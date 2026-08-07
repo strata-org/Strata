@@ -378,6 +378,8 @@ structure LContext (T: LExprParams) where
   knownTypes : KnownTypes
   /-- The set of identifiers that have been seen or generated so far. -/
   idents : Identifiers T.IDMeta
+  /-- Type variables that are rigid (skolemized) in the current scope. -/
+  rigidTypeVars : List TyIdentifier := []
 deriving Inhabited
 
 def LContext.empty {T : LExprParams} : LContext T :=

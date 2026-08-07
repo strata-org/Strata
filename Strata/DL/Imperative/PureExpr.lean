@@ -55,45 +55,6 @@ class HasIdent (P : PureExpr) where
 class LawfulHasIdent (P : PureExpr) [HasIdent P] where
   ident_inj : Function.Injective (HasIdent.ident (P := P))
 
-/-- The shared kind-first freshness core: every `Q`-kind label's identifier
-satisfies the abstract absence test `absent`.  `NoGenSuffix` instantiates
-`absent := (· ∉ xs)` (syntactic — a name list); `NoGenStore` instantiates
-`absent := (ρ.store · = none)` (semantic — a store), so the two freshness
-conditions share this one definition. -/
-abbrev AbsentAtGen {P : PureExpr} [HasIdent P]
-    (Q : String → Prop)
-    (absent : P.Ident → Prop) : Prop :=
-  ∀ s : String, Q s → absent (HasIdent.ident (P := P) s)
-
-/-- `NoGenSuffix Q xs` says no name `xs` carries is the image of a `Q`-kind
-string — equivalently, every ident in `xs` was supplied by user source.  Stated
-*kind-first*: for every string `s` satisfying the label-kind predicate `Q` (the
-kind of label a pass generates), `HasIdent.ident s` is absent from `xs`.
-Instantiating `Q := HasUnderscoreDigitSuffix` recovers the blanket "no statement
-writes a gen-shaped variable" condition; a per-kind `Q` lets a composition
-partner satisfy the obligation by generating under a disjoint prefix. -/
-abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
-    (Q : String → Prop)
-    (xs : List P.Ident) : Prop :=
-  AbsentAtGen (P := P) Q (· ∉ xs)
-
-/-- Contrapositive elimination: from `NoGenSuffix Q xs`, every member of `xs`
-that equals `HasIdent.ident s` is not a `Q`-kind name.  This is the member-first
-orientation some consumers apply. -/
-theorem NoGenSuffix.contrapos {P : PureExpr} [HasIdent P]
-    {Q : String → Prop} {xs : List P.Ident}
-    (h : NoGenSuffix (P := P) Q xs) :
-    ∀ x ∈ xs, ∀ s : String, x = HasIdent.ident (P := P) s → ¬ Q s :=
-  fun _ hx s heq hQ => h s hQ (heq ▸ hx)
-
-/-- Contrapositive introduction: the member-first orientation implies
-`NoGenSuffix`.  Inverse of `NoGenSuffix.contrapos`. -/
-theorem NoGenSuffix.ofContrapos {P : PureExpr} [HasIdent P]
-    {Q : String → Prop} {xs : List P.Ident}
-    (h : ∀ x ∈ xs, ∀ s : String, x = HasIdent.ident (P := P) s → ¬ Q s) :
-    NoGenSuffix (P := P) Q xs :=
-  fun s hQ hmem => h _ hmem s rfl hQ
-
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
   getFvar : P.Expr → Option P.Ident

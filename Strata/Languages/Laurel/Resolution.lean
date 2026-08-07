@@ -290,6 +290,14 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
       match (← fieldTypeInScope innerTy fieldName) with
       | some (.UserDefined typRef) => pure (some typRef.text)
       | _ => pure none
+  | .AsType _ castTy =>
+    -- A cast `(e as T)` fixes the static type to `T` for a following field
+    -- access, e.g. `(e as IndexError)#index`. This lets a `catch` binding or a `throwsOn` case
+    -- binding (typed at the least common ancestor of the thrown types) be
+    -- narrowed to a more specific subtype before dereferencing its fields.
+    match castTy.val with
+    | .UserDefined typRef => pure (some typRef.text)
+    | _ => pure none
   | _ => pure none
   termination_by sizeOf target
   decreasing_by
@@ -1147,6 +1155,169 @@ private def componentTypes (targets : List VariableMd)
     | _ => pure (targets.map fun _ => none, false)
   | none => pure (targets.map fun _ => none, false)
 
+/-- Whether `pred`, the guard of a `catch <binding> when pred`, provably holds
+    for every value of type `ty` — i.e. that clause definitely catches `ty`.
+
+    Conservative: it only reports an absorption it can prove, so an unknown guard
+    keeps the type (a `catch` binding stays broad, never wrongly narrowed). -/
+private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
+    (pred : StmtExprMd) (ty : HighTypeMd) : Bool :=
+  -- `_h` names the discriminant equation so the termination proof can relate a
+  -- disjunct's size back to `pred` (used only there, hence the `_` prefix).
+  match _h : pred.val with
+  | .LiteralBool true => true
+  | .IsType target guardTy =>
+    match target.val with
+    | .Var (.Local n) => n.text == binding.text && isSubtype lattice ty guardTy
+    | _ => false
+  -- A disjunction of type tests catches a type when either side does. Both spellings
+  -- count: `|` is `$or` and `||` is the short-circuiting `$orElse` (see
+  -- `Operation.procName`). Neither wrapper is overloaded, and this runs during
+  -- resolution — before `UniqueOverloadNames` — so matching on the callee text is safe.
+  | .StaticCall callee [p1, p2] =>
+    match Operation.ofProcName? callee.text with
+    | some .Or | some .OrElse =>
+      catchGuardCatches lattice binding p1 ty || catchGuardCatches lattice binding p2 ty
+    | _ => false
+  | _ => false
+  termination_by sizeOf pred
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Whether a `catch` clause definitely catches every value of type `ty`.
+    An absent guard is a catch-all. -/
+private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTypeMd) : Bool :=
+  match c.predicate with
+  | none => true
+  | some p => catchGuardCatches lattice c.binding p ty
+
+/-- Name-keyed adapter over `catchGuardCatches`, for the phase that works in type
+    *names* rather than resolved types: `collectThrownTypeNames` runs while the
+    `catch` binding's own type is still being computed, so a nested `try` must not
+    leak the types its own catches already absorb into an outer binding's
+    least-common-ancestor. Only the binding's text and the named type matter to
+    the guard analysis, so this wraps them and delegates rather than repeating the
+    recursion. -/
+private def catchGuardCatchesName (lattice : TypeLattice) (binding : String)
+    (pred : StmtExprMd) (tyName : String) : Bool :=
+  catchGuardCatches lattice (mkId binding) pred
+    { val := .UserDefined (mkId tyName), source := .unknown }
+
+/-- Whether a `catch` clause provably absorbs a thrown value of the composite
+    named `tyName`: the name-keyed adapter over `clauseCatches`. -/
+private def clauseCatchesName (lattice : TypeLattice) (c : CatchClause) (tyName : String) : Bool :=
+  clauseCatches lattice c { val := .UserDefined (mkId tyName), source := .unknown }
+
+/-- Over-approximate the composite type *names* thrown within `expr`: the
+    operand types of direct `throw`s plus the declared `throws` type of any
+    procedure it calls. Used to type a `catch` binding at the least common
+    ancestor of these (so `e#field` type-checks against the shared supertype
+    without a downcast).
+
+    `throw` operands are read structurally — `new T`/`(x as T)` give `T`
+    directly; a `Var` local/parameter is looked up (inner-block declarations via
+    the threaded `env`, outer names via the current scope). Callee `throws` is
+    available because `preRegisterTopLevel` stores each procedure's full
+    signature in scope before any body is resolved. Operands whose type cannot
+    be determined contribute nothing (the join is over what is known). -/
+private def collectThrownTypeNames (env : Std.HashMap String String) (expr : StmtExprMd)
+    : ResolveM (List String) := do
+  let operandName (op : StmtExprMd) : ResolveM (Option String) := do
+    match op.val with
+    | .New ref => pure (some ref.text)
+    | .AsType _ ty => pure (match ty.val with | .UserDefined r => some r.text | _ => none)
+    | .Var (.Local id) =>
+      match env.get? id.text with
+      | some n => pure (some n)
+      | none =>
+        match (← get).scope.get? id.text with
+        | some (_, node) => pure (match node.getType.val with | .UserDefined r => some r.text | _ => none)
+        | none => pure none
+    | _ => pure none
+  let calleeThrowsName (callee : Identifier) : ResolveM (Option String) := do
+    match (← get).scope.get? callee.text with
+    | some (_, .staticProcedure p) | some (_, .instanceProcedure _ p) =>
+      pure (p.throwsType.bind fun t => match t.val with | .UserDefined r => some r.text | _ => none)
+    | _ => pure none
+  -- Recursive descents go through `attach` (and named discriminant equations) so
+  -- each child carries the membership/shape proof the termination argument needs.
+  match _h : expr.val with
+  | .Throw op => pure ((← operandName op).toList ++ (← collectThrownTypeNames env op))
+  | .StaticCall callee args =>
+    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypeNames env a)
+    pure ((← calleeThrowsName callee).toList ++ rs.flatten)
+  | .InstanceCall target callee args =>
+    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypeNames env a)
+    pure ((← calleeThrowsName callee).toList ++ (← collectThrownTypeNames env target) ++ rs.flatten)
+  | .IfThenElse c t el =>
+    let ee ← match _hel : el with | some x => collectThrownTypeNames env x | none => pure []
+    pure ((← collectThrownTypeNames env c) ++ (← collectThrownTypeNames env t) ++ ee)
+  | .While c _ _ b _ => pure ((← collectThrownTypeNames env c) ++ (← collectThrownTypeNames env b))
+  | .Assign targets v =>
+    -- A `Field` target carries an arbitrary object expression (`mk()#x := 1`), so
+    -- a throw reached through it must contribute to the enclosing binding's join
+    -- too. The generic traversals in `MapStmtExpr` walk these; the hand-written
+    -- descents here have to match them.
+    let ts ← targets.attach.mapM (fun ⟨t, _⟩ =>
+      match _ht : t.val with
+      | .Field obj _ => collectThrownTypeNames env obj
+      | _ => pure [])
+    pure (ts.flatten ++ (← collectThrownTypeNames env v))
+  | .Return (some v) => collectThrownTypeNames env v
+  | .ProveBy v pf => pure ((← collectThrownTypeNames env v) ++ (← collectThrownTypeNames env pf))
+  | .Try body catches finally? =>
+    let ff ← match _hf : finally? with | some f => collectThrownTypeNames env f | none => pure []
+    let cc ← catches.attach.mapM (fun ⟨c, _⟩ => collectThrownTypeNames env c.body)
+    let bodyThrows ← collectThrownTypeNames env body
+    -- Only what escapes this nested `try` can reach an outer `catch` binding, so
+    -- drop the body throws its own catches provably absorb (mirroring
+    -- `exceptionEscapes`); otherwise an inner-handled type would pollute the
+    -- outer binding's least-common-ancestor and could spuriously report "no
+    -- common ancestor". Handler and `finally` throws still escape outward.
+    let lattice := (← get).typeLattice
+    let residual := bodyThrows.filter fun n => !catches.any (fun c => clauseCatchesName lattice c n)
+    pure (residual ++ cc.flatten ++ ff)
+  | .Block stmts _ =>
+    let (_, acc) ← stmts.attach.foldlM (init := (env, ([] : List String))) fun (st) ⟨s, _⟩ => do
+      let (env', acc) := st
+      let more ← collectThrownTypeNames env' s
+      -- A local declaration contributes its declared type name so a later
+      -- `catch e when e is T` guard can be resolved against it. The annotation is
+      -- optional (`Parameter?`), and an unannotated declaration contributes
+      -- nothing: there is no name to record, and the binding's type is inferred
+      -- elsewhere.
+      let noteDeclaredType (param : Parameter?) (e : Std.HashMap String String)
+          : Std.HashMap String String :=
+        match param.type with
+        | some ty => match ty.val with
+          | .UserDefined r => e.insert param.name.text r.text
+          | _ => e
+        | none => e
+      let env'' := match s.val with
+        | .Var (.Declare param) => noteDeclaredType param env'
+        | .Assign [⟨.Declare param, _⟩] _ => noteDeclaredType param env'
+        | _ => env'
+      pure (env'', acc ++ more)
+    pure acc
+  | _ => pure []
+  termination_by sizeOf expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt expr; rw [_h] at hsz)
+    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try term_by_mem)
+    -- Descent into a `Field` assignment target's object expression: the target is
+    -- a member of `targets` and the object is smaller than the target.
+    all_goals (try (
+      have hobj := Variable.sizeOf_field_target_lt_of_eq _ht
+      have hmem := List.sizeOf_lt_of_mem ‹_›
+      simp at hsz
+      omega))
+    all_goals (try (simp_all; omega))
+
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
@@ -1257,6 +1428,12 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     return (r, ⟨ .TVoid, source ⟩)
   | .Assume cond => do
     let r ← Check.assume exprMd cond source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Throw value => do
+    let r ← Check.throw exprMd value source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Try body catches finally? => do
+    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
@@ -1986,6 +2163,91 @@ def Check.assume (exprMd : StmtExprMd)
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
+
+/-- (Throw)
+    ```
+    Γ ⊢ value ⇒ T
+    ──────────────────────────────────
+    Γ ⊢ Throw value ⇒ TVoid
+    ```
+    `throw`'s operand is only synthesized: there is no synthesized exception
+    root, so a `throw` places no upper bound on its operand's type. The thrown
+    types are instead reconciled at each enclosing `catch` binding or a `throwsOn` case, whose
+    binding is typed at the least common ancestor of everything that can reach
+    it (see `Check.tryCatch`). `throw` is a statement: it yields no value, so it
+    synthesizes `TVoid`. -/
+def Check.throw (exprMd : StmtExprMd)
+    (value : StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .Throw value) :
+    ResolveM StmtExprMd := do
+  -- There is no synthesized exception root, so `throw` places no upper bound on
+  -- its operand's type; the thrown types are reconciled at each enclosing
+  -- `catch` binding or a `throwsOn` case by typing the binding at their least common ancestor.
+  -- `throw` is a statement (yields `TVoid`).
+  let (value', _) ← Synth.resolveStmtExpr value
+  pure { val := .Throw value', source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.Throw.sizeOf_spec] at hsz
+    omega
+
+/-- (Try)
+    The `try` body, each `catch` body, and the `finally` arm are statements
+    (checked in statement position, against `Unknown`). Each `catch` clause
+    opens a fresh scope in which its binding is bound to the caught value, typed
+    at the least common ancestor of the exception types thrown in the body (see
+    the body below); the optional guard predicate is checked against
+    `TBool`. `try` is a statement: it synthesizes `TVoid`. See the
+    Exceptions section of the Laurel User Guide. -/
+def Check.tryCatch (exprMd : StmtExprMd)
+    (body : StmtExprMd) (catches : List CatchClause) (finally? : Option StmtExprMd)
+    (source : FileRange)
+    (h : exprMd.val = .Try body catches finally?) :
+    ResolveM StmtExprMd := do
+  let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
+  -- Type each catch binding at the least common ancestor of the exception types
+  -- that can reach it — the operand types of direct `throw`s plus the declared
+  -- `throws` of procedures called in the body. `e#field` then type-checks
+  -- against the shared supertype without a downcast, so a front end can use its
+  -- own exception hierarchy directly. A non-empty set with no common ancestor
+  -- (or an ambiguous join under multiple inheritance) is a hard error; an
+  -- undeterminable/empty set falls back to `Unknown` (gradual).
+  let thrownNames ← collectThrownTypeNames {} body
+  let bindTy : HighTypeMd ← match thrownNames with
+    | [] => pure { val := .Unknown, source := body.source }
+    | _ =>
+      match (← get).typeLattice.commonAncestor thrownNames with
+      | some anc => resolveHighType { val := .UserDefined (mkId anc), source := source }
+      | none =>
+        let names := ", ".intercalate thrownNames.eraseDups
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          s!"the exception types thrown in this `try` block ({names}) have no common ancestor; a `catch` binding needs a single least-common-ancestor type") }
+        pure { val := .Unknown, source := body.source }
+  let catches' ← catches.attach.mapM fun ⟨c, _⟩ => withScope do
+    let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+    let predicate' ← c.predicate.attach.mapM fun ⟨p, _⟩ =>
+      Check.resolveStmtExpr p { val := .TBool, source := p.source }
+    let cbody' ← Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
+    pure ({ binding := binding', predicate := predicate', body := cbody', bindingType := bindTy } : CatchClause)
+  let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
+    Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
+  pure { val := .Try body' catches' finally'?, source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.Try.sizeOf_spec] at hsz
+      try (have := List.sizeOf_lt_of_mem ‹_ ∈ catches›)
+      try (have := CatchClause.sizeOf_body_lt ‹_›)
+      try (have hpr := CatchClause.sizeOf_predicate_lt ‹_›)
+      try (rw [Option.mem_def.mp ‹_ ∈ c.predicate›, Option.some.sizeOf_spec] at hpr)
+      try (rw [Option.mem_def.mp ‹_ ∈ finally?›, Option.some.sizeOf_spec] at hsz)
+      omega
 
 -- ### Assignment
 
@@ -3323,6 +3585,50 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
+/-- Resolve a procedure's exceptional contract: the optional `throws` type (any
+    type in the front end's own hierarchy), the name it binds for the thrown
+    value, and the `throwsOn` behavior cases.
+
+    Scoping follows the meaning of a case (`C ==> (isBad ∧ P)`). The guard `C` is
+    a pre-state predicate, resolved at `bool` like a precondition and *without*
+    the thrown value in scope — there is no exception yet when the guard is
+    evaluated. Each postcondition `P` is resolved at `bool` with the thrown value
+    bound at the declared `throws` type, so a case can state what it threw.
+
+    Because the binding is scoped to the block postconditions, mentioning it in a
+    `requires` or a top-level `ensures` resolves to "not defined" without needing
+    a bespoke check. The declared type itself is not re-stated as a clause here:
+    `EliminateExceptions` derives `isBad ==> err is T` straight from `throwsType`.
+    See the Exceptions section of the Laurel User Guide. -/
+-- Not `private`: `ResolutionProps.resolveExceptionalContract_clean` unfolds this to
+-- prove the `throwsOn` half of `CleanProcFields`, and a private definition is not
+-- visible from that module.
+def resolveExceptionalContract (proc : Procedure)
+    : ResolveM (Option HighTypeMd × Option Identifier × List ThrowsOnBlock) := do
+  -- No upper-bound check: a front end may declare `throws T` for any type in its
+  -- own hierarchy.
+  let throwsType' ← proc.throwsType.mapM resolveHighType
+  -- The thrown value is typed at the declared `throws` type when present, else
+  -- left `Unknown` (gradual).
+  let excBindTy : HighTypeMd := throwsType'.getD { val := .Unknown, source := .unknown }
+  let throwsOn' ← proc.throwsOn.mapM fun blk => do
+    let guard' ← Check.resolveStmtExpr blk.guard { val := .TBool, source := blk.guard.source }
+    let postconditions' ← withScope do
+      match proc.throwsBinding with
+      | some b => do
+        let _ ← defineNameCheckDup b (.var b excBindTy)
+        blk.postconditions.mapM (·.mapM fun p =>
+          Check.resolveStmtExpr p { val := .TBool, source := p.source })
+      | none =>
+        blk.postconditions.mapM (·.mapM fun p =>
+          Check.resolveStmtExpr p { val := .TBool, source := p.source })
+    -- A case's frame: resolve each target like an ordinary (body) modifies
+    -- reference — a Composite reference in scope.
+    let modifies' ← blk.modifies.mapM resolveStmtExpr
+    pure ({ guard := guard', postconditions := postconditions',
+            modifies := modifies' } : ThrowsOnBlock)
+  pure (throwsType', proc.throwsBinding, throwsOn')
+
 /-- (Procedure)
     ```
     T_o-bar = proc.outputs.types
@@ -3368,11 +3674,14 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     let axioms' ← proc.axioms.mapM resolveStmtExpr
+    let (throwsType', throwsBinding', throwsOn') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              isInterpretEntry := proc.isInterpretEntry,
              axioms := axioms',
+             throwsType := throwsType', throwsBinding := throwsBinding',
+             throwsOn := throwsOn',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -3427,11 +3736,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     let axioms' ← proc.axioms.mapM resolveStmtExpr
+    let (throwsType', throwsBinding', throwsOn') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
              isInterpretEntry := proc.isInterpretEntry,
              axioms := axioms',
+             throwsType := throwsType', throwsBinding := throwsBinding',
+             throwsOn := throwsOn',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -3591,6 +3903,15 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
       collectHighType map param.type
     | .AsType _ ty => collectHighType map ty
     | .IsType _ ty => collectHighType map ty
+    -- Register each `catch` binding so references to it in the guard/body
+    -- resolve during Core translation. Its type is the join (least common
+    -- ancestor of the `try` body's thrown types) computed by `Check.tryCatch`
+    -- and carried on the clause as `bindingType`; the `EliminateExceptions` pass
+    -- reads it to type the per-`try` `$exc_<i>` local. Recursion into the arms
+    -- is handled by `foldStmtExpr`.
+    | .Try _ catches _ =>
+      catches.foldl (fun map c =>
+        register map c.binding (.var c.binding c.bindingType)) map
     | _ => map) map expr
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
@@ -3614,7 +3935,17 @@ private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Proced
   let map := register map proc.name (mkNode proc)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
+  -- Covers the `throwsOn` cases' guards, postconditions and frame targets, which
+  -- `procedureSpecificationExprs` enumerates alongside the other specification fields.
   let map := procedureSpecificationExprs proc |>.foldl collectStmtExpr map
+  -- The thrown-value binding is a *declaration*, not an expression, so the fold above
+  -- cannot reach it. Register it here so references to it inside a `throwsOn`
+  -- postcondition resolve during Core translation, typed at the declared `throws` type
+  -- (else `Unknown`), matching `resolveExceptionalContract`.
+  let excBindTy : HighTypeMd := proc.throwsType.getD ⟨.Unknown, .unknown⟩
+  let map := match proc.throwsBinding with
+    | some b => register map b (.var b excBindTy)
+    | none => map
   collectBody map proc.body
 
 private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)
@@ -3814,7 +4145,7 @@ private def preRegisterDefinitions (types : List TypeDefinition)
 private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
   preRegisterDefinitions program.types program.constants program.staticProcedures
 
-/-! ## Entry point -/
+/-! ## Exception-escape enforcement
 
 /-- Collect a "nested `old(...)` has no effect" warning for every `Old` node
     inside `operand` (the operand of an enclosing `old`). An `old` nested
@@ -3828,6 +4159,407 @@ private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
         pure n
       | _ => pure n)
     operand |>.run []).2
+Static "check, don't trust" analysis: a procedure
+that does not declare `throws` must not let any exception escape, and one that
+declares `throws T` must only let exceptions whose type is a subtype of `T`
+escape.
+
+`exceptionEscapes` over-approximates the set of exception types that can leave a
+statement uncaught. A `try` removes a body type only when some `catch` clause
+*provably* handles it — a catch-all, or an `x is T` guard (or a disjunction of
+such guards) with the type a subtype of `T`. Any other guard is treated as
+catching nothing, so the analysis stays sound: it never claims an escape is
+impossible when it might not be.
+
+It runs from `resolve`, on the **initial** resolution only (see the
+`existingModel.isNone` gate there). That is the right moment: the program is still
+as the user wrote it, so `throw` operands and `throws` types carry their real
+types and `is`-guards are un-lowered — all of which `EliminateExceptions` and
+`HeapParameterization` later erase. Instance procedures are not lifted yet, so
+the check walks them inside their composites; a method→method `throws` still
+resolves because `calleeThrows` reads `.instanceProcedure` from the model as well
+as `.staticProcedure`. Re-resolutions of already-lowered output skip it. -/
+
+/-- Whether `stmt` *definitely* completes abruptly — every path through it ends
+    in a `return`, a `throw`, or an `exit` that leaves it — so a completion left
+    pending by a `try` body or handler cannot survive past it (Java JLS §14.20.2 /
+    C#: the `finally`'s own abrupt completion supersedes it, which is what
+    `EliminateExceptions` lowers).
+
+    A sound under-approximation: anything it cannot prove abrupt is `false`, so
+    the caller stays conservative. `opened` carries the labels of blocks opened
+    within `stmt`, which is what distinguishes an `exit` that leaves it from one
+    that merely jumps ahead inside it; the top-level entry point starts empty. -/
+private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd) : Bool :=
+  match _h : stmt.val with
+  | .Return _ => true
+  | .Throw _ => true
+  -- An `exit` completes the statement abruptly only when it *leaves* it: a jump
+  -- to a label opened inside just skips ahead within it. (`EliminateExceptions`
+  -- unwinds a leaving `exit` through the `finally` arms it crosses, dropping the
+  -- pending completion exactly as a `return`/`throw` would.)
+  | .Exit label => !opened.contains label
+  -- Statements after an unconditional terminator are unreachable, so a block is
+  -- abrupt as soon as any of its statements is.
+  | .Block stmts label =>
+    let inner := match label with | some l => l :: opened | none => opened
+    stmts.attach.any (fun ⟨s, _⟩ => alwaysCompletesAbruptlyIn inner s)
+  | .IfThenElse _ t (some e) =>
+    alwaysCompletesAbruptlyIn opened t && alwaysCompletesAbruptlyIn opened e
+  | _ => false
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+private def alwaysCompletesAbruptly (stmt : StmtExprMd) : Bool :=
+  alwaysCompletesAbruptlyIn [] stmt
+
+/-- Over-approximate the exception types (each with a source location) that can
+    escape `expr` uncaught. -/
+private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (expr : StmtExprMd) : List (HighTypeMd × FileRange) :=
+  let calleeThrows (callee : Identifier) : List (HighTypeMd × FileRange) :=
+    match model.get callee with
+    | .staticProcedure p | .instanceProcedure _ p =>
+      match p.throwsType with
+      | some t => [(t, expr.source)]
+      | none => []
+    | _ => []
+  -- Recursive descents go through `attach` (and named discriminant equations) so
+  -- each child carries the membership/shape proof the termination argument needs.
+  match _h : expr.val with
+  | .Throw e =>
+    -- Every `throw` is on the exceptional channel (there is no root type to
+    -- gate on); the thrown value's type is what may escape. Also recurse into
+    -- the operand: a throwing call inside it (e.g. `throw f()` where `f` throws)
+    -- escapes too.
+    (computeExprType model e, expr.source) :: exceptionEscapes model lattice e
+  | .StaticCall callee args =>
+    calleeThrows callee ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapes model lattice a)
+  | .InstanceCall target callee args =>
+    calleeThrows callee ++ exceptionEscapes model lattice target
+      ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapes model lattice a)
+  | .Try body catches finally? =>
+    let bodyEsc := exceptionEscapes model lattice body
+    let uncaught := bodyEsc.filter (fun p => !catches.any (fun c => clauseCatches lattice c p.1))
+    let handlersEsc := catches.attach.flatMap (fun ⟨c, _⟩ => exceptionEscapes model lattice c.body)
+    let finallyEsc := match _hf : finally? with
+      | some f => exceptionEscapes model lattice f
+      | none => []
+    -- A `finally` that definitely completes abruptly *supersedes* whatever the
+    -- body or a handler left pending, so nothing from them escapes through it
+    -- (only the `finally`'s own throws do). Without this the check reports a
+    -- spurious escape for e.g. `try { throw e } finally { return }`, whose
+    -- `return` provably swallows the exception, and rejects a legal program.
+    let finallyAbrupt := match finally? with
+      | some f => alwaysCompletesAbruptly f
+      | none => false
+    if finallyAbrupt then finallyEsc
+    else uncaught ++ handlersEsc ++ finallyEsc
+  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapes model lattice s)
+  | .IfThenElse c t e =>
+    exceptionEscapes model lattice c ++ exceptionEscapes model lattice t
+      ++ (match _he : e with | some eb => exceptionEscapes model lattice eb | none => [])
+  | .While c _ _ b _ =>
+    exceptionEscapes model lattice c ++ exceptionEscapes model lattice b
+  | .Assign targets value =>
+    -- A `Field` target's object expression (`mk()#x := 1`) can throw or call a
+    -- throwing procedure, so it escapes exactly like the assigned value does.
+    targets.attach.flatMap (fun ⟨t, _⟩ =>
+      match _ht : t.val with
+      | .Field obj _ => exceptionEscapes model lattice obj
+      | _ => [])
+      ++ exceptionEscapes model lattice value
+  | .Return (some v) => exceptionEscapes model lattice v
+  | .ProveBy v pf => exceptionEscapes model lattice v ++ exceptionEscapes model lattice pf
+  | _ => []
+  termination_by sizeOf expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt expr; rw [_h] at hsz)
+    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try term_by_mem)
+    -- Descent into a `Field` assignment target's object expression: the target is
+    -- a member of `targets` and the object is smaller than the target.
+    all_goals (try (
+      have hobj := Variable.sizeOf_field_target_lt_of_eq _ht
+      have hmem := List.sizeOf_lt_of_mem ‹_›
+      simp at hsz
+      omega))
+    all_goals (try (simp_all; omega))
+
+/-- Guard: reject a `try` whose escaping exception cannot be copied into the region
+    it propagates into.
+
+    `EliminateExceptions` gives each `try` an exception variable typed at its
+    least-common-ancestor type `ti`, and on the escaping edge copies it into the
+    enclosing region's variable, typed `tp`: a widening when `ti <: tp`, an assumed
+    checked downcast when `tp <: ti`. When the two are unrelated there is no legal
+    copy at all — even `ti as tp` is rejected as a cast between unrelated types — so
+    the lowering emits nothing and the enclosing variable is left unassigned, which
+    then fails the procedure's own `throwsOn` case with a misleading *postcondition
+    could not be proved*.
+
+    Under single inheritance that case cannot arise with anything actually escaping.
+    But a composite may extend several parents, and then a common subtype of two
+    otherwise unrelated types can legally escape: with `composite C extends A, B`, a
+    `try` whose types join at `B`, inside a `throws A` procedure, escapes a `C`.
+    Reject that shape here instead of lowering it into an unassigned variable.
+
+    `parentTy` is the type of the region the statement propagates into — the
+    enclosing `try`'s binding type, or the procedure's declared `throws` type at the
+    top level. A `finally`-only `try` introduces no variable of its own (it shares
+    the enclosing one), so it passes `parentTy` through unchanged, mirroring the
+    lowering. Only a `try` that something actually escapes is checked, so a fully
+    handled `try` with an unrelated binding type stays legal. -/
+private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice)
+    (parentTy : Option HighTypeMd) (stmt : StmtExprMd) : List Message :=
+  match _h : stmt.val with
+  | .Try body catches finally? =>
+    let thisTy : Option HighTypeMd := catches.head?.map (fun c => c.bindingType)
+    let edgeError : List Message :=
+      match thisTy, parentTy with
+      | some ti, some tp =>
+        if !(exceptionEscapes model lattice stmt).isEmpty
+            && !isSubtype lattice ti tp && !isSubtype lattice tp ti then
+          [diagnosticFromSource stmt.source
+            s!"an exception escaping this `try` is not yet supported here: the `try`'s exception type '{formatType ti}' is unrelated to '{formatType tp}', the type it must propagate into, so the lowering has no legal copy between the two (this can happen when a composite extends several parents). Catch it inside the `try`, or relate the two types."
+            MessageKind.notYetImplemented]
+        else []
+      | _, _ => []
+    edgeError
+      ++ checkPropagationEdges model lattice (match thisTy with
+           | some _ => thisTy
+           | none => parentTy) body
+      ++ catches.attach.flatMap (fun ⟨c, _⟩ =>
+           checkPropagationEdges model lattice parentTy c.body)
+      ++ (match _hf : finally? with
+          | some f => checkPropagationEdges model lattice parentTy f
+          | none => [])
+  | .Block stmts _ =>
+    stmts.attach.flatMap (fun ⟨s, _⟩ => checkPropagationEdges model lattice parentTy s)
+  | .IfThenElse _ t e =>
+    checkPropagationEdges model lattice parentTy t
+      ++ (match _he : e with
+          | some eb => checkPropagationEdges model lattice parentTy eb
+          | none => [])
+  | .While _ _ _ b _ => checkPropagationEdges model lattice parentTy b
+  | _ => []
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
+    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Check one procedure's body against its `throws` declaration:
+    no-escape when nothing is declared, subtype upper-bound when `throws T` is. -/
+private def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
+    (displayName : String) (proc : Procedure) : List Message :=
+  let body? := match proc.body with
+    | .Transparent b => some b
+    | .Opaque _ (some impl) _ => some impl
+    | _ => none
+  match body? with
+  | none => []
+  | some body =>
+    let escs := exceptionEscapes model lattice body
+    match proc.throwsType with
+    | none =>
+      escs.map (fun (ty, src) =>
+        diagnosticFromSource src
+          s!"procedure '{displayName}' may let an exception of type '{formatType ty}' escape; catch it with a `try`/`catch` or declare a `throws` clause"
+          MessageKind.userError)
+    | some declared =>
+      escs.filterMap (fun (ty, src) =>
+        if isSubtype lattice ty declared then none
+        else some (diagnosticFromSource src
+          s!"procedure '{displayName}' may throw '{formatType ty}', which is not a subtype of its declared `throws` type '{formatType declared}'"
+          MessageKind.userError))
+
+/-- Validate the whole program's exception contracts. `procs` pairs each procedure
+    with the name to show the user: static procedures by their own name, and a
+    composite's instance procedure as `Composite.method` (they are still un-lifted
+    when this runs — from `resolve`, on the initial resolution — so the owning type
+    has to be supplied here rather than read off a lifted `Composite$method`
+    name). A method→method `throws` still resolves, because `calleeThrows` reads
+    `.instanceProcedure` from the model as well as `.staticProcedure`. -/
+private def validateExceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (procs : List (String × Procedure)) : List Message :=
+  procs.flatMap (fun (displayName, proc) =>
+    checkProcedureThrows model lattice displayName proc)
+
+/-! ## Exception-lowering guards
+
+`EliminateExceptions` does not yet handle two source shapes; each would otherwise
+surface downstream as an internal `strata-bug` or a silent miscompile, so they are
+rejected here — from `resolve`, alongside the escape check, before the lowering —
+with a clear "not yet supported" diagnostic.
+
+(An `exit` leaving a `try`/`finally` needs no guard: the lowering unwinds it
+through the crossed `finally` arms.) -/
+
+/-- Whether `callee` names a procedure that declares `throws`. -/
+private def procDeclaresThrows (model : SemanticModel) (callee : Identifier) : Bool :=
+  match model.get callee with
+  | .staticProcedure p | .instanceProcedure _ p => p.throwsType.isSome
+  | _ => false
+
+/-- Sources of every call to a `throws` procedure anywhere in `e`. The lowering
+    only handles a throwing call as a whole statement or the whole RHS of an
+    assignment/return; anywhere else (nested in an operator, a call argument, a
+    condition, a `throw` operand) is unsupported, so those calls are flagged. -/
+private def throwingCallSources (model : SemanticModel) (e : StmtExprMd) : List FileRange :=
+  collectStmtExprList (fun n =>
+    match n.val with
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+      if procDeclaresThrows model callee then [n.source] else []
+    | _ => []) e
+
+/-- Guard: flag a `throws` call in a disallowed (nested) expression
+    position. A whole-statement call and a whole-RHS call (assignment or return
+    payload — `EliminateValueInReturns` turns the latter into an assignment) are
+    the only positions the lowering handles; their *arguments* are still nested. -/
+private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprMd)
+    : List FileRange :=
+  -- A value expression bound whole (assignment RHS / return payload): a call at
+  -- its head is fine, but its arguments are nested value expressions.
+  let checkValue (v : StmtExprMd) : List FileRange :=
+    match v.val with
+    | .StaticCall _ args | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
+    | _ => throwingCallSources model v
+  match _h : stmt.val with
+  | .Block stmts _ =>
+    stmts.attach.flatMap (fun ⟨s, _⟩ => checkThrowingCallPositions model s)
+  | .IfThenElse c t e =>
+    throwingCallSources model c ++ checkThrowingCallPositions model t
+      ++ (match _he : e with | some eb => checkThrowingCallPositions model eb | none => [])
+  | .While c _ _ b _ => throwingCallSources model c ++ checkThrowingCallPositions model b
+  | .Try body catches finally? =>
+    checkThrowingCallPositions model body
+      ++ catches.attach.flatMap (fun ⟨c, _⟩ =>
+           (match c.predicate with | some p => throwingCallSources model p | none => [])
+             ++ checkThrowingCallPositions model c.body)
+      ++ (match _hf : finally? with | some f => checkThrowingCallPositions model f | none => [])
+  | .Assign targets value =>
+    -- Only the assigned *value* is a whole-RHS position. A `Field` target's object
+    -- expression (`mk()#x := 1`) is nested, so a throwing call anywhere inside it
+    -- is flagged — including at its head.
+    targets.flatMap (fun t =>
+      match t.val with
+      | .Field obj _ => throwingCallSources model obj
+      | _ => [])
+      ++ checkValue value
+  | .Return (some v) => checkValue v
+  | .Throw op => throwingCallSources model op
+  | .StaticCall _ args | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
+  | _ => throwingCallSources model stmt
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
+    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Guard: flag a `catch` handler that re-declares its own exception
+    binding. The binding snapshot in `EliminateExceptions` substitutes by textual
+    name and is not scope-aware, so an inner re-declaration of the binding name is
+    miscompiled. Returns each offending source paired with the binding name. -/
+private def checkCatchBindingShadowing (stmt : StmtExprMd)
+    : List (FileRange × String) :=
+  match _h : stmt.val with
+  | .Try body catches finally? =>
+    let declaresBinding (binding : String) (b : StmtExprMd) : List (FileRange × String) :=
+      collectStmtExprList (fun n =>
+        match n.val with
+        | .Var (.Declare p) => if p.name.text == binding then [(n.source, binding)] else []
+        | .Assign targets _ =>
+          targets.filterMap (fun t => match t.val with
+            | .Declare p => if p.name.text == binding then some (n.source, binding) else none
+            | _ => none)
+        | _ => []) b
+    (catches.attach.flatMap (fun ⟨c, _⟩ => declaresBinding c.binding.text c.body))
+      ++ checkCatchBindingShadowing body
+      ++ catches.attach.flatMap (fun ⟨c, _⟩ => checkCatchBindingShadowing c.body)
+      ++ (match _hf : finally? with | some f => checkCatchBindingShadowing f | none => [])
+  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => checkCatchBindingShadowing s)
+  | .IfThenElse _ t e =>
+    checkCatchBindingShadowing t
+      ++ (match _he : e with | some eb => checkCatchBindingShadowing eb | none => [])
+  | .While _ _ _ b _ => checkCatchBindingShadowing b
+  | _ => []
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
+    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Whether `proc` uses the exceptional channel in its authored form: it declares
+    a `throws` type or any exceptional clause, or its body contains a `throw` or a
+    `try`. This mirrors the condition `EliminateExceptions` uses to decide whether
+    to inject the `Result` datatype. A program that only *calls* a throwing
+    procedure is covered too, because that callee is itself a procedure of the
+    program and declares `throws`. -/
+private def procUsesExceptions (proc : Procedure) : Bool :=
+  proc.throwsType.isSome
+    || !proc.throwsOn.isEmpty
+    || (match proc.body with
+        | .Transparent b => bodyThrowsOrTries b
+        | .Opaque _ (some impl) _ => bodyThrowsOrTries impl
+        | _ => false)
+where
+  bodyThrowsOrTries (b : StmtExprMd) : Bool :=
+    anyStmtExpr (fun n => match n.val with
+      | .Throw _ | .Try .. => true
+      | _ => false) b
+
+/-- Reject a `throwsOn` behavior case on a procedure that declares no `throws`
+    type, and reject a value output referenced from inside one.
+
+    A case describes the throwing exit, and without a `throws` type there is none:
+    the case cannot be honored, and it is not lowered either — `EliminateExceptions`
+    only rewrites the cases of a procedure it gives a `Result` to, and
+    `ModifiesClauses` only builds exceptional frames for such a procedure — so it
+    would be silently ignored rather than checked.
+
+    A value output does not exist on the throwing path either. The lowering
+    replaces it with a single `Result` whose `Bad` arm carries only the exception,
+    so a case mentioning it would read `Result..value($result)` off a `Bad` result:
+    an underspecified postcondition rather than a diagnosable error. Inout
+    parameters are exempt — they survive as outputs of the lowered procedure.
+
+    Runs only on the initial resolution, like the other exception checks: the
+    lowering clears `throws` while deliberately *keeping* the cases' frames for
+    `ModifiesClauses`, so re-running this on lowered output would report every
+    exceptional frame in the program. -/
+private def validateExceptionalClausesNeedThrows
+    (procs : List (String × Procedure)) : List Message :=
+  procs.flatMap fun (displayName, proc) =>
+    let needsThrows :=
+      if proc.throwsType.isSome then []
+      else proc.throwsOn.map fun blk =>
+        diagnosticFromSource blk.guard.source
+          s!"a `throwsOn` case describes the exceptional exit, so procedure '{displayName}' must declare a `throws` type; without one it has no exceptional exit and the case would be silently ignored"
+          MessageKind.userError
+    let inputNames := proc.inputs.map (·.name.text)
+    let valueOutputs := (proc.outputs.filter (fun o => !inputNames.contains o.name.text)).map (·.name.text)
+    let valueOutputRefs := proc.throwsOn.flatMap fun blk =>
+      blk.postconditions.flatMap fun c =>
+        let referenced := foldStmtExpr (fun n acc => match n.val with
+          | .Var (.Local id) => if valueOutputs.contains id.text then acc.insert id.text else acc
+          | _ => acc) (∅ : Std.HashSet String) c.condition
+        referenced.toList.map fun name =>
+          diagnosticFromSource c.condition.source
+            s!"a `throwsOn` case of procedure '{displayName}' refers to the value output '{name}', which does not exist on the throwing path: a throwing procedure returns a single result whose exceptional arm carries only the thrown value"
+            MessageKind.userError
+    needsThrows ++ valueOutputRefs
 
 /-- True when `e` reads heap state, reusing the shared heap-effect analysis so
     this stays consistent with how `HeapParameterization` classifies expressions.
@@ -3842,6 +4574,82 @@ private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : 
     | some id => heapReaders.contains id
     | none => false
 
+/-- Reject the exception source shapes `EliminateExceptions` does not yet handle
+    (each would otherwise miscompile or hit a `strata-bug`). Run from `resolve` on
+    the initial resolution, alongside `validateExceptionEscapes`; `procs` is every
+    procedure in the program (static plus composite instance procedures, which are
+    not yet lifted at that point), and `types` is every type it declares. -/
+private def validateExceptionLowerability (model : SemanticModel)
+    (types : List TypeDefinition) (procs : List Procedure) : List Message :=
+  -- `EliminateExceptions` prepends the `Result` datatype to a program that uses
+  -- exceptions, so the name is reserved for such a program. Without this check the
+  -- collision surfaces only after the pass, as a *duplicate definition* reported
+  -- by the re-resolution and then a cascade of type errors against the wrong
+  -- `Result` — all of them internal-error diagnostics pointing at synthesized
+  -- nodes, none of them naming the user's own declaration.
+  let reservedTypeErrors :=
+    if procs.any procUsesExceptions then
+      types.filterMap fun td =>
+        if td.name.text == exnResultDatatypeName then
+          some (diagnosticFromSource td.name.source
+            s!"a program that uses exceptions may not declare a type named '{exnResultDatatypeName}': exception lowering injects a datatype of that name to carry a throwing procedure's outcome, and the two would collide. Rename this type."
+            MessageKind.notYetImplemented)
+        else none
+    else []
+  reservedTypeErrors ++ procs.flatMap (fun proc =>
+    -- A `throwsOn` guard is defined as a *pre-state* predicate, but the lowering
+    -- reads it in the post-state: `EliminateExceptions` splices the guard verbatim
+    -- into the forcing claim (`C ==> Result..isBad($result)`) and into each case
+    -- postcondition's antecedent, and `ModifiesClauses` splices it into the
+    -- exhaustiveness disjunct — all of them postconditions, none of them wrapped
+    -- to capture the pre-state. A guard over parameters alone is unaffected,
+    -- because an input binding holds the same value in both states, which is why
+    -- the promise has held so far. A guard that reads the heap silently means
+    -- "held on exit" instead, and that is wrong in both directions: a body that
+    -- clears the guarded field before throwing fails exhaustiveness even though it
+    -- throws exactly when the guard held on entry, and a body that lets the guard
+    -- hold on entry and then clears it *without* throwing verifies — letting a
+    -- caller prove from the contract that the call throws when it does not.
+    -- Reject the shape until guards are captured in the pre-state; a caller of a
+    -- bodiless procedure reasons from these cases too, so this is checked on the
+    -- contract rather than only where there is an implementation.
+    let heapGuardErrors := proc.throwsOn.filterMap (fun blk =>
+      if containsHeapRead model.heapReaders blk.guard then
+        some (diagnosticFromSource blk.guard.source
+          "a `throwsOn` guard that reads the heap is not yet supported: a guard is evaluated in the pre-state by definition, but the lowering reads it in the post-state, so a guard naming a field (`x#f`) or calling a heap-reading procedure would silently mean \"held on exit\". Restrict the guard to parameters."
+          MessageKind.notYetImplemented)
+      else none)
+    let body? := match proc.body with
+      | .Transparent b => some b
+      | .Opaque _ (some impl) _ => some impl
+      | _ => none
+    heapGuardErrors ++ match body? with
+    | none => []
+    | some body =>
+      checkPropagationEdges model (TypeLattice.ofTypes types) proc.throwsType body
+      ++ (checkThrowingCallPositions model body).map (fun src =>
+        diagnosticFromSource src
+          "a call to a procedure that `throws` is not yet supported in this expression position; bind it to a variable first (e.g. `var t := f(); … t …`)"
+          MessageKind.notYetImplemented)
+      ++ (checkCatchBindingShadowing body).map (fun (src, name) =>
+        diagnosticFromSource src
+          s!"re-declaring the `catch` binding '{name}' inside its handler is not yet supported (it shadows the exception binding and would miscompile); rename the inner variable"
+          MessageKind.notYetImplemented))
+
+/-! ## Entry point -/
+
+/-- Collect a "nested `old(...)` has no effect" warning for every `Old` node
+    inside `operand` (the operand of an enclosing `old`). An `old` nested
+    directly inside another `old` is always redundant. -/
+private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
+  (mapStmtExprM (m := StateM (List Message))
+    (fun n => do
+      match n.val with
+      | .Old _ =>
+        modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .warning])
+        pure n
+      | _ => pure n)
+    operand |>.run []).2
 
 /-- True when `e` references one of `inoutNames` (an inout parameter), in which
     case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/
@@ -4150,10 +4958,30 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- `validateFullyAnnotated`). Unconditional: re-resolutions check that
   -- lowering passes preserve the invariant too.
   let annotationBugs := validateFullyAnnotated program'
+  -- Exception contract enforcement: catch-or-declare (`validateExceptionEscapes`)
+  -- plus the "not yet lowerable" source-shape guards
+  -- (`validateExceptionLowerability`). Only on the initial resolution — these are
+  -- properties of the *authored* program, and `EliminateExceptions` deliberately
+  -- erases the `throw`/`try`/`throws` constructs they are phrased against, so a
+  -- re-resolution of lowered output must not re-run them (it would report the
+  -- same error once per re-resolve, and find nothing after the lowering).
+  -- Instance procedures are still inside their composites here (lifting happens
+  -- later), so both checks walk `allProcs`, which includes them.
+  let namedProcs : List (String × Procedure) :=
+    program'.staticProcedures.map (fun p => (p.name.text, p))
+      ++ program'.types.flatMap fun
+        | .Composite ct => ct.instanceProcedures.map (fun p => (s!"{ct.name.text}.{p.name.text}", p))
+        | _ => []
+  let exceptionErrors :=
+    if existingModel.isNone then
+      validateExceptionEscapes semanticModel typeLattice namedProcs
+        ++ validateExceptionalClausesNeedThrows namedProcs
+        ++ validateExceptionLowerability semanticModel program'.types allProcs
+    else []
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
-      invokeOnErrors ++ multiOutputCallErrors ++ annotationBugs
+      invokeOnErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
   }
 
 -- `resolve` establishes the invariant that every `Declare` in its output is

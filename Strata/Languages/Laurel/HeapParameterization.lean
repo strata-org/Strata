@@ -38,11 +38,18 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
-     `f(args...) => (var freshVar: type; heapVar, freshVar := f(heapVar, args...); freshVar)`
+     `f(args...) => (var freshVar: type; freshVar, heapVar := f(args..., heapVar); freshVar)`
    - Calls to heap-writing procedures as statements:
-     `f(args...)` => `heap := f(heap, args...)`
+     `f(args...)` => `heap := f(args..., heap)`
    - Calls to heap-reading procedures:
-     `f(args...)` => `f(heap, args...)`
+     `f(args...)` => `f(args..., heap)`
+
+The hidden heap argument is passed LAST so that explicit arguments are
+evaluated before the heap is sampled: an effectful earlier argument (e.g. a
+call that writes the heap) updates `heap` before the trailing heap argument
+reads it, and the imperative-lifting pass snapshots any earlier heap reads.
+This preserves source-level left-to-right evaluation without a separate
+argument-hoisting step in this pass.
 
 The analysis is transitive: if procedure A calls procedure B, and B reads/writes the heap,
 then A is also considered to read/write the heap.
@@ -55,7 +62,9 @@ namespace Strata.Laurel
 -- Heap-effect analysis (`AnalysisResult`, `analyzeProc`, `computeReadsHeap`,
 -- `computeWritesHeap`) now lives in `Strata.Languages.Laurel.HeapAnalysis`, so
 -- it can be shared with `Resolution` (which uses it to diagnose no-op `old(...)`)
--- without an import cycle.
+-- without an import cycle. The exceptional-contract heap effects (a case's guard,
+-- postconditions and frame) and the `Throw`/`Try` expression cases are
+-- handled there.
 
 structure TransformState where
   heapReaders : Std.HashSet Nat
@@ -70,6 +79,16 @@ structure TransformState where
 private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   match model.get name with
   | .datatypeDefinition _ => true
+  | _ => false
+
+/-- Check whether a UserDefined type name refers to a composite (heap object)
+    type in the model. Unlike `!isDatatype`, this is `false` for a type
+    *parameter* (e.g. the `Val` of `Result<Val, Err>`, the field type reported
+    for `Result..value!`) or any name not resolved to a composite, so reference
+    equality is only applied to genuine heap references. -/
+private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
+  match model.get name with
+  | .compositeType _ => true
   | _ => false
 
 /-- Get the `$Box` destructor name for a given Laurel HighType.
@@ -208,20 +227,26 @@ where
         -- For `==` and `!=` on Composite types, compare refs instead. These are
         -- calls to the built-in `$eq`/`$neq` wrappers (see `Operation.procName`);
         -- neither is overloaded, so `UniqueOverloadNames` leaves the names alone
-        -- and matching on the text is safe. Note `.UserDefined` covers BOTH
-        -- composites (heap references — `ref!` is correct) and datatypes (values
-        -- — `ref!` is wrong and would unify a datatype value against
-        -- `Composite`). Only ref-compare composites; datatype equality falls
-        -- through to structural comparison.
+        -- and matching on the text is safe.
+        --
+        -- The guard is `isComposite`, not `!isDatatype`. `.UserDefined` covers three
+        -- things, not two: composites (heap references, where `ref!` is right),
+        -- datatype values (where it is wrong), and type *parameters* — the `Val` of
+        -- `Result<Val, Err>`, which is the type reported for `Result..value!(…)` and
+        -- is an ordinary value, often an `int`. A parameter is not a datatype either,
+        -- so excluding only datatypes would wrap it in `Composite..ref!` and fail to
+        -- unify `(arrow Composite int)` against `(arrow int _)`. Ref-compare genuine
+        -- composites and let everything else compare structurally.
         if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
           match args, args' with
           | [e1, _], [a1, a2] =>
             match (computeExprType model e1).val with
             | .UserDefined name =>
-              if isDatatype model name then return [⟨ .StaticCall callee args', source ⟩]
-              let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
-              let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
-              return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
+              if isComposite model name then
+                let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
+                let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
+                return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
+              return [⟨ .StaticCall callee args', source ⟩]
             | _ => return [⟨ .StaticCall callee args', source ⟩]
           | _, _ => return [⟨ .StaticCall callee args', source ⟩]
         else
@@ -233,13 +258,13 @@ where
               -- Specifications are pure. Keep the source-level call shape so the
               -- pure-context validator reports the call itself, rather than a
               -- synthetic heap-threading assignment introduced by this pass.
-              return [⟨.StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source⟩]
+              return [⟨.StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source⟩]
           | .executable =>
             if valueUsed then
               let freshVar ← freshVarName
               let callWithHeap := ⟨ .Assign
                 [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, some (computeExprType model exprMd)⟩) source]
-                (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
+                (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩
               return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
             else
               -- Generate throwaway Declare targets for any non-heap outputs
@@ -250,9 +275,9 @@ where
               let extraTargets ← procOutputs.mapM fun out => do
                 pure (mkVarMd (.Declare ⟨← freshVarName, some out.type⟩) source)
               let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
-              return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
+              return [⟨ .Assign allTargets (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩]
         else if calleeReadsHeap then
-          return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩]
+          return [⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩]
         else
           return [⟨ .StaticCall callee args', source ⟩]
     | .InstanceCall callTarget callee args =>
@@ -314,9 +339,9 @@ where
             let calleeWritesHeap ← writesHeap callee
             let calleeReadsHeap ← readsHeap callee
             if calleeWritesHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, true)
+              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, true)
             else if calleeReadsHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, false)
+              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, false)
             else
               pure (⟨ .StaticCall callee args', v.source ⟩, false)
           | .InstanceCall callTarget _callee args => do
@@ -353,11 +378,28 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .New _ => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
-    | .AsType t ty =>
-        let t' ← recurseOne t valueUsed
-        let isCheck := ⟨ .IsType t' ty, source ⟩
-        let assertStmt := ⟨ .Assert isCheck none, source ⟩
-        return [⟨ .Block [assertStmt, t'] none, source ⟩]
+    | .AsType target ty =>
+        let target' ← recurseOne target true
+        match context with
+        | .specification =>
+          -- Specifications are pure, so the target can be evaluated twice; a
+          -- declared temp is not resolvable here (no inference in specs).
+          let check : StmtExprMd := ⟨.Assert ⟨.IsType target' ty, source⟩ none, source⟩
+          return [⟨.Block [check, target'] none, source⟩]
+        | .executable =>
+          -- Capture the target once: it is used both by the type check and as
+          -- the result, and an effectful target (e.g. a heap-writing call)
+          -- must run exactly once. No type annotation: the declared return
+          -- type of a generic callee (e.g. `Result..err : Result<Val, Err> →
+          -- Err`) names type parameters that are unbound here; the resolver
+          -- infers the instantiated type.
+          let result ← freshVarName
+          let resultRef : StmtExprMd := ⟨.Var (.Local result), source⟩
+          let capture : StmtExprMd := ⟨.Assign
+            [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
+          let check : StmtExprMd :=
+            ⟨.Assert ⟨.IsType resultRef ty, source⟩ none, source⟩
+          return [⟨.Block [capture, check, resultRef] none, source⟩]
     | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurseOne t
@@ -370,6 +412,8 @@ where
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
+    -- `Throw`/`Try` are lowered away by `EliminateExceptions` (which runs before
+    -- this pass), so they never reach here (no arms needed).
     | _ => return [exprMd]
   termination_by (sizeOf exprMd, 0)
   decreasing_by
@@ -388,6 +432,60 @@ where
       cases exprMd with | mk val src =>
       simp_all
       omega)
+
+/-- Check if `p` is a composite (heap-reference) parameter. -/
+private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
+  match p.type.val with
+  | .UserDefined name => !isDatatype model name
+  | _ => false
+
+/-! Heap well-formedness conditions below are emitted `free`:
+    assumed for reference values appearing *directly* as  parameters/outputs,
+    but not for indirectly reachable references (composite fields, set elements).
+    Closing that gap needs axioms over custom types. -/
+
+/-- For each composite parameter `p`, the free precondition
+    `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
+private def heapWellFormednessPreconds (model : SemanticModel)
+    (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
+  inputs.filterMap fun p =>
+    if isCompositeParam model p then
+      let src := p.name.source
+      let pRead := { val := .Var (.Local p.name), source := src }
+      let pRef := { val := .StaticCall "Composite..ref!" [pRead], source := src }
+      let heapRead := { val := .Var (.Local heapVar), source := src }
+      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      let allocated := { val := .StaticCall "$intLt" [pRef, counter], source := src }
+      some { condition := allocated, summary := some "input is allocated on the heap", mode := .Assume }
+    else none
+
+/-- The free postcondition
+    `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
+    the top of heap pointer never decreases. -/
+private def heapMonotonicityPostcond (source : FileRange)
+    (heapVar : Identifier) : Condition :=
+  let heapRead := { val := .Var (.Local heapVar), source }
+  let nextRef := { val := .StaticCall "Heap..nextReference!" [heapRead], source }
+  let inCounter := { val := .Old nextRef, source }
+  let outCounter := nextRef
+  { condition := { val := .StaticCall "$intLe" [inCounter, outCounter], source },
+    summary := some "monotonic heap pointer", mode := .Assume }
+
+/-- For each composite output `o`, the free postcondition
+    `Composite..ref!(o) < Heap..nextReference!($heap)` - a returned
+    composite is allocated in the output heap. -/
+private def heapOutputAllocationPostconds (model : SemanticModel)
+    (outputs : List Parameter) (heapOutVar : Identifier) : List Condition :=
+  outputs.filterMap fun o =>
+    if isCompositeParam model o then
+      let src := o.name.source
+      let oRead := { val := .Var (.Local o.name), source := src }
+      let oRef := { val := .StaticCall "Composite..ref!" [oRead], source := src }
+      let heapRead := { val := .Var (.Local heapOutVar), source := src }
+      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      some { condition := { val := .StaticCall "$intLt" [oRef, counter], source := src },
+             summary := some "output is allocated on the heap", mode := .Assume }
+    else none
 
 /-- Heap-transform a pure specification expression without introducing
 heap-threading assignments for calls to heap-writing procedures. -/
@@ -410,6 +508,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   let uid ← Identifier.getUniqueId proc.name
   let readsHeap := (← get).heapReaders.contains uid
   let writesHeap := (← get).heapWriters.contains uid
+  -- Kept before the generic specification pass because a `throwsOn` case's frame
+  -- targets need a modifies-specific transform rather than the uniform one; the
+  -- writes-heap branch below rebuilds the cases from these.
+  let originalThrowsOn := proc.throwsOn
   let proc ← if readsHeap || writesHeap then
     mapProcedureSpecificationsM (heapTransformSpecificationExpr heapName model) proc
   else
@@ -418,12 +520,27 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
     -- (true inout). Core's two-state semantics provide `old $heap` automatically.
+    -- The heap goes LAST in the inputs so explicit arguments evaluate before the
+    -- heap is sampled at call sites (see the module docs). It stays FIRST in the
+    -- outputs: Core's `CallArg.getLhs` yields inout receivers before plain out
+    -- receivers, and `CallElim` pairs receivers with outputs positionally.
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
-    let inputs' := heapParam :: proc.inputs
+    let inputs' := proc.inputs ++ [heapParam]
     let outputs' := heapParam :: proc.outputs
 
+    -- `proc` already had its specification expressions (preconditions,
+    -- relies/guarantees) heap-transformed at the top of this function. Prepend
+    -- the free heap-well-formedness preconditions (subjects are the original,
+    -- untransformed composite inputs).
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
+
     let bodyValueIsUsed := !proc.outputs.isEmpty
+    -- Synthesized postconditions: allocation counter is monotone, and every
+    -- composite output is allocated in the output heap.
+    let wfPostconditions :=
+      heapMonotonicityPostcond proc.name.source heapName
+        :: heapOutputAllocationPostconds model proc.outputs heapName
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
@@ -436,15 +553,38 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 pure (some implExpr')
             | none => pure none
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
-          pure (.Opaque postconds' impl' modif')
+          pure (.Opaque (wfPostconditions ++ postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
-          pure (.Abstract postconds')
+          pure (.Abstract (wfPostconditions ++ postconds'))
       | .External => pure .External
+
+    -- `EliminateExceptions` runs before this pass, so each `throwsOn` case's
+    -- postconditions are already lowered into ordinary ones and cleared. Only the
+    -- cases' guards and frames survive — kept for `ModifiesClauses`, which builds
+    -- the exceptional frames after this pass.
+    --
+    -- A guard is an ordinary pre-state predicate, so it transforms like a
+    -- precondition. A frame target is a Composite reference, so it transforms like
+    -- a normal modifies entry — via `heapTransformModifiesEntry`, which keeps a
+    -- field target `o#f` symbolic so `ModifiesClauses` can still match it
+    -- structurally and build a field-granular exceptional frame.
+    -- Transformed from the *original* cases, not from the ones the generic
+    -- specification pass above already rewrote: it applies the specification
+    -- transform uniformly, which is right for a guard but wrong for a frame target.
+    -- A target has to stay structurally matchable — `heapTransformModifiesEntry`
+    -- keeps `o#f` symbolic so `ModifiesClauses` can still build a field-granular
+    -- exceptional frame — exactly as the body's own `modifies` is handled above.
+    let throwsOn' ← originalThrowsOn.mapM fun blk => do
+      let guard' ← heapTransformSpecificationExpr heapName model blk.guard
+      let modifies' ← blk.modifies.mapM (heapTransformModifiesEntry heapName model ·)
+      pure { blk with guard := guard', modifies := modifies' }
 
     return { proc with
       inputs := inputs',
       outputs := outputs',
+      preconditions := preconditions',
+      throwsOn := throwsOn',
       body := body' }
 
   else if readsHeap then
@@ -452,7 +592,11 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Use the prelude `Heap` datatype for the parameter type (see the
     -- writes-heap branch above for rationale).
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
-    let inputs' := heapParam :: proc.inputs
+    let inputs' := proc.inputs ++ [heapParam]
+
+    -- Specifications were heap-transformed at the top of this function; prepend
+    -- the free heap-well-formedness preconditions over the original inputs.
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -468,8 +612,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Abstract postconds')
       | .External => pure .External
 
+    -- A read-only procedure has no exceptional frame (that implies writing the
+    -- heap), and `EliminateExceptions` (before this pass) already cleared
+    -- a `throwsOn` case's guard and postconditions, so there is no exceptional contract to transform here.
     return { proc with
       inputs := inputs',
+      preconditions := preconditions',
       body := body' }
 
   else

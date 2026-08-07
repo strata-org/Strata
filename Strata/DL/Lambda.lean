@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.LExprEvalProps
 public import Strata.DL.Lambda.LExprT
+public import Strata.DL.Lambda.LExprWFProps
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent

@@ -606,4 +606,31 @@ procedure test() {
 };
 #end
 
+/-! ## Nothing is hoisted out of a quantifier
+
+    A quantifier body is a spec position under a binder: hoisting out of it would
+    both strand references to the bound variable outside its scope and collapse a
+    per-instantiation evaluation into a single one before the quantifier. So the
+    body is left untransformed — the declaration below stays inside the `forall`,
+    where `x` is in scope, and `InlineLocalVariables` folds it away afterwards. -/
+
+/--
+info: procedure binderLocalNoProof()
+  opaque
+{
+  assert forall(x: int) => {
+    var t: int := x * x;
+    t >= 0
+  }
+};
+-/
+#guard_msgs in
+#eval printLifted []
+#strata
+program Laurel;
+procedure binderLocalNoProof() opaque {
+  assert forall(x: int) => { var t: int := x * x; t >= 0 }
+};
+#end
+
 end Laurel

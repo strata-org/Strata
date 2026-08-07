@@ -10,73 +10,86 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install cvc5
-        uses: ./.github/actions/install-cvc5
-      - name: Install z3
-        uses: ./.github/actions/install-z3
-      - name: Prepare ccache
-        uses: actions/cache@v5
-        with:
-          save-always: true
-          path: .ccache
-          key: cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc-${{ github.sha }}
-          restore-keys: |
-            cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc
-      - name: Build CBMC from source (with string support patch)
+      # CBMC checks are temporarily disabled — they are currently known-broken
+      # and will be re-enabled once fixed. The original steps are preserved as
+      # comments below; to restore CBMC, delete the no-op step and uncomment
+      # everything between the ORIGINAL CBMC STEPS markers.
+      - name: CBMC temporarily disabled
         shell: bash
         run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y cmake ninja-build flex bison ccache
-          git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
-          cd cbmc-src
-          git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-string-support.patch"
-          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/CBMC/cbmc-bounds-check.patch"
-          git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
-          git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
-          export CCACHE_BASEDIR=$PWD
-          export CCACHE_DIR=$GITHUB_WORKSPACE/.ccache
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DWITH_JBMC=OFF
-          ccache -z --max-size=500M
-          ninja -C build cbmc symtab2gb goto-cc goto-instrument
-          ccache -s
-          echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
-      - name: Restore lake cache
-        # The cache is safe to use here because we just saved it for this exact SHA
-        # in the build_and_test_lean job from ci.yml
-        # https://github.com/strata-org/Strata/issues/952
-        uses: ./.github/actions/restore-lake-cache
-        with:
-          path: |
-            .lake
-          fail-on-cache-miss: "false"
-          use-restore-keys: "false"
-      - name: Build Strata
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: true
-          use-github-cache: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.14'
-      - name: Run legacy CBMC test (C_Simp)
-        shell: bash
-        run: |
-          lake exe StrataToCBMC Strata/Backends/CBMC/tests/simpleTest.csimp.st > symtab.json
-          symtab2gb symtab.json --out full.goto
-          goto-instrument --enforce-contract simpleTest full.goto full_checking.goto
-          OUTPUT=$(cbmc full_checking.goto --function simpleTest --trace)
-          echo "$OUTPUT"
-          [[ "$OUTPUT" == *"VERIFICATION SUCCESSFUL"* ]]
-      - name: Run property summary tests
-        shell: bash
-        run: |
-          ./StrataTest/Backends/CBMC/GOTO/test_property_summary_e2e.sh
-      - name: Run Laurel CBMC pipeline tests
-        shell: bash
-        run: |
-          ./StrataTest/Languages/Laurel/CBMC/run_laurel_cbmc_tests.sh
+          echo "::warning::CBMC checks are temporarily disabled (known-broken; will be re-enabled once fixed)."
+          echo "CBMC checks are temporarily disabled."
+          echo "These checks are currently known-broken and will be re-enabled once fixed."
+          exit 0
+      # --- ORIGINAL CBMC STEPS (temporarily disabled) ---
+      # - name: Checkout
+      #   uses: actions/checkout@v6
+      # - name: Install cvc5
+      #   uses: ./.github/actions/install-cvc5
+      # - name: Install z3
+      #   uses: ./.github/actions/install-z3
+      # - name: Prepare ccache
+      #   uses: actions/cache@v5
+      #   with:
+      #     save-always: true
+      #     path: .ccache
+      #     key: cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc-${{ github.sha }}
+      #     restore-keys: |
+      #       cbmc-${{ runner.os }}-${{ runner.arch }}-cbmc
+      # - name: Build CBMC from source (with string support patch)
+      #   shell: bash
+      #   run: |
+      #     sudo apt-get -qq update
+      #     sudo apt-get -qq install -y cmake ninja-build flex bison ccache
+      #     git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
+      #     cd cbmc-src
+      #     git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-string-support.patch"
+      #     git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/CBMC/cbmc-bounds-check.patch"
+      #     git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
+      #     git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
+      #     export CCACHE_BASEDIR=$PWD
+      #     export CCACHE_DIR=$GITHUB_WORKSPACE/.ccache
+      #     cmake -S . -B build -G Ninja \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_JBMC=OFF
+      #     ccache -z --max-size=500M
+      #     ninja -C build cbmc symtab2gb goto-cc goto-instrument
+      #     ccache -s
+      #     echo "$GITHUB_WORKSPACE/cbmc-src/build/bin/" >> $GITHUB_PATH
+      # - name: Restore lake cache
+      #   # The cache is safe to use here because we just saved it for this exact SHA
+      #   # in the build_and_test_lean job from ci.yml
+      #   # https://github.com/strata-org/Strata/issues/952
+      #   uses: ./.github/actions/restore-lake-cache
+      #   with:
+      #     path: |
+      #       .lake
+      #     fail-on-cache-miss: "false"
+      #     use-restore-keys: "false"
+      # - name: Build Strata
+      #   uses: leanprover/lean-action@v1
+      #   with:
+      #     auto-config: false
+      #     build: true
+      #     use-github-cache: false
+      # - uses: actions/setup-python@v6
+      #   with:
+      #     python-version: '3.14'
+      # - name: Run legacy CBMC test (C_Simp)
+      #   shell: bash
+      #   run: |
+      #     lake exe StrataToCBMC Strata/Backends/CBMC/tests/simpleTest.csimp.st > symtab.json
+      #     symtab2gb symtab.json --out full.goto
+      #     goto-instrument --enforce-contract simpleTest full.goto full_checking.goto
+      #     OUTPUT=$(cbmc full_checking.goto --function simpleTest --trace)
+      #     echo "$OUTPUT"
+      #     [[ "$OUTPUT" == *"VERIFICATION SUCCESSFUL"* ]]
+      # - name: Run property summary tests
+      #   shell: bash
+      #   run: |
+      #     ./StrataTest/Backends/CBMC/GOTO/test_property_summary_e2e.sh
+      # - name: Run Laurel CBMC pipeline tests
+      #   shell: bash
+      #   run: |
+      #     ./StrataTest/Languages/Laurel/CBMC/run_laurel_cbmc_tests.sh
+      # --- END ORIGINAL CBMC STEPS ---

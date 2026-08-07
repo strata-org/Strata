@@ -73,6 +73,27 @@ def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEn
   | some .compositeSet => some (.set expr)
   | none               => none
 
+/-- Whether a `throwsOn` case contributes an exceptional heap frame.
+
+A case contributes one only when it names at least one target *and* none of them is the
+wildcard. The two exclusions mean the same thing — "this path may change anything" — and
+the honest encoding of that is no frame at all, matching how a normal `modifies *` is
+handled.
+
+The wildcard has to be excluded *here* rather than left to the frame builder.
+`extractModifiesEntries` drops `StmtExpr.All` as non-heap-relevant, so a wildcard that
+got this far would reach `buildQuantifiedFrame` as an empty entry list and produce a
+frame asserting that *nothing* changed — the exact inverse of what the wildcard means.
+On a bodiless procedure that frame is assumed rather than checked, so a caller would
+conclude the heap was untouched on a path the callee declared it might change
+arbitrarily.
+
+No surface produces a wildcard in a case today (the grammar has no case-frame
+wildcard form), but `ThrowsOnBlock.modifies` is public AST and front ends construct
+Laurel programs directly rather than through the parser. -/
+def caseContributesFrame (blk : ThrowsOnBlock) : Bool :=
+  !blk.modifies.isEmpty && !hasModifiesWildcard blk.modifies
+
 /-- Extract modifies entries: a field target `o#f` (kept symbolic by heap
 parameterization) becomes a field-granular entry; other entries are classified
 by type. Non-heap-relevant entries are dropped during resolution. -/
@@ -179,34 +200,104 @@ def hasHeapOut (proc : Procedure) : Bool :=
 def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
   match proc.body with
-  | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
+      -- A throwing procedure (lowered by `EliminateExceptions`) returns a single
+      -- `$result : Result<…>`. Its normal `modifies` frame applies only on the
+      -- normal (Good) path, so guard it with `Result..isGood($result)`; each
+      -- `throwsOn` case frames its own throwing path. All of these frames are
+      -- built here rather than in `EliminateExceptions` because they need `$heap`
+      -- and the field constants, which only exist after heap parameterization.
+      -- The cases' guards and targets have already been heap-transformed.
+      -- Names shared with `EliminateExceptions` via `LaurelAST` (a rename that
+      -- reached only one of the two passes would desync them silently).
+      let src := proc.name.source
+      let heapIn := mkMd (.Old (mkMd (.Var (.Local heapVarName)) src)) src
+      let heapOut := mkMd (.Var (.Local heapVarName)) src
+      let isThrowing := proc.outputs.any (fun o => o.name.text == resultOutputName)
+      let resultRef := mkMd (.Var (.Local (mkId resultOutputName))) src
+      let isGoodResult := mkMd (.StaticCall (mkId exnResultIsGood) [resultRef]) src
+      let isBadResult := mkMd (.StaticCall (mkId exnResultIsBad) [resultRef]) src
+      let guardGood (c : StmtExprMd) : StmtExprMd :=
+        if isThrowing then
+          mkMd (.StaticCall (mkId Operation.Implies.procName) [isGoodResult, c]) src
+        else c
+      -- One frame per `throwsOn` case: `Result..isBad($result) ∧ Cᵢ ==> <only that
+      -- case's targets change>`. Because the cases are independent, a per-thrown-type
+      -- frame is expressible — one case each — rather than every exceptional target
+      -- being unioned into a single frame. Emitted only for a procedure with a heap
+      -- output to frame over, and only for cases that name targets.
+      --
+      -- Which cases contribute a frame is `caseContributesFrame`; see there for why a
+      -- wildcard has to be excluded at this level rather than downstream.
+      let excPosts : List Condition :=
+        if isThrowing && hasHeapOut proc then
+          proc.throwsOn.filterMap fun blk =>
+            if !caseContributesFrame blk then none
+            else
+              let entries := extractModifiesEntries model blk.modifies
+              let caseGuard :=
+                mkMd (.StaticCall (mkId Operation.And.procName) [isBadResult, blk.guard]) src
+              -- Anchor the diagnostic at the procedure name, so a failed exceptional
+              -- frame points at the procedure rather than at a source-less
+              -- synthesized node.
+              some { condition := ⟨ .StaticCall (mkId Operation.Implies.procName)
+                       [caseGuard, buildQuantifiedFrame proc entries heapIn heapOut],
+                       proc.name.source ⟩,
+                     summary := "throwsOn modifies clause",
+                     mode := if impl.isNone then ConditionMode.Assume else ConditionMode.Both }
+        else []
+      -- Exhaustiveness: `Result..isBad($result) ==> (C₁ ∨ … ∨ Cₙ)`. Stating at least
+      -- one case is a claim to have enumerated them, so a throwing path matching no
+      -- guard is reported here rather than silently escaping every frame above —
+      -- where it would be unconstrained, since each frame's antecedent is false on
+      -- such a path.
+      --
+      -- Not emitted when the procedure states no cases: it then claims nothing about
+      -- its throwing paths, and an empty disjunction would read as "never throws".
+      --
+      -- For a bodiless procedure it is assumed rather than checked, like every other
+      -- clause there — a declared contract is trusted, and stating the cases *is* the
+      -- author's enumeration of them. This is what lets a caller of a bodiless
+      -- `throwsOn C { … }` conclude the call throws only under `C`.
+      let exhaustivenessPost : List Condition :=
+        match proc.throwsOn with
+        | blk :: blks =>
+          if isThrowing then
+            let anyGuard := blks.foldl
+              (fun acc b =>
+                mkMd (.StaticCall (mkId Operation.Or.procName) [acc, b.guard]) src) blk.guard
+            [{ condition := ⟨ .StaticCall (mkId Operation.Implies.procName)
+                                [isBadResult, anyGuard], proc.name.source ⟩,
+               summary := "throwsOn cases cover every throwing path",
+               mode := if impl.isNone then ConditionMode.Assume else ConditionMode.Both }]
+          else []
+        | [] => []
+      let excAll := excPosts ++ exhaustivenessPost
       if hasModifiesWildcard modifiesExprs then
-        .ok { proc with body := .Opaque postconds impl [] }
+        .ok { proc with body := .Opaque (postconds ++ excAll) impl [], throwsOn := [] }
       else if hasHeapOut proc then
         let entries := extractModifiesEntries model modifiesExprs
-        let src := proc.name.source
-        let heapIn := mkMd (.Old (mkMd (.Var (.Local heapVarName)) src)) src
-        let heapOut := mkMd (.Var (.Local heapVarName)) src
         if useEnumeratedFrame && onlyIndividualRefs entries then
           -- Callers assume the quantifier-free frame (assume-only); the body
           -- checks the pointwise frame (assert-only) at every exit, so the
           -- quantified frame is verified but never exposed to callers.
           let enumeratedPost : Condition :=
-            { condition := buildEnumeratedFrame proc entries heapIn heapOut,
+            { condition := guardGood (buildEnumeratedFrame proc entries heapIn heapOut),
               summary := "modifies clause", mode := ConditionMode.Assume }
           let pointwisePost : Condition :=
-            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
+            { condition := guardGood (buildQuantifiedFrame proc entries heapIn heapOut),
               summary := "modifies clause", mode := ConditionMode.Assert }
-          .ok { proc with body := .Opaque (postconds ++ [enumeratedPost, pointwisePost]) impl [] }
+          .ok { proc with body := .Opaque (postconds ++ [enumeratedPost, pointwisePost] ++ excAll) impl [], throwsOn := [] }
         else
           let framePost : Condition :=
-            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
+            { condition := guardGood (buildQuantifiedFrame proc entries heapIn heapOut),
               summary := "modifies clause" }
-          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl [] }
+          .ok { proc with body := .Opaque (postconds ++ [framePost] ++ excAll) impl [], throwsOn := [] }
       else
-        .ok proc
-  | _ => .ok proc
+        -- No heap to frame, but the exhaustiveness claim is heap-independent.
+        .ok { proc with body := .Opaque (postconds ++ exhaustivenessPost) impl modifiesExprs,
+                        throwsOn := [] }
+  | _ => .ok { proc with throwsOn := [] }
 
 /--
 Transform a Laurel program: apply modifies clause transformation to all procedures.

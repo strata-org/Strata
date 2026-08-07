@@ -530,12 +530,39 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqTarget ← transformExpr target
       return ⟨.InstanceCall seqTarget callee seqArgs.reverse, source⟩
 
-  | .Quantifier mode param trigger body =>
-      let seqBody ← transformExpr body
-      let seqTrigger ← match trigger with
-        | some t => pure (some (← transformExpr t))
-        | none => pure none
-      return ⟨.Quantifier mode param seqTrigger seqBody, source⟩
+  | .Quantifier .. =>
+      -- The body and trigger are *spec* positions under a binder, like a loop
+      -- invariant, and are deliberately left untransformed: nothing may be
+      -- hoisted out of a quantifier.
+      --
+      -- Hoisting is unsound here for two separate reasons. Scope: the binder is
+      -- in scope only inside the quantifier, so a lifted statement mentioning it
+      -- lands where its name is not declared — `forall(x: int) => { var t: int
+      -- := x * x; t >= 0 }` would hoist `var t: int := x * x` above the
+      -- `forall`, leaving `x` free and turning a valid program into one that
+      -- fails to resolve. Multiplicity: the body is re-evaluated per
+      -- instantiation, once for every value of the binder, so even a statement
+      -- that mentions no bound variable would be evaluated exactly once, before
+      -- the quantifier, freezing what should vary — silently changing what the
+      -- quantifier says rather than just making it harder to prove.
+      --
+      -- Nothing is left behind that needs lifting. `TransparencyPass` runs first
+      -- (see `liftImperativeExpressionsPass.comesBefore`) and rewrites every
+      -- quantifier body: `stripAssertAssume` removes its proof steps and calls
+      -- become their `$asFunction` twins, so a body reaching this pass holds no
+      -- assert, assume, or Core-procedure call. A proof procedure's steps are
+      -- moved by that pass into an ordinary `if $proof_N then { .. }` statement
+      -- *preceding* the quantifier, where the binder is replaced by a locally
+      -- declared `$havoc_N`; that block is reached through the normal statement
+      -- path and lifted there, under its own declaration.
+      --
+      -- A declaration written inside a body, as in the example above, therefore
+      -- stays where it is, evaluated per instantiation and still meaning what
+      -- was written. `InlineLocalVariables` folds it back into the expression
+      -- afterwards — it opens a scope per quantifier, shadowing the binder —
+      -- since a Core quantifier can no more carry a declaration than an
+      -- invariant can.
+      return expr
 
   | .Old value =>
       let seqValue ← transformExpr value
@@ -700,11 +727,17 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       let prepends ← takePrepends
       return prepends ++ [⟨.Return (some seqRet), source⟩]
 
+  -- No `.Throw` / `.Try` arms: `EliminateExceptions` runs earlier in the
+  -- pipeline, so by the time expression-lifting runs the exceptional channel has
+  -- already been lowered to ordinary control flow and those constructors can no
+  -- longer occur. They fall through to the identity case below.
   | _ =>
       return [stmt]
   termination_by (sizeOf stmt, 0)
   decreasing_by
     all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
     all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end

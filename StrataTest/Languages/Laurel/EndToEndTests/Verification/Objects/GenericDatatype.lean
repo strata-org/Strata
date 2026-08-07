@@ -47,8 +47,10 @@ procedure useOption()
 #end
 
 -- Two type parameters: the `Result<Val, Err>` shape that exception lowering targets.
--- Exercised here under a distinct name (`Either<A, B>`) because `Result` itself
--- now ships in the always-on prelude, so redefining it would collide.
+-- Exercised here under a distinct name (`Either<A, B>`) to keep it independent of
+-- the exception lowering: `EliminateExceptions` injects its own `Result` datatype
+-- into any program that uses exceptions, which a user-declared `Result` would
+-- collide with.
 #eval testLaurel <|
 #strata
 program Laurel;

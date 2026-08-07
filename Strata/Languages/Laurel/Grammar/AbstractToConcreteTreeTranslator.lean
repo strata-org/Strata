@@ -203,6 +203,13 @@ where
         laurelOp "errorSummary" #[.strlit sr msg])
       laurelOp "assert" #[stmtExprToArg cond, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
+    | .Throw value => laurelOp "throw" #[stmtExprToArg value]
+    | .Try body catches finally? =>
+      let catchArgs := catches.map (fun c =>
+        let guardArg := optionArg (c.predicate.map fun p => laurelOp "catchGuard" #[stmtExprToArg p])
+        laurelOp "catchClause" #[ident c.binding.text, guardArg, stmtExprToArg c.body]) |>.toArray
+      let finallyArg := optionArg (finally?.map fun f => laurelOp "finallyClause" #[stmtExprToArg f])
+      laurelOp "tryCatch" #[stmtExprToArg body, seqArg catchArgs, finallyArg]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
     | .IsType target ty =>
@@ -262,10 +269,12 @@ private def requiresClauseToArg (c : Condition) : Arg :=
     laurelOp "errorSummary" #[.strlit sr msg])
   laurelOp (clauseOpName "requiresClause" c.mode) #[stmtExprToArg c.condition, errOpt]
 
+private def errorSummaryToArg (summary : Option String) : Arg :=
+  optionArg (summary.map fun msg => laurelOp "errorSummary" #[.strlit sr msg])
+
 private def ensuresClauseToArg (c : Condition) : Arg :=
-  let errOpt := optionArg (c.summary.map fun msg =>
-    laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp (clauseOpName "ensuresClause" c.mode) #[stmtExprToArg c.condition, errOpt]
+  laurelOp (clauseOpName "ensuresClause" c.mode)
+    #[stmtExprToArg c.condition, errorSummaryToArg c.summary]
 
 private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
   let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
@@ -293,9 +302,26 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       if proc.outputs.isEmpty then optionArg none
       else optionArg (some (laurelOp "returnParameters" #[commaSep (proc.outputs.map parameterToArg |>.toArray)]))
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
+  -- `throws` carries the binding as well as the type. The two are set together by
+  -- the parser (one op), and `EliminateExceptions` clears them together, so the
+  -- fallback name below is unreachable for anything this printer is given.
+  let throwsArg := optionArg (proc.throwsType.map fun t =>
+    laurelOp "throwsClause"
+      #[ident (proc.throwsBinding.map (·.text) |>.getD "e"), highTypeToArg t])
+  let throwsOnArgs := proc.throwsOn.map (fun blk =>
+    let ens := blk.postconditions.map (fun c =>
+      laurelOp "throwsOnEnsures" #[stmtExprToArg c.condition, errorSummaryToArg c.summary])
+    let mods := if blk.modifies.isEmpty then []
+      else [laurelOp "throwsOnModifies" #[commaSep (blk.modifies.map stmtExprToArg |>.toArray)]]
+    laurelOp "throwsOnClause"
+      #[stmtExprToArg blk.guard, seqArg (ens ++ mods).toArray]) |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let entryArg := optionArg (if proc.isInterpretEntry then some (laurelOp "entryClause" #[]) else none)
+  -- The exceptional behavior cases live inside `opaqueSpec` alongside
+  -- `ensures`/`modifies`, so they are emitted with it. (A `.Transparent` body has
+  -- no spec block to carry them; such a procedure cannot be written in the
+  -- surface grammar, since these cases require `opaque`.)
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
       (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
@@ -303,10 +329,12 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
-      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg mods])), body)
+      (optionArg (some (laurelOp "opaqueSpec"
+        #[seqArg ens, seqArg mods, seqArg throwsOnArgs])), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
-      (optionArg (some (laurelOp "opaqueSpec" #[seqArg ens, seqArg #[]])), optionArg none)
+      (optionArg (some (laurelOp "opaqueSpec"
+        #[seqArg ens, seqArg #[], seqArg throwsOnArgs])), optionArg none)
     | .External =>
       (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr
@@ -316,6 +344,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       commaSep params,
       returnTypeArg,
       returnParamsArg,
+      throwsArg,
       seqArg requiresArgs,
       invokeOnArg,
       entryArg,

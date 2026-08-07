@@ -82,11 +82,19 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let result := (foldProcedureExprsM collectExprNode proc).run {} |>.2
+  -- A bodiless procedure that names frame targets touches the heap even though no
+  -- expression in it says so: the frame is the only evidence. That holds for a
+  -- `throwsOn` case's frame exactly as it does for the normal `modifies`, and it has
+  -- to, because `ModifiesClauses` only builds a case's frame when `$heap` was
+  -- threaded through this procedure — so missing it here would drop the exceptional
+  -- frame silently rather than fail.
+  let framesHeapOnThrow := proc.throwsOn.any (!·.modifies.isEmpty)
   match proc.body with
   | .Opaque _ none modifies =>
-      if modifies.isEmpty then result else
+      if modifies.isEmpty && !framesHeapOnThrow then result else
         { result with readsHeapDirectly := true, writesHeapDirectly := true }
-  | _ => result
+  | _ =>
+      if framesHeapOnThrow then { result with writesHeapDirectly := true } else result
 
 /-- Per-procedure input to `transitiveEffectClosure`: the procedure `name`,
     whether it has the effect `directly`, and its static `callees`. -/

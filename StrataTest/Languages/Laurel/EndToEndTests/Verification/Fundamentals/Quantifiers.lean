@@ -471,3 +471,123 @@ procedure quantifiedPostcondition()
 {
 };
 #end
+
+/-! ### A local declaration in a quantifier body stays under the binder
+
+The lifting pass hoists declarations out of expression position, but a quantifier
+body is a spec position under a binder, so nothing may be hoisted out of it. A
+`var` whose initializer mentions the bound variable is the case that makes this
+observable: hoisting it above the quantifier would strand `x` outside its scope
+and the program would fail to resolve. It stays inside, where `InlineLocalVariables`
+folds it back into the goal.
+
+The first procedure has no proof steps, so it exercises the plain quantifier path;
+the second pairs the declaration with an `assert` step so it also runs through the
+transparency pass's proof block, where the binder is renamed to `$havoc_N`. -/
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure binderLocalNoProof()
+  opaque
+{
+  assert forall(x: int) => { var t: int := x * x; t >= 0 }
+};
+
+procedure binderLocalInProofBody()
+  opaque
+{
+  assert forall(x: int) => {
+    var t: int := x * x;
+    assert t >= 0;
+    t >= 0
+  }
+};
+
+procedure binderLocalInPostcondition()
+  opaque
+  ensures forall(x: int) => { var t: int := x * x; t >= 0 }
+{
+};
+#end
+
+-- `exists` is the same spec position as `forall`.
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure existsBinderLocal()
+  opaque
+{
+  assert exists(x: int) => { var t: int := x * x; t == 4 }
+};
+#end
+
+-- Nested quantifiers, each with a binder-dependent local: the inner declaration
+-- must stay under the inner binder and the outer under the outer.
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure nestedBinderLocals()
+  opaque
+{
+  assert forall(x: int) => {
+    var t: int := x * x;
+    forall(y: int) => { var u: int := y * y; t + u >= 0 }
+  }
+};
+#end
+
+-- An outer local sharing the binder's name must not be substituted inside the
+-- quantifier: the binder shadows it, and the outer local still reads 5 after.
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure binderShadowsOuterLocal()
+  opaque
+{
+  var t: int := 5;
+  assert forall(t: int) => { var u: int := t * t; u >= 0 };
+  assert t == 5
+};
+#end
+
+/-! ### A local declaration inside a quantifier *trigger*
+
+A trigger is `{ <StmtExpr> }`, so it can hold a block with a declaration just as a
+body can, and it is the same spec position: nothing is lifted out of it, and what
+stays behind must be inlined before Core. Without the trigger arm of
+`inlineLocalVariablesInProcedureSpecs` this program is rejected with "local
+variables in transparent bodies should have been eliminated by the
+InlineLocalVariablesPass". -/
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure F(x: int): int;
+
+procedure binderLocalInTrigger()
+  opaque
+{
+  assume forall(i: int) { { var t: int := i; F(t) } } => F(i) >= 0;
+  assert F(3) >= 0
+};
+#end
+
+/-! ### Contract-pass temporaries inside a quantifier body
+
+A `/` in a quantifier body becomes a call to the `requires`-bearing `$div`
+wrapper, which the contract pass rewrites into argument temporaries. Those are
+left inside the body by the lifting pass and folded back in by
+`InlineLocalVariables`, so the division is re-evaluated per instantiation. -/
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure divisionInQuantifierBody()
+  opaque
+{
+  assert forall(x: int) => x > 0 ==> (x / x) == 1
+};
+#end

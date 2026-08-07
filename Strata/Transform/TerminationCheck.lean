@@ -125,7 +125,7 @@ private def extractTermObligations
     (recFuncNames : List String)
     (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
     : Except String (List Expression.Expr) :=
-  go body []
+  go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
   go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
       : Except String (List Expression.Expr) :=
