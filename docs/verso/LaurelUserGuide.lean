@@ -1849,7 +1849,7 @@ A case takes `ensures` and `modifies`, mirroring their normal-exit counterparts 
 to the path its guard selects. An `ensures` inside a case also takes `summary "…"`, exactly
 as a top-level one does, so a failing exceptional postcondition can report in your words:
 
-```laurel
+```
   throwsOn b == 0 {
     ensures e is ArithmeticException summary "dividing by zero throws"
   }
