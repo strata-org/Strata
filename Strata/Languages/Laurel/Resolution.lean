@@ -3106,7 +3106,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
     procedure, while surplus arguments against any other resolution kind are
     still checked against `Unknown` with no arity diagnostic. Like
     `Synth.staticCall`, the push is bidirectional so block- and
-    conditional-shaped arguments route through their own check rules. -/
+    conditional-shaped arguments route through their own check rules.
+
+    **Ambiguity.** With no single most-specific declarer
+    (`MemberResolution.ambiguous`) the call reports the ambiguity and stops, typed
+    `Unknown`, binding no candidate: binding one would propagate a return type that
+    contradicts the ambiguity. Arguments are still checked, against `Unknown`, so an
+    error in one is not masked. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : FileRange)
@@ -3129,7 +3135,40 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- only handle `.InstanceCall` whose callee is an instance proc, the call's precondition is
   -- dropped and it mis-verifies (a silent unsound accept).
   let lookupKey ← match (← targetTypeName target') with
-    | some tyName => pure (containerScopedName (mkId tyName) callee)
+    | some tyName => do
+      -- An instance procedure is registered ONLY under its DECLARING type's key, so an
+      -- inherited call must find which ancestor of the receiver's static type declares
+      -- `callee` -- by MOST-SPECIFIC
+      -- declarer, rejecting an incomparable diamond rather than picking silently. The
+      -- receiver reaches the winner's `self` parameter by the ordinary subtype check.
+      --
+      -- SOUND ONLY because Laurel has no dynamic dispatch: the DECLARED type selects
+      -- the member, so for `b : Base` holding a `Sub` that overrides `m`, `b#m` binds
+      -- Base.m's contract and Base.m runs. Adding dispatch would need a monomorphism
+      -- check here (jverify already enforces one on its side); flagged so the
+      -- dependency is not silent.
+      let s ← get
+      let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
+      match s.typeLattice.resolveInheritedMember tyName declares with
+      | .resolved owner => pure (containerScopedName (mkId owner) callee)
+      | .ambiguous candidates =>
+        let names := String.intercalate ", " candidates
+        let diag := diagnosticFromSource source
+          s!"call to '{callee.text}' is ambiguous: '{tyName}' inherits it from the \
+             unrelated types {names}; declare '{callee.text}' on '{tyName}' to say \
+             which one is meant"
+        modify fun st => { st with errors := st.errors.push diag }
+        -- Exit before binding a candidate (see **Ambiguity** above); arguments
+        -- are still checked so an error in one is not masked.
+        let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+          have := hMem
+          Check.resolveStmtExpr a { val := .Unknown, source := a.source })
+        return (.InstanceCall target' callee args',
+                { val := .Unknown, source := callee.source })
+      | .undeclared =>
+        -- No ancestor declares it; use the receiver's own key so the standard
+        -- "not defined" diagnostic names the receiver type.
+        pure (containerScopedName (mkId tyName) callee)
     | none =>
       unless targetTy.val matches .Unknown | .TVoid do
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source

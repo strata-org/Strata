@@ -1266,6 +1266,108 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
         go acc' (parents ++ rest)
   go {} [name]
 
+/-- The unique element of `names` that is a subtype of every element (the most
+    specific), or `none` when none dominates.
+
+    `ancestors` is reflexive (`go {} [name]` seeds with `name`), so an element
+    dominates itself with no special case. On an acyclic `extending` graph at most one
+    element can dominate -- two dominators would be mutually reachable, which needs a
+    cycle -- so `find?` is equivalent to demanding a singleton. Nothing rejects a cycle
+    (`A extends B`, `B extends A` type-checks today), and in one `find?` returns whichever
+    mutually-reachable name it reaches first; that pick is order-dependent, unlike every
+    acyclic case. Out of scope here: a cycle needs rejecting where types are defined, not
+    working around at each use.
+
+    Each ancestor set is computed ONCE, outside the inner `all`: that lambda runs per
+    pair, so computing it inside would cost a graph walk per pair.
+
+    Serves both directions of specificity, differing only in the set passed and in
+    what an absent winner means: the most-specific *declarer* of an inherited member
+    (`resolveInheritedMember`) and the join of a set of types (`commonAncestor`). -/
+private def TypeLattice.mostSpecific (ctx : TypeLattice) (names : List String) : Option String :=
+  let withAncestors := names.map fun n => (n, ctx.ancestors n)
+  (withAncestors.find? fun (_, anc) => names.all anc.contains).map Prod.fst
+
+/-- The elements of `names` that no OTHER element is a strict subtype of -- the
+    most-specific ones, i.e. the maximal antichain under `extending`.
+
+    This is what an ambiguity is *between*. A declarer that some other declarer sits
+    strictly below is shadowed along that branch and can never be selected, so naming it
+    as a candidate would describe a choice the resolver does not have: for `A` declaring
+    `m`, `B extends A` overriding it, and unrelated `C` also declaring it, a type
+    extending `B, C` is ambiguous between `B` and `C` alone -- `A` is out, and calling
+    `A` and `B` "unrelated" would be false besides, since `B <: A`.
+
+    Reflexivity is why the comparison excludes `n` itself: every element is its own
+    ancestor, so an unguarded test would find each element dominated by itself and
+    return nothing.
+
+    Dominance is STRICT (`!nAnc.contains other`), which matters only because nothing
+    rejects an `extending` cycle: two mutually-extending names each contain the other,
+    so a non-strict test calls each dominated by the other and drops BOTH. For
+    `Ac <-> Bc` both declaring `m` with unrelated `Cc`, and `Tc extends Bc, Cc`, a
+    non-strict test yields "the unrelated types Cc" -- one name, for an ambiguity, and a
+    set that no longer contains the branch the user has to choose between. Strictness
+    keeps a cyclic pair in the list, where the message is at least honest about what
+    competes. `InheritedCallDominance` D7 pins this.
+
+    Filtering never changes WHETHER a call is ambiguous, only which names are reported:
+    `mostSpecific` returns `some` exactly when this antichain is a singleton. (Acyclic
+    case; in a cycle `mostSpecific` already returns `some`, so this is unreachable.) -/
+private def TypeLattice.nonDominated (ctx : TypeLattice) (names : List String) : List String :=
+  let withAncestors := names.map fun n => (n, ctx.ancestors n)
+  (withAncestors.filter fun (n, nAnc) =>
+    !(withAncestors.any fun (other, otherAnc) =>
+        other != n && otherAnc.contains n && !nAnc.contains other)).map Prod.fst
+
+/-- Outcome of resolving an instance procedure inherited through `extends`: the
+    unique most-specific declarer, none, or a same-specificity ambiguity the caller
+    must reject.
+
+    Procedures only. Inherited FIELDS bypass this: `typeScope` copies each parent's
+    scope in `extending` order (see `Resolution.lean`), so a field declared by two
+    incomparable parents gets a silent last-parent-wins pick, not the ambiguity this
+    type surfaces. Routing fields here would change field-resolution behaviour and
+    wants its own change; flagged so the asymmetry is not read as an oversight.
+
+    `ambiguous` carries the non-dominated declarers only -- the antichain the ambiguity
+    is between -- sorted, since they come from a `HashSet` walk and the diagnostic text is
+    derived from them. A shadowed declarer is omitted: it is not a choice the resolver
+    has. `resolved` needs no such guarantee -- dominance makes its winner unique. -/
+inductive MemberResolution where
+  | resolved (declarer : String)
+  | undeclared
+  | ambiguous (candidates : List String)
+  deriving Repr, BEq
+
+/-- Resolve `p` (in practice "declares instance procedure m") across `name`'s
+    ancestor chain by MOST-SPECIFIC declarer, the standard rule for static
+    multiple-inheritance name lookup (cf. Java interface defaults, C++ member lookup):
+    among the ancestors declaring the member, the one that is a subtype of every other
+    declarer wins, so an override on a nearer type shadows a farther one along any
+    single chain. Declarers on incomparable branches (a diamond: `D extends L, R`,
+    both declaring, `D` not) have no most-specific declarer and yield `ambiguous` —
+    never a silent pick. `name` is itself a candidate, so a type declaring its own
+    member resolves to itself. -/
+def TypeLattice.resolveInheritedMember
+    (ctx : TypeLattice) (name : String) (p : String → Bool) : MemberResolution :=
+  -- `ancestors` is a `HashSet`, so this list's order is incidental: specificity
+  -- comes from the subtype relation below, never from position.
+  match (ctx.ancestors name).toList.filter p with
+  | [] => .undeclared
+  | declarers =>
+    -- Deduplicated by DECLARER IDENTITY (each ancestor visited once), which stops a
+    -- shared base forging a false winner: every composite extends a common root
+    -- (Object), yet a diamond `Z extends P, Q` with both declaring `m` yields two
+    -- DISTINCT declarers, neither dominating => `ambiguous`. One declaration
+    -- reached by two paths is a single entry => `resolved`.
+    match ctx.mostSpecific declarers with
+    | some winner => .resolved winner
+    -- Report the antichain, not every declarer: a dominated declarer is shadowed and
+    -- could never be selected (see `nonDominated`). Sorted, since the declarers come
+    -- from a `HashSet` walk and the diagnostic text is derived from this list.
+    | none => .ambiguous ((ctx.nonDominated declarers).mergeSort (· < ·))
+
 /-- The least common ancestor (join) of a list of composite type names in the
     `extending` hierarchy: the unique most-specific type that is an ancestor of
     every name. Used to type a `catch` binding at the join of the exception types
@@ -1284,17 +1386,11 @@ def TypeLattice.commonAncestor (ctx : TypeLattice) (names : List String) : Optio
   | [] => none
   | first :: rest =>
     -- Common ancestors: ancestors of `first` that are also ancestors of every
-    -- other name.
-    let common : List String :=
-      (ctx.ancestors first).toList.filter fun a =>
-        rest.all fun n => (ctx.ancestors n).contains a
-    -- The join is the common ancestor that is itself a subtype of every common
-    -- ancestor (i.e. the deepest). Unique ⇒ the join; otherwise ambiguous.
-    let candidates := common.filter fun m =>
-      common.all fun c => (ctx.ancestors m).contains c
-    match candidates with
-    | [m] => some m
-    | _ => none
+    -- other name. The join is the most specific of those -- the same dominance
+    -- rule `resolveInheritedMember` applies to declarers, hence `mostSpecific`
+    -- for both.
+    ctx.mostSpecific <| (ctx.ancestors first).toList.filter fun a =>
+      rest.all fun n => (ctx.ancestors n).contains a
 
 /-- The instantiation-tag arms COMMON to both monomorphization (`tyTag`) and heap-box
     naming (`appliedBoxTag`): identifier-legal, `$`-delimited, `none` on any type the caller
