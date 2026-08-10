@@ -130,9 +130,11 @@ end Strata.PolymorphicPostconditionTest
 
 namespace Strata.PolymorphicInoutPrecondTest
 
--- An in-out parameter's precondition constrains its type variable, so a body
--- that assigns an incompatible value must be rejected. `requires (x == 5)`
--- forces `a = int`, while `x := true` needs `a = bool`.
+-- An in-out parameter's precondition constrains its type variable to a concrete
+-- type, which is incompatible with the procedure being polymorphic.  Because
+-- `MonomorphizeProcedures` runs before type checking, `a` is first replaced by a
+-- fresh opaque type; the precondition `x == 5` then fails to unify that opaque
+-- type with `int`, so the procedure is rejected.
 def polyInoutPgm : Program :=
 #strata
 program Core;
@@ -147,8 +149,7 @@ spec {
 
 /--
 error: ❌ Type checking error.
-Impossible to unify $__ty0 with bool.
-First mismatch: int with bool.
+[P:P_requires_0]: Impossible to unify $__opaque_P_a_0 with int.
 -/
 #guard_msgs in
 #eval Core.verify polyInoutPgm
