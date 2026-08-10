@@ -460,6 +460,41 @@ private def roundtripText (text : String) : IO Unit := do
 #guard_msgs in
 #eval roundtripText allOpsProgramText
 
+-------------------------------------------------------------------------------
+-- Test: a negative real literal prints as `real.neg(<positive>)`, so a leading
+-- minus is always a parenthesized `real.neg` that re-parses. Surface syntax has
+-- no negative-real-literal token, so these ASTs are built directly.
+-------------------------------------------------------------------------------
+
+/-- `Real.Neg` applied to expression `e`. -/
+private def rNeg (e : Core.Expression.Expr) : Core.Expression.Expr :=
+  .app () (.op () ⟨"Real.Neg", ()⟩ (some (.arrow .real .real))) e
+
+/-- A bare negative real literal, and `Real.Neg` applied to one. -/
+private def negRealLitPgm : Core.Program := { decls := [
+  .func { name := "negLit", typeArgs := [], inputs := [], output := .real,
+          body := some (.realConst () (-3 : Rat)) } .empty,
+  .func { name := "negNegLit", typeArgs := [], inputs := [], output := .real,
+          body := some (rNeg (.realConst () (-3 : Rat))) } .empty
+]}
+
+/--
+info: program Core;
+
+function negLit () : real {
+  real.neg(3.0)
+}
+function negNegLit () : real {
+  real.neg(real.neg(3.0))
+}
+-/
+#guard_msgs in
+#eval do IO.println f!"{Core.formatProgram negRealLitPgm}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtripText (Core.formatProgram negRealLitPgm).pretty
+
 end Strata.Test.Roundtrip
 
 end

@@ -1007,6 +1007,28 @@ function f () : real {
 #guard_msgs in
 #eval showReal (.realConst () (1/2 : Rat))
 
+-- Negative terminating decimals are decomposed into `real.neg(…)`.
+/--
+info: program Core;
+
+function f () : real {
+  real.neg(3.0)
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (-3 : Rat))
+
+-- Negative non-integer terminating decimal.
+/--
+info: program Core;
+
+function f () : real {
+  real.neg(0.5)
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (-1/2 : Rat))
+
 -------------------------------------------------------------------------------
 -- Round-trip: `frac{n, d}` written in surface syntax parses back to the exact
 -- rational.

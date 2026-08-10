@@ -330,7 +330,13 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
         (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
     match StrataDDM.Decimal.fromRat r with
-    | some d => pure (.realLit default ⟨default, d⟩)
+    | some d =>
+      if d.mantissa < 0 then
+        let posD : StrataDDM.Decimal := ⟨d.mantissa.natAbs, d.exponent⟩
+        pure (.unaryArithReal default (CoreDDM.UnaryArithReal.real_neg default)
+          (.realLit default ⟨default, posD⟩))
+      else
+        pure (.realLit default ⟨default, d⟩)
     | none =>
       -- Exact rational literals that are not parsed by `Decimal.fromRat`.
       let (neg, num, den) := FracLit.fracEncode r
