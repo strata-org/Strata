@@ -49,9 +49,8 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       - Each LHS variable's context type equals the instantiated formal output type.
       - In-out arguments are simple variable references with matching names.
 
-      A call leaves the context unchanged; the output `Δ` is required only up to
-      `TContext.Equiv` (see `CmdHasType'` for why equality is too strong under the
-      `HMap`-backed context). -/
+      A call leaves the context unchanged; the output `Δ` is up to
+      `TContext.Equiv` (see `CmdHasType'`). -/
   | call : ∀ Γ (pname : String) callArgs proc md
       (σ : List (TyIdentifier × LMonoTy)) Δ,
       Program.Procedure.find? P pname = some proc →
@@ -59,9 +58,8 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       (CallArg.getLhs callArgs).length = proc.header.outputs.length →
       (∀ v, v ∈ CallArg.getLhs callArgs → (Γ.types.find? v).isSome) →
       -- Each input's type is alias-equivalent to the instantiated formal input type.
-      -- The predicate branches on the argument node: an in-out argument is an
-      -- unannotated `fvar` typed by context lookup (the only form `HasTypeA` can
-      -- satisfy); a by-value input is self-typing via `S.exprTyped`.
+      -- In-out arguments (an unannotated `fvar`) are typed by context lookup;
+      -- by-value inputs are typed via `S.exprTyped`.
       (∀ i (hi : i < (CallArg.getInputExprs callArgs).length)
            (hj : i < proc.header.inputs.values.length),
         ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (proc.header.inputs.values[i])) ∧

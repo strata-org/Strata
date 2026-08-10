@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 
@@ -117,7 +118,7 @@ private def renameAllLocalNames (c:Procedure)
             Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
           s0) bodyStmts)
     | .cfg _ =>
-      throw (Strata.DiagnosticModel.fromMessage
+      throw (Strata.Message.fromString
         "renameAllLocalNames: CFG body renaming not yet implemented")
   let new_header := { c.header with
     inputs := c.header.inputs.map (fun (id,ty) =>
@@ -138,10 +139,10 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   -- For each edge 'g -> x', add f -> x'
   let edges_from_g ← match cg.callees.get? g with
     | .some r => .ok r
-    | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {g} from callees domain")
+    | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {g} from callees domain")
   let edges_from_f ← match cg.callees.get? f with
     | .some r => .ok r
-    | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {f} from callees domain")
+    | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {f} from callees domain")
   let edges_from_f := edges_from_g.fold
     (fun (edges_from_f:Std.HashMap String Nat) fn_x cnt =>
       edges_from_f.alter fn_x (fun v =>
@@ -153,7 +154,7 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let callers_new ← edges_from_g.foldM
     (fun (m:Std.HashMap String (Std.HashMap String Nat)) fn_x cnt => do
       match m.get? fn_x with
-      | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {fn_x} from callers domain")
+      | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {fn_x} from callers domain")
       | .some edges_to_x =>
         .ok (m.insert fn_x (edges_to_x.alter f (fun v =>
           .some (match v with | .none => cnt | .some v' => cnt + v')))))
@@ -162,7 +163,7 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
 
   -- .. and decrement the 'f -> g' edge by 1.
-  let cg_final ← (cg_new.decrementEdge f g).mapError Strata.DiagnosticModel.fromMessage
+  let cg_final ← (cg_new.decrementEdge f g).mapError Strata.Message.fromString
   return cg_final
 
 /-! ### Update assertion metadata with call site information -/
@@ -220,11 +221,11 @@ def inlineCallCmd
         incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
-          | throw (Strata.DiagnosticModel.fromMessage "currentProgram not set")
+          | throw (Strata.Message.fromString "currentProgram not set")
         let some currProcName := (← get).currentProcedureName
-          | throw (Strata.DiagnosticModel.fromMessage "currentProcedure not set")
+          | throw (Strata.Message.fromString "currentProcedure not set")
         let some proc := Program.Procedure.find? p procName
-          | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
+          | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
 
         -- Create a copy of the procedure that has all input/output/local vars
         -- replaced with fresh ones
@@ -274,7 +275,7 @@ def inlineCallCmd
         -- CFG-level inlining is a separate, more complex pass that operates
         -- entirely in the CFG domain (graph splicing).
         let procBodyStmts ← match proc.body with
-        | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+        | .cfg _ => throw (Strata.Message.fromString
             "cannot inline procedure with CFG body into structured code")
         | .structured ss => pure ss
 

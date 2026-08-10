@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.TypeFactory
@@ -346,7 +347,7 @@ def KnownTypes.keywords (ks : KnownTypes) : List String :=
 def KnownTypes.toList (ks: KnownTypes) : List KnownType :=
   (Std.HashMap.toList ks).map (fun x => ⟨x.1, x.2⟩)
 
-def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: DiagnosticModel) : Except DiagnosticModel KnownTypes :=
+def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: Message) : Except Message KnownTypes :=
   Identifiers.addWithError ks ⟨x.name, x.arity⟩ f
 
 def KnownTypes.contains (ks: KnownTypes) (x: KnownType) : Bool :=
@@ -474,13 +475,13 @@ instance : ToFormat (LContext T) where
 
 
 @[expose]
-def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
+def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: Message) : Except Message (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
 
-def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except DiagnosticModel (LContext T) := do
-  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ (DiagnosticModel.fromFormat f!"Error: type {k} already known")) C
+def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except Message (LContext T) := do
+  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ (Message.fromFormat f!"Error: type {k} already known")) C
 
-def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: DiagnosticModel) : Except DiagnosticModel (LContext T) := do
+def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Message) : Except Message (LContext T) := do
   let i ← C.idents.addWithError i f
   .ok {C with idents := i}
 
@@ -499,7 +500,7 @@ def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
     function — `addFactoryFunction`'s silent no-op would otherwise drop it. -/
 @[expose]
 def LContext.addFactoryFunctionWithError [Inhabited T.Metadata] [ToFormat T.IDMeta]
-    (C : LContext T) (fn : LFunc T) : Except DiagnosticModel (LContext T) := do
+    (C : LContext T) (fn : LFunc T) : Except Message (LContext T) := do
   .ok { C with functions := (← C.functions.tryPush fn) }
 
 /--
@@ -510,11 +511,11 @@ and performs error checking for name clashes.
 -/
 @[expose]
 def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
-  (C: LContext T) (block: MutualDatatype T.IDMeta) : Except DiagnosticModel (LContext T) := do
+  (C: LContext T) (block: MutualDatatype T.IDMeta) : Except Message (LContext T) := do
   -- Check for name clashes with known types
   for d in block do
     if C.knownTypes.containsName d.name then
-      throw <| DiagnosticModel.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
+      throw <| Message.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
   let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Add factory functions, checking for name clashes
   let f ← genBlockFactory block
@@ -523,7 +524,7 @@ def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToForma
   let ks ← block.foldlM (fun ks d => ks.add d.toKnownType) C.knownTypes
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
-def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except DiagnosticModel (LContext T) :=
+def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Message (LContext T) :=
   f.foldlM (fun C block => C.addMutualBlock block) C
 
 /--

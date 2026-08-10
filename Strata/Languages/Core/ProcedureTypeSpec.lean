@@ -12,7 +12,7 @@ public import Strata.Languages.Core.Procedure
 
 Specifies when a `Procedure` is well-typed, parameterized over the
 `ExprTypingSpec` typeclass (so it instantiates to both the polymorphic `HasType`
-and the annotated `HasTypeA`), reusing `StmtsHasType'` for the body.
+and the annotated `HasTypeA`), reusing `StatementsHasType'` for the body.
 
 A procedure is well-typed when: its parameter/return/type-argument names are
 distinct and its signature has no undeclared type variables; every variable the
@@ -37,16 +37,12 @@ def procInputContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
   let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
   { Γ with types := Γ.types.push (Strata.Util.HMap.ofList inputScope) }
 
-/-- The typing context for a procedure's postconditions and body: the input
-    context's scope further extended with the output parameters and, for each
-    in-out parameter `g`, an `old g` binding at `g`'s type.
+/-- The typing context for a procedure's postconditions and body: the input scope
+    extended with the outputs and, for each in-out parameter `g`, an `old g`
+    binding at `g`'s type.
 
-    Scopes are concatenated `old ++ output ++ input`: `HMap.ofList` resolves a key
-    to its last occurrence, so at an in-out key (present in both `output` and
-    `input`) the input binding wins, and an `old` key (only in `old`) resolves
-    there. This matches the checker exactly, which adds inputs first and then merges
-    outputs and old-bindings with `HMap.union` (existing binding wins): both resolve
-    a key by `input`-then-`output`-then-`old` priority. -/
+    Scopes are concatenated `old ++ output ++ input`; `HMap.ofList` keeps the last
+    occurrence of a key, giving `input`-then-`output`-then-`old` priority. -/
 def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
   let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
   let outputScope := proc.header.outputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
@@ -75,18 +71,18 @@ Declarative typing for a procedure body, in ambient context `C` and body-scope
 
 * `structured`: the statement list is well-typed with no enclosing labels
   (`L = []`), so every `exit` targets a lexically enclosing `block`.
-* `cfg`: CFG bodies are rejected by the checker, so they carry no obligation.
+* `cfg`: CFG bodies are not supported, so they carry no obligation.
 -/
 inductive ProcBodyHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
     (C : LContext CoreLParams) (Γ_body : TContext Unit) : Procedure.Body → Prop where
   | structured : ∀ ss C' Γ',
-      StmtsHasType' τ P C Γ_body [] ss C' Γ' →
+      StatementsHasType' τ P C Γ_body [] ss C' Γ' →
       ProcBodyHasType' τ P C Γ_body (.structured ss)
   | cfg : ∀ c, ProcBodyHasType' τ P C Γ_body (.cfg c)
 
 /--
 Declarative typing for procedures, parameterized over `ExprTypingSpec`.
-`P` is the enclosing program (threaded to the body's `StmtsHasType'` for
+`P` is the enclosing program (threaded to the body's `StatementsHasType'` for
 `funcDecl`); `C` and `Γ` are the ambient context and type-scope the procedure
 declaration is checked in.
 -/

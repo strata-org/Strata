@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
@@ -32,7 +33,7 @@ namespace Core
 namespace TermCheck
 
 open Lambda
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 open Strata.DL.Util (FuncAttr)
 open Core.Transform
 
@@ -124,7 +125,7 @@ private def extractTermObligations
     (recFuncNames : List String)
     (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
     : Except String (List Expression.Expr) :=
-  go body []
+  go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
   go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
       : Except String (List Expression.Expr) :=
@@ -348,7 +349,7 @@ where
       | .recFuncBlock funcs md => do
         let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
         let throwErr (msg : String) : CoreTransformM Unit :=
-          throw (DiagnosticModel.withRange fileRange msg)
+          throw (Message.withRange fileRange msg)
         -- Step 1: Validate measures and determine DecreasesKind for each function.
         -- Skip polymorphic functions: adtRank axioms are monomorphic.
         let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []

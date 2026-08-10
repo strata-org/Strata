@@ -12,8 +12,7 @@ public import Strata.Languages.Core.Expressions
 
 Bundles the `Lambda`-level datatype relations (`Strata.DL.Lambda.DatatypeWF`)
 into `MutualADTWF`, the Core-facing well-formedness predicate for a mutual
-datatype block in an ambient `LContext CoreLParams`. This is the declarative
-counterpart of `LContext.addMutualBlock` (→ `TypeFactory.addMutualBlock`).
+datatype block in an ambient `LContext CoreLParams`.
 -/
 
 namespace Core
@@ -25,34 +24,33 @@ public section
 
 /--
 Declarative well-formedness of a mutual datatype block `block` in ambient
-context `C`. Bundles the obligations discharged by `LContext.addMutualBlock`
-(→ `TypeFactory.addMutualBlock`), each stated declaratively:
+context `C`.
 
-The inhabitance obligation is checked against `C.datatypes.push block`, the
-factory extended with the new block, so that mutual and forward references
-resolve (matching the checker, which inhabits after pushing the block).
+Inhabitance is required against `C.datatypes.push block`, the factory extended
+with the new block, so that mutual and forward references between the block's
+datatypes resolve.
 -/
 structure MutualADTWF (C : LContext CoreLParams) (block : MutualDatatype Unit) : Prop where
-  /-- The block is non-empty (`validateMutualBlock`). -/
+  /-- The block is non-empty. -/
   nonempty : block ≠ []
-  /-- Datatype names in the block are distinct (`validateMutualBlock`). -/
+  /-- Datatype names in the block are distinct. -/
   namesNodup : (block.map (·.name)).Nodup
-  /-- The block's names do not clash with existing known types (the
-      known-type guard of `addMutualBlock`). -/
+  /-- The block's names do not clash with existing known types. -/
   namesFresh : ∀ d ∈ block, ¬ C.knownTypes.containsName d.name
-  /-- The block's names do not redefine existing datatypes (the redefinition
-      guard of `addMutualBlock`). -/
+  /-- The block's names do not redefine existing datatypes. -/
   namesNew : ∀ d ∈ block, C.datatypes.getType d.name = none
-  /-- Every constructor argument type is not-nested and strictly-positive/uniform
-      (`checkConstructorArgsWF`). -/
+  /-- Every free type variable of a constructor argument is one of the enclosing
+      datatype's own `typeArgs` (constructor arguments introduce no fresh type
+      variables). -/
+  argVarsScoped : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args,
+      ∀ v ∈ LMonoTy.freeVars arg.2, v ∈ d.typeArgs
+  /-- Every constructor argument type is not-nested and strictly-positive/uniform. -/
   argsWF : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, ConstrArgWF block arg.2
   /-- Every type name referenced in a constructor argument is a known type of
-      `C`, an existing datatype of `C`, or a name declared in the block
-      (`validateTypeReferences`). -/
+      `C`, an existing datatype of `C`, or a name declared in the block. -/
   refsKnown : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, ∀ ref ∈ getTypeRefs arg.2,
       ref ∈ C.knownTypes.keywords ∨ ref ∈ C.datatypes.allTypeNames ∨ ref ∈ block.map (·.name)
-  /-- Every datatype in the block is inhabited (`checkMutualBlockInhab`, which
-      calls `adt_inhab d.name = typesym_inhab adts [] d.name`). -/
+  /-- Every datatype in the block is inhabited. -/
   inhabited : ∀ d ∈ block, TySymInhab (C.datatypes.push block) d.name
 
 end -- public section

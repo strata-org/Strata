@@ -30,13 +30,13 @@ procedure P () {
 };
 #end
 
--- The mismatch (`FooAlias (Foo int int)` = `Foo bool bool` vs `Foo int bool`) is
--- now caught by Core's own type checker (`resolve`) rather than DDM. If Core ever
+-- The mismatch (`FooAlias (Foo int int)` = `Foo (Foo int int) bool` vs `Foo int bool`)
+-- is now caught by Core's own type checker (`resolve`) rather than DDM. If Core ever
 -- relies on DDM type checking again, this could instead be caught at DDM parse time.
 /--
 error: ❌ Type checking error.
-Impossible to unify (Foo int bool) with (Foo bool bool).
-First mismatch: int with bool.
+Impossible to unify (Foo int bool) with (Foo (Foo int int) bool).
+First mismatch: int with (Foo int int).
 -/
 #guard_msgs in
 #eval Core.verify badTypeAlias (options := .quiet)

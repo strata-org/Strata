@@ -4116,7 +4116,7 @@ theorem addFactoryFunction_ArrowKnownBinary (C : LContext CoreLParams) (fn : LFu
 
 /-! ### Lemma 4: `addKnownTypeWithError` preserves `ArrowKnownBinary` for non-arrow additions. -/
 theorem addKnownTypeWithError_ArrowKnownBinary (C C' : LContext CoreLParams) (kt : KnownType)
-    (d : Strata.DiagnosticModel)
+    (d : Strata.Message)
     (h_add : C.addKnownTypeWithError kt d = .ok C') (h : ArrowKnownBinary C) :
     ArrowKnownBinary C' := by
   -- `addKnownTypeWithError` only extends `knownTypes` via `addWithError`; monotone `contains`.
@@ -4179,7 +4179,7 @@ annotated twin `Function.typeCheck_annotated_sound` (which concludes about `func
 `Function.typeCheck_sound` above concludes about the *input* `func`.
 
 Needed for `Statement`-level polymorphic soundness in the `funcDecl` case: `go` registers
-`func'`, so the `StmtHasType'.funcDecl` node needs `FuncHasType C Γ func'`, not
+`func'`, so the `StatementHasType'.funcDecl` node needs `FuncHasType C Γ func'`, not
 `FuncHasType C Γ func`. Currently `sorry`. -/
 theorem Function.typeCheck_HasType_output (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)

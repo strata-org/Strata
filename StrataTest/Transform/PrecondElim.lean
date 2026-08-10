@@ -541,5 +541,56 @@ function bug (p : Outer) : bool {
 #guard_msgs in
 #eval (Std.format (transformProgram nestedExistsWFPgm))
 
+/-! ### Test: `changed` flag for a nested function whose body calls a
+    precondition-carrying function (regression)
+
+A nested `function` declaration with no preconditions of its own, but whose
+body invokes a precondition-carrying function (`int.safeModT`), gets rewritten
+to gain a `$$wf` block with an `assert`. The pass must report `changed := true`
+whenever such a `$$wf` block is emitted, even when the function itself has no
+preconditions. -/
+
+/-- Run `PrecondElim` and return only its `changed` flag (`none` if the pass
+    errors). -/
+private def transformChanged (t : StrataDDM.Program) : Option Bool :=
+  let program := translate t
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+  | .error _ => none
+  | .ok (changed, _program) => some changed
+
+private def nestedFuncCallsPartialPgm :=
+#strata
+program Core;
+
+procedure P0()
+{
+  function bB() : int { int.safeModT(0, 2) }
+};
+
+#end
+
+-- The rewrite adds a `bB$$wf` block with an `assert`, so `changed` is `true`.
+/-- info: some true -/
+#guard_msgs in
+#eval transformChanged nestedFuncCallsPartialPgm
+
+-- The rewritten program itself (shows the emitted `$$wf` block).
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+procedure P0 ()
+{
+  bB$$wf: {
+    assert [bB_body_calls_Int.SafeModT_0]: !(2 == 0);
+  }
+  function bB () : int { int.safeModT(0, 2) }
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedFuncCallsPartialPgm))
+
 end PrecondElimTests
 end

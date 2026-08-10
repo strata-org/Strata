@@ -29,14 +29,12 @@ open Lambda LExpr Imperative
 
 public section
 
-/-- The typing context for a function body: the ambient context `Γ` (in which the
-    function declaration was type-checked) with one additional newest scope binding
-    each formal to its declared monomorphic type (wrapped in a trivial polytype).
+/-- The typing context for a function body: the ambient context `Γ` with one new
+    scope binding each formal to its declared monotype.
 
-    The ambient context matters: a statement-level `funcDecl` is checked with the
-    enclosing procedure's locals/params in `Γ`, and its body may reference them.
-    For top-level program functions `Γ.types = []`, so this reduces to the single
-    formals scope `{ types := [formals] }`. -/
+    `Γ` matters because a statement-level `funcDecl` is checked with the enclosing
+    procedure's locals/params in scope and its body may reference them; for
+    top-level functions `Γ.types = []`, leaving just the formals scope. -/
 def funcContext (Γ : TContext Unit) (func : Function) : TContext Unit :=
   { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (func.inputs.map (fun (id, mty) => (id, .forAll [] mty)))) }
 

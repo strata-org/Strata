@@ -4,13 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Util.DecidableEq
 public import Strata.Util.Provenance
 
 namespace Imperative
-open Strata (DiagnosticModel DiagnosticType FileRange Provenance Uri SourceRange)
+open Strata (Message MessageKind FileRange Provenance Uri SourceRange)
 
 public section
 
@@ -268,19 +269,19 @@ def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
 def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
   MetaData.ofProvenance (Provenance.ofSourceRange uri sr)
 
-/-- Create a DiagnosticModel from metadata and a message.
+/-- Create a Message from metadata and a message.
     Uses provenance or file range from metadata if available, otherwise uses a default location. -/
-def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : MessageKind := MessageKind.userError): Message :=
   match getProvenance md with
-  | some (.loc uri range) => DiagnosticModel.withRange { file := uri, range } msg type
-  | some (.synthesized _) => DiagnosticModel.fromMessage msg type
-  | none => DiagnosticModel.fromMessage msg type
+  | some (.loc uri range) => Message.withRange { file := uri, range } msg type
+  | some (.synthesized _) => Message.fromString msg type
+  | none => Message.fromString msg type
 
-/-- Create a DiagnosticModel from metadata and a Format message. -/
-def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+/-- Create a Message from metadata and a Format message. -/
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : MessageKind := MessageKind.userError): Message :=
   MetaData.toDiagnostic md (toString msg) type
 
-/-- Get the file range from metadata as a DiagnosticModel (for formatting).
+/-- Get the file range from metadata as a Message (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
     For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
 def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=

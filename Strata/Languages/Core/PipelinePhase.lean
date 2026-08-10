@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
@@ -87,7 +88,7 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
     : EIO Transform.Err (Program × Transform.CoreTransformState) := do
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
-      IO.toEIO (fun e => Strata.DiagnosticModel.fromFormat f!"{e}")
+      IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
         (IO.FS.createDirAll parent)
   let mut current := p
   let mut state := initState
@@ -110,7 +111,7 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
       step := step + 1
       if let some pfx := keepAllFilesPrefix then
         let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
-        IO.toEIO (fun e => Strata.DiagnosticModel.fromFormat f!"{e}")
+        IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
           (IO.FS.writeFile path (toString current ++ "\n"))
     | .error e => throw e
   pure (current, state)

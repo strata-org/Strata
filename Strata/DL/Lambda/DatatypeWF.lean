@@ -10,37 +10,28 @@ public import Strata.DL.Lambda.TypeFactory
 /-! ## Declarative Well-Formedness of Datatypes
 
 Inductive relations specifying when a mutual datatype block's constructor
-argument types are well-formed, each the declarative counterpart of a checker
-function in `TypeFactory.lean`:
+argument types are well-formed: `TyNameAppears`, `UniformOccur`, `NotNested`,
+`StrictPosUnif`, and the inhabitance relations `TyInhab` / `TySymInhab` /
+`ConstrInhab`.
 
-* `TyNameAppears`  ↔ `tyNameAppearsIn`
-* `UniformOccur`   ↔ `checkUniform`
-* `NotNested`      ↔ `checkNotNested`
-* `StrictPosUnif`  ↔ `checkStrictPosUnifTy`
-* `TyInhab` / `TySymInhab` / `ConstrInhab` ↔ `ty_inhab` / `typesym_inhab`
+These are `Lambda`-level (`LMonoTy` / `MutualDatatype` / `TypeFactory`); the
+Core-facing bundle `MutualADTWF` lives in `Strata.Languages.Core.DatatypeTypeSpec`.
 
-These are `Lambda`-level (about `LMonoTy` / `MutualDatatype` / `TypeFactory`) and
-carry no Core-specific data. The Core-facing bundle `MutualADTWF` (which mentions
-`LContext CoreLParams`) lives in `Strata.Languages.Core.DatatypeTypeSpec`.
-
-Because `LMonoTy.arrow t1 t2` is definitionally `LMonoTy.tcons "arrow" [t1, t2]`,
-the checkers that match `.arrow` *before* the general `.tcons` case
-(`checkNotNested`, `checkStrictPosUnifTy`) behave differently on a binary arrow
-than on an arbitrary type constructor. The inductive relations reproduce that
-match order by guarding the general `.tcons` constructor with `¬ IsBinaryArrow`.
+Since `LMonoTy.arrow t1 t2` is definitionally `LMonoTy.tcons "arrow" [t1, t2]`, the
+general `.tcons` cases below are guarded with `¬ IsBinaryArrow` so an arrow is
+handled only by its dedicated case.
 -/
 
 namespace Lambda
 
 public section
 
-/-- `ty` is a binary arrow, i.e. it is `t1 → t2` for some `t1`, `t2`. Used to
-    guard the general `.tcons` cases of `NotNested` / `StrictPosUnif` so they do
-    not overlap the dedicated arrow case (mirroring the checkers' match order). -/
+/-- `ty` is a binary arrow, i.e. it is `t1 → t2` for some `t1`, `t2`. Guards the
+    general `.tcons` cases of `NotNested` / `StrictPosUnif` so they do not overlap
+    the dedicated arrow case. -/
 def IsBinaryArrow (ty : LMonoTy) : Prop := ∃ t1 t2, ty = .arrow t1 t2
 
-/-- The type name `n` occurs somewhere in `ty`. Declarative counterpart of
-    `Lambda.tyNameAppearsIn` (its `= true` cases). Its negation is the
+/-- The type name `n` occurs somewhere in `ty`. Its negation is the
     "`n` is absent from `ty`" condition used by `NotNested` / `StrictPosUnif`. -/
 inductive TyNameAppears (n : String) : LMonoTy → Prop where
   /-- `n` is the head constructor. -/
@@ -52,13 +43,14 @@ inductive TyNameAppears (n : String) : LMonoTy → Prop where
 def TyNameAbsent (n : String) (ty : LMonoTy) : Prop := ¬ TyNameAppears n ty
 
 /--
-Every occurrence of the type name `n` in `ty` is applied to exactly `args`.
-Declarative counterpart of `Lambda.checkUniform _ n args ty` returning `.ok`.
+Every occurrence of type constructor `n` in the type `ty` is applied to exactly
+`args`. This is the primitive `StrictPosUnif` uses to enforce uniform (regular)
+recursion; it calls it with `args` = the datatype's own `typeArgs`. "Uniform"
+means recursive uses stay on the same parameters — not Rocq's "uniform parameter".
 
-Note (mirroring the checker): once a uniform occurrence `n args` is found, its
-arguments are *not* re-scanned — a nested occurrence like `n (n ...)` is caught
-by the `n ≠ head` branch requiring uniformity of the inner arguments, which
-fails when the inner head is `n` applied to different arguments.
+With `n = List`, `args = [a]` (i.e. checking types for uniform use of `List a`):
+* uniform:     `a`, `List a`, `Pair (List a) bool`
+* not uniform: `List bool`, `List (List a)`   (`List` applied to non-`a`)
 -/
 inductive UniformOccur (n : String) (args : LMonoTys) : LMonoTy → Prop where
   /-- A type variable contains no occurrence of `n`. -/
@@ -73,12 +65,12 @@ inductive UniformOccur (n : String) (args : LMonoTys) : LMonoTy → Prop where
 
 /--
 No datatype of `block` occurs *nested* inside another type constructor's
-arguments in `ty`. Declarative counterpart of
-`Lambda.checkNotNested _ block ty` returning `.ok`.
+arguments in `ty`.
 
-A block datatype appearing at the head of a `.tcons` is fine (that is a direct,
-possibly recursive, reference); what is rejected is a block datatype buried in
-the arguments of a non-block head.
+A block datatype at the head of a `.tcons` is a direct (possibly recursive)
+reference and is fine; one buried in a non-block head's arguments is rejected.
+
+With `Tree` in the block: `Tree a`, `bool → Tree a` ok; `List (Tree a)` rejected.
 -/
 inductive NotNested (block : MutualDatatype Unit) : LMonoTy → Prop where
   /-- Type variables are never nested. -/
@@ -99,32 +91,19 @@ inductive NotNested (block : MutualDatatype Unit) : LMonoTy → Prop where
       NotNested block (.tcons n args)
 
 /--
-`ty` is strictly positive and uniform for `block`. Declarative counterpart of
-`Lambda.checkStrictPosUnifTy _ block ty` returning `.ok`.
+`ty` is strictly positive and uniform for `block`:
+* no `block` datatype occurs left of an arrow (strict positivity, the `arrow` case);
+* at non-arrow positions, every `block` datatype occurs uniformly — delegated to
+  `UniformOccur` (the `base` case).
 
-* No datatype of `block` may appear to the left of an arrow (strict positivity).
-* At a non-arrow position, every block datatype must occur uniformly (applied to
-  its own `typeArgs`).
+With `T` in the block declared `T a`:
+* ok:                    `T a`, `bool → T a`, `Pair a (T a)`
+* rejected (positivity): `(T a → bool) → T a`
 
-WARNING: this is the *checker's* restriction, which is strictly STRONGER than
-the textbook notion of strict positivity, so do not assume the standard
-definition when proving against it. Textbook strict positivity of `T` in an
-argument type `A` allows: `T` absent from `A`; `A = T u₁…uₙ` with `T` absent from
-the `uᵢ`; `A = B → C` with `T` absent from `B` and strictly positive in `C`; and
-*nested* positivity `A = D … b` where `T` is strictly positive in the `bᵢ`. The
-Strata check differs on the last two:
-
-* Uniformity (the `base` case) requires each recursive occurrence to be applied
-  to *exactly* the datatype's own `typeArgs`, so non-uniform/non-regular
-  recursion such as `Powl a = Cons (Powl (a, a))` is rejected even though it is
-  textbook strictly positive.
-* Nested positivity is forbidden entirely — by `NotNested` (the other half of
-  `ConstrArgWF`), not here — so `Rose = Node (List Rose)` is rejected.
-
-The relation is therefore SOUND but INCOMPLETE w.r.t. textbook strict positivity:
-everything it accepts is strictly positive, but it rejects legitimate nested and
-non-uniform datatypes. This is a deliberate language restriction (it keeps
-eliminator generation and the conservative inhabitance check tractable).
+Stronger than textbook strict positivity: uniformity bars non-regular recursion
+(see `UniformOccur`), and nested positivity (`Rose = Node (List (Rose a))`) is
+barred by `NotNested`. Sound but incomplete — a deliberate restriction.
+Ref: https://rocq-prover.org/doc/V9.2.0/refman/language/core/inductive.html#well-formed-inductive-definitions
 -/
 inductive StrictPosUnif (block : MutualDatatype Unit) : LMonoTy → Prop where
   /-- An arrow: no block datatype in the domain; recurse into the codomain
@@ -138,31 +117,24 @@ inductive StrictPosUnif (block : MutualDatatype Unit) : LMonoTy → Prop where
 
 /-- A single constructor-argument type is well-formed for `block`: not nested
     (`NotNested`, which rules out nested positivity) and strictly-positive/uniform
-    (`StrictPosUnif`). Declarative counterpart of the per-argument body of
-    `Lambda.checkConstructorArgsWF`. Together these are strictly stronger than
-    textbook strict positivity — see the `StrictPosUnif` docstring. -/
+    (`StrictPosUnif`). Together these are strictly stronger than textbook strict
+    positivity — see the `StrictPosUnif` docstring. -/
 def ConstrArgWF (block : MutualDatatype Unit) (ty : LMonoTy) : Prop :=
   NotNested block ty ∧ StrictPosUnif block ty
 
 /-! ### Inhabitance
 
 Inhabitance relative to the datatype factory `adts`, as three mutually inductive
-relations mirroring the checker in `TypeFactory.lean`:
+relations:
 
-* `TyInhab`     ↔ `Lambda.ty_inhab`       — a monotype is inhabited.
-* `TySymInhab`  ↔ `Lambda.typesym_inhab`  — a type symbol (constructor name) is
-  inhabited (`adt_inhab a := typesym_inhab adts [] a`).
-* `ConstrInhab` — a constructor is inhabited, i.e. all its argument types are.
+* `TyInhab`     — a monotype is inhabited.
+* `TySymInhab`  — a type symbol is inhabited.
+* `ConstrInhab` — a constructor is inhabited (all its argument types are).
 
-Being least-fixpoint predicates, these capture exactly the checker's memoized
-computation: a datatype reachable only through a cycle back to itself is *not*
-inhabited (the checker marks such `seen` symbols `false`, and there is no
-inductive derivation for it here).
-
-The check is deliberately conservative: `TyInhab (.tcons name args)` requires
-both that the head symbol is inhabited *and* that every actual argument is
-inhabited (so e.g. `List Empty` is rejected even though it is truly inhabited by
-`Nil`) — matching `ty_inhab`.
+As least-fixpoint predicates, a datatype inhabited only through a cycle back to
+itself has no derivation and is not inhabited. Inhabitance is conservative:
+`TyInhab (.tcons name args)` requires both the head symbol and every argument
+inhabited (so `List Empty` is rejected).
 -/
 mutual
 inductive TyInhab (adts : @TypeFactory Unit) : LMonoTy → Prop where
@@ -175,7 +147,7 @@ inductive TyInhab (adts : @TypeFactory Unit) : LMonoTy → Prop where
   | tcons  : ∀ name args, TySymInhab adts name →
       (∀ a ∈ args, TyInhab adts a) → TyInhab adts (.tcons name args)
 
-/-- A type symbol is inhabited. Counterpart of `Lambda.typesym_inhab`. -/
+/-- A type symbol is inhabited. -/
 inductive TySymInhab (adts : @TypeFactory Unit) : String → Prop where
   /-- A non-datatype symbol (external / known type) is assumed inhabited. -/
   | external : ∀ name, adts.getType name = none → TySymInhab adts name
@@ -185,8 +157,7 @@ inductive TySymInhab (adts : @TypeFactory Unit) : String → Prop where
   | datatype : ∀ name d c, adts.getType name = some d →
       c ∈ d.constrs → ConstrInhab adts c → TySymInhab adts name
 
-/-- A constructor is inhabited when all of its (generic) argument types are.
-    Counterpart of the inner `foldlM` in `Lambda.typesym_inhab`. -/
+/-- A constructor is inhabited when all of its (generic) argument types are. -/
 inductive ConstrInhab (adts : @TypeFactory Unit) : LConstr Unit → Prop where
   | mk : ∀ c, (∀ arg ∈ c.args, TyInhab adts arg.2) → ConstrInhab adts c
 end

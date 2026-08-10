@@ -9,6 +9,7 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
+import Strata.Transform.BetaReduce
 
 meta section
 
@@ -171,9 +172,287 @@ spec {
 /-- info:
 Obligation: Test_ensures_0
 Property: assert
-Result: 🚨 SMT Encoding Error! Cannot encode function 'mkFn' to SMT: its body contains a lambda expression. Lambda abstractions cannot be encoded to SMT. Consider marking the function as `inline`.-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Core.verify lambdaInBodyPgm (options := .quiet)
+
+/-! ## Nested lambda redex whose inner body references the OUTER bound var.
+    The SMT encoder's `betaReduceRedexes` reduces the redexes innermost-first;
+    since each redex it contracts is applied to an already-closed argument, the
+    locally-closed `betaReduce` fast path (= `subst`) applies at every step, and
+    the body encodes without residual abstractions. -/
+
+def nestedRedexPgm :=
+#strata
+program Core;
+
+function nestedRedex(i : int) : int
+{
+  (fun b : int => (fun x : int => int.add(x, b))(i))(i)
+}
+
+procedure TestNested(out result : int)
+spec {
+  ensures result == 4;
+}
+{
+  result := nestedRedex(2);
+};
+#end
+
+/-- info:
+Obligation: TestNested_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify nestedRedexPgm (options := .quiet)
+
+def deep3RedexPgm :=
+#strata
+program Core;
+
+function deep3(i : int) : int
+{
+  (fun a : int => (fun b : int => (fun c : int => int.add(int.add(a, b), c))(i))(i))(i)
+}
+
+procedure TestDeep3(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := deep3(2);
+};
+#end
+
+/-- info:
+Obligation: TestDeep3_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify deep3RedexPgm (options := .quiet)
+
+/-! ## Redex whose argument references an enclosing binder, with the redex
+    variable used under a further inner binder — exercises `betaReduce`'s
+    argument lifting (`liftBVars`) when a redex is contracted at nonzero
+    binder depth during encoder-side reduction. -/
+
+def liftArgRedexPgm :=
+#strata
+program Core;
+
+function liftArg(i : int) : int
+{
+  (fun a : int => (fun x : int => (fun y : int => int.add(x, y))(1))(int.add(a, 10)))(i)
+}
+
+procedure TestLiftArg(out result : int)
+spec {
+  ensures result == 13;
+}
+{
+  result := liftArg(2);
+};
+#end
+
+/-- info:
+Obligation: TestLiftArg_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify liftArgRedexPgm (options := .quiet)
+
+/-! ## Constant-lambda redex through the SMT encoder (erasing reducer).
+    `(fun ignored : int => 42)(i)` is a constant lambda: `bvarUsed 0 body`
+    is false, so the SMT encoder's erasing `betaReduceRedexes` drops the (dead)
+    argument and encodes `constLam` as the constant `42`, with no residual
+    abstraction to reject. This exercises the erasing branch of
+    `betaReduceRedexesFuel` reached via the encoder (the termination checker
+    uses the non-erasing variant), pinning the concrete verified result. -/
+
+def constLamPgm :=
+#strata
+program Core;
+
+function constLam(i : int) : int
+{
+  (fun ignored : int => 42)(i)
+}
+
+procedure TestConstLam(out result : int)
+spec {
+  ensures result == 42;
+}
+{
+  result := constLam(7);
+};
+#end
+
+/-- info:
+Obligation: TestConstLam_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify constLamPgm (options := .quiet)
+
+/-! ## Duplicating redex: fuel must account for bound-variable multiplicity.
+    `(fun x : int => int.add(int.add(x, x), x))(int.add(i, 1))` references its bound variable three
+    times, so β-reduction duplicates the (compound) argument and the reduced
+    term is larger than the input. A `sizeOf`-only fuel budget could be exhausted
+    before reduction completes, leaving a residual `.abs` the SMT encoder would
+    reject; the multiplicity-scaled budget suffices for this (single-level)
+    duplication shape — full reduction is not guaranteed in general. -/
+
+def dupRedexPgm :=
+#strata
+program Core;
+
+function dupRedex(i : int) : int
+{
+  (fun x : int => int.add(int.add(x, x), x))(int.add(i, 1))
+}
+
+procedure TestDupRedex(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := dupRedex(1);
+};
+#end
+
+/-- info:
+Obligation: TestDupRedex_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify dupRedexPgm (options := .quiet)
+
+/-! ## Redex under a binder: the phase reduces inside quantifier bodies.
+    The redex `(fun y : int => y + y)(x)` sits under the `forall x` binder, so
+    contracting it must decrement/lift de Bruijn indices relative to the
+    enclosing binder (`betaReduce`, not plain `subst`). Symbolic evaluation
+    does not evaluate under binders, so only the `betaReduce` phase can
+    contract it; without reduction the encoder would reject the `.app` of an
+    abstraction inside the quantifier body. -/
+
+def underBinderPgm :=
+#strata
+program Core;
+
+function underBinder() : bool
+{
+  forall x : int :: (fun y : int => int.add(y, y))(x) == int.add(x, x)
+}
+
+procedure TestUnderBinder()
+spec {
+  ensures underBinder();
+}
+{
+};
+#end
+
+/-- info:
+Obligation: TestUnderBinder_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify underBinderPgm (options := .quiet)
+
+-- Pin the reduced shape: after the phase, the quantifier body is redex-free.
+/-- info: reduced body: forall x : int :: int.add(x, x) == int.add(x, x) -/
+#guard_msgs in
+#eval show Std.Format from
+  match (Core.BetaReduce.betaReduceProgram (translate underBinderPgm)).decls with
+  | [.func f _, _] =>
+    match f.body with
+    | some b => f!"reduced body: {b}"
+    | none => f!"NO BODY"
+  | _ => f!"UNEXPECTED shape"
+
+/-! ## `have`-binding: Core's surface syntax for a let-alias redex.
+    `have c : T = v in body` is sugar for `(fun c : T => body)(v)`; the phase
+    contracts it like any other redex, so the encoder sees `haveAlias` as a
+    first-order body. -/
+
+def haveAliasPgm :=
+#strata
+program Core;
+
+function haveAlias(i : int) : int
+{
+  have c : int = int.add(i, 1) in int.add(c, c)
+}
+
+procedure TestHaveAlias(out result : int)
+spec {
+  ensures result == 6;
+}
+{
+  result := haveAlias(2);
+};
+#end
+
+/-- info:
+Obligation: TestHaveAlias_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify haveAliasPgm (options := .quiet)
+
+/-! ## Redex inside a locally-declared function (`funcDecl` statement).
+    `betaReduceProgram` recurses into `funcDecl` bodies — unlike
+    `Imperative.Stmt.mapExpr`, which treats `funcDecl` as a leaf. The factory
+    registers local-function bodies verbatim (`collectFuncDecls` in
+    `Verifier.lean`), so a residual redex there would reach the encoder
+    whenever the partial evaluator does not inline the call. The shape pin
+    below is the discriminating check: without the `funcDecl` recursion the
+    body stays `(fun c : int => c + c)(x + x)`. -/
+
+def nestedFuncDeclPgm :=
+#strata
+program Core;
+
+procedure TestNestedFuncDecl(out result : int)
+spec {
+  ensures result == 8;
+}
+{
+  function quad(x : int) : int { have c : int = int.add(x, x) in int.add(c, c) }
+  result := quad(2);
+};
+#end
+
+/-- info:
+Obligation: TestNestedFuncDecl_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify nestedFuncDeclPgm (options := .quiet)
+
+-- Pin the reduced shape of the nested function body after the phase.
+/-- info: reduced nested body: int.add(int.add(x, x), int.add(x, x)) -/
+#guard_msgs in
+#eval show Std.Format from
+  match (Core.BetaReduce.betaReduceProgram (translate nestedFuncDeclPgm)).decls with
+  | [.proc proc _] =>
+    match proc.body with
+    | .structured (Imperative.Stmt.funcDecl decl _ :: _) =>
+      match decl.body with
+      | some b => f!"reduced nested body: {b}"
+      | none => f!"NO BODY"
+    | _ => f!"UNEXPECTED body shape"
+  | _ => f!"UNEXPECTED decl shape"
 
 /-! ## Recursive function with function-typed input -/
 

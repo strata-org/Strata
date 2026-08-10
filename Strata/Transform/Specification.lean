@@ -538,6 +538,21 @@ abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
   InitEnvWFParamsTy := Unit
   initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
 
+/-- Block-level initial-environment well-formedness for the imperative-block
+language: a well-formed evaluator, plus the freshness preconditions the
+structured passes rely on — every variable a block `init`s starts undefined,
+and no `Q`-kind (generated) name is defined in the initial store. `Q` is the
+kind of label the consuming pass generates, so a single initial store can
+satisfy several passes' obligations at disjoint kinds. -/
+structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
+    (Q : String → Prop) (ss : List (Stmt P (Cmd P))) (ρ : Env P) : Prop
+    extends WellFormedSemanticEval (P := P) ρ.factory where
+  /-- Every variable the block initializes starts undefined in `ρ`. -/
+  defsUndefined : ∀ x ∈ Block.initVars ss, ρ.store x = none
+  /-- No `Q`-kind (generated-shape) name is defined in the initial store. -/
+  definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+
 end ImperativeStmts
 
 end Transform

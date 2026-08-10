@@ -144,3 +144,28 @@ def StepCFGStar
     (cfg : CFG l (DetBlock l CmdT P)) :
     CFGConfig l CmdT P → CFGConfig l CmdT P → Prop :=
   ReflTrans (StepCFG P EvalCmd extendFactory fac cfg)
+
+/-! ## Bridge: EvalCmds and connector to per-command StepCFG
+
+`EvalCmds` is a structured-side helper inductive used by every simulation
+lemma to package up the structured evaluation of an accumulated command list.
+We bridge it into the per-command `StepCFG` by lifting each
+`eval_cmds_some` step into one `StepCFG.step_cmd` step inside `.inBlock`. -/
+
+inductive EvalCmds
+    {CmdT : Type}
+    (P : PureExpr)
+    (EvalCmdR : EvalCmdParam P CmdT) :
+    P.Factory → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
+  | eval_cmds_none :
+    EvalCmds P EvalCmdR δ σ [] σ false
+  | eval_cmds_some :
+    EvalCmdR δ σ c σ' failed →
+    EvalCmds P EvalCmdR δ σ' cs σ'' failed' →
+    EvalCmds P EvalCmdR δ σ (c :: cs) σ'' (failed || failed')
+
+abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+    (extendFactory : ExtendFactory P)
+    (fac : P.Factory)
+    (cfg : CFG String (DetBlock String (Cmd P) P)) :=
+  StepCFGStar P (EvalCmd P) extendFactory fac cfg

@@ -402,7 +402,7 @@ private theorem addFactoryFunctionWithError_idents {T : LExprParams}
 /-- A successful `List.foldlM addFactoryFunctionWithError` does not change `idents`. -/
 private theorem foldlM_addFactoryFunctionWithError_idents {T : LExprParams}
     [Inhabited T.Metadata] [ToFormat T.IDMeta] {C C' : LContext T} {fs : List α}
-    {g : α → LFunc T} {e : DiagnosticModel → DiagnosticModel}
+    {g : α → LFunc T} {e : Message → Message}
     (h : (fs.foldlM (fun C f => (C.addFactoryFunctionWithError (g f)).mapError e)
             (init := C)) = .ok C') : C'.idents = C.idents := by
   induction fs generalizing C with

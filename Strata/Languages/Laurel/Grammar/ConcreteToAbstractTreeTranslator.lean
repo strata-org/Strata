@@ -306,6 +306,32 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
+    | q`Laurel.throw, #[arg0] =>
+      let value ← translateStmtExpr arg0
+      return mkStmtExprMd (.Throw value) src
+    | q`Laurel.tryCatch, #[bodyArg, catchSeqArg, finallyArg] =>
+      let body ← translateStmtExpr bodyArg
+      let catches ← match catchSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op cOp => match cOp.name, cOp.args with
+              | q`Laurel.catchClause, #[bindingArg, guardArg, cBodyArg] => do
+                let binding ← translateIdent bindingArg
+                let predicate ← match guardArg with
+                  | .option _ (some (.op gOp)) => match gOp.name, gOp.args with
+                    | q`Laurel.catchGuard, #[pArg] => translateStmtExpr pArg >>= (pure ∘ some)
+                    | _, _ => pure none
+                  | _ => pure none
+                let cBody ← translateStmtExpr cBodyArg
+                pure ({ binding := binding, predicate := predicate, body := cBody } : CatchClause)
+              | _, _ => TransM.error "Expected catchClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let finally? ← match finallyArg with
+        | .option _ (some (.op fOp)) => match fOp.name, fOp.args with
+          | q`Laurel.finallyClause, #[fBodyArg] => translateStmtExpr fBodyArg >>= (pure ∘ some)
+          | _, _ => pure none
+        | _ => pure none
+      return mkStmtExprMd (.Try body catches finally?) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) src
@@ -668,21 +694,32 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
-  -- Transitional shim: the `procedure` operator gained a positional
-  -- `entry: Option EntryClause` argument (8 → 9 args). Accept the pre-`entry`
-  -- 8-argument shape emitted by older producers by splicing in an absent entry
-  -- clause at its position, so a post-CR binary can still consume Ion artifacts
-  -- produced against the previous grammar.
+  -- Transitional shim: normalize legacy `procedure` shapes to the current
+  -- 10-argument form (`… returnParameters throws requires invokeOn entry
+  -- opaqueSpec body`). Older producers emitted either the pre-`entry` 8-arg
+  -- shape or the pre-exception 9-arg shape (with `entry`), neither of which had
+  -- any exceptional-contract clauses: splice in an absent `throws` before
+  -- `requires`, and an absent `entry` where it is missing, so a post-CR binary
+  -- can still consume Ion artifacts produced against a previous grammar. (The
+  -- exceptional postcondition/frame clauses now live inside `opaqueSpec`, whose
+  -- own legacy 2-argument shape is normalized where it is parsed below.)
+  let absentOpt : Arg := .option SourceRange.none none
   let args : Array Arg ← match op.name, op.args with
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
       pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-             requiresArg, invokeOnArg, .option SourceRange.none none, opaqueSpecArg, bodyArg]
+             absentOpt, requiresArg, invokeOnArg, absentOpt,
+             opaqueSpecArg, bodyArg]
+    | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+        requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+             absentOpt, requiresArg, invokeOnArg, entryArg,
+             opaqueSpecArg, bodyArg]
     | _, other => pure other
 
   match op.name, args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -700,6 +737,17 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses - zero or more)
     let preconditions ← translateRequiresClauses requiresArg
+    -- Parse the optional `throws (e: T)` clause, which names the thrown value as
+    -- well as its type, scoping the name over the `throwsOn` blocks below. The two
+    -- come from one op, so they are set or unset together.
+    let (throwsType, throwsBinding) ← match throwsArg with
+      | .option _ (some (.op throwsOp)) => match throwsOp.name, throwsOp.args with
+        | q`Laurel.throwsClause, #[bindingArg, tyArg] => do
+          let binding ← translateIdent bindingArg
+          let ty ← translateHighType tyArg
+          pure (some ty, some binding)
+        | _, _ => TransM.error s!"Expected throwsClause, got {repr throwsOp.name}"
+      | _ => pure (none, none)
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
       | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
@@ -721,16 +769,62 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     if isInterpretEntry && !parameters.isEmpty then
       TransM.error s!"entry procedure '{name.text}' cannot take inputs: \
                       an entry point is invoked with no arguments"
-    -- Parse optional opaqueSpec (contains ensures and modifies)
-    let (isOpaque, postconditions, modifies) ← match opaqueSpecArg with
+    -- Parse optional opaqueSpec: the caller-visible contract, holding the
+    -- normal-path clauses (`ensures`, `modifies`) and the exceptional behavior
+    -- cases (`throwsOn <guard> { ensures … modifies … }`).
+    -- Transitional shim: a 2-argument `opaqueSpec` carries no exceptional cases
+    -- and is read as having none.
+    --
+    -- One `throwsOn` block becomes one `ThrowsOnBlock`. Within a block the
+    -- `ensures` clauses accumulate as postconditions and the `modifies` clauses
+    -- union their refs, exactly as the normal-path clauses do at the top level.
+    let parseThrowsOnClauses (a : Arg) : TransM (List Condition × List StmtExprMd) :=
+      match a with
+      | .seq _ _ clauses => do
+        let mut posts : List Condition := []
+        let mut mods : List StmtExprMd := []
+        for arg in clauses do
+          match arg with
+          | .op cOp => match cOp.name, cOp.args with
+            | q`Laurel.throwsOnEnsures, #[condArg, summaryArg] =>
+              let condition ← translateStmtExpr condArg
+              let summary ← translateErrorSummary summaryArg
+              posts := posts ++ [({ condition := condition, summary := summary } : Condition)]
+            | q`Laurel.throwsOnModifies, #[refsArg] =>
+              let refs ← translateModifiesExprs refsArg
+              mods := mods ++ refs
+            | _, _ => TransM.error s!"Expected throwsOn ensures/modifies, got {repr cOp.name}"
+          | _ => TransM.error "Expected operation in throwsOn clause sequence"
+        pure (posts, mods)
+      | _ => pure ([], [])
+    let parseThrowsOn (a : Arg) : TransM (List ThrowsOnBlock) :=
+      match a with
+      | .seq _ _ blocks => blocks.toList.mapM fun arg => match arg with
+          | .op bOp => match bOp.name, bOp.args with
+            | q`Laurel.throwsOnClause, #[guardArg, clausesArg] => do
+              let guard ← translateStmtExpr guardArg
+              let (posts, mods) ← parseThrowsOnClauses clausesArg
+              pure ({ guard := guard, postconditions := posts,
+                      modifies := mods } : ThrowsOnBlock)
+            | _, _ => TransM.error s!"Expected throwsOnClause, got {repr bOp.name}"
+          | _ => TransM.error "Expected operation in throwsOn sequence"
+      | _ => pure []
+    let (isOpaque, postconditions, modifies, throwsOn) ←
+      match opaqueSpecArg with
       | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
-        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg, throwsOnArg] =>
           let postconditions ← translateEnsuresClauses ensuresArg
           let modifies ← translateModifiesClauses modifiesArg
-          pure (true, postconditions, modifies)
+          let throwsOn ← parseThrowsOn throwsOnArg
+          pure (true, postconditions, modifies, throwsOn)
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
+          -- Legacy (pre-exceptional-case) shape.
+          let postconditions ← translateEnsuresClauses ensuresArg
+          let modifies ← translateModifiesClauses modifiesArg
+          pure (true, postconditions, modifies, [])
         | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueSpecOp.name}"
-      | .option _ none => pure (false, [], [])
-      | _ => pure (false, [], [])
+      | .option _ none => pure (false, [], [], [])
+      | _ => pure (false, [], [], [])
     -- Parse optional body
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
@@ -759,10 +853,13 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       decreases := none
       invokeOn := invokeOn
       isInterpretEntry := isInterpretEntry
+      throwsType := throwsType
+      throwsBinding := throwsBinding
+      throwsOn := throwsOn
       body := procBody
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 8 or 9 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 8, 9, or 10 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
@@ -838,7 +935,7 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
     | TransM.error s!"parseDatatype expects operation"
   -- Transitional shim: normalize the legacy pre-`typeParams` 2-argument datatype
   -- shape (`name, constructors`) to the current 3-argument form by splicing in an
-  -- absent `typeParams` option. Mirrors the cross-version shims elsewhere so
+  -- absent `typeParams` option. Mirrors `parseProcedure`'s cross-version shims so
   -- a post-CR binary can still consume Ion artifacts produced against the
   -- pre-generics grammar.
   let args : Array Arg ← match op.name, op.args with

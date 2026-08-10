@@ -3722,11 +3722,11 @@ theorem CmdExtHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
     aliases); `block`/`ite`/`loop`/`exit`/`funcDecl`/`typeDecl` all leave `Γ` fixed,
     and `cons` chains the two ends. Used to relate the checker's body output context
     to `procBodyContext Env'.context proc'` in `bodyTyped`. -/
-theorem StmtsHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
+theorem StatementsHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
     {C C' : LContext CoreLParams} {P : Program} {Γ Γ' : TContext Unit} {L : List String}
     {ss : List Statement}
-    (h : StmtsHasType' (τ := τ) P C Γ L ss C' Γ') : Γ'.aliases = Γ.aliases := by
-  refine StmtsHasType'.rec
+    (h : StatementsHasType' (τ := τ) P C Γ L ss C' Γ') : Γ'.aliases = Γ.aliases := by
+  refine StatementsHasType'.rec
     (motive_1 := fun _ Γa _ _ _ Γa' _ => Γa'.aliases = Γa.aliases)
     (motive_2 := fun _ Γa _ _ _ Γa' _ => Γa'.aliases = Γa.aliases)
     ?cmd ?block ?ite_det ?ite_nondet ?loop ?exit ?funcDecl ?typeDecl ?nil ?cons h
@@ -3744,10 +3744,10 @@ theorem StmtsHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
 /-- A single statement's derivation preserves `SubstReq` from input to output.
     `ren`/`rig_notin_range`/`inv_on_rigid` depend only on `S`/`C.rigidTypeVars`
     (preserved by funcDecl/typeDecl); `aliasesWF` via `CmdExtHasType'_aliases`. -/
-theorem StmtHasType'_SubstReq {P : Program}
+theorem StatementHasType'_SubstReq {P : Program}
     {C C' : LContext CoreLParams} {Γ Γ' : TContext Unit} {L : List String}
     {s : Statement} (S Sinv : Subst)
-    (h : StmtHasTypeA P C Γ L s C' Γ') (hS : SubstReq C Γ S Sinv) :
+    (h : StatementHasTypeA P C Γ L s C' Γ') (hS : SubstReq C Γ S Sinv) :
     SubstReq C' Γ' S Sinv := by
   cases h with
   | cmd _ _ _ _ _ _ h_cmd hΔ =>
@@ -3792,9 +3792,9 @@ theorem StmtHasType'_SubstReq {P : Program}
 
 /-! ## Declarative rigidTypeVars preservation (for threading InitClosed in `cons`). -/
 
-theorem StmtHasType'_rigid_eq {P : Program}
+theorem StatementHasType'_rigid_eq {P : Program}
     {C C' : LContext CoreLParams} {Γ Γ' : TContext Unit} {L : List String}
-    {s : Statement} (h : StmtHasTypeA P C Γ L s C' Γ') :
+    {s : Statement} (h : StatementHasTypeA P C Γ L s C' Γ') :
     C'.rigidTypeVars = C.rigidTypeVars := by
   cases h with
   | cmd => rfl
@@ -3835,32 +3835,32 @@ theorem StmtInitClosed_cmd (rig) (c) :
 
 /-! ## Statement-list substitution (both-sides subst, with InitClosed). -/
 
-theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
+theorem StatementsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
     (Γ : TContext Unit) (L : List String) (ss : List Statement)
     (C' : LContext CoreLParams) (Γ' : TContext Unit) (S Sinv : Lambda.Subst)
-    (h : StmtsHasTypeA P C Γ L ss C' Γ')
+    (h : StatementsHasTypeA P C Γ L ss C' Γ')
     (hS : SubstReq C Γ S Sinv)
     (h_ic : StmtsInitClosed C.rigidTypeVars ss) :
-    StmtsHasTypeA P C (TContext.subst Γ S) L (ss.map (Core.Statement.Statement.subst S)) C' (TContext.subst Γ' S) := by
-  refine StmtsHasType'.rec
+    StatementsHasTypeA P C (TContext.subst Γ S) L (ss.map (Core.Statement.Statement.subst S)) C' (TContext.subst Γ' S) := by
+  refine StatementsHasType'.rec
     (motive_1 := fun Ca Γa La s Ca' Γa' _ =>
       SubstReq Ca Γa S Sinv → StmtInitClosed Ca.rigidTypeVars s →
-      StmtHasTypeA P Ca (TContext.subst Γa S) La (Statement.subst S s) Ca' (TContext.subst Γa' S))
+      StatementHasTypeA P Ca (TContext.subst Γa S) La (Statement.subst S s) Ca' (TContext.subst Γa' S))
     (motive_2 := fun Ca Γa La ss Ca' Γa' _ =>
       SubstReq Ca Γa S Sinv → StmtsInitClosed Ca.rigidTypeVars ss →
-      StmtsHasTypeA P Ca (TContext.subst Γa S) La (ss.map (Statement.subst S)) Ca' (TContext.subst Γa' S))
+      StatementsHasTypeA P Ca (TContext.subst Γa S) La (ss.map (Statement.subst S)) Ca' (TContext.subst Γa' S))
     ?cmd ?block ?ite_det ?ite_nondet ?loop ?exit ?funcDecl ?typeDecl ?nil ?cons h hS h_ic
   case cmd =>
     intro Ca Γa Γa' La c Δ h_cmd hΔ hS' h_ic'
     rw [StmtInitClosed_cmd] at h_ic'
     have h_sub := CmdExtHasTypeA_subst Ca P Γa Γa' c S Sinv h_cmd hS' h_ic'
-    exact StmtHasType'.cmd Ca (TContext.subst Γa S) (TContext.subst Γa' S) La
+    exact StatementHasType'.cmd Ca (TContext.subst Γa S) (TContext.subst Γa' S) La
       (Command.subst S c) _ h_sub (hΔ.subst S)
   case block =>
     intro Ca Γa C_body Γ_body La label body md Δ h_notin _ hΔ ih_body hS' h_ic'
     simp only [Statement.subst, Statement.subst_go_nil]
     rw [StmtInitClosed_block] at h_ic'
-    exact StmtHasType'.block Ca (TContext.subst Γa S) C_body (TContext.subst Γ_body S)
+    exact StatementHasType'.block Ca (TContext.subst Γa S) C_body (TContext.subst Γ_body S)
       La label (body.map (Statement.subst S)) md _ h_notin (ih_body hS' h_ic') (hΔ.subst S)
   case ite_det =>
     intro Ca Γa C_t Γ_t C_e Γ_e La cond thenb elseb md Δ h_cond _ _ hΔ ih_t ih_e hS' h_ic'
@@ -3870,7 +3870,7 @@ theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
       have h_c0 : LExpr.HasTypeA [] cond .bool := h_cond
       have h0 := applySubst_typeCheck S (Δ := ([] : List LMonoTy)) h_c0
       rw [LMonoTy.subst_bool] at h0; simpa using h0
-    exact StmtHasType'.ite_det Ca (TContext.subst Γa S) C_t (TContext.subst Γ_t S)
+    exact StatementHasType'.ite_det Ca (TContext.subst Γa S) C_t (TContext.subst Γ_t S)
       C_e (TContext.subst Γ_e S) La (LExpr.applySubst cond S)
       (thenb.map (Statement.subst S)) (elseb.map (Statement.subst S)) md _
       h_cond_subst (ih_t hS' h_ic'.1) (ih_e hS' h_ic'.2) (hΔ.subst S)
@@ -3878,14 +3878,14 @@ theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
     intro Ca Γa C_t Γ_t C_e Γ_e La thenb elseb md Δ _ _ hΔ ih_t ih_e hS' h_ic'
     simp only [Statement.subst, Statement.subst_go_nil]
     rw [StmtInitClosed_ite] at h_ic'
-    exact StmtHasType'.ite_nondet Ca (TContext.subst Γa S) C_t (TContext.subst Γ_t S)
+    exact StatementHasType'.ite_nondet Ca (TContext.subst Γa S) C_t (TContext.subst Γ_t S)
       C_e (TContext.subst Γ_e S) La (thenb.map (Statement.subst S))
       (elseb.map (Statement.subst S)) md _ (ih_t hS' h_ic'.1) (ih_e hS' h_ic'.2) (hΔ.subst S)
   case loop =>
     intro Ca Γa C_body Γ_body La guard measure invariants body md Δ h_g h_m h_i _ hΔ ih_body hS' h_ic'
     simp only [Statement.subst, Statement.subst_go_nil, substOptionExpr]
     rw [StmtInitClosed_loop] at h_ic'
-    refine StmtHasType'.loop Ca (TContext.subst Γa S) C_body (TContext.subst Γ_body S)
+    refine StatementHasType'.loop Ca (TContext.subst Γa S) C_body (TContext.subst Γ_body S)
       La _ _ _ (body.map (Statement.subst S)) md _ ?_ ?_ ?_ (ih_body hS' h_ic') (hΔ.subst S)
     · intro g h_gd
       cases guard with
@@ -3914,7 +3914,7 @@ theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
       rw [LMonoTy.subst_bool] at h0; simpa using h0
   case exit =>
     intro Ca Γa La label md Δ h_mem hΔ hS' h_ic'
-    exact StmtHasType'.exit Ca (TContext.subst Γa S) La label md _ h_mem (hΔ.subst S)
+    exact StatementHasType'.exit Ca (TContext.subst Γa S) La label md _ h_mem (hΔ.subst S)
   case funcDecl =>
     intro Ca Γa La decl func md Δ h_nrec h_func hΔ hS' h_ic'
     simp only [Statement.subst]
@@ -3924,25 +3924,25 @@ theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
       noUndeclaredVars := h_func.noUndeclaredVars
       bodyTyped := h_func.bodyTyped
       measureTyped := h_func.measureTyped }
-    exact StmtHasType'.funcDecl Ca (TContext.subst Γa S) La _ func md _ h_nrec h_func' (hΔ.subst S)
+    exact StatementHasType'.funcDecl Ca (TContext.subst Γa S) La _ func md _ h_nrec h_func' (hΔ.subst S)
   case typeDecl =>
     intro Ca Ca' Γa La tc md Δ h_add hΔ hS' h_ic'
     have h_eq : Statement.subst S (Statement.typeDecl tc md) = Statement.typeDecl tc md := by
       simp only [Statement.subst]
     rw [h_eq]
-    exact StmtHasType'.typeDecl Ca Ca' (TContext.subst Γa S) La tc md _ h_add (hΔ.subst S)
+    exact StatementHasType'.typeDecl Ca Ca' (TContext.subst Γa S) La tc md _ h_add (hΔ.subst S)
   case nil =>
     intro Ca Γa La Δ hΔ hS' h_ic'
-    exact StmtsHasType'.nil Ca (TContext.subst Γa S) La _ (hΔ.subst S)
+    exact StatementsHasType'.nil Ca (TContext.subst Γa S) La _ (hΔ.subst S)
   case cons =>
     intro Ca Cb Cc Γa Γb Γc La s ss h_s h_ss ih_s ih_ss hS' h_ic'
     have h_ic_head : StmtInitClosed Ca.rigidTypeVars s := h_ic' s List.mem_cons_self
     have h_ic_tail0 : StmtsInitClosed Ca.rigidTypeVars ss :=
       fun s' hs' => h_ic' s' (List.mem_cons_of_mem s hs')
-    have hSb : SubstReq Cb Γb S Sinv := StmtHasType'_SubstReq S Sinv h_s hS'
-    have h_rig_eq : Cb.rigidTypeVars = Ca.rigidTypeVars := StmtHasType'_rigid_eq h_s
+    have hSb : SubstReq Cb Γb S Sinv := StatementHasType'_SubstReq S Sinv h_s hS'
+    have h_rig_eq : Cb.rigidTypeVars = Ca.rigidTypeVars := StatementHasType'_rigid_eq h_s
     have h_ic_tail : StmtsInitClosed Cb.rigidTypeVars ss := by rw [h_rig_eq]; exact h_ic_tail0
-    exact StmtsHasType'.cons Ca Cb Cc (TContext.subst Γa S) (TContext.subst Γb S)
+    exact StatementsHasType'.cons Ca Cb Cc (TContext.subst Γa S) (TContext.subst Γb S)
       (TContext.subst Γc S) La (Statement.subst S s) (ss.map (Statement.subst S))
       (ih_s hS' h_ic_head) (ih_ss hSb h_ic_tail)
 
@@ -4954,44 +4954,44 @@ theorem CmdExtHasTypeA_rig_drop (C : LContext CoreLParams) (P : Program)
 
 set_option maxHeartbeats 1000000 in
 /-- General rigid-drop transport (motive over `Ca.rigidTypeVars`). -/
-theorem StmtsHasTypeA_rig_drop (P : Program) (R2 : List Lambda.TyIdentifier)
+theorem StatementsHasTypeA_rig_drop (P : Program) (R2 : List Lambda.TyIdentifier)
     (C : LContext CoreLParams) (Γ : TContext Unit) (L : List String) (ss : List Statement)
     (C' : LContext CoreLParams) (Γ' : TContext Unit)
-    (h : StmtsHasTypeA P C Γ L ss C' Γ')
+    (h : StatementsHasTypeA P C Γ L ss C' Γ')
     (h_sub : R2 ⊆ C.rigidTypeVars) :
-    StmtsHasTypeA P ({ C with rigidTypeVars := R2 }) Γ L ss
+    StatementsHasTypeA P ({ C with rigidTypeVars := R2 }) Γ L ss
       ({ C' with rigidTypeVars := R2 }) Γ' := by
-  refine StmtsHasType'.rec
+  refine StatementsHasType'.rec
     (motive_1 := fun Ca Γa La s Ca' Γa' _ =>
       R2 ⊆ Ca.rigidTypeVars →
-      StmtHasTypeA P ({ Ca with rigidTypeVars := R2 }) Γa La s ({ Ca' with rigidTypeVars := R2 }) Γa')
+      StatementHasTypeA P ({ Ca with rigidTypeVars := R2 }) Γa La s ({ Ca' with rigidTypeVars := R2 }) Γa')
     (motive_2 := fun Ca Γa La ss Ca' Γa' _ =>
       R2 ⊆ Ca.rigidTypeVars →
-      StmtsHasTypeA P ({ Ca with rigidTypeVars := R2 }) Γa La ss ({ Ca' with rigidTypeVars := R2 }) Γa')
+      StatementsHasTypeA P ({ Ca with rigidTypeVars := R2 }) Γa La ss ({ Ca' with rigidTypeVars := R2 }) Γa')
     ?cmd ?block ?ite_det ?ite_nondet ?loop ?exit ?funcDecl ?typeDecl ?nil ?cons h h_sub
   case cmd =>
     intro Ca Γa Γa' La c Δ h_cmd hΔ h_sub'
-    exact StmtHasType'.cmd _ Γa Γa' La c _ (CmdExtHasTypeA_rig_drop Ca P R2 Γa c Γa' h_cmd h_sub') hΔ
+    exact StatementHasType'.cmd _ Γa Γa' La c _ (CmdExtHasTypeA_rig_drop Ca P R2 Γa c Γa' h_cmd h_sub') hΔ
   case block =>
     intro Ca Γa C_body Γ_body La label body md Δ h_notin _ hΔ ih_body h_sub'
-    exact StmtHasType'.block _ Γa ({ C_body with rigidTypeVars := R2 }) Γ_body La label body md
+    exact StatementHasType'.block _ Γa ({ C_body with rigidTypeVars := R2 }) Γ_body La label body md
       _ h_notin (ih_body h_sub') hΔ
   case ite_det =>
     intro Ca Γa C_t Γ_t C_e Γ_e La cond thenb elseb md Δ h_cond _ _ hΔ ih_t ih_e h_sub'
-    exact StmtHasType'.ite_det _ Γa ({ C_t with rigidTypeVars := R2 }) Γ_t
+    exact StatementHasType'.ite_det _ Γa ({ C_t with rigidTypeVars := R2 }) Γ_t
       ({ C_e with rigidTypeVars := R2 }) Γ_e La cond thenb elseb md
       _ h_cond (ih_t h_sub') (ih_e h_sub') hΔ
   case ite_nondet =>
     intro Ca Γa C_t Γ_t C_e Γ_e La thenb elseb md Δ _ _ hΔ ih_t ih_e h_sub'
-    exact StmtHasType'.ite_nondet _ Γa ({ C_t with rigidTypeVars := R2 }) Γ_t
+    exact StatementHasType'.ite_nondet _ Γa ({ C_t with rigidTypeVars := R2 }) Γ_t
       ({ C_e with rigidTypeVars := R2 }) Γ_e La thenb elseb md _ (ih_t h_sub') (ih_e h_sub') hΔ
   case loop =>
     intro Ca Γa C_body Γ_body La guard measure invariants body md Δ h_g h_m h_i _ hΔ ih_body h_sub'
-    exact StmtHasType'.loop _ Γa ({ C_body with rigidTypeVars := R2 }) Γ_body La
+    exact StatementHasType'.loop _ Γa ({ C_body with rigidTypeVars := R2 }) Γ_body La
       guard measure invariants body md _ h_g h_m h_i (ih_body h_sub') hΔ
   case exit =>
     intro Ca Γa La label md Δ h_mem hΔ h_sub'
-    exact StmtHasType'.exit _ Γa La label md _ h_mem hΔ
+    exact StatementHasType'.exit _ Γa La label md _ h_mem hΔ
   case funcDecl =>
     intro Ca Γa La decl func md Δ h_nrec h_func hΔ h_sub'
     -- `FuncHasTypeA` transports: annotated `exprTyped` ignores `C`, so the body/measure fields
@@ -5008,7 +5008,7 @@ theorem StmtsHasTypeA_rig_drop (P : Program) (R2 : List Lambda.TyIdentifier)
       simp only [LContext.addFactoryFunction]
       split <;> rfl
     rw [← h_comm]
-    exact StmtHasType'.funcDecl _ Γa La decl func md _ h_nrec h_func' hΔ
+    exact StatementHasType'.funcDecl _ Γa La decl func md _ h_nrec h_func' hΔ
   case typeDecl =>
     intro Ca Ca' Γa La tc md Δ h_add hΔ h_sub'
     -- `addKnownTypeWithError` touches only `.knownTypes`, so it commutes with the rig swap.
@@ -5024,15 +5024,15 @@ theorem StmtsHasTypeA_rig_drop (P : Program) (R2 : List Lambda.TyIdentifier)
         simp only [LContext.addKnownTypeWithError, Bind.bind, Except.bind, h_kt]
         subst h_add
         rfl
-    exact StmtHasType'.typeDecl _ ({ Ca' with rigidTypeVars := R2 }) Γa La tc md _ h_add' hΔ
+    exact StatementHasType'.typeDecl _ ({ Ca' with rigidTypeVars := R2 }) Γa La tc md _ h_add' hΔ
   case nil =>
     intro Ca Γa La Δ hΔ h_sub'
-    exact StmtsHasType'.nil _ Γa La _ hΔ
+    exact StatementsHasType'.nil _ Γa La _ hΔ
   case cons =>
     intro Ca Cb Cc Γa Γb Γc La s ss h_s h_ss ih_s ih_ss h_sub'
-    have h_rig_eq : Cb.rigidTypeVars = Ca.rigidTypeVars := StmtHasType'_rigid_eq h_s
+    have h_rig_eq : Cb.rigidTypeVars = Ca.rigidTypeVars := StatementHasType'_rigid_eq h_s
     have h_sub_b : R2 ⊆ Cb.rigidTypeVars := by rw [h_rig_eq]; exact h_sub'
-    exact StmtsHasType'.cons _ _ _ Γa Γb Γc La s ss (ih_s h_sub') (ih_ss h_sub_b)
+    exact StatementsHasType'.cons _ _ _ Γa Γb Γc La s ss (ih_s h_sub') (ih_ss h_sub_b)
 
 
 /-! ## Weak (AliasEquiv-on-old-keys) find?-congruence for the annotated body context bridge. -/
@@ -5496,17 +5496,17 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
       statement_typeCheck_InitClosed ({ C with rigidTypeVars := rigidVars })
         (v_post.snd.updateSubst v_unify) P (some proc) ss v_body.1 v_body.2 h_stc'
         h_bwf.1 h_fwf h_bwf.2.1 h_bwf.2.2.1 h_rigid_inv h_closed
-    have h_subst := StmtsHasTypeA_subst_gen P ({ C with rigidTypeVars := rigidVars })
+    have h_subst := StatementsHasTypeA_subst_gen P ({ C with rigidTypeVars := rigidVars })
       bodyΓ [] v_body.1 C_out v_body.2.context userSubst invSubst h_body_typed h_SR h_IC
     -- Transport the derivation from `{C with rig := rigidVars}` back to ambient `C`.
-    have h_C : StmtsHasTypeA P C
+    have h_C : StatementsHasTypeA P C
         (TContext.subst bodyΓ userSubst) []
         (List.map (Statement.subst userSubst) v_body.fst)
         ({ C_out with rigidTypeVars := C.rigidTypeVars })
         (TContext.subst v_body.snd.context userSubst) := by
       have h_sub : C.rigidTypeVars ⊆ rigidVars := by
         rw [h_ambient_no_rigid]; exact List.nil_subset _
-      have h_drop := StmtsHasTypeA_rig_drop P C.rigidTypeVars ({ C with rigidTypeVars := rigidVars })
+      have h_drop := StatementsHasTypeA_rig_drop P C.rigidTypeVars ({ C with rigidTypeVars := rigidVars })
         (TContext.subst bodyΓ userSubst) []
         (List.map (Statement.subst userSubst) v_body.fst) C_out
         (TContext.subst v_body.snd.context userSubst) h_subst h_sub
@@ -5530,7 +5530,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
         h_setup h_pre h_ra h_post h_ta h_wf h_fwf h_resolved
     -- Close `bodyTyped` via `find_congr`, leaving the two body-context bridge goals below.
     refine ProcBodyHasType'.structured _ ({ C_out with rigidTypeVars := C.rigidTypeVars }) _
-      (StmtsHasType'_find_congr h_expr_congr h_C _ ?bridge2b ?bridge2a).choose_spec.2.2
+      (StatementsHasType'_find_congr h_expr_congr h_C _ ?bridge2b ?bridge2a).choose_spec.2.2
     case bridge2b =>
       -- The two body contexts are `newest-scope :: tail`; compare `find?` head-then-tail.
       intro x
@@ -5704,7 +5704,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
           v_body.snd.stateSubstInfo.subst from rfl, TContext.subst_aliases]
       rw [← h_env', popContext_context_eq]
       show v_body.snd.context.aliases = bodyΓ.aliases
-      exact StmtsHasType'_aliases h_body_typed
+      exact StatementsHasType'_aliases h_body_typed
   · simp only [reduceCtorEq] at h
 
 

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.UnorderedCore
@@ -53,11 +54,11 @@ private structure InlineState where
       so that bindings introduced inside a block/quantifier do not leak out. -/
   saved : List InlineSubst := []
   /-- Diagnostics accumulated so far. -/
-  diags : Array DiagnosticModel := #[]
+  diags : Array Message := #[]
 
 private abbrev InlineM := ExceptT String (StateM InlineState)
 
-private def emitDiag (d : DiagnosticModel) : InlineM Unit :=
+private def emitDiag (d : Message) : InlineM Unit :=
   modify fun s => { s with diags := s.diags.push d }
 
 /-- Enter a new scope: snapshot `subst` so it can be restored on exit. When
@@ -137,12 +138,12 @@ public section
 
 /-- Inline local variables in a single function, returning the rewritten
     procedure and any diagnostics. -/
-def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array DiagnosticModel :=
-  let runBody (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
+def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Message :=
+  let runBody (body : StmtExprMd) : StmtExprMd × Array Message :=
     let (result, st) := (inlineExpr body).run.run {}
     match result with
     | .ok body' => (body', st.diags)
-    | .error e => (body, st.diags.push (diagnosticFromSource proc.name.source s!"inline pass error: {e}" .StrataBug))
+    | .error e => (body, st.diags.push (diagnosticFromSource proc.name.source s!"inline pass error: {e}" .strataBug))
   match proc.body with
   | .Transparent body =>
     let (body', diags) := runBody body
@@ -155,43 +156,62 @@ def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Diagn
     | none => (proc, #[])
   | _ => (proc, #[])
 
-/-- Inline local variables inside the loop invariants and `decreases` clauses of a
-    procedure, leaving the rest of its body alone.
+/-- Inline local variables inside the spec positions of a procedure — its loop
+    invariants and `decreases` clauses, and its quantifier bodies and triggers —
+    leaving the rest of its body alone.
 
     A procedure body may legitimately declare locals, so unlike a function it is not
-    inlined wholesale. Its loop invariants, however, are spec positions: they are pure
-    expressions that reach Core as such, so — exactly like a function body — they
-    cannot carry a `var` declaration.
+    inlined wholesale. Its spec positions, however, are pure expressions that reach
+    Core as such, so — exactly like a function body — they cannot carry a `var`
+    declaration.
 
-    Declarations end up there because the contract pass rewrites a call to a
+    Declarations end up in a loop head because the contract pass rewrites a call to a
     `requires`-bearing procedure into argument temporaries plus a precondition
     `assert`, and `LiftImperativeExpressions` deliberately does not hoist those out of
     a loop head (doing so would freeze loop-varying operands at their pre-loop
     values). Inlining folds them back into the expression, so
     `var $cp_1 := 2 * i; … $div$asFunction($cp_1, 2)` becomes
-    `$div$asFunction(2 * i, 2)` — re-evaluated every iteration, as written. -/
+    `$div$asFunction(2 * i, 2)` — re-evaluated every iteration, as written.
+
+    A quantifier body is the same situation one binder deeper: the lifting pass hoists
+    nothing out of it, both because a lifted statement mentioning the bound variable
+    would land outside its scope and because the body is re-evaluated per
+    instantiation. So a `var` written inside a body, or an argument temporary the
+    contract pass left there, stays put and is folded back in here. Unlike an
+    invariant, the initializer may mention the bound variable — `forall(x: int) =>
+    { var t: int := x * x; t >= 0 }` inlines to `forall(x: int) => x * x >= 0` —
+    which is sound precisely because inlining keeps the expression under the binder
+    instead of moving it out. `inlinePre` opens a scope per quantifier that shadows
+    the binder, so an outer local sharing its name is not substituted inside. -/
 def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
-    : Procedure × Array DiagnosticModel :=
-  -- Each invariant is inlined in its own fresh scope: they are independent
+    : Procedure × Array Message :=
+  -- Each spec is inlined in its own fresh scope: they are independent
   -- expressions, so a binding in one must not leak into the next.
-  let inlineSpec (s : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd := do
+  let inlineSpec (s : StmtExprMd) : StateM (Array Message) StmtExprMd := do
     let (result, st) := (inlineExpr s).run.run {}
     modify (· ++ st.diags)
     match result with
     | .ok s' => return s'
     | .error e =>
       modify (·.push (diagnosticFromSource proc.name.source
-        s!"inline pass error in loop invariant: {e}" .StrataBug))
+        s!"inline pass error in specification: {e}" .strataBug))
       return s
-  let rewrite (body : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd :=
-    mapStmtExprM (m := StateM (Array DiagnosticModel)) (fun e => do
+  let rewrite (body : StmtExprMd) : StateM (Array Message) StmtExprMd :=
+    mapStmtExprM (m := StateM (Array Message)) (fun e => do
       match e.val with
       | .While cond invs dec whileBody postTest =>
         let invs' ← invs.mapM inlineSpec
         let dec' ← dec.mapM inlineSpec
         return ⟨.While cond invs' dec' whileBody postTest, e.source⟩
+      -- The traversal is bottom-up, so a nested quantifier has already been
+      -- inlined by the time its enclosing one is rewritten; `inlineSpec` on the
+      -- outer body is then a no-op over the inner, already-clean subtree.
+      | .Quantifier mode param trigger qBody =>
+        let trigger' ← trigger.mapM inlineSpec
+        let qBody' ← inlineSpec qBody
+        return ⟨.Quantifier mode param trigger' qBody', e.source⟩
       | _ => return e) body
-  let runRewrite (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
+  let runRewrite (body : StmtExprMd) : StmtExprMd × Array Message :=
     (rewrite body).run #[]
   match proc.body with
   | .Transparent body =>
@@ -208,7 +228,7 @@ def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
 /-- Inline local variables in every function of an `UnorderedCoreWithLaurelTypes`,
     and in the loop invariants of every `coreProcedure`. -/
 def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
-    : UnorderedCoreWithLaurelTypes × List DiagnosticModel :=
+    : UnorderedCoreWithLaurelTypes × List Message :=
   let results := uc.functions.map inlineLocalVariablesInFunction
   let functions' := results.map (·.1)
   let procResults := uc.coreProcedures.map inlineLocalVariablesInProcedureSpecs

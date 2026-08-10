@@ -247,7 +247,9 @@ op bv16_not : UnaryArithBv => "bv16.not";
 op bv32_neg : UnaryArithBv => "bv32.neg";
 op bv32_not : UnaryArithBv => "bv32.not";
 op bv64_neg : UnaryArithBv => "bv64.neg";
+op bv128_neg : UnaryArithBv => "bv128.neg";
 op bv64_not : UnaryArithBv => "bv64.not";
+op bv128_not : UnaryArithBv => "bv128.not";
 fn unaryArithBv (W : Type, f : UnaryArithBv, a : bv W) : bv W => f "(" a ")";
 
 // ---- UnarySafeBv (width-polymorphic) ----
@@ -261,7 +263,9 @@ op bv16_safeUNeg : UnarySafeBv => "bv16.safeUNeg";
 op bv32_safeNeg : UnarySafeBv => "bv32.safeNeg";
 op bv32_safeUNeg : UnarySafeBv => "bv32.safeUNeg";
 op bv64_safeNeg : UnarySafeBv => "bv64.safeNeg";
+op bv128_safeNeg : UnarySafeBv => "bv128.safeNeg";
 op bv64_safeUNeg : UnarySafeBv => "bv64.safeUNeg";
+op bv128_safeUNeg : UnarySafeBv => "bv128.safeUNeg";
 fn unarySafeBv (W : Type, f : UnarySafeBv, a : bv W) : bv W => f "(" a ")";
 
 // ---- UnaryOverflowBv (width-polymorphic: a : bv W -> bool) ----
@@ -275,7 +279,9 @@ op bv16_uNegOverflow : UnaryOverflowBv => "bv16.uNegOverflow";
 op bv32_sNegOverflow : UnaryOverflowBv => "bv32.sNegOverflow";
 op bv32_uNegOverflow : UnaryOverflowBv => "bv32.uNegOverflow";
 op bv64_sNegOverflow : UnaryOverflowBv => "bv64.sNegOverflow";
+op bv128_sNegOverflow : UnaryOverflowBv => "bv128.sNegOverflow";
 op bv64_uNegOverflow : UnaryOverflowBv => "bv64.uNegOverflow";
+op bv128_uNegOverflow : UnaryOverflowBv => "bv128.uNegOverflow";
 fn unaryOverflowBv (W : Type, f : UnaryOverflowBv, a : bv W) : bool => f "(" a ")";
 
 // ---- CastBv (width-polymorphic: a : bv W -> int) ----
@@ -323,8 +329,11 @@ op bv32_add : BinaryArithBasicBv => "bv32.add";
 op bv32_sub : BinaryArithBasicBv => "bv32.sub";
 op bv32_mul : BinaryArithBasicBv => "bv32.mul";
 op bv64_add : BinaryArithBasicBv => "bv64.add";
+op bv128_add : BinaryArithBasicBv => "bv128.add";
 op bv64_sub : BinaryArithBasicBv => "bv64.sub";
+op bv128_sub : BinaryArithBasicBv => "bv128.sub";
 op bv64_mul : BinaryArithBasicBv => "bv64.mul";
+op bv128_mul : BinaryArithBasicBv => "bv128.mul";
 fn binaryArithBasicBv (W : Type, f : BinaryArithBasicBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
 
 // ---- BinaryArithDivModInt ----
@@ -357,9 +366,13 @@ op bv32_uMod : BinaryArithDivModBv => "bv32.uMod";
 op bv32_sDiv : BinaryArithDivModBv => "bv32.sDiv";
 op bv32_sMod : BinaryArithDivModBv => "bv32.sMod";
 op bv64_uDiv : BinaryArithDivModBv => "bv64.uDiv";
+op bv128_uDiv : BinaryArithDivModBv => "bv128.uDiv";
 op bv64_uMod : BinaryArithDivModBv => "bv64.uMod";
+op bv128_uMod : BinaryArithDivModBv => "bv128.uMod";
 op bv64_sDiv : BinaryArithDivModBv => "bv64.sDiv";
+op bv128_sDiv : BinaryArithDivModBv => "bv128.sDiv";
 op bv64_sMod : BinaryArithDivModBv => "bv64.sMod";
+op bv128_sMod : BinaryArithDivModBv => "bv128.sMod";
 fn binaryArithDivModBv (W : Type, f : BinaryArithDivModBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
 
 // ---- BinaryBitwiseBv (width-polymorphic) ----
@@ -389,11 +402,17 @@ op bv32_shl : BinaryBitwiseBv => "bv32.shl";
 op bv32_uShr : BinaryBitwiseBv => "bv32.uShr";
 op bv32_sShr : BinaryBitwiseBv => "bv32.sShr";
 op bv64_and : BinaryBitwiseBv => "bv64.and";
+op bv128_and : BinaryBitwiseBv => "bv128.and";
 op bv64_or : BinaryBitwiseBv => "bv64.or";
+op bv128_or : BinaryBitwiseBv => "bv128.or";
 op bv64_xor : BinaryBitwiseBv => "bv64.xor";
+op bv128_xor : BinaryBitwiseBv => "bv128.xor";
 op bv64_shl : BinaryBitwiseBv => "bv64.shl";
+op bv128_shl : BinaryBitwiseBv => "bv128.shl";
 op bv64_uShr : BinaryBitwiseBv => "bv64.uShr";
+op bv128_uShr : BinaryBitwiseBv => "bv128.uShr";
 op bv64_sShr : BinaryBitwiseBv => "bv64.sShr";
+op bv128_sShr : BinaryBitwiseBv => "bv128.sShr";
 fn binaryBitwiseBv (W : Type, f : BinaryBitwiseBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
 
 // ---- BinarySafeInt ----
@@ -437,13 +456,21 @@ op bv32_safeUMul : BinarySafeBv => "bv32.safeUMul";
 op bv32_safeSDiv : BinarySafeBv => "bv32.safeSDiv";
 op bv32_safeSMod : BinarySafeBv => "bv32.safeSMod";
 op bv64_safeAdd : BinarySafeBv => "bv64.safeAdd";
+op bv128_safeAdd : BinarySafeBv => "bv128.safeAdd";
 op bv64_safeSub : BinarySafeBv => "bv64.safeSub";
+op bv128_safeSub : BinarySafeBv => "bv128.safeSub";
 op bv64_safeMul : BinarySafeBv => "bv64.safeMul";
+op bv128_safeMul : BinarySafeBv => "bv128.safeMul";
 op bv64_safeUAdd : BinarySafeBv => "bv64.safeUAdd";
+op bv128_safeUAdd : BinarySafeBv => "bv128.safeUAdd";
 op bv64_safeUSub : BinarySafeBv => "bv64.safeUSub";
+op bv128_safeUSub : BinarySafeBv => "bv128.safeUSub";
 op bv64_safeUMul : BinarySafeBv => "bv64.safeUMul";
+op bv128_safeUMul : BinarySafeBv => "bv128.safeUMul";
 op bv64_safeSDiv : BinarySafeBv => "bv64.safeSDiv";
+op bv128_safeSDiv : BinarySafeBv => "bv128.safeSDiv";
 op bv64_safeSMod : BinarySafeBv => "bv64.safeSMod";
+op bv128_safeSMod : BinarySafeBv => "bv128.safeSMod";
 fn binarySafeBv (W : Type, f : BinarySafeBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
 
 // ---- BinaryTruncInt ----
@@ -489,9 +516,13 @@ op bv32_uLt : BinaryCmpBaseBv => "bv32.uLt";
 op bv32_uGe : BinaryCmpBaseBv => "bv32.uGe";
 op bv32_uGt : BinaryCmpBaseBv => "bv32.uGt";
 op bv64_uLe : BinaryCmpBaseBv => "bv64.uLe";
+op bv128_uLe : BinaryCmpBaseBv => "bv128.uLe";
 op bv64_uLt : BinaryCmpBaseBv => "bv64.uLt";
+op bv128_uLt : BinaryCmpBaseBv => "bv128.uLt";
 op bv64_uGe : BinaryCmpBaseBv => "bv64.uGe";
+op bv128_uGe : BinaryCmpBaseBv => "bv128.uGe";
 op bv64_uGt : BinaryCmpBaseBv => "bv64.uGt";
+op bv128_uGt : BinaryCmpBaseBv => "bv128.uGt";
 fn binaryCmpBaseBv (W : Type, f : BinaryCmpBaseBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
 
 // ---- BinaryCmpSignedBv (width-polymorphic) ----
@@ -513,9 +544,13 @@ op bv32_sLt : BinaryCmpSignedBv => "bv32.sLt";
 op bv32_sGe : BinaryCmpSignedBv => "bv32.sGe";
 op bv32_sGt : BinaryCmpSignedBv => "bv32.sGt";
 op bv64_sLe : BinaryCmpSignedBv => "bv64.sLe";
+op bv128_sLe : BinaryCmpSignedBv => "bv128.sLe";
 op bv64_sLt : BinaryCmpSignedBv => "bv64.sLt";
+op bv128_sLt : BinaryCmpSignedBv => "bv128.sLt";
 op bv64_sGe : BinaryCmpSignedBv => "bv64.sGe";
+op bv128_sGe : BinaryCmpSignedBv => "bv128.sGe";
 op bv64_sGt : BinaryCmpSignedBv => "bv64.sGt";
+op bv128_sGt : BinaryCmpSignedBv => "bv128.sGt";
 fn binaryCmpSignedBv (W : Type, f : BinaryCmpSignedBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
 
 // ---- BinaryOverflowBv (width-polymorphic: a b : bv W -> bool) ----
@@ -549,12 +584,19 @@ op bv32_uAddOverflow : BinaryOverflowBv => "bv32.uAddOverflow";
 op bv32_uSubOverflow : BinaryOverflowBv => "bv32.uSubOverflow";
 op bv32_uMulOverflow : BinaryOverflowBv => "bv32.uMulOverflow";
 op bv64_sAddOverflow : BinaryOverflowBv => "bv64.sAddOverflow";
+op bv128_sAddOverflow : BinaryOverflowBv => "bv128.sAddOverflow";
 op bv64_sSubOverflow : BinaryOverflowBv => "bv64.sSubOverflow";
+op bv128_sSubOverflow : BinaryOverflowBv => "bv128.sSubOverflow";
 op bv64_sMulOverflow : BinaryOverflowBv => "bv64.sMulOverflow";
+op bv128_sMulOverflow : BinaryOverflowBv => "bv128.sMulOverflow";
 op bv64_sDivOverflow : BinaryOverflowBv => "bv64.sDivOverflow";
+op bv128_sDivOverflow : BinaryOverflowBv => "bv128.sDivOverflow";
 op bv64_uAddOverflow : BinaryOverflowBv => "bv64.uAddOverflow";
+op bv128_uAddOverflow : BinaryOverflowBv => "bv128.uAddOverflow";
 op bv64_uSubOverflow : BinaryOverflowBv => "bv64.uSubOverflow";
+op bv128_uSubOverflow : BinaryOverflowBv => "bv128.uSubOverflow";
 op bv64_uMulOverflow : BinaryOverflowBv => "bv64.uMulOverflow";
+op bv128_uMulOverflow : BinaryOverflowBv => "bv128.uMulOverflow";
 fn binaryOverflowBv (W : Type, f : BinaryOverflowBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
 
 // ---- Bitvector concat and extract ----

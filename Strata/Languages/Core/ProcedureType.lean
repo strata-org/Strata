@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 import Strata.DL.Lambda.LExprT
@@ -17,7 +18,7 @@ namespace Core
 
 open Std (ToFormat Format format)
 open Imperative (MetaData HasVarsImp)
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 
 namespace Procedure
 
@@ -29,11 +30,11 @@ private def renameTypeVars (userSubst : Lambda.Subst) (msg : String) : String :=
     | _ => acc) msg
 
 private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   if !proc.header.inputs.keys.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
 
 /-- Well-formedness of a procedure's type parameters (mirroring `LFunc.type`'s checks
     for functions): `typeArgs` must be distinct, every type variable in an input/output
@@ -41,27 +42,27 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
     generator prefix `$__ty` (which instantiation uses for fresh vars, so a collision
     would let the fresh→user back-renaming capture). -/
 private def checkTypeArgsWF (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   if !proc.header.typeArgs.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc
+    .error <| Message.withRange sourceLoc
       f!"[{proc.header.name}] Duplicates found in the type parameters!\n\
          {proc.header.typeArgs}"
   let genPrefixArgs := proc.header.typeArgs.filter
     (fun ta => Lambda.TState.tyPrefix.toList.isPrefixOf ta.toList)
   if !genPrefixArgs.isEmpty then
-    .error <| DiagnosticModel.withRange sourceLoc
+    .error <| Message.withRange sourceLoc
       f!"[{proc.header.name}]: type parameters {genPrefixArgs} use the reserved \
          generator-variable prefix '{Lambda.TState.tyPrefix}'; rename them"
   let sigVars := (Lambda.LMonoTys.freeVars proc.header.inputs.values ++
                   Lambda.LMonoTys.freeVars proc.header.outputs.values).eraseDups
   let undeclared := sigVars.filter (· ∉ proc.header.typeArgs)
   if !undeclared.isEmpty then
-    .error <| DiagnosticModel.withRange sourceLoc
+    .error <| Message.withRange sourceLoc
       f!"[{proc.header.name}]: type variables {undeclared} appear in the \
          signature but are not declared in typeArgs {proc.header.typeArgs}"
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
   let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
   -- The `old ` prefix is reserved for pre-state ghost bindings of in-out parameters
@@ -71,29 +72,29 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
   -- both modified and defined vars are guarded explicitly here.
   let oldWritten := (modifiedVars ++ definedVars).filter (fun v => CoreIdent.isOldIdent v)
   if !oldWritten.isEmpty then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: body modifies or defines variables {oldWritten} \
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}]: body modifies or defines variables {oldWritten} \
               whose names use the reserved 'old ' prefix; that prefix is reserved for pre-state inout parameter ghosts"
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
               Modification allowed for these variables: {allowedVars}"
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst) := do
+    Except Message (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst) := do
   let Env := Env.pushEmptyContext
   let (inp_mty_sig, Env, tyArgSubst) ← Lambda.LMonoTySignature.instantiateWithSubst C Env proc.header.typeArgs
-                            proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
+                            proc.header.inputs |>.mapError (fun e => Message.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
   let Env := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
   return (inp_mty_sig, Env, tyArgSubst)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
-    (md : MetaData Expression) : DiagnosticModel :=
+    (md : MetaData Expression) : Message :=
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions. Structured as an explicit tail recursion
@@ -102,13 +103,13 @@ def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
-    Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) :=
+    Except Message (Array Expression.Expr × Core.Expression.TyEnv) :=
   go C procName conditions #[] Env
 where
   go (C : Core.Expression.TyContext) (procName : CoreIdent)
       (conditions : List (CoreLabel × Check)) (results : Array Expression.Expr)
       (currentEnv : Core.Expression.TyEnv) :
-      Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) :=
+      Except Message (Array Expression.Expr × Core.Expression.TyEnv) :=
     match conditions with
     | [] => .ok (results, currentEnv)
     | (name, condition) :: rest => do
@@ -120,7 +121,7 @@ where
       go C procName rest (results.push annotatedExpr.unresolved) newEnv
 
 def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
-    (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
+    (proc : Procedure) (md : MetaData Expression) : Except Message (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
 
   -- Validate well-formedness of formals and returns.
@@ -142,7 +143,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- as the inputs so that both share the same fresh vars for each type parameter.
   let out_mtys := proc.header.outputs.values.map (Lambda.LMonoTy.subst tyArgSubst)
   let (out_mtys, envAfterPreconds) ← Lambda.LMonoTys.resolveAliases out_mtys envAfterPreconds
-    |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+    |>.mapError (fun e => Message.withRange fileRange e)
   let out_mty_sig : @Lambda.LMonoTySignature Unit := proc.header.outputs.keys.zip out_mtys
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds
@@ -167,14 +168,14 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let bodyStmts : List Statement ← match proc.body with
     | .structured ss => pure ss
     | .cfg _ =>
-      Except.error (DiagnosticModel.withRange fileRange
+      Except.error (Message.withRange fileRange
         f!"[{proc.header.name}]: CFG procedures not supported yet")
   -- Add the typeArg substitution (e.g. [a → $__ty0]) so that body type annotations
   -- referencing the original names get normalized to the fresh vars by `preprocess`.
   let tyArgConstraints : Lambda.Constraints :=
     (tyArgSubst.flatMap Strata.Util.HMap.toList).map fun (k, v) => (.ftvar k, v)
   let S ← Lambda.Constraints.unify tyArgConstraints envAfterPostconds.stateSubstInfo
-          |>.mapError (fun e => DiagnosticModel.withRange fileRange (format e))
+          |>.mapError (fun e => Message.withRange fileRange (format e))
   let envForBody := envAfterPostconds.updateSubst S
   -- The rigid type variables are the fresh vars representing the procedure's type
   -- parameters. These must not be refined by unification in the body.
@@ -190,7 +191,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
         != Lambda.LMonoTy.ftvar v) with
   | some v =>
     let inferred := Lambda.LMonoTy.subst envForBody.stateSubstInfo.subst (Lambda.LMonoTy.ftvar v)
-    .error <| DiagnosticModel.withRange fileRange
+    .error <| Message.withRange fileRange
       f!"[{proc.header.name}]: rigid type variable '{v}' was refined to '{inferred}'; \
          a pre/postcondition or the signature over-constrains a declared type parameter"
   | none => pure ()

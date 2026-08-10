@@ -38,6 +38,37 @@ private def printLifted (roots : List String) (program : StrataDDM.Program) : IO
   for proc in lifted.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
+/-- Lift a program that has deliberately **not** been resolved, so its
+    declarations carry no `uniqueId`, and print the resulting error instead of
+    throwing. The model still comes from `resolve` — only the program passed to
+    the lifter is the unresolved one.
+
+    This is the only way to reach the `Var (.Declare ..) has no uniqueId` throw:
+    the lifter's precondition is that Resolution has run, so no surface program
+    can trigger it. The throw exists to make a violated precondition loud rather
+    than silently returning the expression unchanged, so the error path needs a
+    test even though well-formed input can never take it. -/
+private def printLiftErrorUnresolved (roots : List String) (program : StrataDDM.Program) : IO Unit := do
+  let laurelProgram ← translateLaurel program
+  let model := (resolve laurelProgram).model
+  match liftExpressionAssignments laurelProgram model roots with
+  | .ok _ => IO.println "unexpectedly succeeded"
+  | .error e => IO.println e
+
+/-- As `printLiftErrorUnresolved`, but through `liftImperativeExpressionsPass`,
+    to pin how the pass surfaces the error: an unchanged program plus a single
+    `StrataBug` diagnostic. -/
+private def printLiftPassDiagnosticsUnresolved (program : StrataDDM.Program) : IO Unit := do
+  let laurelProgram ← translateLaurel program
+  let model := (resolve laurelProgram).model
+  let uc : UnorderedCoreWithLaurelTypes :=
+    { functions := [], coreProcedures := laurelProgram.staticProcedures
+      datatypes := [], constants := [] }
+  let (result, diags, _) := liftImperativeExpressionsPass.run {} uc model
+  IO.println s!"procedures unchanged: {result.coreProcedures.length == uc.coreProcedures.length}"
+  for d in diags do
+    IO.println s!"{repr d.kind}: {d.message}"
+
 /-! ## Heap-updating assignments in non-last positions of a block expression -/
 
 /--
@@ -55,7 +86,7 @@ info: procedure assertInBlockExpr()
 };
 -/
 #guard_msgs in
-#eval! printLifted []
+#eval printLifted []
 #strata
 program Laurel;
 procedure assertInBlockExpr()
@@ -82,7 +113,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"]
 #strata
 program Laurel;
 procedure impure(): int {
@@ -107,7 +138,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval! printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"]
 #strata
 program Laurel;
 procedure test() {
@@ -132,7 +163,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"]
 #strata
 program Laurel;
 procedure impure(): int {
@@ -163,7 +194,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"]
 #strata
 program Laurel;
 procedure multi_out(x: int) returns (r: int, extra: int) {
@@ -471,6 +502,134 @@ procedure earlierArgSeesSnapshot()
   var x: int := 1;
   consume(0, x, (if { x := 5; x } > 0 then 7 else 8));
   consume(1, x, 0)
+};
+#end
+
+/-! ## Var declarations in blocks are lifted when their variable is read
+
+    When a block contains a var declaration followed by asserts/assumes that
+    reference the declared variable, the var declaration is lifted to statement
+    level alongside the asserts/assumes. This keeps it in scope for the lifted
+    statements. This is needed for quantifier proof procedures where the proof
+    block introduces a havoced variable. -/
+
+/--
+info: procedure test()
+{
+  var x: int;
+  assume x * x >= 0;
+  assert {
+    x * x >= 0
+  }
+};
+-/
+#guard_msgs in
+#eval printLifted []
+#strata
+program Laurel;
+procedure test() {
+  assert { var x: int; assume x * x >= 0; x * x >= 0 }
+};
+#end
+
+/-! ## Var declarations must not be spuriously lifted across procedures
+
+    `liftedVarRefs` must not leak between procedures. If procedure A reads `x`,
+    a `var x` inside a block expression in procedure B must NOT be lifted —
+    it is a distinct variable that was never read by a lifted statement in B. -/
+
+/--
+info: procedure readsX()
+{
+  var x: int := 5;
+  assert x == 5
+};
+procedure hasXInBlock()
+{
+  var y: int := {
+    var x: int;
+    x
+  };
+  assert y == 0
+};
+-/
+#guard_msgs in
+#eval printLifted []
+#strata
+program Laurel;
+procedure readsX() {
+  var x: int := 5;
+  assert x == 5
+};
+procedure hasXInBlock() {
+  var y: int := { var x: int; x };
+  assert y == 0
+};
+#end
+
+/-! ## A `Var (.Declare ..)` with no `uniqueId` is a loud error
+
+    Hoisting a declaration requires identifying it, and the lifter identifies
+    declarations by `uniqueId`. A `Declare` without one means Resolution did not
+    run (or a pass produced a node it never saw), which the lifter reports rather
+    than silently leaving the declaration where it is — a silent pass-through
+    would strand the declaration below its uses and surface much later as a
+    confusing "not defined" resolution failure.
+
+    Reached here by handing the lifter an unresolved program, since a resolved
+    one always has ids. -/
+
+/--
+info: Var (.Declare x) has no uniqueId
+-/
+#guard_msgs in
+#eval printLiftErrorUnresolved []
+#strata
+program Laurel;
+procedure test() {
+  assert { var x: int; assume x * x >= 0; x * x >= 0 }
+};
+#end
+
+/-! ### The pass reports it as a `StrataBug`, leaving the program untouched -/
+
+/--
+info: procedures unchanged: true
+{ category := "error", impact := Strata.Pipeline.MessageImpact.internalError }: Internal error in LiftImperativeExpressions: Var (.Declare x) has no uniqueId
+-/
+#guard_msgs in
+#eval printLiftPassDiagnosticsUnresolved
+#strata
+program Laurel;
+procedure test() {
+  assert { var x: int; assume x * x >= 0; x * x >= 0 }
+};
+#end
+
+/-! ## Nothing is hoisted out of a quantifier
+
+    A quantifier body is a spec position under a binder: hoisting out of it would
+    both strand references to the bound variable outside its scope and collapse a
+    per-instantiation evaluation into a single one before the quantifier. So the
+    body is left untransformed — the declaration below stays inside the `forall`,
+    where `x` is in scope, and `InlineLocalVariables` folds it away afterwards. -/
+
+/--
+info: procedure binderLocalNoProof()
+  opaque
+{
+  assert forall(x: int) => {
+    var t: int := x * x;
+    t >= 0
+  }
+};
+-/
+#guard_msgs in
+#eval printLifted []
+#strata
+program Laurel;
+procedure binderLocalNoProof() opaque {
+  assert forall(x: int) => { var t: int := x * x; t >= 0 }
 };
 #end
 

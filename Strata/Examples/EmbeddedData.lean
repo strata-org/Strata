@@ -17,7 +17,6 @@ public def embeddedExampleFiles : Array (String × String) := #[
   ("IrrelevantAxioms.core.st", include_str "../../Examples/IrrelevantAxioms.core.st"),
   ("LoopSimple.core.st", include_str "../../Examples/LoopSimple.core.st"),
   ("LoopSimple.csimp.st", include_str "../../Examples/LoopSimple.csimp.st"),
-  ("NondetCond.core.st", include_str "../../Examples/NondetCond.core.st"),
   ("ProcedureTypeError.core.st", include_str "../../Examples/ProcedureTypeError.core.st"),
   ("SafeBvOps.core.st", include_str "../../Examples/SafeBvOps.core.st"),
   ("SarifTest.core.st", include_str "../../Examples/SarifTest.core.st"),

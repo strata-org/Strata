@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.DesugarShortCircuit
@@ -20,14 +21,17 @@ import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.TransparencyPass
+import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.InlineLocalVariables
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.LoopInvariantWellFormedness
 import Strata.Languages.Laurel.UniqueOverloadNames
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.EliminateExceptions
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -96,7 +100,7 @@ public section
 
 /-- Like `translate` but also returns the lowered Laurel program (after all
     Laurel-to-Laurel passes, before the final translation to Core). -/
-abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticModel) × Program × Statistics
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × Program × Statistics
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
@@ -106,7 +110,32 @@ def laurelPipeline : Array LoweringPass := #[
   constrainedTypeElimPass,
   mergeAndLiftReturnsPass,
   liftInstanceProceduresPass,
+  -- Note: the exception contract checks (catch-or-declare, plus the
+  -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
+  -- properties of the authored program, so `resolve` runs them on the initial
+  -- resolution only — see `validateExceptionEscapes` /
+  -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateValueInReturnsPass,
+  -- Lower the exceptional channel (throw/try/catch/finally, and the
+  -- throws + throwsOn contract) into ordinary
+  -- Laurel (labeled blocks, exits, Result construction, and
+  -- postconditions over `$result`). Placed *before* heap parameterization so the
+  -- in-flight exception local `$exc_<i>` can be typed at each `try`'s
+  -- least-common-ancestor exception type (read from the resolved `catch`
+  -- binding) rather than the erased heap `Composite`; a `catch` handler's
+  -- `e#field` then type-checks against that supertype without a downcast.
+  -- Runs after `eliminateValueInReturns` (so `return` payloads are
+  -- already gone). Because it erases the
+  -- exceptional-channel constructs (`throw`/`try`, `throwsOn`), those never
+  -- reach heap parameterization; the heap `modifies` frames — the normal
+  -- `Result..isGood`-guarded frame and the exceptional `Result..isBad`-guarded
+  -- ones (a case's `modifies`) — are built later by `ModifiesClauses`, which runs
+  -- after heap parameterization where `$heap` exists. Its remaining ordering
+  -- constraints — after `eliminateValueInReturns`, before `eliminateReturnStatements`
+  -- and `contractPass` — are declared on the pass itself and enforced by
+  -- `orderingRespected`, so they are not restated here. Needs a re-resolve so the
+  -- synthesized `$thrown`/`$exc_<i>`/`$result` locals get uniqueIds.
+  eliminateExceptionsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -116,6 +145,7 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
+  loopInvariantWellFormednessPass,
   contractPass
 ]
 
@@ -130,7 +160,12 @@ program state after each named Laurel pass is written to
 private def runLaurelPasses
     (options: LaurelTranslateOptions)
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
-    : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
+    : PipelineM (Program × SemanticModel × List Message × Statistics) := do
+  -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
+  -- `Result` datatype that the exceptional-channel lowering targets is *not*
+  -- part of it: `EliminateExceptions` injects `resultDefinitions` itself, and
+  -- only when the program actually uses exceptions, so a program that never
+  -- throws does not carry it.
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
@@ -142,12 +177,12 @@ private def runLaurelPasses
   -- Initial resolution
   let result := resolve program (gradualTypes := options.gradualTypes)
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-  let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
+  let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := result.errors.toList
+  let mut allDiags : List Message := result.errors.toList
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
@@ -159,13 +194,21 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model) (gradualTypes := options.gradualTypes)
                       (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      -- Only treat *new* post-pass resolution errors as an internal bug when the
+      -- program was well-formed to begin with. If initial resolution already
+      -- failed, or an earlier pass reported a real diagnostic (e.g.
+      -- `EliminateExceptions` rejecting a `throws` procedure with two value
+      -- outputs), the program is invalid and translation is skipped regardless —
+      -- so a lowering pass rewriting the ill-typed fragment must not cascade a
+      -- confusing `StrataBug` on top of the actual message.
+      let hadErrors := !resolutionErrors.isEmpty || allDiags.any (fun d => d.kind != .warning)
+      let newErrors := if hadErrors then #[] else result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
           { d with
               message :=
                 s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d}. Existing diagnostics were: {resolutionErrors.toList}"
-              type := .StrataBug }
+              kind := .strataBug }
         emit pass.name "laurel.st" program
         return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
@@ -189,12 +232,12 @@ verified". Every known discard site already emits a diagnostic; this
 guarantees the property for any future/unknown path too. Returns `diags`
 unchanged when the program is present or an error is already reported.
 -/
-def ensureDiscardDiagnosed (programPresent : Bool) (diags : List DiagnosticModel)
-    : List DiagnosticModel :=
-  if !programPresent && !diags.any (·.type != .Warning) then
-    diags ++ [DiagnosticModel.fromMessage
+def ensureDiscardDiagnosed (programPresent : Bool) (diags : List Message)
+    : List Message :=
+  if !programPresent && !diags.any (·.kind != .warning) then
+    diags ++ [Message.fromString
       "internal error: Laurel-to-Core translation produced no program without reporting an error diagnostic"
-      DiagnosticType.StrataBug]
+      MessageKind.strataBug]
   else diags
 
 /--
@@ -220,20 +263,41 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
       for proc in ct.instanceProcedures do
         passDiags := passDiags ++ [diagnosticFromSource proc.name.source
           s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
-          DiagnosticType.StrataBug]
+          MessageKind.strataBug]
 
   -- This early return is a simple way to protect against duplicative errors. Without this return,
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
   -- but that would need more consideration.
-  if passDiags.any (·.type != .Warning) then
+  if passDiags.any (·.kind != .warning) then
     return (none, passDiags, program, stats)
 
   let unorderedCore := (transparencyPass.run options program model).1
   emit "transparencyPass" "core.st" unorderedCore
   let mut unorderedCore := unorderedCore
   let mut fnModel := model
-  let mut ucDiags : List DiagnosticModel := []
+  let mut ucDiags : List Message := []
+
+  -- Re-resolve after transparency pass (needed for synthetic variables it introduces,
+  -- e.g. proof-procedure guard variables).
+  if transparencyPass.needsResolves then
+    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+    -- Thread the same gradual-type and coercion hooks as every other resolve site: this
+    -- pass must see the same type lattice as the main `resolve`, or the widen arm (gated
+    -- on `realizeCoercion.isSome`) and the `toBool` truthiness hook differ between passes
+    -- and a well-formed gradually-typed program is rejected here. See the note on
+    -- `resolveUnorderedCore` in `Resolution.lean`.
+    let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
+                              options.gradualTypes options.realizeCoercion options.toBool
+    if !errors.isEmpty then
+      let newDiags := errors.toList.map fun d =>
+        { d with
+            message :=
+              s!"Internal error: resolution after '{transparencyPass.name}' introduced this diagnostic: {d.message}"
+            kind := .strataBug }
+      return (none, passDiags ++ ucDiags ++ newDiags, program, stats)
+    unorderedCore := uc'
+    fnModel := m'
 
   for pass in unorderedCorePipeline do
     let (uc, passPassDiags, _) := pass.run options unorderedCore fnModel
@@ -255,14 +319,14 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   -- An error introduced by an unordered-core pass (e.g. an assignment to an
   -- inlined local) prevents producing a Core program, just like Laurel pass
   -- errors above.
-  if ucDiags.any (·.type != .Warning) then
+  if ucDiags.any (·.kind != .warning) then
     return (none, passDiags ++ ucDiags, program, stats)
 
   let coreWithLaurelTypes := (orderingPass.run options unorderedCore model).1
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
   let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run options coreWithLaurelTypes fnModel
-  let mut allDiagnostics: List DiagnosticModel := passDiags ++ ucDiags ++ coreDiagnostics;
+  let mut allDiagnostics: List Message := passDiags ++ ucDiags ++ coreDiagnostics;
 
   emit "Core" "core.st" coreProgram
   let coreProgramOption :=
@@ -281,23 +345,23 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
   return (core, diags)
 
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase
-    failure as a **structured** `DiagnosticModel` value (via `.toBaseIO`) rather
+    failure as a **structured** `Message` value (via `.toBaseIO`) rather
     than throwing it.
 
-    `Core.verify : EIO DiagnosticModel VCResults` carries its error as a
-    `DiagnosticModel` (with byte-offset `fileRange`). Capturing it as an
+    `Core.verify : EIO Message VCResults` carries its error as a
+    `Message` (with byte-offset `fileRange`). Capturing it as an
     `Except` here is the single point where that structure is preserved, so the
     throwing (`verifyToVcResults`) and capturing
-    (`verifyToDiagnosticModelsCapturing`) entry points can't drift apart: both
+    (`verifyToMessagesCapturing`) entry points can't drift apart: both
     share this verify setup (the `removeIrrelevantAxioms := .Precise` option and
     the `vcDirectory` temp-dir handling) and only differ in how they treat the
     `.error` case. -/
 private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
-    : IO (Except DiagnosticModel VCResults) := do
+    : IO (Except Message VCResults) := do
   let verifyOptions := { options.verifyOptions with
     removeIrrelevantAxioms := .Precise
     keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
-  let runner tempDir : IO (Except DiagnosticModel VCResults) :=
+  let runner tempDir : IO (Except Message VCResults) :=
     (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
   match verifyOptions.vcDirectory with
   | .none => IO.FS.withTempDir runner
@@ -311,11 +375,11 @@ A verify-phase failure (a type-checking / symbolic-evaluation error) is
 introduced: the structured error is intercepted at the `runVerify` boundary and
 re-thrown via `toString`, so the CLI's control flow and exit codes are
 unchanged. Tests that need the structured error as a value (to render it to
-`line:col`) call `verifyToDiagnosticModelsCapturing` instead.
+`line:col`) call `verifyToMessagesCapturing` instead.
 -/
 def verifyToVcResults (program : Program)
     (options : LaurelVerifyOptions := default)
-    : IO (Option VCResults × List DiagnosticModel) := do
+    : IO (Option VCResults × List Message) := do
   let (coreProgramOption, translateDiags) ← translate options.translateOptions program
 
   match coreProgramOption with
@@ -333,7 +397,7 @@ duplicated assertions merged at the VCOutcome level.
 -/
 def verifyToMergedResults (program : Program)
     (options : LaurelVerifyOptions := default)
-    : IO (Option VCResults × List DiagnosticModel) := do
+    : IO (Option VCResults × List Message) := do
   let (vcOpt, diags) ← verifyToVcResults program options
   return (vcOpt.map (·.mergeByAssertion), diags)
 
@@ -347,17 +411,17 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
-def verifyToDiagnosticModels (program : Program) (options : LaurelVerifyOptions := default)
-    : IO (Array DiagnosticModel) := do
+def verifyToMessages (program : Program) (options : LaurelVerifyOptions := default)
+    : IO (Array Message) := do
   let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases
   let vcDiags := match results.fst with
   | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => toDiagnosticModel vcr phases)
+  | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => toMessage vcr phases)
   return (results.snd ++ vcDiags).toArray
 
-/-- Like `verifyToDiagnosticModels`, but a verify-phase failure is **captured**
-    as a structured `DiagnosticModel` (the same value `verifyToVcResults` would
+/-- Like `verifyToMessages`, but a verify-phase failure is **captured**
+    as a structured `Message` (the same value `verifyToVcResults` would
     have thrown via `toString`) and returned in the list, rather than thrown.
 
     This is the test-framework entry point: the structured error still carries
@@ -369,8 +433,8 @@ def verifyToDiagnosticModels (program : Program) (options : LaurelVerifyOptions 
     Shares the `runVerify` boundary with `verifyToVcResults`, differing only in
     that it returns the captured `.error` as a value instead of re-throwing it —
     so the two can't drift apart on verify options or temp-dir handling. -/
-def verifyToDiagnosticModelsCapturing (program : Program)
-    (options : LaurelVerifyOptions := default) : IO (Array DiagnosticModel) := do
+def verifyToMessagesCapturing (program : Program)
+    (options : LaurelVerifyOptions := default) : IO (Array Message) := do
   let (coreProgramOption, translateDiags) ← translate options.translateOptions program
   match coreProgramOption with
   | none => return translateDiags.toArray
@@ -379,7 +443,7 @@ def verifyToDiagnosticModelsCapturing (program : Program)
     | .error dm => return (translateDiags ++ [dm]).toArray
     | .ok results =>
       let phases := Core.coreAbstractedPhases
-      let vcDiags := results.mergeByAssertion.toList.filterMap (toDiagnosticModel · phases)
+      let vcDiags := results.mergeByAssertion.toList.filterMap (toMessage · phases)
       return (translateDiags ++ vcDiags).toArray
 
 end -- public section

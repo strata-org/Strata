@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
@@ -312,6 +313,26 @@ structure Procedure : Type where
   /-- Axioms to emit alongside this procedure. Populated by the contract pass from
       `invokeOn` and ensures clauses. -/
   axioms : List (AstNode StmtExpr) := []
+  /-- Optional declared exception type: the single type this procedure may
+      throw, drawn from the front end's own hierarchy (no built-in upper bound).
+      Catch-or-declare *is* enforced against it, by `validateExceptionEscapes`
+      during resolution (only a subtype of this type may escape; a procedure with
+      no `throwsType` may let nothing escape). Not lowered until
+      `EliminateExceptions`, which turns it into the `Err` argument of the
+      procedure's `Result<Val, Err>`. -/
+  throwsType : Option (AstNode HighType) := none
+  /-- The name the `throws (e: T)` clause binds to the thrown value. Scoped over the
+      `throwsOn` blocks' postconditions — not over their guards, which are pre-state
+      conditions evaluated on entry.
+
+      Paired with `throwsType`: the grammar has a single `throws` op, which carries
+      both, so a parsed procedure has either both fields or neither. Code that only
+      needs to know whether a procedure throws should therefore test `throwsType`. -/
+  throwsBinding : Option Identifier := none
+  /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
+      case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
+      its throwing paths beyond the declared `throwsType`. -/
+  throwsOn : List ThrowsOnBlock := []
 
 /--
 A typed parameter for a procedure.
@@ -356,6 +377,64 @@ structure Condition where
       asserted at call sites, and a free postcondition is assumed upon return
       from calls but not checked on exit from implementations. -/
   mode : ConditionMode := ConditionMode.Both
+
+/--
+A `catch` clause: a mandatory binding bound to the caught value (typed at
+the least common ancestor of the exception types thrown in the `try` body), an
+optional predicate guard, and a handler body. A `Try` holds an ordered list of
+these; clauses are tried in order, first-match-wins, and an absent predicate is
+a catch-all. Type dispatch is written as a guard, e.g. `catch e when e is T`.
+See the Exceptions section of the Laurel User Guide.
+-/
+structure CatchClause where
+  /-- The identifier bound to the caught value (typed at the least common
+      ancestor of the exception types thrown in the `try` body). -/
+  binding : Identifier
+  /-- Optional guard predicate (checked at `TBool`); `none` is a catch-all. -/
+  predicate : Option (AstNode StmtExpr) := none
+  /-- The handler body, run when this clause matches. -/
+  body : AstNode StmtExpr
+  /-- The binding's resolved type: the least common ancestor of the exception
+      types thrown in the `try` body (computed by `Check.tryCatch`). `Unknown`
+      before resolution. Carried on the node so it survives Phase 1 into Phase 2
+      (the `refToDef` builder) and the `EliminateExceptions` pass, which types
+      the per-`try` `$exc_<i>` local at it. -/
+  bindingType : AstNode HighType := { val := .Unknown, source := .unknown }
+
+/--
+An exceptional *behavior case*: `throwsOn C { ensures … modifies … }`.
+
+`guard` is a pre-state condition that **forces** this throw. The case means
+
+```
+C ==> (Result..isBad($result) ∧ <the block's postconditions>)
+```
+
+with the block's frame applying on that path only. So a caller who establishes
+`C` can conclude the call throws (and what then holds of the thrown value), and
+one who refutes every guard can conclude it does not.
+
+A procedure carries a list of these. Because the blocks are independent, a
+per-thrown-type frame is expressible — one block per case — rather than every
+exceptional frame being unioned into a single clause.
+
+`ModifiesClauses` additionally emits a checked
+`Result..isBad($result) ==> (C₁ ∨ … ∨ Cₙ)` for a procedure that has an
+implementation, so a throwing path matching no guard is rejected rather than
+silently left unframed. It is not emitted for a bodiless procedure, where there
+is nothing to check it against and callers would be handed an unverified
+promise. See the Exceptions section of the Laurel User Guide.
+-/
+structure ThrowsOnBlock where
+  /-- The pre-state guard `C` (checked at `TBool`). The thrown value is *not* in
+      scope here: the guard is evaluated on entry, before any throw. -/
+  guard : AstNode StmtExpr
+  /-- Exceptional postconditions scoped to this case. The thrown value is in
+      scope under the name bound by the procedure's `throws (e: T)` clause. -/
+  postconditions : List Condition
+  /-- This case's exceptional frame: when it fires, only these locations may
+      change. Empty means the case constrains no heap locations. -/
+  modifies : List (AstNode StmtExpr)
 
 /--
 The body of a procedure. A body can be transparent (with a visible
@@ -495,6 +574,15 @@ inductive StmtExpr : Type where
   | Assert (condition : AstNode StmtExpr) (summary : Option String)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
+  /-- Throw a value on the exceptional channel. The operand is unconstrained
+      at the `throw` site; the thrown types are reconciled at each enclosing
+      `catch` (typed at their least common ancestor) and against the procedure's
+      declared `throwsType`. See the Exceptions section of the Laurel User Guide. -/
+  | Throw (value : AstNode StmtExpr)
+  /-- Structured exception handler: a `body`, an ordered list of `catch`
+      clauses (tried first-match-wins), and an optional `finally` arm that runs on
+      every exit path. See the Exceptions section of the Laurel User Guide. -/
+  | Try (body : AstNode StmtExpr) (catches : List CatchClause) (finally? : Option (AstNode StmtExpr))
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
   | ProveBy (value : AstNode StmtExpr) (proof : AstNode StmtExpr)
   /-- Extract the contract (reads, modifies, precondition, or postcondition) of a function. -/
@@ -551,6 +639,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Fresh ..            => "fresh"
   | .Assert ..           => "assert"
   | .Assume ..           => "assume"
+  | .Throw ..            => "throw"
+  | .Try ..              => "try"
   | .ProveBy ..          => "by"
   | .ContractOf ..       => "contractOf"
   | .Abstract            => "abstract"
@@ -561,10 +651,79 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
 
+/-- The label of the implicit block that wraps every procedure body.
+
+    `LaurelToCoreTranslator` lowers each procedure body to a single
+    `Core.Statement.block bodyLabel …`, and lowers an early `return`
+    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    so that jumping to the end of the body falls through past the block.
+    The resolution pass pre-registers this label in scope (via `withLabel`)
+    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    though the label has no syntactic declaration site.
+
+    Shared here so the translator, the resolver, and frontends agree on the
+    exact string rather than each hard-coding it. The leading `$` keeps it
+    out of the user-name space (no source identifier can contain `$`). -/
+def bodyLabel : String := "$body"
+
+/-! ### Names of the injected exception-result datatype
+
+`EliminateExceptions` encodes a throwing procedure's two outcomes as a
+`Result<Val, Err>` datatype (defined in `CoreDefinitionsForLaurel`, injected only
+into programs that use exceptions). The pass *builds* that encoding and
+`ModifiesClauses` *consumes* it — it guards the normal frame with
+`Result..isGood($result)` and the exceptional one with `Result..isBad($result)` —
+so both need the same spellings. They live here, next to `bodyLabel` and
+`resultOutputName`, for the same reason: a rename that reached only one of the
+two passes would desync them silently.
+
+The member names are derived from the datatype, constructor, and field names
+below, following the same convention as `DatatypeDefinition.testerName` and
+`DatatypeDefinition.destructorName`, so renaming a constructor here updates its
+tester too. A `#guard` next to the datatype definition checks these against the
+definition itself. -/
+
+/-- Name of the datatype encoding a throwing procedure's outcome. -/
+def exnResultDatatypeName : String := "Result"
+
+/-- Constructor for the normal-return outcome. -/
+def exnResultGoodCtor : String := "Good"
+
+/-- Constructor for the exceptional outcome. -/
+def exnResultBadCtor : String := "Bad"
+
+/-- Field of `exnResultGoodCtor`, carrying the returned value. -/
+def exnResultValueField : String := "value"
+
+/-- Field of `exnResultBadCtor`, carrying the thrown exception. -/
+def exnResultErrField : String := "err"
+
+/-- `Result..member` — a member (tester or destructor) of the result datatype. -/
+private def exnResultMember (member : String) : String :=
+  s!"{exnResultDatatypeName}..{member}"
+
+/-- Tester for the normal-return outcome: `Result..isGood`. -/
+def exnResultIsGood : String := exnResultMember s!"is{exnResultGoodCtor}"
+
+/-- Tester for the exceptional outcome: `Result..isBad`. -/
+def exnResultIsBad : String := exnResultMember s!"is{exnResultBadCtor}"
+
+/-- Destructor reading the returned value: `Result..value`. -/
+def exnResultValue : String := exnResultMember exnResultValueField
+
+/-- Destructor reading the thrown exception: `Result..err`. -/
+def exnResultErr : String := exnResultMember exnResultErrField
+
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_body_lt (c : CatchClause) : sizeOf c.body < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_predicate_lt (c : CatchClause) : sizeOf c.predicate < 1 + sizeOf c := by
   cases c; grind
 
 /-- The target expression inside a `Variable.Field` is strictly smaller than the `Field` itself.
@@ -615,9 +774,9 @@ def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
 def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
   fileRangeToCoreMd id.source
 
-/-- Create a DiagnosticModel from a source location and a message. -/
-def diagnosticFromSource (source : FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
-  DiagnosticModel.withRange source msg type
+/-- Create a Message from a source location and a message. -/
+def diagnosticFromSource (source : FileRange) (msg : String) (type : MessageKind := .userError) : Message :=
+  Message.withRange source msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole
@@ -800,6 +959,36 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
         let parents := (ctx.extendingMap.get? n).getD []
         go acc' (parents ++ rest)
   go {} [name]
+
+/-- The least common ancestor (join) of a list of composite type names in the
+    `extending` hierarchy: the unique most-specific type that is an ancestor of
+    every name. Used to type a `catch` binding at the join of the exception types
+    that reach it, so `e#field` is well-typed against the shared supertype
+    without a downcast.
+
+    Returns `none` when there is no common ancestor, or when the join is
+    *ambiguous* — two or more equally-specific common ancestors, possible under
+    multiple inheritance (`extends A, B`). Callers treat `none` as "type at
+    `Unknown`"; the `try`/`catch` check in `Resolution` reports the
+    missing/ambiguous join as an error there.
+
+    A singleton list joins to itself (a type is its own most-specific ancestor). -/
+def TypeLattice.commonAncestor (ctx : TypeLattice) (names : List String) : Option String :=
+  match names with
+  | [] => none
+  | first :: rest =>
+    -- Common ancestors: ancestors of `first` that are also ancestors of every
+    -- other name.
+    let common : List String :=
+      (ctx.ancestors first).toList.filter fun a =>
+        rest.all fun n => (ctx.ancestors n).contains a
+    -- The join is the common ancestor that is itself a subtype of every common
+    -- ancestor (i.e. the deepest). Unique ⇒ the join; otherwise ambiguous.
+    let candidates := common.filter fun m =>
+      common.all fun c => (ctx.ancestors m).contains c
+    match candidates with
+    | [m] => some m
+    | _ => none
 
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
     (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
@@ -1000,6 +1189,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Fresh .. => "Fresh"
   | .Assert .. => "Assert"
   | .Assume .. => "Assume"
+  | .Throw .. => "Throw"
+  | .Try .. => "Try"
   | .ProveBy .. => "ProveBy"
   | .ContractOf .. => "ContractOf"
   | .Abstract => "Abstract"

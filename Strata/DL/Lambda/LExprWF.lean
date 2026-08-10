@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExpr
+public import Strata.DL.Util.List
 public import Strata.DL.Util.Map
 
 /-! ## Well-formedness of Lambda Expressions
@@ -181,6 +182,178 @@ to avoid such issues:
   substK 0 s e
 
 /--
+Increment bound variable indices in `e` by `n`. Only bvars at or above `cutoff`
+are shifted; bvars below `cutoff` (bound within `e`) are left alone. The cutoff
+increases when going under binders.
+-/
+def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LExpr ⟨T, GenericTy⟩ :=
+  match e with
+  | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
+  | .bvar m i => if i >= cutoff then .bvar m (i + n) else e
+  | .abs m name ty e' => .abs m name ty (liftBVars n e' (cutoff + 1))
+  | .quant m qk name ty tr' e' => .quant m qk name ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
+  | .app m fn e' => .app m (liftBVars n fn cutoff) (liftBVars n e' cutoff)
+  | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
+  | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
+
+/--
+Worker for `betaReduceWith`/`betaReduce` at binder depth `k` (mirrors `substK`):
+replace bound variable `k` with `liftBVars k (s m) 0`, decrement bound variables
+above `k`, and leave those below `k` (local binders) untouched.
+-/
+def betaReduceK {T : LExprParamsT} (k : Nat) (s : T.base.Metadata → LExpr T) (e : LExpr T) : LExpr T :=
+  match e with
+  | .bvar m i => if i == k then liftBVars k (s m) 0 else if i > k then .bvar m (i - 1) else .bvar m i
+  | .abs m n ty b => .abs m n ty (betaReduceK (k + 1) s b)
+  | .quant m qk n ty tr b => .quant m qk n ty (betaReduceK (k + 1) s tr) (betaReduceK (k + 1) s b)
+  | .app m a b => .app m (betaReduceK k s a) (betaReduceK k s b)
+  | .ite m c t f => .ite m (betaReduceK k s c) (betaReduceK k s t) (betaReduceK k s f)
+  | .eq m a b => .eq m (betaReduceK k s a) (betaReduceK k s b)
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .fvar m x ty => .fvar m x ty
+
+/--
+Capture-avoiding β-substitution with a metadata-aware replacement: replace the
+outermost bound variable (index 0) of `body` with `s m` (where `m` is that
+occurrence's metadata), decrement every remaining bound variable by one, and
+lift the replacement's free bound variables by the binder depth. Metadata-
+preserving generalization of `betaReduce`; coincides with `subst s` on
+locally-closed input — see `betaReduceWith_eq_subst_of_lc`.
+-/
+def betaReduceWith {T : LExprParamsT} (s : T.base.Metadata → LExpr T) (body : LExpr T) : LExpr T :=
+  betaReduceK 0 s body
+
+/--
+Capture-avoiding β-substitution for a single redex: replace the outermost bound
+variable (index 0) of `body` with `arg`, decrement every remaining bound
+variable (those referred to *enclosing* binders) by one, and lift `arg`'s own
+free bound variables by the binder depth at each substitution site. Unlike
+`subst`, this performs both the index shift β-reducing a *nested* redex requires
+and the argument lift needed when `arg` itself mentions enclosing binders (e.g.
+a `let`-alias `var t := field(c)` whose argument refers to an outer pattern
+binding `c`). On a locally-closed redex (`body` closed at 1, `arg` closed at 0)
+it coincides with `subst (fun _ => arg)` — see `betaReduce_eq_subst_of_lc`.
+-/
+def betaReduce {T : LExprParamsT} (arg : LExpr T) (body : LExpr T) : LExpr T :=
+  betaReduceWith (fun _ => arg) body
+
+/-- Does the bound variable with index `k` occur in `e` (counting binders as we
+descend)? Used to tell a genuine alias redex `(λ x. … x …) a` (bvar 0 used)
+apart from a constant-lambda redex `(λ _. e0) a` (bvar 0 unused), whose argument
+`a` a `betaReduce` would erase. -/
+def bvarUsed {T : LExprParamsT} (k : Nat) (e : LExpr T) : Bool :=
+  match e with
+  | .bvar _ i => i == k
+  | .abs _ _ _ b => bvarUsed (k + 1) b
+  | .quant _ _ _ _ tr b => bvarUsed (k + 1) tr || bvarUsed (k + 1) b
+  | .app _ a b => bvarUsed k a || bvarUsed k b
+  | .ite _ c t f => bvarUsed k c || bvarUsed k t || bvarUsed k f
+  | .eq _ a b => bvarUsed k a || bvarUsed k b
+  | _ => false
+
+/-- Shared worker for `betaReduceRedexes` (erasing) and
+`betaReduceRedexesPreservingArgs` (non-erasing), fuel-bounded so it is a *total*
+definition we can reason about (see `getOps_subset_betaReduceRedexesFuel`).
+
+`fuel` bounds the reduction depth: structural descent and each redex contraction
+consume one unit. On exhaustion the (possibly still-reducible) term is returned
+unchanged, so the reduction is best-effort by construction: no fuel budget can
+guarantee a normal form (an ill-typed self-applying term such as Ω never
+terminates at any budget). Exhaustion is safe for callers: consumers that
+require abstraction-free results must check for residual abstractions
+themselves, and analyses relying on call preservation stay sound because
+`getOps` is preserved at *every* fuel (`getOps_subset_betaReduceRedexesFuel`
+in `LExprWFProps` holds for all fuel,
+even `0`).
+
+When `keepConstantRedexes` is `true`, a redex `(λ _. e0) arg` whose body does
+*not* use its bound variable is left un-reduced, so `arg` survives in the term;
+otherwise the redex is β-reduced and `arg` is erased (`betaReduce` drops the
+argument of a constant lambda). -/
+def betaReduceRedexesFuel {T : LExprParamsT}
+    (keepConstantRedexes : Bool) (fuel : Nat) (e : LExpr T) : LExpr T :=
+  match fuel with
+  | 0 => e
+  | fuel + 1 =>
+    match e with
+    | .app m fn arg =>
+      let arg := betaReduceRedexesFuel keepConstantRedexes fuel arg
+      match betaReduceRedexesFuel keepConstantRedexes fuel fn with
+      | .abs mAbs n t body =>
+        if keepConstantRedexes && !bvarUsed 0 body then
+          -- Constant lambda: reducing would erase `arg`. Keep the redex so `arg`
+          -- (and any recursive call inside it) remains syntactically present.
+          .app m (.abs mAbs n t body) arg
+        else
+          betaReduceRedexesFuel keepConstantRedexes fuel (betaReduce arg body)
+      | fn' => .app m fn' arg
+    | .abs m n t body => .abs m n t (betaReduceRedexesFuel keepConstantRedexes fuel body)
+    | .ite m c t f => .ite m (betaReduceRedexesFuel keepConstantRedexes fuel c) (betaReduceRedexesFuel keepConstantRedexes fuel t) (betaReduceRedexesFuel keepConstantRedexes fuel f)
+    | .eq m a b => .eq m (betaReduceRedexesFuel keepConstantRedexes fuel a) (betaReduceRedexesFuel keepConstantRedexes fuel b)
+    | .quant m qk n t tr body => .quant m qk n t (betaReduceRedexesFuel keepConstantRedexes fuel tr) (betaReduceRedexesFuel keepConstantRedexes fuel body)
+    | _ => e
+
+/-- Count occurrences of the bound variable introduced `d` binders out (i.e. the
+`.bvar` leaves with index `d` at this depth). Helper for `maxBvarMultiplicity`. -/
+private def countVarAtDepth {T : LExprParamsT} (d : Nat) : LExpr T → Nat
+  | .bvar _ i => if i == d then 1 else 0
+  | .abs _ _ _ b => countVarAtDepth (d + 1) b
+  | .quant _ _ _ _ tr b => countVarAtDepth (d + 1) tr + countVarAtDepth (d + 1) b
+  | .app _ a b => countVarAtDepth d a + countVarAtDepth d b
+  | .ite _ c t f => countVarAtDepth d c + countVarAtDepth d t + countVarAtDepth d f
+  | .eq _ a b => countVarAtDepth d a + countVarAtDepth d b
+  | _ => 0
+
+/-- The maximum number of times any binder's own bound variable is referenced in
+its body. β-reducing a redex `(λ x. body) arg` duplicates `arg` once per
+occurrence of `x` in `body`, so this bounds the size blow-up of a single
+reduction step. The `betaReduceRedexes*` wrappers scale their fuel budget by
+`(this + 1)` so that a duplicating redex (e.g. `(fun x => x + x + x)(arg)`)
+gets enough budget in the common single-level case. This is a heuristic: full
+reduction is not guaranteed in general (nested duplicating redexes compound
+multiplicatively), and on exhaustion the partially-reduced term is returned
+unchanged, which every caller must (and does) tolerate. -/
+def maxBvarMultiplicity {T : LExprParamsT} : LExpr T → Nat
+  | .abs _ _ _ b => Nat.max (countVarAtDepth 0 b) (maxBvarMultiplicity b)
+  | .quant _ _ _ _ tr b => Nat.max (maxBvarMultiplicity tr) (maxBvarMultiplicity b)
+  | .app _ a b => Nat.max (maxBvarMultiplicity a) (maxBvarMultiplicity b)
+  | .ite _ c t f => Nat.max (maxBvarMultiplicity c) (Nat.max (maxBvarMultiplicity t) (maxBvarMultiplicity f))
+  | .eq _ a b => Nat.max (maxBvarMultiplicity a) (maxBvarMultiplicity b)
+  | _ => 0
+
+/--
+β-reduce directly-applied lambda redexes `(.app (.abs body) arg)` everywhere in
+`e`, substituting the argument for the bound variable (via `betaReduce`, which
+shifts indices correctly for nested redexes). This eliminates `let`-alias
+redexes `(λ x. body) v` — the shape a binding that names an intermediate value
+lowers to — so the residual term is free of such spurious abstractions.
+
+NOTE: this reduction is *value-preserving but not call-preserving*: a constant
+lambda `(λ _. e0) arg` reduces to `e0`, erasing `arg`. That is fine for
+value-level consumers (the argument is dead code) but unsound for any syntactic
+analysis that must see every subterm, such as extracting the calls a term
+makes — use `betaReduceRedexesPreservingArgs` there.
+-/
+def betaReduceRedexes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
+  betaReduceRedexesFuel false (sizeOf e * (maxBvarMultiplicity e + 1)) e
+
+/--
+Like `betaReduceRedexes`, but never erases a redex's argument: a constant-lambda
+redex `(λ _. e0) arg` (bound variable unused) is left un-reduced so that `arg` —
+and any recursive call hidden inside it — stays syntactically present.
+
+For syntactic analyses whose soundness depends on every call remaining in the
+term (e.g. recursive-call extraction): plain `betaReduceRedexes` would drop
+`arg`, so a call wrapped in `(λ _. 0) (f x)` would vanish from the term before
+the analysis sees it. Alias redexes (bound variable used, e.g.
+`(λ c. … tl(c) …) xs`) are still reduced. Call preservation is
+`getOps_subset_betaReduceRedexesPreservingArgs`.
+-/
+def betaReduceRedexesPreservingArgs {T : LExprParamsT} (e : LExpr T) : LExpr T :=
+  betaReduceRedexesFuel true (sizeOf e * (maxBvarMultiplicity e + 1)) e
+
+/--
 This function turns some bound variables to free variables to investigate the
 body of an abstraction. `varOpen k x e` keeps track of the number `k` of
 abstractions that have passed by; it replaces all leaves of the form `(.bvar k)`
@@ -242,20 +415,6 @@ def WF {T} {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : Bool :=
 
 /-! ### Substitution on `LExpr`s -/
 
-/--
-Increment bound variable indices in `e` by `n`. Only bvars at or above `cutoff`
-are shifted; bvars below `cutoff` (bound within `e`) are left alone. The cutoff
-increases when going under binders.
--/
-def liftBVars (n : Nat) (e : LExpr ⟨T, GenericTy⟩) (cutoff : Nat := 0) : LExpr ⟨T, GenericTy⟩ :=
-  match e with
-  | .const _ _ => e | .op _ _ _ => e | .fvar _ _ _ => e
-  | .bvar m i => if i >= cutoff then .bvar m (i + n) else e
-  | .abs m name ty e' => .abs m name ty (liftBVars n e' (cutoff + 1))
-  | .quant m qk name ty tr' e' => .quant m qk name ty (liftBVars n tr' (cutoff + 1)) (liftBVars n e' (cutoff + 1))
-  | .app m fn e' => .app m (liftBVars n fn cutoff) (liftBVars n e' cutoff)
-  | .ite m c t e' => .ite m (liftBVars n c cutoff) (liftBVars n t cutoff) (liftBVars n e' cutoff)
-  | .eq m e1 e2 => .eq m (liftBVars n e1 cutoff) (liftBVars n e2 cutoff)
 
 /--
 Substitute `(.fvar x _)` in `e` with `to`. Does NOT lift de Bruijn indices in `to`

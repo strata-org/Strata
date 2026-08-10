@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Pipeline.Messages
 import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Elab
 import StrataDDM.BuiltinDialects.Init
@@ -45,11 +46,11 @@ def withBuiltins (program : Laurel.Program) : Laurel.Program :=
       Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
 
-/-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
+/-- Convert pipeline `Message`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
     subtracting `basePos` and looking up in a snippet `FileMap`. -/
 private def renderSnippetLocal (basePos : Nat) (snippet : String)
-    (dms : Array Strata.DiagnosticModel) : Array Strata.Diagnostic :=
+    (dms : Array Strata.Message) : Array Strata.Diagnostic :=
   let fileMap := Lean.FileMap.ofString snippet
   dms.map fun dm =>
     let startB := dm.fileRange.range.start.byteIdx
@@ -61,7 +62,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
     { start := { line := startPos.line, column := startPos.column }
       ending := { line := endPos.line, column := endPos.column }
       message := dm.message
-      type := dm.type }
+      type := dm.kind }
 
 /-- Default options used by `testLaurel` when the caller doesn't override:
     quiet verifier, default solver. Override by passing
@@ -70,34 +71,34 @@ def defaultLaurelTestOptions : LaurelVerifyOptions :=
   { verifyOptions := .quiet }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
-    Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
+    Returns diagnostics as `Message`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
     navigation). -/
 private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
     (program : StrataDDM.Program) :
-    IO (Array Strata.DiagnosticModel) := do
+    IO (Array Strata.Message) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
   | .ok laurelProgram =>
     let result := Laurel.resolve (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
-    Returns diagnostics as `DiagnosticModel`s. -/
+    Returns diagnostics as `Message`s. -/
 private def runLaurelPipelineRaw (program : StrataDDM.Program)
-    (options : LaurelVerifyOptions) : IO (Array Strata.DiagnosticModel) := do
+    (options : LaurelVerifyOptions) : IO (Array Strata.Message) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
   | .ok laurelProgram =>
     -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
-    -- back as a structured `DiagnosticModel` (rather than thrown like the CLI),
+    -- back as a structured `Message` (rather than thrown like the CLI),
     -- so it flows through the same snippet-local `line:col` rendering as every
     -- other diagnostic instead of leaking a raw byte offset in its message.
-    Laurel.verifyToDiagnosticModelsCapturing laurelProgram options
+    Laurel.verifyToMessagesCapturing laurelProgram options
 
 /-! ## Concrete-interpretation path
 
@@ -136,7 +137,7 @@ assume makes the assert unreachable) belongs in `testLaurel`, not
 
 /-- Run the interpret path on a translated, type-checked Core program: execute
     every `entry` procedure from a fresh environment and return the runtime
-    assertion failures as `DiagnosticModel`s (mapped back to source), so they
+    assertion failures as `Message`s (mapped back to source), so they
     flow through the same snippet-local rendering and annotation matching as the
     verifier's diagnostics.
 
@@ -154,7 +155,7 @@ assume makes the assert unreachable) belongs in `testLaurel`, not
     which subsumes an unmapped label as a diagnosis. The message still counts the
     unmapped labels so neither signal is lost. -/
 private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
-    IO (Array Strata.DiagnosticModel) := do
+    IO (Array Strata.Message) := do
   let outcome ← match Core.Program.interpretEntries core (Core.Program.entryProcedures core) fuel with
     | .error diag => throw <| IO.userError s!"interpreter setup failed: {diag.message}"
     | .ok outcome => pure outcome
@@ -187,7 +188,7 @@ private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
     *does* mark an entry, a translate/type-check failure here is a real problem
     and is thrown. -/
 private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 10000) :
-    IO (Option (Array Strata.DiagnosticModel)) := do
+    IO (Option (Array Strata.Message)) := do
   let uri := Strata.Uri.file "<#strata>"
   let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
     | .error _ => return none  -- doesn't even parse as Laurel → leave it to verify
@@ -244,12 +245,12 @@ private structure DiagnosticAnnotation where
   message : String
 
 /-- Render the `kind` of a `Diagnostic` to the string used in annotations. -/
-private def diagnosticKindString (t : Strata.DiagnosticType) : String :=
-  match t with
-  | .Warning => "warning"
-  | .UserError => "error"
-  | .NotYetImplemented => "not-yet-implemented"
-  | .StrataBug => "strata-bug"
+private def messageKindString (k : Strata.MessageKind) : String :=
+  match k.category with
+  | "warning" => "warning"
+  | "userError" => "error"
+  | "notYetImplemented" => "not-yet-implemented"
+  | _ => "strata-bug"
 
 /-! ## Unified reporting normal form
 
@@ -278,7 +279,7 @@ private structure LocatedMessage where
 /-- View an actual pipeline `Diagnostic` as a `LocatedMessage`. -/
 private def LocatedMessage.ofDiagnostic (d : Strata.Diagnostic) : LocatedMessage :=
   { line := d.start.line, colStart := d.start.column, colEnd := d.ending.column
-    kind := diagnosticKindString d.type, message := d.message }
+    kind := messageKindString d.type, message := d.message }
 
 /-- View an expected `DiagnosticAnnotation` as a `LocatedMessage`. -/
 private def LocatedMessage.ofAnnotation (a : DiagnosticAnnotation) : LocatedMessage :=
@@ -476,7 +477,7 @@ private def checkAgainstAnnotations (block : SourcedProgram) (label : String)
     - Otherwise asserts an exact match: every diagnostic must be annotated,
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
-    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
+    (run : StrataDDM.Program → IO (Array Strata.Message))
     (label : String := "verify")
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source

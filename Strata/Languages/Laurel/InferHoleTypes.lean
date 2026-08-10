@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Util.Statistics
 public import Strata.Languages.Laurel.LaurelPass
@@ -130,7 +131,7 @@ inductive InferHoleTypesStats where
 structure InferHoleState where
   model : SemanticModel
   statistics : Statistics := {}
-  diagnostics : List DiagnosticModel := []
+  diagnostics : List Message := []
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -276,6 +277,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       return ⟨.Assert (← inferExpr condExpr ⟨ .TBool, source ⟩ outputType) summary, source⟩
   | .Assume cond =>
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩ outputType), source⟩
+  | .Throw v =>
+      return ⟨.Throw (← inferExpr v ⟨ .Unknown, source ⟩ outputType), source⟩
+  -- `Try` is returned unchanged rather than recursed into: descending through the
+  -- catch-clause list would force this mutual block from structural onto well-founded
+  -- recursion. Consequence: holes inside `try`/`catch`/`finally` arms are not
+  -- type-inferred yet. Revisit if holes in those positions need inference.
+  | .Try .. => return expr
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr outputType outputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType outputType), source⟩
@@ -329,7 +337,7 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 Annotate every `.Hole` in the program with a type inferred from context.
 Returns the updated program and any diagnostics (e.g. holes whose type could not be inferred).
 -/
-def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
+def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List Message × Statistics :=
   let initState : InferHoleState := { model := model }
   let (program, finalState) := (mapProgramProceduresM inferProcedure program).run initState
   (program, finalState.diagnostics, finalState.statistics)

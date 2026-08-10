@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 
@@ -54,9 +55,9 @@ def callElimCmd (s : Statement)
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
-        let some p := (← get).currentProgram | throw (Strata.DiagnosticModel.fromMessage "program not available")
+        let some p := (← get).currentProgram | throw (Strata.Message.fromString "program not available")
 
-        let some proc := Program.Procedure.find? p procName | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
+        let some proc := Program.Procedure.find? p procName | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
 
         -- Per-call-site type-variable instantiation for polymorphic procedures.
         -- The inlined contract carries the callee's source type vars (`x : T`). Copied
@@ -113,11 +114,10 @@ def callElimCmd (s : Statement)
         let oldTys ← oldParams.mapM fun param => do
           match instantiatedInputs.find? param with
           | some ty => pure (Lambda.LTy.forAll [] ty)
-          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format param}")
+          | none => throw (Strata.Message.fromFormat f!"failed to find type for {Std.format param}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldParams.map (fun p => CoreIdent.mkOld p.name)
-        let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
-          ((fresh, ty), oldG)
+        let oldTrips := (genOldIdents.zip oldTys).zip oldGVars
 
         -- initialize/declare the newly generated variables
         let argInit := createInits argTrips md
@@ -177,7 +177,7 @@ def callElimCmd (s : Statement)
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
         | .some cg, .some callerName =>
-          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.DiagnosticModel.fromMessage
+          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.Message.fromString
           set { σ with
               cachedAnalyses := { σ.cachedAnalyses with
                 callGraph := .some cg'}}

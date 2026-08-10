@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Env
 public import Strata.Util.Statistics
@@ -19,17 +20,17 @@ open Std (ToFormat Format format)
 namespace Program
 open Lambda LExpr
 open Lambda.LTy Lambda.LExpr Statement Procedure Program
-open Strata (DiagnosticModel DiagnosticType FileRange)
+open Strata (Message MessageKind FileRange)
 
 public section
 
 
-def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
+def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
   go E.program.decls E ({} : Statistics)
   where go (decls : Decls) (declsE : Env) (stats : Statistics)
-      : Except Strata.DiagnosticModel (List Env × Statistics) :=
+      : Except Strata.Message (List Env × Statistics) :=
   match decls with
   | [] => .ok ([declsE], stats)
   | decl :: rest =>
@@ -42,7 +43,7 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
       -- All axioms go into the top-level path condition before anything is executed.
       -- There should be exactly one entry in the path condition stack at this point.
       if declsE.pathConditions.scopes.length != 1 then
-        .error (Strata.DiagnosticModel.fromMessage
+        .error (Strata.Message.fromString
             "Internal error: path condition stack misaligned when adding axiom")
       else
         let declsE := { declsE with pathConditions :=
@@ -76,7 +77,7 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
 --------------------------------------------------------------------
 
-def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
+def Decl.run (d : Decl) (E : Env) : Except Message Env :=
   match d with
   | .type t _md =>
     match t with
@@ -101,7 +102,7 @@ run can register language-specific functions this way and have them
 type-checked and evaluated just like Core's own built-ins.
 -/
 def run (prog : Program) (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
-    : Except DiagnosticModel Env := do
+    : Except Message Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
   let factory ← factory.addFactory moreFns
   let σ ← Lambda.LState.init.addFactory factory
@@ -180,7 +181,7 @@ expected output and throws on the other two.
 structure InterpretOutcome where
   /-- Assertion failures that mapped back to a source range, deduplicated,
       in discovery order. -/
-  diagnostics : Array Strata.DiagnosticModel
+  diagnostics : Array Strata.Message
   /-- Assertion failures whose label carried no source range, as
       `(procedure name, assert label)`. -/
   unmapped : Array (String × String)
@@ -216,12 +217,12 @@ metadata each failure carries, reproducing the verifier's wording for the same
 property.
 -/
 def interpretEntries (prog : Program) (entries : List Procedure) (fuel : Nat)
-    : Except DiagnosticModel InterpretOutcome := do
+    : Except Message InterpretOutcome := do
   let prog := inlineBodiedFunctions prog
   let E ← prog.run
   let E := { E with collectAllAssertFailures := true, ignoreAssumes := true }
-  let mut diagnostics : Array Strata.DiagnosticModel := #[]
-  let mut seen : Std.HashSet Strata.DiagnosticModel := {}
+  let mut diagnostics : Array Strata.Message := #[]
+  let mut seen : Std.HashSet Strata.Message := {}
   let mut unmapped : Array (String × String) := #[]
   let mut errors : Array (String × Imperative.EvalError Core.Expression) := #[]
   for p in entries do
@@ -233,7 +234,7 @@ def interpretEntries (prog : Program) (entries : List Procedure) (fuel : Nat)
       match Imperative.getFileRange md with
       | some fr =>
         let summary := md.getPropertySummary.getD "assertion"
-        let dm := Strata.DiagnosticModel.withRange fr s!"{summary} does not hold"
+        let dm := Strata.Message.withRange fr s!"{summary} does not hold"
         unless seen.contains dm do
           diagnostics := diagnostics.push dm
           seen := seen.insert dm

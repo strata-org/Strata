@@ -47,6 +47,17 @@ The proof is organized in three layers:
    and matched against the trees `validateFullyAnnotated` walks (via the
    `KeepsState` calculus over `mapProcedureM`), concluding in
    `resolve_fullyAnnotated'`.
+
+The per-procedure obligation is `CleanProcFields`, which ranges over every
+expression-bearing specification field `mapProcedureM` walks — including a
+procedure's exceptional contract. Two results carry that last part:
+
+- `CleanThrowsOnBlock` — the cleanliness of one `throwsOn` behavior case: its
+  guard, each of its case postconditions, and each of its frame targets. Needed
+  to read the `CleanProcFields` statement.
+- `resolveExceptionalContract_clean` — `resolveExceptionalContract` produces
+  clean cases, and so supplies the exceptional component of `CleanProcFields`
+  for both `resolveProcedure_clean` and `resolveInstanceProcedure_clean`.
 -/
 
 namespace Strata.Laurel
@@ -181,6 +192,15 @@ theorem fold_hasEmits {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) 
       | (solve | (rintro ⟨⟨v, vsrc⟩, hmem⟩
                   cases v <;> dsimp only <;>
                     solve_by_elim [hasEmits_pure, hmem]))
+      -- A `Try`'s catch clause is a structure rather than an `AstNode`, so the
+      -- element pattern above does not fit: destructure the clause and discharge
+      -- its optional guard and its handler body separately.
+      | (solve | (rintro ⟨c, hmem⟩
+                  refine hasEmits_seq ?_ ?_
+                  · refine hasEmits_option_attach_forM _ _ ?_
+                    rintro ⟨e, he⟩
+                    solve_by_elim [hasEmits_pure, hmem, he]
+                  · solve_by_elim [hasEmits_pure, hmem]))
       | split
       | solve_by_elim
 
@@ -243,6 +263,15 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   | .Fresh value => collectStmtExprList g value
   | .Assert cond _ => collectStmtExprList g cond
   | .Assume cond => collectStmtExprList g cond
+  | .Throw value => collectStmtExprList g value
+  -- Mirrors `foldStmtExprM`'s `Try` arm: the body, then each catch clause's
+  -- optional guard and handler body, then the `finally` arm. The `flatMap`/`elim`
+  -- shapes line up with `emits_attach_forM` and `emits_option_attach_forM`.
+  | .Try body catches finally? =>
+    collectStmtExprList g body
+      ++ catches.flatMap (fun c =>
+           c.predicate.elim [] (collectStmtExprList g) ++ collectStmtExprList g c.body)
+      ++ finally?.elim [] (collectStmtExprList g)
   | .ProveBy value proof => collectStmtExprList g value ++ collectStmtExprList g proof
   | .ContractOf _ func => collectStmtExprList g func
   | _ => []
@@ -270,6 +299,17 @@ theorem collect_unfold {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd)
                first
                | exact emits_pure
                | exact fold_emits g _))
+      -- A `Try`'s catch clauses: each element is a structure whose traversal is
+      -- itself a sequence (optional guard, then handler body), so it needs its own
+      -- alternative rather than the single-fold element cases above.
+      | (solve
+          | (apply emits_attach_forM
+             rintro ⟨c, hmem⟩
+             refine emits_seq ?_ ?_ <;>
+               first
+               | (apply emits_option_attach_forM; intro x; exact fold_emits g _)
+               | exact fold_emits g _
+               | exact emits_pure))
       | (solve
           | (split <;> dsimp only <;>
                first
@@ -399,7 +439,7 @@ theorem clean_declare_annotated (name : Identifier) (ty : HighTypeMd)
   have h1 : unannotatedDeclares { val := .Var (.Declare ⟨name, some ty⟩), source := src } = [] := by
     simp [unannotatedDeclares]
   simp only [collectVisitor, h1]
-  simpa using emits_seq (emits_modify (β := Strata.DiagnosticModel) []) emits_pure
+  simpa using emits_seq (emits_modify (β := Strata.Message) []) emits_pure
 
 theorem varDeclare_clean (param : Parameter?) (source : Strata.FileRange) :
     PostM (Check.varDeclare param source) Clean := by
@@ -440,7 +480,7 @@ theorem validate_decompose (program : Program) :
       (program.staticProcedures ++ program.types.flatMap fun
         | .Composite ct => ct.instanceProcedures
         | _ => []).flatMap (fun proc =>
-          (mapProcedureM (m := StateM (List DiagnosticModel))
+          (mapProcedureM (m := StateM (List Message))
             (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
             proc |>.run []).2)
       ++ (program.types.flatMap fun
@@ -559,6 +599,15 @@ theorem resolveBody_clean (body : Body) :
   · -- External
     exact postM_pure trivial
 
+/-- Cleanliness of one `throwsOn` behavior case: its guard, each of its case
+    postconditions, and each of its frame targets. The case's clauses are ordinary
+    expressions that `mapProcedureM` walks like any other specification field, so
+    they carry the same obligation as the normal-path `ensures`/`modifies`. -/
+def CleanThrowsOnBlock (blk : ThrowsOnBlock) : Prop :=
+  Clean blk.guard ∧
+  (∀ c ∈ blk.postconditions, Clean c.condition) ∧
+  (∀ e ∈ blk.modifies, Clean e)
+
 /-- Procedure-level: everything `mapProcedureM` walks in the RESOLVED procedure
     is Clean. Stated via the fields the validator's walk reads. -/
 def CleanProcFields (proc : Procedure) : Prop :=
@@ -566,7 +615,36 @@ def CleanProcFields (proc : Procedure) : Prop :=
   (∀ e ∈ proc.decreases, Clean e) ∧
   CleanBody proc.body ∧
   (∀ e ∈ proc.invokeOn, Clean e) ∧
-  (∀ e ∈ proc.axioms, Clean e)
+  (∀ e ∈ proc.axioms, Clean e) ∧
+  (∀ blk ∈ proc.throwsOn, CleanThrowsOnBlock blk)
+
+include masterSynth masterCheck in
+/-- The exceptional contract resolves to clean cases. A case's guard and each of its
+    postconditions are *checked* against `bool`, and each frame target is
+    synthesized, so all three come back Clean by the same argument as the
+    normal-path clauses. The declared `throws` type is a type rather than an
+    expression, so it carries no cleanliness obligation. -/
+theorem resolveExceptionalContract_clean (proc : Procedure) :
+    PostM (resolveExceptionalContract proc)
+      (fun r => ∀ blk ∈ r.2.2, CleanThrowsOnBlock blk) := by
+  unfold resolveExceptionalContract
+  refine postM_bind_any fun throwsType' => ?_
+  refine postM_bind (postM_mapM _ _ (fun blk _ => ?_))
+    fun throwsOn' hblks => postM_pure hblks
+  refine postM_bind (masterCheck blk.guard _) fun guard' hguard => ?_
+  -- The postconditions are resolved in a scope that binds the thrown value when
+  -- `throws` names one; both arms of that match end in the same `mapM`.
+  refine postM_bind (Q := fun posts' => ∀ c ∈ posts', Clean c.condition)
+    (postM_withScope ?_) fun posts' hposts => ?_
+  · split
+    · refine postM_bind_any fun _ => ?_
+      exact postM_mapM _ _ (fun c _ =>
+        condition_mapM_clean c _ (fun e => masterCheck e _))
+    · exact postM_mapM _ _ (fun c _ =>
+        condition_mapM_clean c _ (fun e => masterCheck e _))
+  refine postM_bind (postM_mapM _ _ (fun e _ => resolveStmtExpr_clean masterSynth e))
+    fun mods' hmods => ?_
+  exact postM_pure ⟨hguard, hposts, hmods⟩
 
 include masterSynth masterCheck in
 theorem resolveProcedure_clean (proc : Procedure) :
@@ -596,17 +674,22 @@ theorem resolveProcedure_clean (proc : Procedure) :
     refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
       fun invokeOn' hinv => ?_
     refine postM_bind (postM_mapM _ _ (fun e _ => resolveStmtExpr_clean masterSynth e))
-      fun axioms' hax => postM_pure ?_
-    exact ⟨hpres, hdec, hbody, hinv, hax⟩
+      fun axioms' hax => ?_
+    -- The exceptional contract is resolved in a bind of its own before the record is
+    -- assembled; its cleanliness is the sixth component of `CleanProcFields`.
+    refine postM_bind (resolveExceptionalContract_clean masterSynth masterCheck proc)
+      fun exceptional hexc => ?_
+    obtain ⟨throwsType', throwsBinding', throwsOn'⟩ := exceptional
+    exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
 
 /-! Bridge: `CleanProcFields proc` implies the validator's per-procedure walk
-    emits nothing. The walk is `mapProcedureM` in `StateM (List DiagnosticModel)`
+    emits nothing. The walk is `mapProcedureM` in `StateM (List Message)`
     with visitor `fun e => do modify (· ++ collect e); pure e`. -/
 
 open CollectEmits in
 /-- The validator's per-procedure walk, as used in `validateFullyAnnotated`. -/
-def procWalk (proc : Procedure) : List DiagnosticModel :=
-  (mapProcedureM (m := StateM (List DiagnosticModel))
+def procWalk (proc : Procedure) : List Message :=
+  (mapProcedureM (m := StateM (List Message))
     (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
     proc |>.run []).2
 
@@ -685,25 +768,26 @@ theorem keeps_bind_post {δ α β : Type} {a : StateM (List δ) α} {f : α → 
 
 /-- `mapProcedureBodiesM` with the validator's visitor preserves the spec fields. -/
 theorem bodiesM_spec_fields (proc : Procedure) :
-    PostS (δ := DiagnosticModel)
-      (mapProcedureBodiesM (m := StateM (List DiagnosticModel))
+    PostS (δ := Message)
+      (mapProcedureBodiesM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
         proc)
       (fun p1 => p1.preconditions = proc.preconditions ∧
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
-        p1.axioms = proc.axioms) := by
+        p1.axioms = proc.axioms ∧
+        p1.throwsOn = proc.throwsOn) := by
   unfold mapProcedureBodiesM
   split
   all_goals
     repeat' first
-      | exact postS_pure ⟨rfl, rfl, rfl, rfl⟩
+      | exact postS_pure ⟨rfl, rfl, rfl, rfl, rfl⟩
       | (apply postS_bind_any; intro _)
 
 open CollectEmits in
 /-- The validator's visitor keeps the state exactly when the tree is Clean. -/
 theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
-    KeepsState (δ := DiagnosticModel)
+    KeepsState (δ := Message)
       (do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) := by
   intro acc
   simp only [bind, StateT.bind, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
@@ -714,16 +798,17 @@ theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
 open CollectEmits in
 theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
     procWalk proc = [] := by
-  obtain ⟨hpre, hdec, hbody, hinv, hax⟩ := h
-  have hwalk : KeepsState (δ := DiagnosticModel)
-      (mapProcedureM (m := StateM (List DiagnosticModel))
+  obtain ⟨hpre, hdec, hbody, hinv, hax, hthrows⟩ := h
+  have hwalk : KeepsState (δ := Message)
+      (mapProcedureM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) proc) := by
     unfold mapProcedureM mapProcedureBodiesM
-    -- Body first (mapProcedureBodiesM), then the four spec fields.
+    -- Body first (mapProcedureBodiesM), then the five spec fields.
     apply keeps_bind_post (Q := fun p1 => p1.preconditions = proc.preconditions ∧
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
-        p1.axioms = proc.axioms)
+        p1.axioms = proc.axioms ∧
+        p1.throwsOn = proc.throwsOn)
       (hq := bodiesM_spec_fields proc)
     · -- mapProcedureBodiesM: match on proc.body
       rcases hb : proc.body with b | ⟨posts, impl, mods⟩ | posts | _
@@ -745,7 +830,7 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
         exact keeps_pure _
       · exact keeps_pure _
     · intro proc1 hfields
-      obtain ⟨hf1, hf2, hf3, hf4⟩ := hfields
+      obtain ⟨hf1, hf2, hf3, hf4, hf5⟩ := hfields
       apply keeps_bind (keeps_mapM _ _ (fun c hc =>
         keeps_condition_mapM c _ (keeps_visitor _ (hpre c (hf1 ▸ hc)))))
       intro pres'
@@ -758,6 +843,19 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       apply keeps_bind (keeps_mapM _ _ (fun e he =>
         keeps_visitor _ (hax e (hf4 ▸ he))))
       intro axioms'
+      -- Each `throwsOn` case walks its guard, then its postconditions, then its
+      -- frame targets; all three are Clean by `CleanThrowsOnBlock`.
+      apply keeps_bind (keeps_mapM _ _ (fun blk hblk => ?_))
+      · intro throwsOn'
+        exact keeps_pure _
+      obtain ⟨hg, hp, hm⟩ := hthrows blk (hf5 ▸ hblk)
+      apply keeps_bind (keeps_visitor _ hg)
+      intro guard'
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hp c hc))))
+      intro posts'
+      apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hm e he)))
+      intro mods'
       exact keeps_pure _
   have := hwalk []
   unfold procWalk
@@ -787,8 +885,13 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
     fun invokeOn' hinv => ?_
   refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun e _ => resolveStmtExpr_clean masterSynth e))
-    fun axioms' hax => postM_pure ?_
-  exact ⟨hpres, hdec, hbody, hinv, hax⟩
+    fun axioms' hax => ?_
+  -- As in `resolveProcedure_clean`: the exceptional contract is resolved in its own
+  -- bind before the record is assembled, and supplies the sixth component.
+  refine postM_bind (resolveExceptionalContract_clean masterSynth masterCheck proc)
+    fun exceptional hexc => ?_
+  obtain ⟨throwsType', throwsBinding', throwsOn'⟩ := exceptional
+  exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
 
 /-- Cleanliness of a resolved type definition, matching what the validator walks. -/
 def CleanTypeDef (td : TypeDefinition) : Prop :=

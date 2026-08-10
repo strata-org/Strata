@@ -389,7 +389,7 @@ private def specificationCallProgram : Program :=
 
 private def isHeapAwareCall (calleeName : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall callee [heap, cell] =>
+  | .StaticCall callee [cell, heap] =>
       callee.text == calleeName &&
         (match heap.val with
         | .Var (.Local name) => name.text == "$heap"
@@ -506,9 +506,13 @@ instance procedures cleared: true
 
 /-! ## Empty specifications
 
-Procedures without optional specifications must remain specifications-free through each
-traversal. The instance procedure is intentionally lifted, so its name and
-location change while its empty specifications remains unchanged.
+Procedures without optional specifications stay specification-free through each
+traversal, with one exception: heap lowering synthesizes the free
+heap-well-formedness preconditions for composite inputs (one per composite
+input) — and *only* those. No traversal introduces any other specification. The
+instance procedure is intentionally lifted, so its name and location change
+while its (still empty, modulo those synthesized preconditions) specifications
+remain unchanged.
 -/
 
 private def emptySpecificationsProgram : Program :=
@@ -543,6 +547,23 @@ private def emptySpecificationsProgram : Program :=
 private def hasEmptySpecifications (proc : Procedure) : Bool :=
   proc.preconditions.isEmpty && proc.decreases.isNone &&
     proc.invokeOn.isNone && proc.axioms.isEmpty
+
+private def isHeapWfPrecond (c : Condition) : Bool :=
+  match c.condition.val with
+  | .StaticCall lt [lhs, rhs] =>
+    lt.text == "$intLt" &&
+      (match lhs.val with
+       | .StaticCall ref _ => ref.text == "Composite..ref!"
+       | _ => false) &&
+      (match rhs.val with
+       | .StaticCall next _ => next.text == "Heap..nextReference!"
+       | _ => false)
+  | _ => false
+
+private def addsOnlyHeapWfPreconds (proc : Procedure) (expected : Nat) : Bool :=
+  proc.preconditions.length == expected &&
+    proc.preconditions.all isHeapWfPrecond &&
+    proc.decreases.isNone && proc.invokeOn.isNone && proc.axioms.isEmpty
 
 private def findAnyProcedure (program : Program) (name : String) : Option Procedure :=
   (allProcedures program).find? (·.name.text == name)
@@ -591,9 +612,15 @@ private def checkEmptySpecifications : IO Unit := do
   IO.println s!"heap analysis reaches writer and reader branches: {
     staticAnalysis.writesHeapDirectly && instanceAnalysis.readsHeapDirectly &&
       !instanceAnalysis.writesHeapDirectly}"
-  IO.println s!"heap lowering preserves empty specifications: {
+  -- Heap lowering adds one free heap-well-formedness precondition per composite
+  -- input. Both procedures take a single `Cell` input (`cell` / `self`), so each
+  -- gains exactly one; `$heap` itself is a datatype, not a composite, so it adds
+  -- none. Assert that positively — the pass adds exactly those preconditions and
+  -- no other specifications.
+  IO.println s!"heap lowering adds exactly the heap-wf preconditions: {
     liftedResolved.errors.isEmpty &&
-    hasEmptySpecifications staticAfterHeap && hasEmptySpecifications instanceAfterHeap &&
+    addsOnlyHeapWfPreconds staticAfterHeap 1 &&
+    addsOnlyHeapWfPreconds instanceAfterHeap 1 &&
       hasHeapInput staticAfterHeap && hasHeapOutput staticAfterHeap &&
       hasHeapInput instanceAfterHeap && !hasHeapOutput instanceAfterHeap}"
   IO.println s!"instance lifting preserves empty specifications: {
@@ -603,7 +630,7 @@ private def checkEmptySpecifications : IO Unit := do
 info: resolution errors: 0
 constrained-type elimination preserves empty specifications: true
 heap analysis reaches writer and reader branches: true
-heap lowering preserves empty specifications: true
+heap lowering adds exactly the heap-wf preconditions: true
 instance lifting preserves empty specifications: true
 -/
 #guard_msgs in

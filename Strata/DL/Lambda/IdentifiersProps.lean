@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.Identifiers
 import all Strata.DL.Lambda.Identifiers
@@ -53,7 +54,7 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   . rw[meta_eq]; intros _; simp
 
 theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}:
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Message}:
   m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by
   unfold addListWithError
   induction l generalizing m m' with
@@ -68,7 +69,7 @@ theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta]
     have := addWithErrorContains Heq x; grind
 
 theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Message}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
   unfold addListWithError
   induction l generalizing m m' with
   | nil => simp; intros Heq; cases Heq; grind
@@ -83,7 +84,7 @@ theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta]
     grind
 
 theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → l.Nodup := by
+  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Message}: m.addListWithError l f = .ok m' → l.Nodup := by
   unfold addListWithError
   induction l generalizing m m' with
   | nil => simp

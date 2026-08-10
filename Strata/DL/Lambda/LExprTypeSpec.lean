@@ -104,7 +104,6 @@ theorem RigidAnnotCompat.of_aliasEquiv {aliases : List TypeAlias}
   ⟨HMap.empty, fun _ _ => LMonoTy.subst_single_empty _, by
     rw [LMonoTy.subst_single_empty]; exact h⟩
 
-
 -- `AnnotCompat_subst` is defined later (after `AliasEquiv_subst` which it depends on).
 -- See the actual definition below the `AliasEquiv_subst` theorem.
 

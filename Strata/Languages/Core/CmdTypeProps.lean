@@ -31,7 +31,7 @@ plus the two key semantic facts: `inferType_HasType` (inference is sound) and
 namespace Core
 open Lambda Imperative LExpr
 open Std (ToFormat Format format)
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 
 public section
 

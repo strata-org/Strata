@@ -49,14 +49,11 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
   /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
-      an instantiation of `T` up to `RigidAnnotCompat` (see `Cmd.typeCheck_sound`).
+      an instantiation of `T` up to `RigidAnnotCompat`.
 
-      The output context `Δ` is required only up to `TContext.Equiv` with the
-      canonical `insert`-form: the `HMap`-backed context does not observe key or
-      insertion order, so a structural equality is too strong (and the sound
-      theorem only produces the substituted-`update` context, which is `Equiv` to
-      the canonical form, not equal to it). The relation stays syntax-directed —
-      the command still selects exactly one constructor. -/
+      The output `Δ` is required only up to `TContext.Equiv` with the canonical
+      `insert`-form: the `HMap`-backed context ignores key/insertion order, so
+      structural equality is too strong. This holds for every constructor below. -/
   | init_det : ∀ Γ x (xty : LTy) e mty tys md Δ,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
