@@ -446,7 +446,7 @@ the obligation across sequencing and recursion automatically. -/
 
 /-- The source-shape precondition over a source block: no statement in `ss`
 ever defines or modifies a `Q`-kind variable. -/
-@[expose] def SrcNoGenWrites {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr]
+@[expose] def SrcNoGenWrites {P : PureExpr} [HasIdent P]
     (Q : String → Prop)
     (ss : List (Stmt P (Cmd P))) : Prop :=
   (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Block.definedVars ss false ++ Block.modifiedVars ss))
@@ -454,7 +454,7 @@ ever defines or modifies a `Q`-kind variable. -/
 /-- A single `EvalCmd` whose command writes no `Q`-kind variable preserves the
 "no `Q`-kind slot is defined" invariant on its store. -/
 theorem evalCmd_preserves_src_fresh {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr]
     {Q : String → Prop}
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
     (h : EvalCmd P f σ c σ' haf)
@@ -488,7 +488,6 @@ theorem cmd_replay_storeAgree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
     (h_agree : StoreAgreement σ_src₀ σ_tgt₀)
     (h_eval : EvalCmd P f σ_src₀ c σ_src₁ failed)
     (h_wf_def : WellFormedSemanticEvalMono f)
-    (_h_congr : WellFormedSemanticEvalExprCongr f)
     (h_tgt_init_undef : ∀ x ∈ Cmd.definedVars c, σ_tgt₀ x = none) :
     ∃ σ_tgt₁, EvalCmd P f σ_tgt₀ c σ_tgt₁ failed
             ∧ StoreAgreement σ_src₁ σ_tgt₁ := by
@@ -610,7 +609,6 @@ theorem cmd_replay_agreement_storeAgree {P : PureExpr} [HasFvar P] [HasFvars P] 
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
     (h_agree : StoreAgreement ρ_src.store ρ_tgt.store)
     (h_wf_def : WellFormedSemanticEvalMono ρ_src.factory)
-    (h_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (h_tgt_init_undef : ∀ x ∈ Cmd.definedVars c, ρ_tgt.store x = none)
     (h_term : StepStmtStar P (EvalCmd P) extendFactory
       (.stmt (.cmd c) ρ_src) (.terminal ρ_src')) :
@@ -622,7 +620,7 @@ theorem cmd_replay_agreement_storeAgree {P : PureExpr} [HasFvar P] [HasFvars P] 
   obtain ⟨σ', haf, h_cmd, h_eq⟩ := cmd_step_inv (extendFactory := extendFactory) c ρ_src ρ_src' h_term
   obtain ⟨σ_tgt', h_eval_tgt, h_agree'⟩ :=
     cmd_replay_storeAgree ρ_src.factory ρ_src.store ρ_tgt.store c σ' haf
-      h_agree h_cmd h_wf_def h_congr h_tgt_init_undef
+      h_agree h_cmd h_wf_def h_tgt_init_undef
   have h_eval_tgt' : EvalCmd P ρ_tgt.factory ρ_tgt.store c σ_tgt' haf := h_eval_eq ▸ h_eval_tgt
   refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || haf },
     .step _ _ _ (StepStmt.step_cmd h_eval_tgt') (.refl _), ?_, ?_, ?_⟩
@@ -679,7 +677,6 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
           ∧ ρb_out.hasFailure = ρb'.hasFailure
           ∧ ρb_out.factory = ρb'.factory
           ∧ GenFreshStore Q σ_out ρb_out.store)
-    (_σ_out : StringGenState)
     (h_nofd_body : Block.noFuncDecl body = true)
     (oc : Option String)
     (ρ_src ρ' ρ_tgt : Env P) (n : Nat)
@@ -1732,7 +1729,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
       exact evalCmd_preserves_src_fresh h_cmd h_src_fresh h_no_writes_c
     obtain ⟨ρ_tgt', h_run, h_agree', h_fail', h_eval'⟩ :=
       cmd_replay_agreement_storeAgree extendFactory c ρ_src ρ' ρ_tgt
-        h_eval_eq h_fail_eq h_agree hwf.mono hwf.exprCongr h_tgt_init_undef_c h_term
+        h_eval_eq h_fail_eq h_agree hwf.mono h_tgt_init_undef_c h_term
     -- Invert the target replay run to recover the target's `EvalCmd`, which drives
     -- the GenFreshStore preservation step (the target writes no gen-shaped var).
     obtain ⟨σ_tgt', haf_t, h_cmd_tgt, h_eq_tgt⟩ :=
@@ -2192,7 +2189,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     have hstarT := reflTrans_to_T h_term
     obtain ⟨h_fresh', ρ_out, h_loop_run, h_off', h_fail', h_eval', h_fresh_out⟩ :=
       nondetElim_loop_det_sim_iteration_sa extendFactory e m body (Block.nondetElimM body σ).1 md σ
-        h_body_sim (Block.nondetElimM body σ).2 h_nofd_body
+        h_body_sim h_nofd_body
         oc ρ_src ρ' ρ_tgt hstarT.len
         h_eval_eq h_fail_eq h_agree hwf
         h_wf_gen h_src_fresh h_tgt_fresh h_tgt_iu_body hstarT (Nat.le_refl _)
@@ -3813,7 +3810,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       obtain ⟨ρ_tgt', h_run, _, h_fail', _⟩ :=
         cmd_replay_agreement_storeAgree extendFactory c0 ρ_src
           ({ ρ_src with store := σ', hasFailure := ρ_src.hasFailure || hasAssertFailure } : Env P) ρ_tgt
-          h_eval_eq h_fail_eq h_agree hwf.mono hwf.exprCongr h_tgt_init_undef_c h_term_src
+          h_eval_eq h_fail_eq h_agree hwf.mono h_tgt_init_undef_c h_term_src
       refine ⟨.terminal ρ_tgt', ?_, by simpa [Config.getEnv, h_fail'] using h_mid_fail⟩
       simp only [Stmt.nondetElimM]
       exact stmt_to_singleton_stmts (extendFactory := extendFactory) (.cmd c0) ρ_tgt ρ_tgt' h_run
@@ -4552,7 +4549,7 @@ theorem Block.nondetElim_getBlockLabels {P : PureExpr} [HasIdent P] [HasFvar P] 
 The pass's own `OverapproximatesUptoWhen` instance, over pass-local neutral
 languages whose `initEnvWF` mentions only the pass's own generated-name kind
 `ndelimKind`.  The output relation is the store-agreement / failure-flag /
-factory triple (see `NdelimEnvRel` below).  Terminal / exiting reuse the
+factory triple (the shared `EnvStoreAgree`).  Terminal / exiting reuse the
 `nondetElim_sound_kind*_compositional` sims and `CanFail` reuses
 `nondetElim_to_fail_compositional`, at the diagonal `ρ_tgt := ρ₀`. -/
 section NondetElimOverapprox
@@ -4575,13 +4572,7 @@ abbrev Lang.ndelimLocal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [
       (EvalCmd P) extendFactory (isAtAssert P) with
     initEnvWF := fun _ ss ρ₀ => NdelimInitEnvWF (P := P) ss ρ₀ }
 
-/-- The output relation: store agreement + matching failure flag + factory. -/
-@[expose] def NdelimEnvRel {P : PureExpr} (ρ₀ ρ₀' : Env P) : Prop :=
-  StoreAgreement ρ₀.store ρ₀'.store
-  ∧ ρ₀.hasFailure = ρ₀'.hasFailure
-  ∧ ρ₀'.factory = ρ₀.factory
-
-/-- `Block.nondetElim` overapproximates its source up to `NdelimEnvRel`: for a
+/-- `Block.nondetElim` overapproximates its source up to `EnvStoreAgree`: for a
 block that is func-decl-free, has unique inits, and never writes an `ndelimKind`
 name, every terminating, exiting, or failing source run is matched by a run of the
 rewritten block ending in a store-agreeing, failure-matching, factory-preserving
@@ -4595,7 +4586,7 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P] (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
-      (NdelimEnvRel (P := P))
+      (Specification.Transform.EnvStoreAgree (P := P))
       (Lang.ndelimLocal extendFactory)
       (Lang.ndelimLocal extendFactory)
       (fun ss => some (Block.nondetElim ss))

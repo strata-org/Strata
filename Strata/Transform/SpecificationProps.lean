@@ -43,6 +43,8 @@ Properties of the `Overapproximates` family (monotonicity and composition):
   various family members.
 - `overapproximates_id` / `underapproximates_id` / `semanticallyEquivalent_id` —
   the identity transform inhabits each spec.
+- `EnvStoreAgree_trans` — transitivity of the `EnvStoreAgree` output relation
+  (defined in `Specification`), used to chain the per-pass instances.
 
 ### Key results for `OverapproximatesAggressivelyUptoWhen`
 
@@ -1298,6 +1300,14 @@ theorem OverapproximatesAggressively.toWhen (L₁ L₂ : Lang P)
   OverapproximatesAggressivelyWhen.strengthen L₁ L₂ T params₁ params₂ (fun _ _ => trivial) h
 
 end OverapproxProps
+
+
+/-- `EnvStoreAgree` is transitive: store agreement, failure-flag equality, and
+factory equality each compose across a middle environment. -/
+theorem EnvStoreAgree_trans {P : PureExpr} {ρ₁ ρ₂ ρ₃ : Env P}
+    (h₁ : EnvStoreAgree ρ₁ ρ₂) (h₂ : EnvStoreAgree ρ₂ ρ₃) :
+    EnvStoreAgree ρ₁ ρ₃ :=
+  ⟨StoreAgreement.trans h₁.1 h₂.1, h₁.2.1.trans h₂.2.1, h₂.2.2.trans h₁.2.2⟩
 
 
 /-! ## Structured statements-specific results -/

@@ -28,7 +28,11 @@ Key theorems:
     preserved under `StoreAgreement`.
   * `agreement_helper_unchanged_at_x_multi` — agreement is unchanged off the
     written variables across a command list.
-  * `single_cmd_eval` — single-command evaluation into a one-step CFG run. -/
+  * `single_cmd_eval` — single-command evaluation into a one-step CFG run.
+  * `run_block_goto` — run a deterministic block from `.atBlock` to the selected
+    successor of a `condGoto` (the `Bool` index selects the branch).
+  * `run_block_finish` — run a deterministic block to its `finish` terminal.
+    (Reusable CFG-simulation building blocks consumed by the S2U proof.) -/
 
 /-- `StepCFG` is deterministic: from a single source config, at most one target
     is reachable in one step.  The `fac` index (fixed across the relation) pins
@@ -546,5 +550,66 @@ theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
     (h₂ : StepDetCFGStar extendFactory fac cfg b c) :
     StepDetCFGStar extendFactory fac cfg a c :=
   ReflTrans_Transitive _ _ _ _ h₁ h₂
+
+/-- Run a deterministic block from `.atBlock t` to the selected successor of a
+`condGoto`: fetch + chain + goto.  The `Bool` `b` selects the branch — the true
+branch (target `tlbl`) when `b = true`, the false branch (target `elbl`) when
+`b = false` — mirroring how the condition evaluates to `if b then tt else ff`. -/
+theorem run_block_goto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+    {extendFactory : ExtendFactory P}
+    {cfg : CFG String (DetBlock String (Cmd P) P)}
+    {δ : P.Factory} {σ σ' : SemanticStore P}
+    {cs : List (Cmd P)} {c : P.Expr} {tlbl elbl : String} {md : MetaData P}
+    {f_base f : Bool} {t : String} {b : Bool}
+    (h_lkp : List.lookup t cfg.blocks = .some ⟨cs, .condGoto c tlbl elbl md⟩)
+    (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f)
+    (h_cond : P.eval δ σ' c = .some (if b then HasBool.tt else HasBool.ff))
+    (hwfb : WellFormedSemanticEvalBool δ)
+    (hwfcongr : WellFormedSemanticEvalExprCongr δ) :
+    StepCFGStar P (EvalCmd P) extendFactory δ cfg
+      (.atBlock t σ f_base)
+      (.atBlock (if b then tlbl else elbl) σ' (f_base || f)) := by
+  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) extendFactory δ cfg
+      (.atBlock t σ f_base)
+      (.inBlock t cs (.condGoto c tlbl elbl md) σ f_base) :=
+    StepCFG.fetch (extendFactory := extendFactory) h_lkp
+  have h_chain := EvalCmds_to_StepCFG_chain (extendFactory := extendFactory)
+                    (cfg := cfg) h_cmds t (.condGoto c tlbl elbl md) f_base
+  have h_goto : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) extendFactory δ cfg
+      (.inBlock t [] (.condGoto c tlbl elbl md) σ' (f_base || f))
+      (.atBlock (if b then tlbl else elbl) σ' (f_base || f)) := by
+    cases b with
+    | true => exact StepCFG.goto_true (extendFactory := extendFactory) h_cond hwfb hwfcongr
+    | false => exact StepCFG.goto_false (extendFactory := extendFactory) h_cond hwfb hwfcongr
+  exact ReflTrans.step _ _ _ h_fetch
+    (ReflTrans_Transitive _ _ _ _ h_chain
+      (ReflTrans.step _ _ _ h_goto (ReflTrans.refl _)))
+
+/-- Run a deterministic block from `.atBlock t` to `.terminal`: fetch + chain
++ finish. -/
+theorem run_block_finish {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+    {extendFactory : ExtendFactory P}
+    {cfg : CFG String (DetBlock String (Cmd P) P)}
+    {δ : P.Factory} {σ σ' : SemanticStore P}
+    {cs : List (Cmd P)} {md : MetaData P}
+    {f_base f : Bool} {t : String}
+    (h_lkp : List.lookup t cfg.blocks = .some ⟨cs, .finish md⟩)
+    (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f) :
+    StepCFGStar P (EvalCmd P) extendFactory δ cfg
+      (.atBlock t σ f_base)
+      (.terminal σ' (f_base || f)) := by
+  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) extendFactory δ cfg
+      (.atBlock t σ f_base)
+      (.inBlock t cs (.finish md) σ f_base) :=
+    StepCFG.fetch (extendFactory := extendFactory) h_lkp
+  have h_chain := EvalCmds_to_StepCFG_chain (extendFactory := extendFactory)
+                    (cfg := cfg) h_cmds t (.finish md) f_base
+  have h_finish : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) extendFactory δ cfg
+      (.inBlock t [] (.finish md) σ' (f_base || f))
+      (.terminal σ' (f_base || f)) :=
+    StepCFG.finish (extendFactory := extendFactory)
+  exact ReflTrans.step _ _ _ h_fetch
+    (ReflTrans_Transitive _ _ _ _ h_chain
+      (ReflTrans.step _ _ _ h_finish (ReflTrans.refl _)))
 
 end Imperative
