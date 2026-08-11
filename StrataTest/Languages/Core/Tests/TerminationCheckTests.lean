@@ -574,7 +574,8 @@ rec function intListLen (@[cases] xs : MyList int) : int
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -601,7 +602,8 @@ Result: ✅ pass
 
 Obligation: intListLen_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify polyDtTermPgm (options := .default)
 

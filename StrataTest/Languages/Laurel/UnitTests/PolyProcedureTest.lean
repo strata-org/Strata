@@ -326,43 +326,38 @@ procedure u() opaque { assert 1 == 1 };"},
   -- uninterpreted sort. The twin pins BOTH encodability AND soundness: `forall(y:T)=>y==y`
   -- holds in every interpretation (verifies), while `forall(y:T)=>y==x` is falsifiable once
   -- |T| >= 2 (an uninterpreted sort is not forced to be a singleton) so it must FAIL.
-  -- TRANSITIONAL: only the `_true` half currently pins its property. Without the two Core
-  -- SMT-encoder fixes the `_false` half's single failure IS the encoding error rather than a
-  -- countermodel, so it is `inertUntilEncoderFix` and pins only translatability. The
-  -- soundness half of this twin re-asserts when those fixes land.
-  -- GAPPED: quantification over the procedure's OWN type parameter is not grounded by
-  -- monomorphization, and this family is where the corpus exercises it. Monomorphizing a
-  -- polymorphic procedure per call site grounds its
-  -- own obligations. This contract quantifies over `T` ITSELF, so the quantifier BINDER's type is
-  -- synthesized during SMT encoding rather than carried in the instantiated signature — nothing
-  -- at the call site can ground it. Closing this needs the encoder to declare a free type
-  -- variable as a fresh uninterpreted sort — i.e. this case shows that the encoder fix is
-  -- required, because monomorphization alone does not ground a quantifier binder's type.
+  -- TRANSITIONAL: the `_true` half hits one encoder error on the
+  -- poly-procedure's opaque-type body VC because `MonomorphizeProcedures`
+  -- substitutes the type variable with a fresh opaque type in-place — the
+  -- body's own self-check VC is emitted at the caller site under the
+  -- original type variable.  The `_false` and `_multi_inst` twins below do
+  -- not need `knownEncoderErrors` because their poly-Factory-op
+  -- instantiations reach the encoder as fully-mono specialized copies via
+  -- `MonomorphizeFunctions`.  Full clearance of `_true` needs a further
+  -- tightening of the procedure body-VC emitter.
+  -- GAPPED: this contract quantifies over `T` ITSELF, so the quantifier
+  -- BINDER's type is synthesized during SMT encoding rather than carried in the
+  -- instantiated signature — nothing at the call site can ground it, so
+  -- monomorphization alone does not close it; the encoder must declare that
+  -- free type variable as a fresh uninterpreted sort.
   { name := "poly_proc_forall_over_tvar_true", knownEncoderErrors := 1, outcome := .verifies,
     why := "`ensures forall(y:T) => y==y` (valid in every interpretation) must VERIFY — the bare-T quantifier binder encodes as a fresh uninterpreted sort"
     src := r"
 procedure allEq<T>(x: T) returns (r: bool) opaque ensures forall(y: T) => (y == y) { r := true };
 procedure u() opaque { var b: bool := allEq(5); assert 1 == 1 };"},
 
-  { name := "poly_proc_forall_over_tvar_false", knownEncoderErrors := 1, inertUntilEncoderFix := true, outcome := .failsExactly 1,
+  { name := "poly_proc_forall_over_tvar_false", outcome := .failsExactly 1,
     why := "`ensures forall(y:T) => y==x` (false at cardinality >= 2) must FAIL — the auto-declared tyvar sort has arbitrary cardinality, so a false-in-general quantified-over-T contract is not vacuously verified (soundness twin of the encodability fix)"
     src := r"
 procedure allEqBad<T>(x: T) returns (r: bool) opaque ensures forall(y: T) => (y == x) { r := true };
 procedure u() opaque { var b: bool := allEqBad(5); assert 1 == 1 };"},
   -- MULTI-INSTANTIATION of one quantified-over-T helper: the same `allEqM$post0` is
-  -- referenced at its own poly self-check AND at `int` and `bool` call sites. The SMT
-  -- pending-def dedup key is the full `UF` (id + arg/out SORTS), so the three
-  -- reference-instances are three distinct entries, each body-encoded with its own
-  -- `smt_ty_inst` (`resolveOnePendingFnDef`). A per-NAME body shared across
-  -- instantiations would be ill-sorted at all but one of them (binder `T` vs the
-  -- instantiated sort), which the harness's toolchain-error gate catches.
+  -- referenced at its own poly self-check AND at `int` and `bool` call sites. Each of the
+  -- three reference-instances is a distinct specialized copy after monomorphization
+  -- (`MonomorphizeFunctions` pre-encoding), each body-encoded with a monomorphic signature.
   -- Failure count is 1, not 2: the helper has ONE body self-check VC; call sites
   -- contribute assumptions, not obligations.
-  -- TRANSITIONAL: without the two Core SMT-encoder fixes this VC cannot be encoded at all,
-  -- so the single failure IS the encoding error and no countermodel is produced — the case
-  -- is `inertUntilEncoderFix` and currently pins only translatability, NOT the
-  -- no-sort-bleed property described above. It re-asserts when the encoder fixes land.
-  { name := "poly_proc_forall_over_tvar_multi_inst", knownEncoderErrors := 1, inertUntilEncoderFix := true, outcome := .failsExactly 1,
+  { name := "poly_proc_forall_over_tvar_multi_inst", outcome := .failsExactly 1,
     why := "one quantified-over-T helper instantiated at int AND bool: every reference-instance must encode cleanly (per-UF body encoding, no cross-instantiation sort bleed) and the self-check still fails via countermodel"
     src := r"
 procedure allEqM<T>(x: T) returns (r: bool) opaque ensures forall(y: T) => (y == x) { r := true };

@@ -590,7 +590,6 @@ on its `_terminates_` obligations.
 
 #### Current Limitations
 
-- Polymorphic recursive functions are not yet supported.
 - Recursive functions must be declared at the top level (not as local
   declarations inside procedures).
 - Only single-expression termination measures are supported; lexicographic

@@ -431,4 +431,72 @@ Result: ✅ pass
 
 end Strata.MutualRecursivePrecondTest
 
+---------------------------------------------------------------------
+
+namespace Strata.PolyMutualStructTest
+
+/-!
+Mutually recursive polymorphic functions with a structural (`@[cases]`)
+measure, used at a ground type so the block reaches the verifier.
+-/
+
+def polyMutualStructPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function evenLen<a>(@[cases] xs : MyList a) : bool
+{
+  if MyList..isNil(xs) then true else oddLen(MyList..tl(xs))
+}
+function oddLen<a>(@[cases] xs : MyList a) : bool
+{
+  if MyList..isNil(xs) then false else evenLen(MyList..tl(xs))
+};
+
+procedure TestPolyMutual(out r : bool)
+spec {
+  ensures true;
+}
+{
+  var xs : MyList int;
+  xs := Cons(1, Cons(2, Nil()));
+  r := evenLen(xs);
+};
+#end
+
+/--
+info: true
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram polyMutualStructPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: evenLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: evenLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: TestPolyMutual_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify polyMutualStructPgm (options := .quiet)
+
+end Strata.PolyMutualStructTest
+
 end

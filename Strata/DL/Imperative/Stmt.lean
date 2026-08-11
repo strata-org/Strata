@@ -316,6 +316,38 @@ def Block.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
   termination_by (Block.sizeOf ss)
 end
 
+mutual
+/-- Monadic `Stmt.mapExpr`: apply `fExpr`/`mapCmd` threading a monad `M`. -/
+def Stmt.mapExprM {M : Type → Type} [Monad M] (fExpr : P.Expr → M P.Expr) (mapCmd : C → M C)
+    (s : Stmt P C) : M (Stmt P C) := do
+  match s with
+  | .cmd c => return .cmd (← mapCmd c)
+  | .block l ss md => return .block l (← Block.mapExprM fExpr mapCmd ss) md
+  | .ite (.det c) tss ess md =>
+    return .ite (.det (← fExpr c)) (← Block.mapExprM fExpr mapCmd tss)
+      (← Block.mapExprM fExpr mapCmd ess) md
+  | .ite .nondet tss ess md =>
+    return .ite .nondet (← Block.mapExprM fExpr mapCmd tss) (← Block.mapExprM fExpr mapCmd ess) md
+  | .loop (.det g) measure inv body md =>
+    return .loop (.det (← fExpr g)) (← measure.mapM fExpr)
+      (← inv.mapM (fun (l, e) => return (l, ← fExpr e))) (← Block.mapExprM fExpr mapCmd body) md
+  | .loop .nondet measure inv body md =>
+    return .loop .nondet (← measure.mapM fExpr)
+      (← inv.mapM (fun (l, e) => return (l, ← fExpr e))) (← Block.mapExprM fExpr mapCmd body) md
+  | .exit l md => return .exit l md
+  | .funcDecl decl md => return .funcDecl decl md
+  | .typeDecl tc md => return .typeDecl tc md
+  termination_by (Stmt.sizeOf s)
+
+/-- Monadic `Block.mapExpr`. -/
+def Block.mapExprM {M : Type → Type} [Monad M] (fExpr : P.Expr → M P.Expr) (mapCmd : C → M C)
+    (ss : Block P C) : M (Block P C) := do
+  match ss with
+  | [] => return []
+  | s :: rest => return (← Stmt.mapExprM fExpr mapCmd s) :: (← Block.mapExprM fExpr mapCmd rest)
+  termination_by (Block.sizeOf ss)
+end
+
 ---------------------------------------------------------------------
 
 /-! ### StripMetaData

@@ -580,6 +580,46 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify recPrecondPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test: an unused polymorphic recursive function is dropped
+--
+-- `len` is polymorphic and recursive but used at no ground type, so
+-- `MonomorphizeFunctions` (which runs after type checking) drops its
+-- *definition* as dead code before it can reach the SMT encoder.  Its body
+-- well-formedness (`$$wf`) and termination (`$$term`) self-checks are
+-- emitted (at a fresh opaque type for the type variable) and pass.
+---------------------------------------------------------------------
+
+def polyRecPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function len<a>(@[cases] xs : MyList a) : int
+{
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
+};
+
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: len_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: len_terminates_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify polyRecPgm (options := .quiet)
+
 end Strata.RecursiveFunctionTest
 
 end

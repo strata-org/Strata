@@ -90,8 +90,9 @@ Type-check a Core program. Returns the annotated program on success, or a
 -/
 def Core.typeCheck (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except Message Core.Program :=
-  _root_.Core.typeCheck options program moreFns
+    Except Message Core.Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  _root_.Core.typeCheck options program factory
 
 /--
 Type-check a Core program, then run symbolic evaluation. Returns the list of

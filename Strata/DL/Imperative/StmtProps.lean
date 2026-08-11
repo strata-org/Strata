@@ -37,6 +37,9 @@ Equational theory for the boolean shape walkers defined in
 - `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
   the expressions in a statement or block never introduces or removes a
   `funcDecl`.
+- `Stmt`/`Block.mapExpr_eq_mapExprM` — the monadic `mapExprM` at the identity
+  monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
+  (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
 -/
 
 /-! ### Disjointness of funcDeclNames from definedVars
@@ -1731,6 +1734,78 @@ theorem Block.noMeasureLoops_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     (by simp [Block.noMeasureLoops])
     (fun _ _ => by simp [Block.noMeasureLoops])
     (fun _ => by simp [Stmt.noMeasureLoops]) cs
+
+/-! ## `mapExprM` at the identity monad computes `mapExpr`
+
+`Stmt.mapExprM`/`Block.mapExprM` (defined in `Strata.DL.Imperative.Stmt`) are the
+monadic generalizations of the pure `Stmt.mapExpr`/`Block.mapExpr`.  Instantiated
+at the identity monad `Id`, they compute exactly their pure counterparts, so any
+reasoning about the pure walkers transfers to the trivial-effect instance of the
+monadic ones (and vice versa):
+
+- `Stmt.mapExpr_eq_mapExprM` — `Stmt.mapExpr f c s = Stmt.mapExprM (M := Id) f c s`.
+- `Block.mapExpr_eq_mapExprM` — the block-level analogue.
+
+The two supporting lemmas `optionMapM_Id`/`listMapM_Id` discharge the
+`Option.mapM`/`List.mapM` sub-traversals over a loop's measure and invariants —
+the only positions where `mapExprM` threads the monad through a container. -/
+
+/-- Monadic mapping over an option in the trivial (identity) monad reduces to
+    pure mapping — the monadic wrapper is a no-op. -/
+private theorem optionMapM_Id {α β : Type _} (g : α → Id β) (o : Option α) :
+    Option.mapM g o = Option.map g o := by
+  cases o <;> rfl
+
+/-- Monadic mapping over a list in the trivial (identity) monad reduces to pure
+    mapping — the monadic wrapper is a no-op. -/
+private theorem listMapM_Id {α β : Type _} (g : α → Id β) (l : List α) :
+    List.mapM g l = List.map g l := by
+  induction l with
+  | nil => rfl
+  | cons a as ih => rw [List.mapM_cons, ih]; rfl
+
+mutual
+/-- `Stmt.mapExprM` at the identity monad `Id` computes the pure `Stmt.mapExpr`:
+    rewriting a statement's expressions with a pure function is the trivial-effect
+    instance of the monadic walker. -/
+theorem Stmt.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C) (s : Stmt P C) :
+    Stmt.mapExpr fExpr mapCmd s = Stmt.mapExprM (M := Id) fExpr mapCmd s := by
+  match s with
+  | .cmd c => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
+  | .block l ss md =>
+      simp only [Stmt.mapExpr, Stmt.mapExprM]
+      rw [Block.mapExpr_eq_mapExprM fExpr mapCmd ss]; rfl
+  | .ite (.det c) tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.mapExprM]
+      rw [Block.mapExpr_eq_mapExprM fExpr mapCmd tss,
+          Block.mapExpr_eq_mapExprM fExpr mapCmd ess]; rfl
+  | .ite .nondet tss ess md =>
+      simp only [Stmt.mapExpr, Stmt.mapExprM]
+      rw [Block.mapExpr_eq_mapExprM fExpr mapCmd tss,
+          Block.mapExpr_eq_mapExprM fExpr mapCmd ess]; rfl
+  | .loop (.det g) measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.mapExprM]
+      rw [Block.mapExpr_eq_mapExprM fExpr mapCmd body, optionMapM_Id, listMapM_Id]; rfl
+  | .loop .nondet measure inv body md =>
+      simp only [Stmt.mapExpr, Stmt.mapExprM]
+      rw [Block.mapExpr_eq_mapExprM fExpr mapCmd body, optionMapM_Id, listMapM_Id]; rfl
+  | .exit l md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
+  | .funcDecl decl md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
+  | .typeDecl tc md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
+  termination_by sizeOf s
+
+/-- `Block.mapExprM` at the identity monad `Id` computes the pure `Block.mapExpr`:
+    rewriting a block's expressions with a pure function is the trivial-effect
+    instance of the monadic walker. -/
+theorem Block.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C) (ss : Block P C) :
+    Block.mapExpr fExpr mapCmd ss = Block.mapExprM (M := Id) fExpr mapCmd ss := by
+  match ss with
+  | [] => simp only [Block.mapExpr, Block.mapExprM]; rfl
+  | s :: rest =>
+      simp only [Block.mapExpr, Block.mapExprM]
+      rw [Stmt.mapExpr_eq_mapExprM fExpr mapCmd s, Block.mapExpr_eq_mapExprM fExpr mapCmd rest]; rfl
+  termination_by sizeOf ss
+end
 
 end -- public section
 

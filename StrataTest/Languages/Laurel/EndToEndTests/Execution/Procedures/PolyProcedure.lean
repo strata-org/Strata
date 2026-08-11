@@ -27,11 +27,12 @@ value.
 Scope: value-`T` procedures only, i.e. no generic composites. The interpreter does not
 model the heap, and a generic composite is a heap reference, so the composite cases stay
 verifier-only (`Types/Composites/GenericComposite.lean`). Bodies are TRANSPARENT: an
-`opaque ensures` on a polymorphic procedure emits that procedure's own body VC, which
-cannot be encoded until the two Core SMT-encoder fixes land — see
-`UnitTests/PolyProcedureTest.lean` and the `knownEncoderErrors` field on the corpus
-harness. Keeping these bodies transparent is what lets the end-to-end path be pinned
-today rather than deferred with the corpus cases.
+`opaque ensures` on a polymorphic procedure emits that procedure's own body VC.  With
+`MonomorphizeFunctions` inserted after `typeCheckPhase` (see
+`Strata/Transform/MonomorphizeFunctions.lean`), each such body is specialized at the
+ground instantiations reached from its call sites before SMT encoding, so both value
+assertions and the dual-mode interpreter/verifier check succeed for every case in this
+file.
 -/
 
 -- Multi-instantiation in one caller: the same `idp` at `int` and at `bool`. Per-call-site
@@ -101,22 +102,10 @@ procedure computedPolySlot()
 
 -- A polymorphic procedure calling ANOTHER polymorphic procedure at its own type variable.
 -- The inner call's freshened variable must resolve to the outer instantiation, not to a
--- second independent one.
---
--- TRANSITIONAL: this shape reaches the SMT encoder with a bare type variable and cannot be
--- encoded until the two Core encoder fixes land ("encode a polymorphic function's body in
--- its own typeArg scope" and "encode free type variables as uninterpreted sorts, soundly").
--- Unlike the corpus cases, the error is asserted here VERBATIM rather than absorbed into a
--- counter, so the message is visible in test source and a change in the failure mode fails
--- the build. Note the transparent body does NOT avoid it: the poly-to-poly CALL is what
--- synthesizes the free type variable. Replace these two annotations with the intended
--- value assertions once the encoder fixes merge.
---
--- `testLaurelExecution {}`, not `testLaurelExecution { skipCoreInterpreter := false }`, for the same reason: the encoding error is a
--- VERIFIER-only artifact — the interpreter performs no SMT encoding, so it cannot produce
--- these diagnostics, and the dual-mode runner requires every annotation to fire in both
--- modes. This case rejoins the dual-mode set when the annotations above are replaced.
-#eval testLaurelExecution {}
+-- second independent one.  After `MonomorphizeFunctions` pre-encoding, `wrap<int>` and
+-- `wrap<bool>` are specialized before SMT so the poly-to-poly call encodes cleanly and
+-- both value assertions verify in both modes.
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 
@@ -129,10 +118,8 @@ procedure nestedPoly()
 {
   var a: int := wrap(3);
   assert a == 3;
-//^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Cannot encode unresolved type variable 'T' to SMT, polymorphic function body verification is not yet supported.
   var b: bool := wrap(false);
   assert b == false
-//^^^^^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Cannot encode unresolved type variable 'T' to SMT, polymorphic function body verification is not yet supported.
 };
 #end
 

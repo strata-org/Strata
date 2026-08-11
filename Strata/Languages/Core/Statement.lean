@@ -557,6 +557,27 @@ def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
     (ss : Statements) : Statements :=
   ss.map (Statement.mapExprs f)
 
+def Command.mapExprM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr) :
+    Command → M Command
+  | .cmd (.assert l e md) => do return .cmd (.assert l (← f e) md)
+  | .cmd (.assume l e md) => do return .cmd (.assume l (← f e) md)
+  | .cmd (.cover l e md) => do return .cmd (.cover l (← f e) md)
+  | .cmd (.init n ty (.det e) md) => do return .cmd (.init n ty (.det (← f e)) md)
+  | .cmd (.set n (.det e) md) => do return .cmd (.set n (.det (← f e)) md)
+  | .call pname args md => do
+    return .call pname (← args.mapM fun
+      | .inArg e => do return .inArg (← f e)
+      | a => pure a) md
+  | c => pure c
+
+def Statement.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr)
+    (s : Statement) : M Statement :=
+  Imperative.Stmt.mapExprM f (Command.mapExprM f) s
+
+def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr)
+    (ss : Statements) : M Statements :=
+  ss.mapM (Statement.mapExprsM f)
+
 /-- Collect all user-facing expressions from a statement. -/
 def Statement.collectExprs :
     Statement → List Expression.Expr

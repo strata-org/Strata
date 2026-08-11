@@ -13,6 +13,7 @@ public import Strata.Languages.Core.Env
 public import Strata.Util.Name
 public import Strata.Util.OrderedSet
 public import Strata.Util.Statistics
+public import Strata.Languages.Core.NameMangling
 public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
 import Strata.Languages.Core.Statistics
 import Strata.Util.Tactics
@@ -31,21 +32,11 @@ public section
 A factory function whose UF declaration has been emitted but whose
 definition (interpreted body and/or axioms) has not been encoded as SMT.Term yet.
 
-`fn`/`fnty` are the call-site identifier and function type.
-If fn was a polymorphic function, fnty is monomorphised at the call site.
-
-`tySubst` is a snapshot of the encoder's type-variable substitution that was
-active at the point of reference.
-This is necessary for encoding the axioms of the function. A function discovered
-while encoding a *polymorphic* referrer (e.g. `select` referenced inside
-`update`'s axiom) has a `fnty` mentioning the referrer's type variables.
-The snapshot lets the deferred resolution encode those types even though the
-referrer's substitution is no longer otherwise in scope. -/
+`fn`/`fnty` are the call-site identifier and function type. -/
 structure SMT.PendingFnDef where
   fn : CoreIdent
   uf : UF
   fnty : LMonoTy
-  tySubst : Map String TermType
 deriving Repr, Inhabited
 
 /--
@@ -104,6 +95,8 @@ structure SMT.Context where
   ufs : OrderedSet UF := .empty
   ifs : OrderedKeyedSet IF.toUF := .empty
   axms : OrderedSet Term := .empty
+  /-- Unused by the encoder (all input is monomorphic); retained for type
+      compatibility with shared utilities. -/
   tySubst: Map String TermType := []
   /-- The known datatypes: the `TypeFactory` (kept in topological order for
   emission) together with a name→datatype index for O(1) lookup. Seeded by the
@@ -150,14 +143,15 @@ def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) :
 def SMT.Context.committedFn (ctx : SMT.Context) (uf : UF) : Bool :=
   ctx.ufs.contains uf || ctx.ifs.containsKey uf
 
-def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
-  { ctx with tySubst := ctx.tySubst ++ newSubst }
-
-def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermType) : SMT.Context :=
-  { ctx with tySubst := savedSubst }
-
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
+
+/-- Asserts the encoder invariant that all input is monomorphic. -/
+def SMT.Context.checkMonomorphic (ctx : SMT.Context) : Except Format Unit :=
+  if ctx.tySubst.isEmpty then .ok ()
+  else .error f!"SMT encoding: non-empty tySubst reached the encoder \
+                 ({ctx.tySubst.length} entries) — the input should be fully \
+                 monomorphic post-`MonomorphizeFunctions`."
 
 /-- Collect all sort, datatype, constructor, and selector names that have been
     pre-declared to the solver. Used to pre-populate the encoder's `usedNames`
@@ -261,26 +255,6 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
 @[expose] abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
-partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
-  match pattern, concrete with
-  | .ftvar name, concrete_ty =>
-    if typeVars.contains name then
-      acc.insert name concrete_ty
-    else acc
-  | .tcons pname pargs, .tcons cname cargs =>
-    if pname == cname && pargs.length == cargs.length then
-      (pargs.zip cargs).foldl (fun acc' (p, c) => unifyTypes typeVars p c acc') acc
-    else acc
-  | _, _ => acc
-
-def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy) (concreteTypes : List LMonoTy) : Map String LMonoTy :=
-  if patterns.length == concreteTypes.length then
-    (patterns.zip concreteTypes).foldl (fun acc (pattern, concrete) =>
-      unifyTypes typeVars pattern concrete acc) Map.empty
-  else
-    Map.empty
-
-
 /--
 Returns true if the given type name is a built-in Core type whose SMT-LIB
 encoding is handled specially and should not be declared via `declare-sort`.
@@ -345,11 +319,12 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     let ctx := SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
-  | .ftvar tyv => match ctx.tySubst.find? tyv with
-                    | .some termTy =>
-                      .ok (termTy, ctx)
-                    | _ =>
-                      .error f!"Cannot encode unresolved type variable '{tyv}' to SMT, polymorphic function body verification is not yet supported."
+  | .ftvar tyv =>
+    -- If the encoder sees a type variable, that's a bug — either
+    -- MonomorphizeFunctions failed to reach this reference, or something
+    -- re-introduced polymorphism.
+    .error f!"SMT encoding: unexpected type variable '{tyv}' — \
+              the input to SMTEncoder should be fully monomorphic."
 
 def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
@@ -581,7 +556,10 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  match ctx.datatypeFuns.get? fn.name with
+  -- Demangle so a specialized datatype op (e.g. `$__mono#Cons#int`) matches its
+  -- `datatypeFuns` key and the solver sees the native constructor/selector name.
+  let baseFn := Core.NameMangling.demangledBaseName fn.name
+  match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
@@ -590,7 +568,7 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
         Unsafe selectors (e.g. List..head!) use the safe name (List..head).
         -/
         let name := match kind with
-          | .selector => stripUnsafeDestructorSuffix fn.name
+          | .selector => stripUnsafeDestructorSuffix baseFn
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
     .ok (adtApp, smt_outty, ctx, pending)
@@ -599,12 +577,13 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     match factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      match corePredefinedOpToSMTOp (CoreOp.ofString func.name.name) ctx with
+      -- Demangle so built-in dispatch keys on the base name (see above).
+      let baseName := Core.NameMangling.demangledBaseName func.name.name
+      match corePredefinedOpToSMTOp (CoreOp.ofString baseName) ctx with
       | some (op, retty, ctx) => .ok (op, retty, ctx, pending)
       | none => do
-      let fnname := func.name.name
-      if (fnname == "select" || fnname == "update") && ctx.useArrayTheory then
-        .ok (.app (if fnname == "select" then Op.select else Op.store), smt_outty, ctx, pending)
+      if (baseName == "select" || baseName == "update") && ctx.useArrayTheory then
+        .ok (.app (if baseName == "select" then Op.select else Op.store), smt_outty, ctx, pending)
       else
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)
@@ -642,7 +621,7 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
           -- drawn from the factory; schedule a `PendingFnDef` instead. Skip
           -- functions already committed.
           let pending := if ctx.committedFn uf then pending
-            else pending.insert { fn := fn, uf := uf, fnty := fnty, tySubst := ctx.tySubst }
+            else pending.insert { fn := fn, uf := uf, fnty := fnty }
           .ok (.app (Op.uf uf), smt_outty, ctx, pending)
 
 mutual
@@ -819,6 +798,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
     (ctx : SMT.Context) (p : SMT.PendingFnDef) :
     Except Format (SMT.EncodedFnDef × SMT.Context × List SMT.PendingFnDef) :=
   open LTy.Syntax in do
+  ctx.checkMonomorphic
   let some func := factory[p.fn.name]?
     | .error f!"Cannot find function {p.fn} in Strata Core's Factory!"
 
@@ -828,12 +808,6 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
   let formals := func.inputs.keys
   let formalStrs := formals.map (toString ∘ format)
 
-  -- Seed the encoder's type substitution with the snapshot captured at the
-  -- point this function was referenced, so type variables appearing in `p.fnty`
-  -- (when the referrer was polymorphic) resolve while encoding its definition.
-  let savedSubst := ctx.tySubst
-  let ctx := ctx.addSubst p.tySubst
-  let seededSubst := ctx.tySubst
   -- Encode arg types (needed for both interpreted and uninterpreted paths).
   let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
   let args := formalStrs.zip smt_intys |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
@@ -853,23 +827,16 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
       .ok (some term, ctx, pending)
 
   -- Encode the function's axioms (recursive-function axioms are pre-computed by
-  -- `Core.generateRecursiveAxioms` and carried in `func.axioms`).
-  let allPatterns := func.inputs.values ++ [func.output]
-  let type_instantiations : Map String LMonoTy :=
-    extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
-  let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-    let (smtTy, _) ← LMonoTy.toSMTType monoTy ctx
-    .ok (acc_map.insert tyVar smtTy)) Map.empty
-
+  -- `Core.generateRecursiveAxioms` and carried in `func.axioms`).  All types
+  -- are monomorphic post-`MonomorphizeFunctions`, so no type-variable
+  -- substitution is needed to encode them.
   let (axiomTermsRev, ctx, pending) ← func.axioms.foldlM
     (init := (([] : List Term), ctx, pending))
     (fun (axs, ctx, pending) (ax : LExpr CoreLParams.mono) => do
-      let (axiom_term, ctx, pending) ←
-        toSMTTerm factory [] ax (ctx.addSubst smt_ty_inst) pending
-      .ok (axiom_term :: axs, ctx.restoreSubst seededSubst, pending))
-  -- Restore the substitution that was active before this function.
+      let (axiom_term, ctx, pending) ← toSMTTerm factory [] ax ctx pending
+      .ok (axiom_term :: axs, ctx, pending))
   .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
-       ctx.restoreSubst savedSubst, pending.toList)
+       ctx, pending.toList)
 
 /--
 Resolve and commit the transitive closure of deferred function definitions
@@ -910,12 +877,14 @@ decreasing_by
     The initial fuel covers the factory size (each function is committed at most
     once). -/
 def processPendingFnDefs (factory : @Lambda.Factory CoreLParams)
-    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) : Except Format SMT.Context :=
+    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) : Except Format SMT.Context := do
+  ctx.checkMonomorphic
   processPendingFnDefsAux factory (factory.toArray.size + pending.size) ctx {} pending.toList
 
 def toSMTTerms (factory : @Lambda.Factory CoreLParams) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
   (pending : SMT.PendingFnQueue) :
-  Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) :=
+  Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) := do
+  ctx.checkMonomorphic
   go es ctx pending #[]
 where
   go (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue)
