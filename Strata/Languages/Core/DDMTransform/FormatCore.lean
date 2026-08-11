@@ -241,15 +241,11 @@ private def isInternalOpName (name : String) : Bool :=
 #guard !isInternalOpName "myFunc"
 #guard !isInternalOpName "Integer.Add" -- prefix must be exactly `Int.`
 
-/-- Render an unknown operation as a generic function call `name(args...)`.
-    Registers the name as a free variable if not already registered. -/
-def mkGenericCall {M} [Inhabited M] (caller : String) (name : String)
+/-- Render a placeholder call expression `name(args...)`, registering `name` as a
+    free variable if needed. Shared primitive that does not log; callers log why
+    the placeholder was needed (see `mkGenericCall` and `lconstToExpr`). -/
+def renderAsGenericCall {M} [Inhabited M] (name : String)
     (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
-  if isInternalOpName name then
-    ToCSTM.logError caller
-      "internal Core operator missing from the CST mapping tables; the rendered call will not re-parse" name
-  else
-    ToCSTM.logError caller "unknown operation, rendering as generic call" name
   let ctx ← get
   let idx ← match ctx.freeVarIndex? name with
     | some idx => pure idx
@@ -259,6 +255,17 @@ def mkGenericCall {M} [Inhabited M] (caller : String) (name : String)
       pure idx
   let fnExpr := CoreDDM.Expr.fvar default idx
   pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+
+/-- Render an unknown *operation* as a generic function call `name(args...)`,
+    logging why the operation-mapping fallback was reached. -/
+def mkGenericCall {M} [Inhabited M] (caller : String) (name : String)
+    (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
+  if isInternalOpName name then
+    ToCSTM.logError caller
+      "internal Core operator missing from the CST mapping tables; the rendered call will not re-parse" name
+  else
+    ToCSTM.logError caller "unknown operation, rendering as generic call" name
+  renderAsGenericCall name args
 
 /-- Convert `LMonoTy` to `CoreType` -/
 def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
@@ -297,8 +304,16 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
       ToCSTM.logError "lmonoTyToCoreType" "unknown type" (toString ty)
       pure (.tvar default unknownTypeVar)
   | _ => do
-    ToCSTM.logError "lmonoTyToCoreType" "unknown type" (toString ty)
-    pure (.tvar default unknownTypeVar)
+    match ty with
+    | .bitvec w =>
+      -- Widths with surface syntax `bv W{w}` are matched above. Any other width is a valid
+      -- bitvector type with no concrete syntax: log the error and emit a width-tagged placeholder
+      -- that does not re-parse, rather than a type that would re-parse as something else.
+      ToCSTM.logError "lmonoTyToCoreType" "unsupported bitvec width" (toString w)
+      pure (.tvar default s!"$__unsupported_bv{w}")
+    | _ =>
+      ToCSTM.logError "lmonoTyToCoreType" "unknown type" (toString ty)
+      pure (.tvar default unknownTypeVar)
 
 /-- Convert `LTy` to `CoreType` -/
 def lTyToCoreType {M} [Inhabited M] (ty : Lambda.LTy) : ToCSTM M (CoreType M) :=
@@ -353,9 +368,12 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 128 n => pure (.bv128Lit default ⟨default, n.toNat⟩)
-  | .bitvecConst w _ => do
+  | .bitvecConst w v => do
+    -- No literal token for this width: log the same reason as the type path and emit a placeholder
+    -- (width in the name, value as the arg) that does not re-parse. A literal is not an operation,
+    -- so this does not go through `mkGenericCall`.
     ToCSTM.logError "lconstToExpr" "unsupported bitvec width" (toString w)
-    pure (.bv64Lit default ⟨default, w⟩)
+    renderAsGenericCall s!"Bv{w}.Lit" [.natToInt default ⟨default, v.toNat⟩]
 
 
 /-- Handle 0-ary operations -/

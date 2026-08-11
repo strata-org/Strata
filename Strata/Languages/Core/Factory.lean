@@ -277,9 +277,14 @@ end -- public meta section
 
 public section
 
-ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
-ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
-ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
+-- Supported bitvector widths. This set is repeated in the name-registration and
+-- op-expr lists below (all three must agree) and must match the widths exposed by the
+-- surface syntax — the `W…` markers and `bv{…}` tokens in `DDMTransform/Grammar.lean`,
+-- their handling in `Translate.lean`, and `lmonoTyToCoreType`/`lconstToExpr` in
+-- `FormatCore.lean`. `BvWidthPrinterTest` checks the factory and printer agree.
+ExpandBVOpFuncDefs[1, 8, 16, 32, 64, 128]
+ExpandBVSafeOpFuncDefs[1, 8, 16, 32, 64, 128]
+ExpandBVSafeDivOpFuncDefs[1, 8, 16, 32, 64, 128]
 
 /- Real Arithmetic Operations -/
 
