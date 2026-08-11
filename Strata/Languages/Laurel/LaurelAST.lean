@@ -455,6 +455,15 @@ guard — users never write one — but the pass-generated form round-trips: the
 printer renders a guarded group as `modifies <targets> when <guard>`
 (`modifiesWhenClause`), and the parser reads it back, so between-pass output
 stays loadable as well as readable.
+
+The `guard` field is a stand-in for set-valued modifies expressions. A modifies
+clause is meant to accept an arbitrary expression; with set values, a
+conditional frame would be written as the ordinary expression
+`if guard then {x} else {}` and would need no dedicated field. Laurel has no
+set type yet, so the guard rides in a field of its own. Once sets exist, this
+structure is expected to simplify to a single set-valued target expression
+plus `summary`:
+`structure ModifiesClause where target : AstNode StmtExpr; summary : Option String`.
 -/
 structure ModifiesGroup where
   /-- The frame's targets: references (or `*`) that may change. -/
@@ -680,6 +689,23 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
+
+/-! The two degenerate `ModifiesGroup` forms every frontend emits, named so the
+    load-bearing distinction is spelled once: an empty-target group means
+    "nothing changes", a wildcard group means "may modify anything", and zero
+    *groups* would mean unframed. Mixing these up silently flips a procedure's
+    frame semantics, so construction sites should route through these rather
+    than restate the literals. -/
+
+/-- The opaque default frame: one unguarded group with no targets — the
+    procedure changes nothing. Distinct from `[]` (no groups), which means
+    *unframed*. -/
+def ModifiesGroup.nothingChanges : List ModifiesGroup := [{ targets := [] }]
+
+/-- One unguarded group whose only target is the wildcard — the procedure may
+    modify anything. -/
+def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
+  [{ targets := [{ val := .All, source }] }]
 
 /-- The label of the implicit block that wraps every procedure body.
 

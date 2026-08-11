@@ -617,7 +617,7 @@ def translateModifiesClauses (arg : Arg) : TransM (List ModifiesGroup) := do
     -- not the absence of one. (This function is only reached from an
     -- `opaqueSpec`, so the group never lands on a transparent body.)
     pure ({ targets := plainTargets : ModifiesGroup } :: guardedGroups)
-  | _ => pure [{ targets := [] : ModifiesGroup }]
+  | _ => pure ModifiesGroup.nothingChanges
 
 /-- Translate the optional `summary "..."` argument of a clause. -/
 private def translateErrorSummary (errMsgArg : Arg) : TransM (Option String) := do
