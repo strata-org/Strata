@@ -334,28 +334,37 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
         | _ => return []
       catch _ => return []
     let decisionToResult (decision : Strata.SMT.Decision) :
-        Strata.SMT.IncrementalSolverM (Result P.Ident) := do
+        Strata.SMT.IncrementalSolverM (Except SolverError (Result P.Ident)) := do
       match decision with
-      | .sat => return .sat (← getModelForVars)
+      | .sat => return .ok (.sat (← getModelForVars))
       | .unknown =>
         let model ← getModelForVars
-        return if model.isEmpty then .unknown else .unknown (some model)
-      | .unsat => return .unsat
+        return .ok (if model.isEmpty then .unknown else .unknown (some model))
+      | .unsat => return .ok .unsat
+      | .timeout => return .error (.timeout "solver reported a timeout on the incremental check")
     let bothChecks := satisfiabilityCheck && validityCheck
     let mut satResult : Result P.Ident := .unknown
     let mut valResult : Result P.Ident := .unknown
     if bothChecks then
-      satResult ← decisionToResult (← solver.checkSatAssuming [obligationId])
+      match ← decisionToResult (← solver.checkSatAssuming [obligationId]) with
+      | .error e => solver.close; return .error e
+      | .ok r => satResult := r
       let negObligation ← solver.mkNot obligationId
-      valResult ← decisionToResult (← solver.checkSatAssuming [negObligation])
+      match ← decisionToResult (← solver.checkSatAssuming [negObligation]) with
+      | .error e => solver.close; return .error e
+      | .ok r => valResult := r
     else
       if satisfiabilityCheck then
         solver.assert obligationId
-        satResult ← decisionToResult (← solver.checkSat)
+        match ← decisionToResult (← solver.checkSat) with
+        | .error e => solver.close; return .error e
+        | .ok r => satResult := r
       else if validityCheck then
         let negObligation ← solver.mkNot obligationId
         solver.assert negObligation
-        valResult ← decisionToResult (← solver.checkSat)
+        match ← decisionToResult (← solver.checkSat) with
+        | .error e => solver.close; return .error e
+        | .ok r => valResult := r
     solver.close
     return .ok (satResult, valResult, estate)
   let (result, _) ← action.run solverState
