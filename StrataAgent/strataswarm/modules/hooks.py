@@ -191,6 +191,103 @@ def snapshot_tip_hooks(agent_ref=None, probability: float = 0.85) -> dict:
     }
 
 
+# ─── run_code-without-edit nudge: keep the writer editing the FILE ────────────
+
+# Tools that PROBE in a scratch/standalone context (do not change the real file).
+_PROBE_TOOLS = {
+    "mcp__lean_lsp__lean_run_code",
+    "mcp__lean_lsp__lean_multi_attempt",
+}
+# Tools that actually MUTATE the file under proof.
+_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+
+
+def run_code_nudge_hooks(agent_ref=None, threshold: int = 6) -> dict:
+    """Nudge the writer back to the FILE when it probes with lean_run_code /
+    lean_multi_attempt many times WITHOUT editing the file.
+
+    WHY: lean_run_code runs a STANDALONE snippet (reconstructed imports/opens/
+    elaboration order) and ships the whole snippet + full compiler output into the
+    transcript, which is then re-billed as input tokens on every later turn — so a
+    probe-heavy loop with no Edits inflates cost super-linearly AND risks divergence
+    (a proof that "works" in run_code may not compile in place). The system prompt
+    says to prefer editing; this is the RUNTIME reminder that fires when the behavior
+    actually drifts, because a one-time prompt line is easy to forget mid-proof.
+
+    Counts consecutive probe calls since the last file edit on `agent_ref`; once the
+    count crosses `threshold`, emits `additionalContext` (passive, no interrupt)
+    reminding the writer to commit to the file, then resets the counter so the nudge
+    fires again only after another `threshold` probes-without-edit. An Edit/Write at
+    any point resets the counter to 0."""
+
+    ATTR = "_probe_since_edit"
+
+    def _get() -> int:
+        return getattr(agent_ref, ATTR, 0) if agent_ref is not None else 0
+
+    def _set(n: int) -> None:
+        if agent_ref is not None:
+            setattr(agent_ref, ATTR, n)
+
+    _NUDGE = (
+        "⚠️ You've run several lean_run_code/lean_multi_attempt probes WITHOUT editing "
+        "the file. run_code runs a STANDALONE snippet — its imports/opens/elaboration "
+        "can differ from the real file, so a snippet that checks out may still not "
+        "compile in place, and every probe bloats your context (re-billed each turn). "
+        "STOP probing: apply your best current attempt to the file with Edit, then "
+        "verify in place with lean_diagnostic_messages. Use run_code only for a quick "
+        "single-tactic/lemma check, not to iterate the whole proof."
+    )
+
+    async def _nudge(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PostToolUse":
+            return {}
+        tool_name = input_data.get("tool_name", "")
+        short = tool_name.rsplit("__", 1)[-1]
+        # An edit resets the streak.
+        if tool_name in _EDIT_TOOLS or short in _EDIT_TOOLS:
+            _set(0)
+            return {}
+        if tool_name not in _PROBE_TOOLS:
+            return {}
+        n = _get() + 1
+        if n < threshold:
+            _set(n)
+            return {}
+        # Threshold crossed — nudge and reset so it re-arms for the next streak.
+        _set(0)
+        logger.info("run_code-without-edit nudge fired after %d probes", n)
+        if agent_ref is not None:
+            try:
+                await agent_ref._emit("message", f"[edit-the-file nudge] {_NUDGE}")
+            except Exception:
+                pass
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": _NUDGE,
+            }
+        }
+
+    return {
+        "PostToolUse": [HookMatcher(matcher=".*", hooks=[_nudge])]
+    }
+
+
+def writer_nudge_hooks(agent_ref=None) -> dict:
+    """Combined PostToolUse hooks for the proof writer: the snapshot tip + the
+    run_code-without-edit nudge, merged into one dict (both are PostToolUse, so
+    their matcher lists are concatenated)."""
+    combined: dict = {}
+    for h in (snapshot_tip_hooks(agent_ref=agent_ref, probability=1.0),
+              run_code_nudge_hooks(agent_ref=agent_ref)):
+        for event, matchers in h.items():
+            combined.setdefault(event, []).extend(matchers)
+    return combined
+
+
 # ─── SearchAgent: source-only, no Sandbox ────────────────────────────────────
 
 SEARCH_AGENT_DENIED = ["StrataAgent/"]

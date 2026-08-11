@@ -218,6 +218,67 @@ def create_bigsur_ledger_mcp_server(ledger: "LemmaLedger"):
         return _text(ledger.bigsur_reset_to_pending(input["id"]))
 
     @tool(
+        name="ledger_set_status",
+        description=(
+            "Set a ledger entry's status to any NON-proved value: pending | proving | "
+            "contingent | failed | pruned | cycle. Free-form bookkeeping so you can make "
+            "the DAG consistent (e.g. correct a wrongly-`failed` entry to `contingent`, "
+            "or mark a genuinely-dead node `pruned`). PROVED is NOT settable here — use "
+            "ledger_mark_proved, which verifies sorry-freedom with the oracle first. "
+            "Keep the DAG consistent: don't leave dangling refs or cycles."),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "status": {"type": "string",
+                           "enum": ["pending", "proving", "contingent", "failed", "pruned", "cycle"]},
+            },
+            "required": ["id", "status"],
+        },
+    )
+    async def ledger_set_status(input: dict[str, Any]) -> dict[str, Any]:
+        return _text(ledger.bigsur_set_status(input["id"], input["status"]))
+
+    @tool(
+        name="ledger_mark_proved",
+        description=(
+            "Fix a MIS-MARKED ledger status: record a lemma as PROVED when its FILE is "
+            "actually sorry-free but the ledger wrongly says failed/pruned/pending. This "
+            "is the desync case — a lemma that already compiles sorry-free keeps getting "
+            "re-escalated because the ledger never recorded it proved. This tool VERIFIES "
+            "sorry-freedom with the authoritative axioms oracle FIRST and only marks "
+            "PROVED if it genuinely passes; if the oracle says it still has a sorry, or "
+            "can't resolve it (e.g. not `public`), it REFUSES and tells you why. Use when "
+            "your investigation shows a lemma is done but its ledger entry disagrees — "
+            "instead of reset_to_pending (which just re-queues an already-proved lemma)."),
+        input_schema={"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    )
+    async def ledger_mark_proved(input: dict[str, Any]) -> dict[str, Any]:
+        from .modules.po_lean import get_lean_tools
+        entry = ledger.get(input["id"])
+        if not entry:
+            return _text({"marked": False, "error": f"Entry {input['id']} not found"})
+        # VERIFY sorry-free before recording proved — never trust intent over the oracle.
+        tools = get_lean_tools()
+        try:
+            ax = tools.axioms_by_theorem(entry.file_path, [entry.name])
+        except Exception as e:
+            return _text({"marked": False, "error": f"oracle check failed: {e}"})
+        if not ax.build_ok:
+            return _text({"marked": False,
+                          "error": f"file does not build: {ax.build_error}"})
+        if entry.name in getattr(ax, "not_found_by_name", {}):
+            return _text({"marked": False, "not_found": True,
+                          "error": ax.not_found_by_name[entry.name]})
+        if not ax.is_proven(entry.name):
+            return _text({"marked": False, "has_sorry": ax.sorry_by_name.get(entry.name),
+                          "error": f"'{entry.name}' is NOT sorry-free per the oracle — refusing to mark proved."})
+        import_path = entry.file_path.replace("/", ".").removesuffix(".lean")
+        msg = ledger.bigsur_mark_proved(input["id"], import_path)
+        return _text({"marked": True, "message": msg,
+                      "axioms": ax.axioms_by_name.get(entry.name, [])})
+
+    @tool(
         name="ledger_save",
         description=(
             "PERSIST your ledger changes to disk NOW. Your delete/purge/reparent/"
@@ -242,5 +303,6 @@ def create_bigsur_ledger_mcp_server(ledger: "LemmaLedger"):
         tools=[ledger_search, ledger_get, ledger_children, ledger_ancestry,
                ledger_dag, ledger_stats,
                ledger_delete_entry, ledger_purge_subtree, ledger_update_signature,
-               ledger_reparent, ledger_reset_to_pending, ledger_save],
+               ledger_reparent, ledger_reset_to_pending, ledger_set_status,
+               ledger_mark_proved, ledger_save],
     )

@@ -284,6 +284,25 @@ class LemmaLedger:
             winner.turn_budget = 25 + self._indegree.get(winner.id, 0) * 5
             return winner
 
+    def pick_boosted(self) -> LemmaEntry | None:
+        """Return the highest-priority boosted PENDING entry, or None.
+
+        A `priority_boost` on a PENDING entry is a deliberate NOMINATION — almost
+        always BigSur having just re-opened THE node that must be proved next
+        (bigsur_update_signature / bigsur_reset_to_pending both set the boost).
+        SELECT honors it directly instead of re-asking the guide (which lacks
+        BigSur's just-computed repair context and re-litigates into root/sibling
+        churn — the callElim loop). Does NOT clear the boost or change status —
+        the caller does that via mark_proving so the nomination fires exactly once.
+        Ranking mirrors pick_next's boosted branch (indegree, then depth)."""
+        with self._lock:
+            boosted = [e for e in self._entries.values()
+                       if e.status == LemmaStatus.PENDING and e.priority_boost]
+            if not boosted:
+                return None
+            boosted.sort(key=lambda e: (self._indegree.get(e.id, 0), e.depth), reverse=True)
+            return boosted[0]
+
     def pending_children(self, entry_id: str) -> list[LemmaEntry]:
         """Return PENDING children of an entry (for strategist to examine)."""
         with self._lock:
@@ -688,6 +707,51 @@ class LemmaLedger:
             entry.pruned_reason = ""
             entry.priority_boost = True
             return f"Reset '{entry.name}' ({entry_id}) to PENDING"
+
+    def bigsur_set_status(self, entry_id: str, status: str) -> str:
+        """Set an entry's status to any NON-proved status
+        (pending/proving/contingent/failed/pruned/cycle) and clear stale
+        failure/cycle/pruned annotations. Free-form bookkeeping fix for a
+        mis-marked entry. PROVED is refused here — it must go through
+        bigsur_mark_proved, which verifies sorry-freedom via the oracle (marking
+        something proved without verification is itself an inconsistency)."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if not entry:
+                return f"Entry {entry_id} not found"
+            try:
+                new_status = LemmaStatus(status)
+            except ValueError:
+                return (f"Invalid status '{status}'. Valid: pending, proving, "
+                        f"contingent, failed, pruned, cycle (proved → use ledger_mark_proved).")
+            if new_status == LemmaStatus.PROVED:
+                return "REFUSED: use ledger_mark_proved (oracle-verified) to mark PROVED."
+            prev = entry.status.value
+            entry.status = new_status
+            entry.failure_reason = ""
+            entry.cycle_ancestor_id = ""
+            entry.pruned_reason = ""
+            return f"Set '{entry.name}' ({entry_id}) status {prev} → {new_status.value}"
+
+    def bigsur_mark_proved(self, entry_id: str, import_path: str) -> str:
+        """Correct a mis-marked ledger status: record a lemma as PROVED and clear any
+        stale failure/pruned/cycle state. For the desync case where a lemma's FILE is
+        already sorry-free but its ledger entry says failed/pruned — which otherwise
+        loops (reset_to_pending → re-select → re-escalate). CALLER MUST have verified
+        sorry-freedom first (the MCP tool gates this on the axioms oracle)."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if not entry:
+                return f"Entry {entry_id} not found"
+            prev = entry.status.value
+            entry.status = LemmaStatus.PROVED
+            entry.import_path = import_path or entry.import_path
+            entry.proved_by = "bigsur_verified"
+            entry.failure_reason = ""
+            entry.cycle_ancestor_id = ""
+            entry.pruned_reason = ""
+            entry.priority_boost = False
+            return f"Marked '{entry.name}' ({entry_id}) PROVED (was {prev})"
 
     # ─── Persistence ─────────────────────────────────────────────────────────
 

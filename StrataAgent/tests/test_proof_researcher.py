@@ -119,13 +119,18 @@ def test_research_is_a_decision_option():
 
 
 def test_guide_decides_after_research():
-    """After research, the GUIDE reads the report and makes a proceed/give_up call
-    (the researcher only advises; the guide owns the decision → BigSur on give_up)."""
+    """After research, the GUIDE reads the report and makes a proceed/give_up/
+    research_more call. An UNCERTAIN report must NOT force give_up — research_more
+    sends it back for a deeper pass (never escalate a provable goal on low confidence,
+    never blindly proceed on a shaky one)."""
     src = open(os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "strataswarm/modules/po_v5.py")).read()
-    assert 'options=["proceed", "give_up"]' in src, "no post-research guide decision"
-    # give_up branch must route to the failure-propagation (→ BigSur) path.
+    assert 'options=["proceed", "give_up", "research_more"]' in src, \
+        "post-research decision must offer proceed/give_up/research_more"
+    # research_more branch must re-run the researcher, NOT propagate failure.
+    assert 'if r_decision == "research_more":' in src
+    # give_up branch still routes to the failure-propagation (→ BigSur) path.
     assert "Post-research give-up" in src
     assert "_propagate_failure_to_parent" in src
     print("✓ test_guide_decides_after_research")
@@ -145,14 +150,124 @@ def test_researcher_runs_a_decision_loop():
 
 
 def test_report_has_recommendation_section():
-    """The researcher's report format must end with a RECOMMENDATION the guide keys on."""
+    """The report format must offer PROCEED / GIVE_UP / UNCERTAIN, and the prompt must
+    demand a confidence gate + full-footprint feasibility rigor (the fix for the
+    flip-flop where a shaky PROCEED skipped the read/getVars footprint)."""
     import yaml
     d = yaml.safe_load(open(os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "strataswarm/agent_specs/agents/proof_researcher.yaml")))
     sp = d["system_prompt"]
     assert "RECOMMENDATION" in sp and "PROCEED" in sp and "GIVE_UP" in sp
+    # UNCERTAIN must be a first-class outcome (never dress up doubt as confidence).
+    assert "UNCERTAIN" in sp, "no UNCERTAIN verdict option"
+    # Confidence gate + rigor cues.
+    assert "CONFIDENCE GATE" in sp
+    assert "getVars" in sp and "footprint" in sp.lower()
     print("✓ test_report_has_recommendation_section")
+
+
+def test_researcher_loop_gates_on_confidence():
+    """The done/not_done loop must NOT exit on a merely-complete report — it requires
+    HIGH confidence, else it keeps digging (or lands on UNCERTAIN). Guards the
+    flip-flop: a low/medium-confidence 'done' must be pushed back."""
+    src = open(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "strataswarm/modules/po_v5.py")).read()
+    assert "CONFIDENCE:" in src, "researcher check does not ask for confidence"
+    # Exit condition is done AND high confidence.
+    assert 'rdecision == "done" and confidence == "high"' in src, \
+        "researcher loop does not gate exit on high confidence"
+    # A done-but-not-high answer is explicitly not accepted.
+    assert "NOT accepting" in src or "pushing for certainty" in src
+    print("✓ test_researcher_loop_gates_on_confidence")
+
+
+def test_report_hint_surfaces_existing_report_and_verdict():
+    """An authored report must be surfaced (path + RECOMMENDATION) into prompts so
+    the writer/guide/BigSur act on its verdict instead of re-diagnosing. This is the
+    fix for the callElim loop where the report said GIVE_UP early but the give-up→
+    BigSur pipeline re-cited the stale build-gate reason ~10× before acting."""
+    import tempfile, shutil
+    from pathlib import Path
+    from strataswarm.modules import po_v5
+
+    class _E:
+        workspace = "StrataAgent/Sandbox"
+        name = "callElim_overapproximates"
+
+    cwd = Path(tempfile.mkdtemp())
+    try:
+        # No report yet → no hint, no _existing_report.
+        assert po_v5._existing_report(_E(), cwd) is None
+        assert po_v5._report_hint(_E(), cwd) == ""
+
+        # Author a report with a RECOMMENDATION line.
+        rdir = cwd / "StrataAgent/Sandbox/reports"
+        rdir.mkdir(parents=True)
+        (rdir / "callElim_overapproximates.md").write_text(
+            "# Research\n## Verdict: needs-hypothesis\n"
+            "body...\n## RECOMMENDATION: GIVE_UP\nfalse as stated\n")
+
+        found = po_v5._existing_report(_E(), cwd)
+        assert found is not None
+        paths, rec = found
+        assert "StrataAgent/Sandbox/reports/callElim_overapproximates.md" in paths
+        assert "GIVE_UP" in rec
+
+        hint = po_v5._report_hint(_E(), cwd)
+        assert "StrataAgent/Sandbox/reports/callElim_overapproximates.md" in hint  # path surfaced
+        assert "GIVE_UP" in hint                 # verdict is surfaced
+        assert "authoritative" in hint.lower()   # instruction to act on it
+    finally:
+        shutil.rmtree(cwd)
+    print("✓ test_report_hint_surfaces_existing_report_and_verdict")
+
+
+def test_report_hint_surfaces_path_even_without_parseable_verdict():
+    """CRUX of the robustness ask: the PATH must be in the prompt even when the
+    RECOMMENDATION/Verdict regex does NOT match — the agent can still Read it. Also
+    covers a report filename that is NOT the canonical <name>.md."""
+    import tempfile, shutil
+    from pathlib import Path
+    from strataswarm.modules import po_v5
+
+    class _E:
+        workspace = "StrataAgent/Sandbox"
+        name = "some_lemma"
+
+    cwd = Path(tempfile.mkdtemp())
+    try:
+        rdir = cwd / "StrataAgent/Sandbox/reports"
+        rdir.mkdir(parents=True)
+        # Non-canonical name + NO RECOMMENDATION/Verdict line at all.
+        (rdir / "notes_on_some_lemma.md").write_text("# findings\njust prose, no verdict header\n")
+        found = po_v5._existing_report(_E(), cwd)
+        assert found is not None, "must find a report even with a non-canonical name"
+        paths, rec = found
+        assert paths == ["StrataAgent/Sandbox/reports/notes_on_some_lemma.md"]
+        assert rec == ""                          # nothing parseable — fine
+        hint = po_v5._report_hint(_E(), cwd)
+        assert "StrataAgent/Sandbox/reports/notes_on_some_lemma.md" in hint  # PATH still surfaced
+        assert "READ" in hint.upper()
+    finally:
+        shutil.rmtree(cwd)
+    print("✓ test_report_hint_surfaces_path_even_without_parseable_verdict")
+
+
+def test_report_hint_wired_into_bigsur_and_prompts():
+    """The report hint must be injected into BigSur's briefing, the guide's decision
+    hint, and the writer's scope note — the three consumers that spun the loop."""
+    src = open(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "strataswarm/modules/po_v5.py")).read()
+    # BigSur briefing includes the hint + the anti-spin instruction.
+    assert "report_hint = _report_hint(entry, cwd)" in src
+    assert "Re-queuing a\n" in src or "only spins this loop" in src
+    # guide decision hint + writer scope note both append the hint.
+    assert src.count("_report_hint(entry, cwd)") >= 3, \
+        "report hint not wired into all three (bigsur/guide/writer)"
+    print("✓ test_report_hint_wired_into_bigsur_and_prompts")
 
 
 if __name__ == "__main__":
@@ -165,4 +280,8 @@ if __name__ == "__main__":
     test_guide_decides_after_research()
     test_researcher_runs_a_decision_loop()
     test_report_has_recommendation_section()
+    test_researcher_loop_gates_on_confidence()
+    test_report_hint_surfaces_existing_report_and_verdict()
+    test_report_hint_surfaces_path_even_without_parseable_verdict()
+    test_report_hint_wired_into_bigsur_and_prompts()
     print("\n✅ All ProofResearcher tests passed!")

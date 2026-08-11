@@ -9,19 +9,23 @@ escalates on wall-clock elapsed (warn → redispatch → terminate) and, before 
 restart/terminate, consults the authoritative oracle (`_target_proven`) to catch
 a prover that is secretly already done.
 
-These tests exercise the exact behaviors we now guard against:
+NOTE (2026-08-07): the watchdog NO LONGER does time-based restart/terminate — a
+prover is never killed for running long. A lemma is stopped only by a natural
+give_up (→ BigSur) or BigSur's own invocation cap, both inside the prover. The
+watchdog's only action is the "secretly already done" escape.
+
+These tests exercise the current behavior:
 
   _target_proven (real Lean builds against Sandbox/Stub.lean):
     * a proven stub    → True  (spinning-but-done → escalate to success)
-    * a sorry stub     → False (genuinely not done → keep escalating)
-    * no theorem_names → None  (can't enumerate → defer to time-based ladder)
+    * a sorry stub     → False (genuinely not done → keep monitoring, never killed)
+    * no theorem_names → None  (can't enumerate → keep monitoring)
 
-  _prover_watchdog (escalation ladder, with controlled time):
+  _prover_watchdog:
     * below warn threshold           → keep monitoring (None)
     * warn tier                      → nudge exactly once, then keep monitoring
-    * past redispatch, target proven → PROVER_DONE (no needless kill)
-    * past redispatch, not proven    → redispatch a fresh prover (bounded)
-    * restarts exhausted             → terminate (force_terminate) → PROVER_DONE
+    * past warn, target proven       → PROVER_DONE (already-done escape)
+    * past warn, not proven (any t)  → keep monitoring; NEVER restart or terminate
 
 Run:
     StrataAgent/.venv/bin/python StrataAgent/tests/test_prover_watchdog.py
@@ -40,7 +44,7 @@ from strataswarm.modules import task_manager as tm
 from strataswarm.modules.task_manager import (
     WorkflowState, WorkflowMode, Stage, Transition,
     _target_proven, _prover_watchdog,
-    PROVER_WARN, PROVER_REDISPATCH, MAX_REDISPATCHES,
+    PROVER_WARN,
 )
 
 STRATA_AGENT = Path(__file__).resolve().parent.parent
@@ -220,12 +224,12 @@ def test_watchdog_warn_tier_nudges_once():
 
 
 def test_watchdog_proven_target_escalates_to_done():
-    """Past the redispatch threshold, if the oracle says the target is proven the
-    watchdog escalates to PROVER_DONE (success) instead of killing the prover."""
+    """Past the warn threshold, if the oracle says the target is proven the watchdog
+    escalates to PROVER_DONE (success) — the "secretly already done" escape."""
     agent, st = _FakeAgent(), _fresh_state(["watchdog_target"])
     p = _Patcher()
     try:
-        result, calls = _run_watchdog(st, agent, now_offset=PROVER_REDISPATCH + 60,
+        result, calls = _run_watchdog(st, agent, now_offset=PROVER_WARN + 60,
                                       proven=True, patch=p)
     finally:
         p.restore()
@@ -235,32 +239,28 @@ def test_watchdog_proven_target_escalates_to_done():
     print("✓ test_watchdog_proven_target_escalates_to_done")
 
 
-def test_watchdog_wedged_redispatches_then_terminates():
-    """Not proven + restarts remaining → redispatch (MONITOR_TICK). Once restarts
-    are exhausted → terminate (force_terminate) and escalate to PROVER_DONE for
-    salvage-validation."""
+def test_watchdog_never_restarts_or_terminates_a_working_prover():
+    """A still-working (not-proven) prover is NEVER killed for running long — no
+    matter how much time elapses. Only give_up→BigSur or the BigSur cap (both inside
+    the prover) can stop a lemma. The watchdog just keeps monitoring (+ one nudge)."""
     agent, st = _FakeAgent(), _fresh_state(["watchdog_target"])
     p = _Patcher()
     try:
-        # Redispatch tier: should restart while redispatches < MAX_REDISPATCHES.
-        for i in range(MAX_REDISPATCHES):
-            result, calls = _run_watchdog(st, agent, now_offset=PROVER_REDISPATCH + 60,
+        # Way past any old restart/terminate threshold, still not proven.
+        for offset in (PROVER_WARN + 60, PROVER_WARN + 100_000, PROVER_WARN + 500_000):
+            result, calls = _run_watchdog(st, agent, now_offset=offset,
                                           proven=False, patch=p)
-            assert result == Transition.MONITOR_TICK, f"restart {i} should keep monitoring"
-            assert st.redispatches == i + 1
-            assert calls["redispatch"] == 1 and calls["cleanup"] == 1
-            assert st.prover_warned is False, "warn flag should reset for the new instance"
-
-        # Now restarts are exhausted → terminate path.
-        result, calls = _run_watchdog(st, agent, now_offset=PROVER_REDISPATCH + 60,
-                                      proven=False, patch=p)
-        assert result == Transition.PROVER_DONE, "exhausted restarts should terminate→PROVER_DONE"
-        assert st.force_terminate is True
-        assert st.prover_done is True
-        assert calls["cleanup"] == 1 and calls["redispatch"] == 0, "terminate kills, does not restart"
+            assert result is None, f"working prover must keep monitoring (offset {offset})"
+            assert calls["redispatch"] == 0, "must NEVER redispatch"
+            assert calls["cleanup"] == 0, "must NEVER kill/terminate a working prover"
+        assert st.force_terminate is False
+        assert st.redispatches == 0
+        # Exactly one informational nudge across all those ticks.
+        nudges = len([m for m in agent.messages if "watchdog" in m.lower()])
+        assert nudges == 1, f"expected one nudge, got {nudges}"
     finally:
         p.restore()
-    print("✓ test_watchdog_wedged_redispatches_then_terminates")
+    print("✓ test_watchdog_never_restarts_or_terminates_a_working_prover")
 
 
 # ── 3. Transition wiring: IDLE + PROVER_DONE routes to VALIDATE (bypass gate) ─
@@ -282,6 +282,6 @@ if __name__ == "__main__":
     test_watchdog_below_warn_keeps_monitoring()
     test_watchdog_warn_tier_nudges_once()
     test_watchdog_proven_target_escalates_to_done()
-    test_watchdog_wedged_redispatches_then_terminates()
+    test_watchdog_never_restarts_or_terminates_a_working_prover()
     test_idle_prover_done_routes_to_validate()
     print("\n✅ All prover-watchdog tests passed!")

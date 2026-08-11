@@ -46,33 +46,19 @@ from .._agent import SwarmAgent
 T = TypeVar("T")
 
 MAX_DEPTH = 5
-MIN_CHUNK_TURNS = 50
-MAX_CHUNK_TURNS = 100
+MIN_CHUNK_TURNS = 120
+MAX_CHUNK_TURNS = 160
 CHUNK_TURNS = MIN_CHUNK_TURNS
 GRACE_TURNS = 20
-# Runaway backstop for a single lemma's guide-driven prove loop. The guide remains
-# the decision-maker; this is only a safety net against an unbounded `continue`
-# spin (a leaf that neither proves, decomposes, nor gets given up). On breach we
-# stop asking the guide to `continue` and force the terminal path
-# (decompose → give_up → propagate). These are deliberately HIGH — a normal proof
-# should never approach them.
-MAX_CHUNKS_PER_LEMMA = 80          # ~80 chunks × up to 100 turns = a lot of room
-# TIER 1 — FLEXIBLE per-lemma backstop. This is a NO-PROGRESS budget, not raw
-# wall-clock: the clock is measured from the last chunk that STRICTLY reduced the
-# transitive open-sorry count (entry._last_progress_time). A proof that keeps
-# shedding sorries never trips it — only genuine stalling does. The guide can also
-# grant bounded extensions (EXTEND_MINUTES) when it judges the lemma is close.
-LEMMA_IDLE_MINUTES = 180           # minutes WITHOUT progress before the backstop fires
-MAX_GUIDE_EXTEND_MINUTES = 30      # max minutes the guide may add per grant
-# ENDGAME grace: chunks with 0 leaf-sorries but a not-yet-compiling proof count as
-# progress (reset the idle clock) for this many chunks — a writer that closed the
-# last sorry and is fixing compile errors is on the critical path, not stalling.
-# After the window the idle clock ages again so a permanently-wedged endgame (a
-# proof the writer can never compile) is still caught by the flexible/hard backstop.
+# NO per-lemma or run-level backstops. A lemma is only ever stopped by a NATURAL
+# give_up (the guide decides false / needs a contract change → give_up → BigSur) or
+# by BigSur's own global cap (BIGSUR_MAX_INVOCATIONS). We removed the idle-minutes
+# budget, the per-lemma chunk cap, and the run-level max-minutes ceiling — blunt
+# timeouts killed slow-but-progressing proofs and forced churn. The guide keeps
+# working (continue/decompose/research/fresh_start/give_up) until it or BigSur ends it.
+# ENDGAME grace: chunks with 0 leaf-sorries but a not-yet-compiling proof — tracked
+# ONLY to drive the guide-facing stuck_hint (no backstop consumes it anymore).
 ENDGAME_GRACE_CHUNKS = 4
-# TIER 2 — HARD run-level ceiling (absolute wall-clock for the WHOLE run). Set via
-# `start_dashboard.sh --max-run-minutes`. None ⇒ NO stopping time (run until proved
-# or otherwise terminated). This is the only unconditional stop.
 # BigSur — the repair agent of last resort. EVERY give-up that reaches
 # _propagate_failure_to_parent escalates straight to BigSur (no local
 # parent-reactivation first — a give-up's real cause usually lives ABOVE the parent,
@@ -89,6 +75,11 @@ BIGSUR_MAX_INVOCATIONS = 100
 # real repair reads many files and edits several — but bounded so a wedged pass is
 # eventually reaped and the decision loop takes over.
 BIGSUR_INITIAL_TURNS = 200
+# Periodic full-swarm checkpoint interval (seconds). A safety net for a long grind
+# with no proved lemma: if no full checkpoint has happened in this long, take one on
+# the next chunk boundary. Any full checkpoint (proved-lemma / run-done) resets the
+# clock, so this only fires when nothing else has checkpointed recently.
+CHECKPOINT_INTERVAL_SECONDS = 3600  # 1 hour
 # ProofResearcher — a deep-research pass the guide can request (the `research`
 # decision) when a lemma is genuinely stuck. It reads the whole codebase for
 # primitives/patterns/counterexamples and writes a findings report the writer and
@@ -262,6 +253,12 @@ class PO5State:
     # How many times the BigSur repair agent has been invoked this run. Bounded by
     # BIGSUR_MAX_INVOCATIONS — a global backstop against a repair ↔ re-fail loop.
     bigsur_invocations: int = 0
+    # The LAST BigSur completion note (what it attested when it finished its most
+    # recent repair, and on which lemma). Surfaced in the next SELECT so the guide
+    # knows BigSur already ran — and doesn't re-give-up on a node BigSur just handled
+    # (the callElim spin: the guide kept re-escalating the same node, unaware BigSur
+    # had already attested "done, nothing to change"). Format: (lemma_name, note).
+    last_bigsur_note: str = ""
 
 
 def _read_hint(state: PO5State) -> str:
@@ -540,6 +537,10 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
     bigsur_build_mcp = create_bigsur_build_mcp_server(cwd)
 
     root_name = root_entry.name if root_entry else state.root_theorem_name
+    # If a ProofResearcher already investigated this lemma, its report is the ground
+    # truth about feasibility — make it authoritative in the briefing so BigSur acts
+    # on a proven GIVE_UP verdict instead of re-deriving the stale give-up reason.
+    report_hint = _report_hint(entry, cwd)
     briefing = (
         f"A proof give-up has escalated to you.\n\n"
         f"FAILED LEMMA: {entry.name} (id={entry.id})\n"
@@ -548,6 +549,12 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
         f"Its pristine signature lives in {root_ws}/Stub.clean.lean — NEVER edit "
         f"that file.\n\n"
         f"GUIDE'S IMPACT REPORT:\n{impact_report or '(none — scan the ancestry yourself)'}\n\n"
+        f"{report_hint}\n\n"
+        f"IMPORTANT: if a ProofResearcher report above concludes the goal is FALSE / "
+        f"unprovable as stated / needs a hypothesis the ROOT lacks, do NOT keep "
+        f"'resetting to pending' or re-checking the build — VERIFY the report's "
+        f"counterexample and, if it holds, GIVE UP with that epiphany. Re-queuing a "
+        f"node whose report says it is false only spins this loop.\n\n"
         f"NOTE: the give-up may be a BUILD / OLEAN-CACHE blocker rather than a contract "
         f"defect — e.g. 'imports are out of date / must be rebuilt', a repeated identical "
         f"build failure (4294967294 / 'no such file'), or a stale-subtree olean gate that "
@@ -571,6 +578,7 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
 
     gave_up = False
     epiphany = ""
+    attested_note = ""  # BigSur's "done" reason — surfaced to the next SELECT
     async with swarm_agent(
         "bigsur", swarm=agent.swarm, cwd=agent._cwd,
         can_see=["SearchAgent"],
@@ -614,6 +622,7 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
             reason = rm.group(1).strip() if rm else raw[:200]
             if decision == "done":
                 await agent._emit("message", f"[PO5] BigSur attests consistent: {reason}")
+                attested_note = reason
                 break
             if decision == "give_up":
                 gave_up = True
@@ -683,9 +692,88 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
     # which dereferences current_lemma_id) and BigSur may have DELETED that entry.
     # _phase_update tolerates a missing entry (guarded); the subsequent CHECK →
     # SELECT then picks fresh work from the corrected ledger.
+    #
+    # Record what BigSur just did on this node, keyed to the node, so the NEXT SELECT
+    # can tell the guide "BigSur already ran on <lemma> and attested: <note>". Without
+    # this the guide re-picks the same node blind to BigSur's work and re-gives-up
+    # with the same reason → the repair↔re-fail spin (callElim: same root, ~10×).
+    note = attested_note or ("(exhausted decision rounds without attesting done)")
+    state.last_bigsur_note = (
+        f"BigSur (invocation #{state.bigsur_invocations}) just ran on '{entry.name}' "
+        f"and attested: {note}")
     await _cleanup_all_agents(agent)
     await agent._emit("message",
         f"[PO5] BigSur repair complete; resuming proof search against corrected contracts.")
+
+
+def _existing_report(entry: LemmaEntry, cwd: Path) -> tuple[list[str], str] | None:
+    """If any ProofResearcher report exists for this entry, return (report_paths,
+    recommendation), else None.
+
+    A report is authored by the researcher (see _run_researcher) into
+    <workspace>/reports/ and is the GROUND TRUTH about the lemma's feasibility — it
+    may say GIVE_UP with a counterexample. That verdict must be surfaced INTO the
+    writer/guide/BigSur prompts, not left sitting on disk: in the callElim run the
+    report reached GIVE_UP early, but the give-up→BigSur pipeline kept re-deriving
+    the stale build-gate reason and spun BigSur ~10× before the verdict was acted on.
+
+    Robustness: we do NOT gate on the canonical `<name>.md` filename or on a regex
+    matching. We return the PATH(S) of every report file in the dir unconditionally
+    (the writer/guide/BigSur must be TOLD the path to read even if we can't parse a
+    verdict for them). `recommendation` is a best-effort parse of a RECOMMENDATION /
+    Verdict line — '' if none matched, which is fine: the path is still surfaced so
+    the agent reads the report itself."""
+    reports_dir = cwd / f"{entry.workspace}/reports"
+    try:
+        if not reports_dir.is_dir():
+            return None
+        files = sorted(p for p in reports_dir.glob("*.md")
+                       if p.is_file() and p.stat().st_size > 0)
+    except OSError:
+        return None
+    if not files:
+        return None
+    # Prefer the canonical <name>.md for verdict parsing, else the first report.
+    canonical = reports_dir / f"{entry.name}.md"
+    primary = canonical if canonical in files else files[0]
+    rec = ""
+    try:
+        text = primary.read_text()
+        m = re.search(r'RECOMMENDATION:\s*([^\n]+)', text, re.IGNORECASE) \
+            or re.search(r'Verdict:\s*([^\n]+)', text, re.IGNORECASE)
+        if m:
+            rec = m.group(1).strip()
+    except OSError:
+        pass
+    # Workspace-relative paths (what the agents' Read tool expects).
+    rels = [f"{entry.workspace}/reports/{p.name}" for p in files]
+    # Put the canonical/primary first so the strongest signal leads.
+    prim_rel = f"{entry.workspace}/reports/{primary.name}"
+    rels = [prim_rel] + [r for r in rels if r != prim_rel]
+    return rels, rec
+
+
+def _report_hint(entry: LemmaEntry, cwd: Path) -> str:
+    """A prompt fragment pointing writer/guide/BigSur at existing research report(s)
+    and their recommendation, or '' if none. The PATH is ALWAYS surfaced (even when
+    no verdict could be parsed) so the agent can Read the report itself — the whole
+    point is that the report must never sit unread on disk."""
+    found = _existing_report(entry, cwd)
+    if not found:
+        return ""
+    report_rels, rec = found
+    primary = report_rels[0]
+    others = report_rels[1:]
+    rec_line = f" Its RECOMMENDATION/verdict: {rec}." if rec else \
+        " (Recommendation not auto-parsed — READ the report to get its verdict.)"
+    extra = f" Other reports here: {', '.join(others)}." if others else ""
+    return (
+        f"\n\n📄 A ProofResearcher report ALREADY EXISTS for this lemma at "
+        f"{primary}.{rec_line}{extra} READ IT (Read {primary}) and take its findings "
+        f"as authoritative — if it proves the goal is FALSE / needs a signature change, "
+        f"do NOT re-hunt in-file: act on the report (give_up → BigSur / human), do not "
+        f"re-diagnose from scratch."
+    )
 
 
 async def _run_researcher(agent, state: PO5State, ledger: LemmaLedger,
@@ -751,43 +839,77 @@ async def _run_researcher(agent, state: PO5State, ledger: LemmaLedger,
         # Initial free-form dig.
         await researcher.run_ai(inp=briefing, max_turns=RESEARCHER_TURNS)
 
-        # Decision loop: keep it working until the report is COMPLETE (like BigSur).
+        # Decision loop: keep it working until the report is COMPLETE **and the
+        # researcher is genuinely CONFIDENT in its PROCEED/GIVE_UP verdict**. The
+        # feasibility verdict feeds the guide's give_up decision, so a shaky call is
+        # worse than none: a wrong PROCEED sends the writer to grind an unprovable
+        # goal; a wrong GIVE_UP escalates a provable one. We therefore do NOT let it
+        # exit on a merely-complete report — it must attest CONFIDENCE, or explicitly
+        # mark the verdict UNCERTAIN in the report (with what it would take to decide)
+        # instead of guessing PROCEED/GIVE_UP. If unsure, it keeps digging.
         for round_i in range(RESEARCHER_DECISION_ROUNDS):
             prompt = (
                 "Report check. Answer EXACTLY:\n"
                 "DECISION: <done | not_done>\n"
+                "CONFIDENCE: <high | medium | low>\n"
                 "REASON: <one sentence>\n\n"
-                f"- done: you have WRITTEN the report to {report_rel} and it is "
-                "COMPLETE — it names the concrete primitives (with locations), the "
-                "recommended proof shape, any counterexample/missing-hypothesis you "
-                "found, and it ends with a clear RECOMMENDATION line (PROCEED or "
-                "GIVE_UP). If you claimed a scratch-verified skeleton, you actually "
-                "ran it through lean_run_code. Do NOT say done on an empty or "
-                "half-written report.\n"
-                "- not_done: more digging needed; you will continue after answering."
+                f"- done: REQUIRES BOTH (1) the report at {report_rel} is COMPLETE — "
+                "names concrete primitives with locations, the proof shape, any "
+                "counterexample/missing-hypothesis, ends with a RECOMMENDATION line; "
+                "AND (2) you are genuinely CONFIDENT (high) in the PROCEED/GIVE_UP "
+                "verdict, having checked it RIGOROUSLY. For a feasibility claim this "
+                "means you traced the ACTUAL definitions, not a plausible-sounding "
+                "sketch — e.g. for a well-formedness/footprint goal you enumerated the "
+                "FULL footprint (BOTH the modified/written set AND the read set / "
+                "getVars, including free vars of every emitted assert/assume), not just "
+                "the easy half. If a scratch skeleton is claimed, you actually ran it "
+                "through lean_run_code. If you are NOT confident, you are NOT done — "
+                "answer not_done and keep digging.\n"
+                "- not_done: unresolved uncertainty remains; you will continue.\n\n"
+                "If after genuine effort you CANNOT reach a confident PROCEED/GIVE_UP, "
+                "that is a legitimate outcome — but you must then make the report's "
+                "RECOMMENDATION line say `UNCERTAIN` and state exactly what you could "
+                "not resolve and what would settle it. Never dress up an unresolved "
+                "question as a confident PROCEED or GIVE_UP."
             )
             result = await researcher.run_ai(inp=prompt, max_turns=40)
             raw = result.raw_result or ""
             m = re.search(r'DECISION:\s*(done|not_done)', raw, re.IGNORECASE)
             rdecision = m.group(1).lower() if m else "not_done"
+            cm = re.search(r'CONFIDENCE:\s*(high|medium|low)', raw, re.IGNORECASE)
+            confidence = cm.group(1).lower() if cm else "low"
             rm = re.search(r'REASON:\s*(.+)', raw)
             rreason = rm.group(1).strip() if rm else ""
+            # Exit ONLY on done + high confidence. A done-but-not-confident answer is
+            # treated as not_done UNLESS it is the last round (then we accept whatever
+            # it has, but it should already read UNCERTAIN per the instruction).
+            if rdecision == "done" and confidence == "high":
+                await agent._emit("message",
+                    f"[PO5] ProofResearcher attests report complete (confident): {rreason}")
+                break
             if rdecision == "done":
                 await agent._emit("message",
-                    f"[PO5] ProofResearcher attests report complete: {rreason}")
-                break
-            await agent._emit("message",
-                f"[PO5] ProofResearcher round {round_i+1}/{RESEARCHER_DECISION_ROUNDS}: "
-                f"not done — {rreason}")
+                    f"[PO5] ProofResearcher says done but confidence={confidence} — "
+                    f"NOT accepting; pushing for certainty or an explicit UNCERTAIN verdict.")
+            else:
+                await agent._emit("message",
+                    f"[PO5] ProofResearcher round {round_i+1}/{RESEARCHER_DECISION_ROUNDS}: "
+                    f"not done — {rreason}")
             await researcher.run_ai(
-                inp=(f"Keep digging and finish the report at {report_rel} — reach a "
-                     f"concrete PROCEED/GIVE_UP recommendation with named primitives "
-                     f"and, if you claim one, a scratch-verified skeleton. Then I will re-check."),
+                inp=(f"You are not yet CONFIDENT. Keep digging and finish the report at "
+                     f"{report_rel}. For any feasibility claim, verify it against the "
+                     f"ACTUAL definitions and enumerate the FULL footprint (writes AND "
+                     f"reads / getVars of every emitted statement, including assert/assume "
+                     f"free vars) before concluding. Reach a HIGH-confidence PROCEED or "
+                     f"GIVE_UP with named primitives (and a scratch-verified skeleton if "
+                     f"you claim one) — OR, if you genuinely cannot decide, write "
+                     f"RECOMMENDATION: UNCERTAIN and state what would settle it. Then I re-check."),
                 max_turns=RESEARCHER_TURNS)
         else:
             await agent._emit("message",
                 f"[PO5] ProofResearcher exhausted {RESEARCHER_DECISION_ROUNDS} rounds "
-                f"without attesting done — using whatever report it produced.")
+                f"without a confident verdict — using whatever report it produced "
+                f"(should read UNCERTAIN if it never reached certainty).")
 
     # Verify a report was actually written.
     if (cwd / report_rel).exists() and (cwd / report_rel).read_text().strip():
@@ -1067,14 +1189,11 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     await agent._emit("message",
         f"[PO5] Finished: stage={state.stage}, proved={state.lemmas_proved}, "
         f"cycles={state.cycles_detected}, time={elapsed/60:.1f}min, cost=${total_cost:.2f}")
-    ledger.save()
-
-    # Checkpoint swarm state
-    if hasattr(agent, 'swarm') and hasattr(agent.swarm, '_checkpoint_manager') and agent.swarm._checkpoint_manager:
-        try:
-            agent.swarm._checkpoint_manager.save("prover_done")
-        except Exception:
-            pass
+    # Final consistent checkpoint (proof state + full swarm). NOTE: the old code
+    # here called `_checkpoint_manager.save(...)`, which does not exist (the method
+    # is the async `create`/`swarm.checkpoint`) — it silently no-op'd under the bare
+    # except. _checkpoint uses the real async path.
+    await _checkpoint(agent, ledger, cwd, state, reason="prover_done")
 
     status = AgentStatus.COMPLETED if state.stage == "done" else AgentStatus.FAILED
     return AgentResult(name=agent.spec.name, status=status,
@@ -1094,6 +1213,21 @@ async def _phase_select(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
     """Pick next lemma. Parent's guide chooses among pending children."""
     if not ledger.has_pending():
         return Trans.BLOCKED
+
+    # BigSur nomination wins outright. A boosted-PENDING entry is a deliberate
+    # nomination — almost always BigSur having just re-opened THE node that must be
+    # proved next (update_signature / reset_to_pending set priority_boost). Pick it
+    # directly, BYPASSING the DFS-walk and the guide consultation: the guide lacks
+    # BigSur's just-computed repair context and re-litigates ("pick the hardest
+    # child") into root/sibling churn — the callElim defUseWF loop, where the one
+    # node BigSur re-opened kept losing the guide's vote to the root. mark_proving
+    # clears the boost, so the nomination fires exactly once.
+    nominated = ledger.pick_boosted()
+    if nominated is not None:
+        state.current_lemma_id = nominated.id
+        ledger.mark_proving(nominated.id)
+        await agent._emit("message", f"[PO5] Selected (BigSur nomination): {nominated.name}")
+        return Trans.PICKED
 
     parent_entry, pending_kids = _find_dfs_candidates(ledger, state.current_lemma_id)
 
@@ -1153,6 +1287,12 @@ async def _phase_prove(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
 
     if result == "proved":
         state.lemmas_proved += 1
+        # Always FULL-checkpoint when a lemma is proved — this is the single funnel
+        # every prove path (main / max-depth / grace) returns through. A proved lemma
+        # is durable progress that must never be redone, so we persist BOTH the proof
+        # state AND the whole swarm (session ids + workspace snapshot) here, so it
+        # survives a prover re-dispatch AND a full dashboard restart.
+        await _checkpoint(agent, ledger, cwd, state, reason=f"lemma_proved:{entry.name}")
         return Trans.PROVED
     elif result == "contingent":
         return Trans.CONTINGENT
@@ -1161,9 +1301,20 @@ async def _phase_prove(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
     elif result == "retry":
         return Trans.RETRY
     else:
-        if entry.status != LemmaStatus.FAILED:
-            ledger.mark_failed(entry.id, result)
-            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' failed: {result}")
+        # result == "failed". EVERY "failed" return from _attempt_prove has ALREADY
+        # run its own mark_failed + _propagate_failure_to_parent (→ BigSur) — the
+        # give-up / max-depth / grace / user-timeout / post-research paths all do so
+        # before returning. So we must NOT re-propagate here.
+        #
+        # The old `if entry.status != LemmaStatus.FAILED` guard tried to prevent the
+        # double-escalation, but it was DEFEATED by BigSur itself: when BigSur runs
+        # inside that first propagation and calls reset_to_pending / update_signature,
+        # it flips the entry's status FAILED → PENDING. Control then returns here,
+        # the guard sees "not FAILED", and fires a SECOND BigSur escalation with the
+        # contentless "failed: failed" reason — BigSur #2 for a problem BigSur #1 just
+        # handled (observed live: the @[expose] fix was landed by #1, then #2 fired
+        # on resume). The failure lifecycle is owned entirely by _attempt_prove; here
+        # we only surface the transition so CHECK → SELECT picks up the re-opened work.
         return Trans.CONTRADICTORY
 
 
@@ -1207,8 +1358,29 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             f"Other theorems here ({sorted(siblings)}) are proved separately — "
             f"leave their `sorry` untouched and do NOT modify or delete them."
         )
+    # If a ProofResearcher already investigated this lemma, point the writer at the
+    # report so it follows the proven proof-shape / primitives instead of re-hunting.
+    scope_note += _report_hint(entry, cwd)
 
     # ── Step 1: Initial advice ──
+    # If BigSur just ran (this lemma was re-opened by a repair), tell the guide up
+    # front — so it does NOT immediately re-give-up on a node BigSur already handled.
+    # Consumed once (cleared after folding in), so it only colors this fresh start.
+    bigsur_note = ""
+    if state.last_bigsur_note:
+        bigsur_note = (
+            f"\n\n🛠 {state.last_bigsur_note}\n"
+            f"BigSur is the repair agent of last resort and it has ALREADY acted. Do "
+            f"NOT immediately give_up again with the same reason — that just re-invokes "
+            f"BigSur on work it already did (a spin loop). Try proving against the "
+            f"corrected state FIRST. Only give_up if you hit a GENUINELY NEW blocker, "
+            f"and if so state precisely what changed since BigSur's repair.")
+        state.last_bigsur_note = ""
+        # Fold into failure_context so the directed branch (task=None, which rebuilds
+        # from ctx) carries it too — instead of REPLACING the directed context.
+        ctx.failure_context = (ctx.failure_context + bigsur_note) if ctx.failure_context \
+            else bigsur_note.lstrip()
+
     if ctx.current_task or ctx.failure_context:
         await agent._emit("message", f"[PO5] Guide: directed task for {entry.name}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd, task=None)
@@ -1236,59 +1408,26 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     while True:
         ledger.increment_attempts(entry.id)
         chunks_this_call += 1
-        # ── Backstops ─────────────────────────────────────────────────────────
-        # The guide drives strategy, but it must not spin forever on a target it
-        # can neither close nor abandon. Two independent tiers plus a hard chunk cap:
-        #   TIER 1 (flexible): NO-PROGRESS budget — minutes since the last chunk that
-        #     STRICTLY reduced the transitive open-sorry count. A proof that keeps
-        #     shedding sorries never trips it; only genuine stalling does. The guide
-        #     may grant bounded extensions (EXTEND_MINUTES) that add to this budget.
-        #   TIER 2 (hard): absolute run wall-clock vs state.max_run_minutes. None ⇒
-        #     no stop. This is unconditional — no decompose escape hatch.
-        #   MAX_CHUNKS_PER_LEMMA: fixed runaway guard (independent of the clocks).
-        now = _time.time()
-        # First iteration: no progress recorded yet — anchor the idle clock to loop start.
-        if not hasattr(entry, '_last_progress_time'):
-            entry._last_progress_time = loop_start
-        idle_minutes = (now - entry._last_progress_time) / 60.0
-        idle_budget = LEMMA_IDLE_MINUTES + getattr(entry, '_idle_extension_minutes', 0.0)
-        run_minutes = (now - getattr(agent, '_po4_start_time', now)) / 60.0
-        hard_stop = (state.max_run_minutes is not None
-                     and run_minutes > state.max_run_minutes)
-        tier1_stop = idle_minutes > idle_budget
-        chunk_stop = chunks_this_call > MAX_CHUNKS_PER_LEMMA
-        if hard_stop:
-            # TIER 2: unconditional — the whole RUN has blown its user-set ceiling.
-            # Do not attempt decompose; stop and propagate immediately.
-            reason = (f"hard run-level backstop: {run_minutes:.0f}min ≥ "
+        # NO automatic backstops (no idle-minutes timer, no chunk cap, no time
+        # extensions). A lemma is stopped only by a NATURAL give_up (guide → BigSur)
+        # or BigSur's global cap — those blunt timeouts killed slow-but-progressing
+        # proofs and forced churn.
+        #
+        # The ONE exception is the USER's explicit run-level ceiling: if the user
+        # launched with --max-run-minutes, honor it. This is a user choice, not
+        # magic — when the whole run exceeds it we stop and propagate.
+        elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
+        if state.max_run_minutes is not None and (elapsed / 60.0) > state.max_run_minutes:
+            reason = (f"user run-level timeout: {elapsed/60:.0f}min ≥ "
                       f"max_run_minutes={state.max_run_minutes:.0f} (set via "
                       f"--max-run-minutes); stopping on '{entry.name}'")
             await agent._emit("message", f"[PO5] ⛔ {reason}")
-            ctx.failure_context = f"Backstop give-up: {reason}"
-            ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
-            _record_give_up(state, entry, f"Backstop give-up: {reason}")
-            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' hit run cap: {reason}")
+            ctx.failure_context = f"User timeout: {reason}"
+            ledger.mark_failed(entry.id, f"User timeout: {reason}")
+            _record_give_up(state, entry, f"User timeout: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd,
+                                               f"Child '{entry.name}' hit user run cap: {reason}")
             return "failed"
-        if tier1_stop or chunk_stop:
-            reason = (f"runaway backstop: {chunks_this_call} chunks / "
-                      f"{idle_minutes:.0f}min idle (budget {idle_budget:.0f}min) "
-                      f"on '{entry.name}' with no resolution")
-            await agent._emit("message", f"[PO5] ⛔ {reason}")
-            # Last resort: if a decomposition is possible, take it (a fresh subtree
-            # may crack what inline attempts could not). Otherwise give up cleanly.
-            if entry.depth < MAX_DEPTH:
-                decompose_ok = await _validate_decompose(
-                    agent, state, ledger, entry, cwd, tools, stub_rel, protected_names)
-                if decompose_ok is True:
-                    await agent._emit("message", "[PO5] Backstop → forced decompose")
-                    break
-            ctx.failure_context = f"Backstop give-up: {reason}"
-            ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
-            _record_give_up(state, entry, f"Backstop give-up: {reason}")
-            await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Backstop give-up: {reason}")
-            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' hit backstop: {reason}")
-            return "failed"
-        elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
         writer_pct = await writer.get_context_percentage()
         # _get_guide handles rotation internally if >= 75%
         guide = await _get_guide(agent, entry, state, ledger)
@@ -1320,7 +1459,11 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             agent_ctx=writer,
             initial_input=(
                 f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-                f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}\n\n"
+                f"You have {chunk} turns. EDIT FORWARD — transient `error:` states while "
+                f"building are fine; do NOT revert to the last green version on every error. "
+                f"The file must be error-free (sorry warnings OK) by the END of your turns; "
+                f"if you edit into a mess you can't untangle, read_snapshot to restore your "
+                f"last banked good state rather than hand-reverting.{scope_note}\n\n"
                 f"Your proof guide '{guide_name}' is live RIGHT NOW while you work and "
                 f"answers in real time. Keep proving — do NOT block waiting on it. If you "
                 f"hit something strategic — the goal looks false or mis-stated, the "
@@ -1339,6 +1482,26 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         total_turns += chunk
         await agent._emit("message", f"[PO5] Writer finished chunk {entry.attempts} ({total_turns} total turns)")
 
+        # CHECKPOINT after every chunk. The PROVE phase runs this whole chunk loop
+        # as ONE handler() call, so the main loop's phase-boundary save (which only
+        # fires when a lemma finishes) does NOT protect mid-lemma progress. If the
+        # TM watchdog restarts a wedged prover mid-lemma, without this the fresh
+        # prover would resume from the phase entry and REDO the lemma from scratch.
+        # Persisting the ledger + state here means a restart resumes from the last
+        # completed chunk against the proved work already on disk. Cheap (a small
+        # JSON write) and it's the "resume from checkpoint, don't redo" guarantee.
+        #
+        # PERIODIC FULL CHECKPOINT: on a long grind with no proved lemma, also take a
+        # full swarm checkpoint (session ids + workspace snapshot) once an hour, so a
+        # dashboard crash mid-lemma still has a recent full checkpoint. Gated by the
+        # swarm's own clock (any full checkpoint resets it), so it's the safety net,
+        # not an extra per-chunk cost.
+        if _periodic_checkpoint_due(agent):
+            await _checkpoint(agent, ledger, cwd, state, reason="periodic")
+        else:
+            ledger.save()
+            _save_state(cwd, state)
+
         # Build the AUTHORITATIVE dependency+sorry overview ONCE. This single
         # source of truth drives (a) the proved/contingent gate, (b) the guide's
         # progress metric, and (c) the guide-facing overview. It joins in-file
@@ -1354,23 +1517,15 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         if cr.success and tsm.build_ok and protected_names and all(
                 tsm.targets[n].done for n in protected_names if n in tsm.targets):
             ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+            await agent._emit("message", f"[PO5] ✓ Proved '{entry.name}'.")
+            # Checkpoint happens in _phase_prove on the "proved" result (the single
+            # funnel every prove path returns through).
             return "proved"
 
-        # Not (yet) proved. If the writer's OWN block is locally sorry-free but the
-        # target is transitively unproven, decide whether it is (a)/(b) someone
-        # else's job — a sibling obligation proved separately, or a registered
-        # child still being proved → park as contingent, _propagate_proved promotes
-        # us later — or whether the target depends on writer-created INLINE helpers
-        # that still need work. `siblings` EXCLUDES inline helpers.
+        # Not (yet) proved. Compute the writer's REMAINING EDITABLE work FIRST, so the
+        # contingent gate below can tell "waiting on someone else" from "still my job".
         local_sorry = tools.get_sorries_by_theorem(stub_rel)
         protected_local_sorry = sum(len(local_sorry.get(n, [])) for n in protected_names)
-        if cr.success and tsm.build_ok and protected_local_sorry == 0:
-            sibling_sorry = any(
-                n in siblings and positions
-                for n, positions in local_sorry.items())
-            if sibling_sorry or entry.children:
-                ledger.mark_contingent(entry.id)
-                return "contingent"
 
         # Reachable in-file helpers the TARGET depends on that still carry a
         # LITERAL sorry, excluding the protected targets themselves and genuine
@@ -1390,6 +1545,26 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             if n not in protected_names and n not in siblings and n in tsm.decls
             and tsm.decls[n].has_local_sorry
         }
+
+        # CONTINGENT gate. The target's OWN block is locally sorry-free but it is
+        # transitively unproven. Whose job is the residual sorry?
+        #   - If there is EDITABLE in-file work (an inline `sorry` helper the writer
+        #     factored out and can still prove), it is OURS → fall through and keep
+        #     proving. Parking contingent here would freeze a lemma the writer could
+        #     finish this very chunk.
+        #   - Otherwise the residual lives in something we CANNOT edit from this file
+        #     — a sibling obligation proved separately, a registered child, or an
+        #     IMPORTED cross-branch dependency. That is a DAG handoff, NOT a writer
+        #     stall → park CONTINGENT so _propagate_proved promotes us once the
+        #     dependency clears. This stops the callElim_sim_canfail loop (20 give-ups
+        #     escalated to BigSur while the real blocker, callElim_call_block_exec,
+        #     sat unproven in an imported sibling file). WHICH lemma to drive next is
+        #     the guide's job in _phase_select — the blocker is its own registered
+        #     pending/proving node, so no manual nomination is needed here.
+        if cr.success and tsm.build_ok and protected_local_sorry == 0 \
+                and not transitive_inline_sorry_info:
+            ledger.mark_contingent(entry.id)
+            return "contingent"
 
         # Progress metric: the number of literal `sorry` TOKENS in OUR obligations
         # (protected targets + the inline helpers they depend on), excluding
@@ -1487,9 +1662,6 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 out["snapshot"] = True
                 tm = re.search(r'SNAPSHOT_TAG:\s*(.+)', raw)
                 out["snapshot_tag"] = tm.group(1).strip() if tm else "guide-checkpoint"
-            em = re.search(r'EXTEND_MINUTES:\s*(\d+)', raw)
-            if em:
-                out["extend_minutes"] = int(em.group(1))
             return out
 
         # Track consecutive no-reduction chunks. Progress = the leaf-sorry count
@@ -1511,23 +1683,12 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             entry._stuck_count = getattr(entry, '_stuck_count', 0) + 1
         else:
             entry._stuck_count = 0
-        # Endgame credit is BOUNDED. `finishing_compile` counts as progress (resets
-        # the idle clock) only for the first ENDGAME_GRACE_CHUNKS chunks — enough for
-        # a writer that is genuinely one-tactic-away, but not a licence to reset the
-        # backstop forever on a compile the writer can never close. After the grace
-        # window the idle clock is allowed to age again so the flexible/hard
-        # backstops can still fire on a truly wedged endgame.
+        # Track endgame chunks (0 sorries but not yet compiling) only to drive the
+        # guide-facing stuck_hint below — no longer feeds any idle backstop.
         if finishing_compile:
             entry._endgame_count = getattr(entry, '_endgame_count', 0) + 1
         else:
             entry._endgame_count = 0
-        endgame_credit = finishing_compile and entry._endgame_count <= ENDGAME_GRACE_CHUNKS
-        # Record the moment of last real progress so the flexible per-lemma
-        # backstop (Fix B) measures time-SINCE-PROGRESS, not raw wall-clock — a
-        # proof that is still shedding sorries (or, within the grace window, closing
-        # out the final compile errors with no sorries left) must not be killed.
-        if made_progress or endgame_credit or prior_sorry_count is None:
-            entry._last_progress_time = _time.time()
 
         stuck_hint = ""
         if finishing_compile and entry._endgame_count > ENDGAME_GRACE_CHUNKS:
@@ -1554,25 +1715,15 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"helpers ({sorted(transitive_inline_sorry_info)}). `continue` only helps if the "
                 f"writer will close them inline; otherwise choose `decompose` to extract them.\n"
             )
+        # Surface an already-authored research report + its verdict so the guide does
+        # not re-diagnose from scratch and re-give-up with a stale reason (the callElim
+        # loop: the report said GIVE_UP early, but the guide kept citing the fixed
+        # @[expose] build gate for 9 give-ups before acting on it).
+        stuck_hint += _report_hint(entry, cwd)
 
-        # Flexible TIER-1 backstop status for the guide. The idle clock is measured
-        # from the last chunk that reduced the transitive sorry count; if it is
-        # getting close to the budget but the lemma looks close, the guide can add
-        # bounded minutes with EXTEND_MINUTES rather than being force-stopped.
-        _idle_min = (_time.time() - getattr(entry, '_last_progress_time', loop_start)) / 60.0
-        _idle_budget = LEMMA_IDLE_MINUTES + getattr(entry, '_idle_extension_minutes', 0.0)
+        # No idle/extend backstop anymore — the guide decides when to stop (give_up)
+        # and BigSur is the only cap. The `stuck_hint` above still nudges strategy.
         extend_prompt = ""
-        if _idle_min > 0.5 * _idle_budget:
-            stuck_hint += (
-                f"\n⏳ IDLE BUDGET: {_idle_min:.0f}/{_idle_budget:.0f} min without a sorry "
-                f"reduction. At {_idle_budget:.0f} min the flexible backstop fires. If you "
-                f"judge this lemma is CLOSE, you may grant more time with EXTEND_MINUTES "
-                f"(≤{MAX_GUIDE_EXTEND_MINUTES} per grant).\n"
-            )
-            extend_prompt = (
-                f"\nEXTEND_MINUTES: <0-{MAX_GUIDE_EXTEND_MINUTES}> (extra idle minutes to "
-                f"grant if you believe the lemma is close; 0 or omit for none)"
-            )
 
         snapshot_prompt = ""
         if file_compiles:
@@ -1630,19 +1781,6 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             ),
             post_prompt_parser=_parse_turns,
         )
-
-        # Apply a guide-granted flexible-backstop extension (Fix B, Tier 1). Bounded
-        # per grant; there is no total cap — the guide keeps ownership of the clock
-        # while it judges the lemma close. The hard run-level ceiling (Tier 2) still
-        # applies unconditionally.
-        if extras.get("extend_minutes"):
-            grant = min(MAX_GUIDE_EXTEND_MINUTES, max(0, int(extras["extend_minutes"])))
-            if grant > 0:
-                entry._idle_extension_minutes = (
-                    getattr(entry, '_idle_extension_minutes', 0.0) + grant)
-                await agent._emit("message",
-                    f"[PO5] Guide extended idle budget by {grant}min "
-                    f"(total extension {entry._idle_extension_minutes:.0f}min)")
 
         # Guide-driven snapshot: an independent strategic checkpoint, in addition
         # to any the writer took on its own. save_snapshot re-checks compilation
@@ -1710,20 +1848,34 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             # gives up now (→ BigSur) instead of handing the writer a doomed task.
             r_decision, r_reason, _rx = await _consult_guide_decide(
                 agent, state, ledger, entry, cwd,
-                options=["proceed", "give_up"],
+                options=["proceed", "give_up", "research_more"],
                 task=(
                     f"The ProofResearcher wrote its findings to {report_rel}. READ IT "
-                    f"(Read {report_rel}) and decide:\n"
-                    f"- proceed: the report found a viable proof shape / the needed "
-                    f"primitives — steer the writer to follow it (put the concrete "
-                    f"shape + primitives + report path in REASON so the writer acts on it).\n"
-                    f"- give_up: the report shows the goal is FALSE / unprovable AS "
+                    f"(Read {report_rel}) — note its RECOMMENDATION and Confidence — and decide:\n"
+                    f"- proceed: the report is CONFIDENT the goal is provable and gives a "
+                    f"viable shape / primitives — steer the writer to follow it (put the "
+                    f"concrete shape + primitives + report path in REASON).\n"
+                    f"- give_up: the report is CONFIDENT the goal is FALSE / unprovable AS "
                     f"STATED, needs a SIGNATURE CHANGE the writer cannot make, or the "
-                    f"required substrate is beyond reach here — route to BigSur. Put the "
-                    f"report's finding (counterexample / missing hypothesis / needed "
-                    f"substrate) in REASON.\n"
-                    f"Base this on what the report ACTUALLY concluded, not a guess."
+                    f"required substrate is beyond reach — route to BigSur. Put the report's "
+                    f"finding (counterexample / missing hypothesis / substrate) in REASON.\n"
+                    f"- research_more: the report is UNCERTAIN / low-confidence, or its "
+                    f"feasibility verdict is not backed by the actual definitions. Do NOT "
+                    f"give_up on an uncertain report (that may escalate a provable goal) and "
+                    f"do NOT blindly proceed on a shaky one — send it back for another, "
+                    f"deeper research pass. Put in REASON exactly what must be resolved.\n"
+                    f"Base this on what the report ACTUALLY concluded AND how confident it "
+                    f"is — never treat an UNCERTAIN report as a confident PROCEED or GIVE_UP."
                 ))
+            if r_decision == "research_more":
+                await agent._emit("message",
+                    f"[PO5] Guide: research inconclusive, requesting a deeper pass: {r_reason}")
+                # Re-run the researcher with the guide's specific unresolved question.
+                report_rel = await _run_researcher(
+                    agent, state, ledger, entry, cwd, stub_rel,
+                    reason=f"PRIOR REPORT WAS UNCERTAIN. Resolve specifically: {r_reason}") \
+                    or report_rel
+                continue
             if r_decision == "give_up":
                 await agent._emit("message", f"[PO5] Guide gives up after research: {r_reason}")
                 ctx.failure_context = f"Guide gave up (post-research): {r_reason}"
@@ -2049,11 +2201,11 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
                    if b.name not in protected_names and b.mutual_group is None
                    and b.name not in siblings]
 
-    # Fix A: nothing to extract. A forced decompose (e.g. from the backstop) can land
-    # here when every declaration is a protected/sibling obligation. Spawning an
-    # extractor is pointless — it can only no-op or, worse, move protected siblings
-    # (the IMO2026 corruption). Skip the extractor entirely and let the guide decide
-    # (retry with a different tack, or give up) instead of spinning.
+    # Fix A: nothing to extract — every declaration is a protected/sibling
+    # obligation. Spawning an extractor is pointless — it can only no-op or, worse,
+    # move protected siblings (the IMO2026 corruption). Skip the extractor entirely
+    # and let the guide decide (retry with a different tack, or give up) instead of
+    # spinning.
     if not extractable:
         await agent._emit("message",
             f"[PO5] Nothing extractable from {stub_rel} "
@@ -2581,14 +2733,16 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLe
         stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
         import_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger, current_entry_id=entry.id)
         from .._snapshot_mcp import create_snapshot_server
-        from .hooks import snapshot_tip_hooks
+        from .hooks import writer_nudge_hooks
         snapshot_mcp = create_snapshot_server(stub_rel, entry.workspace, cwd, can_write=True)
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace,
             can_see=["SearchAgent"],
             extra_mcp_servers={"writer_imports": import_mcp, "snapshots": snapshot_mcp},
-            extra_hooks=snapshot_tip_hooks(agent_ref=agent, probability=1.0),
+            # Snapshot tip + run_code-without-edit nudge (keeps the writer editing
+            # the FILE instead of iterating in scratch run_code, the main cost sink).
+            extra_hooks=writer_nudge_hooks(agent_ref=agent),
         )
         internal = await ctx.__aenter__()
         setattr(agent, f"{attr}_ctx", ctx)
@@ -3050,30 +3204,48 @@ def _proved_or_contingent(tools, ledger, entry, cwd, stub_rel) -> str | None:
 
     Assumes the file already compiles. Returns:
       - "proved":     protected block is transitively sorry-free (marks PROVED).
-      - "contingent": block is locally clean but transitively depends on a sorry
-                      owned by an unproven SIBLING obligation in this shared file
-                      or a registered CHILD helper — i.e. we are WAITING for a
-                      proof still in flight (marks CONTINGENT). _propagate_proved
-                      promotes it once that sibling/subtree clears.
-      - None:         no sibling/child explains the transitive sorry (untracked
-                      dep or a fresh inline helper) → caller falls through to
-                      continue proving / extraction.
+      - "contingent": block is locally clean on its OWN target(s) but transitively
+                      unproven — the residual sorry lives in something it cannot
+                      edit from this file (a same-file sibling, a registered child,
+                      OR an imported cross-branch dependency). We are WAITING on a
+                      proof in flight (marks CONTINGENT); _propagate_proved promotes
+                      it once that dependency clears.
+      - None:         the entry has its OWN local sorry still to prove (real editable
+                      work) → caller falls through to continue proving / extraction.
 
     Centralizes the logic the per-target gate uses so the deep and grace loops
-    stay consistent (they previously keyed CONTINGENT on `entry.children` only,
-    missing the sibling-wait case and needlessly re-driving finished targets).
+    stay consistent. The verdict is scope-symmetric: own sorry → keep proving;
+    locally clean but transitively unproven → contingent, regardless of WHERE the
+    residual sorry lives (sibling / child / imported cousin).
     """
     if _entry_transitively_proven(tools, entry):
         ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
         return "proved"
     local_sorry = tools.get_sorries_by_theorem(stub_rel)
-    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
-    sibling_sorry = any(n in siblings and positions
+    # CONTINGENT means "locally clean, only waiting on a sibling/child proof in
+    # flight". If THIS entry's OWN target(s) still carry sorry, it has real work
+    # to do and must NOT be parked contingent — doing so hides it from SELECT
+    # (which only picks PENDING), so no prover is ever dispatched and BigSur gets
+    # re-escalated with "nothing to do here" while the goals sit open. This was
+    # the callElim defUseWF_fold trap: BigSur reset it to PENDING after threading
+    # a hypothesis, a prover re-entered, `entry.children` was truthy, and it got
+    # flipped straight back to contingent (which also clears priority_boost),
+    # burying the one node that actually needed proving.
+    protected = _get_protected_names(tools, stub_rel, entry)
+    has_own_sorry = any(n in protected and positions
                         for n, positions in local_sorry.items())
-    if sibling_sorry or entry.children:
-        ledger.mark_contingent(entry.id)
-        return "contingent"
-    return None
+    if has_own_sorry:
+        return None  # real local work remains → keep proving THIS node
+    # We are here iff: transitively UNPROVEN (oracle sees a sorry somewhere) AND
+    # locally clean on our own target(s). So the residual sorry lives in something
+    # we cannot edit from this file — a same-file sibling, a registered child, OR
+    # an IMPORTED cross-branch dependency. All three are "waiting on a proof in
+    # flight", NOT a local stall → park CONTINGENT (the old code checked only
+    # sibling_sorry/entry.children and missed the imported-dependency case, which
+    # then fell through to give_up → BigSur: the callElim_sim_canfail loop).
+    # _propagate_proved promotes us once the dependency clears.
+    ledger.mark_contingent(entry.id)
+    return "contingent"
 
 
 def _propagate_proved(ledger: LemmaLedger, cwd: Path):
@@ -3766,6 +3938,40 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
             suffix = f" FAIL: {e.failure_reason[:40]}"
         lines.append(f"  {marker} {e.name} [{e.status}] d={e.depth}{suffix}")
     return "\n".join(lines)
+
+
+def _periodic_checkpoint_due(agent) -> bool:
+    """True if no full swarm checkpoint has happened in CHECKPOINT_INTERVAL_SECONDS.
+    Uses the CheckpointManager's own clock, which every full checkpoint resets — so
+    a proved-lemma / run-done checkpoint also postpones the periodic one."""
+    mgr = getattr(getattr(agent, "swarm", None), "_checkpoint_manager", None)
+    if mgr is None:
+        return False
+    try:
+        return mgr.should_checkpoint_periodic(CHECKPOINT_INTERVAL_SECONDS)
+    except Exception:
+        return False
+
+
+async def _checkpoint(agent, ledger: LemmaLedger, cwd: Path, state: PO5State, reason: str):
+    """The ONE checkpoint used everywhere — proof state AND full swarm state.
+
+    Two layers, always together so there is a single consistent checkpoint:
+      1. Proof state: ledger.save() (lemma_ledger.json) + _save_state (po5_state.yaml)
+         — the proof DAG + phase, so a re-dispatched prover resumes the proof.
+      2. Swarm state: swarm.checkpoint(reason) — session IDs, visibility, handoffs,
+         and a workspace snapshot — so a full dashboard/process restart can revive
+         the whole swarm and the proved work on disk.
+    Best-effort on the swarm layer (never let a checkpoint failure sink the run)."""
+    ledger.save()
+    _save_state(cwd, state)
+    swarm = getattr(agent, "swarm", None)
+    cp = getattr(swarm, "checkpoint", None)
+    if callable(cp):
+        try:
+            await cp(reason=reason)
+        except Exception as e:
+            await agent._emit("message", f"[PO5] swarm checkpoint ({reason}) failed: {e}")
 
 
 def _save_state(cwd: Path, state: PO5State):

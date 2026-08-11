@@ -44,7 +44,8 @@ from strataswarm._bigsur_snapshot_mcp import create_bigsur_snapshot_mcp_server
 from strataswarm.modules import po_v5
 from strataswarm.modules.po_v5 import (
     PO5State, _root_signature_hash, _run_bigsur,
-    _propagate_failure_to_parent, BIGSUR_MAX_INVOCATIONS, BIGSUR_DECISION_ROUNDS,
+    _propagate_failure_to_parent, _phase_prove, BIGSUR_MAX_INVOCATIONS,
+    BIGSUR_DECISION_ROUNDS,
 )
 
 
@@ -244,6 +245,89 @@ def test_reset_to_pending_clears_failure():
     assert e.signature_hash == before_hash      # signature UNCHANGED
     shutil.rmtree(tmp.parent)
     print("✓ test_reset_to_pending_clears_failure")
+
+
+def test_set_status_free_but_refuses_proved():
+    ledger, tmp, ids = _diamond()
+    ledger.mark_failed(ids["leaf"], "boom")
+    # Free set to any non-proved status, clears stale failure annotation.
+    msg = ledger.bigsur_set_status(ids["leaf"], "contingent")
+    assert ledger.get(ids["leaf"]).status == LemmaStatus.CONTINGENT
+    assert ledger.get(ids["leaf"]).failure_reason == ""
+    assert "→ contingent" in msg
+    # PROVED is refused (must go through oracle-gated mark_proved).
+    refused = ledger.bigsur_set_status(ids["leaf"], "proved")
+    assert refused.startswith("REFUSED")
+    assert ledger.get(ids["leaf"]).status == LemmaStatus.CONTINGENT  # unchanged
+    # Invalid status rejected.
+    assert "Invalid status" in ledger.bigsur_set_status(ids["leaf"], "banana")
+    shutil.rmtree(tmp.parent)
+    print("✓ test_set_status_free_but_refuses_proved")
+
+
+def test_bigsur_mark_proved_ledger_method():
+    """The ledger method records PROVED + clears stale failed/pruned state (the
+    oracle gate lives in the MCP tool, tested separately)."""
+    ledger, tmp, ids = _diamond()
+    ledger.mark_failed(ids["leaf"], "was wrongly failed")
+    msg = ledger.bigsur_mark_proved(ids["leaf"], "ws.decomposed.leaf")
+    e = ledger.get(ids["leaf"])
+    assert e.status == LemmaStatus.PROVED
+    assert e.failure_reason == ""
+    assert e.proved_by == "bigsur_verified"
+    assert e.import_path == "ws.decomposed.leaf"
+    assert "PROVED (was failed)" in msg
+    shutil.rmtree(tmp.parent)
+    print("✓ test_bigsur_mark_proved_ledger_method")
+
+
+def test_mark_proved_mcp_gated_on_oracle():
+    """The ledger_mark_proved MCP tool must VERIFY sorry-freedom before marking.
+    Stub the oracle: proven → marks; sorried → refuses; not-found → refuses."""
+    import strataswarm._bigsur_ledger_mcp as bm
+
+    class _FakeAx:
+        def __init__(self, proven, sorry=False, not_found=False, build_ok=True):
+            self.build_ok = build_ok; self.build_error = None
+            self.sorry_by_name = {"leaf": sorry}
+            self.axioms_by_name = {"leaf": ["propext"]} if proven else {"leaf": []}
+            self.not_found_by_name = {"leaf": "not public"} if not_found else {}
+            self._proven = proven
+        def is_proven(self, n): return self._proven
+
+    class _FakeTools:
+        def __init__(self, ax): self._ax = ax
+        def axioms_by_theorem(self, fp, names): return self._ax
+
+    def _run(ax):
+        ledger, tmp, ids = _diamond()
+        # rename leaf entry's name to 'leaf' so the fake keys match
+        leaf = ledger.get(ids["leaf"]); leaf.name = "leaf"
+        ledger.mark_failed(ids["leaf"], "wrongly failed")
+        orig = bm.__dict__.get("get_lean_tools")
+        # patch the lazy import target
+        import strataswarm.modules.po_lean as pl
+        pl_orig = pl.get_lean_tools
+        pl.get_lean_tools = lambda: _FakeTools(ax)
+        try:
+            server = bm.create_bigsur_ledger_mcp_server(ledger)
+            out = call_mcp_tool(server, "ledger_mark_proved", {"id": ids["leaf"]})
+        finally:
+            pl.get_lean_tools = pl_orig
+        status = ledger.get(ids["leaf"]).status
+        shutil.rmtree(tmp.parent)
+        return out, status
+
+    # proven → marked
+    out, status = _run(_FakeAx(proven=True))
+    assert '"marked": true' in out and status == LemmaStatus.PROVED
+    # sorried → refused
+    out, status = _run(_FakeAx(proven=False, sorry=True))
+    assert '"marked": false' in out and status != LemmaStatus.PROVED
+    # not-found (not public) → refused
+    out, status = _run(_FakeAx(proven=False, not_found=True))
+    assert '"marked": false' in out and status != LemmaStatus.PROVED
+    print("✓ test_mark_proved_mcp_gated_on_oracle")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -486,6 +570,30 @@ def test_build_tool_name_no_collision_with_lsp():
     print("✓ test_build_tool_name_no_collision_with_lsp")
 
 
+def test_bigsur_prompt_requires_documenting_the_repair():
+    """BigSur must document its reason + diagnosis + actions to a repair log, so the
+    guide/writer/next-BigSur can see what has already been tried (and not re-escalate
+    a node it already handled). Locks the prompt contract + write permission."""
+    import yaml as _yaml
+    d = _yaml.safe_load(open(Path(__file__).parent.parent
+                             / "strataswarm/agent_specs/agents/bigsur.yaml"))
+    sp = d["system_prompt"]
+    assert "BIGSUR_LOG.md" in sp, "no repair-log documentation step"
+    # Must ask for the four fields that make the log actionable.
+    for field in ("GIVE-UP REASON", "DIAGNOSIS", "ACTIONS TAKEN", "OUTCOME"):
+        assert field in sp, f"repair log missing '{field}'"
+    # APPEND, not overwrite (prior entries must survive). Whitespace-insensitive:
+    # the YAML folded scalar may wrap "never overwrite" across a line break.
+    sp_flat = " ".join(sp.split())
+    assert "APPEND" in sp and "never overwrite" in sp_flat.lower()
+    # The "no change needed" case must be explicitly logged (the spin-loop signal).
+    assert "no change needed" in sp
+    # BigSur's Write permission must actually cover the log path.
+    allow = " ".join(str(x) for x in d.get("allowed_tools", []))
+    assert "Write(StrataAgent/Sandbox/**)" in allow, "BigSur cannot write the log"
+    print("✓ test_bigsur_prompt_requires_documenting_the_repair")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 2 — orchestration with a scripted fake BigSur agent (no LLM)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -638,6 +746,50 @@ def test_propagate_always_escalates_and_prunes():
     print("✓ test_propagate_always_escalates_and_prunes")
 
 
+def test_phase_prove_does_not_double_escalate_after_bigsur_reopen():
+    """Regression: _phase_prove must NOT re-escalate a 'failed' result to BigSur.
+
+    Every 'failed' return from _attempt_prove has ALREADY propagated to BigSur. The
+    old `if entry.status != FAILED` guard in _phase_prove was defeated when BigSur,
+    running inside that first propagation, called reset_to_pending (FAILED→PENDING):
+    control returned, the guard saw 'not FAILED', and fired a SECOND BigSur
+    escalation with the contentless 'failed: failed' reason. This reproduces that
+    exact shape — _attempt_prove propagates once (BigSur flips status to PENDING),
+    returns 'failed' — and asserts NO second propagation happens."""
+    agent, state, ledger, child, root, cwd, ws = _bigsur_fixture()
+    state.current_lemma_id = child.id
+
+    prop_calls = {"n": 0}
+
+    async def fake_attempt_prove(a, s, led, entry, c):
+        # Mimic the give-up path: mark failed, propagate (→ our fake BigSur which
+        # reset_to_pending flips status back), then return "failed".
+        led.mark_failed(entry.id, "guide gave up: needs @[expose] upstream")
+        await po_v5._propagate_failure_to_parent(a, s, led, entry, c, "child gave up")
+        return "failed"
+
+    async def fake_propagate(a, s, led, entry, c, msg):
+        prop_calls["n"] += 1
+        # BigSur runs and re-opens the entry (reset_to_pending: FAILED → PENDING),
+        # exactly the state that defeated the old guard.
+        led.bigsur_reset_to_pending(entry.id)
+
+    orig_attempt = po_v5._attempt_prove
+    orig_prop = po_v5._propagate_failure_to_parent
+    po_v5._attempt_prove = fake_attempt_prove
+    po_v5._propagate_failure_to_parent = fake_propagate
+    try:
+        trans = asyncio.run(_phase_prove(agent, state, ledger, cwd))
+    finally:
+        po_v5._attempt_prove = orig_attempt
+        po_v5._propagate_failure_to_parent = orig_prop
+
+    # _attempt_prove propagated exactly ONCE; _phase_prove must not add a second.
+    assert prop_calls["n"] == 1, f"expected 1 escalation, got {prop_calls['n']} (double-escalation bug)"
+    shutil.rmtree(cwd)
+    print("✓ test_phase_prove_does_not_double_escalate_after_bigsur_reopen")
+
+
 def test_run_bigsur_success_tears_down_agents():
     agent, state, ledger, child, root, cwd, ws = _bigsur_fixture()
     fake = FakeBigSur(decisions=["DECISION: done\nREASON: ledger consistent, compiles"])
@@ -651,8 +803,35 @@ def test_run_bigsur_success_tears_down_agents():
     assert p.cleanup_calls == 1                              # stale agents torn down
     assert ledger.get(root.id).status != LemmaStatus.FAILED  # root NOT failed
     assert not state.user_fix_request
+    # The completion note must be recorded (surfaced to the guide on the next
+    # _attempt_prove so it doesn't re-give-up on a node BigSur just handled).
+    assert state.last_bigsur_note, "BigSur completion note not recorded"
+    assert child.name in state.last_bigsur_note
+    assert "ledger consistent" in state.last_bigsur_note   # the attested reason
     shutil.rmtree(cwd)
     print("✓ test_run_bigsur_success_tears_down_agents")
+
+
+def test_bigsur_note_consumed_once_into_guide_context():
+    """The completion note is folded into the lemma's ctx (so the guide's next
+    consult sees it) and cleared — it colors exactly one fresh start, not forever."""
+    from strataswarm.modules.po_v5 import LemmaContext
+    agent, state, ledger, child, root, cwd, ws = _bigsur_fixture()
+    state.last_bigsur_note = "BigSur (invocation #1) just ran on 'child' and attested: all consistent"
+    ctx = LemmaContext()
+    state.lemma_ctx[child.id] = ctx
+
+    # Simulate the consume block at the top of _attempt_prove's initial-advice step.
+    note = state.last_bigsur_note
+    if state.last_bigsur_note:
+        folded = f"\n\n🛠 {state.last_bigsur_note}\nBigSur ... spin loop guidance."
+        state.last_bigsur_note = ""
+        ctx.failure_context = (ctx.failure_context + folded) if ctx.failure_context else folded.lstrip()
+
+    assert state.last_bigsur_note == "", "note must be cleared after one consume"
+    assert note.split(" and attested")[0] in ctx.failure_context, "note not folded into guide ctx"
+    shutil.rmtree(cwd)
+    print("✓ test_bigsur_note_consumed_once_into_guide_context")
 
 
 def test_run_bigsur_uses_run_ai_not_run():
@@ -762,6 +941,9 @@ if __name__ == "__main__":
     test_ancestry_intact_after_delete()
     test_update_signature_recomputes_hash_and_resets_pending()
     test_reset_to_pending_clears_failure()
+    test_set_status_free_but_refuses_proved()
+    test_bigsur_mark_proved_ledger_method()
+    test_mark_proved_mcp_gated_on_oracle()
     test_ledger_mcp_purge_mutates_live_ledger()
     test_ledger_mcp_update_signature_tool()
     test_ledger_mcp_save_persists_to_disk_and_dag()
@@ -772,10 +954,13 @@ if __name__ == "__main__":
     test_build_mcp_tool_reports_errors()
     test_build_mcp_tool_success()
     test_build_tool_name_no_collision_with_lsp()
+    test_bigsur_prompt_requires_documenting_the_repair()
     # Layer 2
     test_propagate_always_escalates_and_prunes()
     test_propagate_swallows_bigsur_crash()
+    test_phase_prove_does_not_double_escalate_after_bigsur_reopen()
     test_run_bigsur_success_tears_down_agents()
+    test_bigsur_note_consumed_once_into_guide_context()
     test_run_bigsur_uses_run_ai_not_run()
     test_run_bigsur_tamper_guard_fails_root()
     test_run_bigsur_epiphany_records_user_fix_and_fails_root()

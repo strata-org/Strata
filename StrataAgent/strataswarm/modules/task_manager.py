@@ -48,20 +48,14 @@ MONITOR_INTERVAL = 600
 THINKING_MAX_TURNS = 20
 ROUTER_MAX_TURNS = 3
 
-# ─── Prover watchdog / escalation ladder (Bug #2) ──────────────────────────────
-# The TM monitor ticks every MONITOR_INTERVAL. During PROVING it escalates on
-# wall-clock elapsed since the current prover instance started (state.prover_start,
-# which resets on each (re)dispatch):
-#   warn      → nudge the prover once it has been running a while
-#   redispatch→ a fresh prover on top of a likely-wedged one (bounded by MAX_REDISPATCHES)
-#   terminate → give up: kill the prover, salvage via VALIDATE, then REPORT
-# Before every redispatch/terminate we run the authoritative verify_no_sorry oracle
-# on the REAL target — a spinning-but-actually-done prover is escalated to
-# PROVER_DONE (success) instead of being killed.
-PROVER_WARN = 7200          # 2h on one instance → nudge
-PROVER_REDISPATCH = 21600   # 6h on one instance → restart a wedged prover
-PROVER_TIMEOUT = 86400      # 24h absolute per instance → hard give-up backstop
-MAX_REDISPATCHES = 2
+# ─── Prover watchdog ────────────────────────────────────────────────────────
+# NO time-based restart or terminate. A prover is never killed for running long —
+# a lemma is stopped only by a natural give_up (→ BigSur) or BigSur's own
+# BIGSUR_MAX_INVOCATIONS cap, both inside the prover. The watchdog's ONLY job is the
+# "secretly already done" escape: if verify_no_sorry shows the target proven while
+# the prover still spins, stop it and validate. PROVER_WARN just gates one
+# informational nudge (not a restart).
+PROVER_WARN = 7200          # 2h → one informational "still working" nudge
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -357,19 +351,14 @@ async def _target_proven(state: WorkflowState, agent) -> bool | None:
 
 
 async def _prover_watchdog(state: WorkflowState, agent) -> Transition | None:
-    """Escalation ladder for a still-running prover (Bug #2).
+    """Watchdog for a still-running prover — NO time-based kill.
 
-    Called on each idle MONITOR_TICK while PROVING. Escalates on wall-clock
-    elapsed since the CURRENT prover instance started (state.prover_start resets
-    on every (re)dispatch):
-        < WARN         → keep monitoring
-        WARN..REDISP   → nudge once, keep monitoring
-        REDISP..TIMEOUT→ verify target; if done→PROVER_DONE, else redispatch a
-                         fresh prover (up to MAX_REDISPATCHES), else terminate
-        >= TIMEOUT     → verify target; if done→PROVER_DONE, else terminate
-    Terminate = kill the prover, then route to VALIDATE (which salvages whatever
-    the prover left in Stub.lean and reports honestly). Returns a Transition to
-    force, or None to keep monitoring.
+    Called on each idle MONITOR_TICK while PROVING. The prover is NEVER restarted or
+    terminated for running long (a lemma is stopped only by give_up→BigSur or the
+    BigSur cap, inside the prover). The watchdog's only action is the "already done"
+    escape: once past PROVER_WARN, verify the target; if it is sorry-free while the
+    prover still spins → PROVER_DONE. Otherwise emit one nudge and keep monitoring.
+    Returns a Transition to force, or None to keep monitoring.
     """
     if state.prover_start <= 0:
         return None
@@ -378,18 +367,12 @@ async def _prover_watchdog(state: WorkflowState, agent) -> Transition | None:
     if elapsed < PROVER_WARN:
         return None
 
-    # Warn tier — one nudge, then keep waiting.
-    if elapsed < PROVER_REDISPATCH:
-        if not state.prover_warned:
-            state.prover_warned = True
-            mins = int(elapsed // 60)
-            await agent._emit("message",
-                f"[TM watchdog] Prover {state.prover_agent_name or '?'} has run {mins}m "
-                f"with no completion — will restart it at {PROVER_REDISPATCH // 3600}h if still stuck.")
-        return None
-
-    # Redispatch/terminate tiers — first ask the oracle whether the prover is
-    # secretly already done (spinning past success).
+    # NO time-based restart or terminate. The prover is NOT killed for running long —
+    # a lemma is only ever stopped by a natural give_up (→ BigSur) or BigSur's own
+    # 100-invocation cap, both of which happen INSIDE the prover. The watchdog's only
+    # remaining job is the "secretly already done" escape: if the target is verified
+    # sorry-free while the prover is still spinning, stop it and go validate. It never
+    # kills a still-working prover.
     proven = await _target_proven(state, agent)
     if proven is True:
         state.prover_done = True
@@ -398,31 +381,14 @@ async def _prover_watchdog(state: WorkflowState, agent) -> Transition | None:
         await agent._emit("message", "[TM watchdog] Target is already proven — escalating to validation.")
         return Transition.PROVER_DONE
 
-    # Redispatch tier: restart a wedged prover a bounded number of times.
-    if elapsed < PROVER_TIMEOUT and state.redispatches < MAX_REDISPATCHES:
-        state.redispatches += 1
+    # Otherwise: keep waiting. One informational nudge, then silence — no restart.
+    if not state.prover_warned:
+        state.prover_warned = True
         mins = int(elapsed // 60)
         await agent._emit("message",
-            f"[TM watchdog] Prover wedged after {mins}m (restart "
-            f"{state.redispatches}/{MAX_REDISPATCHES}) — killing and re-dispatching a fresh prover.")
-        await _cleanup_prover(agent)
-        # _dispatch_prover resets prover_start; clear the warn flag for the new instance.
-        state.prover_warned = False
-        await _dispatch_prover(state, agent, resume=True)
-        return Transition.MONITOR_TICK
-
-    # Terminate tier: out of restarts or past the absolute timeout. Kill the
-    # prover and salvage-validate whatever it produced.
-    mins = int(elapsed // 60)
-    await agent._emit("message",
-        f"[TM watchdog] Prover exhausted watchdog budget after {mins}m "
-        f"({state.redispatches} restart(s)) — terminating and validating salvage.")
-    state.force_terminate = True
-    state.prover_done = True
-    state.raw_input = "Watchdog: prover terminated after exceeding time/restart budget."
-    state.sender = "system"
-    await _cleanup_prover(agent)
-    return Transition.PROVER_DONE
+            f"[TM watchdog] Prover {state.prover_agent_name or '?'} has run {mins}m — "
+            f"still working; not restarting (only give_up / BigSur cap can stop a lemma).")
+    return None
 
 
 async def _state_thinking(state: WorkflowState, agent) -> Transition:
@@ -866,6 +832,30 @@ async def _cleanup_internal(agent, which: Handler):
 
 
 async def _cleanup_prover(agent):
+    # Tear down the prover's CACHED CHILD agents (its per-lemma guide/writer/closer
+    # instances) FIRST. Each holds a persistent _listen_messages background task and
+    # a live backend session; cancelling only the prover task (below) orphans them,
+    # so every watchdog restart leaked a growing pile of guide/writer sessions.
+    # Sweeping them here keeps a restart clean — the fresh prover resumes from the
+    # saved ledger/state (checkpoint) rather than fighting stale live agents.
+    prover = getattr(agent, "_prover_agent", None)
+    if prover is not None:
+        from .po_v5 import _stop_listening
+        for attr in [a for a in list(vars(prover).keys())
+                     if a.startswith(("_guide_", "_writer_", "_closer_"))
+                     and not a.endswith("_ctx")]:
+            try:
+                inst = getattr(prover, attr, None)
+                ctx = getattr(prover, f"{attr}_ctx", None)
+                if inst is not None:
+                    await _stop_listening(inst)      # cancel+await the listen task
+                if ctx is not None:
+                    await ctx.__aexit__(None, None, None)  # disconnect the backend
+            except Exception:
+                pass  # best-effort teardown — never let cleanup raise
+            setattr(prover, attr, None)
+            setattr(prover, f"{attr}_ctx", None)
+
     if hasattr(agent, '_prover_task') and agent._prover_task:
         agent._prover_task.cancel()
         agent._prover_task = None
