@@ -3101,8 +3101,8 @@ private theorem cmd_arm_snoc_rebracket {P : PureExpr}
       rw [List.cons_append, Cmds.definedVars_cons, Cmds.definedVars_cons, ih, List.append_assoc]
   have h_d : Cmds.definedVars (c :: accum).reverse ++ Block.initVars rest =
       Cmds.definedVars accum.reverse ++ Block.initVars (.cmd c :: rest) := by
-    rw [List.reverse_cons, h_d_snoc, Block.initVars]
-    cases c <;> simp [Stmt.initVars, Cmd.definedVars, List.append_assoc]
+    rw [List.reverse_cons, h_d_snoc, Block.initVars_cons]
+    cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars, List.append_assoc]
   have h_m_snoc : Cmds.modifiedVars (accum.reverse ++ [c]) =
       Cmds.modifiedVars accum.reverse ++ Cmd.modifiedVars c := by
     induction accum.reverse with
@@ -3280,7 +3280,7 @@ private theorem typeDecl_arm_noop_prepend {P : PureExpr}
       ∧ ((∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmds.modifiedVars accum.reverse ++ Block.modifiedVars rest))) := by
   have h_d : Cmds.definedVars accum.reverse ++ Block.initVars rest =
       Cmds.definedVars accum.reverse ++ Block.initVars (.typeDecl tc md :: rest) := by
-    simp [Stmt.initVars]
+    simp
   have h_m : Cmds.modifiedVars accum.reverse ++ Block.modifiedVars rest =
       Cmds.modifiedVars accum.reverse ++ Block.modifiedVars (.typeDecl tc md :: rest) := by
     rw [Block.modifiedVars, Stmt.modifiedVars, List.nil_append]
@@ -4421,6 +4421,331 @@ theorem not_mem_coveringLabels_of_lookup_none
         · exact hne heq
         · exact h_notin_rest (by simpa [coveringLabels] using hin)
 
+/-- Decompose a structured execution of a `.block`-headed statement list that
+reaches `.exiting label`.  Either (A) the block body itself exits with `label`
+(so `label' ≠ label` and `rest` does not run), or (B) the block terminates
+(body terminates, or body exits matching its own `label'`) and then `rest`
+exits with `label`.  Self-contained: uses only the structured operational
+semantics, so it lives outside the mutual simulation block. -/
+private theorem block_exit_decompose {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {label label' : String} {body rest : List (Stmt P (Cmd P))} {md : MetaData P}
+    {ρ₀ ρ' : Env P}
+    (h_exit : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.block label' body md :: rest) ρ₀) (.exiting label ρ')) :
+    (label' ≠ label ∧
+     ∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+        (.stmts body ρ₀) (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
+    (∃ ρ_blk, ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.terminal ρ_inner) ∧
+        ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
+      (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.exiting label' ρ_inner) ∧
+        ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory })) ∧
+      StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_blk) (.exiting label ρ')) := by
+  cases h_exit with
+  | step _ _ _ hstep1 hrest1 =>
+    cases hstep1 with
+    | step_stmts_cons =>
+      have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
+      rcases h_seq_inv with h_inner_exit | h_term_exit
+      · cases h_inner_exit with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_block =>
+            have ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩ :=
+              block_reaches_exiting_strong P (EvalCmd P) extendFactory hrest2
+            exact Or.inl ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩
+      · obtain ⟨ρ_blk, h_inner_term, h_rest_exit⟩ := h_term_exit
+        cases h_inner_term with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_block =>
+            have h_blk_inv := block_some_reaches_terminal P (EvalCmd P) extendFactory hrest2
+            rcases h_blk_inv with h_term | h_match
+            · obtain ⟨ρ_i, h_body_term, heq⟩ := h_term
+              exact Or.inr ⟨ρ_blk, Or.inl ⟨ρ_i, h_body_term, heq⟩, h_rest_exit⟩
+            · obtain ⟨ρ_i, h_body_match, heq⟩ := h_match
+              exact Or.inr ⟨ρ_blk, Or.inr ⟨ρ_i, h_body_match, heq⟩, h_rest_exit⟩
+
+/-- Decompose a structured execution of a `.ite (.det e)`-headed statement list
+that reaches `.exiting label`.  Either (A) the taken branch itself exits with
+`label`, or (B) the taken branch terminates at `ρ_mid` and then `rest` exits
+with `label`; in each case the guard `e` evaluates to the corresponding boolean.
+Self-contained: uses only the structured operational semantics. -/
+private theorem ite_exit_decompose {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {e : P.Expr} {thenBranch elseBranch rest : List (Stmt P (Cmd P))} {md : MetaData P}
+    {label : String} {ρ₀ ρ' : Env P}
+    (h_exit : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.ite (.det e) thenBranch elseBranch md :: rest) ρ₀) (.exiting label ρ')) :
+    ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+        (.stmts thenBranch ρ₀) (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+      P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
+     (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+        (.stmts elseBranch ρ₀) (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+      P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∨
+    (∃ ρ_mid,
+      ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
+        ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+        P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
+       (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
+        ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+        P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∧
+      StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_mid) (.exiting label ρ')) := by
+  cases h_exit with
+  | step _ _ _ hstep1 hrest1 =>
+    cases hstep1 with
+    | step_stmts_cons =>
+      have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
+      rcases h_seq_inv with h_inner_exit | h_term_exit
+      · cases h_inner_exit with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_ite_true h_eval_tt _ =>
+            have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
+              (reflTrans_to_T hrest2)
+            exact Or.inl (Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_tt⟩)
+          | step_ite_false h_eval_ff _ =>
+            have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
+              (reflTrans_to_T hrest2)
+            exact Or.inl (Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_ff⟩)
+      · obtain ⟨ρ_mid_outer, h_inner_term, h_rest_exit⟩ := h_term_exit
+        cases h_inner_term with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_ite_true h_eval_tt _ =>
+            have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
+              (reflTrans_to_T hrest2)
+            exact Or.inr ⟨ρ_mid_outer, Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩, h_rest_exit⟩
+          | step_ite_false h_eval_ff _ =>
+            have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
+              (reflTrans_to_T hrest2)
+            exact Or.inr ⟨ρ_mid_outer, Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩, h_rest_exit⟩
+
+/-- A leading `.typeDecl` is a no-op for the structured operational semantics:
+if `.typeDecl tc md :: rest` exits with `label`, then `rest` alone exits with
+`label` from the same state.  Self-contained (structured semantics only). -/
+private theorem typeDecl_cons_reaches_exiting {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {tc : TypeConstructor} {md : MetaData P} {rest : List (Stmt P (Cmd P))}
+    {label : String} {ρ₀ ρ' : Env P}
+    (h_exit : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.typeDecl tc md :: rest) ρ₀) (.exiting label ρ')) :
+    StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ₀) (.exiting label ρ') := by
+  cases h_exit with
+  | step _ _ _ hstep1 hrest1 =>
+    cases hstep1 with
+    | step_stmts_cons =>
+      have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
+      rcases h_seq_inv with h_inner_exit | h_term_exit
+      · exfalso
+        cases h_inner_exit with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_typeDecl =>
+            cases hrest2 with
+            | step _ _ _ h _ => cases h
+      · obtain ⟨ρ_mid, h_inner_term, h_rest_exit⟩ := h_term_exit
+        cases h_inner_term with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_typeDecl =>
+            cases hrest2 with
+            | refl => exact h_rest_exit
+            | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+
+/-- If a statement list headed by `.exit l'` reaches `.exiting label`, then the
+exit fired immediately: `l' = label` and the state is unchanged.  Self-contained
+(structured semantics only). -/
+private theorem exit_cons_reaches_exiting {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {l' label : String} {md : MetaData P} {rest : List (Stmt P (Cmd P))}
+    {ρ₀ ρ' : Env P}
+    (h_exit : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.exit l' md :: rest) ρ₀) (.exiting label ρ')) :
+    l' = label ∧ ρ' = ρ₀ := by
+  cases h_exit with
+  | step _ _ _ hstep1 hrest1 =>
+    cases hstep1 with
+    | step_stmts_cons =>
+      have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
+      rcases h_seq_inv with h_inner_exit | h_term
+      · cases h_inner_exit with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_exit =>
+            cases hrest2 with
+            | refl => exact ⟨rfl, rfl⟩
+            | step _ _ _ h _ => cases h
+      · obtain ⟨ρ_mid, h_inner_term, _⟩ := h_term
+        cases h_inner_term with
+        | step _ _ _ hstep2 hrest2 =>
+          cases hstep2 with
+          | step_exit =>
+            cases hrest2 with
+            | step _ _ _ h _ => cases h
+
+/-- Decompose a structured execution of a singleton `[.ite (.det e) …]` that
+reaches `.terminal ρ₁`: the taken branch terminates and the guard `e` evaluates
+to the corresponding boolean.  Self-contained (structured semantics only). -/
+private theorem ite_singleton_terminal_decompose {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {e : P.Expr} {thenBranch elseBranch : List (Stmt P (Cmd P))} {md : MetaData P}
+    {ρ₀ ρ₁ : Env P}
+    (h_ite_star : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts [.ite (.det e) thenBranch elseBranch md] ρ₀) (.terminal ρ₁)) :
+    (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+        (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
+        ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+        P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
+      (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+        (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
+        ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+        P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff) := by
+  cases h_ite_star with
+  | step _ _ _ hstep1 hrest1 =>
+    cases hstep1 with
+    | step_stmts_cons =>
+      have ⟨ρ_mid, h_inner, h_nil⟩ :=
+        seq_reaches_terminal P (EvalCmd P) extendFactory hrest1
+      have h_eq := stmts_nil_terminal (EvalCmd P) extendFactory _ _ h_nil
+      subst h_eq
+      cases h_inner with
+      | step _ _ _ hstep2 hrest2 =>
+        cases hstep2 with
+        | step_ite_true h_eval_tt _ =>
+          have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest2)
+          exact Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩
+        | step_ite_false h_eval_ff _ =>
+          have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest2)
+          exact Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩
+
+/-- Decompose a *failing* structured run of an `.ite (.det e)`-headed list
+(`ρ₀` not already failed): either the taken branch itself reaches a failing
+config, or the taken branch terminates and then `rest` reaches a failing config;
+in each case `e` evaluates to the corresponding boolean.  Self-contained. -/
+private theorem ite_fail_decompose {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {e : P.Expr} {thenBranch elseBranch rest : List (Stmt P (Cmd P))} {md : MetaData P}
+    {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (h_ρ₀_nofail : ρ₀.hasFailure = false)
+    (h_reach : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.ite (.det e) thenBranch elseBranch md :: rest) ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    ((∃ d_t, StepStmtStar P (EvalCmd P) extendFactory (.stmts thenBranch ρ₀) d_t ∧
+        d_t.getEnv.hasFailure = true ∧ P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
+     (∃ d_f, StepStmtStar P (EvalCmd P) extendFactory (.stmts elseBranch ρ₀) d_f ∧
+        d_f.getEnv.hasFailure = true ∧ P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∨
+    (∃ ρ₁, ∃ d_rest,
+      ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
+          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+          P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
+       (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
+          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
+          P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∧
+      StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ₁) d_rest ∧
+        d_rest.getEnv.hasFailure = true) := by
+  rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_reach) h_c_fail with hA | hB
+  · obtain ⟨d, h_head_run, hd_fail⟩ := hA
+    left
+    match h_head_run with
+    | .refl _ =>
+      exact absurd (h_ρ₀_nofail ▸ (by simpa [Config.getEnv] using hd_fail) :
+        (false : Bool) = true) (by simp)
+    | .step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_ite_true h_eval_tt _ =>
+        have ⟨d_body, h_body_run, hd_body_fail⟩ :=
+          block_reaches_failing' P extendFactory hrest hd_fail
+        exact Or.inl ⟨d_body, h_body_run, hd_body_fail, h_eval_tt⟩
+      | step_ite_false h_eval_ff _ =>
+        have ⟨d_body, h_body_run, hd_body_fail⟩ :=
+          block_reaches_failing' P extendFactory hrest hd_fail
+        exact Or.inr ⟨d_body, h_body_run, hd_body_fail, h_eval_ff⟩
+  · obtain ⟨ρ₁, d, h_head_term, h_rest_run, hd_fail⟩ := hB
+    right
+    match h_head_term with
+    | .step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_ite_true h_eval_tt _ =>
+        have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest)
+        exact ⟨ρ₁, d, Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩, h_rest_run, hd_fail⟩
+      | step_ite_false h_eval_ff _ =>
+        have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest)
+        exact ⟨ρ₁, d, Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩, h_rest_run, hd_fail⟩
+
+/-- Decompose a *failing* structured run of a `.block label`-headed list
+(`ρ₀` not already failed): either the block body reaches a failing config, or
+the block terminates (body terminates or exits matching `label`) and then `rest`
+reaches a failing config.  Self-contained. -/
+private theorem block_fail_decompose {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    (extendFactory : ExtendFactory P)
+    {label : String} {body rest : List (Stmt P (Cmd P))} {md : MetaData P}
+    {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (h_ρ₀_nofail : ρ₀.hasFailure = false)
+    (h_reach : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmts (.block label body md :: rest) ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    (∃ d_body, StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) d_body ∧
+        d_body.getEnv.hasFailure = true) ∨
+    (∃ ρ_blk, ∃ d_rest,
+      ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.terminal ρ_inner) ∧
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
+       (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.exiting label ρ_inner) ∧
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory })) ∧
+      StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_blk) d_rest ∧
+        d_rest.getEnv.hasFailure = true) := by
+  rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_reach) h_c_fail with hA | hB
+  · obtain ⟨d, h_head_run, hd_fail⟩ := hA
+    left
+    match h_head_run with
+    | .refl _ =>
+      exact absurd (h_ρ₀_nofail ▸ (by simpa [Config.getEnv] using hd_fail) :
+        (false : Bool) = true) (by simp)
+    | .step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_block =>
+        have ⟨d_body, h_body_run, hd_body_fail⟩ :=
+          block_reaches_failing' P extendFactory hrest hd_fail
+        exact ⟨d_body, h_body_run, hd_body_fail⟩
+  · obtain ⟨ρ_blk, d, h_head_term, h_rest_run, hd_fail⟩ := hB
+    right
+    have h_block_inv :
+        (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.terminal ρ_inner) ∧
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
+        (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
+          (.stmts body ρ₀) (.exiting label ρ_inner) ∧
+          ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) := by
+      match h_head_term with
+      | .step _ _ _ hstep hrest =>
+        cases hstep with
+        | step_block =>
+          exact block_some_reaches_terminal P (EvalCmd P) extendFactory hrest
+    exact ⟨ρ_blk, d, h_block_inv, h_rest_run, hd_fail⟩
+
 set_option maxHeartbeats 6400000 in
 set_option maxRecDepth 1024 in
 mutual
@@ -4594,14 +4919,14 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
           simp [Cmd.definedVars] at h
           subst h
           apply h_x_not_inits
-          simp [Stmt.initVars]
+          simp [Cmd.definedVars, HasVarsImp.definedVars]
         | _ => simp [Cmd.definedVars] at h
     have h_x_not_rest_inits : x ∉ Block.initVars rest := by
       intro h
       apply h_x_not_inits
       rw [Block.initVars]
       -- Stmt.initVars (.cmd _) is either [x'] or [], in either case x ∈ rhs ∪ Block.initVars rest
-      cases c <;> simp [Stmt.initVars] <;> first | right; exact h | exact h
+      cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars] <;> first | right; exact h | exact h
     exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest_inits h_outer_guard
   | .ite (.det e) thenBranch elseBranch md :: rest =>
     unfold stmtsToBlocks at h_gen
@@ -4632,31 +4957,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
         [.ite (.det e) thenBranch elseBranch md] rest ρ₀ ρ'
         (by simp at h_term ⊢; exact h_term)
     -- Invert: the ite steps to either then-branch or else-branch
-    have h_ite_inv : (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-          (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
-          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-        (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-          (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
-          ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff) := by
-      cases h_ite_star with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have ⟨ρ_mid, h_inner, h_nil⟩ :=
-            seq_reaches_terminal P (EvalCmd P) extendFactory hrest1
-          have h_eq := stmts_nil_terminal (EvalCmd P) extendFactory _ _ h_nil
-          subst h_eq
-          cases h_inner with
-          | step _ _ _ hstep2 hrest2 =>
-            cases hstep2 with
-            | step_ite_true h_eval_tt _ =>
-              have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest2)
-              exact Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩
-            | step_ite_false h_eval_ff _ =>
-              have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest2)
-              exact Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩
+    have h_ite_inv := ite_singleton_terminal_decompose extendFactory h_ite_star
     -- Block membership: distribute h_cfg_blocks over concatenated blocks
     subst h_blocks
     have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
@@ -5126,7 +5427,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
       (Block.simpleShape_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
-      simp only [Stmt.initVars] at h; exact h
+      simp only [Stmt.initVars_loop] at h; exact h
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_body : Block.loopBodyNoInits body = true :=
       Stmt.loopBodyNoInits_loop_body_rec ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
@@ -5144,7 +5445,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
     have h_initvars_eq :
         Block.initVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
         Block.initVars rest := by
-      rw [Block.initVars]; simp only [Stmt.initVars, h_body_no_inits, List.nil_append]
+      rw [Block.initVars_cons, Stmt.initVars_loop, h_body_no_inits, List.nil_append]
     -- === STEP 3: Split h_term into loop run + rest run. ===
     have ⟨ρ_loop_post, h_loop_term, h_rest_term⟩ :=
       stmts_append_terminates P (EvalCmd P) extendFactory
@@ -6112,7 +6413,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Stmt.initVars]; exact hx
+      simp; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest
 termination_by sizeOf ss
 decreasing_by
@@ -6288,13 +6589,13 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           simp [Cmd.definedVars] at h
           subst h
           apply h_x_not_inits
-          simp [Stmt.initVars]
+          simp [Cmd.definedVars, HasVarsImp.definedVars]
         | _ => simp [Cmd.definedVars] at h
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro h
       apply h_x_not_inits
       rw [Block.initVars]
-      cases c <;> simp [Stmt.initVars] <;> first | right; exact h | exact h
+      cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars] <;> first | right; exact h | exact h
     exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest h_outer_guard
   | .funcDecl _ _ :: _ =>
     -- Excluded by h_nofd
@@ -6303,31 +6604,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     unfold stmtsToBlocks at h_gen
     -- typeDecl is a no-op in structured semantics; recurse on rest.
     -- Decompose: typeDecl steps to .terminal ρ₀, then rest exits at ρ'.
-    have h_rest_exit : StepStmtStar P (EvalCmd P) extendFactory
-        (.stmts rest ρ₀) (.exiting label ρ') := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner is .stmt (.typeDecl ..) ρ₀; cannot exit.
-            exfalso
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_typeDecl =>
-                cases hrest2 with
-                | step _ _ _ h _ => cases h
-          · obtain ⟨ρ_mid, h_inner_term, h_rest_exit⟩ := h_term_exit
-            -- .stmt (.typeDecl ..) ρ₀ → .terminal ρ_mid via step_typeDecl, so ρ_mid = ρ₀.
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_typeDecl =>
-                cases hrest2 with
-                | refl => exact h_rest_exit
-                | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+    have h_rest_exit := typeDecl_cons_reaches_exiting extendFactory h_exit
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
     have h_simple_rest : Block.simpleShape rest = true :=
@@ -6360,33 +6637,13 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Stmt.initVars]; exact hx
+      simp; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest h_outer_guard
   | .exit l' md :: _ =>
     -- The structured side: `.exit l'` produces `.exiting l'`.  For the trace
     -- to reach `.exiting label`, we need `l' = label`.
     -- Also: ρ' = ρ₀ (.exit doesn't modify the environment).
-    have h_combined : l' = label ∧ ρ' = ρ₀ := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term
-          · cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_exit =>
-                cases hrest2 with
-                | refl => exact ⟨rfl, rfl⟩
-                | step _ _ _ h _ => cases h
-          · obtain ⟨ρ_mid, h_inner_term, _⟩ := h_term
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_exit =>
-                cases hrest2 with
-                | step _ _ _ h _ => cases h
+    have h_combined := exit_cons_reaches_exiting extendFactory h_exit
     obtain ⟨h_l'_eq, h_ρ_eq⟩ := h_combined
     -- We want to keep `label` as the canonical name; rewrite l' → label in h_gen.
     rw [h_l'_eq] at h_gen
@@ -6434,47 +6691,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     --   (B) `.stmt (.block ..) ρ₀ → .terminal ρ_blk` then
     --       `.stmts rest ρ_blk → .exiting label ρ'`.  Body either terminates
     --       (B1) or exits matching `label'` (B2).
-    have h_decomp :
-        -- (A): body exits with `label`, label' ≠ label, ρ' is projected.
-        (label' ≠ label ∧
-         ∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts body ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-        -- (B): block terminates then rest exits.
-        (∃ ρ_blk, ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.terminal ρ_inner) ∧
-            ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-          (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.exiting label' ρ_inner) ∧
-            ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory })) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_blk) (.exiting label ρ')) := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner = .stmt (.block ..) ρ₀ → .exiting label ρ'
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_block =>
-                -- hrest2 : .block (.some label') ρ₀.store (.stmts body ρ₀) → .exiting label ρ'
-                have ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩ :=
-                  block_reaches_exiting_strong P (EvalCmd P) extendFactory hrest2
-                exact Or.inl ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩
-          · obtain ⟨ρ_blk, h_inner_term, h_rest_exit⟩ := h_term_exit
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_block =>
-                -- hrest2 : .block (.some label') ρ₀.store (.stmts body ρ₀) → .terminal ρ_blk
-                have h_blk_inv := block_some_reaches_terminal P (EvalCmd P) extendFactory hrest2
-                rcases h_blk_inv with h_term | h_match
-                · obtain ⟨ρ_i, h_body_term, heq⟩ := h_term
-                  exact Or.inr ⟨ρ_blk, Or.inl ⟨ρ_i, h_body_term, heq⟩, h_rest_exit⟩
-                · obtain ⟨ρ_i, h_body_match, heq⟩ := h_match
-                  exact Or.inr ⟨ρ_blk, Or.inr ⟨ρ_i, h_body_match, heq⟩, h_rest_exit⟩
+    have h_decomp := block_exit_decompose extendFactory h_exit
     -- noFuncDecl projections.
     have h_nofd_body : Block.noFuncDecl body = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
@@ -7115,58 +7332,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     -- Two outer cases via seq_reaches_exiting:
     --   (caseA) inner `.stmt (.ite ..) ρ₀` already exits with `label`; rest doesn't run.
     --   (caseB) inner terminates at ρ_mid, then rest exits.
-    have h_decomp :
-        -- caseA: branch itself exits with `label`. Either thenBranch (cond=tt) or elseBranch (cond=ff).
-        ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts thenBranch ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-         (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts elseBranch ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∨
-        -- caseB: branch terminates at ρ_mid, rest exits with `label`.
-        (∃ ρ_mid,
-          ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
-            ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-            P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-           (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
-            ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-            P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_mid) (.exiting label ρ')) := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner = .stmt (.ite ..) ρ₀ → .exiting label ρ'
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_ite_true h_eval_tt _ =>
-                have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inl (Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_tt⟩)
-              | step_ite_false h_eval_ff _ =>
-                have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inl (Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_ff⟩)
-          · obtain ⟨ρ_mid_outer, h_inner_term, h_rest_exit⟩ := h_term_exit
-            -- inner = .stmt (.ite ..) ρ₀ → .terminal ρ_mid_outer
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_ite_true h_eval_tt _ =>
-                have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inr ⟨ρ_mid_outer, Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩, h_rest_exit⟩
-              | step_ite_false h_eval_ff _ =>
-                have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inr ⟨ρ_mid_outer, Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩, h_rest_exit⟩
+    have h_decomp := ite_exit_decompose extendFactory h_exit
     -- Block membership: distribute h_cfg_blocks over concatenated blocks.
     subst h_blocks
     have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
@@ -7700,7 +7866,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       (Block.simpleShape_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
-      simp only [Stmt.initVars] at h; exact h
+      simp only [Stmt.initVars_loop] at h; exact h
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_body : Block.loopBodyNoInits body = true :=
       Stmt.loopBodyNoInits_loop_body_rec ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
@@ -7717,7 +7883,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have h_initvars_eq :
         Block.initVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
         Block.initVars rest := by
-      rw [Block.initVars]; simp only [Stmt.initVars, h_body_no_inits, List.nil_append]
+      rw [Block.initVars_cons, Stmt.initVars_loop, h_body_no_inits, List.nil_append]
     -- === STEP 3: Split h_exit (loop :: rest exits with label). ===
     -- Two cases: (a) the loop body exits with label (loop produces .exiting), or
     -- (b) the loop terminates, then rest exits with label.
@@ -8193,13 +8359,13 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
           simp [Cmd.definedVars] at h
           subst h
           apply h_x_not_inits
-          simp [Stmt.initVars]
+          simp [Cmd.definedVars, HasVarsImp.definedVars]
         | _ => simp [Cmd.definedVars] at h
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro h
       apply h_x_not_inits
       rw [Block.initVars]
-      cases c <;> simp [Stmt.initVars] <;> first | right; exact h | exact h
+      cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars] <;> first | right; exact h | exact h
     exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest h_outer_guard
   | .funcDecl _ _ :: _ =>
     -- Excluded by h_nofd
@@ -8208,31 +8374,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     unfold stmtsToBlocks at h_gen
     -- typeDecl is a no-op in structured semantics; recurse on rest.
     -- Decompose: typeDecl steps to .terminal ρ₀, then rest exits at ρ'.
-    have h_rest_exit : StepStmtStar P (EvalCmd P) extendFactory
-        (.stmts rest ρ₀) (.exiting label ρ') := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner is .stmt (.typeDecl ..) ρ₀; cannot exit.
-            exfalso
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_typeDecl =>
-                cases hrest2 with
-                | step _ _ _ h _ => cases h
-          · obtain ⟨ρ_mid, h_inner_term, h_rest_exit⟩ := h_term_exit
-            -- .stmt (.typeDecl ..) ρ₀ → .terminal ρ_mid via step_typeDecl, so ρ_mid = ρ₀.
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_typeDecl =>
-                cases hrest2 with
-                | refl => exact h_rest_exit
-                | step _ _ _ h _ => exact absurd h (by intro h; cases h)
+    have h_rest_exit := typeDecl_cons_reaches_exiting extendFactory h_exit
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
     have h_simple_rest : Block.simpleShape rest = true :=
@@ -8267,33 +8409,13 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Stmt.initVars]; exact hx
+      simp; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest h_outer_guard
   | .exit l' md :: _ =>
     -- The structured side: `.exit l'` produces `.exiting l'`.  For the trace
     -- to reach `.exiting label`, we need `l' = label`.
     -- Also: ρ' = ρ₀ (.exit doesn't modify the environment).
-    have h_combined : l' = label ∧ ρ' = ρ₀ := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term
-          · cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_exit =>
-                cases hrest2 with
-                | refl => exact ⟨rfl, rfl⟩
-                | step _ _ _ h _ => cases h
-          · obtain ⟨ρ_mid, h_inner_term, _⟩ := h_term
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_exit =>
-                cases hrest2 with
-                | step _ _ _ h _ => cases h
+    have h_combined := exit_cons_reaches_exiting extendFactory h_exit
     obtain ⟨h_l'_eq, _h_ρ_eq⟩ := h_combined
     -- Uncaught exit is vacuous under `exitsCoveredByBlocks`: the head `.exit l'`
     -- requires `l' ∈ coveringLabels exitConts`, but `h_label` says `label` (= l')
@@ -8325,47 +8447,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     --   (B) `.stmt (.block ..) ρ₀ → .terminal ρ_blk` then
     --       `.stmts rest ρ_blk → .exiting label ρ'`.  Body either terminates
     --       (B1) or exits matching `label'` (B2).
-    have h_decomp :
-        -- (A): body exits with `label`, label' ≠ label, ρ' is projected.
-        (label' ≠ label ∧
-         ∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts body ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-        -- (B): block terminates then rest exits.
-        (∃ ρ_blk, ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.terminal ρ_inner) ∧
-            ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-          (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.exiting label' ρ_inner) ∧
-            ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory })) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_blk) (.exiting label ρ')) := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner = .stmt (.block ..) ρ₀ → .exiting label ρ'
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_block =>
-                -- hrest2 : .block (.some label') ρ₀.store (.stmts body ρ₀) → .exiting label ρ'
-                have ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩ :=
-                  block_reaches_exiting_strong P (EvalCmd P) extendFactory hrest2
-                exact Or.inl ⟨h_ne, ρ_inner, h_body_exit, h_eq⟩
-          · obtain ⟨ρ_blk, h_inner_term, h_rest_exit⟩ := h_term_exit
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_block =>
-                -- hrest2 : .block (.some label') ρ₀.store (.stmts body ρ₀) → .terminal ρ_blk
-                have h_blk_inv := block_some_reaches_terminal P (EvalCmd P) extendFactory hrest2
-                rcases h_blk_inv with h_term | h_match
-                · obtain ⟨ρ_i, h_body_term, heq⟩ := h_term
-                  exact Or.inr ⟨ρ_blk, Or.inl ⟨ρ_i, h_body_term, heq⟩, h_rest_exit⟩
-                · obtain ⟨ρ_i, h_body_match, heq⟩ := h_match
-                  exact Or.inr ⟨ρ_blk, Or.inr ⟨ρ_i, h_body_match, heq⟩, h_rest_exit⟩
+    have h_decomp := block_exit_decompose extendFactory h_exit
     -- noFuncDecl projections.
     have h_nofd_body : Block.noFuncDecl body = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
@@ -9014,58 +9096,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     -- Two outer cases via seq_reaches_exiting:
     --   (caseA) inner `.stmt (.ite ..) ρ₀` already exits with `label`; rest doesn't run.
     --   (caseB) inner terminates at ρ_mid, then rest exits.
-    have h_decomp :
-        -- caseA: branch itself exits with `label`. Either thenBranch (cond=tt) or elseBranch (cond=ff).
-        ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts thenBranch ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-         (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-            (.stmts elseBranch ρ₀) (.exiting label ρ_inner) ∧
-          ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-          P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∨
-        -- caseB: branch terminates at ρ_mid, rest exits with `label`.
-        (∃ ρ_mid,
-          ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
-            ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-            P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-           (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
-            ρ_mid = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-            P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_mid) (.exiting label ρ')) := by
-      cases h_exit with
-      | step _ _ _ hstep1 hrest1 =>
-        cases hstep1 with
-        | step_stmts_cons =>
-          have h_seq_inv := seq_reaches_exiting P (EvalCmd P) extendFactory hrest1
-          rcases h_seq_inv with h_inner_exit | h_term_exit
-          · -- inner = .stmt (.ite ..) ρ₀ → .exiting label ρ'
-            cases h_inner_exit with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_ite_true h_eval_tt _ =>
-                have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inl (Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_tt⟩)
-              | step_ite_false h_eval_ff _ =>
-                have ⟨ρ_inner, h_body_exit, h_eq, _⟩ := blockT_none_reaches_exiting (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inl (Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_exit, h_eq, h_eval_ff⟩)
-          · obtain ⟨ρ_mid_outer, h_inner_term, h_rest_exit⟩ := h_term_exit
-            -- inner = .stmt (.ite ..) ρ₀ → .terminal ρ_mid_outer
-            cases h_inner_term with
-            | step _ _ _ hstep2 hrest2 =>
-              cases hstep2 with
-              | step_ite_true h_eval_tt _ =>
-                have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inr ⟨ρ_mid_outer, Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩, h_rest_exit⟩
-              | step_ite_false h_eval_ff _ =>
-                have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory)
-                  (reflTrans_to_T hrest2)
-                exact Or.inr ⟨ρ_mid_outer, Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩, h_rest_exit⟩
+    have h_decomp := ite_exit_decompose extendFactory h_exit
     -- Block membership: distribute h_cfg_blocks over concatenated blocks.
     subst h_blocks
     have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
@@ -9609,7 +9640,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
       (Block.simpleShape_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
-      simp only [Stmt.initVars] at h; exact h
+      simp only [Stmt.initVars_loop] at h; exact h
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_body : Block.loopBodyNoInits body = true :=
       Stmt.loopBodyNoInits_loop_body_rec ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
@@ -9626,7 +9657,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     have h_initvars_eq :
         Block.initVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
         Block.initVars rest := by
-      rw [Block.initVars]; simp only [Stmt.initVars, h_body_no_inits, List.nil_append]
+      rw [Block.initVars_cons, Stmt.initVars_loop, h_body_no_inits, List.nil_append]
     -- === STEP 3: Split h_exit (loop :: rest exits with label). ===
     -- Two cases: (a) the loop body exits with label (loop produces .exiting), or
     -- (b) the loop terminates, then rest exits with label.
@@ -10272,52 +10303,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     subst h_blocks
     -- Cons-split: either the ite (one of its branches) reaches a failing config, or
     -- the ite terminates and rest fails.  Decompose the failing run accordingly.
-    have h_ite_dispatch :
-        ((∃ d_t, StepStmtStar P (EvalCmd P) extendFactory (.stmts thenBranch ρ₀) d_t ∧
-            d_t.getEnv.hasFailure = true ∧ P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-         (∃ d_f, StepStmtStar P (EvalCmd P) extendFactory (.stmts elseBranch ρ₀) d_f ∧
-            d_f.getEnv.hasFailure = true ∧ P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∨
-        (∃ ρ₁, ∃ d_rest,
-          ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
-              ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-              P.eval ρ₀.factory ρ₀.store e = .some HasBool.tt) ∨
-           (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory (.stmts elseBranch ρ₀) (.terminal ρ_inner) ∧
-              ρ₁ = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } ∧
-              P.eval ρ₀.factory ρ₀.store e = .some HasBool.ff)) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ₁) d_rest ∧
-            d_rest.getEnv.hasFailure = true) := by
-      rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_reach) h_c_fail with hA | hB
-      · -- The head `.stmt (.ite ..) ρ₀` reaches a failing config; the ite steps into
-        -- the chosen branch first.
-        obtain ⟨d, h_head_run, hd_fail⟩ := hA
-        left
-        match h_head_run with
-        | .refl _ =>
-          -- `d = .stmt (.ite ..) ρ₀`, so `ρ₀.hasFailure = true`, excluded by `h_ρ₀_nofail`.
-          exact absurd (h_ρ₀_nofail ▸ (by simpa [Config.getEnv] using hd_fail) :
-            (false : Bool) = true) (by simp)
-        | .step _ _ _ hstep hrest =>
-          cases hstep with
-          | step_ite_true h_eval_tt _ =>
-            have ⟨d_body, h_body_run, hd_body_fail⟩ :=
-              block_reaches_failing' P extendFactory hrest hd_fail
-            exact Or.inl ⟨d_body, h_body_run, hd_body_fail, h_eval_tt⟩
-          | step_ite_false h_eval_ff _ =>
-            have ⟨d_body, h_body_run, hd_body_fail⟩ :=
-              block_reaches_failing' P extendFactory hrest hd_fail
-            exact Or.inr ⟨d_body, h_body_run, hd_body_fail, h_eval_ff⟩
-      · obtain ⟨ρ₁, d, h_head_term, h_rest_run, hd_fail⟩ := hB
-        right
-        -- head `.stmt (.ite ..) ρ₀ ⟶* .terminal ρ₁`: invert into branch terminate.
-        match h_head_term with
-        | .step _ _ _ hstep hrest =>
-          cases hstep with
-          | step_ite_true h_eval_tt _ =>
-            have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest)
-            exact ⟨ρ₁, d, Or.inl ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_tt⟩, h_rest_run, hd_fail⟩
-          | step_ite_false h_eval_ff _ =>
-            have ⟨ρ_inner, h_body_term, h_eq, _⟩ := blockT_none_reaches_terminal (extendFactory := extendFactory) (reflTrans_to_T hrest)
-            exact ⟨ρ₁, d, Or.inr ⟨ρ_inner, reflTransT_to_prop h_body_term, h_eq, h_eval_ff⟩, h_rest_run, hd_fail⟩
+    have h_ite_dispatch := ite_fail_decompose extendFactory h_ρ₀_nofail h_reach h_c_fail
     have h_cfg_accum : ∀ b ∈ accumBlocks, b ∈ cfg.blocks := fun b hb =>
       h_cfg_blocks b (List.mem_append_left _ hb)
     have h_cfg_tbs : ∀ b ∈ tbs, b ∈ cfg.blocks := fun b hb =>
@@ -10702,51 +10688,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
     -- Cons-split: either the block reaches a failing config (failure inside body),
     -- or the block terminates and rest fails.
-    have h_block_dispatch :
-        (∃ d_body, StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) d_body ∧
-            d_body.getEnv.hasFailure = true) ∨
-        (∃ ρ_blk, ∃ d_rest,
-          ((∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.terminal ρ_inner) ∧
-              ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-           (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.exiting label ρ_inner) ∧
-              ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory })) ∧
-          StepStmtStar P (EvalCmd P) extendFactory (.stmts rest ρ_blk) d_rest ∧
-            d_rest.getEnv.hasFailure = true) := by
-      rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_reach) h_c_fail with hA | hB
-      · -- The head `.stmt (.block ..) ρ₀` reaches a failing config: step into block,
-        -- failure inside body.
-        obtain ⟨d, h_head_run, hd_fail⟩ := hA
-        left
-        match h_head_run with
-        | .refl _ =>
-          exact absurd (h_ρ₀_nofail ▸ (by simpa [Config.getEnv] using hd_fail) :
-            (false : Bool) = true) (by simp)
-        | .step _ _ _ hstep hrest =>
-          cases hstep with
-          | step_block =>
-            -- `.block (some label) ρ₀.store (.stmts body ρ₀) ⟶* d` failing: failure
-            -- inside the body frame.
-            have ⟨d_body, h_body_run, hd_body_fail⟩ :=
-              block_reaches_failing' P extendFactory hrest hd_fail
-            exact ⟨d_body, h_body_run, hd_body_fail⟩
-      · obtain ⟨ρ_blk, d, h_head_term, h_rest_run, hd_fail⟩ := hB
-        right
-        -- Invert `.stmt (.block ..) ρ₀ ⟶* .terminal ρ_blk`.
-        have h_block_inv :
-            (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.terminal ρ_inner) ∧
-              ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) ∨
-            (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body ρ₀) (.exiting label ρ_inner) ∧
-              ρ_blk = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory }) := by
-          match h_head_term with
-          | .step _ _ _ hstep hrest =>
-            cases hstep with
-            | step_block =>
-              exact block_some_reaches_terminal P (EvalCmd P) extendFactory hrest
-        exact ⟨ρ_blk, d, h_block_inv, h_rest_run, hd_fail⟩
+    have h_block_dispatch := block_fail_decompose extendFactory h_ρ₀_nofail h_reach h_c_fail
     have h_nofd_body : Block.noFuncDecl body = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
@@ -11248,7 +11190,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
       (Block.simpleShape_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
-      simp only [Stmt.initVars] at h; exact h
+      simp only [Stmt.initVars_loop] at h; exact h
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_body : Block.loopBodyNoInits body = true :=
       Stmt.loopBodyNoInits_loop_body_rec ((Block.loopBodyNoInits_cons_iff.mp h_lbni).1)
@@ -11265,7 +11207,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     have h_initvars_eq :
         Block.initVars (Stmt.loop (.det guardExpr) none [] body md :: rest) =
         Block.initVars rest := by
-      rw [Block.initVars]; simp only [Stmt.initVars, h_body_no_inits, List.nil_append]
+      rw [Block.initVars_cons, Stmt.initVars_loop, h_body_no_inits, List.nil_append]
     -- === STEP 3: Split the failing run into "loop fails" vs "loop terminates, rest fails". ===
     have h_loop_dispatch :
         (∃ a', StepStmtStar P (EvalCmd P) extendFactory
@@ -12515,57 +12457,26 @@ theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [Has
 
 The final structured→CFG pass stated as its own `OverapproximatesUptoWhen` instance,
 over CR-local neutral languages/relation so the pipeline capstone can reuse it by
-definitional equality. `IntermediateInitEnvWF` (the shared intermediate-stage
-`initEnvWF`, kind-generic in its downstream-name predicate `Q`), the target CFG
-language `Lang.cfg`, the neutral structured source language `Lang.s2uSrc`, and the
-output relation `S2UEnvRel` all live here (upstream of the capstone). -/
+definitional equality. The source language is
+`Specification.Transform.Lang.imperativeBlock` with its `initEnvWF` set to
+`BlockInitEnvWF s2uKind` (the shared intermediate-stage store conditions — the same
+`BlockInitEnvWF` pack `nondetElim` uses, at kind `s2uKind`), the target is the CFG
+language `Lang.cfg`. -/
 
 section StmtsToCFGOverapprox
 open Specification.Transform
 variable {P : PureExpr}
 
-/-- The initial-environment condition the intermediate structured stages share:
-the shared `BlockInitEnvWF` pack (the program's own `initVars` undefined, the
-downstream generated-name kind `Q` undefined, and the well-formed-evaluator
-bundle — the same pack `nondetElim`'s `NdelimInitEnvWF` uses) plus the factory pin
-`ρ₀.factory = f₀` that the CFG-target language requires.  Any constructor must
-supply the full `WellFormedSemanticEval` bundle, which real evaluator
-environments already provide. -/
-@[expose] def IntermediateInitEnvWF [HasBool P] [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    (Q : String → Prop) (f₀ : P.Factory)
-    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) : Prop :=
-  Specification.Transform.BlockInitEnvWF (P := P) Q ss ρ₀ ∧ ρ₀.factory = f₀
-
-/-- The structured (post-hoist, simple-shape) source language whose `initEnvWF`
-carries the intermediate-stage store conditions at the shared initial env. -/
-abbrev Lang.s2uSrc [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [HasSubstFvar P]
-    (extendFactory : ExtendFactory P) (f₀ : P.Factory) :
-    Specification.Lang P :=
-  { Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P)
-      (EvalCmd P) extendFactory (isAtAssert P) with
-    initEnvWF := fun _ ss ρ₀ => IntermediateInitEnvWF (P := P) s2uKind f₀ ss ρ₀ }
-
-/-- The `stmtsToCFG` output relation is the shared `EnvStoreAgree` from
-`Specification.lean` (store agreement + failure-flag/factory preservation).
-Transitive (`EnvStoreAgree_trans`), which is what `comp_trans_eq` consumes to chain
-the per-pass instances. -/
-@[expose] abbrev S2UEnvRel : Env P → Env P → Prop :=
-  Specification.Transform.EnvStoreAgree
-
-/-- `stmtsToCFG` per-pass overapproximation up to `S2UEnvRel`.  The final pass:
-`Lang.s2uSrc` → `Lang.cfg`.  The arms run a `StepDetCFGStar` from the CFG start
-config; statement-shape premises come from `pre`, while the evaluator facts and
-`s2uKind`-freshness come from the source language's `initEnvWF () ss ρ₀`. -/
+/-- `stmtsToCFG` per-pass overapproximation up to `EnvStoreAgree`.  The final pass:
+the structured `Lang.imperativeBlock` (post-hoist, simple-shape) → `Lang.cfg`. -/
 theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
     [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P]
-    [LawfulHasIdent P] [HasSubstFvar P] (extendFactory : ExtendFactory P) (f₀ : P.Factory) :
+    [LawfulHasIdent P] [HasSubstFvar P] (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
-      (S2UEnvRel (P := P))
-      (Lang.s2uSrc extendFactory f₀)
-      (Lang.cfg extendFactory f₀)
+      (Specification.Transform.EnvStoreAgree (P := P))
+      (Lang.imperativeBlock (EvalCmd P) extendFactory (isAtAssert P))
+      (Lang.cfg extendFactory)
       (fun ss => some (stmtsToCFG ss))
       (fun ss =>
         Block.noFuncDecl ss = true
@@ -12578,14 +12489,14 @@ theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P]
         ∧ Block.userLabelsShapeNodup ss
         ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ (Block.initVars ss))
         ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ (Block.modifiedVars ss)))
-      () () := by
+      s2uKind () := by
   intro ss cfg ht hpre ρ₀ ρ₀' hEq hwf
   subst hEq
   simp only [Option.some.injEq] at ht
   subst ht
   obtain ⟨h_nofd, h_simple, h_unique, h_lbni, h_lhni, h_nml, h_covered, h_disj,
     h_iv_sf, h_mv_sf⟩ := hpre
-  obtain ⟨hbwf, hf₀eq⟩ := hwf
+  have hbwf := hwf
   have h_inits_ext := hbwf.defsUndefined
   have h_s2u_ext := hbwf.definedVarsNotReserved
   have hwfb := hbwf.bool
@@ -12596,7 +12507,7 @@ theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P]
   refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, ?_, ?_⟩
   · -- ===== TERMINAL ARM =====
     have h_term : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) (.terminal ρ') := by
-      simpa [Lang.s2uSrc, Lang.imperativeBlock] using hstar
+      simpa [Lang.imperativeBlock] using hstar
     obtain ⟨σ_cfg, h_run, h_agree⟩ :=
       stmtsToCFG_terminal_compositional
         (Q := s2uKind)
@@ -12607,28 +12518,26 @@ theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P]
         s2uKind_gen h_term
     refine ⟨{ store := σ_cfg, factory := ρ'.factory, hasFailure := ρ'.hasFailure }, ?_, ?_⟩
     · exact ⟨h_agree, rfl, rfl⟩
-    · subst hf₀eq
-      change StepDetCFGStar extendFactory ρ₀.factory (stmtsToCFG ss)
+    · change StepDetCFGStar extendFactory ρ₀.factory (stmtsToCFG ss)
         (CFGConfig.atBlock (stmtsToCFG ss).entry ρ₀.store ρ₀.hasFailure) _
       exact h_run
   · -- ===== EXITING ARM (vacuous: exit-covered inputs never reach top-level .exiting) =====
     have h_exit : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) (.exiting lbl ρ') := by
-      simpa [Lang.s2uSrc, Lang.imperativeBlock] using hstar
+      simpa [Lang.imperativeBlock] using hstar
     exact absurd h_exit
       (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendFactory ss h_covered ρ₀ lbl ρ')
   · -- ===== CanFail ARM =====
     intro h_src
-    subst hf₀eq
     by_cases h_ρ₀_fail : ρ₀.hasFailure = true
-    · refine ⟨(stmtsToCFG ss, .atBlock (stmtsToCFG ss).entry ρ₀.store ρ₀.hasFailure),
+    · refine ⟨(ρ₀.factory, stmtsToCFG ss, .atBlock (stmtsToCFG ss).entry ρ₀.store ρ₀.hasFailure),
         by simpa [Lang.cfg, CFGConfig.getFailure] using h_ρ₀_fail, ?_⟩
       exact ReflTrans.refl _
     · have h_ρ₀_nofail : ρ₀.hasFailure = false := by simpa using h_ρ₀_fail
       obtain ⟨cfg_s, h_cfg_fail, h_cfg_reach⟩ := h_src
       have h_reach : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) cfg_s := by
-        simpa [Lang.s2uSrc, Lang.imperativeBlock] using h_cfg_reach
+        simpa [Lang.imperativeBlock] using h_cfg_reach
       have h_fail : cfg_s.getEnv.hasFailure = true := by
-        simpa [Lang.s2uSrc, Lang.imperativeBlock] using h_cfg_fail
+        simpa [Lang.imperativeBlock] using h_cfg_fail
       obtain ⟨d, hd_run, hd_fail⟩ :=
         stmtsToCFG_to_fail
           (Q := s2uKind)
@@ -12637,7 +12546,7 @@ theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P]
           h_nofd h_simple h_unique h_lbni h_lhni h_nml
           (StoreAgreement.refl _) h_inits_ext h_disj (Env.varsUndefined_iff.mp h_s2u_ext) h_iv_sf h_mv_sf
           s2uKind_gen h_reach h_fail
-      exact ⟨(⟨"", []⟩, d), by simpa [Lang.cfg, CFGConfig.getFailure] using hd_fail,
+      exact ⟨(ρ₀.factory, ⟨"", []⟩, d), by simpa [Lang.cfg, CFGConfig.getFailure] using hd_fail,
         by simpa [Lang.cfg] using hd_run⟩
   · -- ===== target initEnvWF conjunct: `Lang.cfg.initEnvWF = fun _ _ _ => True` =====
     trivial

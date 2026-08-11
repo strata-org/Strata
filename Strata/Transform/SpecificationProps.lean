@@ -1317,17 +1317,24 @@ section StructuredStmts
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
+omit [HasOps P] in
 private theorem overapproximates_stmts_aux
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : Overapproximates
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEval (P := P) ρ₀.factory →
+        Inv ρ₀ →
         (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendFactory (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -1344,9 +1351,9 @@ private theorem overapproximates_stmts_aux
     subst hss'
     have wf_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEval (P := P) ρ₁.factory := by
+        Inv ρ₁ := by
       intro ρ₁ hterm_s
-      exact star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
+      exact hPres hwf hterm_s
     -- `Lang.imperative`'s `initEnvWF` unfolds to `WellFormedSemanticEval ρ.factory`,
     -- so `hwf` directly satisfies the source-side WF gate of `hsem`.
     have hsem_s : ∀ (ρ₁ : Env P),
@@ -1356,7 +1363,7 @@ private theorem overapproximates_stmts_aux
         (∀ lbl, StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.exiting lbl ρ₁) →
                 StepStmtStar P evalCmd extendFactory (.stmt s' ρ₀) (.exiting lbl ρ₁)) := by
       intro ρ₁
-      have hr := (hsem s s' hs trivial ρ₀ ρ₀ rfl hwf).1 ρ₁
+      have hr := (hsem s s' hs trivial ρ₀ ρ₀ rfl (hGate hwf)).1 ρ₁
       exact ⟨fun h => by obtain ⟨ρ'', heq, hstar⟩ := hr.1 h; subst heq; exact hstar,
              fun lbl h => by obtain ⟨ρ'', heq, hstar⟩ := hr.2 lbl h; subst heq; exact hstar⟩
     constructor
@@ -1365,11 +1372,11 @@ private theorem overapproximates_stmts_aux
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendFactory hrest_exec
-          have hwf₁ := wf_preserved ρ₁ hterm_s
+          have hwf := wf_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁
               ((hsem_s ρ₁).1 hterm_s))
-            ((ih rest' hrm ρ₁ ρ' hwf₁).1 hterm_rest)
+            ((ih rest' hrm ρ₁ ρ' hwf).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
@@ -1381,23 +1388,30 @@ private theorem overapproximates_stmts_aux
                 ((hsem_s ρ').2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have hwf₁ := wf_preserved ρ₁ hterm_s
+            have hwf := wf_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁
                 ((hsem_s ρ₁).1 hterm_s))
-              ((ih rest' hrm ρ₁ ρ' hwf₁).2 lbl hexit_rest)
+              ((ih rest' hrm ρ₁ ρ' hwf).2 lbl hexit_rest)
 
+omit [HasOps P] in
 private theorem overapproximates_stmts_canfail
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : Overapproximates
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT))
     (ss' : List (Stmt P CmdT))
     (hmap : ss.mapM T = some ss')
     (ρ₀ : Env P)
-    (hwf : WellFormedSemanticEval (P := P) ρ₀.factory)
+    (hwf : Inv ρ₀)
     (hcf : ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
       StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) cfg) :
     ∃ cfg' : Config P CmdT, cfg'.getEnv.hasFailure = true ∧
@@ -1422,22 +1436,22 @@ private theorem overapproximates_stmts_canfail
         | .inl ⟨cfg', hf', hstar'⟩ =>
           -- Failure happens in the first statement `s`.
           -- Use hsem's CanFail clause for statement `s`.
-          have hsem_canfail := (hsem s s' hs trivial ρ₀ ρ₀ rfl hwf).2.1
+          have hsem_canfail := (hsem s s' hs trivial ρ₀ ρ₀ rfl (hGate hwf)).2.1
           have ⟨cfg_t, hf_t, hstar_t⟩ := hsem_canfail ⟨cfg', hf', hstar'⟩
           exact ⟨.seq cfg_t rest', hf_t,
             .step _ _ _ .step_stmts_cons
               (seq_inner_star P evalCmd extendFactory _ cfg_t rest' hstar_t)⟩
         | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
           -- First statement terminates at ρ₁, failure is in the rest.
-          have hwf₁ : WellFormedSemanticEval (P := P) ρ₁.factory :=
-            star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
+          have hwfρ₁ : Inv ρ₁ :=
+            hPres hwf hterm_s
           -- Get terminal simulation for s → s'
-          have hsem_s := (hsem s s' hs trivial ρ₀ ρ₀ rfl hwf).1 ρ₁
+          have hsem_s := (hsem s s' hs trivial ρ₀ ρ₀ rfl (hGate hwf)).1 ρ₁
           have ⟨ρ₁', heq₁, hterm_s'⟩ := hsem_s.1 hterm_s
           subst heq₁
           -- Recurse on the rest
           have ⟨cfg_rest, hf_rest, hstar_rest'⟩ :=
-            ih rest' hrm ρ₁ hwf₁ ⟨cfg', hf', hstar_rest⟩
+            ih rest' hrm ρ₁ hwfρ₁ ⟨cfg', hf', hstar_rest⟩
           exact ⟨cfg_rest, hf_rest,
             ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁ hterm_s')
@@ -1449,28 +1463,57 @@ private theorem overapproximates_stmts_canfail
 statement lists (block bodies).  If `T` overapproximates every individual
 statement, then `fun ss => ss.mapM T` overapproximates the block obtained by
 mapping `T` over the list.
+
+Note that this lifting depends on finding an environment invariant
+`Inv : Env P → Prop` — one that depends only on the `Env` and not on the
+statement — that holds at block entry (`hGround`), is preserved across each
+statement's execution (`hPres`), and implies the per-statement source
+well-formedness for *every* statement (`hGate : Inv ρ → swf sp₁ s ρ`).
+When no such statement-independent `Inv` can be found, these lemmas do not
+apply and the compositionality has to be proven separately for that
+well-formedness.
 -/
 
-theorem overapproximates_stmts
-    (hwf_ext : WFFactoryExtension P extendFactory)
+omit [HasOps P] in
+theorem overapproximates_stmts [HasIdent P] [HasVarsImp P CmdT]
+    {Params : Type}
+    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : Params)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂) :
+    -- An abstract operational invariant on environments; the concrete
+    -- `WellFormedSemanticEval ρ.factory` is one instance (with `hPres` from
+    -- `star_preserves_wfEval`), but any `Inv` will do.
+    (Inv : Env P → Prop)
+    -- hGround: the block-level well-formedness establishes `Inv` at the initial env.
+    (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
+    -- hPres: `Inv` is preserved when a statement runs to a terminal state.
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    -- hGate: `Inv` implies the statement-level source well-formedness `hsem` gates on.
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    -- the block-level well-formedness transfers along the transform.
+    (hWF : ∀ ss ss' ρ, ss.mapM T = some ss' → wf p₁ ss ρ → wf p₂ ss' ρ)
+    (hsem : Overapproximates
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂) :
     Overapproximates
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (fun ss => ss.mapM T) () () := by
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (fun ss => ss.mapM T) p₁ p₂ := by
   intro ss ss' hmap _ ρ₀ ρ₀' heq hwf
   subst heq
-  have aux := overapproximates_stmts_aux evalCmd extendFactory isAtAssertFn hwf_ext T
-    params₁ params₂ hsem ss ss' hmap ρ₀
-  refine ⟨fun ρ' => ⟨fun h => ⟨ρ', rfl, (aux ρ' hwf).1 h⟩,
-                      fun lbl h => ⟨ρ', rfl, (aux ρ' hwf).2 lbl h⟩⟩, ?_, hwf⟩
+  have hInv0 := hGround ss ρ₀ hwf
+  have aux := overapproximates_stmts_aux evalCmd extendFactory isAtAssertFn T
+    swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀
+  refine ⟨fun ρ' => ⟨fun h => ⟨ρ', rfl, (aux ρ' hInv0).1 h⟩,
+                      fun lbl h => ⟨ρ', rfl, (aux ρ' hInv0).2 lbl h⟩⟩, ?_, hWF ss ss' ρ₀ hmap hwf⟩
   -- CanFail preservation via the dedicated helper.
   intro ⟨cfg, hfcfg, hstar⟩
-  exact overapproximates_stmts_canfail evalCmd extendFactory isAtAssertFn hwf_ext T params₁ params₂
-    hsem ss ss' hmap ρ₀ hwf ⟨cfg, hfcfg, hstar⟩
+  exact overapproximates_stmts_canfail evalCmd extendFactory isAtAssertFn T swf sp₁ sp₂ Inv hPres hGate
+    hsem ss ss' hmap ρ₀ hInv0 ⟨cfg, hfcfg, hstar⟩
 
 
 /-! ### Compositionality of `OverapproximatesUpto` over statement lists
@@ -1487,19 +1530,26 @@ env's failure flag and well-formedness from `R`.  We therefore require `R` to
 preserve those two invariants (`hRfail`, `hRwf`); for the equality relation both
 are trivial, recovering `overapproximates_stmts` as the special case. -/
 
+omit [HasOps P] in
 private theorem overapproximatesUpto_stmts_aux
     (R : Relation (Env P))
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesUpto R (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesUpto R
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ₀' ρ' : Env P),
         R ρ₀ ρ₀' →
-        WellFormedSemanticEval (P := P) ρ₀.factory →
+        Inv ρ₀ →
         (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') →
          ∃ ρ'', R ρ' ρ'' ∧
            StepStmtStar P evalCmd extendFactory (.stmts ss' ρ₀') (.terminal ρ''))
@@ -1530,20 +1580,20 @@ private theorem overapproximatesUpto_stmts_aux
     subst hss'
     have wf_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEval (P := P) ρ₁.factory := by
+        Inv ρ₁ := by
       intro ρ₁ hterm_s
-      exact star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
+      exact hPres hwf hterm_s
     -- Head simulation up to `R`: source `s` from `ρ₀` and target `s'` from `ρ₀'`.
-    have hsem_s := hsem s s' hs trivial ρ₀ ρ₀' hR hwf
+    have hsem_s := hsem s s' hs trivial ρ₀ ρ₀' hR (hGate hwf)
     constructor
     · intro hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendFactory hrest_exec
-          have hwf₁ := wf_preserved ρ₁ hterm_s
+          have hwf := wf_preserved ρ₁ hterm_s
           have ⟨ρ₁', hR₁, hterm_s'⟩ := (hsem_s.1 ρ₁).1 hterm_s
-          have ⟨ρ'', hR'', hrest'⟩ := (ih rest' hrm ρ₁ ρ₁' ρ' hR₁ hwf₁).1 hterm_rest
+          have ⟨ρ'', hR'', hrest'⟩ := (ih rest' hrm ρ₁ ρ₁' ρ' hR₁ hwf).1 hterm_rest
           exact ⟨ρ'', hR'', ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀' ρ₁' hterm_s') hrest'⟩
     · intro lbl hstar
@@ -1558,26 +1608,33 @@ private theorem overapproximatesUpto_stmts_aux
                 (seq_inner_star P evalCmd extendFactory _ _ rest' hexit_s')
                 (.step _ _ _ .step_seq_exit (.refl _)))⟩
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have hwf₁ := wf_preserved ρ₁ hterm_s
+            have hwf := wf_preserved ρ₁ hterm_s
             have ⟨ρ₁', hR₁, hterm_s'⟩ := (hsem_s.1 ρ₁).1 hterm_s
-            have ⟨ρ'', hR'', hexit_rest'⟩ := (ih rest' hrm ρ₁ ρ₁' ρ' hR₁ hwf₁).2 lbl hexit_rest
+            have ⟨ρ'', hR'', hexit_rest'⟩ := (ih rest' hrm ρ₁ ρ₁' ρ' hR₁ hwf).2 lbl hexit_rest
             exact ⟨ρ'', hR'', ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀' ρ₁' hterm_s') hexit_rest'⟩
 
+omit [HasOps P] in
 private theorem overapproximatesUpto_stmts_canfail
     (R : Relation (Env P))
     (hRfail : ∀ ρ ρ' : Env P, R ρ ρ' → ρ.hasFailure = true → ρ'.hasFailure = true)
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesUpto R (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesUpto R
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ₀' : Env P),
         R ρ₀ ρ₀' →
-        WellFormedSemanticEval (P := P) ρ₀.factory →
+        Inv ρ₀ →
         (∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
           StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) cfg) →
         ∃ cfg' : Config P CmdT, cfg'.getEnv.hasFailure = true ∧
@@ -1608,7 +1665,7 @@ private theorem overapproximatesUpto_stmts_canfail
       -- `cfg = .stmts (s :: rest) ρ₀` already fails ⇒ head `s` can fail from `ρ₀`.
       have hcanfail_s : CanFail (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) s ρ₀ :=
         ⟨.stmt s ρ₀, by simpa [Config.getEnv] using hfcfg, .refl _⟩
-      have ⟨cfg_t, hf_t, hstar_t⟩ := (hsem s s' hs trivial ρ₀ ρ₀' hR hwf).2.1 hcanfail_s
+      have ⟨cfg_t, hf_t, hstar_t⟩ := (hsem s s' hs trivial ρ₀ ρ₀' hR (hGate hwf)).2.1 hcanfail_s
       exact ⟨.seq cfg_t rest', by simpa [Config.getEnv] using hf_t,
         .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendFactory _ cfg_t rest' hstar_t)⟩
     | step _ _ _ hstep hrest_exec => cases hstep with
@@ -1617,65 +1674,64 @@ private theorem overapproximatesUpto_stmts_canfail
         | .inl ⟨cfg', hf', hstar'⟩ =>
           -- Failure occurs while executing the head `s`.
           have ⟨cfg_t, hf_t, hstar_t⟩ :=
-            (hsem s s' hs trivial ρ₀ ρ₀' hR hwf).2.1 ⟨cfg', hf', hstar'⟩
+            (hsem s s' hs trivial ρ₀ ρ₀' hR (hGate hwf)).2.1 ⟨cfg', hf', hstar'⟩
           exact ⟨.seq cfg_t rest', by simpa [Config.getEnv] using hf_t,
             .step _ _ _ .step_stmts_cons (seq_inner_star P evalCmd extendFactory _ cfg_t rest' hstar_t)⟩
         | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
           -- Head terminates at `ρ₁`; failure is in the rest.  Simulate the head
           -- up to `R` (yielding `ρ₁'`) and recurse from the related env.
-          have hwf₁ := star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
-          have ⟨ρ₁', hR₁, hterm_s'⟩ := ((hsem s s' hs trivial ρ₀ ρ₀' hR hwf).1 ρ₁).1 hterm_s
+          have hwfρ₁ := hPres hwf hterm_s
+          have ⟨ρ₁', hR₁, hterm_s'⟩ := ((hsem s s' hs trivial ρ₀ ρ₀' hR (hGate hwf)).1 ρ₁).1 hterm_s
           have ⟨cfg_rest, hf_rest, hstar_rest'⟩ :=
-            ih rest' hrm ρ₁ ρ₁' hR₁ hwf₁ ⟨cfg', hf', hstar_rest⟩
+            ih rest' hrm ρ₁ ρ₁' hR₁ hwfρ₁ ⟨cfg', hf', hstar_rest⟩
           exact ⟨cfg_rest, hf_rest,
             ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀' ρ₁' hterm_s')
               hstar_rest'⟩
 
+omit [HasOps P] in
 /-- Compositionality of `OverapproximatesUpto` over statement lists.
 
 The state-relation analogue of `overapproximates_stmts`: if `T` overapproximates
 every individual statement up to `R`, then `fun ss => ss.mapM T` overapproximates
-the whole block up to `R`.  `hRfail`/`hRwf` require `R` to preserve the failure
-flag and well-formedness, which is what the empty-block case needs. -/
-theorem overapproximatesUpto_stmts
+the whole block up to `R`.  `hRfail` requires `R` to preserve the failure flag,
+which is what the empty-block case needs. -/
+theorem overapproximatesUpto_stmts [HasIdent P] [HasVarsImp P CmdT]
+    {Params : Type}
+    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : Params)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
     (R : Relation (Env P))
-    -- Precondition on R: 1. it must not make the target program silently succeed
+    -- Precondition on R: it must not make the target program silently succeed.
     (hRfail : ∀ ρ ρ' : Env P,
       R ρ ρ' → ρ.hasFailure = true → ρ'.hasFailure = true)
-    -- Precondition on R: 2. evaluator wellformedness w.r.t. src's factory must
-    --                       imply tgt's evaluator wellformedness
-    (hRwf : ∀ ρ ρ' : Env P, R ρ ρ' →
-      WellFormedSemanticEval (P := P) ρ.factory →
-      WellFormedSemanticEval (P := P) ρ'.factory)
-
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesUpto R (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂) :
+    (Inv : Env P → Prop)
+    (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    -- block-level well-formedness transfers along the transform and `R`.
+    (hWF : ∀ ss ss' ρ ρ', ss.mapM T = some ss' → R ρ ρ' → wf p₁ ss ρ → wf p₂ ss' ρ')
+    (hsem : OverapproximatesUpto R
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂) :
     OverapproximatesUpto R
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (fun ss => ss.mapM T) () () := by
-
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (fun ss => ss.mapM T) p₁ p₂ := by
   intro ss ss' hmap _ ρ₀ ρ₀' hR hwf
-  -- Target-side well-formedness at `ρ₀'`: from the head statement's guarantee
-  -- when the block is non-empty, and from `hRwf` for the empty block.
-  have hwf' : WellFormedSemanticEval (P := P) ρ₀'.factory := by
-    cases ss with
-    | nil => exact hRwf ρ₀ ρ₀' hR hwf
-    | cons s rest =>
-      have ⟨s', _, hs, _, _⟩ := List.mapM_cons_some hmap
-      exact (hsem s s' hs trivial ρ₀ ρ₀' hR hwf).2.2
-  refine ⟨fun ρ' => ⟨fun h => ?_, fun lbl h => ?_⟩, ?_, hwf'⟩
-  · exact (overapproximatesUpto_stmts_aux evalCmd extendFactory isAtAssertFn R hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ ρ₀' ρ' hR hwf).1 h
-  · exact (overapproximatesUpto_stmts_aux evalCmd extendFactory isAtAssertFn R hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ ρ₀' ρ' hR hwf).2 lbl h
+  have hInv0 := hGround ss ρ₀ hwf
+  refine ⟨fun ρ' => ⟨fun h => ?_, fun lbl h => ?_⟩, ?_, hWF ss ss' ρ₀ ρ₀' hmap hR hwf⟩
+  · exact (overapproximatesUpto_stmts_aux evalCmd extendFactory isAtAssertFn R T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ₀' ρ' hR hInv0).1 h
+  · exact (overapproximatesUpto_stmts_aux evalCmd extendFactory isAtAssertFn R T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ₀' ρ' hR hInv0).2 lbl h
   · intro ⟨cfg, hfcfg, hstar⟩
-    exact overapproximatesUpto_stmts_canfail evalCmd extendFactory isAtAssertFn R hRfail hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ ρ₀' hR hwf ⟨cfg, hfcfg, hstar⟩
+    exact overapproximatesUpto_stmts_canfail evalCmd extendFactory isAtAssertFn R hRfail T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ₀' hR hInv0 ⟨cfg, hfcfg, hstar⟩
 
 
 /-! ## Aggressive statement-list overapproximation
@@ -1698,17 +1754,24 @@ theorem canFail_head_to_block
       (.step _ _ _ .step_stmts_cons (.refl _))
       (seq_inner_star P evalCmd extendFactory _ _ ss hreach)
 
+omit [HasOps P] in
 private theorem overapproximatesAggressively_stmts_canfail
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesAggressively
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT))
     (ss' : List (Stmt P CmdT))
     (hmap : ss.mapM T = some ss')
     (ρ₀ : Env P)
-    (hwf : WellFormedSemanticEval (P := P) ρ₀.factory)
+    (hwf : Inv ρ₀)
     (hcf : ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
       StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) cfg) :
     ∃ cfg' : Config P CmdT, cfg'.getEnv.hasFailure = true ∧
@@ -1731,16 +1794,16 @@ private theorem overapproximatesAggressively_stmts_canfail
         match seq_canfail_prop hrest_exec hfcfg with
         | .inl ⟨cfg', hf', hstar'⟩ =>
           -- Failure in the head `s`: use aggressive fail preservation (`.2.2.1`).
-          have hsem_canfail := (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ hwf).2.2.1
+          have hsem_canfail := (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)).2.2.1
           have ⟨cfg_t, hf_t, hstar_t⟩ := hsem_canfail ⟨cfg', hf', hstar'⟩
           exact ⟨.seq cfg_t rest', hf_t,
             .step _ _ _ .step_stmts_cons
               (seq_inner_star P evalCmd extendFactory _ cfg_t rest' hstar_t)⟩
         | .inr ⟨ρ₁, hterm_s, cfg', hf', hstar_rest⟩ =>
-          have hwf₁ : WellFormedSemanticEval (P := P) ρ₁.factory :=
-            star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
+          have hwfρ₁ : Inv ρ₁ :=
+            hPres hwf hterm_s
           -- The head's terminal guarantee is a disjunction under `hsem` (`.1`).
-          match (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ hwf).1 ρ₁ hterm_s with
+          match (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)).1 ρ₁ hterm_s with
           | .inl canfail_s' =>
             obtain ⟨cfg'', hf'', hreach''⟩ := canfail_s'
             exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
@@ -1750,7 +1813,7 @@ private theorem overapproximatesAggressively_stmts_canfail
             by_cases hf₁ : ρ₁.hasFailure = false
             · -- Head terminates without failure at ρ₁; recurse on the tail.
               have ⟨cfg_rest, hf_rest, hstar_rest'⟩ :=
-                ih rest' hrm ρ₁ hwf₁ ⟨cfg', hf', hstar_rest⟩
+                ih rest' hrm ρ₁ hwfρ₁ ⟨cfg', hf', hstar_rest⟩
               exact ⟨cfg_rest, hf_rest,
                 ReflTrans_Transitive _ _ _ _
                   (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁ (hterm_s' hf₁))
@@ -1761,22 +1824,28 @@ private theorem overapproximatesAggressively_stmts_canfail
               have hcanfail_s :
                   CanFail (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) s ρ₀ :=
                 ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁', hterm_s⟩
-              have ⟨cfg'', hf'', hreach''⟩ := (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ hwf).2.2.1 hcanfail_s
+              have ⟨cfg'', hf'', hreach''⟩ := (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)).2.2.1 hcanfail_s
               exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
                 .step _ _ _ .step_stmts_cons
                   (seq_inner_star P evalCmd extendFactory _ cfg'' rest' hreach'')⟩
 
 private theorem overapproximatesAggressively_stmts_aux
-    (hwf_ext : WFFactoryExtension P extendFactory)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesAggressively
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEval (P := P) ρ₀.factory →
+        Inv ρ₀ →
         (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') →
           CanFailBlock evalCmd extendFactory ss' ρ₀ ∨
           (ρ'.hasFailure = false →
@@ -1797,11 +1866,11 @@ private theorem overapproximatesAggressively_stmts_aux
     subst hss'
     have wf_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEval (P := P) ρ₁.factory := by
+        Inv ρ₁ := by
       intro ρ₁ hterm_s
-      exact star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm_s hwf
+      exact hPres hwf hterm_s
     have ⟨hsem_term, hsem_exit, hsem_fail, _hsem_swf⟩ :=
-      OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ hwf
+      OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)
     -- Common pattern: a failing intermediate env makes the head, hence the whole
     -- transformed block, able to fail.
     have canfail_from_failure : ∀ (ρ₁ : Env P),
@@ -1821,13 +1890,13 @@ private theorem overapproximatesAggressively_stmts_aux
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendFactory hrest_exec
-          have hwf₁ := wf_preserved ρ₁ hterm_s
+          have hwf := wf_preserved ρ₁ hterm_s
           match hsem_term ρ₁ hterm_s with
           | .inl canfail_s' =>
             exact .inl (canFail_head_to_block evalCmd extendFactory isAtAssertFn s' rest' ρ₀ canfail_s')
           | .inr hterm_s' =>
             by_cases hf₁ : ρ₁.hasFailure = false
-            · match (ih rest' hrm ρ₁ ρ' hwf₁).1 hterm_rest with
+            · match (ih rest' hrm ρ₁ ρ' hwf).1 hterm_rest with
               | .inl canfail_rest' =>
                 obtain ⟨cfg', hf', hreach'⟩ := canfail_rest'
                 exact .inl ⟨cfg', hf',
@@ -1859,12 +1928,12 @@ private theorem overapproximatesAggressively_stmts_aux
                     (hexit_s' hf))
                     (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have hwf₁ := wf_preserved ρ₁ hterm_s
+            have hwf := wf_preserved ρ₁ hterm_s
             match hsem_term ρ₁ hterm_s with
             | .inl canfail_s' =>
               exact .inl (canFail_head_to_block evalCmd extendFactory isAtAssertFn s' rest' ρ₀ canfail_s')
             | .inr hterm_s' =>
-              match (ih rest' hrm ρ₁ ρ' hwf₁).2 lbl hexit_rest with
+              match (ih rest' hrm ρ₁ ρ' hwf).2 lbl hexit_rest with
               | .inl canfail_rest' =>
                 by_cases hf₁ : ρ₁.hasFailure = false
                 · obtain ⟨cfg', hf', hreach'⟩ := canfail_rest'
@@ -1894,30 +1963,42 @@ The aggressive analogue of `overapproximates_stmts`: if `T` aggressively
 overapproximates every individual statement, then `fun ss => ss.mapM T`
 aggressively overapproximates the whole block.
 -/
-theorem overapproximatesAggressively_stmts
-    (hwf_ext : WFFactoryExtension P extendFactory)
+theorem overapproximatesAggressively_stmts [HasIdent P] [HasVarsImp P CmdT]
+    {Params : Type}
+    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : Params)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
-    (hsem : OverapproximatesAggressively (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
-      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂) :
+    (Inv : Env P → Prop)
+    (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P}, Inv ρ →
+       StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hWF : ∀ ss ss' ρ, ss.mapM T = some ss' → wf p₁ ss ρ → wf p₂ ss' ρ)
+    (hsem : OverapproximatesAggressively
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn SParams swf) T sp₁ sp₂) :
     OverapproximatesAggressively
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (fun ss => ss.mapM T) () () := by
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn (wfPkg := ⟨Params, wf⟩))
+      (fun ss => ss.mapM T) p₁ p₂ := by
   intro ss ss' hmap _ ρ₀ ρ₀' hEq hwf
   subst hEq
-  refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_, hwf⟩
-  · rcases (overapproximatesAggressively_stmts_aux evalCmd extendFactory isAtAssertFn hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ ρ' hwf).1 hstar with hcf | hstep
+  have hInv0 := hGround ss ρ₀ hwf
+  refine ⟨fun ρ' hstar => ?_, fun lbl ρ' hstar => ?_, ?_, hWF ss ss' ρ₀ hmap hwf⟩
+  · rcases (overapproximatesAggressively_stmts_aux evalCmd extendFactory isAtAssertFn T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ' hInv0).1 hstar with hcf | hstep
     · exact .inl hcf
     · exact .inr fun hf => ⟨ρ', rfl, hstep hf⟩
-  · rcases (overapproximatesAggressively_stmts_aux evalCmd extendFactory isAtAssertFn hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ ρ' hwf).2 lbl hstar with hcf | hstep
+  · rcases (overapproximatesAggressively_stmts_aux evalCmd extendFactory isAtAssertFn T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ' hInv0).2 lbl hstar with hcf | hstep
     · exact .inl hcf
     · exact .inr fun hf => ⟨ρ', rfl, hstep hf⟩
   · intro ⟨cfg, hfcfg, hstar⟩
-    exact overapproximatesAggressively_stmts_canfail evalCmd extendFactory isAtAssertFn hwf_ext T
-      params₁ params₂ hsem ss ss' hmap ρ₀ hwf
+    exact overapproximatesAggressively_stmts_canfail evalCmd extendFactory isAtAssertFn T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ hInv0
       ⟨cfg, hfcfg, hstar⟩
 
 end StructuredStmts

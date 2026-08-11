@@ -181,7 +181,7 @@ private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere
     Stmt.initVars s = [] := by
   match s with
   | .cmd c =>
-      cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars]
+      cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
   | .block lbl bss md =>
       rw [Stmt.noInitsAnywhere] at h
       simp only [Stmt.initVars_block]
@@ -220,7 +220,7 @@ theorem Stmt.noInitsAnywhere_of_initVars_nil
     (s : Stmt P (Cmd P)) (h : Stmt.initVars s = []) :
     Stmt.noInitsAnywhere s = true := by
   match s with
-  | .cmd c => cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars]
+  | .cmd c => cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
   | .block lbl bss md =>
       rw [Stmt.initVars_block] at h; simp only [Stmt.noInitsAnywhere]
       exact Block.noInitsAnywhere_of_initVars_nil bss h
