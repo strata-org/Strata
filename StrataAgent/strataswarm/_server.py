@@ -21,6 +21,21 @@ SWARM_SAVE_DIR = Path(__file__).parent / "temp"
 CHAT_SAVE_DIR = SWARM_SAVE_DIR / "chats"
 LOG_DIR = SWARM_SAVE_DIR
 
+
+def _ts_num(v) -> float:
+    """Coerce a log event's `ts` (epoch-ms int, or a string, or missing) to a float.
+
+    Event logs are not type-consistent about `ts`: most are int millis, some are
+    strings. Any arithmetic/sort over a mix raises TypeError (broke replay: both the
+    sort and the gap = next_ts - current_ts). Everything that reads `ts` for math or
+    ordering must go through this. Unparseable/missing → 0.0."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
 # Set up logging for all strataswarm modules (file + console)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 _fmt = logging.Formatter("%(asctime)s [%(name)s] %(message)s", datefmt="%H:%M:%S")
@@ -737,8 +752,16 @@ class SwarmDashboard:
                         continue
                     jsonl_count = len(list(swarm_dir.glob("*.jsonl")))
                     if jsonl_count > 0:
+                        # Prefer a CWD-relative path, but FALL BACK to the absolute
+                        # path when the session dir isn't under the launch CWD
+                        # (relative_to raises ValueError otherwise → 500, which broke
+                        # the Replay button). replay/start accepts absolute paths too.
+                        try:
+                            path_str = str(swarm_dir.relative_to(Path.cwd()))
+                        except ValueError:
+                            path_str = str(swarm_dir)
                         results.append({
-                            "path": str(swarm_dir.relative_to(Path.cwd())),
+                            "path": path_str,
                             "timestamp": ts_dir.name,
                             "swarm": swarm_dir.name,
                             "agent_count": jsonl_count,
@@ -1559,7 +1582,12 @@ class SwarmDashboard:
                     continue
                 entry["agent"] = agent_name
                 events.append(entry)
-        events.sort(key=lambda e: e.get("ts", 0))
+
+        # Sort by timestamp. `ts` is USUALLY epoch-ms int, but some logs carry it as
+        # a string (e.g. ISO) or omit it — a mixed int/str list makes `<` raise
+        # TypeError (this broke Start Replay). Coerce every key to a float so the
+        # sort is total and never throws; unparseable/missing → 0 (sorts first).
+        events.sort(key=lambda e: _ts_num(e.get("ts", 0)))
         return events
 
     def _should_emit_event(self, event: dict[str, Any]) -> bool:
@@ -1580,7 +1608,7 @@ class SwarmDashboard:
         agent_name = event.get("agent", "unknown")
         event_type = event.get("type", "message")
         data = event.get("data")
-        ts = event.get("ts", 0)
+        ts = _ts_num(event.get("ts", 0))
 
         entry = {
             "agent": agent_name,
@@ -1616,8 +1644,8 @@ class SwarmDashboard:
 
                 # Calculate sleep duration based on gap to next event
                 if self._replay_index < len(self._replay_events) and self._replay_speed > 0:
-                    current_ts = event.get("ts", 0)
-                    next_ts = self._replay_events[self._replay_index].get("ts", 0)
+                    current_ts = _ts_num(event.get("ts", 0))
+                    next_ts = _ts_num(self._replay_events[self._replay_index].get("ts", 0))
                     gap_ms = next_ts - current_ts
                     if gap_ms > 0:
                         sleep_s = (gap_ms / 1000.0) / self._replay_speed
