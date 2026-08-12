@@ -345,7 +345,8 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
-                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
+                    | _ =>
+                      .error f!"Cannot encode unresolved type variable '{tyv}' to SMT, polymorphic function body verification is not yet supported."
 
 def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do

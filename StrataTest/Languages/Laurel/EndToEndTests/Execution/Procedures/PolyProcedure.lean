@@ -129,9 +129,9 @@ procedure nestedPoly()
 {
   var a: int := wrap(3);
   assert a == 3;
-//^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Unimplemented encoding for type var T
+//^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Cannot encode unresolved type variable 'T' to SMT, polymorphic function body verification is not yet supported.
   var b: bool := wrap(false);
   assert b == false
-//^^^^^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Unimplemented encoding for type var T
+//^^^^^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Cannot encode unresolved type variable 'T' to SMT, polymorphic function body verification is not yet supported.
 };
 #end
