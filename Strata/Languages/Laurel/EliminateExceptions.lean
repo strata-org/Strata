@@ -815,14 +815,8 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
 
-private def bodyImpl (body : Body) : Option StmtExprMd :=
-  match body with
-  | .Transparent b => some b
-  | .Opaque _ impl _ => impl
-  | _ => none
-
 private def bodyHasExn (model : SemanticModel) (proc : Procedure) : Bool :=
-  match bodyImpl proc.body with
+  match proc.body.implementation with
   | some b => stmtUsesExn model b
   | none => false
 
@@ -869,7 +863,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
     modify (fun s => { s with rejected := proc.name.text :: s.rejected })
     return proc
   -- Lower the implementation statements (if any).
-  let loweredBody? ← match bodyImpl proc.body with
+  let loweredBody? ← match proc.body.implementation with
     | some b => do pure (some (fillSrcs b.source (← lowerStmt ctx b)))
     | none => pure none
   let usedExc := (← get).usedExc

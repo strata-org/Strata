@@ -2806,7 +2806,9 @@ def Synth.staticCall (exprMd : StmtExprMd)
     return (.StaticCall { callee with uniqueId := none } args',
             { val := .Unknown, source := callee.source })
 
-  -- Equality is polymorphic, but Laurel has no polymorphic types, so the `$eq` /
+  -- Equality must work at EVERY type, which user-level polymorphism does not provide (a
+  -- generic composite is monomorphized per instantiation, a poly procedure's type variables are
+  -- freshened per call site), so the `$eq` /
   -- `$neq` wrappers are declared over placeholder `int` parameters. Checking
   -- arguments against that signature would reject every comparison of anything
   -- but an int — including the `Box` / `Composite` / `Field` / `Map` comparisons
@@ -5506,10 +5508,7 @@ private def contractExpressions (proc : Procedure) : List StmtExprMd :=
     | .Transparent _ | .External => []
 
 private def bodyExpressions (proc : Procedure) : List StmtExprMd :=
-  match proc.body with
-  | .Transparent body => [body]
-  | .Opaque _ implementation _ => implementation.toList
-  | .Abstract _ | .External => []
+  proc.body.implementation.toList
 
 /-- Reject `old(...)` operands that directly or transitively depend on globals. -/
 private def oldGlobalErrorsInExpr (model : SemanticModel)

@@ -503,21 +503,55 @@ composite Box<T> { var val: T }
 composite Box$a1$int { var val: bool }
 procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; assert bi#val == 7 };"},
 
-  -- A NON-generic composite named after a reserved internal type (`Box`, the heap
-  -- boxing datatype; also `Composite`/`Heap`/`Field`/`TypeTag`) collides with a
-  -- lowering-generated type. It is soundly REJECTED with a SINGLE clean `UserError`
-  -- rename hint — no `.strataBug` cascade. `rejectedExactly` pins the cascade-
-  -- suppression: `HeapParameterization`'s Box filter must drop only the DATATYPE-kind
-  -- `Box` (a `!= "Box"` name filter would delete the user composite, leaving a bare
-  -- StrataBug plus re-resolution follow-on StrataBugs). Generic `Box<T>` dodges the
-  -- collision (it monomorphizes to `Box$a1$int`), so only a non-generic reserved
-  -- name reaches it — the exact corpus blind spot this pins shut.
-  { name := "composite_named_reserved_box_rejected_cleanly", outcome := .rejectedExactly .userError,
-    why := "a non-generic `composite Box` collides with the synthetic boxing datatype; rejected with one UserError, no StrataBug cascade"
+  -- SOURCE COMPATIBILITY: the name `Box` belongs to USER programs, all four ways. The boxing
+  -- datatype `HeapParameterization` generates is `$Box`, in Laurel's reserved `$`-namespace,
+  -- precisely so these declarations do not collide with it. `datatype Box`, `datatype Box<T>` and
+  -- `composite Box` are valid user programs and must verify clean; rejecting any is a regression,
+  -- which is what these four cases catch. (`composite Box<T>` is also legal, for a different
+  -- reason and so not covered here: a generic composite is monomorphized to `Box$a1$int`, so the
+  -- plain name never reaches heap lowering. The non-generic forms above are the ones that do.)
+  -- (Contrast `Field`/`TypeTag` below, whose generated forms are NOT `$`-prefixed and so
+  -- genuinely are reserved.)
+  { name := "user_datatype_named_box_ok", outcome := .verifies,
+    why := "SOURCE COMPAT: a user `datatype Box` is legal — the generated boxing datatype is `$Box`, so there is nothing to collide with"
+    src := r"
+datatype Box { MkB(v: int) }
+procedure u() opaque { var b: Box := MkB(7); assert Box..v(b) == 7 };"},
+
+  { name := "user_generic_datatype_named_box_ok", outcome := .verifies,
+    why := "SOURCE COMPAT: the GENERIC form is legal too — a generic datatype is not monomorphized, so it reaches heap lowering under its own name and must survive"
+    src := r"
+datatype Box<T> { MkB(v: T) }
+procedure u() opaque { var b: Box<int> := MkB(7); assert Box..v(b) == 7 };"},
+
+  { name := "user_generic_datatype_named_box_wrong", outcome := .failsExactly 1,
+    why := "SOURCE COMPAT twin: the user `datatype Box<T>` is really being verified — a generic datatype is not monomorphized, so it reaches heap lowering under its own name, and a false read must still FAIL"
+    src := r"
+datatype Box<T> { MkB(v: T) }
+procedure u() opaque { var b: Box<int> := MkB(7); assert Box..v(b) == 8 };"},
+
+  { name := "user_datatype_named_box_wrong", outcome := .failsExactly 1,
+    why := "SOURCE COMPAT twin: the user `datatype Box` is really being verified, not merely accepted — a false read of its payload must FAIL"
+    src := r"
+datatype Box { MkB(v: int) }
+procedure u() opaque { var b: Box := MkB(7); assert Box..v(b) == 8 };"},
+
+  { name := "user_composite_named_box_ok", outcome := .verifies,
+    why := "SOURCE COMPAT: a non-generic `composite Box` is legal — it is heap-allocated alongside the `$Box` boxing datatype without clashing"
     src := r"
 composite Box { var val: int }
 procedure u() opaque { var b: Box := new Box; b#val := 7; assert b#val == 7 };"},
 
+  { name := "user_composite_named_box_wrong", outcome := .failsExactly 1,
+    why := "SOURCE COMPAT twin: the user `composite Box` is really being verified, not merely accepted — a false read of its field must FAIL"
+    src := r"
+composite Box { var val: int }
+procedure u() opaque { var b: Box := new Box; b#val := 7; assert b#val == 8 };"},
+
+  -- A NON-generic composite named after a genuinely reserved internal type (`Field`, and likewise
+  -- `Composite`/`Heap`/`TypeTag` — the generated heap-model names that carry no `$`) collides with
+  -- a lowering-generated type. It is soundly REJECTED with a SINGLE clean `UserError` rename hint
+  -- and no `.strataBug` cascade; `rejectedExactly` is what pins the cascade-suppression.
   { name := "composite_named_reserved_field_rejected_cleanly", outcome := .rejectedExactly .userError,
     why := "a `composite Field` collides with the synthetic Field datatype; the follow-on `expected 'Composite', got 'Field'` mismatches are its cascade and are suppressed — only the UserError remains"
     src := r"
@@ -529,11 +563,11 @@ procedure u() opaque { var b: Field := new Field; b#val := 7; assert b#val == 7 
   -- the cascade by whether an error mentions a colliding name, not by count). `rejectedExactly`
   -- confirms no `.strataBug` survives and both distinct collisions are still surfaced as UserErrors.
   { name := "two_reserved_name_collisions_both_reported", outcome := .rejectedExactly .userError,
-    why := "`composite Box` and `composite Field` both collide with generated datatypes; each reported as a clean UserError, no StrataBug cascade for either"
+    why := "`composite Field` and `composite TypeTag` both collide with generated datatypes; each reported as a clean UserError, no StrataBug cascade for either"
     src := r"
-composite Box { var val: int }
 composite Field { var val: int }
-procedure u() opaque { var b: Box := new Box; var f: Field := new Field; assert b#val == f#val };"},
+composite TypeTag { var val: int }
+procedure u() opaque { var f: Field := new Field; var t: TypeTag := new TypeTag; assert f#val == t#val };"},
 ]
 
 private def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus

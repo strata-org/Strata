@@ -69,9 +69,10 @@ procedure strConcat(a: string, b: string) : string
   return a
 };
 
-// A user datatype named `Box` resolves fine here: the boxing `Box` datatype is
-// synthesized later, in `HeapParameterization`, so nothing in the prelude reserves
-// the name `Box` at resolution time.
+// A user datatype named `Box` must also survive: `HeapParameterization` generates
+// its own `$Box`, which is a distinct, reserved name. NB this file stops at
+// resolution, so it cannot see a later pass reserving the name — the end-to-end
+// guarantee is pinned by the source-compatibility cases in `GenericCompositeTest`.
 datatype Box { MkUserBox(contents: int) }
 
 procedure useThem(x: int, s: string) opaque {

@@ -37,9 +37,11 @@ params) — a pass-through, no monomorphization. Front-end plumbing: `datatype B
 binder → `DatatypeDefinition.typeArgs` → resolution scopes `T` as `.TVar` → `translateType`
 lowers `Bx<int>` to `.tcons "Bx" [int]`.
 
-NB: avoid the type name `Box` here — it collides with the internal heap boxed-value
-datatype from `HeapParameterization` (a pre-existing name clash, not a generics issue),
-so these use `Bx`/`Lst`/`Pr`. -/
+These use `Bx`/`Lst`/`Pr` merely to keep the programs short. The name `Box` would be fine:
+the boxed-value datatype `HeapParameterization` generates is `$Box`, in the reserved
+`$`-namespace, so user `Box` declarations do not collide with it — pinned by the
+source-compatibility cases in `GenericCompositeTest`. (`Heap`, `Field`, `TypeTag` and
+`Composite` ARE reserved, since their generated forms carry no `$`.) -/
 private def genericDatatypeCorpus : List Case := [
   { name := "generic_datatype_construct_eq", outcome := .verifies,
     why := "a generic datatype `Bx<int>` constructed + compared verifies (native Core parametric datatype)"

@@ -44,9 +44,9 @@ datatype LaurelUnit { MkLaurelUnit() }
 // These are internal stand-ins for Core's native, already-polymorphic map primitives
 // (the real signatures live in Core.Factory). Declared `external`, they are filtered out
 // before Core translation and never reach Core; calls resolve to the Core primitives by
-// name. The `int` parameter/return types are inert placeholders. NOTE: return type is `int`
-// (not a `Box` datatype) so the name `Box` stays free for user-level generic composites
-// (`composite Box<T>`); the polymorphism comes from the Core primitives.
+// name. The `int` parameter/return types are inert placeholders: being `external`, these never
+// reach Core, so nothing observes them — and the polymorphism callers rely on is the Core
+// primitives' own.
 procedure select(map: int, key: int) : int
   external;
 
@@ -250,9 +250,13 @@ procedure $andThen(x: bool, y: bool) : bool external;
 procedure $orElse(x: bool, y: bool) : bool external;
 
 // Equality. Declared `external` rather than as a wrapper delegating to `eq`,
-// because equality is polymorphic and Laurel has no polymorphic types: a
-// transparent body would carry the placeholder `int → int → bool` signature into
-// Core and fail to unify against `Composite`, `Box`, `bool`, … . `Synth.staticCall`
+// because equality must work at EVERY type, which user-level polymorphism does not
+// provide here: a generic composite is monomorphized per instantiation and a poly
+// procedure's type variables are freshened per call site, so neither yields one
+// definition quantified over all types — and this prelude declaration has no call
+// site to infer from. A transparent body would therefore carry the placeholder
+// `int → int → bool` signature into Core and fail to unify against `Composite`,
+// `$Box`, `bool`, … . `Synth.staticCall`
 // special-cases these names to require only operand consistency, and
 // `LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic equality.
 procedure $eq(x: int, y: int) : bool external;

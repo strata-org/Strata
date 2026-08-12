@@ -44,13 +44,6 @@ def preCondProcName (procName : String) (i : Nat) : String := s!"{procName}$pre{
 /-- Name for the i-th postcondition helper procedure. -/
 def postCondProcName (procName : String) (i : Nat) : String := s!"{procName}$post{i}"
 
-/-- Get postconditions from a procedure body. -/
-private def getPostconditions (body : Body) : List Condition :=
-  match body with
-  | .Opaque postconds _ _ => postconds
-  | .Abstract postconds => postconds
-  | _ => []
-
 /-- Build a call expression. -/
 private def mkCall (callee : String) (args : List StmtExprMd) (source : FileRange) : StmtExprMd :=
   mkMd (.StaticCall (mkId callee) args) source
@@ -193,7 +186,7 @@ private def ContractInfo.hasPostCondition (info : ContractInfo) : Bool := !info.
 /-- Collect contract info for all procedures with contracts. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
   procs.foldl (fun m proc =>
-    let postconds := getPostconditions proc.body
+    let postconds := proc.body.postconditions
     let hasPre := !proc.preconditions.isEmpty
     let hasPost := !postconds.isEmpty
     if hasPre || hasPost then
@@ -266,7 +259,7 @@ private def transformProcBody (model : SemanticModel) (proc : Procedure) (info :
   let src := proc.name.source
   let inputArgs := paramsToArgs proc.inputs src
   let outputArgs := paramsToArgs proc.outputs src
-  let postconds := getPostconditions proc.body
+  let postconds := proc.body.postconditions
   -- A precondition is assumed in the body unless it is assert-only (mode `Assert`).
   let preAssumes : List StmtExprMd :=
     proc.preconditions.zip info.preNames |>.filterMap fun (pc, name, _) =>
@@ -486,7 +479,7 @@ def lowerContracts (model : SemanticModel) (program : Program) : Program :=
 
   -- Generate helper procedures for all procedures with contracts
   let helperProcs := program.staticProcedures.flatMap fun proc =>
-    let postconds := getPostconditions proc.body
+    let postconds := proc.body.postconditions
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.typeArgs proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
@@ -499,7 +492,7 @@ def lowerContracts (model : SemanticModel) (program : Program) : Program :=
   let (transformedProcs, _) := (program.staticProcedures.mapM fun (proc : Procedure) => do
     let proc : Procedure := match proc.invokeOn with
       | some trigger =>
-        let postconds := getPostconditions proc.body
+        let postconds := proc.body.postconditions
         if postconds.isEmpty then { proc with invokeOn := none }
         else { proc with
           axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]

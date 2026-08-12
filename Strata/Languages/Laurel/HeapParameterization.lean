@@ -23,8 +23,8 @@ import Strata.Languages.Laurel.EliminateReturnStatements
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
-and a `nextReference: int` for allocating new objects. `Box` is a sum type with constructors for each
+The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field $Box)` map
+and a `nextReference: int` for allocating new objects. `$Box` is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -34,7 +34,7 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 
 2. Procedures that only read the heap get an in heap parameter
    - Input: `heap : Heap`
-   - Field reads become: `Box..tVal(readField(heap, obj, field))`
+   - Field reads become: `$Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
@@ -104,8 +104,8 @@ private def appliedBoxTag (ty : HighType) : Option String :=
   instTagCommon (fun _ => none) ty
 
 /-- Get the Box destructor name for a given Laurel HighType.
-    For UserDefined datatypes, uses "Box..<datatypeName>Val!";
-    for Composite types, uses "Box..compositeVal!".
+    For UserDefined datatypes, uses "$Box..<datatypeName>Val!";
+    for Composite types, uses "$Box..compositeVal!".
 
     Constrained types do not need resolving here: `ConstrainedTypeElim` runs
     before this pass and has already lowered every constrained type to its base
@@ -113,21 +113,21 @@ private def appliedBoxTag (ty : HighType) : Option String :=
     constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => "Box..intVal!"
-  | .TBool => "Box..boolVal!"
-  | .TFloat64 => "Box..float64Val!"
-  | .TReal => "Box..realVal!"
-  | .TString => "Box..stringVal!"
+  | .TInt => "$Box..intVal!"
+  | .TBool => "$Box..boolVal!"
+  | .TFloat64 => "$Box..float64Val!"
+  | .TReal => "$Box..realVal!"
+  | .TString => "$Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name then s!"Box..{name.text}Val!"
-      else "Box..compositeVal!"
-  | .TBv n => s!"Box..bv{n}Val!"
+      if isDatatype model name then s!"$Box..{name.text}Val!"
+      else "$Box..compositeVal!"
+  | .TBv n => s!"$Box..bv{n}Val!"
   -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
   -- instantiation, named via `appliedBoxTag`. (`.TSet` is unreachable — LaurelGrammar.st has
   -- only `mapType`, no Set production — kept for symmetry with `.TMap`.)
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
-    | some tag => s!"Box..{tag}Val!"
+    | some tag => s!"$Box..{tag}Val!"
     | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
@@ -789,30 +789,25 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
     match td with
     | .Composite ct => .Composite { ct with fields := [] }
     | other => other
-  -- Generate the `Box` datatype from all constructors used during transformation.
-  -- It MUST be named `Box`: the box constructors/destructors emitted for field
-  -- reads and writes (`boxConstructorName`/`boxDestructorName`) reference accessors
-  -- like `Box..compositeVal!`, whose prefix is this datatype's name. The Core map
-  -- primitives (`select`/`update`/`mapConst`) do not carry a `$Box` placeholder
-  -- return type, so the name `Box` is free to be reused here.
+  -- Generate the boxing datatype from all constructors used during transformation.
+  -- The name lives in Laurel's reserved `$`-namespace, and the coupling is by hand rather than
+  -- derived: the accessors emitted for field reads come from `boxDestructorName`, which spells
+  -- the prefix as STRING LITERALS (`"$Box..intVal!"`, `s!"$Box..{tag}Val!"`, …), so renaming
+  -- this datatype means editing those literals in lockstep. (The box CONSTRUCTOR names —
+  -- `BoxInt`, `BoxComposite`, `Box..<datatype>` — are NOT `$`-prefixed, because they
+  -- live in the constructor namespace and so do not clash with a user TYPE named `Box`; they
+  -- are not protected against a user CONSTRUCTOR of the same name, which is a smaller and
+  -- pre-existing exposure.)
+  -- The `$` prefix is what keeps the plain name `Box` available to user programs: a
+  -- `datatype Box`, `datatype Box<T>`, `composite Box` or `composite Box<T>` is legal and does
+  -- not collide with this type. No filter is needed to protect it: `$Box` is in the reserved
+  -- namespace and this pass is its only producer, so there is no synthetic duplicate to drop —
+  -- and therefore no risk that a name-based drop removes a user declaration along with it. A
+  -- second producer would reintroduce that risk, so it belongs here rather than elsewhere.
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
+    .Datatype { name := "$Box", typeArgs := [], constructors := state1.usedBoxConstructors }
 
-  -- Drop only a DATATYPE named `Box`, so we don't emit a duplicate of the
-  -- `boxDatatype` synthesized just above (a stray `Box` datatype could arrive from
-  -- the prelude or a prior lowering). Crucially this must NOT match a user
-  -- `.Composite` named `Box`: composites are still needed here (TypeHierarchy reads
-  -- them to build the `TypeTag` constructors and flatten them to `Composite`), and
-  -- deleting one erases its `Box_TypeTag`, collapsing re-resolution. A user datatype
-  -- literally named `Box` collides with the boxing datatype irreducibly and is caught
-  -- elsewhere as a duplicate; here we only guard the composite case.
-  let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
-    -- Drop the generated boxing `Box` DATATYPE (regenerated just above), but keep a
-    -- user-declared `Box` composite — freeing the `Box` name for user generics is the
-    -- whole point (no `$Box` placeholder remains in CoreDefinitionsForLaurel).
-    types'.filter (fun td => match td with
-      | .Datatype dt => dt.name.text != "Box"
-      | _ => true)
+  let types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types'
   pure { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }
@@ -820,7 +815,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
-  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with

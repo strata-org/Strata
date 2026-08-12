@@ -330,6 +330,14 @@ procedure u() opaque { assert 1 == 1 };"},
   -- SMT-encoder fixes the `_false` half's single failure IS the encoding error rather than a
   -- countermodel, so it is `inertUntilEncoderFix` and pins only translatability. The
   -- soundness half of this twin re-asserts when those fixes land.
+  -- GAPPED: quantification over the procedure's OWN type parameter is not grounded by
+  -- monomorphization, and this family is where the corpus exercises it. Monomorphizing a
+  -- polymorphic procedure per call site grounds its
+  -- own obligations. This contract quantifies over `T` ITSELF, so the quantifier BINDER's type is
+  -- synthesized during SMT encoding rather than carried in the instantiated signature — nothing
+  -- at the call site can ground it. Closing this needs the encoder to declare a free type
+  -- variable as a fresh uninterpreted sort — i.e. this case shows that the encoder fix is
+  -- required, because monomorphization alone does not ground a quantifier binder's type.
   { name := "poly_proc_forall_over_tvar_true", knownEncoderErrors := 1, outcome := .verifies,
     why := "`ensures forall(y:T) => y==y` (valid in every interpretation) must VERIFY — the bare-T quantifier binder encodes as a fresh uninterpreted sort"
     src := r"

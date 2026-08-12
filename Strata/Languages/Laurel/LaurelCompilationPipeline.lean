@@ -227,8 +227,8 @@ private def runLaurelPasses
         -- StrataBug so it fails loud (translated=false).
         --
         -- EXCEPTION — a user identifier colliding with a pass-generated name is NOT a compiler
-        -- bug: `$`, the `$aN$` tag shape, and the reserved internal type names (`Box`, `Heap`,
-        -- `Field`, `TypeTag`, `Composite`) are all legal in source, so a user can declare one.
+        -- bug: `$`, the `$aN$` tag shape, and the reserved internal type names (`Heap`, `Field`,
+        -- `TypeTag`, `Composite`) are all legal in source, so a user can declare one.
         -- Such a collision surfaces as a NEW `Duplicate definition` — and a duplicate can ONLY be
         -- a user/generated clash (two user names would have clashed in the first resolve; two
         -- generated names are worklist-deduped), so a genuine internal failure is always a "not
@@ -271,7 +271,7 @@ private def runLaurelPasses
           return (program, model, allDiags ++ newDiags, allStats)
         else
           -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
-          -- mismatches restated over the doubly-defined name (a composite named `Box`/`Field`/
+          -- mismatches restated over the doubly-defined name (a composite named `Field`/
           -- `TypeTag` clashing with a lowering-generated datatype yields `expected 'Composite',
           -- got 'Field'` follow-ons) — is not an independent compiler bug and must not be blamed
           -- on the compiler. Report each collision as a clean `.userError` with a rename hint.
@@ -289,8 +289,8 @@ private def runLaurelPasses
             { d with
                 message :=
                   s!"{d.message} (this name collides with one introduced by an internal lowering \
-                     pass; rename the identifier — a reserved internal type name (e.g. `Box`, \
-                     `Heap`, `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
+                     pass; rename the identifier — a reserved internal type name (e.g. `Heap`, \
+                     `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
                      `$aN$` instantiation-tag shape can clash with a synthetic name)"
                 kind := .userError }
           let independent := newErrors.toList.filter fun d =>
@@ -533,7 +533,8 @@ def verifyToMessages (program : Program) (options : LaurelVerifyOptions := defau
   let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
   let vcDiags := match results.fst with
   | none => []
-  | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => toMessage vcr phases)
+  | some vcResults =>
+    vcResults.toList.filterMap (fun (vcr : VCResult) => toMessage vcr phases)
   return (results.snd ++ vcDiags).toArray
 
 /-- Like `verifyToMessages`, but a verify-phase failure is **captured**

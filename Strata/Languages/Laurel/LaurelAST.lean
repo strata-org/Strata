@@ -1514,7 +1514,7 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
       -- `isConsistent ∨ isSubtype` (the stated invariant) across the poly extensions.
       -- Gradual types cannot reach the arms above: wildcards and boxable gradual UserDefineds
       -- are consumed by the guards (isWildcard / subBoxable / supBoxable) on the SAME unfolded
-      -- values this branch tests, so isGradualTop is always false by here. (AutoSDE f-362a2f95.)
+      -- values this branch tests, so isGradualTop is always false by here.
       | _, _ =>
         if isConsistent ctx sub' sup' || isSubtype ctx sub' sup' then some .refl else none
 
@@ -1604,6 +1604,21 @@ def Body.isExternal : Body → Bool
 def Body.isTransparent : Body → Bool
   | .Transparent _ => true
   | _ => false
+
+/-- The body's postconditions. An opaque or abstract body carries them; a transparent or
+    external body has none. -/
+def Body.postconditions : Body → List Condition
+  | .Opaque posts _ _ => posts
+  | .Abstract posts   => posts
+  | _                 => []
+
+/-- The body's implementation, when it has one — the code a checked condition is verified
+    against. A bodiless `.Opaque`, an `.Abstract` body (checked at its concrete overrides
+    instead) and an `.External` body have none. -/
+def Body.implementation : Body → Option StmtExprMd
+  | .Transparent b   => some b
+  | .Opaque _ impl _ => impl
+  | _                => none
 
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
 

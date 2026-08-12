@@ -135,3 +135,46 @@ procedure nestedPoly()
 //^^^^^^^^^^^^^^^^^ strata-bug: analysis error: SMT Encoding Error! Cannot encode unresolved type variable 'T' to SMT, polymorphic function body verification is not yet supported.
 };
 #end
+
+/-! ## Two type parameters, with the returned one differing from the discarded one
+
+`firstOf` returns its FIRST argument, and is called at both orderings so the returned and
+discarded parameters have different types each time. A substitution that crossed or dropped a
+slot returns the wrong value here rather than failing to typecheck. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#strata
+program Laurel;
+procedure firstOf<A, B>(a: A, b: B): A { return a };
+
+procedure twoTypeParams()
+  entry
+  opaque
+{
+  var a: int := firstOf(1, true);
+  assert a == 1;
+  var b: bool := firstOf(false, 9);
+  assert b == false
+};
+#end
+
+/-! ## The two-parameter result is really observed
+
+A wrong expected value must FAIL, so the asserts above are pinning an evaluated result rather
+than passing on a body the pipeline silently dropped. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#strata
+program Laurel;
+procedure firstOf<A, B>(a: A, b: B): A { return a };
+
+procedure twoTypeParamsWrong()
+  entry
+  opaque
+{
+  var a: int := firstOf(1, true);
+  assert a == 2
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+

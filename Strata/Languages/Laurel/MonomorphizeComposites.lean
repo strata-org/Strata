@@ -845,9 +845,18 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- 3b. (gap: uncalled monomorphized poly procs) An indexed poly proc absent from
   -- `clonedBases` is genuinely UNCALLED (the proc→proc edge cloned every reachable one), so it
   -- would be dropped at emission with its contract UNCHECKED. To close the gap, synthesize a
-  -- WITNESS: bind each type var to a FRESH OPAQUE composite (`$Witness$<proc>$<i>`) — an
-  -- uninterpreted sort of arbitrary cardinality (NOT a singleton), so a false-in-general
-  -- contract still fails; distinct type vars get distinct witnesses. Then drain again.
+  -- WITNESS: bind each type var to a FRESH composite (`$Witness$<proc>$<i>`), so the contract is
+  -- checked somewhere rather than nowhere. Then drain again.
+  -- MEASURED LIMIT — this is NOT a sort of arbitrary cardinality. `TypeHierarchy` flattens every
+  -- composite to `datatype Composite { MkComposite(ref: int) }`, so a witness is isomorphic to
+  -- `int`: infinite, and in particular `exists y z : T. y != z` is PROVABLE at it (measured). A
+  -- false-in-general contract therefore fails here only if it is false at an infinite type; one
+  -- that holds at every type of size >= 2 but fails at a singleton is accepted. Real call sites
+  -- are unaffected — each is monomorphized at its own concrete type and checked there — so the
+  -- gap is confined to an UNCALLED procedure's contract being held to a weaker standard than
+  -- "for all T". Genuinely arbitrary cardinality requires the encoder to mint a fresh
+  -- uninterpreted sort, which is exactly what a witness cannot do from the Laurel side. Distinct
+  -- type vars get distinct witness NAMES, but those names flatten to the same sort.
   -- (A value-`T` poly proc touching no generic composite is instead kept verbatim as a
   -- polymorphic Core proc, its body VC always emitted — checked by a different path.)
   for (pname, pproc) in polyProcDefs.toList do
