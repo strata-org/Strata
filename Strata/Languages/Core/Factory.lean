@@ -464,14 +464,21 @@ def seqEmptyFunc : WFLFunc CoreLParams :=
             (~Sequence.empty : (Sequence %a))) == #0]
     ])
 
+/- Each select-of-constructor axiom, paired with its `Sequence.select!` mirror
+   (same axiom with `Sequence.select` renamed), so the unsafe selector reasons
+   through constructors identically to the checked one. -/
+private def withSelectBang (axs : List Expression.Expr) : List Expression.Expr :=
+  axs ++ axs.map (·.substOps (Strata.Util.HMap.ofList
+    [(⟨"Sequence.select", ()⟩, fun ty => .op () "Sequence.select!" ty)]))
+
 /- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.append" ["a"]
     [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(append(s0, s1)) == length(s0) + length(s1)
-      esM[∀ (Sequence %a): -- %1 s0
+      [ esM[∀ (Sequence %a): -- %1 s0
           (∀ (Sequence %a): -- %0 s1
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))}
@@ -480,9 +487,9 @@ def seqAppendFunc : WFLFunc CoreLParams :=
             ==
             (((~Int.Add : int → int → int)
               ((~Sequence.length : (Sequence %a) → int) %1))
-              ((~Sequence.length : (Sequence %a) → int) %0)))],
-      -- select(append(s0, s1), n):
-      --   0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
+              ((~Sequence.length : (Sequence %a) → int) %0)))] ]
+      ++ withSelectBang [
+      -- 0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
       esM[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
@@ -518,7 +525,7 @@ def seqAppendFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %1)
                     (((~Int.Sub : int → int → int) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
               else #true))]
-    ])
+      ])
 
 /-! ### Sequence bounds preconditions
 
@@ -572,15 +579,23 @@ def seqSelectFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
+/- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so
+   no out-of-bounds obligation per call site; out-of-range access is
+   unconstrained. Shares `Sequence.select`'s interaction axioms (mirrored on the
+   constructor functions), so it reasons through constructors identically. -/
+def seqSelectUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.select!" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+
 /- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
 def seqBuildFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.build" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(build(s, v)) == 1 + length(s)
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))}
@@ -589,9 +604,9 @@ def seqBuildFunc : WFLFunc CoreLParams :=
             ==
             (((~Int.Add : int → int → int)
               #1)
-              ((~Sequence.length : (Sequence %a) → int) %1)))],
-      -- select(build(s, v), i):
-      --   i == length(s) ==> select(build(s,v), i) == v
+              ((~Sequence.length : (Sequence %a) → int) %1)))] ]
+      ++ withSelectBang [
+      -- i == length(s) ==> select(build(s,v), i) == v
       esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
@@ -603,8 +618,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
                     (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
                 == %1
               else #true))],
-      -- select(build(s, v), i):
-      --   0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
+      -- 0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
@@ -620,7 +634,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
                 ==
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
-    ])
+      ])
 
 /- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
    `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`.
@@ -629,9 +643,9 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(update(s, i, v)) == length(s)
-      esM[∀ (Sequence %a): -- %2 s
+      [ esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
               {((~Sequence.length : (Sequence %a) → int)
@@ -639,7 +653,8 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int)
                 ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))
               ==
-              ((~Sequence.length : (Sequence %a) → int) %2)))],
+              ((~Sequence.length : (Sequence %a) → int) %2)))] ]
+      ++ withSelectBang [
       -- 0 <= i < length(s) ==> select(update(s, i, v), i) == v  (same index)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
@@ -674,7 +689,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                   ==
                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
                 else #true)))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
@@ -704,9 +719,9 @@ def seqTakeFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- 0 <= n <= length(s) ==> length(take(s, n)) == n
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -718,7 +733,8 @@ def seqTakeFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int)
                 (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
               == %0
-            else #true)],
+            else #true)] ]
+      ++ withSelectBang [
       -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -734,7 +750,7 @@ def seqTakeFunc : WFLFunc CoreLParams :=
                 ==
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
@@ -744,9 +760,9 @@ def seqDropFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -761,7 +777,8 @@ def seqDropFunc : WFLFunc CoreLParams :=
               (((~Int.Sub : int → int → int)
                 ((~Sequence.length : (Sequence %a) → int) %1))
                 %0)
-            else #true)],
+            else #true)] ]
+      ++ withSelectBang [
       -- 0 <= j < length(s) - n ==> select(drop(s, n), j) == select(s, j + n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -781,7 +798,7 @@ def seqDropFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2)
                     (((~Int.Add : int → int → int) %0) %1))
               else #true))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
@@ -957,6 +974,7 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   seqEmptyFunc,
   seqAppendFunc,
   seqSelectFunc,
+  seqSelectUnsafeFunc,
   seqBuildFunc,
   seqUpdateFunc,
   seqContainsFunc,
@@ -1160,6 +1178,7 @@ def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
   | some ty => .op default "Sequence.empty" (some (seqTy ty))
 def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
 def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
+def seqSelectUnsafeOp : Expression.Expr := seqSelectUnsafeFunc.opExpr
 def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr
 def seqUpdateOp : Expression.Expr := seqUpdateFunc.opExpr
 def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr

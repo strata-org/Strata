@@ -1295,6 +1295,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      return .mkApp () fn [s, i]
+  | .fn _ q`Core.seq_select_unsafe, [_, sa, ia] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .SelectUnsafe)
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     return .mkApp () fn [s, i]
   | .fn _ q`Core.seq_append, [_, s1a, s2a] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Append)
      let s1 ← translateExpr p bindings s1a
