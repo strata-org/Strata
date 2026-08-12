@@ -29,7 +29,7 @@ const d : bool;
 function f(x0 : int) : (bool);
 
 // Axioms
-axiom [ax_l11c1]: (forall x: int :: ((x >= 0) ==> f(x)));
+axiom [ax_l11c1]: (forall x : int :: (int.ge(x, 0) ==> f(x)));
 
 // Uninterpreted procedures
 // Implementations
@@ -40,7 +40,7 @@ procedure P()
     assert [a0]: ((a ==> ((b ==> c) ==> d)) <==> (a ==> ((b ==> c) ==> d)));
     assert [a1]: ((a ==> (b ==> c)) <==> ((a ==> b) ==> c));
     assert [a2]: f(23);
-    assert [a3]: f(-(5));
+    assert [a3]: f(int.neg(5));
   }
   _exit : {}
 };

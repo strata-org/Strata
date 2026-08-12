@@ -18,9 +18,9 @@ open Strata.Laurel
 
 namespace StrataTest.Laurel.ModifiesFrameQuantifierFree
 
-private def selfRef : StmtExprMd := { val := .Var (.Local "self"), source := none }
-private def heapIn  : StmtExprMd := { val := .Var (.Local "$heap_in"), source := none }
-private def heapOut : StmtExprMd := { val := .Var (.Local "$heap"), source := none }
+private def selfRef : StmtExprMd := { val := .Var (.Local "self"), source := default }
+private def heapIn  : StmtExprMd := { val := .Var (.Local "$heap_in"), source := default }
+private def heapOut : StmtExprMd := { val := .Var (.Local "$heap"), source := default }
 private def singleRefModifies : List ModifiesEntry := [.single selfRef]
 
 /-- Whether the (pretty-printed) frame mentions a quantifier. -/

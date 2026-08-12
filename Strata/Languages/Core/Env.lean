@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
@@ -165,9 +166,11 @@ structure Env where
       failures can be collected in a single run. See `assertFailures`. -/
   collectAllAssertFailures : Bool := false
   /-- Assertion failures collected during concrete execution when
-      `collectAllAssertFailures` is set, most recent first. Each entry pairs the
-      assert's label with its evaluated (false) condition. -/
-  assertFailures : List (String × Expression.Expr) := []
+      `collectAllAssertFailures` is set, most recent first. Each entry carries the
+      assert's label, its evaluated (false) condition, and the statement's
+      metadata — the last of which resolves the failure's source location and
+      property summary without consulting the label. -/
+  assertFailures : List (String × Expression.Expr × Imperative.MetaData Expression) := []
   /-- When `true`, concrete execution treats `assume` statements as no-ops
       instead of enforcing them. See `EvalContext.ignoreAssume`. -/
   ignoreAssumes : Bool := false
@@ -234,7 +237,7 @@ def Env.popScope (E : Env) : Env :=
 def Env.factory (E : Env) : (@Lambda.Factory CoreLParams) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except DiagnosticModel Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Message Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
@@ -242,7 +245,7 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
     reference known datatypes. This is checked at evaluation time because
     it is an SMT backend limitation, not a type system constraint. -/
 def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   for func in funcs do
     match Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr with
     | none => pure ()
@@ -259,7 +262,7 @@ def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
     the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
     rejects cases not yet supported for SMT verification (polymorphic recursive
     functions, missing `@[cases]` attribute). -/
-def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Message Env := do
   if func.isRecursive && !func.typeArgs.isEmpty then
     .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
       verification: '{func.name}'. SMT solvers require monomorphic axioms.")
@@ -385,12 +388,12 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
-def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except DiagnosticModel Env := do
+def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except Message Env := do
   let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
   return { env with datatypes := E.datatypes.push block }
 
-def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except DiagnosticModel Env :=
+def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except Message Env :=
   blocks.foldlM Env.addMutualDatatype E
 
 end Core

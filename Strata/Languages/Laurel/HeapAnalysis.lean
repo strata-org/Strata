@@ -49,9 +49,8 @@ structure AnalysisResult where
     through an instance call as non-heap-writing. Callee identifiers compare by
     name, and the lifted procedure keeps the same method name, so the pre-lift
     callee still matches the procedure in the call graph. -/
-def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
-  foldStmtExprM (fun e => do
-    match e.val with
+private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := do
+  match expr.val with
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
     | .StaticCall callee _ => modify fun s => { s with callees := callee :: s.callees }
     | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
@@ -75,33 +74,32 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
         match target.val with
         | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
         | .Local _ | .Declare _ => pure ()
-    | _ => pure ()) expr
+    | _ => pure ()
+
+/-- Collect direct heap effects from every node in one expression tree. -/
+def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
+  foldStmtExprM collectExprNode expr
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
-  let bodyResult := match proc.body with
-    | .Transparent b => (collectExprMd b).run {} |>.2
-    | .Opaque postconds impl modif =>
-        if impl.isNone && !modif.isEmpty then
-          { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
-        else
-          let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
-            let r := (collectExprMd pc.condition).run {} |>.2
-            { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
-              writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
-              callees := acc.callees ++ r.callees }) {}
-          let r2 := match impl with
-            | some e => (collectExprMd e).run {} |>.2
-            | none => {}
-          { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
-            writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
-            callees := r1.callees ++ r2.callees }
-    | .Abstract postconds => (postconds.forM (collectExprMd ·.condition)).run {} |>.2
-    | .External => {}
-  -- Also analyze preconditions
-  let precondResult := (proc.preconditions.forM (collectExprMd ·.condition)).run {} |>.2
-  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
-    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
-    callees := bodyResult.callees ++ precondResult.callees }
+  let result := (foldProcedureExprsM collectExprNode proc).run {} |>.2
+  -- A bodiless procedure that names frame targets touches the heap even though no
+  -- expression in it says so: the frame is the only evidence. That holds for a
+  -- `throwsOn` case's frame exactly as it does for the normal `modifies`, and it has
+  -- to, because `ModifiesClauses` only builds a case's frame when `$heap` was
+  -- threaded through this procedure — so missing it here would drop the exceptional
+  -- frame silently rather than fail.
+  let framesHeapOnThrow := proc.throwsOn.any (!·.modifies.isEmpty)
+  match proc.body with
+  | .Opaque _ none modifies =>
+      -- What marks a heap writer is a group with *targets*, never the groups'
+      -- existence: the grammar path always supplies one group (possibly empty —
+      -- the default "nothing changes" frame), but directly-constructed ASTs and
+      -- post-`EliminateExceptions` procedures can carry zero groups, and
+      -- `[].all` being vacuously true classifies those as non-writers too.
+      if modifies.all (·.targets.isEmpty) && !framesHeapOnThrow then result else
+        { result with readsHeapDirectly := true, writesHeapDirectly := true }
+  | _ =>
+      if framesHeapOnThrow then { result with writesHeapDirectly := true } else result
 
 /-- Per-procedure input to `transitiveEffectClosure`: the procedure `name`,
     whether it has the effect `directly`, and its static `callees`. -/
@@ -134,7 +132,8 @@ def transitiveEffectClosure {α : Type} [BEq α] [Hashable α]
       if next.size == current.size then current else fixpoint fuel' next
   fixpoint info.length (Std.HashSet.ofList direct)
 
-def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) := do
+private def computeEffectClosure (procs : List Procedure)
+    (directly : AnalysisResult → Bool) : Except String (Std.HashSet Nat) := do
   let info ← procs.mapM fun p => do
     let name ← Identifier.getUniqueId p.name
     let r := analyzeProc p
@@ -142,19 +141,14 @@ def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) 
     -- from failed name resolution (already reported as a diagnostic). They
     -- can't match any procedure in the set, so filtering them is sound.
     let callees := r.callees.filterMap (·.uniqueId)
-    pure { name, directly := r.readsHeapDirectly, callees : ProcEffectInfo Nat }
+    pure { name, directly := directly r, callees : ProcEffectInfo Nat }
   pure (transitiveEffectClosure info)
 
-def computeWritesHeap (procs : List Procedure) : Except String (Std.HashSet Nat) := do
-  let info ← procs.mapM fun p => do
-    let name ← Identifier.getUniqueId p.name
-    let r := analyzeProc p
-    -- Callees are reference-position: unresolved ones (uniqueId = none) come
-    -- from failed name resolution (already reported as a diagnostic). They
-    -- can't match any procedure in the set, so filtering them is sound.
-    let callees := r.callees.filterMap (·.uniqueId)
-    pure { name, directly := r.writesHeapDirectly, callees : ProcEffectInfo Nat }
-  pure (transitiveEffectClosure info)
+def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) :=
+  computeEffectClosure procs (·.readsHeapDirectly)
+
+def computeWritesHeap (procs : List Procedure) : Except String (Std.HashSet Nat) :=
+  computeEffectClosure procs (·.writesHeapDirectly)
 
 end Strata.Laurel
 

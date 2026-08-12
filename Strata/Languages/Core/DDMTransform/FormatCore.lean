@@ -220,11 +220,36 @@ end ToCSTContext
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do
   modify (·.logError fn desc detail)
 
+/-- Does `name` carry a Core internal-operator prefix (`Bv<N>.`, `Int.`,
+    `Real.`)? Such names come from the operator tables, so reaching the
+    generic-call fallback with one means a missing arm in the CST mapping
+    (the rendered call will not re-parse). -/
+private def isInternalOpName (name : String) : Bool :=
+  name.startsWith "Int." || name.startsWith "Real." ||
+    (name.startsWith "Bv" &&
+      let rest := name.drop 2 |>.dropWhile Char.isDigit
+      rest.startsWith "." && rest.toString.length < name.length - 2)
+
+#guard isInternalOpName "Int.Add"
+#guard isInternalOpName "Real.Div"
+#guard isInternalOpName "Bv32.Add"
+#guard isInternalOpName "Bv128.Neg"
+#guard isInternalOpName "Bv1.UAddOverflow"
+#guard !isInternalOpName "Bv.Add"      -- no width digits
+#guard !isInternalOpName "BvFoo.Add"   -- non-digit after Bv
+#guard !isInternalOpName "Bv32Add"     -- no dot after the width
+#guard !isInternalOpName "myFunc"
+#guard !isInternalOpName "Integer.Add" -- prefix must be exactly `Int.`
+
 /-- Render an unknown operation as a generic function call `name(args...)`.
     Registers the name as a free variable if not already registered. -/
 def mkGenericCall {M} [Inhabited M] (caller : String) (name : String)
     (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
-  ToCSTM.logError caller "unknown operation, rendering as generic call" name
+  if isInternalOpName name then
+    ToCSTM.logError caller
+      "internal Core operator missing from the CST mapping tables; the rendered call will not re-parse" name
+  else
+    ToCSTM.logError caller "unknown operation, rendering as generic call" name
   let ctx ← get
   let idx ← match ctx.freeVarIndex? name with
     | some idx => pure idx
@@ -240,11 +265,12 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
     ToCSTM M (CoreType M) := do
   match ty with
   | .ftvar name => pure (.tvar default name)
-  | .bitvec 1 => pure (.bv1 default)
-  | .bitvec 8 => pure (.bv8 default)
-  | .bitvec 16 => pure (.bv16 default)
-  | .bitvec 32 => pure (.bv32 default)
-  | .bitvec 64 => pure (.bv64 default)
+  | .bitvec 1 => pure (.bv default (.W1 default))
+  | .bitvec 8 => pure (.bv default (.W8 default))
+  | .bitvec 16 => pure (.bv default (.W16 default))
+  | .bitvec 32 => pure (.bv default (.W32 default))
+  | .bitvec 64 => pure (.bv default (.W64 default))
+  | .bitvec 128 => pure (.bv default (.W128 default))
   | .bool => pure (.bool default)
   | .int => pure (.int default)
   | .string => pure (.string default)
@@ -300,19 +326,24 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     if n >= 0 then
       pure (.natToInt default ⟨default, n.toNat⟩)
     else
-      let ty := CoreType.tvar default unknownTypeVar
-      pure (.neg_expr default ty (.natToInt default ⟨default, n.natAbs⟩))
+      pure (.unaryArithInt default (CoreDDM.UnaryArithInt.int_neg default)
+        (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
     match StrataDDM.Decimal.fromRat r with
-    | some d => pure (.realLit default ⟨default, d⟩)
+    | some d =>
+      if d.mantissa < 0 then
+        let posD : StrataDDM.Decimal := ⟨d.mantissa.natAbs, d.exponent⟩
+        pure (.unaryArithReal default (CoreDDM.UnaryArithReal.real_neg default)
+          (.realLit default ⟨default, posD⟩))
+      else
+        pure (.realLit default ⟨default, d⟩)
     | none =>
       -- Exact rational literals that are not parsed by `Decimal.fromRat`.
-      let ty := CoreType.tvar default unknownTypeVar
       let (neg, num, den) := FracLit.fracEncode r
       let fracExpr :=
         CoreDDM.Expr.fracLit default ⟨default, num⟩ ⟨default, den⟩
       if neg then
-        pure (.neg_expr default ty fracExpr)
+        pure (.unaryArithReal default (CoreDDM.UnaryArithReal.real_neg default) fracExpr)
       else
         pure fracExpr
   | .strConst s => pure (.strLit default ⟨default, s⟩)
@@ -321,6 +352,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 128 n => pure (.bv128Lit default ⟨default, n.toNat⟩)
   | .bitvecConst w _ => do
     ToCSTM.logError "lconstToExpr" "unsupported bitvec width" (toString w)
     pure (.bv64Lit default ⟨default, w⟩)
@@ -338,26 +370,328 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
 
-/-- Convert a bitvector width to the corresponding CoreType, logging an error and
-    falling back to bv64 for unsupported widths. -/
-def bvTypeOfWidth {M} [Inhabited M] (caller : String) (w : Nat) : ToCSTM M (CoreType M) :=
-  match w with
-  | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
-  | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
-  | 64 => pure (.bv64 default)
-  | _ => do
-    ToCSTM.logError caller s!"unsupported BV width {w}" (toString w)
-    pure (.bv64 default)
+/-- Grouped type-specific unary operators to CST. Returns `none` for ops that are
+    not part of a grouped family (handled structurally by the caller). The op
+    name (e.g. "Int.Neg", "Bv8.ToUInt") selects the wrapper + category member. -/
+private def groupedUnaryCST? {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
+    : Option (CoreDDM.Expr M) :=
+  match name with
+  | "Int.Neg" => some (.unaryArithInt default (CoreDDM.UnaryArithInt.int_neg default) arg)
+  | "Real.Neg" => some (.unaryArithReal default (CoreDDM.UnaryArithReal.real_neg default) arg)
+  | "Bv1.Neg" => some (.unaryArithBv default (.W1 default) (CoreDDM.UnaryArithBv.bv1_neg default) arg)
+  | "Bv1.Not" => some (.unaryArithBv default (.W1 default) (CoreDDM.UnaryArithBv.bv1_not default) arg)
+  | "Bv1.SafeNeg" => some (.unarySafeBv default (.W1 default) (CoreDDM.UnarySafeBv.bv1_safeNeg default) arg)
+  | "Bv1.SafeUNeg" => some (.unarySafeBv default (.W1 default) (CoreDDM.UnarySafeBv.bv1_safeUNeg default) arg)
+  | "Bv1.SNegOverflow" => some (.unaryOverflowBv default (.W1 default) (CoreDDM.UnaryOverflowBv.bv1_sNegOverflow default) arg)
+  | "Bv1.UNegOverflow" => some (.unaryOverflowBv default (.W1 default) (CoreDDM.UnaryOverflowBv.bv1_uNegOverflow default) arg)
+  | "Bv8.Neg" => some (.unaryArithBv default (.W8 default) (CoreDDM.UnaryArithBv.bv8_neg default) arg)
+  | "Bv8.Not" => some (.unaryArithBv default (.W8 default) (CoreDDM.UnaryArithBv.bv8_not default) arg)
+  | "Bv8.SafeNeg" => some (.unarySafeBv default (.W8 default) (CoreDDM.UnarySafeBv.bv8_safeNeg default) arg)
+  | "Bv8.SafeUNeg" => some (.unarySafeBv default (.W8 default) (CoreDDM.UnarySafeBv.bv8_safeUNeg default) arg)
+  | "Bv8.SNegOverflow" => some (.unaryOverflowBv default (.W8 default) (CoreDDM.UnaryOverflowBv.bv8_sNegOverflow default) arg)
+  | "Bv8.UNegOverflow" => some (.unaryOverflowBv default (.W8 default) (CoreDDM.UnaryOverflowBv.bv8_uNegOverflow default) arg)
+  | "Bv16.Neg" => some (.unaryArithBv default (.W16 default) (CoreDDM.UnaryArithBv.bv16_neg default) arg)
+  | "Bv16.Not" => some (.unaryArithBv default (.W16 default) (CoreDDM.UnaryArithBv.bv16_not default) arg)
+  | "Bv16.SafeNeg" => some (.unarySafeBv default (.W16 default) (CoreDDM.UnarySafeBv.bv16_safeNeg default) arg)
+  | "Bv16.SafeUNeg" => some (.unarySafeBv default (.W16 default) (CoreDDM.UnarySafeBv.bv16_safeUNeg default) arg)
+  | "Bv16.SNegOverflow" => some (.unaryOverflowBv default (.W16 default) (CoreDDM.UnaryOverflowBv.bv16_sNegOverflow default) arg)
+  | "Bv16.UNegOverflow" => some (.unaryOverflowBv default (.W16 default) (CoreDDM.UnaryOverflowBv.bv16_uNegOverflow default) arg)
+  | "Bv32.Neg" => some (.unaryArithBv default (.W32 default) (CoreDDM.UnaryArithBv.bv32_neg default) arg)
+  | "Bv32.Not" => some (.unaryArithBv default (.W32 default) (CoreDDM.UnaryArithBv.bv32_not default) arg)
+  | "Bv32.SafeNeg" => some (.unarySafeBv default (.W32 default) (CoreDDM.UnarySafeBv.bv32_safeNeg default) arg)
+  | "Bv32.SafeUNeg" => some (.unarySafeBv default (.W32 default) (CoreDDM.UnarySafeBv.bv32_safeUNeg default) arg)
+  | "Bv32.SNegOverflow" => some (.unaryOverflowBv default (.W32 default) (CoreDDM.UnaryOverflowBv.bv32_sNegOverflow default) arg)
+  | "Bv32.UNegOverflow" => some (.unaryOverflowBv default (.W32 default) (CoreDDM.UnaryOverflowBv.bv32_uNegOverflow default) arg)
+  | "Bv64.Neg" => some (.unaryArithBv default (.W64 default) (CoreDDM.UnaryArithBv.bv64_neg default) arg)
+  | "Bv128.Neg" => some (.unaryArithBv default (.W128 default) (CoreDDM.UnaryArithBv.bv128_neg default) arg)
+  | "Bv64.Not" => some (.unaryArithBv default (.W64 default) (CoreDDM.UnaryArithBv.bv64_not default) arg)
+  | "Bv128.Not" => some (.unaryArithBv default (.W128 default) (CoreDDM.UnaryArithBv.bv128_not default) arg)
+  | "Bv64.SafeNeg" => some (.unarySafeBv default (.W64 default) (CoreDDM.UnarySafeBv.bv64_safeNeg default) arg)
+  | "Bv128.SafeNeg" => some (.unarySafeBv default (.W128 default) (CoreDDM.UnarySafeBv.bv128_safeNeg default) arg)
+  | "Bv64.SafeUNeg" => some (.unarySafeBv default (.W64 default) (CoreDDM.UnarySafeBv.bv64_safeUNeg default) arg)
+  | "Bv128.SafeUNeg" => some (.unarySafeBv default (.W128 default) (CoreDDM.UnarySafeBv.bv128_safeUNeg default) arg)
+  | "Bv64.SNegOverflow" => some (.unaryOverflowBv default (.W64 default) (CoreDDM.UnaryOverflowBv.bv64_sNegOverflow default) arg)
+  | "Bv128.SNegOverflow" => some (.unaryOverflowBv default (.W128 default) (CoreDDM.UnaryOverflowBv.bv128_sNegOverflow default) arg)
+  | "Bv64.UNegOverflow" => some (.unaryOverflowBv default (.W64 default) (CoreDDM.UnaryOverflowBv.bv64_uNegOverflow default) arg)
+  | "Bv128.UNegOverflow" => some (.unaryOverflowBv default (.W128 default) (CoreDDM.UnaryOverflowBv.bv128_uNegOverflow default) arg)
+  | "Bv1.ToUInt" => some (.castBv default (.W1 default) (CoreDDM.CastBv.bv1_toUInt default) arg)
+  | "Bv1.ToInt" => some (.castBv default (.W1 default) (CoreDDM.CastBv.bv1_toInt default) arg)
+  | "Bv8.ToUInt" => some (.castBv default (.W8 default) (CoreDDM.CastBv.bv8_toUInt default) arg)
+  | "Bv8.ToInt" => some (.castBv default (.W8 default) (CoreDDM.CastBv.bv8_toInt default) arg)
+  | "Bv16.ToUInt" => some (.castBv default (.W16 default) (CoreDDM.CastBv.bv16_toUInt default) arg)
+  | "Bv16.ToInt" => some (.castBv default (.W16 default) (CoreDDM.CastBv.bv16_toInt default) arg)
+  | "Bv32.ToUInt" => some (.castBv default (.W32 default) (CoreDDM.CastBv.bv32_toUInt default) arg)
+  | "Bv32.ToInt" => some (.castBv default (.W32 default) (CoreDDM.CastBv.bv32_toInt default) arg)
+  | "Bv64.ToUInt" => some (.castBv default (.W64 default) (CoreDDM.CastBv.bv64_toUInt default) arg)
+  | "Bv64.ToInt" => some (.castBv default (.W64 default) (CoreDDM.CastBv.bv64_toInt default) arg)
+  | "Bv128.ToUInt" => some (.castBv default (.W128 default) (CoreDDM.CastBv.bv128_toUInt default) arg)
+  | "Bv128.ToInt" => some (.castBv default (.W128 default) (CoreDDM.CastBv.bv128_toInt default) arg)
+  -- int -> bitvector casts (`as_bvN`): standalone grammar fns, not grouped wrappers.
+  | "Int.ToBv1" => some (.as_bv1 default arg)
+  | "Int.ToBv8" => some (.as_bv8 default arg)
+  | "Int.ToBv16" => some (.as_bv16 default arg)
+  | "Int.ToBv32" => some (.as_bv32 default arg)
+  | "Int.ToBv64" => some (.as_bv64 default arg)
+  | "Int.ToBv128" => some (.as_bv128 default arg)
+  | _ => none
+
+/-- Grouped type-specific binary operators → CST. Returns `none` for non-grouped ops. -/
+private def groupedBinaryCST? {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
+    : Option (CoreDDM.Expr M) :=
+  match name with
+  | "Int.Add" => some (.binaryArithBasicInt default (CoreDDM.BinaryArithBasicInt.int_add default) arg1 arg2)
+  | "Int.Sub" => some (.binaryArithBasicInt default (CoreDDM.BinaryArithBasicInt.int_sub default) arg1 arg2)
+  | "Int.Mul" => some (.binaryArithBasicInt default (CoreDDM.BinaryArithBasicInt.int_mul default) arg1 arg2)
+  | "Int.Div" => some (.binaryArithDivModInt default (CoreDDM.BinaryArithDivModInt.int_div default) arg1 arg2)
+  | "Int.Mod" => some (.binaryArithDivModInt default (CoreDDM.BinaryArithDivModInt.int_mod default) arg1 arg2)
+  | "Int.SafeDiv" => some (.binarySafeInt default (CoreDDM.BinarySafeInt.int_safeDiv default) arg1 arg2)
+  | "Int.SafeMod" => some (.binarySafeInt default (CoreDDM.BinarySafeInt.int_safeMod default) arg1 arg2)
+  | "Int.DivT" => some (.binaryTruncInt default (CoreDDM.BinaryTruncInt.int_divT default) arg1 arg2)
+  | "Int.ModT" => some (.binaryTruncInt default (CoreDDM.BinaryTruncInt.int_modT default) arg1 arg2)
+  | "Int.SafeDivT" => some (.binaryTruncInt default (CoreDDM.BinaryTruncInt.int_safeDivT default) arg1 arg2)
+  | "Int.SafeModT" => some (.binaryTruncInt default (CoreDDM.BinaryTruncInt.int_safeModT default) arg1 arg2)
+  | "Int.Le" => some (.binaryCmpBaseInt default (CoreDDM.BinaryCmpBaseInt.int_le default) arg1 arg2)
+  | "Int.Lt" => some (.binaryCmpBaseInt default (CoreDDM.BinaryCmpBaseInt.int_lt default) arg1 arg2)
+  | "Int.Ge" => some (.binaryCmpBaseInt default (CoreDDM.BinaryCmpBaseInt.int_ge default) arg1 arg2)
+  | "Int.Gt" => some (.binaryCmpBaseInt default (CoreDDM.BinaryCmpBaseInt.int_gt default) arg1 arg2)
+  | "Real.Le" => some (.binaryCmpBaseReal default (CoreDDM.BinaryCmpBaseReal.real_le default) arg1 arg2)
+  | "Real.Lt" => some (.binaryCmpBaseReal default (CoreDDM.BinaryCmpBaseReal.real_lt default) arg1 arg2)
+  | "Real.Ge" => some (.binaryCmpBaseReal default (CoreDDM.BinaryCmpBaseReal.real_ge default) arg1 arg2)
+  | "Real.Gt" => some (.binaryCmpBaseReal default (CoreDDM.BinaryCmpBaseReal.real_gt default) arg1 arg2)
+  | "Bv1.ULe" => some (.binaryCmpBaseBv default (.W1 default) (CoreDDM.BinaryCmpBaseBv.bv1_uLe default) arg1 arg2)
+  | "Bv1.ULt" => some (.binaryCmpBaseBv default (.W1 default) (CoreDDM.BinaryCmpBaseBv.bv1_uLt default) arg1 arg2)
+  | "Bv1.UGe" => some (.binaryCmpBaseBv default (.W1 default) (CoreDDM.BinaryCmpBaseBv.bv1_uGe default) arg1 arg2)
+  | "Bv1.UGt" => some (.binaryCmpBaseBv default (.W1 default) (CoreDDM.BinaryCmpBaseBv.bv1_uGt default) arg1 arg2)
+  | "Bv1.SLe" => some (.binaryCmpSignedBv default (.W1 default) (CoreDDM.BinaryCmpSignedBv.bv1_sLe default) arg1 arg2)
+  | "Bv1.SLt" => some (.binaryCmpSignedBv default (.W1 default) (CoreDDM.BinaryCmpSignedBv.bv1_sLt default) arg1 arg2)
+  | "Bv1.SGe" => some (.binaryCmpSignedBv default (.W1 default) (CoreDDM.BinaryCmpSignedBv.bv1_sGe default) arg1 arg2)
+  | "Bv1.SGt" => some (.binaryCmpSignedBv default (.W1 default) (CoreDDM.BinaryCmpSignedBv.bv1_sGt default) arg1 arg2)
+  | "Bv8.ULe" => some (.binaryCmpBaseBv default (.W8 default) (CoreDDM.BinaryCmpBaseBv.bv8_uLe default) arg1 arg2)
+  | "Bv8.ULt" => some (.binaryCmpBaseBv default (.W8 default) (CoreDDM.BinaryCmpBaseBv.bv8_uLt default) arg1 arg2)
+  | "Bv8.UGe" => some (.binaryCmpBaseBv default (.W8 default) (CoreDDM.BinaryCmpBaseBv.bv8_uGe default) arg1 arg2)
+  | "Bv8.UGt" => some (.binaryCmpBaseBv default (.W8 default) (CoreDDM.BinaryCmpBaseBv.bv8_uGt default) arg1 arg2)
+  | "Bv8.SLe" => some (.binaryCmpSignedBv default (.W8 default) (CoreDDM.BinaryCmpSignedBv.bv8_sLe default) arg1 arg2)
+  | "Bv8.SLt" => some (.binaryCmpSignedBv default (.W8 default) (CoreDDM.BinaryCmpSignedBv.bv8_sLt default) arg1 arg2)
+  | "Bv8.SGe" => some (.binaryCmpSignedBv default (.W8 default) (CoreDDM.BinaryCmpSignedBv.bv8_sGe default) arg1 arg2)
+  | "Bv8.SGt" => some (.binaryCmpSignedBv default (.W8 default) (CoreDDM.BinaryCmpSignedBv.bv8_sGt default) arg1 arg2)
+  | "Bv16.ULe" => some (.binaryCmpBaseBv default (.W16 default) (CoreDDM.BinaryCmpBaseBv.bv16_uLe default) arg1 arg2)
+  | "Bv16.ULt" => some (.binaryCmpBaseBv default (.W16 default) (CoreDDM.BinaryCmpBaseBv.bv16_uLt default) arg1 arg2)
+  | "Bv16.UGe" => some (.binaryCmpBaseBv default (.W16 default) (CoreDDM.BinaryCmpBaseBv.bv16_uGe default) arg1 arg2)
+  | "Bv16.UGt" => some (.binaryCmpBaseBv default (.W16 default) (CoreDDM.BinaryCmpBaseBv.bv16_uGt default) arg1 arg2)
+  | "Bv16.SLe" => some (.binaryCmpSignedBv default (.W16 default) (CoreDDM.BinaryCmpSignedBv.bv16_sLe default) arg1 arg2)
+  | "Bv16.SLt" => some (.binaryCmpSignedBv default (.W16 default) (CoreDDM.BinaryCmpSignedBv.bv16_sLt default) arg1 arg2)
+  | "Bv16.SGe" => some (.binaryCmpSignedBv default (.W16 default) (CoreDDM.BinaryCmpSignedBv.bv16_sGe default) arg1 arg2)
+  | "Bv16.SGt" => some (.binaryCmpSignedBv default (.W16 default) (CoreDDM.BinaryCmpSignedBv.bv16_sGt default) arg1 arg2)
+  | "Bv32.ULe" => some (.binaryCmpBaseBv default (.W32 default) (CoreDDM.BinaryCmpBaseBv.bv32_uLe default) arg1 arg2)
+  | "Bv32.ULt" => some (.binaryCmpBaseBv default (.W32 default) (CoreDDM.BinaryCmpBaseBv.bv32_uLt default) arg1 arg2)
+  | "Bv32.UGe" => some (.binaryCmpBaseBv default (.W32 default) (CoreDDM.BinaryCmpBaseBv.bv32_uGe default) arg1 arg2)
+  | "Bv32.UGt" => some (.binaryCmpBaseBv default (.W32 default) (CoreDDM.BinaryCmpBaseBv.bv32_uGt default) arg1 arg2)
+  | "Bv32.SLe" => some (.binaryCmpSignedBv default (.W32 default) (CoreDDM.BinaryCmpSignedBv.bv32_sLe default) arg1 arg2)
+  | "Bv32.SLt" => some (.binaryCmpSignedBv default (.W32 default) (CoreDDM.BinaryCmpSignedBv.bv32_sLt default) arg1 arg2)
+  | "Bv32.SGe" => some (.binaryCmpSignedBv default (.W32 default) (CoreDDM.BinaryCmpSignedBv.bv32_sGe default) arg1 arg2)
+  | "Bv32.SGt" => some (.binaryCmpSignedBv default (.W32 default) (CoreDDM.BinaryCmpSignedBv.bv32_sGt default) arg1 arg2)
+  | "Bv64.ULe" => some (.binaryCmpBaseBv default (.W64 default) (CoreDDM.BinaryCmpBaseBv.bv64_uLe default) arg1 arg2)
+  | "Bv128.ULe" => some (.binaryCmpBaseBv default (.W128 default) (CoreDDM.BinaryCmpBaseBv.bv128_uLe default) arg1 arg2)
+  | "Bv64.ULt" => some (.binaryCmpBaseBv default (.W64 default) (CoreDDM.BinaryCmpBaseBv.bv64_uLt default) arg1 arg2)
+  | "Bv128.ULt" => some (.binaryCmpBaseBv default (.W128 default) (CoreDDM.BinaryCmpBaseBv.bv128_uLt default) arg1 arg2)
+  | "Bv64.UGe" => some (.binaryCmpBaseBv default (.W64 default) (CoreDDM.BinaryCmpBaseBv.bv64_uGe default) arg1 arg2)
+  | "Bv128.UGe" => some (.binaryCmpBaseBv default (.W128 default) (CoreDDM.BinaryCmpBaseBv.bv128_uGe default) arg1 arg2)
+  | "Bv64.UGt" => some (.binaryCmpBaseBv default (.W64 default) (CoreDDM.BinaryCmpBaseBv.bv64_uGt default) arg1 arg2)
+  | "Bv128.UGt" => some (.binaryCmpBaseBv default (.W128 default) (CoreDDM.BinaryCmpBaseBv.bv128_uGt default) arg1 arg2)
+  | "Bv64.SLe" => some (.binaryCmpSignedBv default (.W64 default) (CoreDDM.BinaryCmpSignedBv.bv64_sLe default) arg1 arg2)
+  | "Bv128.SLe" => some (.binaryCmpSignedBv default (.W128 default) (CoreDDM.BinaryCmpSignedBv.bv128_sLe default) arg1 arg2)
+  | "Bv64.SLt" => some (.binaryCmpSignedBv default (.W64 default) (CoreDDM.BinaryCmpSignedBv.bv64_sLt default) arg1 arg2)
+  | "Bv128.SLt" => some (.binaryCmpSignedBv default (.W128 default) (CoreDDM.BinaryCmpSignedBv.bv128_sLt default) arg1 arg2)
+  | "Bv64.SGe" => some (.binaryCmpSignedBv default (.W64 default) (CoreDDM.BinaryCmpSignedBv.bv64_sGe default) arg1 arg2)
+  | "Bv128.SGe" => some (.binaryCmpSignedBv default (.W128 default) (CoreDDM.BinaryCmpSignedBv.bv128_sGe default) arg1 arg2)
+  | "Bv64.SGt" => some (.binaryCmpSignedBv default (.W64 default) (CoreDDM.BinaryCmpSignedBv.bv64_sGt default) arg1 arg2)
+  | "Bv128.SGt" => some (.binaryCmpSignedBv default (.W128 default) (CoreDDM.BinaryCmpSignedBv.bv128_sGt default) arg1 arg2)
+  | "Real.Add" => some (.binaryArithBasicReal default (CoreDDM.BinaryArithBasicReal.real_add default) arg1 arg2)
+  | "Real.Sub" => some (.binaryArithBasicReal default (CoreDDM.BinaryArithBasicReal.real_sub default) arg1 arg2)
+  | "Real.Mul" => some (.binaryArithBasicReal default (CoreDDM.BinaryArithBasicReal.real_mul default) arg1 arg2)
+  | "Real.Div" => some (.binaryArithDivModReal default (CoreDDM.BinaryArithDivModReal.real_div default) arg1 arg2)
+  | "Bv1.Add" => some (.binaryArithBasicBv default (.W1 default) (CoreDDM.BinaryArithBasicBv.bv1_add default) arg1 arg2)
+  | "Bv1.Sub" => some (.binaryArithBasicBv default (.W1 default) (CoreDDM.BinaryArithBasicBv.bv1_sub default) arg1 arg2)
+  | "Bv1.Mul" => some (.binaryArithBasicBv default (.W1 default) (CoreDDM.BinaryArithBasicBv.bv1_mul default) arg1 arg2)
+  | "Bv1.UDiv" => some (.binaryArithDivModBv default (.W1 default) (CoreDDM.BinaryArithDivModBv.bv1_uDiv default) arg1 arg2)
+  | "Bv1.UMod" => some (.binaryArithDivModBv default (.W1 default) (CoreDDM.BinaryArithDivModBv.bv1_uMod default) arg1 arg2)
+  | "Bv1.SDiv" => some (.binaryArithDivModBv default (.W1 default) (CoreDDM.BinaryArithDivModBv.bv1_sDiv default) arg1 arg2)
+  | "Bv1.SMod" => some (.binaryArithDivModBv default (.W1 default) (CoreDDM.BinaryArithDivModBv.bv1_sMod default) arg1 arg2)
+  | "Bv1.And" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_and default) arg1 arg2)
+  | "Bv1.Or" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_or default) arg1 arg2)
+  | "Bv1.Xor" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_xor default) arg1 arg2)
+  | "Bv1.Shl" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_shl default) arg1 arg2)
+  | "Bv1.UShr" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_uShr default) arg1 arg2)
+  | "Bv1.SShr" => some (.binaryBitwiseBv default (.W1 default) (CoreDDM.BinaryBitwiseBv.bv1_sShr default) arg1 arg2)
+  | "Bv1.SafeAdd" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeAdd default) arg1 arg2)
+  | "Bv1.SafeSub" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeSub default) arg1 arg2)
+  | "Bv1.SafeMul" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeMul default) arg1 arg2)
+  | "Bv1.SafeUAdd" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeUAdd default) arg1 arg2)
+  | "Bv1.SafeUSub" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeUSub default) arg1 arg2)
+  | "Bv1.SafeUMul" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeUMul default) arg1 arg2)
+  | "Bv1.SafeSDiv" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeSDiv default) arg1 arg2)
+  | "Bv1.SafeSMod" => some (.binarySafeBv default (.W1 default) (CoreDDM.BinarySafeBv.bv1_safeSMod default) arg1 arg2)
+  | "Bv1.SAddOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_sAddOverflow default) arg1 arg2)
+  | "Bv1.SSubOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_sSubOverflow default) arg1 arg2)
+  | "Bv1.SMulOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_sMulOverflow default) arg1 arg2)
+  | "Bv1.SDivOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_sDivOverflow default) arg1 arg2)
+  | "Bv1.UAddOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_uAddOverflow default) arg1 arg2)
+  | "Bv1.USubOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_uSubOverflow default) arg1 arg2)
+  | "Bv1.UMulOverflow" => some (.binaryOverflowBv default (.W1 default) (CoreDDM.BinaryOverflowBv.bv1_uMulOverflow default) arg1 arg2)
+  | "Bv8.Add" => some (.binaryArithBasicBv default (.W8 default) (CoreDDM.BinaryArithBasicBv.bv8_add default) arg1 arg2)
+  | "Bv8.Sub" => some (.binaryArithBasicBv default (.W8 default) (CoreDDM.BinaryArithBasicBv.bv8_sub default) arg1 arg2)
+  | "Bv8.Mul" => some (.binaryArithBasicBv default (.W8 default) (CoreDDM.BinaryArithBasicBv.bv8_mul default) arg1 arg2)
+  | "Bv8.UDiv" => some (.binaryArithDivModBv default (.W8 default) (CoreDDM.BinaryArithDivModBv.bv8_uDiv default) arg1 arg2)
+  | "Bv8.UMod" => some (.binaryArithDivModBv default (.W8 default) (CoreDDM.BinaryArithDivModBv.bv8_uMod default) arg1 arg2)
+  | "Bv8.SDiv" => some (.binaryArithDivModBv default (.W8 default) (CoreDDM.BinaryArithDivModBv.bv8_sDiv default) arg1 arg2)
+  | "Bv8.SMod" => some (.binaryArithDivModBv default (.W8 default) (CoreDDM.BinaryArithDivModBv.bv8_sMod default) arg1 arg2)
+  | "Bv8.And" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_and default) arg1 arg2)
+  | "Bv8.Or" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_or default) arg1 arg2)
+  | "Bv8.Xor" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_xor default) arg1 arg2)
+  | "Bv8.Shl" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_shl default) arg1 arg2)
+  | "Bv8.UShr" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_uShr default) arg1 arg2)
+  | "Bv8.SShr" => some (.binaryBitwiseBv default (.W8 default) (CoreDDM.BinaryBitwiseBv.bv8_sShr default) arg1 arg2)
+  | "Bv8.SafeAdd" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeAdd default) arg1 arg2)
+  | "Bv8.SafeSub" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeSub default) arg1 arg2)
+  | "Bv8.SafeMul" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeMul default) arg1 arg2)
+  | "Bv8.SafeUAdd" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeUAdd default) arg1 arg2)
+  | "Bv8.SafeUSub" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeUSub default) arg1 arg2)
+  | "Bv8.SafeUMul" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeUMul default) arg1 arg2)
+  | "Bv8.SafeSDiv" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeSDiv default) arg1 arg2)
+  | "Bv8.SafeSMod" => some (.binarySafeBv default (.W8 default) (CoreDDM.BinarySafeBv.bv8_safeSMod default) arg1 arg2)
+  | "Bv8.SAddOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_sAddOverflow default) arg1 arg2)
+  | "Bv8.SSubOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_sSubOverflow default) arg1 arg2)
+  | "Bv8.SMulOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_sMulOverflow default) arg1 arg2)
+  | "Bv8.SDivOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_sDivOverflow default) arg1 arg2)
+  | "Bv8.UAddOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_uAddOverflow default) arg1 arg2)
+  | "Bv8.USubOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_uSubOverflow default) arg1 arg2)
+  | "Bv8.UMulOverflow" => some (.binaryOverflowBv default (.W8 default) (CoreDDM.BinaryOverflowBv.bv8_uMulOverflow default) arg1 arg2)
+  | "Bv16.Add" => some (.binaryArithBasicBv default (.W16 default) (CoreDDM.BinaryArithBasicBv.bv16_add default) arg1 arg2)
+  | "Bv16.Sub" => some (.binaryArithBasicBv default (.W16 default) (CoreDDM.BinaryArithBasicBv.bv16_sub default) arg1 arg2)
+  | "Bv16.Mul" => some (.binaryArithBasicBv default (.W16 default) (CoreDDM.BinaryArithBasicBv.bv16_mul default) arg1 arg2)
+  | "Bv16.UDiv" => some (.binaryArithDivModBv default (.W16 default) (CoreDDM.BinaryArithDivModBv.bv16_uDiv default) arg1 arg2)
+  | "Bv16.UMod" => some (.binaryArithDivModBv default (.W16 default) (CoreDDM.BinaryArithDivModBv.bv16_uMod default) arg1 arg2)
+  | "Bv16.SDiv" => some (.binaryArithDivModBv default (.W16 default) (CoreDDM.BinaryArithDivModBv.bv16_sDiv default) arg1 arg2)
+  | "Bv16.SMod" => some (.binaryArithDivModBv default (.W16 default) (CoreDDM.BinaryArithDivModBv.bv16_sMod default) arg1 arg2)
+  | "Bv16.And" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_and default) arg1 arg2)
+  | "Bv16.Or" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_or default) arg1 arg2)
+  | "Bv16.Xor" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_xor default) arg1 arg2)
+  | "Bv16.Shl" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_shl default) arg1 arg2)
+  | "Bv16.UShr" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_uShr default) arg1 arg2)
+  | "Bv16.SShr" => some (.binaryBitwiseBv default (.W16 default) (CoreDDM.BinaryBitwiseBv.bv16_sShr default) arg1 arg2)
+  | "Bv16.SafeAdd" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeAdd default) arg1 arg2)
+  | "Bv16.SafeSub" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeSub default) arg1 arg2)
+  | "Bv16.SafeMul" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeMul default) arg1 arg2)
+  | "Bv16.SafeUAdd" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeUAdd default) arg1 arg2)
+  | "Bv16.SafeUSub" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeUSub default) arg1 arg2)
+  | "Bv16.SafeUMul" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeUMul default) arg1 arg2)
+  | "Bv16.SafeSDiv" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeSDiv default) arg1 arg2)
+  | "Bv16.SafeSMod" => some (.binarySafeBv default (.W16 default) (CoreDDM.BinarySafeBv.bv16_safeSMod default) arg1 arg2)
+  | "Bv16.SAddOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_sAddOverflow default) arg1 arg2)
+  | "Bv16.SSubOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_sSubOverflow default) arg1 arg2)
+  | "Bv16.SMulOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_sMulOverflow default) arg1 arg2)
+  | "Bv16.SDivOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_sDivOverflow default) arg1 arg2)
+  | "Bv16.UAddOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_uAddOverflow default) arg1 arg2)
+  | "Bv16.USubOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_uSubOverflow default) arg1 arg2)
+  | "Bv16.UMulOverflow" => some (.binaryOverflowBv default (.W16 default) (CoreDDM.BinaryOverflowBv.bv16_uMulOverflow default) arg1 arg2)
+  | "Bv32.Add" => some (.binaryArithBasicBv default (.W32 default) (CoreDDM.BinaryArithBasicBv.bv32_add default) arg1 arg2)
+  | "Bv32.Sub" => some (.binaryArithBasicBv default (.W32 default) (CoreDDM.BinaryArithBasicBv.bv32_sub default) arg1 arg2)
+  | "Bv32.Mul" => some (.binaryArithBasicBv default (.W32 default) (CoreDDM.BinaryArithBasicBv.bv32_mul default) arg1 arg2)
+  | "Bv32.UDiv" => some (.binaryArithDivModBv default (.W32 default) (CoreDDM.BinaryArithDivModBv.bv32_uDiv default) arg1 arg2)
+  | "Bv32.UMod" => some (.binaryArithDivModBv default (.W32 default) (CoreDDM.BinaryArithDivModBv.bv32_uMod default) arg1 arg2)
+  | "Bv32.SDiv" => some (.binaryArithDivModBv default (.W32 default) (CoreDDM.BinaryArithDivModBv.bv32_sDiv default) arg1 arg2)
+  | "Bv32.SMod" => some (.binaryArithDivModBv default (.W32 default) (CoreDDM.BinaryArithDivModBv.bv32_sMod default) arg1 arg2)
+  | "Bv32.And" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_and default) arg1 arg2)
+  | "Bv32.Or" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_or default) arg1 arg2)
+  | "Bv32.Xor" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_xor default) arg1 arg2)
+  | "Bv32.Shl" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_shl default) arg1 arg2)
+  | "Bv32.UShr" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_uShr default) arg1 arg2)
+  | "Bv32.SShr" => some (.binaryBitwiseBv default (.W32 default) (CoreDDM.BinaryBitwiseBv.bv32_sShr default) arg1 arg2)
+  | "Bv32.SafeAdd" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeAdd default) arg1 arg2)
+  | "Bv32.SafeSub" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeSub default) arg1 arg2)
+  | "Bv32.SafeMul" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeMul default) arg1 arg2)
+  | "Bv32.SafeUAdd" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeUAdd default) arg1 arg2)
+  | "Bv32.SafeUSub" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeUSub default) arg1 arg2)
+  | "Bv32.SafeUMul" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeUMul default) arg1 arg2)
+  | "Bv32.SafeSDiv" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeSDiv default) arg1 arg2)
+  | "Bv32.SafeSMod" => some (.binarySafeBv default (.W32 default) (CoreDDM.BinarySafeBv.bv32_safeSMod default) arg1 arg2)
+  | "Bv32.SAddOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_sAddOverflow default) arg1 arg2)
+  | "Bv32.SSubOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_sSubOverflow default) arg1 arg2)
+  | "Bv32.SMulOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_sMulOverflow default) arg1 arg2)
+  | "Bv32.SDivOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_sDivOverflow default) arg1 arg2)
+  | "Bv32.UAddOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_uAddOverflow default) arg1 arg2)
+  | "Bv32.USubOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_uSubOverflow default) arg1 arg2)
+  | "Bv32.UMulOverflow" => some (.binaryOverflowBv default (.W32 default) (CoreDDM.BinaryOverflowBv.bv32_uMulOverflow default) arg1 arg2)
+  | "Bv64.Add" => some (.binaryArithBasicBv default (.W64 default) (CoreDDM.BinaryArithBasicBv.bv64_add default) arg1 arg2)
+  | "Bv128.Add" => some (.binaryArithBasicBv default (.W128 default) (CoreDDM.BinaryArithBasicBv.bv128_add default) arg1 arg2)
+  | "Bv64.Sub" => some (.binaryArithBasicBv default (.W64 default) (CoreDDM.BinaryArithBasicBv.bv64_sub default) arg1 arg2)
+  | "Bv128.Sub" => some (.binaryArithBasicBv default (.W128 default) (CoreDDM.BinaryArithBasicBv.bv128_sub default) arg1 arg2)
+  | "Bv64.Mul" => some (.binaryArithBasicBv default (.W64 default) (CoreDDM.BinaryArithBasicBv.bv64_mul default) arg1 arg2)
+  | "Bv128.Mul" => some (.binaryArithBasicBv default (.W128 default) (CoreDDM.BinaryArithBasicBv.bv128_mul default) arg1 arg2)
+  | "Bv64.UDiv" => some (.binaryArithDivModBv default (.W64 default) (CoreDDM.BinaryArithDivModBv.bv64_uDiv default) arg1 arg2)
+  | "Bv128.UDiv" => some (.binaryArithDivModBv default (.W128 default) (CoreDDM.BinaryArithDivModBv.bv128_uDiv default) arg1 arg2)
+  | "Bv64.UMod" => some (.binaryArithDivModBv default (.W64 default) (CoreDDM.BinaryArithDivModBv.bv64_uMod default) arg1 arg2)
+  | "Bv128.UMod" => some (.binaryArithDivModBv default (.W128 default) (CoreDDM.BinaryArithDivModBv.bv128_uMod default) arg1 arg2)
+  | "Bv64.SDiv" => some (.binaryArithDivModBv default (.W64 default) (CoreDDM.BinaryArithDivModBv.bv64_sDiv default) arg1 arg2)
+  | "Bv128.SDiv" => some (.binaryArithDivModBv default (.W128 default) (CoreDDM.BinaryArithDivModBv.bv128_sDiv default) arg1 arg2)
+  | "Bv64.SMod" => some (.binaryArithDivModBv default (.W64 default) (CoreDDM.BinaryArithDivModBv.bv64_sMod default) arg1 arg2)
+  | "Bv128.SMod" => some (.binaryArithDivModBv default (.W128 default) (CoreDDM.BinaryArithDivModBv.bv128_sMod default) arg1 arg2)
+  | "Bv64.And" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_and default) arg1 arg2)
+  | "Bv128.And" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_and default) arg1 arg2)
+  | "Bv64.Or" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_or default) arg1 arg2)
+  | "Bv128.Or" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_or default) arg1 arg2)
+  | "Bv64.Xor" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_xor default) arg1 arg2)
+  | "Bv128.Xor" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_xor default) arg1 arg2)
+  | "Bv64.Shl" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_shl default) arg1 arg2)
+  | "Bv128.Shl" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_shl default) arg1 arg2)
+  | "Bv64.UShr" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_uShr default) arg1 arg2)
+  | "Bv128.UShr" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_uShr default) arg1 arg2)
+  | "Bv64.SShr" => some (.binaryBitwiseBv default (.W64 default) (CoreDDM.BinaryBitwiseBv.bv64_sShr default) arg1 arg2)
+  | "Bv128.SShr" => some (.binaryBitwiseBv default (.W128 default) (CoreDDM.BinaryBitwiseBv.bv128_sShr default) arg1 arg2)
+  | "Bv64.SafeAdd" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeAdd default) arg1 arg2)
+  | "Bv128.SafeAdd" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeAdd default) arg1 arg2)
+  | "Bv64.SafeSub" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeSub default) arg1 arg2)
+  | "Bv128.SafeSub" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeSub default) arg1 arg2)
+  | "Bv64.SafeMul" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeMul default) arg1 arg2)
+  | "Bv128.SafeMul" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeMul default) arg1 arg2)
+  | "Bv64.SafeUAdd" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeUAdd default) arg1 arg2)
+  | "Bv128.SafeUAdd" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeUAdd default) arg1 arg2)
+  | "Bv64.SafeUSub" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeUSub default) arg1 arg2)
+  | "Bv128.SafeUSub" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeUSub default) arg1 arg2)
+  | "Bv64.SafeUMul" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeUMul default) arg1 arg2)
+  | "Bv128.SafeUMul" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeUMul default) arg1 arg2)
+  | "Bv64.SafeSDiv" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeSDiv default) arg1 arg2)
+  | "Bv128.SafeSDiv" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeSDiv default) arg1 arg2)
+  | "Bv64.SafeSMod" => some (.binarySafeBv default (.W64 default) (CoreDDM.BinarySafeBv.bv64_safeSMod default) arg1 arg2)
+  | "Bv128.SafeSMod" => some (.binarySafeBv default (.W128 default) (CoreDDM.BinarySafeBv.bv128_safeSMod default) arg1 arg2)
+  | "Bv64.SAddOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_sAddOverflow default) arg1 arg2)
+  | "Bv128.SAddOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_sAddOverflow default) arg1 arg2)
+  | "Bv64.SSubOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_sSubOverflow default) arg1 arg2)
+  | "Bv128.SSubOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_sSubOverflow default) arg1 arg2)
+  | "Bv64.SMulOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_sMulOverflow default) arg1 arg2)
+  | "Bv128.SMulOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_sMulOverflow default) arg1 arg2)
+  | "Bv64.SDivOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_sDivOverflow default) arg1 arg2)
+  | "Bv128.SDivOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_sDivOverflow default) arg1 arg2)
+  | "Bv64.UAddOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_uAddOverflow default) arg1 arg2)
+  | "Bv128.UAddOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_uAddOverflow default) arg1 arg2)
+  | "Bv64.USubOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_uSubOverflow default) arg1 arg2)
+  | "Bv128.USubOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_uSubOverflow default) arg1 arg2)
+  | "Bv64.UMulOverflow" => some (.binaryOverflowBv default (.W64 default) (CoreDDM.BinaryOverflowBv.bv64_uMulOverflow default) arg1 arg2)
+  | "Bv128.UMulOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_uMulOverflow default) arg1 arg2)
+  | _ => none
 
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
   open Core in
+  -- Type-specific unary operators (neg, not, safeNeg, overflow, casts) are
+  -- grouped: each is a nullary member of a wrapper category, dispatched by name.
+  match groupedUnaryCST? name arg with
+  | some e => pure e
+  | none =>
   match CoreOp.ofString name with
   | .other "old" => pure (.old default ty arg)
-  -- Integers and reals
-  | .numeric ⟨_, .Neg⟩ => pure (.neg_expr default ty arg)
   -- Booleans
   | .bool .Not => pure (.not default arg)
   -- Strings and regexes
@@ -368,33 +702,7 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .re .Comp => pure (.re_comp default arg)
   -- Sequences
   | .seq .Length => pure (.seq_length default ty arg)
-  -- Bitvector unary ops: enumerated per size because the CST constructors
-  -- (.bvnot, .neg_expr) require a concrete type argument. Adding a new BV
-  -- width requires adding cases here.
-  | .bv ⟨1, .Not⟩ => pure (.bvnot default (.bv1 default) arg)
-  | .bv ⟨1, .Neg⟩ => pure (.neg_expr default (.bv1 default) arg)
-  | .bv ⟨8, .Not⟩ => pure (.bvnot default (.bv8 default) arg)
-  | .bv ⟨8, .Neg⟩ => pure (.neg_expr default (.bv8 default) arg)
-  | .bv ⟨16, .Not⟩ => pure (.bvnot default (.bv16 default) arg)
-  | .bv ⟨16, .Neg⟩ => pure (.neg_expr default (.bv16 default) arg)
-  | .bv ⟨32, .Not⟩ => pure (.bvnot default (.bv32 default) arg)
-  | .bv ⟨32, .Neg⟩ => pure (.neg_expr default (.bv32 default) arg)
-  | .bv ⟨64, .Not⟩ => pure (.bvnot default (.bv64 default) arg)
-  | .bv ⟨64, .Neg⟩ => pure (.neg_expr default (.bv64 default) arg)
-  -- Safe negation variants
-  | .bv ⟨1, .SafeNeg⟩ | .bv ⟨1, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv1 default) arg)
-  | .bv ⟨8, .SafeNeg⟩ | .bv ⟨8, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv8 default) arg)
-  | .bv ⟨16, .SafeNeg⟩ | .bv ⟨16, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv16 default) arg)
-  | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
-  | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
-  -- Overflow predicates
-  | .bv ⟨w, .SNegOverflow⟩ => do
-    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
-    pure (.bv_neg_overflow default bvTy arg)
-  | .bv ⟨w, .UNegOverflow⟩ => do
-    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
-    pure (.bv_uneg_overflow default bvTy arg)
-  -- Bitvector extract ops
+  -- Bitvector extract ops (not part of the grouped operator families).
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
   | .bvExtract 16 15 15 => pure (.bvextract_15_15 default arg)
   | .bvExtract 32 31 31 => pure (.bvextract_31_31 default arg)
@@ -406,109 +714,21 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bvExtract 64 31 0 => pure (.bvextract_31_0_64 default arg)
   | _ => mkGenericCall "handleUnaryOps" name [arg]
 
-/-- Map from bitvector binary operation kinds to DDM Expr constructors -/
-def bvBinaryOpMap {M} [Inhabited M] :
-    List (Core.BvOpKind × (CoreType M → CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) :=
- [
-  (.And, fun ty arg1 arg2 => .bvand default ty arg1 arg2),
-  (.Or, fun ty arg1 arg2 => .bvor default ty arg1 arg2),
-  (.Xor, fun ty arg1 arg2 => .bvxor default ty arg1 arg2),
-  (.Add, fun ty arg1 arg2 => .add_expr default ty arg1 arg2),
-  (.Sub, fun ty arg1 arg2 => .sub_expr default ty arg1 arg2),
-  (.Mul, fun ty arg1 arg2 => .mul_expr default ty arg1 arg2),
-  (.UDiv, fun ty arg1 arg2 => .div_expr default ty arg1 arg2),
-  (.UMod, fun ty arg1 arg2 => .mod_expr default ty arg1 arg2),
-  (.SDiv, fun ty arg1 arg2 => .bvsdiv default ty arg1 arg2),
-  (.SMod, fun ty arg1 arg2 => .bvsmod default ty arg1 arg2),
-  (.Shl, fun ty arg1 arg2 => .bvshl default ty arg1 arg2),
-  (.UShr, fun ty arg1 arg2 => .bvushr default ty arg1 arg2),
-  (.SShr, fun ty arg1 arg2 => .bvsshr default ty arg1 arg2),
-  (.ULe, fun ty arg1 arg2 => .le default ty arg1 arg2),
-  (.ULt, fun ty arg1 arg2 => .lt default ty arg1 arg2),
-  (.UGe, fun ty arg1 arg2 => .ge default ty arg1 arg2),
-  (.UGt, fun ty arg1 arg2 => .gt default ty arg1 arg2),
-  (.SLe, fun ty arg1 arg2 => .bvsle default ty arg1 arg2),
-  (.SLt, fun ty arg1 arg2 => .bvslt default ty arg1 arg2),
-  (.SGe, fun ty arg1 arg2 => .bvsge default ty arg1 arg2),
-  (.SGt, fun ty arg1 arg2 => .bvsgt default ty arg1 arg2),
-  -- Safe variants
-  (.SafeAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
-  (.SafeSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
-  (.SafeMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
-  (.SafeSDiv, fun ty arg1 arg2 => .safesdiv_expr default ty arg1 arg2),
-  (.SafeSMod, fun ty arg1 arg2 => .safesmod_expr default ty arg1 arg2),
-  (.SafeUAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
-  (.SafeUSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
-  (.SafeUMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
-  -- Overflow predicates
-  (.SAddOverflow, fun ty arg1 arg2 => .bv_sadd_overflow default ty arg1 arg2),
-  (.SSubOverflow, fun ty arg1 arg2 => .bv_ssub_overflow default ty arg1 arg2),
-  (.SMulOverflow, fun ty arg1 arg2 => .bv_smul_overflow default ty arg1 arg2),
-  (.SDivOverflow, fun ty arg1 arg2 => .bv_sdiv_overflow default ty arg1 arg2),
-  (.UAddOverflow, fun ty arg1 arg2 => .bv_uadd_overflow default ty arg1 arg2),
-  (.USubOverflow, fun ty arg1 arg2 => .bv_usub_overflow default ty arg1 arg2),
-  (.UMulOverflow, fun ty arg1 arg2 => .bv_umul_overflow default ty arg1 arg2)
-]
-
-/-- Map from bitvector sizes to their corresponding type constructors -/
-def bvTypeMap {M} [Inhabited M] : List (Nat × (CoreType M)) := [
-  (1, .bv1 default),
-  (8, .bv8 default),
-  (16, .bv16 default),
-  (32, .bv32 default),
-  (64, .bv64 default)
-]
-
-/-- Map from bitvector sizes to their corresponding concat operations -/
-def bvConcatMap {M} [Inhabited M] :
-    List (Nat × (CoreDDM.Expr M → CoreDDM.Expr M → CoreDDM.Expr M)) := [
-  (8, fun arg1 arg2 => .bvconcat8 default arg1 arg2),
-  (16, fun arg1 arg2 => .bvconcat16 default arg1 arg2),
-  (32, fun arg1 arg2 => .bvconcat32 default arg1 arg2)
-]
-
-/-- Auto-generated bitvector binary operations handler -/
-def handleBitvecBinaryOps {M} [Inhabited M] (name : String) (arg1 arg2 : CoreDDM.Expr M)
-    : ToCSTM M (CoreDDM.Expr M) :=
-  open Core in
-  match CoreOp.ofString name with
-  | .bv ⟨size, .Concat⟩ =>
-    match (bvConcatMap).find? (·.1 == size) with
-    | some (_, concatOp) => pure (concatOp arg1 arg2)
-    | none => do
-      ToCSTM.logError "handleBitvecBinaryOps" "unsupported concat size" (toString size)
-      pure (.bvconcat32 default arg1 arg2)
-  | .bv ⟨size, kind⟩ =>
-    match (bvTypeMap).find? (·.1 == size) with
-    | some (_, ty) =>
-      match (bvBinaryOpMap).find? (·.1 == kind) with
-      | some (_, op) => pure (op ty arg1 arg2)
-      | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
-    | none => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
-  | _ => mkGenericCall "handleBitvecBinaryOps" name [arg1, arg2]
-
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
   let ty := CoreType.tvar default unknownTypeVar
   open Core in
+  -- Type-specific binary operators (arith, bitwise, comparison, safe, overflow)
+  -- are grouped: each is a nullary member of a wrapper category, by name.
+  match groupedBinaryCST? name arg1 arg2 with
+  | some e => pure e
+  | none =>
   match CoreOp.ofString name with
-  -- Integer and Real operations
-  | .numeric ⟨_, .Add⟩ => pure (.add_expr default ty arg1 arg2)
-  | .numeric ⟨_, .Sub⟩ => pure (.sub_expr default ty arg1 arg2)
-  | .numeric ⟨_, .Mul⟩ => pure (.mul_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .Div⟩ | .numeric ⟨.real, .Div⟩ => pure (.div_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .SafeDiv⟩ => pure (.safediv_expr default ty arg1 arg2)
-  | .numeric ⟨_, .Mod⟩ => pure (.mod_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .SafeMod⟩ => pure (.safemod_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .DivT⟩ => pure (.divt_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .SafeDivT⟩ => pure (.safedivt_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .ModT⟩ => pure (.modt_expr default ty arg1 arg2)
-  | .numeric ⟨.int, .SafeModT⟩ => pure (.safemodt_expr default ty arg1 arg2)
-  | .numeric ⟨_, .Le⟩ => pure (.le default ty arg1 arg2)
-  | .numeric ⟨_, .Lt⟩ => pure (.lt default ty arg1 arg2)
-  | .numeric ⟨_, .Ge⟩ => pure (.ge default ty arg1 arg2)
-  | .numeric ⟨_, .Gt⟩ => pure (.gt default ty arg1 arg2)
+  -- Bitvector concat (not part of the grouped operator families).
+  | .bv ⟨8, .Concat⟩ => pure (.bvconcat8 default arg1 arg2)
+  | .bv ⟨16, .Concat⟩ => pure (.bvconcat16 default arg1 arg2)
+  | .bv ⟨32, .Concat⟩ => pure (.bvconcat32 default arg1 arg2)
   -- Boolean operations
   | .bool .And => pure (.and default arg1 arg2)
   | .bool .Or => pure (.or default arg1 arg2)
@@ -536,7 +756,7 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | .re .Concat => pure (.re_concat default arg1 arg2)
   | .re .Union => pure (.re_union default arg1 arg2)
   | .re .Inter => pure (.re_inter default arg1 arg2)
-  | _ => handleBitvecBinaryOps name arg1 arg2
+  | _ => mkGenericCall "handleBinaryOps" name [arg1, arg2]
 
 /-- Handle ternary operations -/
 def handleTernaryOps {M} [Inhabited M] (name : String)
@@ -1053,7 +1273,7 @@ private inductive FormatParamKind where
   | inParam | outParam | inoutParam
 
 def procToCST {M} [Inhabited M] (proc : Core.Procedure)
-    (md : Imperative.MetaData Core.Expression := .empty) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs := mkTypeArgsAnn proc.header.typeArgs
@@ -1222,7 +1442,7 @@ def Core.formatProcedure (proc : Core.Procedure)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
-  let (cst, finalCtx) := (procToCST proc) initCtx
+  let (cst, finalCtx) := (procToCST proc .empty) initCtx
   formatWithDDM finalCtx fun ctx state =>
     (mformat (ArgF.op cst.toAst) ctx state).format
 

@@ -29,6 +29,7 @@ inductive ResolvedNodeKind where
   | typeAlias
   | constant
   | quantifierVar
+  | typeParameter
   | unresolved
   deriving Repr, BEq
 
@@ -46,6 +47,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .typeAlias         => "type alias"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
+  | .typeParameter     => "type parameter"
   | .unresolved        => "unresolved"
 
 /-- A definition-site AST node that a reference can resolve to. -/
@@ -78,11 +80,16 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
-  | unresolved (referenceSource: Option FileRange)
+  /-- A datatype's type parameter (a type variable), in scope only while resolving
+      that datatype's constructor argument types. Registering it lets a reference
+      to a type parameter resolve through the normal scope lookup — like any other
+      type name — instead of being special-cased by name via a threaded list. -/
+  | typeParameter (name : Identifier)
+  | unresolved (referenceSource: FileRange)
   deriving Repr
 
 instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved none
+  default := ResolvedNode.unresolved default
 
 /-- Return the constructor tag of a `ResolvedNode`. -/
 def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
@@ -99,19 +106,25 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
+  | .typeParameter ..     => .typeParameter
   | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, type.source ⟩
  | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
- | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
- | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
+ | .staticProcedure proc => ⟨ .Unknown, proc.name.source ⟩
+ | .instanceProcedure _ proc => ⟨ .Unknown, proc.name.source ⟩
+ | .compositeType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .constrainedType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
+ | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
+ | .typeParameter name => ⟨ .Unknown, name.source ⟩
 
 /-! ## Resolution result -/
 
@@ -119,12 +132,16 @@ structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
   refToDef: Std.HashMap Nat ResolvedNode
-  /-- Procedures that (transitively) read the heap, by name. Computed once by
-      `HeapAnalysis` during resolution so downstream checks can decide whether a
-      call reads the heap without re-running the call-graph analysis. -/
+  /-- Procedures that (transitively) read the heap, keyed by `uniqueId`. Computed
+      once by `HeapAnalysis` during resolution so downstream checks can decide
+      whether a call reads the heap without re-running the call-graph analysis. -/
   heapReaders: Std.HashSet Nat := {}
-  /-- Procedures that (transitively) write the heap, by name. See `heapReaders`. -/
+  /-- Procedures that (transitively) write the heap, keyed by `uniqueId`. See `heapReaders`. -/
   heapWriters: Std.HashSet Nat := {}
+  /-- UniqueIds of static procedures whose registration was rejected as a
+      duplicate (conflicting signature with an existing overload). These must
+      not be renamed by `UniqueOverloadNames`. -/
+  conflictingOverloads: Std.HashSet Nat := {}
   deriving Repr
 
 /-- Look up the resolved node for an identifier, returning `none` if the identifier

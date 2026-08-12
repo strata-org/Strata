@@ -566,14 +566,9 @@ end Strata.PolymorphicDatatypeTest
 
 namespace Strata.InferTypePanicTest
 
--- Verify that the program does not panic during type inference (issue #650).
--- The program has type errors that should be reported gracefully.
-/--
-error: Could not infer type parameter 2 for Core.seq_select
----
-error: Encountered .|| expression when MethodSetting expected.
--/
-#guard_msgs in
+-- This program is well-typed; Core's type checker (`resolve`) accepts it and
+-- `Core.verify` runs it (see the `#eval` below). The companion `illTypedPgm`
+-- confirms `resolve` rejects a genuinely ill-typed program.
 def issue650Pgm : Program :=
 #strata
 program Core;
@@ -596,8 +591,8 @@ function method_ok(ms: MethodSetting): bool {
 function stage_ok(stage: Stage): bool {
   forall i: int ::
     (Stage..MethodSettings(stage) != None()
-     && 0 <= i
-     && i < Sequence.length(Option..val(Stage..MethodSettings(stage))))
+     && int.le(0, i)
+     && int.lt(i, Sequence.length(Option..val(Stage..MethodSettings(stage)))))
     ==>
     method_ok(Sequence.select(Option..val(Stage..MethodSettings(stage)), i))
 }
@@ -610,10 +605,148 @@ axiom Sequence.select(grouped, 0) == s;
 procedure Check()
 {
   assert [check]:
-    forall i: int :: (0 <= i && i < Sequence.length(grouped)) ==>
+    forall i: int :: (int.le(0, i) && int.lt(i, Sequence.length(grouped))) ==>
       stage_ok(Sequence.select(grouped, i));
 };
 #end
+
+/--
+info:
+Obligation: method_ok_body_calls_MethodSetting..LoggingLevel_0
+Property: assert
+Result: ✅ pass
+
+Obligation: method_ok_body_calls_MethodSetting..LoggingLevel_1
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Stage..MethodSettings_0
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Stage..MethodSettings_1
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Option..val_2
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Stage..MethodSettings_3
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Option..val_4
+Property: assert
+Result: ✅ pass
+
+Obligation: stage_ok_body_calls_Sequence.select_5
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: assert_check_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: check
+Property: assert
+Result: ❓ unknown
+-/
+#guard_msgs in
+#eval Core.verify issue650Pgm (options := .quiet)
+
+-- Negative test: injects a real type error (comparing an `Option string` field
+-- against `Some(42)`, an `Option int`) to confirm `resolve` rejects ill-typed
+-- programs.
+private def illTypedPgm : Program :=
+#strata
+program Core;
+
+datatype Option (a : Type) { None(), Some(val: a) };
+
+datatype MethodSetting () {
+  MethodSetting_Cons(LoggingLevel: Option string)
+};
+
+function method_ok(ms: MethodSetting): bool {
+  (MethodSetting..LoggingLevel(ms) == Some(42))
+}
+
+procedure Check()
+{
+  assert [check]: method_ok(MethodSetting_Cons(Some("x")));
+};
+#end
+
+/--
+error: ❌ Type checking error.
+Impossible to unify (Option string) with (Option int).
+First mismatch: string with int.
+-/
+#guard_msgs in
+#eval Core.verify illTypedPgm (options := .quiet)
+
+-- Tests that comparison and sequence-index through a polymorphic datatype accessor
+-- (`Option..val(...)`) translate and type-check: `resolve` recovers the accessor's
+-- result type from its argument.
+
+-- Comparison through an Option accessor.
+private def cmpThroughOptionAccessorPgm : Program :=
+#strata
+program Core;
+datatype Option (a : Type) { None(), Some(val : a) };
+function x () : Option int;
+function bug(): bool { int.ge(Option..val(x()), 1024) }
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval (TransM.run Inhabited.default (translateProgram cmpThroughOptionAccessorPgm) |>.snd) == #[]
+
+/--
+info: ok: program Core;
+
+datatype Option (a : Type) {
+  None(),
+  Some(val : a)
+};
+function x () : Option int;
+function bug () : bool {
+  int.ge(Option..val(x), 1024)
+}
+-/
+#guard_msgs in
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram cmpThroughOptionAccessorPgm)).fst
+
+-- Sequence index through an Option accessor.
+private def seqSelectThroughOptionAccessorPgm : Program :=
+#strata
+program Core;
+datatype Option (a : Type) { None(), Some(val : a) };
+type Foo;
+function s () : Option (Sequence Foo);
+function pick(): Foo { Sequence.select(Option..val(s()), 0) }
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval (TransM.run Inhabited.default (translateProgram seqSelectThroughOptionAccessorPgm) |>.snd) == #[]
+
+/--
+info: ok: program Core;
+
+datatype Option (a : Type) {
+  None(),
+  Some(val : a)
+};
+type Foo;
+function s () : Option (Sequence Foo);
+function pick () : Foo {
+  Sequence.select(Option..val(s), 0)
+}
+-/
+#guard_msgs in
+#eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram seqSelectThroughOptionAccessorPgm)).fst
 
 end Strata.InferTypePanicTest
 

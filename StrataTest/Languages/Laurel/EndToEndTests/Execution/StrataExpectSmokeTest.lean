@@ -44,6 +44,6 @@ procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

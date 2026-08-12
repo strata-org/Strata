@@ -34,7 +34,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
 rec function len<a>(@[cases] xs : MyList a) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
 };
 
 #end
@@ -63,7 +63,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (xs : IntList) : int
 decreases xs
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 #end
@@ -87,7 +87,7 @@ function f () : bool;
 rec function bad (n : int) : int
   decreases f
 {
-  if n <= 0 then 0 else bad(n - 1)
+  if int.le(n, 0) then 0 else bad(int.sub(n, 1))
 };
 #end
 
@@ -107,7 +107,7 @@ program Core;
 rec function bad (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else bad(bad(n - 1))
+  if int.le(n, 0) then 0 else bad(bad(int.sub(n, 1)))
 };
 #end
 
@@ -126,12 +126,12 @@ program Core;
 rec function size (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else 1 + size(n - 1)
+  if int.le(n, 0) then 0 else int.add(1, size(int.sub(n, 1)))
 }
 function bad (n : int) : int
   decreases size(n)
 {
-  if n <= 0 then 0 else bad(n - 1)
+  if int.le(n, 0) then 0 else bad(int.sub(n, 1))
 };
 #end
 
@@ -151,12 +151,12 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 }
 function countdown (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else countdown(n - 1)
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
 };
 #end
 

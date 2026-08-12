@@ -39,7 +39,9 @@ def parseLowerCompoundAssign (input : String) : IO Program := do
     let program := eliminateIncrDecrAndCompoundAssign program
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments program model [])
+    match liftExpressionAssignments program model [] with
+    | .ok p => pure p
+    | .error e => throw (IO.userError s!"Lift error: {e}")
 
 /-- Statement form: `x += 3` lowers to a clean `x := x + 3`. -/
 def stmtFormProgram : String := r"

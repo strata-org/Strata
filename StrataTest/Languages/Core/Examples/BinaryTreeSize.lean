@@ -29,7 +29,7 @@ datatype IntTree { Leaf(), Node(left: IntTree, val: int, right: IntTree) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 rec function append (@[cases] xs : IntList, ys : IntList) : IntList
@@ -41,7 +41,7 @@ rec function append (@[cases] xs : IntList, ys : IntList) : IntList
 rec function size (@[cases] t : IntTree) : int
 {
   if IntTree..isLeaf(t) then 0
-  else 1 + size(IntTree..left(t)) + size(IntTree..right(t))
+  else int.add(int.add(1, size(IntTree..left(t))), size(IntTree..right(t)))
 };
 
 rec function toList (@[cases] t : IntTree) : IntList
@@ -53,7 +53,7 @@ rec function toList (@[cases] t : IntTree) : IntList
 // listLen distributes over append.
 procedure LenAppend(xs : IntList, ys : IntList)
 spec {
-  ensures [len_append]: listLen(append(xs, ys)) == listLen(xs) + listLen(ys);
+  ensures [len_append]: listLen(append(xs, ys)) == int.add(listLen(xs), listLen(ys));
 }
 {
   if (IntList..isCons(xs))

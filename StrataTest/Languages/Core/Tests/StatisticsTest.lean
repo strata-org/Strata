@@ -35,8 +35,7 @@ spec {
 };
 #end
 
-/--
-info: [statistics] Evaluator.factoryOps: 310
+/-- info: [statistics] Evaluator.factoryOps: 352
 [statistics] Evaluator.procedures: 1
 [statistics] Evaluator.simulatedStmts: 2
 [statistics] Evaluator.verificationEnvironments: 1
@@ -58,7 +57,7 @@ def statsPgm2 : StrataDDM.Program :=
 program Core;
 
 function add(a : int, b : int) : int
-{ a + b }
+{ int.add(a, b) }
 
 procedure P1(x : int, out y : int)
 spec {
@@ -77,8 +76,7 @@ spec {
 };
 #end
 
-/--
-info: [statistics] Evaluator.factoryOps: 310
+/-- info: [statistics] Evaluator.factoryOps: 352
 [statistics] Evaluator.functions: 1
 [statistics] Evaluator.procedures: 2
 [statistics] Evaluator.simulatedStmts: 4

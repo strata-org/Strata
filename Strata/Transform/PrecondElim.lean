@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
@@ -40,7 +41,7 @@ namespace Core
 namespace PrecondElim
 
 open Lambda
-open Strata (DiagnosticModel)
+open Strata (Message)
 open Core.Transform
 
 /-- Statistics keys tracked by the precondition elimination transformation. -/
@@ -318,7 +319,7 @@ def transformStmt (s : Statement)
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
+    let func ← liftDiag ((Function.ofPureFunc decl).mapError Message.fromFormat)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
       | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
@@ -335,7 +336,10 @@ def transformStmt (s : Statement)
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty .nondet md
-      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
+      -- A `$$wf` block is always emitted here, so the program changed even when
+      -- the function itself had no preconditions (its body still calls a
+      -- precondition-carrying function).
+      return (true, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
@@ -363,13 +367,20 @@ Returns (changed, transformed program).
 -/
 def precondElim (p : Program)
     : CoreTransformM (Bool × Program) := do
-  -- If Factory is not set, there is no Factory function to process; finish early.
-  match (← get).factory with
-  | .none =>
-    return (false, p)
-  | .some _ =>
+  -- The factory is accumulated across declarations *within* this pass so that
+  -- WF-obligation collection can resolve calls to earlier declarations. This
+  -- accumulation is an internal detail of the pass: restore the factory
+  -- afterwards so it does not leak into the pipeline's output state (which is
+  -- threaded into `buildEnv`, where the program's functions are registered
+  -- afresh and duplicates must surface as errors).
+  let savedF ← getFactory
+  try
     let (changed, newDecls) ← transformDecls p.decls
+    setFactory savedF
     return (changed, { decls := newDecls })
+  catch e =>
+    setFactory savedF
+    throw e
 where
   transformDecls (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
@@ -391,7 +402,7 @@ where
               pure (c, { proc with body := .structured body' })
             -- CFG bodies pass through untouched.
             | .cfg _ => pure (false, proc)
-          setFactory F
+          setFactory F -- reset factory
           let procDecl := Decl.proc proc' md
           match mkContractWFProc F proc md with
           | some wfDecl => do

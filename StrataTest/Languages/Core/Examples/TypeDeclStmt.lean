@@ -197,11 +197,7 @@ procedure P2 () {
 };
 #end
 
--- Type mismatch with parameterized statement-level type (must be last — error tests break parsing of subsequent definitions)
-/--
-error: Expression has type T int bool when T bool int expected.
--/
-#guard_msgs in
+-- Type mismatch with parameterized statement-level type.
 def typeDeclStmtError1 :=
 #strata
 program Core;
@@ -213,6 +209,17 @@ procedure P () {
   assert [wrong]: (p1 == p2);
 };
 #end
+
+-- The `T int bool` vs `T bool int` mismatch is now caught by Core's own type
+-- checker (`resolve`) rather than DDM. If Core ever relies on DDM type checking
+-- again, this could instead be caught at DDM parse time.
+/--
+error: ❌ Type checking error.
+Impossible to unify (T int bool) with (T bool int).
+First mismatch: int with bool.
+-/
+#guard_msgs in
+#eval Core.verify typeDeclStmtError1 (options := .quiet)
 
 end Strata
 end

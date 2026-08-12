@@ -47,9 +47,9 @@ procedure bareLoop(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
+  while (int.lt(i, n))
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -61,18 +61,18 @@ procedure bareLoop (n : int)
 {
   var i : int;
   i := 0;
-  if (i < n) {
+  if (int.lt(i, n)) {
     loopElim_arbitrary_iter_facts_loop_0: {
       loopElim_havoc_loop_0: {
         havoc i;
       }
-      assume [loopElimAssume_guard_loop_0]: i < n;
-      i := i + 1;
+      assume [loopElimAssume_guard_loop_0]: int.lt(i, n);
+      i := int.add(i, 1);
     }
     loopElim_havoc_loop_0: {
       havoc i;
     }
-    assume [loopElimAssume_not_guard_loop_0]: !(i < n);
+    assume [loopElimAssume_not_guard_loop_0]: !(int.lt(i, n));
   }
 };
 -/
@@ -91,7 +91,7 @@ procedure bareNondetLoop(n : int)
   i := 0;
   while *
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -108,7 +108,7 @@ procedure bareNondetLoop (n : int)
       loopElim_havoc_loop_0: {
         havoc i;
       }
-      i := i + 1;
+      i := int.add(i, 1);
     }
     loopElim_havoc_loop_0: {
       havoc i;
@@ -128,10 +128,10 @@ procedure invLoop(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
-    invariant 0 <= i
+  while (int.lt(i, n))
+    invariant int.le(0, i)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -148,10 +148,10 @@ procedure measureLoop(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
-    decreases n - i
+  while (int.lt(i, n))
+    decreases int.sub(n, i)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -170,7 +170,7 @@ procedure conflict(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
+  while (int.lt(i, n))
   {
     exit loopElim_havoc_loop_0;
   }

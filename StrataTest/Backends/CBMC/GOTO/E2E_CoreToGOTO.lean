@@ -53,7 +53,7 @@ def E2E_SimpleAssert :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
@@ -70,9 +70,9 @@ def E2E_Precondition :=
 program Core;
 procedure test(x : int)
 spec {
-  requires (x > 0);
+  requires (int.gt(x, 0));
 } {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
@@ -92,9 +92,9 @@ def E2E_Postcondition :=
 program Core;
 procedure test(x : int)
 spec {
-  ensures (x > 0);
+  ensures (int.gt(x, 0));
 } {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
@@ -113,7 +113,7 @@ def E2E_Cover :=
 #strata
 program Core;
 procedure test(x : int) {
-  cover (x > 0);
+  cover (int.gt(x, 0));
 };
 #end
 
@@ -127,9 +127,9 @@ procedure test(x : int) {
 def E2E_BVOps :=
 #strata
 program Core;
-procedure test(x : bv32, y : bv32) {
-  var z : bv32 := x + y;
-  assert (z > bv{32}(0));
+procedure test(x : bv W32, y : bv W32) {
+  var z : bv W32 := bv32.add(x, y);
+  assert (bv32.uGt(z, bv{32}(0)));
 };
 #end
 
@@ -146,13 +146,13 @@ def E2E_FreeSpecs :=
 program Core;
 procedure test(x : int)
 spec {
-  free requires (x > 10);
-  requires (x >= 0);
-  free ensures (x > 5);
-  ensures (x >= 0);
+  free requires (int.gt(x, 10));
+  requires (int.ge(x, 0));
+  free ensures (int.gt(x, 5));
+  ensures (int.ge(x, 0));
 }
 {
-  assert (x >= 0);
+  assert (int.ge(x, 0));
 };
 #end
 
@@ -180,7 +180,7 @@ def E2E_Call :=
 #strata
 program Core;
 procedure callee(x : int, out r : int) {
-  r := x + 1;
+  r := int.add(x, 1);
 };
 procedure caller(out y : int) {
   call callee(42, out y);
@@ -250,9 +250,9 @@ procedure caller() {
 def E2E_Axiom :=
 #strata
 program Core;
-axiom [positive_fact]: (42 > 0);
+axiom [positive_fact]: (int.gt(42, 0));
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
@@ -314,12 +314,12 @@ program Core;
 function helper(x : int) : int;
 procedure caller(x : int) {
   var b : int;
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     b := helper(x);
   } else {
     b := 0;
   }
-  assert (b >= 0);
+  assert (int.ge(b, 0));
 };
 #end
 
@@ -339,8 +339,8 @@ def E2E_FuncDecl :=
 #strata
 program Core;
 procedure test(x : int) {
-  function double(n : int) : int { n + n }
-  assert (double(x) >= 0 || double(x) < 0);
+  function double(n : int) : int { int.add(n, n) }
+  assert (int.ge(double(x), 0) || int.lt(double(x), 0));
 };
 #end
 
@@ -357,7 +357,7 @@ def E2E_SourceLoc :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
@@ -403,7 +403,7 @@ def E2E_PropertySummary :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 

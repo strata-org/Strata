@@ -33,9 +33,9 @@ program Core;
 procedure caller (out r : int, a : int, b : int)
 {
   r := 0;
-  assume [pa]: a == -1;
-  assume [pb]: b == -1;
-  assert [aa]: a > 0;
+  assume [pa]: a == int.neg(1);
+  assume [pb]: b == int.neg(1);
+  assert [aa]: int.gt(a, 0);
 };
 #end
 
@@ -55,9 +55,9 @@ info: program Core;
 procedure caller (a : int, b : int, out r : int)
 {
   r := 0;
-  assume [pa]: a == -1;
-  assume [pb]: b == -1;
-  assert [aa]: a > 0;
+  assume [pa]: a == int.neg(1);
+  assume [pb]: b == int.neg(1);
+  assert [aa]: int.gt(a, 0);
 };
 -/
 #guard_msgs in
@@ -75,9 +75,9 @@ program Core;
 procedure caller (inout r : int, a : int, b : int)
 {
   r := 0;
-  assume [pa]: a == -1;
-  assume [pb]: b == -1;
-  assert [aa]: a > 0;
+  assume [pa]: a == int.neg(1);
+  assume [pb]: b == int.neg(1);
+  assert [aa]: int.gt(a, 0);
 };
 #end
 
@@ -96,9 +96,9 @@ info: program Core;
 procedure caller (inout r : int, a : int, b : int)
 {
   r := 0;
-  assume [pa]: a == -1;
-  assume [pb]: b == -1;
-  assert [aa]: a > 0;
+  assume [pa]: a == int.neg(1);
+  assume [pb]: b == int.neg(1);
+  assert [aa]: int.gt(a, 0);
 };
 -/
 #guard_msgs in
@@ -116,9 +116,9 @@ program Core;
 procedure caller (out r : int, inout s : int, a : int)
 {
   r := s;
-  assume [pa]: a == -1;
+  assume [pa]: a == int.neg(1);
   assume [ps]: s == 5;
-  assert [aa]: a > 0;
+  assert [aa]: int.gt(a, 0);
 };
 #end
 
@@ -137,9 +137,9 @@ info: program Core;
 procedure caller (inout s : int, a : int, out r : int)
 {
   r := s;
-  assume [pa]: a == -1;
+  assume [pa]: a == int.neg(1);
   assume [ps]: s == 5;
-  assert [aa]: a > 0;
+  assert [aa]: int.gt(a, 0);
 };
 -/
 #guard_msgs in
@@ -156,7 +156,7 @@ def outFirstSpec :=
 program Core;
 procedure caller (out r : int, a : int, b : int)
 spec {
-  requires a > b;
+  requires int.gt(a, b);
   ensures r == a;
 }
 {
@@ -175,7 +175,7 @@ info: program Core;
 
 procedure caller (a : int, b : int, out r : int)
 spec {
-  requires [caller_requires_0]: a > b;
+  requires [caller_requires_0]: int.gt(a, b);
   ensures [caller_ensures_1]: r == a;
   } {
   r := a;
@@ -208,8 +208,8 @@ procedure caller (out r : int, a : int, b : int)
 cfg entry {
   entry: {
     r := a;
-    assume [pa]: a == -1;
-    assert [aa]: a > 0;
+    assume [pa]: a == int.neg(1);
+    assert [aa]: int.gt(a, 0);
     return;
   }
 };
@@ -226,7 +226,7 @@ info: #[]
 -- `assert a > 0` (we format only `cmds`, not the transfer, whose metadata
 -- carries an unstable source offset).
 /--
-info: [r := a;, assume [pa]: a == -1;, assert [aa]: a > 0;]
+info: [r := a;, assume [pa]: a == int.neg(1);, assert [aa]: int.gt(a, 0);]
 -/
 #guard_msgs in
 #eval Std.format (entryCmds outFirstCFG 0)

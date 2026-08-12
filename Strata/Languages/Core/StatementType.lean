@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 import Strata.DL.Imperative.CmdType
@@ -18,7 +19,7 @@ namespace Statement
 
 open Lambda Imperative
 open Std (ToFormat Format format)
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 ---------------------------------------------------------------------
 
 -- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
@@ -35,7 +36,7 @@ Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
 def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : Command) :
-  Except DiagnosticModel (Command × (TEnv Unit)) := do
+  Except Message (Command × (TEnv Unit)) := do
   match c with
   | .cmd c =>
     -- Any errors in `Imperative.Cmd.typeCheck` already include source
@@ -63,24 +64,24 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
-         let lhsinsts ← Lambda.Identifier.instantiateAndSubsts lhs C Env |>.mapError DiagnosticModel.fromFormat
+         let lhsinsts ← Lambda.Identifier.instantiateAndSubsts lhs C Env |>.mapError Message.fromFormat
          match lhsinsts with
          | none => .error <| md.toDiagnosticF f!"Implementation error. \
                              Types of {lhs} should have been known."
          | some (lhs_tys, Env) =>
-           let _ ← Env.freeVarChecks args |>.mapError DiagnosticModel.fromFormat
-           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError DiagnosticModel.fromFormat
+           let _ ← Env.freeVarChecks args |>.mapError Message.fromFormat
+           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError Message.fromFormat
            let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst ret_sig.values
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
-           let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError DiagnosticModel.fromFormat
+           let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError Message.fromFormat
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
-           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError DiagnosticModel.fromFormat
+           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError Message.fromFormat
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
-           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
+           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => Message.fromFormat (format e))
            let Env := Env.updateSubst S
            let newCallArgs := CallArg.replaceInArgs callArgs args'
            let s' := .call pname newCallArgs md
@@ -91,14 +92,14 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
 
 def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss : List Statement) :
-    Except DiagnosticModel
+    Except Message
       (List Statement × TEnv Unit × LContext CoreLParams) :=
   go C Env ss [] []
 where
   go (C : LContext CoreLParams) (Env : TEnv Unit) (ss : List Statement) (acc : List Statement)
     (labels : List String) :
-    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) :=
-    let errorWithSourceLoc := fun (e : DiagnosticModel) md =>
+    Except Message (List Statement × TEnv Unit × LContext CoreLParams) :=
+    let errorWithSourceLoc := fun (e : Message) md =>
       e.withRangeIfUnknown (getFileRange md |>.getD FileRange.unknown)
     match ss with
     | [] => .ok (acc.reverse, Env, C)
@@ -120,8 +121,8 @@ where
         | .ite cond tss ess md => do try
           match cond with
           | .det c =>
-            let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-            let (conda, Env) ← LExpr.resolve C Env c |>.mapError DiagnosticModel.fromFormat
+            let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError Message.fromFormat
+            let (conda, Env) ← LExpr.resolve C Env c |>.mapError Message.fromFormat
             let condty := conda.toLMonoTy
             match condty with
             | .tcons "bool" [] =>
@@ -142,8 +143,8 @@ where
         | .loop guard measure invariant bss md => do try
           let guardResult ← match guard with
             | .det g => do
-              let _ ← Env.freeVarCheck g f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-              let (conda, Env) ← LExpr.resolve C Env g |>.mapError DiagnosticModel.fromFormat
+              let _ ← Env.freeVarCheck g f!"[{s}]" |>.mapError Message.fromFormat
+              let (conda, Env) ← LExpr.resolve C Env g |>.mapError Message.fromFormat
               let condty := conda.toLMonoTy
               if condty != .tcons "bool" [] then
                 throw <| md.toDiagnosticF f!"[{s}]: Loop's guard {g} is not of type `bool`!"
@@ -152,13 +153,13 @@ where
           let (guarda, Env) := guardResult
           let (mt, Env) ← (match measure with
           | .some m => do
-            let _ ← Env.freeVarCheck m f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-            let (ma, Env) ← LExpr.resolve C Env m |>.mapError DiagnosticModel.fromFormat
+            let _ ← Env.freeVarCheck m f!"[{s}]" |>.mapError Message.fromFormat
+            let (ma, Env) ← LExpr.resolve C Env m |>.mapError Message.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
           let (it, Env) ← invariant.foldlM (fun (acc, E) (lbl, i) => do
-            let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
-            let (ia, E') ← LExpr.resolve C E i |>.mapError DiagnosticModel.fromFormat
+            let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError Message.fromFormat
+            let (ia, E') ← LExpr.resolve C E i |>.mapError Message.fromFormat
             if ia.toLMonoTy == .tcons "bool" [] then
               .ok (acc ++ [(lbl, ia)], E')
             else
@@ -198,7 +199,7 @@ where
             .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
-          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
+          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError Message.fromFormat
           let C := C.addFactoryFunction func.toLFunc
           .ok (.funcDecl decl' md, Env, C)
           catch e =>
@@ -217,7 +218,7 @@ where
       go C Env srest (s' :: acc) labels
   goBlock (C : LContext CoreLParams) (Env : TEnv Unit) (bss : Imperative.Block Core.Expression Core.Command) (acc : List Statement)
     (labels : List String) :
-    Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) := do
+    Except Message (List Statement × TEnv Unit × LContext CoreLParams) := do
     let Env := Env.pushEmptyContext
     let (ss', Env, C) ← go C Env bss acc labels
     .ok (ss', Env.popContext, C)
@@ -300,7 +301,7 @@ proven correct: successful type checking here should imply
 statements.
 -/
 def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except DiagnosticModel (List Statement × Expression.TyEnv) := do
+  Except Message (List Statement × Expression.TyEnv) := do
   let (ss', Env, _C) ← typeCheckAux C Env P op ss
   let context := TContext.subst Env.context Env.stateSubstInfo.subst
   let Env := Env.updateContext context

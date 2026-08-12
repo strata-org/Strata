@@ -56,6 +56,7 @@ than the final one, and the IH must apply to each sub-result under the caller's
 namespace Lambda
 
 open LExpr
+open Strata.Util (HMap HMaps)
 
 section
 
@@ -170,8 +171,10 @@ theorem allFvarAnnot_varCloseT_ne [DecidableEq T.IDMeta]
 
 /-- When a variable has a monomorphic, alias-free scheme `∀[]. xty` in the context,
     `inferFVar` returns exactly `xty` (instantiation and alias resolution are no-ops). -/
-private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
+private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    (C : LContext T) (Env : TEnv T.IDMeta)
     (x : T.Identifier) (fty : Option LMonoTy) (ty_res : LMonoTy) (Env' : TEnv T.IDMeta)
+    {xty : LMonoTy}
     (h : inferFVar C Env x fty = .ok (ty_res, Env'))
     (h_ctx : Env.context.types.find? x = some (.forAll [] xty))
     (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
@@ -199,7 +202,7 @@ private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] (C : LContext T)
     `resolveAux`: well-formedness holds, types are non-empty, and aliases
     remain resolved. Context preservation is stated separately at each use
     site. -/
-private structure ResolveAuxWF [DecidableEq T.IDMeta]
+private structure ResolveAuxWF [DecidableEq T.IDMeta] [Hashable T.IDMeta]
   (Env' : TEnv T.IDMeta) where
   envwf : TEnvWF Env'
   ne : Env'.context.types ≠ []
@@ -208,34 +211,39 @@ private structure ResolveAuxWF [DecidableEq T.IDMeta]
 /-- If `ResolveAuxWF Env` holds and `resolveAux` succeeds, then
     `ResolveAuxWF Env'` holds for the output environment. -/
 private theorem ResolveAuxWF.mk_from_resolveAux
-  [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+  [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
     (Env Env' : TEnv T.IDMeta)
     (h_res : resolveAux C Env e = Except.ok (et, Env'))
     (h_wf : ResolveAuxWF Env)
     (h_fwf : FactoryWF C.functions) :
-    ResolveAuxWF Env' ∧ Env'.context = Env.context :=
-  let h_props := resolveAux_properties e et C Env Env' h_res h_wf.ne
+    ResolveAuxWF Env' ∧ Env'.context.Equiv Env.context := by
+  have h_props := resolveAux_properties e et C Env Env' h_res h_wf.ne
     h_wf.envwf.aliasesWF h_fwf h_wf.envwf.substFreshForGen h_wf.envwf.ctxFreshForGen h_wf.envwf.boundVarsFresh
-  ⟨⟨TEnvWF.of_resolveAux e et C Env Env' h_res h_wf.envwf h_wf.ne h_fwf h_props.context,
-    h_props.context ▸ h_wf.ne,
-    h_props.context ▸ h_wf.resolved⟩, h_props.context⟩
+  have h_resolved' : TContext.AliasesResolved Env'.context := by
+    have h_al : Env'.context.aliases = Env.context.aliases := h_props.context.2
+    intro a ha; rw [h_al] at ha ⊢; exact h_wf.resolved a ha
+  exact ⟨⟨TEnvWF.of_resolveAux e et C Env Env' h_res h_wf.envwf h_wf.ne h_fwf h_props.context,
+    h_props.context.symm.types_ne_nil h_wf.ne,
+    h_resolved'⟩, h_props.context⟩
 
 omit [Std.ToFormat T.IDMeta] in
 /-- Transport an alias-free fact through a context-preserving step. -/
 private theorem ResolveAuxWF.aliasFree_preserved
-  [DecidableEq T.IDMeta]
-    {Env' Env : TEnv T.IDMeta} (h_ctx : Env'.context = Env.context)
+  [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    {Env' Env : TEnv T.IDMeta} (h_ctx : Env'.context.Equiv Env.context)
     {xty : LMonoTy} (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
     LMonoTy.aliasFree Env'.context.aliases xty :=
-  (congrArg TContext.aliases h_ctx) ▸ h_af
+  h_ctx.2 ▸ h_af
 
 
 /-- Core lemma: `resolveAux` annotates every free occurrence of a context variable
     `xv` with exactly its context type `xty`. Proved by well-founded induction on
     expression size, mirroring the structure of `resolveAux`. -/
 private theorem resolveAux_allFvarAnnot_aux
-  [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+  [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (C : LContext T) (Env Env' : TEnv T.IDMeta)
     (e : LExpr T.mono) (et : LExprT T.mono)
     (xv : T.Identifier) (xty : LMonoTy)
@@ -290,8 +298,8 @@ private theorem resolveAux_allFvarAnnot_aux
       h_ih1 h_ih2 xv xty h_ctx h_af
     subst h_et
     simp only [LExprT.allFvarAnnot]
-    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := h_ctx1 ▸ h_ctx
-    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1 ▸ h_af
+    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := (h_ctx1.find? xv).trans h_ctx
+    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1.2 ▸ h_af
     exact ⟨h_ih1 xv xty h_ctx h_af, h_ih2 xv xty h_ctx1' h_af1⟩
   case h_abs =>
     intro m name bty body et C Env Env' xvb xtyb Env1 et_body Env2
@@ -302,7 +310,7 @@ private theorem resolveAux_allFvarAnnot_aux
     have h_ne_xv : xv ≠ xvb := by
       intro heq; subst heq
       have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xtyb Env1 h_tbv
-      have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+      have h_none := HMaps.find?_of_all_none Env.context.types xv h_fresh
       rw [h_ctx] at h_none; exact absurd h_none (by simp)
     have h_ctx1 := typeBoundVar_preserves_find C Env bty xvb xtyb Env1 h_tbv xv (.forAll [] xty) h_ne_xv h_ctx
     have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_aliases_eq ▸ h_af
@@ -317,13 +325,12 @@ private theorem resolveAux_allFvarAnnot_aux
     have h_ne_xv : xv ≠ xvb := by
       intro heq; subst heq
       have h_fresh := typeBoundVar_xv_fresh_in_context C Env bty xv xtyb Env1 h_tbv
-      have h_none := Maps.find?_of_all_none Env.context.types xv h_fresh
+      have h_none := HMaps.find?_of_all_none Env.context.types xv h_fresh
       rw [h_ctx] at h_none; exact absurd h_none (by simp)
     have h_ctx1 := typeBoundVar_preserves_find C Env bty xvb xtyb Env1 h_tbv xv (.forAll [] xty) h_ne_xv h_ctx
     have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_aliases_eq ▸ h_af
-    have h_ctx2' : Env2.context.types.find? xv = some (.forAll [] xty) := h_ctx2 ▸ h_ctx1
-    have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty :=
-      (congrArg TContext.aliases h_ctx2) ▸ h_af1
+    have h_ctx2' : Env2.context.types.find? xv = some (.forAll [] xty) := (h_ctx2.find? xv).trans h_ctx1
+    have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty := h_ctx2.2 ▸ h_af1
     have h_ih_b := h_ih_body xv xty h_ctx1 h_af1
     have h_ih_t := h_ih_tr xv xty h_ctx2' h_af2
     exact ⟨allFvarAnnot_varCloseT_ne xv xvb xty 0 et_tr h_ih_t,
@@ -334,8 +341,8 @@ private theorem resolveAux_allFvarAnnot_aux
       h_ih1 h_ih2 xv xty h_ctx h_af
     subst h_et
     simp only [LExprT.allFvarAnnot]
-    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := h_ctx1 ▸ h_ctx
-    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1 ▸ h_af
+    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := (h_ctx1.find? xv).trans h_ctx
+    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1.2 ▸ h_af
     exact ⟨h_ih1 xv xty h_ctx h_af, h_ih2 xv xty h_ctx1' h_af1⟩
   case h_ite =>
     intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
@@ -343,15 +350,16 @@ private theorem resolveAux_allFvarAnnot_aux
       h_envwf3 h_ctx3 h_ihc h_iht h_ihe xv xty h_ctx h_af
     subst h_et
     simp only [LExprT.allFvarAnnot]
-    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := h_ctx1 ▸ h_ctx
-    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1 ▸ h_af
-    have h_ctx2' : Env2.context.types.find? xv = some (.forAll [] xty) := h_ctx2 ▸ h_ctx
-    have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty := h_ctx2 ▸ h_af
+    have h_ctx1' : Env1.context.types.find? xv = some (.forAll [] xty) := (h_ctx1.find? xv).trans h_ctx
+    have h_af1 : LMonoTy.aliasFree Env1.context.aliases xty := h_ctx1.2 ▸ h_af
+    have h_ctx2' : Env2.context.types.find? xv = some (.forAll [] xty) := (h_ctx2.find? xv).trans h_ctx
+    have h_af2 : LMonoTy.aliasFree Env2.context.aliases xty := h_ctx2.2 ▸ h_af
     exact ⟨h_ihc xv xty h_ctx h_af, h_iht xv xty h_ctx1' h_af1, h_ihe xv xty h_ctx2' h_af2⟩
 
 /-- `resolveAux` annotates every free occurrence of a context variable with its
     context type. Public interface to `resolveAux_allFvarAnnot_aux`. -/
-theorem resolveAux_allFvarAnnot [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+theorem resolveAux_allFvarAnnot [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
   (C : LContext T) (Env Env' : TEnv T.IDMeta)
     (e : LExpr T.mono) (et : LExprT T.mono)
     (xv : T.Identifier) (xty : LMonoTy)
@@ -451,6 +459,16 @@ private theorem varCloseT_unresolved_HasTypeA_gen [DecidableEq T.IDMeta] (k : Na
       exact HasTypeA.eq (ih1 _ _ hk _ h1 h_annot.1) (ih2 _ _ hk _ h2 h_annot.2)
 
 omit [Std.ToFormat T.IDMeta] in
+/-- `varCloseT` preserves `toLMonoTy`: closing a free variable only changes fvars
+    to bvars without affecting the root metadata (representation-independent). -/
+theorem varCloseT_toLMonoTy [DecidableEq T.IDMeta] (k : Nat) (x : T.Identifier) (et : LExprT T.mono) :
+    (LExpr.varCloseT k x et).toLMonoTy = et.toLMonoTy := by
+  match et with
+  | .const _ _ | .op _ _ _ | .bvar _ _ | .abs _ _ _ _ | .app _ _ _
+  | .ite _ _ _ _ | .eq _ _ _ | .quant _ _ _ _ _ _ => rfl
+  | .fvar _ y _ => simp only [LExpr.varCloseT]; split <;> rfl
+
+omit [Std.ToFormat T.IDMeta] in
 /-- Closing `xv` at depth `k` preserves typing with `toLMonoTy` as the result type,
     extending the bound-variable context by `[t]`. -/
 theorem varCloseT_unresolved_HasTypeA [DecidableEq T.IDMeta] (k : Nat) (Δ : List LMonoTy) (hk : Δ.length = k)
@@ -474,31 +492,39 @@ theorem varCloseT_unresolved_HasTypeA_nil [DecidableEq T.IDMeta] (xv : T.Identif
 omit [Std.ToFormat T.IDMeta] in
 /-- The context initialization in `resolve` (pushing an empty scope if types is
     empty) preserves `TEnvWF`. -/
-theorem TEnvWF_resolve_init [DecidableEq T.IDMeta]
+theorem TEnvWF_resolve_init [DecidableEq T.IDMeta] [Hashable T.IDMeta]
   (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
     TEnvWF (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) := by
-  cases h_emp : Env.context.types.isEmpty with
-  | false => simp; exact h_envwf
-  | true =>
-    simp [TEnv.updateContext]
+  split
+  · have h_ty_none : ∀ (y : Identifier T.IDMeta) (ty : LTy),
+        HMaps.find? ([HMap.empty] : HMaps (Identifier T.IDMeta) LTy) y ≠ some ty := by
+      intro y ty hf
+      simp only [HMaps.find?, HMap.find?_empty] at hf
+      exact absurd hf (by simp)
+    have h_ktv_empty : TContext.knownTypeVars
+        (⟨[HMap.empty], Env.context.aliases⟩ : TContext T.IDMeta) = [] := by
+      simp only [TContext.knownTypeVars, HMaps.values, HMap.values_empty,
+        List.flatMap_nil, List.append_nil]
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · exact h_envwf.aliasesWF
     · exact h_envwf.substFreshForGen
     · intro v hv n hn
-      change v ∈ TContext.types.knownTypeVars [[]] at hv
-      simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+      rw [show (Env.updateContext { Env.context with types := [.empty] }).context
+        = (⟨[HMap.empty], Env.context.aliases⟩ : TContext T.IDMeta) from rfl,
+        h_ktv_empty] at hv
+      exact absurd hv (List.not_mem_nil)
     · intro y ty hf
-      change Maps.find? [[]] y = some ty at hf
-      simp [Maps.find?, Map.find?] at hf
+      exact absurd hf (h_ty_none y ty)
     · intro y ty hf
-      change Maps.find? [[]] y = some ty at hf
-      simp [Maps.find?, Map.find?] at hf
+      exact absurd hf (h_ty_none y ty)
+  · exact h_envwf
 
 /-- `TEnvWF` is preserved through `resolveAux`: the output environment is
     well-formed whenever the input is. -/
-theorem resolveAux_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+theorem resolveAux_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
     (Env Env' : TEnv T.IDMeta)
     (h_res : resolveAux C Env e = .ok (et, Env'))
@@ -512,7 +538,8 @@ theorem resolveAux_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
 
 /-- `TEnvWF` is preserved through `resolve`: the output environment is
     well-formed whenever the input is. -/
-theorem resolve_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+theorem resolve_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
     (Env Env' : TEnv T.IDMeta)
     (h : e.resolve C Env = .ok (e_typed, Env'))
@@ -522,7 +549,7 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h
@@ -543,7 +570,8 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
 /-- Core soundness lemma: for any substitution `S` absorbing the output substitution,
     the resolved and substituted expression satisfies `HasTypeA`. Proved by
     well-founded induction on expression size. -/
-private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
     (Env Env' : TEnv T.IDMeta)
     (h_res : resolveAux C Env e = Except.ok (et, Env'))
@@ -611,18 +639,19 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       Subst.absorbs_trans _ _ _ h_abs_rem_e2 h_abs_S_rem
     have h_abs_e1 : S.absorbs Env1.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ h_abs_rem_e1 h_abs_S_rem
-    have h_resolved1 : TContext.AliasesResolved Env1.context := h_ctx1 ▸ h_resolved
+    have h_resolved1 : TContext.AliasesResolved Env1.context := by
+      intro a h_mem; rw [h_ctx1.2] at h_mem ⊢; exact h_resolved a h_mem
     have h_subst_e1t : LMonoTy.subst S (LMonoTy.subst substInfo.subst e1t.toLMonoTy) =
         LMonoTy.subst S e1t.toLMonoTy := by
       rw [← LMonoTy.subst_remove_not_fv substInfo.subst fresh_name
             e1t.toLMonoTy h_e1t_no_fresh]
-      exact LMonoTy.subst_absorbs S (Maps.remove substInfo.subst fresh_name)
+      exact LMonoTy.subst_absorbs S (HMaps.remove substInfo.subst fresh_name)
         e1t.toLMonoTy h_abs_S_rem
     have h_subst_e2t : LMonoTy.subst S (LMonoTy.subst substInfo.subst e2t.toLMonoTy) =
         LMonoTy.subst S e2t.toLMonoTy := by
       rw [← LMonoTy.subst_remove_not_fv substInfo.subst fresh_name
             e2t.toLMonoTy h_e2t_no_fresh]
-      exact LMonoTy.subst_absorbs S (Maps.remove substInfo.subst fresh_name)
+      exact LMonoTy.subst_absorbs S (HMaps.remove substInfo.subst fresh_name)
         e2t.toLMonoTy h_abs_S_rem
     have h_eq_S : LMonoTy.subst S e1t.toLMonoTy =
         LMonoTy.tcons "arrow"
@@ -698,10 +727,11 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       h_res h_tbv h_res_body h_res_tr h_unify h_et h_env' h_abs32 h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
       h_envwf2 h_ctx2 h_ih_body h_ih_tr h_resolved S h_absorbs
     subst h_et h_env'
-    have h_ne2 : Env2.context.types ≠ [] := h_ctx2 ▸ h_ne1
+    have h_ne2 : Env2.context.types ≠ [] := h_ctx2.symm.types_ne_nil h_ne1
     have h_resolved1 : TContext.AliasesResolved Env1.context := by
       intro a h_mem; rw [h_aliases_eq] at h_mem ⊢; exact h_resolved a h_mem
-    have h_resolved2 : TContext.AliasesResolved Env2.context := h_ctx2 ▸ h_resolved1
+    have h_resolved2 : TContext.AliasesResolved Env2.context := by
+      intro a h_mem; rw [h_ctx2.2] at h_mem ⊢; exact h_resolved1 a h_mem
     have h_abs_sub : S.absorbs substInfo.subst := by
       simp [TEnv.eraseFromContext, TEnv.updateContext, TEnv.updateSubst] at h_absorbs
       exact h_absorbs
@@ -732,10 +762,9 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     · have h_ctx_xv : Env1.context.types.find? xv = some (.forAll [] xty) :=
         typeBoundVar_adds_to_context C Env bty xv xty Env1 h_tbv
       have h_ctx_xv2 : Env2.context.types.find? xv = some (.forAll [] xty) :=
-        h_ctx2 ▸ h_ctx_xv
+        (h_ctx2.find? xv).trans h_ctx_xv
       have h_xty_af2 : LMonoTy.aliasFree Env2.context.aliases xty := by
-        rw [show Env2.context.aliases = Env1.context.aliases from by rw [h_ctx2]]
-        rw [h_aliases_eq]
+        rw [h_ctx2.2, h_aliases_eq]
         exact typeBoundVar_xty_aliasFree C Env bty xv xty Env1 h_tbv h_resolved
       have h_annot_tr_raw : LExprT.allFvarAnnot xv xty et_tr :=
         resolveAux_allFvarAnnot C Env2 Env3
@@ -775,7 +804,8 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       h_envwf1 h_ctx1 h_envwf2 h_ctx2 h_ih1 h_ih2 h_resolved S h_absorbs
     subst h_et
     rw [h_subeq] at h_absorbs
-    have h_resolved1 : TContext.AliasesResolved Env1.context := h_ctx1 ▸ h_resolved
+    have h_resolved1 : TContext.AliasesResolved Env1.context := by
+      intro a h_mem; rw [h_ctx1.2] at h_mem ⊢; exact h_resolved a h_mem
     have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify
     have h_abs_e2 : S.absorbs Env2.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ h_abs_unify h_absorbs
@@ -799,8 +829,10 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       h_envwf1 h_ctx1 h_envwf2 h_ctx2 h_envwf3 h_ctx3 h_ihc h_iht h_ihe h_resolved S h_absorbs
     subst h_et
     rw [h_subeq] at h_absorbs
-    have h_resolved1 : TContext.AliasesResolved Env1.context := h_ctx1 ▸ h_resolved
-    have h_resolved2 : TContext.AliasesResolved Env2.context := h_ctx2 ▸ h_resolved
+    have h_resolved1 : TContext.AliasesResolved Env1.context := by
+      intro a h_mem; rw [h_ctx1.2] at h_mem ⊢; exact h_resolved a h_mem
+    have h_resolved2 : TContext.AliasesResolved Env2.context := by
+      intro a h_mem; rw [h_ctx2.2] at h_mem ⊢; exact h_resolved a h_mem
     have h_abs_unify := Constraints.unify_absorbs _ _ _ h_unify
     have h_abs_el : S.absorbs Env3.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ h_abs_unify h_absorbs
@@ -840,7 +872,8 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [HasGen T.IDMeta]
 
 /-- When `resolveAux` succeeds, applying the final substitution and erasing metadata
     produces a well-typed and well-annotated expression according to `HasTypeA`. -/
-theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (C : LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono)
     (et : LExprT T.mono) (Env' : TEnv T.IDMeta)
     (h : resolveAux C Env e = Except.ok (et, Env'))
@@ -859,7 +892,8 @@ theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     this does not require `WellScoped`, `allKeysFresh`, or `checkContextTypesClosed`
     — only `AliasesResolved`. The trade-off is that it proves annotation-consistency
     (`HasTypeA`) rather than full polymorphic typing (`HasType`). -/
-theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+theorem resolve_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
     (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
     (Env : TEnv T.IDMeta) (Env' : TEnv T.IDMeta)
     (h : e.resolve C Env = Except.ok (e_typed, Env'))
@@ -879,7 +913,7 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     subst h_et h_env
     have h_envwf0 := TEnvWF_resolve_init Env h_envwf
     have h_ne0 : (if Env.context.types.isEmpty = true then
-        Env.updateContext { types := [[]], aliases := Env.context.aliases }
+        Env.updateContext { Env.context with types := [.empty] }
       else Env).context.types ≠ [] := by
       split
       · exact List.cons_ne_nil _ _
@@ -888,11 +922,12 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
         simp_all
         contradiction
     have h_resolved0 : (if Env.context.types.isEmpty = true then
-        Env.updateContext { types := [[]], aliases := Env.context.aliases }
+        Env.updateContext { Env.context with types := [.empty] }
       else Env).context.AliasesResolved := by
       split
-      · simp [TEnv.updateContext, TEnv.context, TContext.AliasesResolved] at h_resolved ⊢
-        exact h_resolved
+      · intro a h_mem
+        simp only [TEnv.updateContext, TEnv.context] at h_mem ⊢
+        exact h_resolved a h_mem
       · exact h_resolved
     exact resolveAux_HasTypeA C _ e val.fst val.snd h_res h_envwf0 h_ne0 h_fwf h_resolved0
 

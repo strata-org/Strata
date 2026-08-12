@@ -1295,7 +1295,7 @@ Interpret an SMT query by universally quantifying assumptions and returning the 
 @[simp]
 noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (conc : Term) : Option Prop := do
   -- Datatypes not supported yet
-  if !ctx.typeFactory.isEmpty || !ctx.seenDatatypes.isEmpty || !ctx.datatypeFuns.isEmpty then none
+  if !ctx.datatypes.factory.isEmpty || !ctx.seenDatatypes.isEmpty || !ctx.datatypeFuns.isEmpty then none
   let stmt := assums.foldr (.app .implies [·, ·] (.prim .bool)) conc
   let t := ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool)) stmt
   let uss := ctx.sorts.toList.reverse

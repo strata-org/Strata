@@ -142,8 +142,8 @@ class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
   assert : String → P.Expr → MetaData P → CmdT
 
 instance : HasPassiveCmds P (Cmd P) where
-  assume l e (md := MetaData.empty):= .assume l e md
-  assert l e (md := MetaData.empty):= .assert l e md
+  assume l e md := .assume l e md
+  assert l e md := .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → MetaData P → CmdT

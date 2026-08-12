@@ -35,7 +35,7 @@ structure ElimHoleState where
 private abbrev ElimHoleM := StateM ElimHoleState
 
 /-- Generate a fresh uninterpreted procedure for a typed hole and return a call to it. -/
-private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
+private def mkHoleCall (source : FileRange) (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   let s ← get
   let n := s.counter
   modify fun s => { s with counter := n + 1 }
@@ -63,7 +63,7 @@ private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
   modify fun s => { s with currentInputs := proc.inputs }
-  mapProcedureBodiesM (mapStmtExprM elimHoleNode) proc
+  mapProcedureM (mapStmtExprM elimHoleNode) proc
 
 inductive ElimHoleStats where
   /-- Number of deterministic holes replaced with calls to uninterpreted functions. -/
@@ -81,10 +81,10 @@ Assumes `inferHoleTypes` has already annotated holes with types.
 -/
 def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
   let initState : ElimHoleState := {}
-  let (procs, finalState) := (program.staticProcedures.mapM elimProcedure).run initState
+  let (program, finalState) := (mapProgramProceduresM elimProcedure program).run initState
   let stats := ({} : Statistics)
     |>.increment s!"{ElimHoleStats.holesEliminated}" finalState.counter
-  ({ program with staticProcedures := finalState.generatedFunctions ++ procs }, stats)
+  ({ program with staticProcedures := finalState.generatedFunctions ++ program.staticProcedures }, stats)
 
 end -- public section
 

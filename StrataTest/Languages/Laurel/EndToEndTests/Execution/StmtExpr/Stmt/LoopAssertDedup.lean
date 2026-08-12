@@ -19,7 +19,8 @@ the loop in `runsItThrice` calls on each of the three iterations.
   message). Carrying those failures back out of each call exercises the callee →
   caller `assertFailures` propagation in `Command.runCall`; collapsing the
   identical diagnostics exercises the exact-duplicate deduplication in
-  `runLaurelInterpretCore`. Without the dedup the interpret path would surface
+  `Core.Program.interpretEntries`, which the `laurelInterpret` CLI command shares,
+  so this pins the dedup for both. Without it the interpret path would surface
   three diagnostics at one range and fail `checkAgainstAnnotations`.
 * The **verifier** checks `alwaysFails` once (the `assert false` is top-level and
   always-false-and-reachable, so it is worded `does not hold`, not

@@ -4,8 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
+import all Strata.DL.Lambda.LExprWFProps
 
 public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.FactoryProps
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -168,7 +171,7 @@ instance [ToFormat T.TypeType]: ToFormat (Except Format (LExpr T)) where
               | .ok e => format e
               | .error err => err
 
-instance [ToFormat T.TypeType]: ToFormat (Except Strata.DiagnosticModel (LExpr T)) where
+instance [ToFormat T.TypeType]: ToFormat (Except Strata.Message (LExpr T)) where
   format x := match x with
               | .ok e => format e
               | .error err => f!"{err.message}"

@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Util.Relations
 import all Strata.DL.Imperative.CmdSemantics
 
@@ -66,6 +67,14 @@ It is proven that both specifications imply `AssertValid` of the input program:
   that overapproximation preserves `Hoare.Triple`, which is equivalent to
   `AssertValid` by the bidirectional theorems `hoareTriple_implies_assertValid`
   and `assertValid_implies_hoareTriple`.
+
+## Key shared definitions for unstructured Imperative
+
+- `Lang.cfg` — the unstructured CFG `Lang P`, whose steps are `StepDetCFGStar`.
+- `EnvStoreAgree` — an environment relation: store agreement on source-defined
+  names, matching failure flags, preserved factory.
+- `BlockInitEnvWF` — block-level initial-environment well-formedness bundling a
+  well-formed evaluator with freshness preconditions on a generated-name kind.
 -/
 
 public section
@@ -385,6 +394,74 @@ further fixes `R = (· = ·)`. -/
   OverapproximatesWhen L₁ L₂ T (fun _ => True) params₁ params₂
 
 
+/-! ## Aggressive overapproximation up to a mapping relation
+
+`OverapproximatesAggressivelyUptoWhen Rin Rout` is the common generalization of
+`OverapproximatesUptoWhen` (which carries an input/output relation split but
+requires the target to reproduce every source terminal exactly) and the
+equality-output aggressive relation `OverapproximatesAggressivelyWhen` defined
+below (which permits the target to assert-fail spuriously but fixes
+source = target initial env and equality of final envs).
+
+Carrying both lets it specify a transform that simultaneously *prunes paths* and
+*renames/generates variables*: pruning forces the aggressive `CanFail ∨ …`
+disjunction (a source terminal may have no target counterpart, e.g. when an
+inserted `assume` blocks the path), while surviving generated names force the
+up-to output relation `Rout` (the target's final env agrees with the source's
+only modulo those names).  A transform that only prunes — its fresh names never
+reaching the final env — instantiates this at `Rout = (· = ·)`. -/
+
+/-- Aggressive overapproximation up to an **input** relation `Rin` between the
+    two initial environments and an **output** relation `Rout` between the final
+    environments, under a precondition `pre`.
+
+    For every transformed pair `T st = some st'`, source initial env `ρ₀`
+    (well-formed) and `Rin`-related target initial env `ρ₀'`:
+    1. for every terminal (resp. exiting) env `ρ'` reachable from `st` in `L₁`,
+       *either* the target `CanFail`s, *or* — when `ρ'` is failure-free — some
+       target env `ρ''` with `Rout ρ' ρ''` is reachable from `st'` in `L₂`;
+    2. failure is preserved (`ρ₀`→`ρ₀'`);
+    3. the target initial env `ρ₀'` is well-formed.
+
+    Specializing `Rin = Rout = (· = ·)` recovers `OverapproximatesAggressivelyWhen`,
+    which is *defined* as that specialization below. -/
+@[expose] public def OverapproximatesAggressivelyUptoWhen
+    (Rin Rout : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    ∀ (ρ₀ ρ₀' : Env P),
+      Rin ρ₀ ρ₀' →
+      L₁.initEnvWF params₁ st ρ₀ →
+      -- Terminal case: CanFail, or a Rout-related target terminal.
+      (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        CanFail L₂ st' ρ₀' ∨
+        (ρ'.hasFailure = false →
+          ∃ ρ'', Rout ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.terminalCfg ρ'')))
+      ∧
+      -- Exiting case.
+      (∀ lbl ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        CanFail L₂ st' ρ₀' ∨
+        (ρ'.hasFailure = false →
+          ∃ ρ'', Rout ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.exitingCfg lbl ρ'')))
+      ∧
+      -- Fail preservation (source ρ₀ → target ρ₀').
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀')
+      ∧
+      -- Target-side WF.
+      L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Aggressive overapproximation up to a single mapping relation `R`, no
+    precondition: the diagonal `Rin = Rout = R` specialization. -/
+@[expose] public def OverapproximatesAggressivelyUpto
+    (R : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesAggressivelyUptoWhen R R L₁ L₂ T (fun _ => True) params₁ params₂
+
 /-! ## Aggressive overapproximation
 
 `OverapproximatesAggressively` relaxes `Overapproximates`: the target may
@@ -392,36 +469,15 @@ terminate with `hasFailure = true` instead of matching the source's
 terminal/exiting env exactly.  -/
 
 /-- Aggressive overapproximation under a precondition `pre`: the target program
-    can assert-fail spuriously.
-
-    TODO: generalize this to OverapproximatesAggressivelyUptoWhen if necessary.
--/
+    can assert-fail spuriously.  This is the diagonal `Rin = Rout = (· = ·)`
+    specialization of `OverapproximatesAggressivelyUptoWhen` — the target shares
+    the source's initial env and reproduces its final env exactly (modulo the
+    trivial relation), while still permitting spurious assert failures. -/
 @[expose] public def OverapproximatesAggressivelyWhen (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
-  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
-    T st = some st' →
-    pre st →
-    ∀ (ρ₀ : Env P),
-      L₁.initEnvWF params₁ st ρ₀ →
-      -- Terminal case
-      (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
-        CanFail L₂ st' ρ₀ ∨
-        (ρ'.hasFailure = false →
-          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ')))
-      ∧
-      -- Exiting case
-      (∀ lbl ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
-        CanFail L₂ st' ρ₀ ∨
-        (ρ'.hasFailure = false →
-          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ')))
-      ∧
-      -- Fail preservation, but does not exactly track the counterexample.
-      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
-      ∧
-      -- Store WF preservation on the target side, with the target's parameters.
-      L₂.initEnvWF params₂ st' ρ₀
+  OverapproximatesAggressivelyUptoWhen (· = ·) (· = ·) L₁ L₂ T pre params₁ params₂
 
 /-- Aggressive overapproximation: `OverapproximatesAggressivelyWhen` with no
     precondition. -/
@@ -490,6 +546,62 @@ abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
   getEnv := Config.getEnv
   InitEnvWFParamsTy := Unit
   initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
+
+/-- The unstructured CFG language: steps are `StepDetCFGStar` over a fixed
+factory `f₀`.
+
+`initEnvWF` is `fun _ _ _ => True`: this is correct, not a stub. The language is
+only ever the *target* of an overapproximation, and `OverapproximatesUptoWhen`
+reads the target's `initEnvWF` as the well-formedness it must re-establish so the
+guarantee can be threaded into a *further* transform. Nothing transforms out of
+the CFG language, so there is no downstream obligation to carry and `True` is
+exactly right.
+
+`isAtAssert` is `fun _ _ => False`: this is a placeholder, not a faithful
+predicate — a CFG block can carry `assert` commands, so a real `isAtAssert` would
+detect a config sitting at one. It is left trivial because the current
+overapproximation results never consume the target's `isAtAssert` (their
+guarantees are stated over terminal/exiting reachability, with assertion tracking
+carried on the structured source side). A faithful CFG-level `isAtAssert`, needed
+for direct assert-level reasoning about this language, is future work. -/
+abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr]
+    (extendFactory : ExtendFactory P) (f₀ : P.Factory) : Lang P where
+  StmtT := CFG String (DetBlock String (Cmd P) P)
+  CfgT := (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
+  star := fun c d => StepDetCFGStar extendFactory f₀ c.1 c.2 d.2
+  stmtCfg := fun cfg ρ => (cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
+  terminalCfg := fun ρ => (⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
+  exitingCfg := fun lbl ρ => (⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
+  isAtAssert := fun _ _ => False
+  getEnv := fun c => { store := c.2.getStore, factory := f₀, hasFailure := c.2.getFailure }
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ _ => True
+
+/-- The output relation shared by the structured-pass overapproximation
+instances: the target environment's store agrees with the source's on every
+source-defined name, the failure flags match, and the factory is preserved.
+`nondetElim`, `hoistLoopPrefixInits`/`stmtsToCFG`, and the whole pipeline all
+overapproximate up to this same relation. -/
+@[expose] def EnvStoreAgree {P : PureExpr} (ρ₀ ρ₀' : Env P) : Prop :=
+  StoreAgreement ρ₀.store ρ₀'.store
+  ∧ ρ₀.hasFailure = ρ₀'.hasFailure
+  ∧ ρ₀'.factory = ρ₀.factory
+
+/-- Block-level initial-environment well-formedness for the imperative-block
+language: a well-formed evaluator, plus the freshness preconditions the
+structured passes rely on — every variable a block `init`s starts undefined,
+and no `Q`-kind (generated) name is defined in the initial store. `Q` is the
+kind of label the consuming pass generates, so a single initial store can
+satisfy several passes' obligations at disjoint kinds. -/
+structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
+    (Q : String → Prop) (ss : List (Stmt P (Cmd P))) (ρ : Env P) : Prop
+    extends WellFormedSemanticEval (P := P) ρ.factory where
+  /-- Every variable the block initializes starts undefined in `ρ`. -/
+  defsUndefined : ∀ x ∈ Block.initVars ss, ρ.store x = none
+  /-- No `Q`-kind (generated-shape) name is defined in the initial store. -/
+  definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
 
 end ImperativeStmts
 

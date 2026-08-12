@@ -1,7 +1,7 @@
 program Core;
 
 const N : int;
-axiom [ax_N]: (0 <= N);
+axiom [ax_N]: int.le(0, N);
 
 procedure TwoLoops()
 {
@@ -9,17 +9,17 @@ procedure TwoLoops()
   var j : int;
 
   i := 0;
-  while (i < N)
-  invariant ((0 <= i) && (i <= N))
+  while (int.lt(i, N))
+  invariant (int.le(0, i) && int.le(i, N))
   {
-      i := (i + 1);
+      i := int.add(i, 1);
   }
 
   j := 0;
-  while (j < N)
-  invariant ((0 <= j) && (j <= N))
+  while (int.lt(j, N))
+  invariant (int.le(0, j) && int.le(j, N))
   {
-      j := (j + 1);
+      j := int.add(j, 1);
   }
   
 };

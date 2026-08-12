@@ -32,19 +32,19 @@ private instance : Coe String TestParams.Identifier where
 
 /-- info: ok: (((λ (%0 : $__ty3)) : (arrow $__ty3 $__ty3)) (y : $__ty3)) : $__ty3) -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := [[("y", t[∀x. %x])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("y", t[∀x. %x])]] })
                             esM[((λ %0) y)]
          return (format $ ans.fst)
 
 /-- info: error: Impossible to unify bool with int. -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[bool])]] })
                          esM[if #true then (x == #5) else (x == #6)]
          return format ans
 
 /-- info: ok: (if #true then ((x : int) == #5) else ((x : int) == #6)) -/
 #guard_msgs in
-#eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default (TEnv.default.updateContext { types := [[("x", t[∀x. %x])]] })
+#eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[∀x. %x])]] })
                                esM[if #true then (x == #5) else (x == #6)]
          return (format $ ans.fst)
 
@@ -60,7 +60,7 @@ private instance : Coe String TestParams.Identifier where
 
 /-- info: ok: (λ (bvar:int) ((succ : (arrow int int)) %0)) -/
 #guard_msgs in
-#eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default ( TEnv.default.updateContext { types := [[("succ", t[int → int])]] })
+#eval do let ans ← LExpr.annotate (T:=TestParams) LContext.default ( TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("succ", t[int → int])]] })
                                esM[λ(succ %0)]
          return (format $ ans.fst)
 
@@ -246,25 +246,25 @@ First mismatch: int with bool.
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int])]] })
                              esM[(λ (~Int.Add %0))]
          return (format $ ans.fst.toLMonoTy)
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int])]] })
                              esM[λλ ((~Int.Add %0) %1)]
          return (format $ ans.fst.toLMonoTy)
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int])]] })
                              esM[(λλ ((~Int.Add %1) %0))]
          return (format $ ans.fst.toLMonoTy);
 
 /-- info: ok: int -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int])]] })
                              esM[((~Int.Add x) (~Int.Neg #30))]
          return (format $ ans.fst.toLMonoTy)
 
@@ -272,7 +272,7 @@ First mismatch: int with bool.
 info: ok: ((~Int.Add : (arrow int (arrow int int))) (x : int) ((~Int.Neg : (arrow int int)) #30))
 -/
 #guard_msgs in
-#eval do let ans ← LExpr.annotate (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("x", t[int])]] })
+#eval do let ans ← LExpr.annotate (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int])]] })
                                    esM[((~Int.Add x) (~Int.Neg #30))]
          return (format $ ans.fst)
 
@@ -280,13 +280,13 @@ info: ok: ((~Int.Add : (arrow int (arrow int int))) (x : int) ((~Int.Neg : (arro
 info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bool)) : bool)) : $__ty4)) : (arrow (arrow bool $__ty4) $__ty4))
 -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("fn", t[∀a. %a → %a])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("fn", t[∀a. %a → %a])]] })
                              esM[(λ (%0 (fn #true)))]
          return format ans.fst
 
 /-- info: ok: int -/
 #guard_msgs in
-#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("fn", t[∀a. %a → %a])]] })
+#eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := Strata.Util.HMaps.ofScopes [[("fn", t[∀a. %a → %a])]] })
                              esM[(fn #3)]
          return (format $ ans.fst.toLMonoTy)
 

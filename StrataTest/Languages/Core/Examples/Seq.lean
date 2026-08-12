@@ -76,7 +76,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 0 < Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.lt(0, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: t_0
 Property: assert
@@ -90,7 +90,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 1 < Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.lt(1, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: t_1
 Property: assert
@@ -104,7 +104,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 2 < Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.lt(2, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: t_2
 Property: assert
@@ -226,7 +226,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 0 < Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)))
+true && int.lt(0, Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50))))
 
 Label: append_elem_0
 Property: assert
@@ -240,7 +240,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 4 < Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)))
+true && int.lt(4, Sequence.length(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50))))
 
 Label: append_elem_4
 Property: assert
@@ -254,7 +254,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 1 < Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.lt(1, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: update_length
 Property: assert
@@ -268,7 +268,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 1 < Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99))
+true && int.lt(1, Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
 
 Label: update_same
 Property: assert
@@ -282,7 +282,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 0 < Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99))
+true && int.lt(0, Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
 
 Label: update_other
 Property: assert
@@ -303,7 +303,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 2 <= Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.le(2, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: take_length
 Property: assert
@@ -317,7 +317,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 0 < Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2))
+true && int.lt(0, Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)))
 
 Label: take_elem
 Property: assert
@@ -331,7 +331,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 1 <= Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30))
+true && int.le(1, Sequence.length(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30)))
 
 Label: drop_length
 Property: assert
@@ -345,7 +345,7 @@ Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-true && 0 < Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1))
+true && int.lt(0, Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)))
 
 Label: drop_elem
 Property: assert
@@ -503,7 +503,7 @@ Sequence.length(Sequence.build(Sequence.empty<int>(), 42)) == 1
 Label: assert_build_on_empty_elem_calls_Sequence.select_0
 Property: out-of-bounds access check
 Obligation:
-true && 0 < Sequence.length(Sequence.build(Sequence.empty<int>(), 42))
+true && int.lt(0, Sequence.length(Sequence.build(Sequence.empty<int>(), 42)))
 
 Label: build_on_empty_elem
 Property: assert

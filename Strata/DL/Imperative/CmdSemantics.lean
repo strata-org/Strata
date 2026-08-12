@@ -172,6 +172,53 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → σ v = none
 
+/-- Every `Q`-kind slot is undefined in `σ`.  Predicate-keyed generalisation of
+`isNotDefined`: `isNotDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
+@[expose] def SemanticStore.varsUndefined {P : PureExpr}
+    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
+  ∀ y, Q y → σ y = none
+
+/-- Every `Q`-kind slot is defined in `σ`.  Predicate-keyed generalisation of
+`isDefined`: `isDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
+@[expose] def SemanticStore.varsDefined {P : PureExpr}
+    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
+  ∀ y, Q y → (σ y).isSome = true
+
+/-- Point update: define `ident := b`, leaving every other variable untouched. -/
+@[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr) : SemanticStore P :=
+  fun y => if y = ident then some b else σ y
+
+/-- Asymmetric agreement between two stores: wherever `σ_struct` is defined (per
+`isDefined`), `σ_cfg` assigns the same value at that variable. -/
+@[expose] def StoreAgreement {P : PureExpr}
+    (σ_struct σ_cfg : SemanticStore P) : Prop :=
+  ∀ x, isDefined σ_struct [x] → σ_struct x = σ_cfg x
+
+theorem StoreAgreement.refl {P : PureExpr} (σ : SemanticStore P) :
+    StoreAgreement σ σ :=
+  fun _ _ => rfl
+
+/-- `StoreAgreement` supplies the pointwise-extension premise of
+`WellFormedSemanticEvalMono`: whatever the source store defines, the target
+store defines identically. -/
+theorem storeAgreement_supplies_mono_premise {P : PureExpr}
+    (σ_struct σ_cfg : SemanticStore P) (h_agree : StoreAgreement σ_struct σ_cfg) :
+    ∀ x w, σ_struct x = some w → σ_cfg x = some w := by
+  intro x w hw
+  have h_def : isDefined σ_struct [x] := fun v hv => by
+    rw [List.mem_singleton.mp hv, hw]; rfl
+  rw [← h_agree x h_def]; exact hw
+
+theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P}
+    (h₁ : StoreAgreement σ₁ σ₂) (h₂ : StoreAgreement σ₂ σ₃) :
+    StoreAgreement σ₁ σ₃ := by
+  intro x h_def₁
+  have h12 : σ₁ x = σ₂ x := h₁ x h_def₁
+  have h_def₂ : isDefined σ₂ [x] := fun v hv => by
+    rw [List.mem_singleton.mp hv, ← h12]; exact h_def₁ x (List.mem_singleton.mpr rfl)
+  exact h12.trans (h₂ x h_def₂)
+
 -- Can make this more generic by supplying a predicate function
 -- (SemanticStore P) → P.Ident → Bool
 -- determining whether each variable in the store is valid

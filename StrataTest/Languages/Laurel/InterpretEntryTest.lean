@@ -46,6 +46,11 @@ private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
   let core ← match Core.typeCheck Core.VerifyOptions.quiet core with
     | .ok prog => pure prog
     | .error e => IO.println s!"type error: {e.message}"; return
+  -- Inline bodied functions so concrete evaluation can reduce them, exactly as
+  -- the real command and `TestLaurel`'s interpret helper do. Operators reach
+  -- Core as calls to their built-in wrapper functions (`$add`, …), so without
+  -- this an `assert x + x == 4` never reduces to a bool.
+  let core := Core.Program.inlineBodiedFunctions core
   IO.println s!"entries: {markedEntryNames core}"
   match core.run with
   | .error diag => IO.println s!"setup failed: {diag}"
@@ -223,7 +228,7 @@ procedure takesInput(x: int)
 The `procedure` operator gained a positional `entry` argument (8 → 9 args).
 A post-CR binary must still consume Ion artifacts produced by an older
 grammar, so `parseProcedure` accepts the legacy 8-argument shape and treats
-the missing entry clause as absent. `#strata` always emits the current 9-arg
+the missing entry clause as absent. `#strata` always emits the current 10-arg
 form, so we synthesize the legacy shape by dropping the entry arg from a parsed
 procedure op. -/
 
@@ -246,10 +251,15 @@ private def procedureOp (prog : StrataDDM.Program) : Option StrataDDM.Operation 
   | some (.op procOp) => some procOp
   | _ => none
 
-/-- Drop the positional `entry` argument (index 6) from a 9-arg procedure op,
-    reproducing the legacy 8-argument shape an older producer would emit. -/
+/-- Reproduce the legacy pre-`entry`, pre-exception 8-argument procedure shape
+    from the current 10-argument op by keeping only `name, parameters,
+    returnType, returnParameters, requires, invokeOn, opaqueSpec, body`
+    (indices 0,1,2,3,5,6,8,9 — dropping the `throws` and `entry` slots). An
+    older producer — before the `entry` clause and the exceptional-contract
+    clauses were added — would emit exactly this shape; the transitional shim in
+    the concrete-to-abstract translator upgrades it back to the current form. -/
 private def dropEntryArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  { op with args := op.args.take 6 ++ op.args.extract 7 op.args.size }
+  { op with args := #[0, 1, 2, 3, 5, 6, 8, 9].filterMap (fun i => op.args[i]?) }
 
 -- The legacy 8-arg shape parses without error and yields `isInterpretEntry := false`
 -- (no entry clause present), rather than the old "expects 9 arguments" failure.
@@ -261,6 +271,80 @@ private def dropEntryArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
   let legacy := dropEntryArg op
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
   | .ok proc => IO.println s!"{legacy.args.size}-arg parse ok, isInterpretEntry = {proc.isInterpretEntry}"
+  | .error e => IO.println s!"parse error: {e}"
+
+/-! ### Transitional shim: the pre-exception 9-argument shape still parses
+
+A producer built after the `entry` clause was added but before the
+exceptional contract (`throws` and `throwsOn` cases)
+emits the 9-argument shape (`entry` present, no exception clauses).
+`parseProcedure` upgrades it to the current 10-arg form by splicing in the
+absent exception clauses while keeping `entry` — so, unlike the 8-arg shape
+(which predates `entry`), `isInterpretEntry` stays `true`. This exercises the
+9-arg → 10-arg shim arm, distinct from the 8-arg arm above. -/
+
+/-- Reproduce the pre-exception 9-argument procedure shape (with `entry` but
+    without the exceptional-contract clauses) from the current 10-argument op by
+    keeping only `name, parameters, returnType, returnParameters, requires,
+    invokeOn, entry, opaqueSpec, body` (indices 0,1,2,3,5,6,7,8,9 — dropping the
+    `throws` slot). -/
+private def drop9ArgShape (op : StrataDDM.Operation) : StrataDDM.Operation :=
+  { op with args := #[0, 1, 2, 3, 5, 6, 7, 8, 9].filterMap (fun i => op.args[i]?) }
+
+-- The legacy 9-arg shape parses without error and preserves `isInterpretEntry := true`,
+-- since the entry clause is kept (only the exceptional-contract clauses are absent).
+/-- info: 9-arg parse ok, isInterpretEntry = true
+-/
+#guard_msgs in
+#eval do
+  let some op := procedureOp entryProc | IO.println "no procedure op"
+  let legacy := drop9ArgShape op
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
+  | .ok proc => IO.println s!"{legacy.args.size}-arg parse ok, isInterpretEntry = {proc.isInterpretEntry}"
+  | .error e => IO.println s!"parse error: {e}"
+
+/-! ### Transitional shim: the 2-argument `opaqueSpec` shape still parses
+
+`opaqueSpec` carries the exceptional behavior cases alongside the normal-path
+clauses, so it takes three arguments (`ensures`, `modifies`, `throwsOn`). A
+producer emitting a contract without exceptional cases emits only the first two,
+and `parseProcedure` reads that shape as having no cases. This is a separate shim
+arm from the procedure-level ones above: the arity that differs is the *nested*
+`opaqueSpec` operation's, not the enclosing `procedure`'s. -/
+
+/-- Reproduce the 2-argument `opaqueSpec` shape by dropping the `throwsOn` slot
+    from the procedure's `opaqueSpec` argument (index 8), leaving
+    `#[ensures, modifies]`. The enclosing `procedure` keeps its current 10-arg
+    form, so this isolates the `opaqueSpec` shim arm. -/
+private def drop2ArgOpaqueSpec (op : StrataDDM.Operation) : StrataDDM.Operation :=
+  match (op.args[8]? : Option StrataDDM.Arg) with
+  | some (.option ann (some (.op os))) =>
+    let os' := { os with args := os.args.take 2 }
+    { op with args := op.args.set! 8 (.option ann (some (.op os'))) }
+  | _ => op
+
+/-- The arity of the `opaqueSpec` operation nested at index 8, or `none` when that
+    argument is not a present `opaqueSpec`. Reported by the test below so the
+    shape being parsed is pinned, rather than assumed. -/
+private def opaqueSpecArity (op : StrataDDM.Operation) : Option Nat :=
+  match (op.args[8]? : Option StrataDDM.Arg) with
+  | some (.option _ (some (.op os))) => some os.args.size
+  | _ => none
+
+-- The 2-arg `opaqueSpec` parses without error and yields no exceptional behavior
+-- cases, rather than failing to match the 3-argument shape. The arities are
+-- printed on both sides so the test cannot pass vacuously: were the rewrite not
+-- to fire, `before` and `after` would both read 3.
+/-- info: opaqueSpec arity before = (some 3), after = (some 2)
+opaqueSpec 2-arg parse ok, throwsOn cases = 0
+-/
+#guard_msgs in
+#eval do
+  let some op := procedureOp entryProc | IO.println "no procedure op"
+  let legacy := drop2ArgOpaqueSpec op
+  IO.println s!"opaqueSpec arity before = {opaqueSpecArity op}, after = {opaqueSpecArity legacy}"
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProcedure (.op legacy)) with
+  | .ok proc => IO.println s!"opaqueSpec 2-arg parse ok, throwsOn cases = {proc.throwsOn.length}"
   | .error e => IO.println s!"parse error: {e}"
 
 end StrataTest.Laurel.InterpretEntry

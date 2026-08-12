@@ -91,19 +91,19 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
     | .Assign targets _ =>
       for ⟨t, _⟩ in targets.attach do
         match t.val with
-        | .Declare param => collectHighTypeNames param.type
+        | .Declare param => param.type.forM collectHighTypeNames
         | .Field _ _ | .Local _ => pure ()
     | .IncrDecr _ _ target =>
       match target.val with
-      | .Declare param => collectHighTypeNames param.type
+      | .Declare param => param.type.forM collectHighTypeNames
       | .Field _ _ | .Local _ => pure ()
     | .CompoundAssign _ target _ =>
       -- `rhs` and any `.Field` object subtree are recursed into by `foldStmtExprM`;
       -- only a `.Declare` target directly introduces a type name here.
       match target.val with
-      | .Declare param => collectHighTypeNames param.type
+      | .Declare param => param.type.forM collectHighTypeNames
       | .Field _ _ | .Local _ => pure ()
-    | .Var (.Declare param) => collectHighTypeNames param.type
+    | .Var (.Declare param) => param.type.forM collectHighTypeNames
     | .Quantifier _ param _ _ => collectHighTypeNames param.type
     | .AsType _ ty | .IsType _ ty => collectHighTypeNames ty
     | .Hole _ ty => ty.forM collectHighTypeNames
@@ -116,7 +116,9 @@ private def collectBodyNames (body : Body) : CollectM Unit := do
   | .Opaque posts impl modifies =>
     posts.forM (collectExprNames ·.condition)
     impl.forM collectExprNames
-    modifies.forM collectExprNames
+    modifies.forM fun g => do
+      g.targets.forM collectExprNames
+      g.guard.forM collectExprNames
   | .Abstract posts => posts.forM (collectExprNames ·.condition)
   | .External => pure ()
 
@@ -127,6 +129,17 @@ private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.preconditions.forM (collectExprNames ·.condition)
   proc.decreases.forM collectExprNames
   proc.invokeOn.forM collectExprNames
+  -- Exceptional contract: the declared type plus every part of every behavior
+  -- case (guard, postconditions, frame), so a prelude name reachable *only* from
+  -- one of them survives the filter. There is no exception prelude to gate in
+  -- here: the `Result` datatype the exceptional channel lowers to is injected
+  -- later, by `EliminateExceptions` itself, and only for programs that use
+  -- exceptions.
+  proc.throwsType.forM collectHighTypeNames
+  proc.throwsOn.forM fun blk => do
+    collectExprNames blk.guard
+    blk.postconditions.forM (collectExprNames ·.condition)
+    blk.modifies.forM collectExprNames
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/
@@ -240,20 +253,19 @@ private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
   runCollect do
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
+    prog.staticFields.forM fun field => do
+      collectHighTypeNames field.type
+      field.initializer.forM collectExprNames
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
 public def filterPrelude (prelude user : Laurel.Program)
     : Except String Laurel.Program := do
-  -- Guard: filterPrelude does not yet track dependencies through static fields
-  -- or constants.  Error early if either program contains them so a silent
-  -- under-filtering cannot occur.
+  -- Dependency collection does not model prelude globals or constants.
   unless prelude.staticFields.isEmpty do
     throw "FilterPrelude: prelude contains static fields, which are not yet supported"
   unless prelude.constants.isEmpty do
     throw "FilterPrelude: prelude contains constants, which are not yet supported"
-  unless user.staticFields.isEmpty do
-    throw "FilterPrelude: user program contains static fields, which are not yet supported"
   unless user.constants.isEmpty do
     throw "FilterPrelude: user program contains constants, which are not yet supported"
   let refs := collectProgramRefs user
