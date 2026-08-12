@@ -1620,6 +1620,7 @@ structure Field where
   isMutable : Bool
   /-- The field's type. -/
   type : HighTypeMd
+  /-- An optional initializer expression evaluated to produce the field's initial value. -/
   initializer : Option StmtExprMd := none
 
 /--
