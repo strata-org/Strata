@@ -18,14 +18,14 @@ def globalCounterPgm : Program :=
 #strata
 program Core;
 
-inline function Add(x : int, y : int) : int { x + y }
+inline function Add(x : int, y : int) : int { int.add(x, y) }
 
 procedure Inc(inout counter : int, a : int, out ret : int)
 spec {
-  requires [counter_ge_zero]: (counter >= 0);
-  requires [a_positive]:      (a > 0);
-  ensures  [new_g_value]:     (counter == old counter + a);
-  ensures  [old_g_property]:  (ret - a == old counter);
+  requires [counter_ge_zero]: int.ge(counter, 0);
+  requires [a_positive]:      int.gt(a, 0);
+  ensures  [new_g_value]:     (counter == int.add(old counter, a));
+  ensures  [old_g_property]:  (int.sub(ret, a) == old counter);
 }
 {
   counter := Add(counter, a);
@@ -34,8 +34,8 @@ spec {
 
 procedure P(inout counter : int, out b : int)
 spec {
-  requires [counter_ge_zero]: (counter >= 0);
-  ensures [return_value_lemma]: (b == old counter + 16);
+  requires [counter_ge_zero]: int.ge(counter, 0);
+  ensures [return_value_lemma]: (b == int.add(old counter, 16));
 }
 {
   call Inc(inout counter, 8, out b);
@@ -73,61 +73,61 @@ VCs:
 Label: new_g_value
 Property: assert
 Assumptions:
-counter_ge_zero: counter@1 >= 0
-a_positive: a@1 > 0
+counter_ge_zero: int.ge(counter@1, 0)
+a_positive: int.gt(a@1, 0)
 Obligation:
 true
 
 Label: old_g_property
 Property: assert
 Assumptions:
-counter_ge_zero: counter@1 >= 0
-a_positive: a@1 > 0
+counter_ge_zero: int.ge(counter@1, 0)
+a_positive: int.gt(a@1, 0)
 Obligation:
-counter@1 + a@1 - a@1 == counter@1
+int.sub(int.add(counter@1, a@1), a@1) == counter@1
 
 Label: callElimAssert_counter_ge_zero_5
 Property: assert
 Assumptions:
-counter_ge_zero: counter@3 >= 0
+counter_ge_zero: int.ge(counter@3, 0)
 Obligation:
-counter@3 >= 0
+int.ge(counter@3, 0)
 
 Label: callElimAssert_a_positive_6
 Property: assert
 Assumptions:
-counter_ge_zero: counter@3 >= 0
+counter_ge_zero: int.ge(counter@3, 0)
 Obligation:
 true
 
 Label: callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
-counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_8: b@2 - 8 == counter@3
+counter_ge_zero: int.ge(counter@3, 0)
+callElimAssume_new_g_value_7: counter@5 == int.add(counter@3, 8)
+callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@3
 Obligation:
-counter@5 >= 0
+int.ge(counter@5, 0)
 
 Label: callElimAssert_a_positive_15
 Property: assert
 Assumptions:
-counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_8: b@2 - 8 == counter@3
+counter_ge_zero: int.ge(counter@3, 0)
+callElimAssume_new_g_value_7: counter@5 == int.add(counter@3, 8)
+callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@3
 Obligation:
 true
 
 Label: return_value_lemma
 Property: assert
 Assumptions:
-counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_8: b@2 - 8 == counter@3
-callElimAssume_new_g_value_16: counter@6 == counter@5 + 8
-callElimAssume_old_g_property_17: b@3 - 8 == counter@5
+counter_ge_zero: int.ge(counter@3, 0)
+callElimAssume_new_g_value_7: counter@5 == int.add(counter@3, 8)
+callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@3
+callElimAssume_new_g_value_16: counter@6 == int.add(counter@5, 8)
+callElimAssume_old_g_property_17: int.sub(b@3, 8) == counter@5
 Obligation:
-b@3 == counter@3 + 16
+b@3 == int.add(counter@3, 16)
 
 Label: assert_0
 Property: assert

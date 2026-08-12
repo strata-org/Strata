@@ -17,9 +17,6 @@ meta import Strata.Languages.Core.Identifiers
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core.Verifier
-meta import all StrataTest.DL.Lambda.PlausibleHelpers
-public meta import Plausible.Arbitrary
-meta import Plausible
 
 meta section
 

@@ -273,4 +273,4 @@ file held.
 | `#strata` elaborator + `SourcedProgram` | `Strata/DDM/Integration/Lean/HashCommands.lean` |
 | `Diagnostic` data type | `Strata/Languages/Core/Verifier.lean` |
 | Laurel test helpers | `StrataTest/Util/TestLaurel.lean` |
-| Examples | `StrataTest/Languages/Laurel/Examples/**/*.lean` |
+| Example tests | `StrataTest/Languages/Laurel/EndToEndTests/**/*.lean` |

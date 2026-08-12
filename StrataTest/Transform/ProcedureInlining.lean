@@ -458,7 +458,7 @@ def TestThreeChain :=
 #strata
 program Core;
 procedure leaf(x : int, out y : int) {
-  y := x + 1;
+  y := int.add(x, 1);
 };
 procedure mid(a : int, out b : int) {
   call leaf(a, out b);

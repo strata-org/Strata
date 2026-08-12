@@ -23,70 +23,6 @@ Because HashMaps do not reduce well in the kernel, this file uses
 
 namespace Lambda
 
-/-! ## Section 1: InterpConsistentEvalReduce
-
-`InterpConsistentEval` (from `LExprDenote.lean`) uses `LMonoTy.subst` which has a
-well-founded recursion guard that prevents definitional reduction. We restate it
-using `LMonoTy.substReduce` (structural recursion, no guard) so that ground-type
-instantiations reduce in the kernel. The conversion theorem bridges the two via
-`subst_eq_substReduce`, `denote_cast_ty`, `denoteArgs_cast_ty`, and `applyArgs_cast_ty`.
--/
-
-private def LFunc.InterpConsistentEvalReduce
-    {T : LExprParams}
-    (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
-    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
-  ∀ (vt : TyVarVal) (fvarVal : FreeVarVal T tcInterp)
-    (md : T.Metadata) (tySubst : Subst)
-    (argExprs : List (LExpr T.mono)) (resultExpr : LExpr T.mono),
-  ceval md argExprs = some resultExpr →
-  let instInputTys := (List.map Prod.snd f.inputs).map (LMonoTy.substReduce tySubst)
-  let instOutputTy := LMonoTy.substReduce tySubst f.output
-  let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
-  let outputSort := LMonoTy.substTyVars vt instOutputTy
-  let fullSort := LSort.mkArrow outputSort inputSorts
-  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
-    (h_result : LExpr.HasTypeA [] resultExpr instOutputTy),
-  LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr instOutputTy h_result =
-    SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
-      (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs instInputTys h_args)
-
-/--
-Equivalence of InterpConsistentEval (for proofs) and InterpConsistentEvalReduce
-(reduces in kernel). This involves messy dependent types and typecasts, but must
-only be done once: now ground types will automatically reduce in proofs
--/
-private theorem InterpConsistentEval_to_Simple
-    {T : LExprParams} [DecidableEq T.IDMeta]
-    (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
-    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
-    (h : LFunc.InterpConsistentEval tcInterp opInterp f ceval)
-    : LFunc.InterpConsistentEvalReduce tcInterp opInterp f ceval := by
-  unfold Lambda.LFunc.InterpConsistentEval at h
-  unfold LFunc.InterpConsistentEvalReduce
-  intros vt fvarVal md tySubst argExprs resultExprs hceval instInputTys
-    instOutputTy inputSorts outputSorts fullSort
-  subst instOutputTy
-  intros h_args
-  have heq:= LMonoTy.subst_eq_substReduce tySubst f.output
-  intros h_result
-  have hty2 : LExpr.HasTypeA [] resultExprs (LMonoTy.subst tySubst f.output) := by rw [heq]; assumption
-  rw[denote_cast_ty (h_eq:=heq.symm) (h₂:=hty2)]
-  have heq2 : instInputTys = List.map (LMonoTy.subst tySubst) (List.map Prod.snd f.inputs) := by
-    subst instInputTys
-    induction (List.map Prod.snd f.inputs)
-    . simp
-    . rw[List.map_cons, List.map_cons]
-      congr 1
-      rw [LMonoTy.subst_eq_substReduce]
-  have hty3 : List.Forall₂ (LExpr.HasTypeA []) argExprs (List.map (LMonoTy.subst tySubst) (List.map Prod.snd f.inputs)) := by
-    rw[←heq2]; assumption
-  rw[denoteArgs_cast_ty (h_eq:=heq2) (h₂:=hty3)]
-  specialize (h vt fvarVal md tySubst argExprs resultExprs hceval hty3 hty2)
-  rw[h]
-  rw[applyArgs_cast_ty (h_args :=heq2.symm) (h_ret:=heq)]
-  grind
-
 private abbrev TP : LExprParams := ⟨Unit, Unit⟩
 private abbrev F : @Factory TP := @IntBoolFactory TP ⟨()⟩ ⟨()⟩
 
@@ -199,11 +135,11 @@ interpret as its Lean counterpart in any consistent interpretation. The proof
 strategy is:
 
 1. Extract `ceval` from `concreteEval` via `native_decide` membership/isSome proofs
-2. Convert `InterpConsistentEval` to `InterpConsistentEvalReduce` (Section 1)
+2. Take the operator's `InterpConsistentEval` from `I.interpConsistent`
 3. Rewrite factory fields (name, inputs, output) using `native_decide` lemmas
 4. Instantiate with concrete boolean constant expressions
-5. Since `substReduce` reduces definitionally on ground types, typing proofs (`.const`) work directly
-6. Use `change` to normalize the goal (substReduce is defeq but not syntactically reduced)
+5. Since `subst` reduces definitionally on ground types, typing proofs (`.const`) work directly
+6. Use `change` to normalize the goal (`subst` is defeq but not syntactically reduced)
 -/
 
 private abbrev boolBinSort : LSort :=
@@ -222,12 +158,9 @@ private theorem bool_and_interp (I : Interp F) :
     I.opInterp "Bool.And" boolBinSort
     = fun (p : Bool) (q : Bool) => Bool.and p q := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_and_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.And" bool_and_mem ceval h_ceval_eq)
-  -- Unfold and simplify factory fields
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.And" bool_and_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_and_input_tys, bool_and_output, bool_and_name] at h_ic
-  -- Now h_ic uses substReduce which reduces definitionally on ground types
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
       = some (.boolConst () (p && q)) := by
@@ -247,15 +180,12 @@ private theorem bool_and_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (p && q))
       h_eval
-  -- substReduce reduces definitionally on ground types. Provide typing proofs.
   have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
   have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (p && q)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
-  -- substReduce reduces definitionally but Lean displays it unreduced.
-  -- Use change to normalize the type in h_eq.
   change (p && q) = I.opInterp "Bool.And" boolBinSort p q at h_eq
   exact h_eq.symm
 
@@ -269,9 +199,8 @@ private theorem bool_implies_interp (I : Interp F) :
     I.opInterp "Bool.Implies" boolBinSort
     = fun (p : Bool) (q : Bool) => (!p || q) := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_implies_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Implies" bool_implies_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Implies" bool_implies_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_implies_input_tys, bool_implies_output, bool_implies_name] at h_ic
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
@@ -311,9 +240,8 @@ private theorem bool_or_interp (I : Interp F) :
     I.opInterp "Bool.Or" boolBinSort
     = fun (p : Bool) (q : Bool) => Bool.or p q := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_or_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Or" bool_or_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Or" bool_or_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_or_input_tys, bool_or_output, bool_or_name] at h_ic
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
@@ -353,9 +281,8 @@ private theorem bool_not_interp (I : Interp F) :
     I.opInterp "Bool.Not" boolUnSort
     = fun (p : Bool) => Bool.not p := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_not_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Not" bool_not_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Not" bool_not_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_not_input_tys, bool_not_output, bool_not_name] at h_ic
   funext p
   have h_eval : ceval () [.boolConst () p]

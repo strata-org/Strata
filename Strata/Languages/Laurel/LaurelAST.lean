@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
@@ -33,7 +34,7 @@ structure Identifier where
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
   /-- Source location for this identifier. -/
-  source : Option FileRange := none
+  source : FileRange := .unknown
   deriving Repr
 
 instance : Inhabited Identifier where
@@ -130,6 +131,50 @@ instance : ToString Operation where
     | .StrConcat => "++"
 
 /--
+Name of the built-in wrapper procedure implementing an `Operation`.
+
+Operators are not a distinct kind of expression: `x + y` is a `StaticCall` to
+the overloaded procedure `$add`, declared in `CoreDefinitionsForLaurel` and
+prepended to every program. The `$` prefix puts these in Laurel's reserved
+namespace so they cannot collide with a user-defined `add`.
+
+Each wrapper is a thin transparent procedure delegating to a type-specific
+external (`intAdd`, `realAdd`, …) that `LaurelToCoreSchemaPass` recognizes and
+lowers to the corresponding Core operator. Overload resolution picks the
+wrapper matching the argument types, which is why the wrappers must share one
+name per operator while the externals they call do not.
+-/
+def Operation.procName : Operation → String
+  | .Eq => "$eq"                | .Neq => "$neq"
+  | .And => "$and"              | .Or => "$or"
+  | .Not => "$not"              | .Implies => "$implies"
+  | .AndThen => "$andThen"      | .OrElse => "$orElse"
+  | .Neg => "$neg"              | .Add => "$add"
+  | .Sub => "$sub"              | .Mul => "$mul"
+  | .Div => "$div"              | .Mod => "$mod"
+  | .DivT => "$divT"            | .ModT => "$modT"
+  | .Lt => "$lt"                | .Leq => "$le"
+  | .Gt => "$gt"                | .Geq => "$ge"
+  | .StrConcat => "$strConcat"
+
+/-- Inverse of `Operation.procName`: recognize a built-in operator wrapper by
+    name. Used by the pretty-printer to print `$add(x, y)` back as `x + y`, so
+    that a parsed program round-trips. -/
+def Operation.ofProcName? : String → Option Operation
+  | "$eq" => some .Eq                | "$neq" => some .Neq
+  | "$and" => some .And              | "$or" => some .Or
+  | "$not" => some .Not              | "$implies" => some .Implies
+  | "$andThen" => some .AndThen      | "$orElse" => some .OrElse
+  | "$neg" => some .Neg              | "$add" => some .Add
+  | "$sub" => some .Sub              | "$mul" => some .Mul
+  | "$div" => some .Div              | "$mod" => some .Mod
+  | "$divT" => some .DivT            | "$modT" => some .ModT
+  | "$lt" => some .Lt                | "$le" => some .Leq
+  | "$gt" => some .Gt                | "$ge" => some .Geq
+  | "$strConcat" => some .StrConcat
+  | _ => none
+
+/--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
 `AstNode` so that error messages and verification conditions can
@@ -139,7 +184,7 @@ structure AstNode (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
   /-- Source location for this AST node. -/
-  source : Option FileRange
+  source : FileRange
   deriving Repr
 
 /--
@@ -268,6 +313,26 @@ structure Procedure : Type where
   /-- Axioms to emit alongside this procedure. Populated by the contract pass from
       `invokeOn` and ensures clauses. -/
   axioms : List (AstNode StmtExpr) := []
+  /-- Optional declared exception type: the single type this procedure may
+      throw, drawn from the front end's own hierarchy (no built-in upper bound).
+      Catch-or-declare *is* enforced against it, by `validateExceptionEscapes`
+      during resolution (only a subtype of this type may escape; a procedure with
+      no `throwsType` may let nothing escape). Not lowered until
+      `EliminateExceptions`, which turns it into the `Err` argument of the
+      procedure's `Result<Val, Err>`. -/
+  throwsType : Option (AstNode HighType) := none
+  /-- The name the `throws (e: T)` clause binds to the thrown value. Scoped over the
+      `throwsOn` blocks' postconditions — not over their guards, which are pre-state
+      conditions evaluated on entry.
+
+      Paired with `throwsType`: the grammar has a single `throws` op, which carries
+      both, so a parsed procedure has either both fields or neither. Code that only
+      needs to know whether a procedure throws should therefore test `throwsType`. -/
+  throwsBinding : Option Identifier := none
+  /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
+      case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
+      its throwing paths beyond the declared `throwsType`. -/
+  throwsOn : List ThrowsOnBlock := []
 
 /--
 A typed parameter for a procedure.
@@ -277,6 +342,25 @@ structure Parameter where
   name : Identifier
   /-- The parameter type. -/
   type : AstNode HighType
+
+/--
+A parameter with an *optional* type annotation, used for local variable
+declarations (`Variable.Declare`).
+
+This mirrors `Parameter` but lets the annotation be omitted: `type` is `some T`
+for an annotated declaration (`var x : T`, `var x : T := e`) and `none` for an
+unannotated one (`var x`, `var x := e`). An unannotated declaration is a
+transient form produced by the parser; the resolution pass recovers a concrete
+type — synthesized from the initializer for `var x := e`, or `Unknown` (with a
+diagnostic) for the annotation-less, initializer-less `var x` — and fills in
+`some T`. Every declaration reaching the post-resolution passes therefore
+carries `some`.
+-/
+structure Parameter? where
+  /-- The parameter name. -/
+  name : Identifier
+  /-- The parameter's optional type annotation. -/
+  type : Option (AstNode HighType)
 
 /--
 A condition with an optional human-readable summary.
@@ -293,6 +377,103 @@ structure Condition where
       asserted at call sites, and a free postcondition is assumed upon return
       from calls but not checked on exit from implementations. -/
   mode : ConditionMode := ConditionMode.Both
+
+/--
+A `catch` clause: a mandatory binding bound to the caught value (typed at
+the least common ancestor of the exception types thrown in the `try` body), an
+optional predicate guard, and a handler body. A `Try` holds an ordered list of
+these; clauses are tried in order, first-match-wins, and an absent predicate is
+a catch-all. Type dispatch is written as a guard, e.g. `catch e when e is T`.
+See the Exceptions section of the Laurel User Guide.
+-/
+structure CatchClause where
+  /-- The identifier bound to the caught value (typed at the least common
+      ancestor of the exception types thrown in the `try` body). -/
+  binding : Identifier
+  /-- Optional guard predicate (checked at `TBool`); `none` is a catch-all. -/
+  predicate : Option (AstNode StmtExpr) := none
+  /-- The handler body, run when this clause matches. -/
+  body : AstNode StmtExpr
+  /-- The binding's resolved type: the least common ancestor of the exception
+      types thrown in the `try` body (computed by `Check.tryCatch`). `Unknown`
+      before resolution. Carried on the node so it survives Phase 1 into Phase 2
+      (the `refToDef` builder) and the `EliminateExceptions` pass, which types
+      the per-`try` `$exc_<i>` local at it. -/
+  bindingType : AstNode HighType := { val := .Unknown, source := .unknown }
+
+/--
+An exceptional *behavior case*: `throwsOn C { ensures … modifies … }`.
+
+`guard` is a pre-state condition that **forces** this throw. The case means
+
+```
+C ==> (Result..isBad($result) ∧ <the block's postconditions>)
+```
+
+with the block's frame applying on that path only. So a caller who establishes
+`C` can conclude the call throws (and what then holds of the thrown value), and
+one who refutes every guard can conclude it does not.
+
+A procedure carries a list of these. Because the blocks are independent, a
+per-thrown-type frame is expressible — one block per case — rather than every
+exceptional frame being unioned into a single clause.
+
+`ModifiesClauses` additionally emits a checked
+`Result..isBad($result) ==> (C₁ ∨ … ∨ Cₙ)` for a procedure that has an
+implementation, so a throwing path matching no guard is rejected rather than
+silently left unframed. It is not emitted for a bodiless procedure, where there
+is nothing to check it against and callers would be handed an unverified
+promise. See the Exceptions section of the Laurel User Guide.
+-/
+structure ThrowsOnBlock where
+  /-- The pre-state guard `C` (checked at `TBool`). The thrown value is *not* in
+      scope here: the guard is evaluated on entry, before any throw. -/
+  guard : AstNode StmtExpr
+  /-- Exceptional postconditions scoped to this case. The thrown value is in
+      scope under the name bound by the procedure's `throws (e: T)` clause. -/
+  postconditions : List Condition
+  /-- This case's exceptional frame: when it fires, only these locations may
+      change. Empty means the case constrains no heap locations. -/
+  modifies : List (AstNode StmtExpr)
+
+/--
+One frame of a procedure's `modifies` specification: when `guard` holds (or
+unconditionally, when it is `none`), only `targets` may change.
+
+Each group lowers to its own frame condition, so the grouping is semantic, not
+cosmetic: targets in one group *union* (any of them may change), while separate
+groups *conjoin* (each group's frame must hold whenever its guard does).
+
+User syntax produces exactly one unguarded group — the plain `modifies` list.
+Guards exist for the compilation passes: `EliminateExceptions` consumes a
+`throwsOn` block by appending a group guarded on that case
+(`Result..isBad(<carrier>) && C`), and re-guards the user's group on the normal
+path (`Result..isGood(<carrier>)`). This is what lets the downstream frame
+lowering (`ModifiesClauses`) stay agnostic to exceptions: it sees only
+"guard implies frame", never a `throwsOn`. There is no *authored* syntax for a
+guard — users never write one — but the pass-generated form round-trips: the
+printer renders a guarded group as `modifies <targets> when <guard>`
+(`modifiesWhenClause`), and the parser reads it back, so between-pass output
+stays loadable as well as readable.
+
+The `guard` field is a stand-in for set-valued modifies expressions. A modifies
+clause is meant to accept an arbitrary expression; with set values, a
+conditional frame would be written as the ordinary expression
+`if guard then {x} else {}` and would need no dedicated field. Laurel has no
+set type yet, so the guard rides in a field of its own. Once sets exist, this
+structure is expected to simplify to a single set-valued target expression
+plus `summary`:
+`structure ModifiesClause where target : AstNode StmtExpr; summary : Option String`.
+-/
+structure ModifiesGroup where
+  /-- The frame's targets: references (or `*`) that may change. -/
+  targets : List (AstNode StmtExpr)
+  /-- When the frame applies; `none` means always. -/
+  guard : Option (AstNode StmtExpr) := none
+  /-- Diagnostic summary for the frame this group lowers to. Set by the pass that
+      created a guarded group, so a failed frame is reported in the vocabulary the
+      author wrote (`throwsOn modifies clause`), not the pass's. -/
+  summary : Option String := none
 
 /--
 The body of a procedure. A body can be transparent (with a visible
@@ -319,7 +500,7 @@ inductive Body where
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       -- See the constructor doc above for the allowed `modifies` forms.
-      (modifies : List (AstNode StmtExpr))
+      (modifies : List ModifiesGroup)
       -- TODO: add back non-determinism together with an implementation
       -- deterministic : Bool
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
@@ -335,8 +516,8 @@ inductive Variable : Type where
   | Local (name : Identifier)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
   | Field (target : AstNode StmtExpr) (fieldName : Identifier)
-  /-- A local variable declaration with a name and type. -/
-  | Declare (parameter : Parameter)
+  /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
+  | Declare (parameter : Parameter?)
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -403,13 +584,10 @@ inductive StmtExpr : Type where
   | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
-  /-- Call a static procedure by name with the given arguments. -/
+  /-- Call a static procedure by name with the given arguments.
+      Primitive operators are calls too: `x + y` is a `StaticCall` to the
+      built-in wrapper `$add`. See `Operation.procName`. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Apply a primitive operation to the given arguments.
-      The skipProof property is used internally.
-      It means that any precondition of the operator, such as division has, should be ignored. -/
-  | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
-    (skipProof: Bool := false)
   /-- Create new object (`new`). -/
   | New (ref : Identifier)
   /-- Reference to the current object (`this`/`self`). -/
@@ -435,6 +613,15 @@ inductive StmtExpr : Type where
   | Assert (condition : AstNode StmtExpr) (summary : Option String)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
+  /-- Throw a value on the exceptional channel. The operand is unconstrained
+      at the `throw` site; the thrown types are reconciled at each enclosing
+      `catch` (typed at their least common ancestor) and against the procedure's
+      declared `throwsType`. See the Exceptions section of the Laurel User Guide. -/
+  | Throw (value : AstNode StmtExpr)
+  /-- Structured exception handler: a `body`, an ordered list of `catch`
+      clauses (tried first-match-wins), and an optional `finally` arm that runs on
+      every exit path. See the Exceptions section of the Laurel User Guide. -/
+  | Try (body : AstNode StmtExpr) (catches : List CatchClause) (finally? : Option (AstNode StmtExpr))
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
   | ProveBy (value : AstNode StmtExpr) (proof : AstNode StmtExpr)
   /-- Extract the contract (reads, modifies, precondition, or postcondition) of a function. -/
@@ -479,7 +666,6 @@ def StmtExpr.constrName : StmtExpr → String
   | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
-  | .PrimitiveOp op ..   => toString op
   | .New ..              => "new"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
@@ -492,6 +678,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Fresh ..            => "fresh"
   | .Assert ..           => "assert"
   | .Assume ..           => "assume"
+  | .Throw ..            => "throw"
+  | .Try ..              => "try"
   | .ProveBy ..          => "by"
   | .ContractOf ..       => "contractOf"
   | .Abstract            => "abstract"
@@ -502,10 +690,105 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
 
+/-! The two degenerate `ModifiesGroup` forms every frontend emits, named so the
+    load-bearing distinction is spelled once: an empty-target group means
+    "nothing changes", a wildcard group means "may modify anything", and zero
+    *groups* would mean unframed. Mixing these up silently flips a procedure's
+    frame semantics, so construction sites should route through these rather
+    than restate the literals. -/
+
+/-- The opaque default frame: one unguarded group with no targets — the
+    procedure changes nothing. Distinct from `[]` (no groups), which means
+    *unframed*. -/
+def ModifiesGroup.nothingChanges : List ModifiesGroup := [{ targets := [] }]
+
+/-- One unguarded group whose only target is the wildcard — the procedure may
+    modify anything. -/
+def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
+  [{ targets := [{ val := .All, source }] }]
+
+/-- The label of the implicit block that wraps every procedure body.
+
+    `LaurelToCoreTranslator` lowers each procedure body to a single
+    `Core.Statement.block bodyLabel …`, and lowers an early `return`
+    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    so that jumping to the end of the body falls through past the block.
+    The resolution pass pre-registers this label in scope (via `withLabel`)
+    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    though the label has no syntactic declaration site.
+
+    Shared here so the translator, the resolver, and frontends agree on the
+    exact string rather than each hard-coding it. The leading `$` keeps it
+    out of the user-name space (no source identifier can contain `$`). -/
+def bodyLabel : String := "$body"
+
+/-! ### Names of the injected exception-result datatype
+
+`EliminateExceptions` encodes a throwing procedure's two outcomes as a
+`Result<Val, Err>` datatype (defined in `CoreDefinitionsForLaurel`, injected only
+into programs that use exceptions). The pass *builds* that encoding, and every
+downstream consumer meets it only through expressions the pass itself constructed
+(`Result..isGood(<carrier>) ==> …` postconditions and `ModifiesGroup` guards), so
+the member names live here for the passes that *print* or *inspect* datatype
+members generally, not as a cross-pass contract about the carrier.
+
+The carrier *output* is not named here at all. Its name is private to
+`EliminateExceptions`, which references the carrier directly in everything it
+emits — no downstream pass reconstructs it, so none can misread an unrelated
+output that happens to be spelled the same way. It does have to stay distinct
+from `resultOutputName`, the output the short `: T` return form mints for every
+procedure: were they equal, both would claim one identifier in a throwing
+procedure written `: T`, and the signature's `Result<…>` would contradict the
+value type the body assigns; the pass freshens past taken names for exactly that
+reason.
+
+The member names are derived from the datatype, constructor, and field names
+below, following the same convention as `DatatypeDefinition.testerName` and
+`DatatypeDefinition.destructorName`, so renaming a constructor here updates its
+tester too. A `#guard` next to the datatype definition checks these against the
+definition itself. -/
+
+/-- Name of the datatype encoding a throwing procedure's outcome. -/
+def exnResultDatatypeName : String := "Result"
+
+/-- Constructor for the normal-return outcome. -/
+def exnResultGoodCtor : String := "Good"
+
+/-- Constructor for the exceptional outcome. -/
+def exnResultBadCtor : String := "Bad"
+
+/-- Field of `exnResultGoodCtor`, carrying the returned value. -/
+def exnResultValueField : String := "value"
+
+/-- Field of `exnResultBadCtor`, carrying the thrown exception. -/
+def exnResultErrField : String := "err"
+
+/-- `Result..member` — a member (tester or destructor) of the result datatype. -/
+private def exnResultMember (member : String) : String :=
+  s!"{exnResultDatatypeName}..{member}"
+
+/-- Tester for the normal-return outcome: `Result..isGood`. -/
+def exnResultIsGood : String := exnResultMember s!"is{exnResultGoodCtor}"
+
+/-- Tester for the exceptional outcome: `Result..isBad`. -/
+def exnResultIsBad : String := exnResultMember s!"is{exnResultBadCtor}"
+
+/-- Destructor reading the returned value: `Result..value`. -/
+def exnResultValue : String := exnResultMember exnResultValueField
+
+/-- Destructor reading the thrown exception: `Result..err`. -/
+def exnResultErr : String := exnResultMember exnResultErrField
+
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_body_lt (c : CatchClause) : sizeOf c.body < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_predicate_lt (c : CatchClause) : sizeOf c.predicate < 1 + sizeOf c := by
   cases c; grind
 
 /-- The target expression inside a `Variable.Field` is strictly smaller than the `Field` itself.
@@ -540,14 +823,12 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
-/-- Build a provenance from an optional source location. -/
-def fileRangeToProvenance (source : Option FileRange) : Provenance :=
-  match source with
-  | some fr => Provenance.ofSourceRange fr.file fr.range
-  | none => .synthesized .laurel
+/-- Build a provenance from a source location. -/
+def fileRangeToProvenance (source : FileRange) : Provenance :=
+  Provenance.ofSourceRange source.file source.range
 
-/-- Build Core metadata from an optional source location. -/
-def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
+/-- Build Core metadata from a source location. -/
+def fileRangeToCoreMd (source : FileRange) : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (fileRangeToProvenance source)
 
 /-- Build Core metadata from an AstNode's source location. -/
@@ -558,23 +839,21 @@ def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
 def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
   fileRangeToCoreMd id.source
 
-/-- Create a DiagnosticModel from an optional source location and a message. -/
-def diagnosticFromSource (source : Option FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
-  match source with
-  | some fr => DiagnosticModel.withRange fr msg type
-  | none => DiagnosticModel.fromMessage msg type
+/-- Create a Message from a source location and a message. -/
+def diagnosticFromSource (source : FileRange) (msg : String) (type : MessageKind := .userError) : Message :=
+  Message.withRange source msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole
 
 instance : Inhabited (AstNode Variable) where
-  default := { val := .Local default, source := none }
+  default := { val := .Local default, source := default }
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.Unknown, source := some { file := .file "HighTypeMd default", range := default} }
+  default := { val := HighType.Unknown, source := default }
 
 instance : Inhabited StmtExprMd where
-  default := { val := default, source := none }
+  default := { val := default, source := default }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
@@ -606,8 +885,49 @@ instance : BEq HighTypeMd where
   beq := highEq
 
 instance : BEq HighType where
-  beq a b := highEq ⟨a, none⟩ ⟨b, none⟩
+  beq a b := highEq ⟨a, default⟩ ⟨b, default⟩
 
+
+/-- The proof-relevant verdict of `coerce sub sup`: not just "is `sub <: sup`?" but
+    *how* to realize the coercion. `coerce` returns `some verdict` exactly when the
+    subtype holds (so `isConsistentSubtype := (coerce ..).isSome`), and the verdict
+    tells the frontend's `realizeCoercion` which runtime term to insert. The five
+    constructors are exactly the distinct realizer outputs — none collapses into another,
+    because each maps to a DIFFERENT operation:
+
+    | verdict     | when                                   | realizer must emit        |
+    |-------------|----------------------------------------|---------------------------|
+    | `refl`      | same type after unfold, or wildcard    | nothing (identity)        |
+    | `upcast`    | nominal composite ≤ ancestor composite | nothing — SAME represn.   |
+    | `widen T`   | numeric `int ≤ real/float64`           | `int_to_real` — subtype   |
+    |             |                                        |   but DIFFERENT represn.  |
+    | `inject A`  | concrete `A` ≤ dynamic-top `Any`       | box (`from_A`)            |
+    | `project A` | dynamic-top `Any` ≤ concrete `A`       | unbox (`Any..as_A!`)      |
+
+    Why NOT fewer cases:
+    - `upcast` vs `widen`: both are subtyping (`int <: real` just like `Dog <: Animal`),
+      but `upcast` is representation-preserving (a subclass reference already IS a
+      superclass reference → identity), whereas `int` and `real` have different Core
+      sorts, so `widen` needs the `int_to_real` conversion. Merging them and realizing
+      as identity would hand Core an `int` in a `real` slot — malformed downstream.
+    - `inject` vs `project`: opposite directions across the dynamic top — box vs unbox.
+      They are NOT inverses the realizer can share: each carries the concrete type so the
+      realizer picks the right (un)boxer (`from_int`/`from_Composite` vs `Any..as_int!`).
+    - `widen`/`inject`/`project` all carry a `HighType` because the realizer needs the
+      concrete source/target type to name the exact runtime function.
+
+    Terminology note: `inject`/`project` follow Henglein's coercion calculus (injection
+    `T!` into / projection `T?` out of the dynamic type), the standard names for gradual
+    casts against a dynamic top. Truthiness is NOT a verdict here (it is not subtyping —
+    `list` is not `<: bool`); it is a separate `toBool` hook fired only at boolean-context
+    slots, so `coerce` stays an honest subtype judgment. -/
+inductive Coercion where
+  | refl
+  | inject (source : HighType)
+  | project (target : HighType)
+  | upcast
+  | widen (target : HighType)
+  deriving Inhabited
 
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
     the program's `TypeDefinition`s by the resolution pass:
@@ -629,20 +949,62 @@ instance : BEq HighType where
 structure TypeLattice where
   unfoldMap : Std.HashMap String HighTypeMd := {}
   extendingMap : Std.HashMap String (List String) := {}
+  /-- Type names that are treated as the gradual/dynamic top type (consistent with everything).
+      Set by language frontends (e.g. Python pipeline registers `"Any"` here). -/
+  gradualTypes : Std.HashSet String := {}
+  /-- Names RESERVED by the frontend's coercion machinery: the box/unbox bridge procedures
+      and datatype constructors/accessors the `realizeCoercion` realizer synthesizes calls to
+      (e.g. the Python pipeline's `from_int`, `Any_sets!`, `Any..as_Dict!`, `int_to_real`,
+      `exception`). The realizer inserts calls to these by bare name and assumes they always
+      resolve to their prelude declarations; a user binding that shadowed one would break that
+      assumption (the synthesized call would re-resolve to the local). So a local/parameter/
+      quantifier binding whose name is reserved is rejected at its binding site with a user
+      diagnostic, exactly as a keyword would be. Empty for native Laurel (no reservations). -/
+  reservedNames : Std.HashSet String := {}
+  /-- Caller-supplied REALIZER for an abstract `Coercion` verdict: maps the verdict
+      plus the term being coerced to a rewritten term carrying the concrete runtime
+      coercion call. `none` (the default, for native Laurel) means "identity" — no
+      coercion term is inserted. The Python frontend sets this to its box/unbox
+      vocabulary. This REALIZES an already-decided verdict; it makes no subtyping
+      decision, so it can never disagree with `coerce`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
+  /-- Caller-supplied TRUTHINESS realizer: maps an operand's `HighType` plus the term to a
+      bool-typed term (e.g. Python `str_to_bool`/`int_to_bool`/`Any_to_bool`). Truthiness is a
+      boolean-CONTEXT coercion, NOT subtyping (`coerce Any bool` would be non-functional: unbox
+      vs truthify), so it lives here as a separate hook applied at bool-context sites
+      (if/assert/assume/bool-ops), not in `coerce`. `none` (native Laurel) = identity. -/
+  toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
     Composites and primitives are returned unchanged. A `visited` set guards
     against cycles in the alias/constrained graph (already cycle-checked
-    elsewhere, but keeps `unfold` safe to call independently). -/
+    elsewhere, but keeps `unfold` safe to call independently).
+
+    INVARIANT (AST producers): the primitive keywords `int`/`real`/`bool`/`string`
+    must not be used as user type names. `unfold` canonicalizes a `UserDefined` with
+    one of those names to the corresponding primitive, so a user/generated type so
+    named would be silently reinterpreted. The Laurel parser already reserves these
+    (`composite real { … }` fails to parse), so this only constrains non-parser AST
+    producers (frontends / generated ASTs). -/
 partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     (visited : Std.HashSet String := {}) : HighTypeMd :=
   match ty.val with
   | .UserDefined name =>
-    if visited.contains name.text then ty
-    else match ctx.unfoldMap.get? name.text with
-      | some target => ctx.unfold target (visited.insert name.text)
-      | none => ty
+    -- A `UserDefined` whose name is a primitive keyword is that primitive. Some paths
+    -- (e.g. a `TFloat64`/`real` name round-trip, or a stub type written by name) yield a
+    -- phantom `UserDefined "real"` that must denote `TReal` — otherwise it collides with a
+    -- genuine `TReal` (both print "real") and `coerce`/`highEq` wrongly reject them.
+    match name.text with
+    | "real" => { ty with val := .TReal }
+    | "int" => { ty with val := .TInt }
+    | "bool" => { ty with val := .TBool }
+    | "string" => { ty with val := .TString }
+    | _ =>
+      if visited.contains name.text then ty
+      else match ctx.unfoldMap.get? name.text with
+        | some target => ctx.unfold target (visited.insert name.text)
+        | none => ty
   -- Generic type application is *erased* to its base in Laurel's consistency /
   -- subtype relation: `Option<int>` relates as `Option`. (Resolution still
   -- checks the application's arity and well-formedness; only the deep
@@ -671,6 +1033,36 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
         let parents := (ctx.extendingMap.get? n).getD []
         go acc' (parents ++ rest)
   go {} [name]
+
+/-- The least common ancestor (join) of a list of composite type names in the
+    `extending` hierarchy: the unique most-specific type that is an ancestor of
+    every name. Used to type a `catch` binding at the join of the exception types
+    that reach it, so `e#field` is well-typed against the shared supertype
+    without a downcast.
+
+    Returns `none` when there is no common ancestor, or when the join is
+    *ambiguous* — two or more equally-specific common ancestors, possible under
+    multiple inheritance (`extends A, B`). Callers treat `none` as "type at
+    `Unknown`"; the `try`/`catch` check in `Resolution` reports the
+    missing/ambiguous join as an error there.
+
+    A singleton list joins to itself (a type is its own most-specific ancestor). -/
+def TypeLattice.commonAncestor (ctx : TypeLattice) (names : List String) : Option String :=
+  match names with
+  | [] => none
+  | first :: rest =>
+    -- Common ancestors: ancestors of `first` that are also ancestors of every
+    -- other name.
+    let common : List String :=
+      (ctx.ancestors first).toList.filter fun a =>
+        rest.all fun n => (ctx.ancestors n).contains a
+    -- The join is the common ancestor that is itself a subtype of every common
+    -- ancestor (i.e. the deepest). Unique ⇒ the join; otherwise ambiguous.
+    let candidates := common.filter fun m =>
+      common.all fun c => (ctx.ancestors m).contains c
+    match candidates with
+    | [m] => some m
+    | _ => none
 
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
     (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
@@ -734,33 +1126,109 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
-    match a'.val, b'.val with
-    | .Unknown, _ | _, .Unknown => true
-    | _, _ => highEq a' b'
+    let isGradual (t : HighType) := match t with
+      | .Unknown => true
+      | .UserDefined id => ctx.gradualTypes.contains id.text
+      | _ => false
+    if isGradual a'.val || isGradual b'.val then true
+    else highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)
     cases t1; term_by_mem
 
-/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
-    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+/-- Test whether a type is gradual (consistent with everything): `Unknown`, or a
+    frontend-registered gradual `UserDefined` (e.g. Python `Any`). Mirrors the
+    `isGradual` local inside `isConsistent` so `coerce`'s DECISION classifies
+    identically. -/
+private def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighType) : Bool :=
+  match t with
+  | .Unknown => true
+  | .UserDefined id => ctx.gradualTypes.contains id.text
+  | _ => false
 
-    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
-    choice is what makes the system *gradual*: an expression of type
-    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
-    into any typed slot, and any expression flows freely into a slot of
-    type `Unknown`. Strict checking is applied between fully-known types
-    only.
+/-- Test whether a type is the BOXABLE dynamic type — Python `Any`, a
+    frontend-registered gradual `.UserDefined "Any"`. This is the SUBSET of
+    `isGradualTop` that has a runtime representation you can inject into / project
+    out of. `Unknown` is a gradual *wildcard* (a synth gap, a hole, an unresolved
+    accessor, internal plumbing): it flows freely but carries NO box/unbox
+    coercion, so a coercion against it is `refl` (identity) — coercing it would
+    wrap concrete-typed prelude code (`ListAny..tail!` synth'd as `Unknown`) or
+    heap plumbing in a bogus box/unbox. -/
+private def TypeLattice.isDynamicBoxable (ctx : TypeLattice) (t : HighType) : Bool :=
+  match t with
+  | .UserDefined id => ctx.gradualTypes.contains id.text
+  | _ => false
 
-    A previous iteration was synth-only with two *bivariantly-compatible*
-    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
-    load-bearing: no assignment, call argument, or comparison involving a
-    user type was ever rejected. The bidirectional design retires that
-    carve-out — user-defined types are now a regular participant in `<:`,
-    with `isSubtype` walking inheritance chains and unwrapping aliases
-    and constrained types to deliver real checking on user-defined code. -/
+/-- PROOF-RELEVANT consistent subtyping: the ONE subtyping judgment. Returns the
+    abstract `Coercion` verdict witnessing `sub ≤ sup`, or `none` when unrelated.
+    Its `.isSome` matches the old boolean `isConsistentSubtype` (`isConsistent ∨
+    isSubtype`) EXCEPT for numeric widening (int → real/float64), which is now gated
+    on `realizeCoercion.isSome`: native Laurel (no realizer) rejects int in a real
+    slot exactly as before, while a frontend that supplies a realizer accepts and
+    realizes it. A check-mode site that rebuilds the term can obtain the witness and
+    realize it. GENERIC: the verdict names the KIND of coercion
+    (inject/project/upcast/widen/refl), never a runtime function; the frontend's
+    `realizeCoercion` turns it into a concrete term.
+
+    The gradual cases split by WHICH gradual: only the boxable dynamic type (`Any`)
+    yields a runtime `inject`/`project`; a bare wildcard (`Unknown`) yields
+    `refl` (it flows with no coercion). The DECISION (`.isSome`) is unchanged either
+    way — both are `some` — so `isConsistentSubtype` matches the old boolean exactly.
+
+    Case-for-case (mirrors `isConsistent ∨ isSubtype` for the decision):
+    - `MultiValuedExpr` (proc-output tuples): delegate to `isConsistent`; `refl`.
+    - equal after unfold → `refl`.
+    - `sup` is `Any`, `sub` concrete → `inject sub'` (box into the dynamic type).
+    - `sub` is `Any`, `sup` concrete → `project sup'` (unbox/downcast out of it).
+    - either side a bare wildcard (`Unknown`) → `refl` (gradual, no runtime op).
+    - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal). -/
+def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
+  match sub.val, sup.val with
+  | .MultiValuedExpr _, .MultiValuedExpr _ =>
+    if isConsistent ctx sub sup then some .refl else none
+  | _, _ =>
+    let sub' := ctx.unfold sub
+    let sup' := ctx.unfold sup
+    let subBoxable := ctx.isDynamicBoxable sub'.val
+    let supBoxable := ctx.isDynamicBoxable sup'.val
+    -- `Unknown` is the only PURE wildcard: a synth gap / hole / unresolved accessor
+    -- with no runtime form, so a coercion against it is `refl` (it flows freely, no
+    -- box/unbox). A concrete container type like `ListAny`/`DictStrAny` (a
+    -- `UserDefined` NOT in `gradualTypes`) is NOT a wildcard — it is a real type that
+    -- boxes/unboxes against `Any` (`from_ListAny`/`Any..as_ListAny!`). Distinguishing
+    -- them here is what lets `Any ↔ ListAny` insert a witness while `Any ↔ <hole>`
+    -- stays `refl`.
+    let isWildcard (t : HighType) : Bool := match t with | .Unknown => true | _ => false
+    if subBoxable && supBoxable then some .refl                  -- Any ↔ Any
+    else if isWildcard sub'.val || isWildcard sup'.val then some .refl  -- wildcard: no op
+    else if supBoxable then some (.inject sub'.val)              -- concrete → Any (box)
+    else if subBoxable then some (.project sup'.val)             -- Any → concrete (unbox)
+    else if highEq sub' sup' then some .refl
+    else match sub'.val, sup'.val with
+      -- Numeric widening: an `int` flows into a `real`/`float64` slot (e.g. `total: float = 0`).
+      -- Legitimate in Python (int <: float); realized by `int_to_real`.
+      -- Option A (Heimdall blocking finding): only produce a widen verdict when a realizer is
+      -- available to actually insert the int_to_real conversion. Native Laurel supplies
+      -- realizeCoercion = none, so it still rejects int in a real slot (behavior-neutral); a
+      -- widen verdict nobody can realize is exactly `none`.
+      | .TInt, .TReal => if ctx.realizeCoercion.isSome then some (.widen .TReal) else none
+      | .TInt, .TFloat64 => if ctx.realizeCoercion.isSome then some (.widen .TFloat64) else none
+      | .UserDefined subName, .UserDefined supName =>
+        if (ctx.ancestors subName.text).contains supName.text then some .upcast else none
+      -- Gradual types cannot reach here: wildcards and boxable gradual UserDefineds are consumed
+      -- by the guards above (isWildcard / subBoxable / supBoxable) on the SAME unfolded values
+      -- this branch tests, so isGradualTop is always false at this point. (AutoSDE f-362a2f95.)
+      | _, _ => none
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. DERIVED from the
+    proof-relevant `coerce` so the yes/no answer and the inserted coercion can
+    never disagree (ONE judgment). Used by rule `[⇐] Sub` and every bespoke check
+    rule. That single choice is what makes the system *gradual*: an expression of
+    type `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely into
+    any typed slot, and any expression flows freely into a slot of type `Unknown`. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
-  isConsistent ctx sub sup || isSubtype ctx sub sup
+  (coerce ctx sub sup).isSome
 
 def HighType.isBool : HighType → Bool
   | TBool => true
@@ -783,7 +1251,6 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
   | .StaticCall .. => "StaticCall"
-  | .PrimitiveOp .. => "PrimitiveOp"
   | .New .. => "New"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"
@@ -796,6 +1263,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Fresh .. => "Fresh"
   | .Assert .. => "Assert"
   | .Assume .. => "Assume"
+  | .Throw .. => "Throw"
+  | .Try .. => "Try"
   | .ProveBy .. => "ProveBy"
   | .ContractOf .. => "ContractOf"
   | .Abstract => "Abstract"
@@ -837,7 +1306,9 @@ def Body.isTransparent : Body → Bool
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
 
 /--
-A field in a composite type. Fields declare their name, mutability, and type.
+A field in a composite type, also used for file-scope globals (which resolution
+registers as fields of the reserved `$static` owner). Fields declare their
+name, mutability, and type.
 Mutability affects what permissions are needed to access the field.
 -/
 structure Field where
@@ -847,6 +1318,7 @@ structure Field where
   isMutable : Bool
   /-- The field's type. -/
   type : HighTypeMd
+  initializer : Option StmtExprMd := none
 
 /--
 A composite defines a type with fields and instance procedures.

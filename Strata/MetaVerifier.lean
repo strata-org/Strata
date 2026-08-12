@@ -89,7 +89,7 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
       match Core.ObligationExtraction.extractObligations oblProgram with
       | .error _ => none
       | .ok obligations =>
-        let E := match Core.buildEnv options tcProgram with
+        let E := match Core.buildEnv options tcProgram Core.Factory with
           | .ok (initE, _) =>
             match Program.eval initE with
             | .ok (pEs, _) => pEs.head?.getD initE

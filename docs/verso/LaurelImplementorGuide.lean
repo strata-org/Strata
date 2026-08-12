@@ -191,7 +191,7 @@ To enable its verification analyses, Laurel compiles to Core. Compilation happen
 A compilation pass may not change the semantics of the program. User errors may only be reported
 during resolution (`resolve`, which the pipeline re-runs after passes that set `needsResolves`),
 never by a pass — there are no exceptions to this rule. Every diagnostic emitted by a pass is a bug
-report (`DiagnosticType.StrataBug`), where a "bug" includes features that are planned but not yet
+report (`MessageKind.strataBug`), where a "bug" includes features that are planned but not yet
 supported: for example, `InlineLocalVariables` reporting an assignment to a variable it has inlined.
 A compilation pass may only refer to AST nodes that relate to its business
 logic: it may not define AST traversals without using helper methods, to allow adding new AST nodes
@@ -248,3 +248,125 @@ The following passes make up the compilation of Laurel to Core:
 The following graph shows the ordering constraints between passes.
 
 {laurelPipelineDependencyGraph}
+
+## Exception lowering
+
+`EliminateExceptions` is the largest single rewrite in the pipeline, so it is worth spelling out
+beyond its entry in the pass list above. It is a Laurel-to-Laurel pass: it rewrites every exceptional
+construct into ordinary Laurel, so that the Laurel-to-Core translator never has to know exceptions
+exist.
+
+*The `Result` encoding.* A Core procedure has one exit; a throwing Laurel procedure has two, so its
+result becomes a sum type — `Good(value)` for a normal return and `Bad(err)` for an exit by throwing,
+with the error component at the procedure's declared `throws` type so both outcomes stay precisely
+typed. A caller inspects `Result..isGood` / `Result..isBad` and either unwraps the value or
+re-propagates the exception. `Result` is not part of the always-on prelude: the pass injects it, and
+only into programs that actually use exceptions (a `throws` procedure, a `throw`, or a call to a
+throwing procedure), so a program that never throws does not carry it. It is an ordinary datatype,
+free for SMT, so it does not perturb heap reasoning.
+
+*The in-flight exception rides in synthesized locals.*
+
+- `$thrown : bool` — an exception is in flight.
+- `$exc_<i>` — one per `try`, typed at that `try`'s least common ancestor exception type. A
+  `finally`-only `try` reuses the enclosing region's local.
+- `$exc` — procedure-level, at the declared `throws` type, for exceptions that leave the body.
+- `$returning : bool` — a `return` unwinding out of enclosing `try` blocks, so their `finally` arms
+  still run.
+- `$exiting_<label> : bool` — one per label, for an `exit` whose target lies outside a `try` it has
+  to unwind through; cleared once the jump is delivered to its label.
+
+Propagating outward into a region whose exception local is narrower inserts an assumed checked
+downcast, which is sound because the escape analysis has already proved that only subtypes of that
+type can travel the edge.
+
+*The shapes it produces.* A `throw v` assigns its region's exception local, sets `$thrown`, and exits
+to the nearest enclosing `try` or to the body-exit block. A `try` becomes two nested labeled blocks
+plus the `finally` arm and a re-dispatch: the inner block is where the body's `throw` exits to, the
+guarded catch chain runs after it first-match-wins, and the re-dispatch is what continues an unwinding
+`throw`, `return`, or `exit` outward. Each pending completion is snapshotted and cleared around the
+`finally` arm, so an arm that itself completes abruptly supersedes it — Java's JLS 14.20.2 rule. A
+call to a throwing procedure binds its `Result` to a temporary and then propagates on `Bad` or unwraps
+the value on `Good`. The body is wrapped in a body-exit block, after which the result is assembled:
+`Bad` of the in-flight exception if one is in flight, `Good` of the value otherwise.
+
+*Contracts become guarded postconditions* over the assembled result. A good-path `ensures P` becomes
+`Result..isGood($result) ==> P`. The declared `throws T` becomes
+`Result..isBad($result) ==> Result..err($result) is T`, derived from the type rather than from any
+authored clause, since it holds on every throwing path. Each `throwsOn C { … }` case becomes its
+forcing claim `C ==> Result..isBad($result)` plus, for every `ensures P` it contains,
+`C & Result..isBad($result) ==> P`, with the name bound by `throws (e: T)` substituted by
+`Result..err($result)`.
+
+Splitting a case this way rather than emitting one `C ==> (isBad & P)` matters twice over. A cast in
+`P` lowers to an embedded `assert (e is T)` (see `HeapParameterization`), which is discharged from the
+enclosing antecedents — so the idiomatic `ensures e is T ==> (e as T)#f …` only verifies with `isBad`
+and `C` on the left. And a body that never throws on a guarded path then fails as exactly one
+condition: the forcing claim fails while every postcondition is vacuous.
+
+*What is synthesized and what is preserved.* The forcing claim and the declared-type postcondition are
+synthesized by this pass, so their mode is computed here — assumed for a bodiless procedure, both
+checked and assumed otherwise. A case's `ensures` is *authored*, so its mode is carried through
+instead, exactly as the normal-path arm carries a top-level `ensures`. That distinction is not
+theoretical: `ThrowsOnBlock.postconditions` is public AST and frontends construct Laurel programs
+directly rather than parsing them, so a pass that computed the mode here would silently turn a
+frontend's assume-only case postcondition into a checked obligation — verifying, but against a
+contract nobody wrote. The forcing claim stays computed even if `free` reaches the surface, because a
+free forcing claim would assert nothing about the body, which is the one thing a case exists to do. A
+case's `summary` is likewise carried through, which is why that part of the surface already works.
+
+*The heap frames are the exception to that.* They quantify over `$heap` and the field constants,
+which do not exist until heap parameterization has run, so this pass cannot build them. It clears each
+case's postconditions but leaves `throwsOn` itself on the procedure, and `ModifiesClauses` later builds
+the `Result..isGood`-guarded normal frame, one `Result..isBad & Cᵢ`-guarded frame per case, and the
+exhaustiveness claim `Result..isBad($result) ==> (C₁ ∨ … ∨ Cₙ)` over the guards. That claim is checked
+for a procedure with a body and assumed for a bodiless one, like every other clause there.
+
+*A procedure with no case gets no exhaustiveness claim.* The empty disjunction is `false`, so emitting
+it unconditionally would read as "never throws" and reject every procedure that declares `throws` and
+states nothing else — which is most of them. `ModifiesClauses` therefore suppresses the claim when
+`throwsOn` is empty, which is what makes stating cases opt-in: a procedure says nothing about its
+throwing paths until it states one, and once it states any, it has to account for all of them. The
+declared-type postcondition is unaffected, so such a procedure still tells callers *what* it threw,
+just not when.
+
+*One gap in the guards.* A guard is documented as a pre-state predicate, but the conditions it is
+lowered into are postconditions and its heap reads are not wrapped in `old(...)`, so a guard such as
+`c#value < 0` is evaluated against the post-state heap. Guards over parameters are unaffected, since
+those are immutable. Heap-reading guards are therefore unsupported rather than merely untested.
+
+*Why the pass runs before `HeapParameterization`.* Heap parameterization, and the type-hierarchy
+transform after it, erase every composite reference to the synthesized `Composite` type. A pass
+running later would therefore have nothing but `Composite` to type the in-flight exception at, and
+every handler's field access would need a downcast. Running first, the pass can read each `catch`
+binding's resolved least-common-ancestor type and use it directly.
+
+*One rule the analysis and the lowering have to share.* Catch-or-declare is checked during resolution
+(`validateExceptionEscapes`), not by a pass, following the rule above that user errors are reported
+only by `resolve`. It has to agree with the lowering on one point: a `finally` arm that definitely
+completes abruptly discards whatever completion was pending. So the escape analysis treats a body or
+handler `throw` as *not* escaping through such an arm — otherwise it would reject
+`try { throw e } finally { return }`, a program whose lowering swallows the exception. The analysis
+stays an under-approximation: only completions it can prove abrupt count.
+
+*Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
+resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or
+a silent miscompile: a call to a `throws` procedure in a nested expression position (only a whole
+statement or a whole assignment right-hand side is handled), and a `catch` handler that re-declares
+its own exception binding (the binding substitution matches by name and is not scope-aware).
+
+*Reading the actual output.* The pass's real output is pinned as golden cases in
+`StrataTest/Languages/Laurel/Idiomaticity/EliminateExceptionsTest.lean` — a bodiless throwing
+procedure with a contract, a `try` / `catch` around a throwing call, a void-returning throwing
+procedure, and the `finally` unwinding cases among them. That file is the place to look for the
+concrete shapes rather than a transcription here, which would go stale the first time the pass
+changes.
+
+*What reaches the backends.* Nothing exception-specific: datatypes, labeled blocks and exits, and
+ordinary postconditions. Backends that want to reason about exceptional control flow can still
+exploit what survives — `Good` versus `Bad` marks the two ways a procedure can finish, `$thrown`
+together with the exception locals identifies an in-flight exception, and catch blocks stay
+identifiable. By the time the program reaches Core those locals are typed `Composite` like every
+other composite reference, including inside the result type's arguments, so a backend recovers the
+specific exception type from its type tag rather than from the static type. These are directions for
+exception-aware backends rather than something the current backends rely on.

@@ -23,10 +23,11 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 open LTy
+open Strata.Util (HMap HMaps)
 
 public section
 
-variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
+variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
 
 @[expose] abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
@@ -145,7 +146,7 @@ def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
       let (xtyid, Env) ← TEnv.genTyVar Env
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, Env)
-  let Env := Env.addInNewestContext [(xv, (.forAll [] xty))]
+  let Env := Env.addInNewestContext (HMap.single xv (.forAll [] xty))
   return (xv, xty, Env)
 
 /-- Infer the type of `.fvar x fty`. -/
@@ -231,8 +232,8 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let S ← Constraints.unify constraints Env.stateSubstInfo |>.mapError format
     let mty := LMonoTy.subst S.subst freshty
     -- `freshty` can now be safely removed from the substitution list.
-    have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
-      apply @SubstWF_of_remove S.subst fresh_name S.isWF
+    have hWF : SubstWF (HMaps.remove S.subst fresh_name) := by
+      apply SubstWF_of_remove fresh_name S.isWF
     let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
@@ -311,7 +312,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 /-- Check that all context types are closed (no free type variables).
     This is a precondition for soundness: `resolve_HasType` requires it. -/
 def checkContextTypesClosed (Env : TEnv T.IDMeta) : Bool :=
-  Env.context.types.all (·.all (fun (_, ty) => ty.freeVars == []))
+  Env.context.types.all (·.all (fun _ ty => ty.freeVars == []))
 
 protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
@@ -320,7 +321,7 @@ protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
   -- addInNewestContext/eraseFromContext round-trip correctly only
   -- when there is at least one scope.
   let Env := if Env.context.types.isEmpty then
-      Env.updateContext { Env.context with types := [[]] }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)

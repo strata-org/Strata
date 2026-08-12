@@ -381,16 +381,16 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
   (termCache : Option (IO.Ref (Std.HashMap Strata.SMT.Term String)) := none)
   (pctx : Strata.Pipeline.PipelineContext) :
   IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
-  let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
-  let solver ← Strata.SMT.Solver.fileWriter handle
-
   -- Seed the solver's term-string cache from the shared ref (if any).
   let initState : Strata.SMT.SolverState ←
     match termCache with
     | some ref => do let m ← ref.get; pure { termStrings := m }
     | none => pure {}
   let ((_ids, estate), solverState) ← pctx.withPhase "writeSMTLib" do
-    encodeSMT.run solver initState
+    Strata.SMT.Solver.withFileWriter filename (state := initState) do
+      let r ← encodeSMT
+      pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
+      pure r
   -- Persist newly produced strings back to the shared ref.
   match termCache with
   | some ref => ref.set solverState.termStrings

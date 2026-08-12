@@ -81,17 +81,16 @@ structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
     P.eval (extendFactory f σ decl) σ' e = some v →
     P.eval f σ' e = some v
 
-/-- `NoGenStore Q ρ` says the environment `ρ` leaves every `Q`-kind slot
+/-- `Env.varsUndefined Q ρ` says the environment `ρ` leaves every `Q`-kind slot
 undefined: for each string `s` satisfying the label-kind predicate `Q` (the
 kind of label a pass generates), `ρ`'s store maps `HasIdent.ident s` to `none`.
 
-This is the store-level analogue of the syntactic `NoGenSuffix` freshness
-condition: it captures the "generated names start undefined" precondition shared
-by the pipeline passes, parameterised by the kind each pass generates so a single
+It captures the "generated names start undefined" precondition shared by the
+pipeline passes, parameterised by the kind each pass generates so a single
 initial store can satisfy several passes' obligations at disjoint kinds. -/
-@[expose] abbrev NoGenStore {P : PureExpr} [HasIdent P]
+@[expose] abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
     (Q : String → Prop) (ρ : Env P) : Prop :=
-  AbsentAtGen (P := P) Q (fun i => ρ.store i = none)
+  ρ.store.varsUndefined (fun y => ∃ s : String, Q s ∧ y = HasIdent.ident (P := P) s)
 
 /-! ## Small-Step Operational Semantics for Statements
 
@@ -156,6 +155,15 @@ variable {P : PureExpr} {CmdT : Type}
 /-- Extract the store from a configuration. -/
 @[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
   := cfg.getEnv.store
+
+/-- The terminal-or-exiting configuration selected by an `Option String`:
+`none` denotes the terminal outcome `.terminal ρ`, `some lbl` the exiting outcome
+`.exiting lbl ρ`.  Lets a lemma conclude over *either* outcome uniformly. -/
+@[expose] def Env.outcomeConfig (oc : Option String) (ρ : Env P) :
+    Config P (Cmd P) :=
+  match oc with
+  | none => .terminal ρ
+  | some lbl => .exiting lbl ρ
 
 /-! ## noMatchingAssert
 
@@ -255,6 +263,43 @@ theorem StoreAgreement.of_projectStore {P : PureExpr}
   by_cases hp : (σ_parent x).isSome
   · simp [hp]
   · simp [hp] at h
+
+/-! ## Config-level definedness / undefinedness invariants
+
+Two dual `Config`-recursive predicates, keyed on a set `Q` of identifiers,
+threaded through a run to track store contents across the execution stack:
+
+* `Config.varsDefined Q c` — every `Q`-var is defined in `c`'s operative store
+  and in every enclosing block-parent store.  Monotone (no step undefines a
+  slot), so it makes no claim about the pending statements.
+* `Config.varsUndefinedThroughout Q c` — every `Q`-var is undefined in `c`'s
+  operative store and in every enclosing block-parent store, AND no pending
+  statement defines a `Q`-var.  The pending-statement clause is what makes
+  undefinedness stable across a step (an `init`/`set` of a `Q`-var would break
+  it), the dual of the monotone `varsDefined` which needs no such clause. -/
+
+@[expose] def Config.varsDefined {P : PureExpr} (Q : P.Ident → Prop) :
+    Config P (Cmd P) → Prop
+  | .stmt _ ρ => ρ.store.varsDefined Q
+  | .stmts _ ρ => ρ.store.varsDefined Q
+  | .terminal ρ => ρ.store.varsDefined Q
+  | .exiting _ ρ => ρ.store.varsDefined Q
+  | .block _ σ_parent _ inner => σ_parent.varsDefined Q ∧ Config.varsDefined Q inner
+  | .seq inner _ => Config.varsDefined Q inner
+
+/-- Single-identifier specialisation of `Config.varsDefined`. -/
+@[expose] abbrev Config.varDefined {P : PureExpr} (y : P.Ident) :
+    Config P (Cmd P) → Prop :=
+  Config.varsDefined (· = y)
+
+@[expose] def Config.varsUndefinedThroughout {P : PureExpr} (Q : P.Ident → Prop) :
+    Config P (Cmd P) → Prop
+  | .stmt s ρ => ∀ y, Q y → ρ.store y = none ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+  | .stmts ss ρ => ∀ y, Q y → ρ.store y = none ∧ ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+  | .terminal ρ => ρ.store.varsUndefined Q
+  | .exiting _ ρ => ρ.store.varsUndefined Q
+  | .block _ σ_parent _ inner => σ_parent.varsUndefined Q ∧ Config.varsUndefinedThroughout Q inner
+  | .seq inner ss => Config.varsUndefinedThroughout Q inner ∧ ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
 
 /-! ## Single-step relation -/
 

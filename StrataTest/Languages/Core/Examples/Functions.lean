@@ -91,7 +91,7 @@ def multiArgFuncPgm : Program :=
 #strata
 program Core;
 
-function add(x : int, y : int) : int { x + y }
+function add(x : int, y : int) : int { int.add(x, y) }
 
 procedure testMultiArg(a : int, b : int) {
   assert [addComm]: (add(a, b) == add(b, a));
@@ -131,10 +131,10 @@ def quantBodyFuncPgm : Program :=
 #strata
 program Core;
 
-function allPositive(x : int) : bool { forall y : int :: y > 0 ==> y + x > 0 }
+function allPositive(x : int) : bool { forall y : int :: int.gt(y, 0) ==> int.gt(int.add(y, x), 0) }
 
 procedure testQuantBody(n : int) {
-  assert [quantOk]: (n > 0 ==> allPositive(n));
+  assert [quantOk]: (int.gt(n, 0) ==> allPositive(n));
 };
 
 #end
@@ -147,7 +147,7 @@ VCs:
 Label: quantOk
 Property: assert
 Obligation:
-n@1 > 0 ==> allPositive(n@1)
+int.gt(n@1, 0) ==> allPositive(n@1)
 
 ---
 info:

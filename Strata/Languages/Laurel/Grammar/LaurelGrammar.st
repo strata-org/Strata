@@ -70,10 +70,11 @@ op divAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), righta
 op modAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " %= " value;
 op strConcatAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " ^= " value;
 
-// Multi-target assignment: assign var x: int, y, var z: int := call()
+// Multi-target assignment: assign var x: int, y, var z := call()
 // Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
+// The declared target's annotation is optional, like varDecl's.
 category AssignTarget;
-op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
+op assignTargetDecl (name: Ident, targetType: Option TypeAnnotation): AssignTarget => @[prec(0)] "var " name targetType;
 op assignTargetVar (name: Ident): AssignTarget => name;
 op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
 
@@ -140,10 +141,25 @@ op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBran
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
+op throw (value : StmtExpr) : StmtExpr => @[prec(0)] "throw " value:0;
 op return (value : Option StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}";
 op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label;
 op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
+
+// Exception handling: try / catch (with optional `when` guard) / finally.
+category CatchGuard;
+op catchGuard (predicate: StmtExpr): CatchGuard => " when " predicate:0;
+
+category CatchClause;
+op catchClause (binding: Ident, guard: Option CatchGuard, body: StmtExpr): CatchClause
+  => "\n  catch " binding guard " " body:0;
+
+category FinallyClause;
+op finallyClause (body: StmtExpr): FinallyClause => "\n  finally " body:0;
+
+op tryCatch (body: StmtExpr, catches: Seq CatchClause, finallyClause: Option FinallyClause): StmtExpr
+  => @[prec(0)] "try " body:0 catches finallyClause;
 
 // While loops
 category InvariantClause;
@@ -220,13 +236,49 @@ op checkedEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): Ensu
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;
 op modifiesWildcard: ModifiesClause => "\n  modifies *";
+// Internal (pass-generated) form: a frame that applies only when its guard holds.
+// `EliminateExceptions` emits these when consuming `throwsOn` blocks; users write
+// plain `modifies`, which is a single unguarded frame.
+op modifiesWhenClause(refs: CommaSepBy StmtExpr, guard: StmtExpr): ModifiesClause => "\n  modifies " refs:0 " when " guard:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
 
+// Exceptional contract. The `throws` type is part of the signature (see the
+// `procedure` op); the `throwsOn` behavior cases below are part of the
+// `opaqueSpec`, alongside the normal-path `ensures`/`modifies`.
+// The clause always names the thrown value, scoping that name over every
+// `throwsOn` block's `ensures` (but not over their guards, which are evaluated on
+// entry). There is deliberately no unbound form: a procedure that says nothing
+// about its exception today would otherwise have to change its signature the
+// moment it wants to, and one spelling means one thing to learn.
+category ThrowsClause;
+op throwsClause(binding: Ident, throwsType: LaurelType): ThrowsClause =>
+  " throws (" binding ": " throwsType ")";
+
+// The clauses inside a `throwsOn` block: the throwing-path counterparts of
+// `ensures` and `modifies`, scoped to that block's guard.
+category ThrowsOnSpecClause;
+op throwsOnEnsures(cond: StmtExpr, errorMessage: Option ErrorSummary): ThrowsOnSpecClause =>
+  "\n    ensures " cond:0 errorMessage;
+op throwsOnModifies(refs: CommaSepBy StmtExpr): ThrowsOnSpecClause =>
+  "\n    modifies " refs:0;
+
+// An exceptional behavior case: `guard` is a pre-state condition that *forces*
+// this throw (`guard ==> throws`), and the clauses inside describe that
+// throwing path. Repeatable, one block per case. A throwing path matching no
+// guard may modify nothing; see the exhaustiveness check in `ModifiesClauses`.
+category ThrowsOnClause;
+op throwsOnClause(guard: StmtExpr, clauses: Seq ThrowsOnSpecClause): ThrowsOnClause =>
+  "\n  throwsOn " guard:0 " {" clauses "\n  }";
+
+// The opaque specification: the caller-visible contract, holding the
+// normal-path clauses and the exceptional behavior cases.
 category OpaqueSpec;
-op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
-  "\n  opaque" ensures modifies;
+op opaqueSpec(ensures: Seq EnsuresClause,
+  modifies: Seq ModifiesClause,
+  throwsOn: Seq ThrowsOnClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies throwsOn;
 
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
@@ -236,12 +288,13 @@ category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
+  throws: Option ThrowsClause,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
   entry: Option EntryClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn entry opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters throws requires invokeOn entry opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 
@@ -249,6 +302,8 @@ category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
+
+op globalVarCommand (name: Ident, varType: LaurelType, init: Option Initializer): Command => @[prec(0)] "var " name ": " varType init;
 
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;

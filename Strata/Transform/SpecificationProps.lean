@@ -19,15 +19,43 @@ This module contains the theorems associated with the definitions in
 `Strata.Transform.Specification`. See that file's module docstring for the
 overall structure of the soundness-specification framework.
 
-## Key results for `OverapproximatesAggressivelyUptoWhen`
+## Key results
+
+Connecting the two assertion-validity formulations and the transform specs:
+
+- `hoareTriple_implies_assertValid` / `allAssertsValid_implies_hoareTriple` —
+  the bidirectional bridge between `Hoare.Triple` and `AssertValid`.
+- `sound_assertValid` / `sound_allAsserts` — `Sound` implies `AssertValid`.
+- `overapproximates_triple` / `overapproximatesWhen_triple` — an
+  overapproximation preserves `Hoare.Triple`.
+
+Properties of the `Overapproximates` family (monotonicity and composition):
+
+- `OverapproximatesUptoWhen.mono` — coerce both relations of
+  `OverapproximatesUptoWhen`: tighten the input relation (`Rin' ⊆ Rin`) and
+  weaken the output relation (`Rout ⊆ Rout'`).  `OverapproximatesUptoWhen.mono_out`
+  (output-only, covariant) and `OverapproximatesUptoWhen.mono_in` (input-only,
+  contravariant) are its single-sided specializations.
+- `overapproximatesUpto_comp` / `OverapproximatesUptoWhen.comp_eq` /
+  `OverapproximatesUptoWhen.comp` / `OverapproximatesUptoWhen.comp_dense_trans` /
+  `OverapproximatesUptoWhen.comp_trans_eq` / `overapproximates_comp` /
+  `overapproximatesAggressively_comp` — composition of transforms under the
+  various family members.
+- `overapproximates_id` / `underapproximates_id` / `semanticallyEquivalent_id` —
+  the identity transform inhabits each spec.
+- `EnvStoreAgree_trans` — transitivity of the `EnvStoreAgree` output relation
+  (defined in `Specification`), used to chain the per-pass instances.
+
+### Key results for `OverapproximatesAggressivelyUptoWhen`
 
 The aggressive-up-to relation (the common generalization of the faithful up-to
 and equality-output aggressive relations) has these structural lemmas:
 - `OverapproximatesAggressivelyUptoWhen.mono_out` — output-relation weakening.
 - `OverapproximatesAggressivelyUptoWhen.comp_eq` — shared-start (`Rin = (· = ·)`)
-  `RComp` composition (needs the first output relation to preserve the failure flag).
+  `RComp` composition (needs the first output relation to preserve failure-freedom).
 - `OverapproximatesAggressivelyUptoWhen.comp_trans_eq` — the transitive
   shared-start combinator for chaining per-pass instances.
+- `OverapproximatesAggressivelyUptoWhen.strengthen` — precondition weakening.
 - `OverapproximatesUptoWhen.toAggressivelyUptoWhen` /
   `OverapproximatesAggressivelyWhen.toAggressivelyUptoWhen` — coercions from the
   faithful up-to and equality-output aggressive relations into the common one.
@@ -649,22 +677,58 @@ theorem overapproximatesUpto_comp (L₁ L₂ L₃ : Lang P)
     · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
+/-- Rewriting both relations of `OverapproximatesUptoWhen`.  The input relation
+    `Rin` sits in hypothesis position (contravariant) while the output relation
+    `Rout` sits in the positive position of the terminal/exiting witnesses
+    (covariant), so the coercion tightens the input (`Rin' ⊆ Rin`) and weakens the
+    output (`Rout ⊆ Rout'`).  The `CanFail` and target-`initEnvWF` conjuncts do not
+    mention either relation, so they pass through unchanged.
+
+    `mono_out` and `mono_in` are the single-sided specializations. -/
+theorem OverapproximatesUptoWhen.mono (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {Rin Rin' Rout Rout' : Relation (Env P)}
+    (hin : ∀ a b, Rin' a b → Rin a b)
+    (hout : ∀ a b, Rout a b → Rout' a b)
+    (h : OverapproximatesUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesUptoWhen Rin' Rout' L₁ L₂ T pre params₁ params₂ := by
+  intro st st' ht hpre ρ₀ ρ₀' hRin' hwf
+  have hr := h st st' ht hpre ρ₀ ρ₀' (hin _ _ hRin') hwf
+  refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, hr.2.1, hr.2.2⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').1 hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').2 lbl hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+
 /-- Rewriting the *output* relation `Rout → Rout'`, holding the input relation
-    `Rin` fixed.  `OverapproximatesUptoWhen`'s output relation appears only in the
-    positive position of the terminal/exiting witnesses, so the change is purely
-    monotone: `Rout ⊆ Rout'` suffices. -/
+    `Rin` fixed.  The output relation appears only in the positive position of the
+    terminal/exiting witnesses, so the change is purely monotone: `Rout ⊆ Rout'`
+    suffices.  The `Rout`-covariant specialization of `mono`. -/
 theorem OverapproximatesUptoWhen.mono_out (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     {Rin Rout Rout' : Relation (Env P)}
     (hout : ∀ a b, Rout a b → Rout' a b)
     (h : OverapproximatesUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂) :
-    OverapproximatesUptoWhen Rin Rout' L₁ L₂ T pre params₁ params₂ := by
-  intro st st' ht hpre ρ₀ ρ₀' hRin hwf
-  have hr := h st st' ht hpre ρ₀ ρ₀' hRin hwf
-  refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, hr.2.1, hr.2.2⟩
-  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').1 hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
-  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').2 lbl hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+    OverapproximatesUptoWhen Rin Rout' L₁ L₂ T pre params₁ params₂ :=
+  OverapproximatesUptoWhen.mono L₁ L₂ T pre params₁ params₂ (fun _ _ => id) hout h
+
+/-- Rewriting the *input* relation `Rin → Rin'`, holding the output relation
+    `Rout` fixed.  The input relation sits in hypothesis position, so tightening it
+    (`Rin' ⊆ Rin`) is what preserves the guarantee: fewer initial pairs are
+    required to be related.  The `Rin`-contravariant specialization of `mono`.
+
+    Combined with `RComp`, this is the input-side dual of the transitivity collapse
+    that `mono_out` supports: a *dense* input relation (`Rin ⊆ RComp Rin Rin`, see
+    `Dense`) can be re-expressed as the two-step `RComp Rin Rin` that a composed
+    transform's input relation carries. -/
+theorem OverapproximatesUptoWhen.mono_in (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {Rin Rin' Rout : Relation (Env P)}
+    (hin : ∀ a b, Rin' a b → Rin a b)
+    (h : OverapproximatesUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesUptoWhen Rin' Rout L₁ L₂ T pre params₁ params₂ :=
+  OverapproximatesUptoWhen.mono L₁ L₂ T pre params₁ params₂ hin (fun _ _ => id) h
 
 /-- **Compositionality** (shared-start form): composing two transforms that each
     run source and target from the *same* initial env (input relation `(· = ·)`)
@@ -703,6 +767,69 @@ theorem OverapproximatesUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
       obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).2 lbl hstar₂
       exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
 
+/-- **Compositionality** (general split-input form): composing two transforms with
+    arbitrary input and output relations composes both via `RComp`.  Unlike
+    `comp_eq`, the two stages need not run from the same initial env: the composed
+    input relation `RComp Rin₁ Rin₂` supplies an intermediate initial env `ρmid`
+    with `Rin₁ ρ₀ ρmid` and `Rin₂ ρmid ρ₀''`, and pass 2 runs from `ρmid`.  Pass
+    2's source `initEnvWF` at `ρmid` is exactly pass 1's target `initEnvWF`
+    conjunct (`hr₁.2.2`), so freshness threads through with no per-env
+    precondition.  `comp_eq` is the `Rin₁ = Rin₂ = (· = ·)` diagonal of this. -/
+theorem OverapproximatesUptoWhen.comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {Rin₁ Rin₂ Rout₁ Rout₂ : Relation (Env P)}
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen Rin₁ Rout₁ L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen Rin₂ Rout₂ L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen (RComp Rin₁ Rin₂) (RComp Rout₁ Rout₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ := by
+  intro st st'' ht hpre₁ ρ₀ ρ₀'' hRin hwf
+  obtain ⟨ρmid, hRin₁, hRin₂⟩ := hRin
+  simp only [bind, Option.bind] at ht
+  match hT₁ : T₁ st with
+  | none => rw [hT₁] at ht; exact absurd ht (by nofun)
+  | some st' =>
+    rw [hT₁] at ht
+    have hr₁ := h₁ st st' hT₁ hpre₁ ρ₀ ρmid hRin₁ hwf
+    have hr₂ := h₂ st' st'' ht (hpre st st' hT₁ hpre₁) ρmid ρ₀'' hRin₂ hr₁.2.2
+    refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩,
+            fun hcf => hr₂.2.1 (hr₁.2.1 hcf), hr₂.2.2⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').1 hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).1 hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').2 lbl hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).2 lbl hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+
+/-- **Compositionality** (fixed-relation, dense-input transitive-output form):
+    composing two transforms that share a *dense* input relation `Rin` and a
+    *transitive* output relation `Rout` yields a transform with the same `Rin` and
+    `Rout`.  This is the `Dense`/`mono_in` consumer: `comp` produces `RComp Rin Rin`
+    on the input and `RComp Rout Rout` on the output; `mono_out` collapses the
+    composed output back to `Rout` via transitivity (`RComp.collapse`), and
+    `mono_in` re-expresses a single `Rin`-relatedness as the two-step `RComp Rin Rin`
+    the composed input carries via density (`Dense`).  `comp_trans_eq` is the
+    `Rin := (· = ·)` instance (equality is dense by `Reflexive.dense`). -/
+theorem OverapproximatesUptoWhen.comp_dense_trans (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {Rin Rout : Relation (Env P)}
+    (hdense : Dense Rin) (htrans : Transitive Rout)
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen Rin Rout L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen Rin Rout L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen Rin Rout L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
+  OverapproximatesUptoWhen.mono_in L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
+    (fun a c h => hdense a c h)
+    (OverapproximatesUptoWhen.mono_out L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
+      (fun _ _ h => RComp.collapse htrans (fun _ _ => id) (fun _ _ => id) h)
+      (OverapproximatesUptoWhen.comp L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃ hpre h₁ h₂))
+
 /-- **Compositionality** (shared-start transitive form): if the shared output
     relation `R` is *transitive* then composing two shared-start
     `OverapproximatesUptoWhen (· = ·) R` transforms yields another
@@ -711,8 +838,10 @@ theorem OverapproximatesUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
     environment is shared and each pass's target `initEnvWF` re-establishes the
     next pass's source `initEnvWF` at that env, no per-environment precondition is
     needed; transitivity collapses the `RComp`-composed output relation back to
-    `R`.  Only transitivity of `R` is consumed (no reflexivity), so an
-    irreflexive-but-transitive `R` — e.g. agreement modulo frame — composes here. -/
+    `R`.  The `Rin := (· = ·)` instance of `comp_dense_trans`: equality is dense
+    (`Reflexive.dense`).  Only transitivity of `R` is consumed (no reflexivity of
+    the *output*), so an irreflexive-but-transitive `R` — e.g. agreement modulo
+    frame — composes here. -/
 theorem OverapproximatesUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
@@ -724,9 +853,8 @@ theorem OverapproximatesUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lang P)
     (h₁ : OverapproximatesUptoWhen (· = ·) R L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesUptoWhen (· = ·) R L₂ L₃ T₂ pre₂ params₂ params₃) :
     OverapproximatesUptoWhen (· = ·) R L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
-  OverapproximatesUptoWhen.mono_out L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
-    (fun _ _ h => RComp.collapse htrans (fun _ _ => id) (fun _ _ => id) h)
-    (OverapproximatesUptoWhen.comp_eq L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃ hpre h₁ h₂)
+  OverapproximatesUptoWhen.comp_dense_trans L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃
+    (Reflexive.dense (fun _ => rfl)) htrans hpre h₁ h₂
 
 /-- Composition of two overapproximations. -/
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
@@ -858,10 +986,11 @@ theorem OverapproximatesAggressivelyUptoWhen.mono_out (L₁ L₂ : Lang P)
     `overapproximatesAggressively_comp`, with one extra ingredient the up-to
     output relation forces: the intermediate reachable env `ρ'₂` is only
     `R₁`-*related* to the source terminal `ρ'` (not equal), so its failure flag
-    is not immediately known.  Requiring `R₁` to **preserve the failure flag**
-    (`hR₁fail`) recovers `ρ'₂.hasFailure = ρ'.hasFailure`, so on the failure-free
-    branch `ρ'₂` is failure-free too and stage 2's reachability witness chains;
-    the `by_cases hf` on the *source* terminal then mirrors the equality proof.
+    is not immediately known.  Only the *failure-free* direction is consumed —
+    recovering `ρ'₂.hasFailure = false` from `ρ'.hasFailure = false` on the
+    failure-free branch so stage 2's reachability witness chains — so `hR₁fail`
+    asks only that `R₁` **preserve failure-freedom**, not the full flag.  The
+    `by_cases hf` on the *source* terminal then mirrors the equality proof.
     (A failure-flag-preserving output relation discharges this hypothesis, so a
     downstream pipeline whose environment relation preserves the flag satisfies
     it.) -/
@@ -871,7 +1000,7 @@ theorem OverapproximatesAggressivelyUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
     {R₁ R₂ : Relation (Env P)}
-    (hR₁fail : ∀ a b, R₁ a b → a.hasFailure = b.hasFailure)
+    (hR₁fail : ∀ a b, R₁ a b → a.hasFailure = false → b.hasFailure = false)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesAggressivelyUptoWhen (· = ·) R₁ L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesAggressivelyUptoWhen (· = ·) R₂ L₂ L₃ T₂ pre₂ params₂ params₃) :
@@ -894,7 +1023,7 @@ theorem OverapproximatesAggressivelyUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
       | .inr hstep₁ =>
         by_cases hf : ρ'.hasFailure = false
         · obtain ⟨ρ'₂, hR₁, hs₂⟩ := hstep₁ hf
-          have hf₂ : ρ'₂.hasFailure = false := by rw [← hR₁fail ρ' ρ'₂ hR₁]; exact hf
+          have hf₂ : ρ'₂.hasFailure = false := hR₁fail ρ' ρ'₂ hR₁ hf
           match (hr₂.1 ρ'₂ hs₂) with
           | .inl hcf₃ => exact .inl hcf₃
           | .inr hstep₂ =>
@@ -907,7 +1036,7 @@ theorem OverapproximatesAggressivelyUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
       | .inr hstep₁ =>
         by_cases hf : ρ'.hasFailure = false
         · obtain ⟨ρ'₂, hR₁, hs₂⟩ := hstep₁ hf
-          have hf₂ : ρ'₂.hasFailure = false := by rw [← hR₁fail ρ' ρ'₂ hR₁]; exact hf
+          have hf₂ : ρ'₂.hasFailure = false := hR₁fail ρ' ρ'₂ hR₁ hf
           match (hr₂.2.1 lbl ρ'₂ hs₂) with
           | .inl hcf₃ => exact .inl hcf₃
           | .inr hstep₂ =>
@@ -929,7 +1058,7 @@ theorem OverapproximatesAggressivelyUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lan
     (params₃ : L₃.InitEnvWFParamsTy)
     {R : Relation (Env P)}
     (htrans : Transitive R)
-    (hRfail : ∀ a b, R a b → a.hasFailure = b.hasFailure)
+    (hRfail : ∀ a b, R a b → a.hasFailure = false → b.hasFailure = false)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesAggressivelyUptoWhen (· = ·) R L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesAggressivelyUptoWhen (· = ·) R L₂ L₃ T₂ pre₂ params₂ params₃) :
@@ -979,19 +1108,19 @@ source only modulo fresh names) are faithful up-to.  The whole point of
 which *both* coerce, so a mixed chain composes.
 
 The two lemmas below are the ready-made joins for a mixed adjacency, each a thin
-corollary of `.comp` after coercing both operands via
+corollary of `comp_eq` after coercing both operands via
 `OverapproximatesUptoWhen.toAggressivelyUptoWhen` /
 `OverapproximatesAggressivelyWhen.toAggressivelyUptoWhen`.  They share a
 `Rin = (· = ·)` (shared start) and conclude at output relation `Rout` — the
-`RComp` from `.comp` collapses because one side is `(· = ·)`.
+`RComp` from `comp_eq` collapses because one side is `(· = ·)`.
 
 Note the **asymmetry** in their hypotheses, which is a real design fact rather than
-an accident: `.comp`'s `hR₁fail` obligation always lands on the *first* stage's
+an accident: `comp_eq`'s `hR₁fail` obligation always lands on the *first* stage's
 output relation (the intermediate reachable env is only related to — not equal to —
-the source terminal, so its failure flag must be recovered from that relation
+the source terminal, so its failure-freedom must be recovered from that relation
 before the second stage's failure-free reachability branch can fire).  When the
-aggressive pass is placed **first** its output is `(· = ·)`, which preserves the
-failure flag for free, so `comp_uptoWhen` needs *no* extra hypothesis.  When the
+aggressive pass is placed **first** its output is `(· = ·)`, which preserves
+failure-freedom for free, so `comp_uptoWhen` needs *no* extra hypothesis.  When the
 faithful up-to pass is placed first, its output relation `Rout` carries the
 obligation, so `comp_aggressivelyWhen` must take `hRoutFail`.  This is the formal
 reason a path-pruning pass composes most freely at the front of the pipeline —
@@ -1013,8 +1142,8 @@ theorem OverapproximatesAggressivelyWhen.toAggressivelyUptoWhen (L₁ L₂ : Lan
 /-- **Boundary join, aggressive-first.**  An equality-output *aggressive* pass
     followed by a faithful *up-to* pass composes to
     `OverapproximatesAggressivelyUptoWhen (· = ·) Rout`.  Because the first stage
-    is equality-output, `.comp`'s failure-flag side-condition is discharged by
-    `rfl`, and the `RComp (· = ·) Rout` output collapses to `Rout`.  This is the
+    is equality-output, `comp_eq`'s failure-freedom side-condition is discharged by
+    `id`, and the `RComp (· = ·) Rout` output collapses to `Rout`.  This is the
     join at the front of an S2U pipeline: the pruning pass (`InsertLoopInvariantAsserts`)
     first, then a variable-generating faithful pass (`nondetElim` / `hoist` /
     `stmtsToCFG`) up to an output relation `Rout` tracking the generated names. -/
@@ -1032,7 +1161,7 @@ theorem OverapproximatesAggressivelyWhen.comp_uptoWhen (L₁ L₂ L₃ : Lang P)
   OverapproximatesAggressivelyUptoWhen.mono_out L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
     (fun _ _ h => by obtain ⟨m, hEq, hR⟩ := h; subst hEq; exact hR)
     (OverapproximatesAggressivelyUptoWhen.comp_eq L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃
-      (fun _ _ h => by subst h; rfl)
+      (fun _ _ h => by subst h; exact id)
       hpre
       (OverapproximatesAggressivelyWhen.toAggressivelyUptoWhen L₁ L₂ T₁ pre₁ params₁ params₂ h₁)
       (OverapproximatesUptoWhen.toAggressivelyUptoWhen L₂ L₃ T₂ pre₂ params₂ params₃ h₂))
@@ -1040,8 +1169,8 @@ theorem OverapproximatesAggressivelyWhen.comp_uptoWhen (L₁ L₂ L₃ : Lang P)
 /-- **Boundary join, up-to-first.**  A faithful *up-to* pass followed by an
     equality-output *aggressive* pass, also concluding
     `OverapproximatesAggressivelyUptoWhen (· = ·) Rout`.  Unlike `comp_uptoWhen`,
-    this needs `hRoutFail` — the up-to output relation preserves the failure flag —
-    because here `Rout` is the *first* stage's output relation, on which `.comp`'s
+    this needs `hRoutFail` — the up-to output relation preserves failure-freedom —
+    because here `Rout` is the *first* stage's output relation, on which `comp_eq`'s
     `hR₁fail` obligation lands. -/
 theorem OverapproximatesUptoWhen.comp_aggressivelyWhen (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
@@ -1049,7 +1178,7 @@ theorem OverapproximatesUptoWhen.comp_aggressivelyWhen (L₁ L₂ L₃ : Lang P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
     {Rout : Relation (Env P)}
-    (hRoutFail : ∀ a b, Rout a b → a.hasFailure = b.hasFailure)
+    (hRoutFail : ∀ a b, Rout a b → a.hasFailure = false → b.hasFailure = false)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesUptoWhen (· = ·) Rout L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesAggressivelyWhen L₂ L₃ T₂ pre₂ params₂ params₃) :
@@ -1138,6 +1267,20 @@ theorem OverapproximatesAggressivelyWhen.strengthen (L₁ L₂ : Lang P)
   intro st st' ht hpre' ρ₀ ρ₀' hR hswf
   exact h st st' ht (himp st hpre') ρ₀ ρ₀' hR hswf
 
+/-- Precondition strengthening for `OverapproximatesAggressivelyUptoWhen`: a
+    relation that holds under `pre` also holds under any stronger precondition
+    `pre'`.  The up-to (input/output relation split) counterpart of
+    `OverapproximatesAggressivelyWhen.strengthen`; both relations are held fixed. -/
+theorem OverapproximatesAggressivelyUptoWhen.strengthen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {Rin Rout : Relation (Env P)}
+    (himp : ∀ st, pre' st → pre st)
+    (h : OverapproximatesAggressivelyUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesAggressivelyUptoWhen Rin Rout L₁ L₂ T pre' params₁ params₂ := by
+  intro st st' ht hpre' ρ₀ ρ₀' hR hswf
+  exact h st st' ht (himp st hpre') ρ₀ ρ₀' hR hswf
+
 /-- An unconditional `Overapproximates` is the strongest case: it gives
     `OverapproximatesWhen` for ANY precondition. -/
 theorem Overapproximates.toWhen (L₁ L₂ : Lang P)
@@ -1157,6 +1300,14 @@ theorem OverapproximatesAggressively.toWhen (L₁ L₂ : Lang P)
   OverapproximatesAggressivelyWhen.strengthen L₁ L₂ T params₁ params₂ (fun _ _ => trivial) h
 
 end OverapproxProps
+
+
+/-- `EnvStoreAgree` is transitive: store agreement, failure-flag equality, and
+factory equality each compose across a middle environment. -/
+theorem EnvStoreAgree_trans {P : PureExpr} {ρ₁ ρ₂ ρ₃ : Env P}
+    (h₁ : EnvStoreAgree ρ₁ ρ₂) (h₂ : EnvStoreAgree ρ₂ ρ₃) :
+    EnvStoreAgree ρ₁ ρ₃ :=
+  ⟨StoreAgreement.trans h₁.1 h₂.1, h₁.2.1.trans h₂.2.1, h₂.2.2.trans h₁.2.2⟩
 
 
 /-! ## Structured statements-specific results -/

@@ -30,10 +30,10 @@ program Core;
 
 procedure test(cond : bool, x : int, y : int) {
   if (cond) {
-    function f(a : int) : int { a + x }
+    function f(a : int) : int { int.add(a, x) }
     var r1 : int := f(10);
   } else {
-    function f(a : int) : int { a + y }
+    function f(a : int) : int { int.add(a, y) }
     var r2 : int := f(20);
   }
 };
@@ -49,10 +49,10 @@ info: ok: program Core;
 procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
-    function f (a : int) : int { a + x }
+    function f (a : int) : int { int.add(a, x) }
     var r1 : int := f(10);
   } else {
-    function f (a : int) : int { a + y }
+    function f (a : int) : int { int.add(a, y) }
     var r2 : int := f(20);
   }
 };
@@ -120,8 +120,8 @@ procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
-    { y div x }
-  assert 5 div x > 0;
+    { int.div(y, x) }
+  assert int.gt(int.div(5, x), 0);
   var z : int := safeDiv(5);
 };
 
@@ -136,8 +136,8 @@ info: ok: program Core;
 procedure test ()
 {
   var x : int := 1;
-  function safeDiv (y : int) : int { y div x }
-  assert [assert_0]: 5 div x > 0;
+  function safeDiv (y : int) : int { int.div(y, x) }
+  assert [assert_0]: int.gt(int.div(5, x), 0);
   var z : int := safeDiv(5);
 };
 -/

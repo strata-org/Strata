@@ -12,14 +12,14 @@
     "exists" "program"))
 
 (defvar core-st-types
-  '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
-    "bv64" "bv128" "Map" "Sequence"))
+  '(    "bool" "int" "string" "regex" "real" "bv" "W1" "W8" "W16" "W32"
+    "W64" "W128" "Map" "Sequence"))
 
 (defvar core-st-constants
   '(    "true" "false" "null"))
 
 (defvar core-st-operators
-  '(    "div" "mod" "ashr" "sdiv" "smod" "slt" "sle" "sgt" "sge"))
+  '(    ))
 
 (defvar core-st-builtins
   '(    "Sequence.empty" "Sequence.length" "Sequence.select"
@@ -29,11 +29,69 @@
     "str.suffixof" "str.contains" "str.indexof" "str.replace" "str.at"
     "str.lt" "str.le" "re.allchar" "re.all" "re.range" "re.concat"
     "re.*" "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
-    "Int.DivT" "Int.ModT" "Int.SafeDivT" "Int.SafeModT" "Bv.SafeAdd"
-    "Bv.SafeSub" "Bv.SafeMul" "Bv.SafeNeg" "Bv.SafeSDiv" "Bv.SafeSMod"
-    "Bv.SNegOverflow" "Bv.UNegOverflow" "Bv.SAddOverflow"
-    "Bv.SSubOverflow" "Bv.SMulOverflow" "Bv.SDivOverflow"
-    "Bv.UAddOverflow" "Bv.USubOverflow" "Bv.UMulOverflow"))
+    "int.neg" "real.neg" "bv1.neg" "bv1.not" "bv8.neg" "bv8.not"
+    "bv16.neg" "bv16.not" "bv32.neg" "bv32.not" "bv64.neg" "bv128.neg"
+    "bv64.not" "bv128.not" "bv1.safeNeg" "bv1.safeUNeg" "bv8.safeNeg"
+    "bv8.safeUNeg" "bv16.safeNeg" "bv16.safeUNeg" "bv32.safeNeg"
+    "bv32.safeUNeg" "bv64.safeNeg" "bv128.safeNeg" "bv64.safeUNeg"
+    "bv128.safeUNeg" "bv1.sNegOverflow" "bv1.uNegOverflow"
+    "bv8.sNegOverflow" "bv8.uNegOverflow" "bv16.sNegOverflow"
+    "bv16.uNegOverflow" "bv32.sNegOverflow" "bv32.uNegOverflow"
+    "bv64.sNegOverflow" "bv128.sNegOverflow" "bv64.uNegOverflow"
+    "bv128.uNegOverflow" "bv1.toUInt" "bv1.toInt" "bv8.toUInt"
+    "bv8.toInt" "bv16.toUInt" "bv16.toInt" "bv32.toUInt" "bv32.toInt"
+    "bv64.toUInt" "bv64.toInt" "bv128.toUInt" "bv128.toInt" "int.add"
+    "int.sub" "int.mul" "real.add" "real.sub" "real.mul" "bv1.add"
+    "bv1.sub" "bv1.mul" "bv8.add" "bv8.sub" "bv8.mul" "bv16.add"
+    "bv16.sub" "bv16.mul" "bv32.add" "bv32.sub" "bv32.mul" "bv64.add"
+    "bv128.add" "bv64.sub" "bv128.sub" "bv64.mul" "bv128.mul" "int.div"
+    "int.mod" "real.div" "bv1.uDiv" "bv1.uMod" "bv1.sDiv" "bv1.sMod"
+    "bv8.uDiv" "bv8.uMod" "bv8.sDiv" "bv8.sMod" "bv16.uDiv" "bv16.uMod"
+    "bv16.sDiv" "bv16.sMod" "bv32.uDiv" "bv32.uMod" "bv32.sDiv"
+    "bv32.sMod" "bv64.uDiv" "bv128.uDiv" "bv64.uMod" "bv128.uMod"
+    "bv64.sDiv" "bv128.sDiv" "bv64.sMod" "bv128.sMod" "bv1.and" "bv1.or"
+    "bv1.xor" "bv1.shl" "bv1.uShr" "bv1.sShr" "bv8.and" "bv8.or"
+    "bv8.xor" "bv8.shl" "bv8.uShr" "bv8.sShr" "bv16.and" "bv16.or"
+    "bv16.xor" "bv16.shl" "bv16.uShr" "bv16.sShr" "bv32.and" "bv32.or"
+    "bv32.xor" "bv32.shl" "bv32.uShr" "bv32.sShr" "bv64.and" "bv128.and"
+    "bv64.or" "bv128.or" "bv64.xor" "bv128.xor" "bv64.shl" "bv128.shl"
+    "bv64.uShr" "bv128.uShr" "bv64.sShr" "bv128.sShr" "int.safeDiv"
+    "int.safeMod" "bv1.safeAdd" "bv1.safeSub" "bv1.safeMul"
+    "bv1.safeUAdd" "bv1.safeUSub" "bv1.safeUMul" "bv1.safeSDiv"
+    "bv1.safeSMod" "bv8.safeAdd" "bv8.safeSub" "bv8.safeMul"
+    "bv8.safeUAdd" "bv8.safeUSub" "bv8.safeUMul" "bv8.safeSDiv"
+    "bv8.safeSMod" "bv16.safeAdd" "bv16.safeSub" "bv16.safeMul"
+    "bv16.safeUAdd" "bv16.safeUSub" "bv16.safeUMul" "bv16.safeSDiv"
+    "bv16.safeSMod" "bv32.safeAdd" "bv32.safeSub" "bv32.safeMul"
+    "bv32.safeUAdd" "bv32.safeUSub" "bv32.safeUMul" "bv32.safeSDiv"
+    "bv32.safeSMod" "bv64.safeAdd" "bv128.safeAdd" "bv64.safeSub"
+    "bv128.safeSub" "bv64.safeMul" "bv128.safeMul" "bv64.safeUAdd"
+    "bv128.safeUAdd" "bv64.safeUSub" "bv128.safeUSub" "bv64.safeUMul"
+    "bv128.safeUMul" "bv64.safeSDiv" "bv128.safeSDiv" "bv64.safeSMod"
+    "bv128.safeSMod" "int.divT" "int.modT" "int.safeDivT" "int.safeModT"
+    "int.le" "int.lt" "int.ge" "int.gt" "real.le" "real.lt" "real.ge"
+    "real.gt" "bv1.uLe" "bv1.uLt" "bv1.uGe" "bv1.uGt" "bv8.uLe"
+    "bv8.uLt" "bv8.uGe" "bv8.uGt" "bv16.uLe" "bv16.uLt" "bv16.uGe"
+    "bv16.uGt" "bv32.uLe" "bv32.uLt" "bv32.uGe" "bv32.uGt" "bv64.uLe"
+    "bv128.uLe" "bv64.uLt" "bv128.uLt" "bv64.uGe" "bv128.uGe" "bv64.uGt"
+    "bv128.uGt" "bv1.sLe" "bv1.sLt" "bv1.sGe" "bv1.sGt" "bv8.sLe"
+    "bv8.sLt" "bv8.sGe" "bv8.sGt" "bv16.sLe" "bv16.sLt" "bv16.sGe"
+    "bv16.sGt" "bv32.sLe" "bv32.sLt" "bv32.sGe" "bv32.sGt" "bv64.sLe"
+    "bv128.sLe" "bv64.sLt" "bv128.sLt" "bv64.sGe" "bv128.sGe" "bv64.sGt"
+    "bv128.sGt" "bv1.sAddOverflow" "bv1.sSubOverflow" "bv1.sMulOverflow"
+    "bv1.sDivOverflow" "bv1.uAddOverflow" "bv1.uSubOverflow"
+    "bv1.uMulOverflow" "bv8.sAddOverflow" "bv8.sSubOverflow"
+    "bv8.sMulOverflow" "bv8.sDivOverflow" "bv8.uAddOverflow"
+    "bv8.uSubOverflow" "bv8.uMulOverflow" "bv16.sAddOverflow"
+    "bv16.sSubOverflow" "bv16.sMulOverflow" "bv16.sDivOverflow"
+    "bv16.uAddOverflow" "bv16.uSubOverflow" "bv16.uMulOverflow"
+    "bv32.sAddOverflow" "bv32.sSubOverflow" "bv32.sMulOverflow"
+    "bv32.sDivOverflow" "bv32.uAddOverflow" "bv32.uSubOverflow"
+    "bv32.uMulOverflow" "bv64.sAddOverflow" "bv128.sAddOverflow"
+    "bv64.sSubOverflow" "bv128.sSubOverflow" "bv64.sMulOverflow"
+    "bv128.sMulOverflow" "bv64.sDivOverflow" "bv128.sDivOverflow"
+    "bv64.uAddOverflow" "bv128.uAddOverflow" "bv64.uSubOverflow"
+    "bv128.uSubOverflow" "bv64.uMulOverflow" "bv128.uMulOverflow"))
 
 ;; Font-lock rules
 (defvar core-st-font-lock-keywords

@@ -383,7 +383,7 @@ standard library rather than the core language), — not present.
    * —
  *
    * Try / catch and checked exceptions
-   * WIP
+   * ✓
    * —
    * ✓
    * ~
@@ -437,6 +437,30 @@ standard library rather than the core language), — not present.
    * ✓
    * ✓
    * —
+ *
+   * Implicit numeric widening (`int` to `real`/`float64`)
+   * ✓
+   * —
+   * ✓
+   * —
+   * ✓
+   * ✓
+ *
+   * Truthiness (non-`bool` values in boolean position)
+   * ✓
+   * —
+   * —
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Dynamic type (values assignable to and from any type)
+   * WIP
+   * —
+   * —
+   * ✓
+   * ✓
+   * —
 :::
 
 Notes on the partial (~) entries:
@@ -477,6 +501,14 @@ Notes on the partial (~) entries:
   `eval`/dynamic code loading is available only indirectly through `dlopen` (~). C has no built-in
   sets or maps, no classes or inheritance, no exceptions, no reflection, and no garbage collection,
   so those rows are —.
+- *Implicit numeric widening* — Java, Python, and C widen an integer to a floating-point value where
+  one is expected (`1 + 2.0`). JavaScript has a single `number` type, so there is no integer to widen
+  (—).
+- *Truthiness* — Python, JavaScript, and C admit non-boolean values in boolean position, each with
+  its own rule (`0`, `""`, empty containers, and `null`/`None`/`undefined` are false). Java rejects
+  them: a condition must already be `boolean` (—).
+- *Dynamic type* — Python and JavaScript are dynamically typed, so a value of any type flows into any
+  variable. Java and C are statically typed with no such type (—).
 
 Notes on the *Core* column. Core is Laurel's lowering target, a Boogie-style intermediate
 verification language, so the column records what survives to Core as a native construct rather than
@@ -515,6 +547,125 @@ GIL (✓); JavaScript is single-threaded and only achieves parallelism through w
 communicate by message passing (~). Laurel is currently sequential, and reasoning under a relaxed
 memory model is a large, separable piece of work, so this is planned rather than available.
 
+## Proof-relevant subtyping
+The shared conversions above — numeric widening, and (below) the dynamic type — are realized through
+a single subtyping judgment. `coerce S T` returns a witness describing how a value of type `S`
+becomes one of type `T`: `refl` for identical types, `upcast` for nominal widening
+(representation-preserving), `widen` for `int` to `real`/`float64`, and `inject`/`project` to box and
+unbox across the dynamic type. The boolean subtype check is derived from it
+(`isConsistentSubtype := (coerce …).isSome`), so one computation produces both the decision and the
+coercion. `upcast` and `widen` are ordinary subtyping and hold in every Laurel program.
+
+A frontend supplies `realizeCoercion` to turn a witness into the concrete box/unbox/convert term for
+its runtime. Native Laurel supplies none, so `refl` and `upcast` pass the value through unchanged and
+`widen` is rejected — an `int` in a `real` slot is only accepted once a frontend provides the
+conversion.
+
+## Truthiness coercion
+A value in boolean position — `if`, `while`, `assert`, boolean operators — coerces to `bool` through
+a canonical witness: `int_to_bool`, `str_to_bool`, `list_to_bool`, and so on. This coercion applies
+in boolean position specifically, so it lives in the `toBool` hook, which fires at boolean-context
+slots. An `int` in a condition (`if 5`) truthifies through `int_to_bool`; an `int` in a plain `bool`
+slot (`var b: bool := 5`) is a type error. `coerce` handles `Any` in boolean position directly, as
+the `project bool` verdict realized by `Any_to_bool`; `toBool` supplies the witnesses for the
+concrete types — `int`, `str`, `list`, and the rest.
+
+In the future that mechanism can be superseded by configurable coercive subtyping, but care needs to
+be taken to ensure that the resulting relation is coherent. Such a mechanism could also handle other
+implicit casts — for example, dereferencing a nullable reference in Java (`Nullable<T> => T`) in a
+position that expects a `T` but is provided a `Nullable<T>`.
+
+## Exceptions
+
+Every source language Laurel currently targets signals unrecoverable-here conditions by throwing,
+and any sound reasoning about their programs has to account for it. Exceptions are therefore
+first-class in Laurel — `throws`, `throw`, `try` / `catch` / `finally`, and the exceptional
+contracts — rather than something each frontend encodes for itself. The alternative, letting every
+frontend lower exceptions into its own mixture of flags and branches, multiplies the same work per
+frontend and widens the surface where each of them can get it subtly wrong.
+
+*No root exception type.* Laurel does not define a `Throwable`, and does not require a thrown value
+to belong to any hierarchy: a procedure may declare `throws int` and `throw 3`. Java and Python each
+have a root (`Throwable`, `BaseException`), but they are *different* roots with different tiering
+rules, and JavaScript has none at all — `throw 42` is legal there, and the convention of throwing an
+`Error` is enforced by linters rather than by the language. Imposing one root would mean every
+frontend adapting its own hierarchy to Laurel's, which is exactly the per-frontend work this feature
+exists to avoid.
+
+*Subtype-aware typing of the handler binding instead.* What a handler actually needs is a type for
+its binding, so that reading a field of the caught value is well-typed. Laurel types a `catch`
+binding at the least common ancestor of the exception types that can reach it — the types thrown in
+the `try` body, and the declared `throws` types of the procedures it calls. Each frontend's own
+hierarchy then does the work: where the reachable types share an ancestor, the handler sees it
+directly and needs no downcast. Where they share nothing useful (unrelated types, or JavaScript's
+arbitrary values), a frontend boxes the value on the way out and unboxes it in the handler, which
+keeps that cost in the frontends that actually have the problem. The rejected alternative was to
+type every binding at a synthesized universal root, which would put a downcast in front of every
+field access in every handler, in every frontend.
+
+*Predicate dispatch rather than type dispatch.* A `catch` clause carries an arbitrary boolean guard
+over its binding, `catch e when <condition on e>`, with ordered first-match-wins clauses and an
+unguarded clause as catch-all. Type-based dispatch is then one guard shape, `catch e when e is T`,
+which covers Java's static `catch (Type e)` and Python's `except T as e`; JavaScript's hand-written
+`e instanceof Error && e.code == …` is another. A type-keyed clause list would have needed a second,
+separate mechanism to express the JavaScript case, so the general form is the cheaper one to support.
+
+*`finally` is native.* All three languages have it, with the same core rule — the arm runs on normal
+completion, on a caught exception, on an uncaught one, on a `return` or re-throw from a handler, and
+nested arms chain outward — so Laurel provides it directly. Language-specific variants stay in the
+frontends: Java's try-with-resources desugars to a `finally` that closes the resource, and Python's
+`else` arm (which runs before `finally` only when the body completed normally) desugars into the
+body.
+
+*Errors versus exceptions are not modelled.* Java separates catchable `Exception` from fatal `Error`,
+Python separates `Exception` from `SystemExit`, and the line differs per language. Laurel needs no
+construct for it: a frontend expresses the tiering by which parent a type extends, and a catch-all
+written as a guard over the catchable tier is simply `false` for a fatal type. The distinction falls
+out of ordinary subtyping.
+
+*Declared throwing behavior, checked.* A procedure that may throw says so with `throws`, and Laurel
+enforces catch-or-declare during resolution: a procedure with no `throws` may not let an exception
+escape, and one declaring `throws T` may only let subtypes of `T` escape. This is a direct fit for
+Java's checked exceptions, and procedures from Python and JavaScript carry a `throws` too even though
+those languages have no such surface construct. The gain is that failures which are silent at runtime
+in the source language become statically visible: a frontend emits an explicit guarded `throw` where
+the source language would have failed implicitly.
+
+:::table +header
+ *
+   * Implicit failure
+   * Source
+   * Explicit check the frontend emits
+ *
+   * Null dereference
+   * `x.f`
+   * `if x is null then throw`
+ *
+   * Index out of bounds
+   * `a[i]`
+   * `if i < 0 or i >= a.length then throw`
+ *
+   * Division by zero
+   * `a / b`
+   * `if b == 0 then throw`
+ *
+   * Bad cast
+   * `(Sub) x`
+   * `if !(x is Sub) then throw`
+:::
+
+Requiring a frontend to declare *unchecked* exceptions this way would make nearly every procedure
+throwing, which costs propagation and unwrapping at every call site. Inferring a procedure's
+throwable types from its body is the planned way out; see the Planned features section.
+
+*What this asks of a frontend.* Map throwing signatures onto `throws` and the exceptional contracts,
+and handlers onto `try` / `catch` with predicate guards; define the exception types and their
+subtyping; handle any catchable-versus-fatal tiering; and desugar what Laurel does not model
+natively, such as Python's `else` arm, try-with-resources, multi-catch lists, and throwing values with
+no common ancestor. The contract clauses need surface syntax of the frontend's own — the Java
+frontend, for example, exposes them as static helper calls in the method body — but the names are the
+frontend's choice; what matters is that they map onto `throwsOn` behavior cases.
+
 # Modular Verification
 To achieve goal (3), Laurel has the following features related to modular verification.
 
@@ -538,6 +689,73 @@ that calls the target one. Such a separate 'lemma' procedure can be invoked auto
 invokeOn clause, discussed later in this guide.
 
 Since modifies clauses are a type of postcondition, they are also only allowed on opaque procedures.
+
+## Exceptional contracts
+A procedure that can throw has two ways to finish, and modular verification needs both of them
+described. `ensures` and `modifies` say nothing about the throwing exit, so without further clauses a
+caller that catches an exception would know nothing at all about the state it caught it in — the same
+loss of precision that opaque heap mutation has without a modifies clause. Laurel therefore mirrors
+each normal-exit clause on the exceptional exit.
+
+A `throwsOn C { … }` case describes one throwing path. Its guard `C` is evaluated in the pre-state
+but is deliberately *not* an obligation on the caller: the case states that if `C` held on entry then
+the procedure is guaranteed to throw, and the case's `ensures` clauses hold of the thrown value. That
+is what lets a caller prove ahead of time that a particular input fails. Inside a case, `ensures` and
+`modifies` mirror their normal-exit counterparts, scoped to that path — so a procedure may
+legitimately touch a log object only when it fails, and say which one for which failure.
+
+Because a guard forces its throw, stating any case is a claim to have enumerated them, and Laurel
+checks the converse: `it threw ==> one of the guards held`. That is what gives a caller the other
+direction, letting it rule the throwing exit *out* rather than only characterise it. It also means a
+throwing path matching no guard is reported instead of being left silently unconstrained, since every
+case's frame is vacuous on such a path.
+
+A frontend does not need to emit a type test for the declared exception type. `throws (e: T)` already
+yields `it threw ==> e is T` on every throwing path, so a case's `ensures e is U` is worth emitting
+only when `U` is a proper subtype of `T` — narrowing the declaration for that path. Restating `T`
+itself would be weaker, not redundant: the case's `ensures` is conditioned on the case's guard, while
+the declaration holds unconditionally. A case that has nothing to narrow can be empty, and still
+carries its forcing claim.
+
+The cost of keying cases on a pre-state guard is that framing a throwing path requires naming its
+condition. A procedure whose throwing condition is not expressible in its own pre-state — one that
+propagates a callee's exception, for instance — must leave that path unframed by stating no case,
+which is the modular-verification loss described above. Weigh that when designing a frontend's
+contract emission: prefer emitting a case whenever the condition is available.
+
+One restriction on guards is worth knowing when emitting them: a guard may not read the heap. It may
+name parameters and call heap-independent procedures, but a field access (`x#f`) or a call to a
+heap-reading procedure is rejected. The reason is an implementation gap rather than a design choice —
+a guard is lowered into a postcondition, which is evaluated in the post-state, so a heap-reading
+guard would silently mean "held on exit" instead of "held on entry". A frontend that needs to test
+heap state in a guard hoists the read into a parameter and ties it to the field with a `requires`,
+which is exactly what a Java frontend does for an array-bounds check: take the length as an argument
+and guard on that.
+
+As with the normal-exit clauses, cases are checked against the body when there is one and assumed at
+call sites, which is what keeps a throwing procedure verifiable independently of its callers.
+
+The mirroring of normal-exit clauses is deliberately not total, and the three gaps are worth
+recording so a frontend author does not read them as oversights.
+
+A case's `ensures` accepts `summary "…"`, exactly as a normal `ensures` does, so an exceptional
+postcondition can be phrased in the frontend's own words rather than Laurel's.
+
+There is no wildcard case frame, because an empty one already means what a wildcard would. A normal
+`modifies *` is encoded by emitting no frame at all — the procedure may change anything — and a case
+that names no `modifies` is likewise given no frame, leaving its throwing path unconstrained. So
+`throwsOn C { modifies * }` would be a second spelling of `throwsOn C { }`, and the surface omits it
+rather than offering two ways to say one thing. This is also why stating a case with only an `ensures`
+does not tighten the frame on that path: heap framing is opt-in per case. The lowering normalizes the
+wildcard to "no frame" rather than relying on the surface to exclude it, because `ThrowsOnBlock` is
+public AST: a frontend can build a wildcard case frame even though no syntax produces one, and the
+frame builder would otherwise read an empty target list as "nothing changed" — the exact inverse.
+
+There are no `free` or `checked` variants of a case's `ensures`. This one is a deferral rather than a
+principle: the underlying condition already carries a mode, the lowering already preserves an authored
+one, and a bodiless procedure's cases are already assumed rather than checked. What remains is
+grammar and one decision — whether `free` should also relax the case's forcing claim. It should not: a
+`free` forcing claim would assert nothing about the body, which is the one thing a case exists to do.
 
 # Minimize Verification Code
 To achieve goal (4), minimize the amount of user code needed to enable verification, Laurel has the
@@ -915,10 +1133,6 @@ Transparent procedures will support:
 - Multiple output parameters
 - Control flow with loops
 
-## Enhance support for quantifiers
-- Support assumptions in quantifiers
-- Support checking the wellformedness of quantifiers
-
 ## Property-based testing
 To be designed..
 
@@ -954,3 +1168,14 @@ Composite types perform better than maps because reading from them incurs no dom
 ## Decreases clauses
 To enable proving that contracts terminate, Laurel uses decreases clauses to enable proving the
 termination of procedure calls.
+
+## Exception inference
+Laurel enforces catch-or-declare, so a frontend must currently declare every exception a procedure
+may let escape. For the unchecked exceptions of Python and JavaScript — and for Java's — that means
+nearly every procedure ends up with a `throws` clause, and every call site pays to propagate and
+unwrap a result that almost never carries an exception.
+
+The planned refinement is to infer a procedure's throwable types from its body: a bottom-up analysis
+over the call graph combining the types a procedure throws directly, the types its callees may throw,
+and the types it catches locally. A frontend would then declare only what it wants to pin as part of
+a signature, and let Laurel supply the rest.

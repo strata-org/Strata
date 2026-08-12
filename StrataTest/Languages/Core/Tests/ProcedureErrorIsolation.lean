@@ -30,12 +30,12 @@ program Core;
 
 procedure first()
 {
-  function foo(y : int) : int { y + 1 }
+  function foo(y : int) : int { int.add(y, 1) }
 };
 
 procedure second()
 {
-  function foo(y : int) : int { y + 2 }
+  function foo(y : int) : int { int.add(y, 2) }
 };
 
 procedure third()

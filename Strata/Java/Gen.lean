@@ -1,0 +1,589 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public meta import Lean.Elab.Term.TermElabM
+public meta import Init.Data.String.Legacy
+public import StrataDDM.Util.Decimal
+
+open Lean Meta Elab Term
+
+/-!
+# Java Code Generator for Lean Types
+
+`getIonSerializer%` is a term-level elaborator that inspects Lean inductive and
+structure types at compile time and generates Java source code consisting of:
+
+- A sealed interface hierarchy mirroring the Lean type
+- Records for each constructor / structure
+- Ion serialization methods using the same format as `getIonDeserializer%`
+
+## Ion encoding conventions (matching `getIonDeserializer%`)
+
+| Lean type | Ion encoding |
+|-----------|-------------|
+| Structures | Ion struct with field names as keys |
+| Single-constructor inductives | Ion struct with positional keys `_0`, `_1`, … |
+| Multi-constructor inductives | Ion sexp `(ConstructorName arg₁ arg₂ …)` |
+
+## Supported leaf types
+
+`Nat`, `Int`, `Float`, `String`, `Bool`, `Decimal`
+
+## Container types
+
+`List α` → `java.util.List<T>`, `Option α` → `java.util.Optional<T>`
+-/
+
+namespace Strata.Java
+
+/-! ## All generated Java source files. -/
+
+public structure GeneratedFiles where
+  files : Array (String × String)  -- (filename, content)
+  deriving Inhabited
+
+public def writeJavaFiles (baseDir : System.FilePath) (package : String)
+    (files : GeneratedFiles) : IO Unit := do
+  let parts := package.splitOn "."
+  let dir := parts.foldl (init := baseDir) (· / ·)
+  IO.FS.createDirAll dir
+  for (filename, content) in files.files do
+    IO.FS.writeFile (dir / filename) content
+
+/-! ## Name Utilities -/
+
+private meta def javaReservedWords : Std.HashSet String := Std.HashSet.ofList [
+  "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
+  "class", "const", "continue", "default", "do", "double", "else", "enum",
+  "extends", "final", "finally", "float", "for", "goto", "if", "implements",
+  "import", "instanceof", "int", "interface", "long", "native", "new",
+  "package", "private", "protected", "public", "return", "short", "static",
+  "strictfp", "super", "switch", "synchronized", "this", "throw", "throws",
+  "transient", "try", "void", "volatile", "while",
+  "exports", "module", "open", "opens", "permits", "provides",
+  "record", "sealed", "to", "transitive", "uses", "var", "when", "with", "yield",
+  "true", "false", "null", "_",
+  "String", "Object", "Integer", "Boolean", "Long", "Double", "Float",
+  "Character", "Byte", "Short"
+]
+
+private meta def escapeJavaName (name : String) : String :=
+  let cleaned := String.ofList (name.toList.filter (fun c => c.isAlphanum || c == '_'))
+  let cleaned := if cleaned.isEmpty then "field" else cleaned
+  if javaReservedWords.contains cleaned then cleaned ++ "_" else cleaned
+
+private meta def toPascalCase (s : String) : String :=
+  s.splitOn "_"
+  |>.filter (!·.isEmpty)
+  |>.map (fun part => match part.toList with
+    | [] => ""
+    | c :: cs => .ofList (c.toUpper :: cs))
+  |> String.intercalate ""
+
+/--
+The Java class name for a Lean type, and the single source of truth for it: the
+emitted filename and every field-type reference derive from this, so they cannot
+disagree.
+
+A trailing `?` is rendered as an `Opt` suffix rather than dropped. `escapeJavaName`
+strips non-alphanumerics, so `Laurel.Parameter?` would otherwise fold onto
+`Laurel.Parameter` — two distinct Lean types (the second's `type` field is an
+`Option`) collapsing to one `Parameter.java`, where the last one generated silently
+overwrote the other.
+-/
+private meta def javaClassName (typeName : Name) : String :=
+  let base := typeName.getString!
+  let (stem, suffix) :=
+    if base.endsWith "?" then (base.dropEnd 1 |>.toString, "Opt") else (base, "")
+  escapeJavaName (toPascalCase stem ++ suffix)
+
+/--
+Return a variant of `base` that is not already in `usedNames`, adding a `_`
+(then `_2`, `_3`, …) suffix on collision, along with the extended set.
+
+Escaping is not injective: `escapeJavaName` strips non-alphanumerics and
+`toPascalCase` upcases segment heads, so distinct Lean names can fold to one Java
+identifier (`foo` and `Foo` both become `Foo`; so do `myCtor` and `my_ctor`).
+Emitting the folded name twice would produce duplicate records or record
+components, which does not compile. Comparison is case-insensitive because Java
+members that differ only in case are still confusable, and because each generated
+type becomes a file on a possibly case-insensitive filesystem.
+-/
+private meta partial def disambiguate (base : String) (usedNames : Std.HashSet String) :
+    String × Std.HashSet String :=
+  let rec findUnused (n : Nat) : String :=
+    let suffix := if n == 0 then "" else if n == 1 then "_" else s!"_{n}"
+    let candidate := base ++ suffix
+    if usedNames.contains candidate.toLower then findUnused (n + 1) else candidate
+  let name := findUnused 0
+  (name, usedNames.insert name.toLower)
+
+/-- Disambiguate a whole list of names left to right, so earlier names keep their
+unsuffixed form and only later collisions are renamed. -/
+private meta def disambiguateAll (names : List String) : List String :=
+  (names.foldl (init := (#[], ∅)) fun (acc, used) n =>
+    let (name, used') := disambiguate n used
+    (acc.push name, used')).1.toList
+
+/-! ## Leaf type detection and mapping -/
+
+private meta def isLeafTypeName (name : Name) : Bool :=
+  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
+  name == ``StrataDDM.Decimal
+
+private meta def leafJavaType (name : Name) : Option String :=
+  match name with
+  | ``Nat => some "long"
+  | ``Int => some "long"
+  | ``Float => some "double"
+  | ``String => some "java.lang.String"
+  | ``Bool => some "boolean"
+  | ``StrataDDM.Decimal => some "java.math.BigDecimal"
+  | _ => none
+
+private meta def leafSerializeExpr (name : Name) (accessor : String) : Option String :=
+  match name with
+  | ``Nat => some s!"ion.newInt({accessor})"
+  | ``Int => some s!"ion.newInt({accessor})"
+  | ``Float => some s!"ion.newFloat({accessor})"
+  | ``String => some s!"ion.newString({accessor})"
+  | ``Bool => some s!"ion.newBool({accessor})"
+  | ``StrataDDM.Decimal => some s!"ion.newDecimal({accessor})"
+  | _ => none
+
+/-! ## Type info extraction -/
+
+private inductive FieldTypeInfo where
+  | leaf (name : Name)
+  | compound (name : Name) (typeArgs : Array FieldTypeInfo)
+  | typeParam (paramName : String)  -- type parameter; generates a Java generic
+  | list (elem : FieldTypeInfo)
+  | option (elem : FieldTypeInfo)
+
+private structure JavaFieldInfo where
+  name : String
+  typeInfo : FieldTypeInfo
+
+private meta instance : Inhabited JavaFieldInfo := ⟨{ name := "", typeInfo := .leaf `unknown }⟩
+
+private structure CtorInfo' where
+  name : Name
+  shortName : String
+  fields : Array JavaFieldInfo
+
+private meta instance : Inhabited CtorInfo' := ⟨{ name := `unknown, shortName := "", fields := #[] }⟩
+
+private inductive TypeShape where
+  | struct (name : Name) (javaName : String) (fields : Array JavaFieldInfo) (typeParams : Array String := #[])
+  | singleCtor (name : Name) (javaName : String) (ctor : CtorInfo') (typeParams : Array String := #[])
+  | multiCtor (name : Name) (javaName : String) (ctors : Array CtorInfo') (typeParams : Array String := #[])
+
+private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
+  !isLeafTypeName name &&
+    ((getStructureInfo? env name).isSome ||
+      match env.find? name with | some (.inductInfo _) => true | _ => false)
+
+/-- Extract Java type parameter name from a tagged level, if it is one. -/
+private meta def extractTypeParamName : Level → Option String
+  | .param n =>
+    let s := n.toString (escape := false)
+    if s.startsWith "__javaTypeParam_" then some (s.drop "__javaTypeParam_".length).toString
+    else none
+  | _ => none
+
+private meta partial def classifyFieldType (env : Environment) (ty : Expr)
+    (paramNames : Array String := #[]) : MetaM FieldTypeInfo := do
+  let ty ← whnf ty
+  -- Strip optParam/autoParam wrappers (fields with default values)
+  let ty := match ty.getAppFn.constName? with
+    | some ``optParam =>
+      let args := ty.getAppArgs
+      if h : args.size > 0 then args[0] else ty
+    | some ``autoParam =>
+      let args := ty.getAppArgs
+      if h : args.size > 0 then args[0] else ty
+    | _ => ty
+  let name := ty.getAppFn.constName?
+  match name with
+  | some ``List =>
+    let args := ty.getAppArgs
+    if h : args.size > 0 then return .list (← classifyFieldType env args[0] paramNames)
+    else return .leaf `unknown
+  | some ``Option =>
+    let args := ty.getAppArgs
+    if h : args.size > 0 then return .option (← classifyFieldType env args[0] paramNames)
+    else return .leaf `unknown
+  | some n =>
+    if isCompoundType env n then
+      -- Collect type arguments as FieldTypeInfo
+      let args := ty.getAppArgs
+      let numParams := match env.find? n with
+        | some (.inductInfo indInfo) => indInfo.numParams
+        | _ => args.size
+      let typeArgs ← args[:numParams].toArray.mapM (classifyFieldType env · paramNames)
+      return .compound n typeArgs
+    else return .leaf n
+  | none =>
+    -- Check for tagged type parameter sorts
+    if let .sort level := ty then
+      if let some pName := extractTypeParamName level then
+        return .typeParam pName
+    if ty.isSort || ty.isFVar then return .typeParam "T"
+    return .leaf `unknown
+
+private meta def extractCtorFields (env : Environment) (ctorName : Name)
+    (fieldNames? : Option (Array Name) := none) : MetaM (Array String × Array JavaFieldInfo) := do
+  let some (.ctorInfo ci) := env.find? ctorName
+    | throwError "Cannot find constructor {ctorName}"
+  let mut ty := ci.type
+  -- Collect parameter names and substitute with unique level-tagged sorts
+  let mut paramNames : Array String := #[]
+  for _ in List.range ci.numParams do
+    match ty with
+    | .forallE n dom b _ =>
+      let pName := n.toString (escape := false)
+      let jName := toPascalCase pName
+      paramNames := paramNames.push jName
+      -- Use a tagged sort as placeholder; only substitute Type-valued params
+      let placeholder := if dom.isSort then
+        mkSort (mkLevelParam (Name.mkStr .anonymous s!"__javaTypeParam_{jName}"))
+      else
+        mkSort levelZero
+      ty := b.instantiate1 placeholder
+    | _ => break
+  let mut fields := #[]
+  for i in List.range ci.numFields do
+    match ty with
+    | .forallE n t b _ =>
+      let typeInfo ← classifyFieldType env t paramNames
+      let name := match fieldNames? with
+        | some names => names[i]!.toString (escape := false)
+        | none =>
+          let s := n.toString (escape := false)
+          if s.startsWith "_" && s.length > 1 then s!"field{i}" else s
+      fields := fields.push { name, typeInfo }
+      ty := b.instantiate1 (mkSort levelZero)
+    | _ => break
+  return (paramNames, fields)
+
+private meta def analyzeType (env : Environment) (typeName : Name) : MetaM TypeShape := do
+  let javaName := javaClassName typeName
+  if let some sinfo := getStructureInfo? env typeName then
+    let (paramNames, fields) ← extractCtorFields env (sinfo.structName ++ `mk) (some sinfo.fieldNames)
+    return .struct typeName javaName fields paramNames
+  let some (.inductInfo indInfo) := env.find? typeName
+    | throwError "{typeName} is not an inductive or structure type"
+  let mut typeParams : Array String := #[]
+  let mut ctors : Array CtorInfo' := #[]
+  for ctorName in indInfo.ctors do
+    let (paramNames, fields) ← extractCtorFields env ctorName
+    typeParams := paramNames
+    ctors := ctors.push { name := ctorName, shortName := ctorName.getString!, fields }
+  if ctors.size == 1 then
+    return .singleCtor typeName javaName ctors[0]! typeParams
+  return .multiCtor typeName javaName ctors typeParams
+
+private meta partial def extractCompoundNamesFromExpr (env : Environment) (t : Expr) : MetaM (Array Name) := do
+  let t ← whnf t
+  -- Strip optParam/autoParam wrappers
+  let t := match t.getAppFn.constName? with
+    | some ``optParam =>
+      let args := t.getAppArgs
+      if h : args.size > 0 then args[0] else t
+    | some ``autoParam =>
+      let args := t.getAppArgs
+      if h : args.size > 0 then args[0] else t
+    | _ => t
+  let name := t.getAppFn.constName?
+  match name with
+  | some ``List | some ``Option =>
+    let args := t.getAppArgs
+    if h : args.size > 0 then extractCompoundNamesFromExpr env args[0]
+    else return #[]
+  | some n =>
+    let mut result := #[]
+    if isCompoundType env n then result := result.push n
+    -- Also recurse into type arguments to find nested compound types
+    for arg in t.getAppArgs do
+      result := result ++ (← extractCompoundNamesFromExpr env arg)
+    return result
+  | none => return #[]
+
+private meta def collectNestedTypes (env : Environment) (rootName : Name) : MetaM (Array Name) := do
+  let mut visited : Std.HashSet Name := {}
+  let mut queue := #[rootName]
+  let mut result := #[]
+  while h : queue.size > 0 do
+    let name := queue[0]
+    queue := queue.extract 1 queue.size
+    if visited.contains name then continue
+    visited := visited.insert name
+    result := result.push name
+    let ctors := if let some sinfo := getStructureInfo? env name then
+      [sinfo.structName ++ `mk]
+    else match env.find? name with
+      | some (.inductInfo indInfo) => indInfo.ctors
+      | _ => []
+    for ctorName in ctors do
+      let some (.ctorInfo ci) := env.find? ctorName | continue
+      let mut ty := ci.type
+      for _ in List.range ci.numParams do
+        match ty with
+        | .forallE _ _ b _ => ty := b.instantiate1 (mkSort levelZero)
+        | _ => break
+      for _ in List.range ci.numFields do
+        match ty with
+        | .forallE _ t b _ =>
+          for n in ← extractCompoundNamesFromExpr env t do
+            if !visited.contains n then queue := queue.push n
+          ty := b.instantiate1 (mkSort levelZero)
+        | _ => break
+  return result
+
+/-! ## Java Code Generation -/
+
+private meta partial def javaTypeForInfo : FieldTypeInfo → String
+  | .leaf name => (leafJavaType name).getD "java.lang.Object"
+  | .compound name typeArgs =>
+    let base := javaClassName name
+    if typeArgs.isEmpty then base
+    else s!"{base}<{", ".intercalate (typeArgs.toList.map javaBoxedTypeForInfo)}>"
+  | .typeParam paramName => paramName
+  | .list elem => s!"java.util.List<{javaBoxedTypeForInfo elem}>"
+  | .option elem => s!"java.util.Optional<{javaBoxedTypeForInfo elem}>"
+where
+  javaBoxedTypeForInfo : FieldTypeInfo → String
+    | .leaf ``Nat | .leaf ``Int => "Long"
+    | .leaf ``Float => "Double"
+    | .leaf ``Bool => "Boolean"
+    | .leaf ``StrataDDM.Decimal => "java.math.BigDecimal"
+    | .leaf ``String => "java.lang.String"
+    | other => javaTypeForInfo other
+
+private meta def javaTypeFor (f : JavaFieldInfo) : String := javaTypeForInfo f.typeInfo
+
+/-- Serialize `accessor` to an `IonValue` expression. `depth` distinguishes the
+lambda parameters introduced for nested lists, which would otherwise shadow the
+enclosing binder and fail to compile. -/
+private meta partial def serializeExprForInfo (ti : FieldTypeInfo) (accessor : String)
+    (depth : Nat := 0) : String :=
+  match ti with
+  | .leaf name => (leafSerializeExpr name accessor).getD "ion.newNull()"
+  | .compound _ _ => s!"{accessor}.toIon(ion)"
+  | .typeParam _ => s!"{accessor}.toIon(ion)"
+  | .list elem =>
+    -- Build the Ion list inline: `java.util.List` has no `toIon`, so nested
+    -- containers (e.g. `Option (List T)`, `List (List T)`) need this form.
+    let v := s!"_e{depth}"
+    let inner := serializeExprForInfo elem v (depth + 1)
+    s!"ion.newList({accessor}.stream().<com.amazon.ion.IonValue>map({v} -> {inner}).toList())"
+  | .option elem =>
+    let inner := serializeExprForInfo elem s!"{accessor}.get()" depth
+    s!"({accessor}.isPresent() ? {inner} : ion.newNull())"
+
+private meta def serializeExprFor (f : JavaFieldInfo) (accessor : String) : String :=
+  serializeExprForInfo f.typeInfo accessor
+
+/--
+The Java identifier to use for each field, by position, with collisions resolved.
+
+Two Lean field names can escape to one Java identifier (see `disambiguate`), which
+would emit a record with duplicate components. This is deterministic in the field
+array alone, so every site that needs a field's identifier — the record
+parameter list and each `toIon` body — derives the same answer without threading
+state between them.
+
+Only the Java-side identifier changes; the Ion key stays `f.name` (or the
+positional `_0`/`_1`), so disambiguation never perturbs the wire format.
+-/
+private meta def fieldIdents (fields : Array JavaFieldInfo) : Array String :=
+  (disambiguateAll (fields.toList.map fun f => escapeJavaName f.name)).toArray
+
+private meta def recordParams (fields : Array JavaFieldInfo) : String :=
+  let idents := fieldIdents fields
+  ", ".intercalate ((List.range fields.size).map fun i =>
+    s!"{javaTypeFor fields[i]!} {idents[i]!}")
+
+private meta def typeParamDecl (typeParams : Array String) : String :=
+  if typeParams.isEmpty then ""
+  else s!"<{", ".intercalate (typeParams.toList.map fun p => s!"{p} extends ToIon")}>"
+
+private meta def typeParamUse (typeParams : Array String) : String :=
+  if typeParams.isEmpty then ""
+  else s!"<{", ".intercalate typeParams.toList}>"
+
+/-- Generate the toIon method body for a struct (Ion struct with field name keys). -/
+private meta def structToIonBody (fields : Array JavaFieldInfo) : String :=
+  let idents := fieldIdents fields
+  let fieldLines := (List.range fields.size).flatMap fun i =>
+    let f := fields[i]!
+    let ident := idents[i]!
+    let accessor := s!"{ident}()"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e" (depth := 1)
+      [s!"        var _l_{ident} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l_{ident}.add({inner});",
+       s!"        s.put(\"{f.name}\", _l_{ident});"]
+    | _ =>
+      [s!"        s.put(\"{f.name}\", {serializeExprFor f accessor});"]
+  s!"        var s = ion.newEmptyStruct();\n{"\n".intercalate fieldLines}\n        return s;"
+
+/-- Generate the toIon method body for a single-ctor inductive (Ion struct with _0, _1, ... keys). -/
+private meta def singleCtorToIonBody (fields : Array JavaFieldInfo) : String :=
+  let idents := fieldIdents fields
+  let fieldLines := (List.range fields.size).flatMap fun i =>
+    let f := fields[i]!
+    let accessor := s!"{idents[i]!}()"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e" (depth := 1)
+      [s!"        var _l{i} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l{i}.add({inner});",
+       s!"        s.put(\"_{i}\", _l{i});"]
+    | _ =>
+      [s!"        s.put(\"_{i}\", {serializeExprFor f accessor});"]
+  s!"        var s = ion.newEmptyStruct();\n{"\n".intercalate fieldLines}\n        return s;"
+
+private meta def multiCtorToIonBody (shortName : String) (fields : Array JavaFieldInfo) : String :=
+  let idents := fieldIdents fields
+  let fieldLines := (List.range fields.size).flatMap fun i =>
+    let f := fields[i]!
+    let accessor := s!"{idents[i]!}()"
+    match f.typeInfo with
+    | .list elem =>
+      let inner := serializeExprForInfo elem "e" (depth := 1)
+      [s!"        var _l{i} = ion.newEmptyList();",
+       s!"        for (var e : {accessor}) _l{i}.add({inner});",
+       s!"        sexp.add(_l{i});"]
+    | _ =>
+      [s!"        sexp.add({serializeExprFor f accessor});"]
+  s!"        var sexp = ion.newEmptySexp();\n        sexp.add(ion.newSymbol(\"{shortName}\"));\n{"\n".intercalate fieldLines}\n        return sexp;"
+
+private meta def generateRecord (interfaceName : String) (recordName : String)
+    (fields : Array JavaFieldInfo) (toIonBody : String) (tpDecl : String := "") : String :=
+  let params := recordParams fields
+  s!"    public record {recordName}{tpDecl}({params}) implements {interfaceName} \{
+        @Override
+        public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
+{toIonBody}
+        }
+    }"
+
+private meta def generateTypeFile (package : String) (shape : TypeShape) : String :=
+  match shape with
+  | .struct _ javaName fields typeParams =>
+    let toIon := structToIonBody fields
+    let params := recordParams fields
+    let tpDecl := typeParamDecl typeParams
+    s!"package {package};
+
+public record {javaName}{tpDecl}({params}) implements ToIon \{
+    public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
+{toIon}
+    }
+}
+"
+  | .singleCtor _ javaName ctor typeParams =>
+    let toIon := singleCtorToIonBody ctor.fields
+    let params := recordParams ctor.fields
+    let tpDecl := typeParamDecl typeParams
+    s!"package {package};
+
+public record {javaName}{tpDecl}({params}) implements ToIon \{
+    public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
+{toIon}
+    }
+}
+"
+  | .multiCtor _ javaName ctors typeParams =>
+    let tpDecl := typeParamDecl typeParams
+    let tpUse := typeParamUse typeParams
+    -- Names are disambiguated once, up front, so the `permits` clause and the
+    -- record definitions below cannot disagree about a renamed constructor.
+    let recNames := disambiguateAll
+      (ctors.toList.map fun ctor => escapeJavaName (toPascalCase ctor.shortName))
+    let recordDefs := (ctors.toList.zip recNames).map fun (ctor, recName) =>
+      -- The Ion tag stays `ctor.shortName`: renaming is a Java-identifier
+      -- concern and must not change the wire encoding.
+      let toIon := multiCtorToIonBody ctor.shortName ctor.fields
+      generateRecord (s!"{javaName}{tpUse}") recName ctor.fields toIon tpDecl
+    -- A zero-constructor inductive has nothing to permit. Both `sealed` and
+    -- `permits` have to go in that case: `permits` with an empty list is not
+    -- valid Java, and a `sealed` interface with no permitted subtype is
+    -- rejected too (`sealed class must have subclasses`). Dropping only
+    -- `permits` would swap one uncompilable form for another.
+    let sealedKw := if recNames.isEmpty then "" else "sealed "
+    let permits := if recNames.isEmpty then ""
+      else " permits " ++ ", ".intercalate (recNames.map fun n => s!"{javaName}.{n}")
+    s!"package {package};
+
+public {sealedKw}interface {javaName}{tpDecl} extends ToIon{permits} \{
+    com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion);
+
+{"\n\n".intercalate recordDefs}
+}
+"
+
+private meta def generateForType (env : Environment) (package : String) (rootName : Name) :
+    MetaM GeneratedFiles := do
+  let nestedTypes ← collectNestedTypes env rootName
+  let mut files := #[]
+  -- Emit the ToIon interface used by type-parameter fields
+  let toIonInterface := s!"package {package};\n\npublic interface ToIon \{\n    com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion);\n}\n"
+  files := files.push ("ToIon.java", toIonInterface)
+  -- Guard against two Lean types mapping to one Java file. `writeJavaFiles`
+  -- just loops `IO.FS.writeFile`, so a duplicate would silently overwrite the
+  -- earlier one and emit a tree that disagrees with the Lean AST. Fail at
+  -- generation time instead, naming both culprits.
+  let mut seen : Std.HashMap String Name := {}
+  for typeName in nestedTypes do
+    let shape ← analyzeType env typeName
+    let javaName := match shape with
+      | .struct _ n _ _ | .singleCtor _ n _ _ | .multiCtor _ n _ _ => n
+    let fileName := s!"{javaName}.java"
+    if let some prior := seen[fileName]? then
+      throwError "getIonSerializer%: {prior} and {typeName} both map to \
+                  '{fileName}'. Rename one of the Lean types, or extend \
+                  `javaClassName` to distinguish them."
+    seen := seen.insert fileName typeName
+    let content := generateTypeFile package shape
+    files := files.push (fileName, content)
+  return { files }
+
+/-! ## Elaborator -/
+
+public section
+
+/--
+`getIonSerializer%` generates Java source files for a Lean type.
+The result has type `Strata.Java.GeneratedFiles`.
+
+Usage: `getIonSerializer% MyType "com.example.pkg"`
+-/
+syntax (name := getIonSerializerStx) "getIonSerializer%" ident str : term
+
+@[term_elab getIonSerializerStx]
+meta def getIonSerializerElab : TermElab := fun stx _expectedType? => do
+  match stx with
+  | `(getIonSerializer% $typeId $pkgStr) => do
+    let typeName ← resolveGlobalConstNoOverload typeId
+    let env ← getEnv
+    let package := pkgStr.getString
+    let result ← generateForType env package typeName
+    let filesArr ← result.files.mapM fun (name, content) => do
+      let nameLit : TSyntax `str := ⟨Syntax.mkStrLit name⟩
+      let contentLit : TSyntax `str := ⟨Syntax.mkStrLit content⟩
+      `(($nameLit, $contentLit))
+    let arrStx ← `(#[$[$filesArr],*])
+    let resultStx ← `(Strata.Java.GeneratedFiles.mk $arrStx)
+    elabTerm resultStx _expectedType?
+  | _ => throwUnsupportedSyntax
+
+end
+
+end Strata.Java

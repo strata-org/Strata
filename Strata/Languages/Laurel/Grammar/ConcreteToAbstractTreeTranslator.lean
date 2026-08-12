@@ -20,13 +20,19 @@ open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
 structure TransState where
-  uri : Option Uri
+  /-- The file the program being translated came from. Compiler-embedded
+      preludes name their defining `.lean` file and set `synthesized`. -/
+  uri : Uri
+  /-- True when the source is a compiler-embedded prelude rather than a user
+      file. Only affects the Core `MetaData` provenance; `FileRange`s still
+      name `uri` so every AST node carries a real file. -/
+  synthesized : Bool := false
   errors : Array String
 
 @[expose] abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
-  match StateT.run m { uri := uri, errors := #[] } with
+def TransM.run (uri : Uri) (m : TransM α) (synthesized : Bool := false) : Except String α :=
+  match StateT.run m { uri := uri, synthesized := synthesized, errors := #[] } with
   | .ok (v, _) => .ok v
   | .error e => .error e
 
@@ -36,24 +42,15 @@ def TransM.error (msg : String) : TransM α :=
 private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :=
   ⟨ uri, sr ⟩
 
-private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
-  -- `SourceRange.none` ({0,0}) is StrataDDM's own "no location" sentinel (see
-  -- `StrataDDM.SourceRange.none`/`isNone`; its `format` prints "unknown", and
-  -- the Ion reader materializes a null range annotation as this value — no
-  -- producer literally writes zeroes on the wire). Surface it as `none` rather
-  -- than as a real-looking 0-0 location that downstream diagnostics would
-  -- point at (a real token at offset 0 has stop > 0). If source ranges become
-  -- mandatory, this check should give way to enclosing-range synthesis — see
-  -- `translateSingleReturnType` for the first instance of that pattern.
-  if arg.ann.isNone then return none
-  return match (← get).uri with
-  | some uri => some (SourceRange.toFileRange uri arg.ann)
-  | none => none
+private def getArgFileRange (arg : Arg) : TransM FileRange := do
+  return SourceRange.toFileRange (← get).uri arg.ann
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
-  return match (← get).uri with
-  | some uri => Imperative.MetaData.ofSourceRange uri arg.ann
-  | none => Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
+  let s ← get
+  return if s.synthesized then
+    Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
+  else
+    Imperative.MetaData.ofSourceRange s.uri arg.ann
 
 def checkOp (op : StrataDDM.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -91,8 +88,8 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited Parameter where
   default := { name := "" , type := default }
 
-def mkHighTypeMd (t : HighType) (source : Option FileRange) : HighTypeMd := { val := t, source := source }
-def mkStmtExprMd (e : StmtExpr) (source : Option FileRange) : StmtExprMd := { val := e, source := source }
+def mkHighTypeMd (t : HighType) (source : FileRange) : HighTypeMd := { val := t, source := source }
+def mkStmtExprMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source := source }
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
@@ -244,7 +241,7 @@ instance : Inhabited Procedure where
     preconditions := []
     decreases := none
     invokeOn := none
-    body := .Transparent { val := .LiteralBool true, source := none }
+    body := .Transparent { val := .LiteralBool true, source := default }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -309,6 +306,32 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
+    | q`Laurel.throw, #[arg0] =>
+      let value ← translateStmtExpr arg0
+      return mkStmtExprMd (.Throw value) src
+    | q`Laurel.tryCatch, #[bodyArg, catchSeqArg, finallyArg] =>
+      let body ← translateStmtExpr bodyArg
+      let catches ← match catchSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op cOp => match cOp.name, cOp.args with
+              | q`Laurel.catchClause, #[bindingArg, guardArg, cBodyArg] => do
+                let binding ← translateIdent bindingArg
+                let predicate ← match guardArg with
+                  | .option _ (some (.op gOp)) => match gOp.name, gOp.args with
+                    | q`Laurel.catchGuard, #[pArg] => translateStmtExpr pArg >>= (pure ∘ some)
+                    | _, _ => pure none
+                  | _ => pure none
+                let cBody ← translateStmtExpr cBodyArg
+                pure ({ binding := binding, predicate := predicate, body := cBody } : CatchClause)
+              | _, _ => TransM.error "Expected catchClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let finally? ← match finallyArg with
+        | .option _ (some (.op fOp)) => match fOp.name, fOp.args with
+          | q`Laurel.finallyClause, #[fBodyArg] => translateStmtExpr fBodyArg >>= (pure ∘ some)
+          | _, _ => pure none
+        | _ => pure none
+      return mkStmtExprMd (.Try body catches finally?) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) src
@@ -337,11 +360,15 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
-      let varType ← match typeArg with
+      -- The type annotation is optional. When absent, the declaration's type is
+      -- recovered by the resolution pass: synthesized from the initializer for
+      -- `var x := e`, or `Unknown` (with a diagnostic) for `var x`.
+      let varType? ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
-          | q`Laurel.typeAnnotation, #[typeArg0] => translateHighType typeArg0
-          | _, _ => TransM.error s!"Variable {name} requires explicit type"
-        | _ => TransM.error s!"Variable {name} requires explicit type"
+          | q`Laurel.typeAnnotation, #[typeArg0] => (some <$> translateHighType typeArg0)
+          | _, _ => TransM.error s!"Variable {name} has a malformed type annotation"
+        | .option _ none => pure none
+        | _ => TransM.error s!"Variable {name} has a malformed type annotation"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
@@ -349,8 +376,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       match value with
-      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType⟩, src⟩] init) src
-      | none => return mkStmtExprMd (.Var (.Declare ⟨name, varType⟩)) src
+      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType?⟩, src⟩] init) src
+      | none => return mkStmtExprMd (.Var (.Declare ⟨name, varType?⟩)) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
       return mkStmtExprMd (.Var (.Local name)) src
@@ -401,8 +428,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           match top.name, top.args with
           | q`Laurel.assignTargetDecl, #[nameArg, typeArg] =>
             let name ← translateIdent nameArg
-            let ty ← translateHighType typeArg
-            pure (⟨.Declare ⟨name, ty⟩, tSrc⟩ : VariableMd)
+            -- Like varDecl's, the annotation is optional; resolution infers the type from the callee's corresponding output.
+            let ty? ← match typeArg with
+              | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
+                | q`Laurel.typeAnnotation, #[typeArg0] => (some <$> translateHighType typeArg0)
+                | _, _ => TransM.error s!"Assign target {name} has a malformed type annotation"
+              | .option _ none => pure none
+              | _ => TransM.error s!"Assign target {name} has a malformed type annotation"
+            pure (⟨.Declare ⟨name, ty?⟩, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetVar, #[nameArg] =>
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc⟩ : VariableMd)
@@ -506,16 +539,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure none
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.Quantifier .Exists { name := name, type := ty } trigger body) src
+    -- Operators are calls to the built-in `$`-prefixed wrapper procedures
+    -- (see `Operation.procName`), so there is no dedicated operator node.
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
-        return mkStmtExprMd (.PrimitiveOp primOp [inner]) src
+        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [inner]) src
       | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
         let rhs ← translateStmtExpr arg1
-        return mkStmtExprMd (.PrimitiveOp primOp [lhs, rhs]) src
+        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [lhs, rhs]) src
       | none => TransM.error s!"Unknown operation: {op.name}"
     | _, _ => TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
@@ -553,25 +588,36 @@ def translateModifiesExprs (arg : Arg) : TransM (List StmtExprMd) := do
     args.toList.mapM translateStmtExpr
   | _ => pure []
 
-def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
+/-- User `modifies` clauses fold into a single unguarded `ModifiesGroup` — one
+    frame, exactly the pre-guard semantics. A `modifiesWhenClause` (pass-generated,
+    but parsed here so printed output round-trips) contributes its own guarded
+    group. -/
+def translateModifiesClauses (arg : Arg) : TransM (List ModifiesGroup) := do
   match arg with
   | .seq _ _ args => do
-    let mut allModifies : List StmtExprMd := []
+    let mut plainTargets : List StmtExprMd := []
+    let mut guardedGroups : List ModifiesGroup := []
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
-          allModifies := allModifies ++ refs
+          plainTargets := plainTargets ++ refs
         | q`Laurel.modifiesWildcard, #[] =>
-          let src ← match (← get).uri with
-            | some uri => pure (some (SourceRange.toFileRange uri clauseOp.ann))
-            | none => pure none
-          allModifies := allModifies ++ [mkStmtExprMd .All src]
+          let src := SourceRange.toFileRange (← get).uri clauseOp.ann
+          plainTargets := plainTargets ++ [mkStmtExprMd .All src]
+        | q`Laurel.modifiesWhenClause, #[refsArg, guardArg] =>
+          let refs ← translateModifiesExprs refsArg
+          let guard ← translateStmtExpr guardArg
+          guardedGroups := guardedGroups ++ [{ targets := refs, guard := some guard }]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
-    pure allModifies
-  | _ => pure []
+    -- The plain group exists even with no clauses: for an opaque procedure, an
+    -- absent `modifies` means "nothing may change", which is the empty frame —
+    -- not the absence of one. (This function is only reached from an
+    -- `opaqueSpec`, so the group never lands on a transparent body.)
+    pure ({ targets := plainTargets : ModifiesGroup } :: guardedGroups)
+  | _ => pure ModifiesGroup.nothingChanges
 
 /-- Translate the optional `summary "..."` argument of a clause. -/
 private def translateErrorSummary (errMsgArg : Arg) : TransM (Option String) := do
@@ -651,9 +697,9 @@ def translateSingleReturnType (returnTypeOp : StrataDDM.Operation) :
   match returnTypeOp.name, returnTypeOp.args with
   | q`Laurel.returnType, #[typeArg] =>
     let retType ← translateHighType typeArg
-    let retType ← match retType.source with
-      | some _ => pure retType
-      | none => do pure { retType with source := ← getArgFileRange (.op returnTypeOp) }
+    let retType ← if retType.source.range.isNone then
+        do pure { retType with source := ← getArgFileRange (.op returnTypeOp) }
+      else pure retType
     pure [{ name := resultOutputName, type := retType : Parameter }]
   | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
 
@@ -661,21 +707,32 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
-  -- Transitional shim: the `procedure` operator gained a positional
-  -- `entry: Option EntryClause` argument (8 → 9 args). Accept the pre-`entry`
-  -- 8-argument shape emitted by older producers by splicing in an absent entry
-  -- clause at its position, so a post-CR binary can still consume Ion artifacts
-  -- produced against the previous grammar.
+  -- Transitional shim: normalize legacy `procedure` shapes to the current
+  -- 10-argument form (`… returnParameters throws requires invokeOn entry
+  -- opaqueSpec body`). Older producers emitted either the pre-`entry` 8-arg
+  -- shape or the pre-exception 9-arg shape (with `entry`), neither of which had
+  -- any exceptional-contract clauses: splice in an absent `throws` before
+  -- `requires`, and an absent `entry` where it is missing, so a post-CR binary
+  -- can still consume Ion artifacts produced against a previous grammar. (The
+  -- exceptional postcondition/frame clauses now live inside `opaqueSpec`, whose
+  -- own legacy 2-argument shape is normalized where it is parsed below.)
+  let absentOpt : Arg := .option SourceRange.none none
   let args : Array Arg ← match op.name, op.args with
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
       pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-             requiresArg, invokeOnArg, .option SourceRange.none none, opaqueSpecArg, bodyArg]
+             absentOpt, requiresArg, invokeOnArg, absentOpt,
+             opaqueSpecArg, bodyArg]
+    | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+        requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+             absentOpt, requiresArg, invokeOnArg, entryArg,
+             opaqueSpecArg, bodyArg]
     | _, other => pure other
 
   match op.name, args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -693,6 +750,17 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
     -- Parse preconditions (requires clauses - zero or more)
     let preconditions ← translateRequiresClauses requiresArg
+    -- Parse the optional `throws (e: T)` clause, which names the thrown value as
+    -- well as its type, scoping the name over the `throwsOn` blocks below. The two
+    -- come from one op, so they are set or unset together.
+    let (throwsType, throwsBinding) ← match throwsArg with
+      | .option _ (some (.op throwsOp)) => match throwsOp.name, throwsOp.args with
+        | q`Laurel.throwsClause, #[bindingArg, tyArg] => do
+          let binding ← translateIdent bindingArg
+          let ty ← translateHighType tyArg
+          pure (some ty, some binding)
+        | _, _ => TransM.error s!"Expected throwsClause, got {repr throwsOp.name}"
+      | _ => pure (none, none)
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
       | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
@@ -714,16 +782,62 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     if isInterpretEntry && !parameters.isEmpty then
       TransM.error s!"entry procedure '{name.text}' cannot take inputs: \
                       an entry point is invoked with no arguments"
-    -- Parse optional opaqueSpec (contains ensures and modifies)
-    let (isOpaque, postconditions, modifies) ← match opaqueSpecArg with
+    -- Parse optional opaqueSpec: the caller-visible contract, holding the
+    -- normal-path clauses (`ensures`, `modifies`) and the exceptional behavior
+    -- cases (`throwsOn <guard> { ensures … modifies … }`).
+    -- Transitional shim: a 2-argument `opaqueSpec` carries no exceptional cases
+    -- and is read as having none.
+    --
+    -- One `throwsOn` block becomes one `ThrowsOnBlock`. Within a block the
+    -- `ensures` clauses accumulate as postconditions and the `modifies` clauses
+    -- union their refs, exactly as the normal-path clauses do at the top level.
+    let parseThrowsOnClauses (a : Arg) : TransM (List Condition × List StmtExprMd) :=
+      match a with
+      | .seq _ _ clauses => do
+        let mut posts : List Condition := []
+        let mut mods : List StmtExprMd := []
+        for arg in clauses do
+          match arg with
+          | .op cOp => match cOp.name, cOp.args with
+            | q`Laurel.throwsOnEnsures, #[condArg, summaryArg] =>
+              let condition ← translateStmtExpr condArg
+              let summary ← translateErrorSummary summaryArg
+              posts := posts ++ [({ condition := condition, summary := summary } : Condition)]
+            | q`Laurel.throwsOnModifies, #[refsArg] =>
+              let refs ← translateModifiesExprs refsArg
+              mods := mods ++ refs
+            | _, _ => TransM.error s!"Expected throwsOn ensures/modifies, got {repr cOp.name}"
+          | _ => TransM.error "Expected operation in throwsOn clause sequence"
+        pure (posts, mods)
+      | _ => pure ([], [])
+    let parseThrowsOn (a : Arg) : TransM (List ThrowsOnBlock) :=
+      match a with
+      | .seq _ _ blocks => blocks.toList.mapM fun arg => match arg with
+          | .op bOp => match bOp.name, bOp.args with
+            | q`Laurel.throwsOnClause, #[guardArg, clausesArg] => do
+              let guard ← translateStmtExpr guardArg
+              let (posts, mods) ← parseThrowsOnClauses clausesArg
+              pure ({ guard := guard, postconditions := posts,
+                      modifies := mods } : ThrowsOnBlock)
+            | _, _ => TransM.error s!"Expected throwsOnClause, got {repr bOp.name}"
+          | _ => TransM.error "Expected operation in throwsOn sequence"
+      | _ => pure []
+    let (isOpaque, postconditions, modifies, throwsOn) ←
+      match opaqueSpecArg with
       | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
-        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg, throwsOnArg] =>
           let postconditions ← translateEnsuresClauses ensuresArg
           let modifies ← translateModifiesClauses modifiesArg
-          pure (true, postconditions, modifies)
+          let throwsOn ← parseThrowsOn throwsOnArg
+          pure (true, postconditions, modifies, throwsOn)
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
+          -- Legacy (pre-exceptional-case) shape.
+          let postconditions ← translateEnsuresClauses ensuresArg
+          let modifies ← translateModifiesClauses modifiesArg
+          pure (true, postconditions, modifies, [])
         | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueSpecOp.name}"
-      | .option _ none => pure (false, [], [])
-      | _ => pure (false, [], [])
+      | .option _ none => pure (false, [], [], [])
+      | _ => pure (false, [], [], [])
     -- Parse optional body
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
@@ -752,10 +866,13 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       decreases := none
       invokeOn := invokeOn
       isInterpretEntry := isInterpretEntry
+      throwsType := throwsType
+      throwsBinding := throwsBinding
+      throwsOn := throwsOn
       body := procBody
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 8 or 9 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 8, 9, or 10 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
@@ -831,7 +948,7 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
     | TransM.error s!"parseDatatype expects operation"
   -- Transitional shim: normalize the legacy pre-`typeParams` 2-argument datatype
   -- shape (`name, constructors`) to the current 3-argument form by splicing in an
-  -- absent `typeParams` option. Mirrors the cross-version shims elsewhere so
+  -- absent `typeParams` option. Mirrors `parseProcedure`'s cross-version shims so
   -- a post-CR binary can still consume Ion artifacts produced against the
   -- pre-generics grammar.
   let args : Array Arg ← match op.name, op.args with
@@ -889,25 +1006,57 @@ def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   | _, _ =>
     TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
 
-def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+/-- The result of translating one top-level command: at most one of a static
+    procedure, a type definition, or a global (static) field. -/
+private structure TopLevel where
+  proc : Option Procedure := none
+  type : Option TypeDefinition := none
+  field : Option Field := none
+
+private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
   | q`Laurel.procedureCommand, #[procArg] =>
     let proc ← parseProcedure procArg
-    return (some proc, none)
+    return { proc := some proc }
   | q`Laurel.compositeCommand, #[compositeArg] =>
     let typeDef ← parseComposite compositeArg
-    return (none, some typeDef)
+    return { type := some typeDef }
   | q`Laurel.datatypeCommand, #[datatypeArg] =>
     let typeDef ← parseDatatype datatypeArg
-    return (none, some typeDef)
+    return { type := some typeDef }
   | q`Laurel.constrainedTypeCommand, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
-    return (none, some (.Constrained ct))
+    return { type := some (.Constrained ct) }
+  | q`Laurel.globalVarCommand, #[nameArg, typeArg, initArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    let initializer ← match initArg with
+      | .option _ (some (.op initOp)) => match initOp.name, initOp.args with
+        | q`Laurel.initializer, #[valueArg] => translateStmtExpr valueArg
+        | _, _ => TransM.error s!"global '{name.text}' has a malformed initializer"
+      | .option _ none =>
+        TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
+                        'var {name.text}: <type> := <value>'"
+      | _ => TransM.error s!"global '{name.text}' has a malformed initializer"
+    return { field := some { name := name, isMutable := true, type := fieldType,
+                             initializer := some initializer } }
+  | q`Laurel.globalVarCommand, #[nameArg, _typeArg] =>
+    let name ← translateIdent nameArg
+    TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
+                    'var {name.text}: <type> := <value>'"
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, or globalVarCommand, got {repr op.name}"
+
+/-- Translate one non-global top-level command, preserving the existing public API. -/
+def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+  let topLevel ← parseTopLevelWithGlobals arg
+  if topLevel.field.isSome then
+    TransM.error
+      "parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got `Laurel.globalVarCommand`"
+  return (topLevel.proc, topLevel.type)
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
@@ -915,17 +1064,22 @@ Translate concrete Laurel syntax into abstract Laurel syntax
 def parseProgram (prog : StrataDDM.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
+  let mut fields : List Field := []
   for op in prog.commands do
-    let (procOpt, typeOpt) ← parseTopLevel (.op op)
+    let { proc := procOpt, type := typeOpt, field := fieldOpt } ←
+      parseTopLevelWithGlobals (.op op)
     match procOpt with
     | some proc => procedures := procedures ++ [proc]
     | none => pure ()
     match typeOpt with
     | some typeDef => types := types ++ [typeDef]
     | none => pure ()
+    match fieldOpt with
+    | some field => fields := fields ++ [field]
+    | none => pure ()
   return {
     staticProcedures := procedures
-    staticFields := []
+    staticFields := fields
     types := types
   }
 

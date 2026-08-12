@@ -18,7 +18,7 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
   match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .datatypeDestructor _ fld => fld.type
@@ -26,7 +26,7 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
     | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
       | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
     | .unresolved source => { val := HighType.Unknown, source := source }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
@@ -57,20 +57,6 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
   | .StaticCall callee _ => getCallType source model callee
   | .InstanceCall _ callee _ => getCallType source model callee
-  -- Operators
-  | .PrimitiveOp op args _ =>
-      match args with
-      | head :: tail =>
-        match op with
-        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, source ⟩
-        | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-          match (computeExprType model head).val with
-            | .TFloat64  => ⟨ .TFloat64, source ⟩
-            | .TReal => ⟨ .TReal, source ⟩
-            | .TInt => ⟨ .TInt, source ⟩
-            | _ => ⟨ .Unknown, source ⟩
-        | .StrConcat => ⟨ .TString, source ⟩
-      | _ => ⟨ .Unknown, source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
@@ -97,6 +83,8 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert .. => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
+  | .Throw _ => ⟨ .TVoid, source ⟩
+  | .Try _ _ _ => ⟨ .TVoid, source ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, source ⟩
   | .This => default -- TODO: implement

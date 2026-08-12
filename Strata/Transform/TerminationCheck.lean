@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
@@ -32,7 +33,7 @@ namespace Core
 namespace TermCheck
 
 open Lambda
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 open Strata.DL.Util (FuncAttr)
 open Core.Transform
 
@@ -124,7 +125,7 @@ private def extractTermObligations
     (recFuncNames : List String)
     (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
     : Except String (List Expression.Expr) :=
-  go body []
+  go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
   go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
       : Except String (List Expression.Expr) :=
@@ -176,13 +177,13 @@ where
 private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
   match concreteTy with
   | .tcons adtName concreteArgs =>
-    if concreteArgs.isEmpty then []
+    if concreteArgs.isEmpty then Subst.empty
     else match tf.getType adtName with
       | some dt =>
-        if dt.typeArgs.length != concreteArgs.length then []
-        else [dt.typeArgs.zip concreteArgs]
-      | none => []
-  | _ => [] -- unreachable: termCheck Step 1 rejects non-.tcons types
+        if dt.typeArgs.length != concreteArgs.length then Subst.empty
+        else Strata.Util.HMaps.ofScopes [dt.typeArgs.zip concreteArgs]
+      | none => Subst.empty
+  | _ => Subst.empty -- unreachable: termCheck Step 1 rejects non-.tcons types
 
 /-- Compute the call-site measure expression. For structural, wraps the
     decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/
@@ -327,11 +328,8 @@ private def mkAdtRankDecls
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking procedures for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
-  match (← get).factory with
-  | .none => return (false, p)
-  | .some _ =>
-    let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
-    return (changed, { decls := newDecls })
+  let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+  return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)
@@ -348,7 +346,7 @@ where
       | .recFuncBlock funcs md => do
         let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
         let throwErr (msg : String) : CoreTransformM Unit :=
-          throw (DiagnosticModel.withRange fileRange msg)
+          throw (Message.withRange fileRange msg)
         -- Step 1: Validate measures and determine DecreasesKind for each function.
         -- Skip polymorphic functions: adtRank axioms are monomorphic.
         let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []

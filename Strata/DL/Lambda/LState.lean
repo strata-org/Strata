@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.Scopes
@@ -82,7 +83,7 @@ instance : ToFormat (LState T) where
 Add function `func` to the existing factory of functions in `σ`. Redefinitions
 are not allowed.
 -/
-def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except DiagnosticModel (LState T) := do
+def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except Message (LState T) := do
   let F ← σ.config.factory.tryPush func
   .ok { σ with config := { σ.config with factory := F }}
 
@@ -90,7 +91,7 @@ def LState.addFactoryFunc (σ : LState T) (func : (LFunc T)) : Except Diagnostic
 Append `Factory f` to the existing factory of functions in `σ`, checking for
 redefinitions.
 -/
-def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except DiagnosticModel (LState T) := do
+def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except Message (LState T) := do
   let oldF := σ.config.factory
   let newF ← oldF.addFactory F
   .ok { σ with config := { σ.config with factory := newF } }

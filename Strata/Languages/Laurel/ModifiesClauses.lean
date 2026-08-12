@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
@@ -49,7 +50,7 @@ namespace Strata.Laurel
 
 public section
 
-private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
+private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
 
 /--
 A single entry in a modifies clause: a single Composite expression, a Set of
@@ -83,7 +84,7 @@ def extractModifiesEntries (model: SemanticModel)
     -- resolution, so any field target reaching here owns a heap object.
     | .Var (.Field objExpr fieldName) =>
       (resolveQualifiedFieldName model fieldName).map fun qualifiedName =>
-        .field objExpr (mkMd <| .StaticCall qualifiedName [])
+        .field objExpr (mkMd (.StaticCall qualifiedName []) expr.source)
     | _ => classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
@@ -92,25 +93,26 @@ Build the "obj is not modified" condition for a single modifies entry as a Laure
 - For a field `(o, f)`: `!($obj == o && $fld == f)` i.e. the quantified
   `($obj, $fld)` pair is not the modified `(object, field)` pair (field-granular)
 -/
-def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) : StmtExprMd :=
+def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) (source : FileRange) : StmtExprMd :=
   match entry with
   | .single expr =>
-    mkMd <| .PrimitiveOp .Neq [obj, expr]
+    mkMd (.StaticCall (mkId Operation.Neq.procName) [obj, expr]) source
   | .set expr =>
-    let membership := mkMd <| .StaticCall "select" [expr, obj]
-    mkMd <| .PrimitiveOp .Not [membership]
+    let membership := mkMd (.StaticCall "select" [expr, obj]) source
+    mkMd (.StaticCall (mkId Operation.Not.procName) [membership]) source
   | .field objExpr fieldConst =>
-    let objEq := mkMd <| .PrimitiveOp .Eq [obj, objExpr]
-    let fldEq := mkMd <| .PrimitiveOp .Eq [fld, fieldConst]
-    let bothMatch := mkMd <| .PrimitiveOp .And [objEq, fldEq]
-    mkMd <| .PrimitiveOp .Not [bothMatch]
+    let objEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [obj, objExpr]) source
+    let fldEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [fld, fieldConst]) source
+    let bothMatch := mkMd (.StaticCall (mkId Operation.And.procName) [objEq, fldEq]) source
+    mkMd (.StaticCall (mkId Operation.Not.procName) [bothMatch]) source
 
 /-- Conjoin a list of StmtExprs with `&&`. -/
-def conjoinAll (exprs : List StmtExprMd) : StmtExprMd :=
+def conjoinAll (exprs : List StmtExprMd) (source : FileRange) : StmtExprMd :=
   match exprs with
-  | [] => mkMd <| .LiteralBool true
+  | [] => mkMd (.LiteralBool true) source
   | [single] => single
-  | first :: rest => rest.foldl (fun acc e => mkMd <| .PrimitiveOp .And [acc, e]) first
+  | first :: rest =>
+    rest.foldl (fun acc e => mkMd (.StaticCall (mkId Operation.And.procName) [acc, e]) source) first
 
 /--
 Quantified (pointwise) frame: every allocated object the `modifies` clause does not name keeps
@@ -123,41 +125,43 @@ Returns `none` if there are no entries.
 -/
 def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
     (heapIn heapOut : StmtExprMd) : StmtExprMd :=
+  let src := proc.name.source
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
-  let obj := mkMd <| .Var (.Local objName)
-  let fld := mkMd <| .Var (.Local fldName)
-  let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
-  let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
-  let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
+  let obj := mkMd (.Var (.Local objName)) src
+  let fld := mkMd (.Var (.Local fldName)) src
+  let heapCounter := mkMd (.StaticCall "Heap..nextReference!" [heapIn]) src
+  let objRef := mkMd (.StaticCall "Composite..ref!" [obj]) src
+  let objAllocated := mkMd (.StaticCall (mkId Operation.Lt.procName) [objRef, heapCounter]) src
   let antecedent := if entries.isEmpty
     then objAllocated
     else
       -- Build the "not modified" precondition from all entries
       -- Combine: $obj < old($heap).nextReference && notModified($obj, $fld)
-      let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj fld))
-      mkMd <| .PrimitiveOp .And [objAllocated, notModified]
-  let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
-  let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
-  let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
-  let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
-  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := none } ⟩ none implBody
-  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
+      let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj fld · src)) src
+      mkMd (.StaticCall (mkId Operation.And.procName) [objAllocated, notModified]) src
+  let readIn := mkMd (.StaticCall "readField" [heapIn, obj, fld]) src
+  let readOut := mkMd (.StaticCall "readField" [heapOut, obj, fld]) src
+  let heapUnchanged := mkMd (.StaticCall (mkId Operation.Eq.procName) [readIn, readOut]) src
+  let implBody := mkMd (.StaticCall (mkId Operation.Implies.procName) [antecedent, heapUnchanged]) src
+  let innerForall := mkMd (.Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := src } ⟩ none implBody) src
+  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := src } ⟩ none innerForall, source := src }
 
 /-- Quantifier-free frame: output `data` equals input with only the named rows
 overwritten, and `nextReference` is monotone. -/
 def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
     (heapIn heapOut : StmtExprMd) : StmtExprMd :=
-  let data h := mkMd <| .StaticCall "Heap..data!" [h]
-  let nextRef h := mkMd <| .StaticCall "Heap..nextReference!" [h]
+  let src := proc.name.source
+  let data h := mkMd (.StaticCall "Heap..data!" [h]) src
+  let nextRef h := mkMd (.StaticCall "Heap..nextReference!" [h]) src
   let dataOut := data heapOut
   let modifiedRefs := entries.filterMap fun e => match e with | .single r => some r | _ => none
   let framedData := modifiedRefs.foldr
-    (fun ref acc => mkMd <| .StaticCall "update" [acc, ref, mkMd <| .StaticCall "select" [dataOut, ref]])
+    (fun ref acc => mkMd (.StaticCall "update" [acc, ref, mkMd (.StaticCall "select" [dataOut, ref]) src]) src)
     (data heapIn)
-  let dataPreserved := mkMd <| .PrimitiveOp .Eq [dataOut, framedData]
-  let refsMonotone := mkMd <| .PrimitiveOp .Leq [nextRef heapIn, nextRef heapOut]
-  { val := .PrimitiveOp .And [dataPreserved, refsMonotone], source := proc.name.source }
+  let dataPreserved := mkMd (.StaticCall (mkId Operation.Eq.procName) [dataOut, framedData]) src
+  let refsMonotone := mkMd (.StaticCall (mkId Operation.Leq.procName) [nextRef heapIn, nextRef heapOut]) src
+  { val := .StaticCall (mkId Operation.And.procName) [dataPreserved, refsMonotone], source := src }
 
 /-- True when the `modifies` clause is non-empty and names only individual references
 (no set-valued entries), so the enumerated frame applies. -/
@@ -171,36 +175,70 @@ indicating it mutates the heap.
 def hasHeapOut (proc : Procedure) : Bool :=
   proc.outputs.any (fun p => p.name.text == "$heap")
 
-/-- Build and attach `proc`'s modifies frame, then clear the clause. -/
+/-- Build and attach `proc`'s frame conditions, then clear the clauses.
+
+This pass knows nothing about exceptions. Each `ModifiesGroup` lowers on its own:
+an unguarded group to a plain frame, a guarded group to `guard ==> frame`. The
+guards were resolved by whichever pass created them (`EliminateExceptions` guards
+a lowered procedure's groups on its result's `isGood`/`isBad`) and have already
+been heap-transformed, like the targets; here they are opaque boolean expressions.
+
+Wildcard semantics are per group: a group whose targets include `*` claims
+nothing, so it is dropped — under its guard anything may change. Other groups
+still contribute their frames; an *unguarded* wildcard therefore erases only the
+unguarded frame, exactly as `modifies *` always has.
+
+The enumerated-frame optimization (quantifier-free caller view) applies to
+guarded and unguarded groups alike, with both halves of the split under the
+group's guard: the body still checks `guard ==> quantified frame` and callers
+assume `guard ==> enumerated frame`, which is sound because the quantified
+frame implies the enumerated one pointwise and the shared guard preserves the
+implication (a vacuous guard makes both halves trivial, not unsound). This
+keeps a lowered throwing procedure's normal frame — guarded on its result —
+as cheap for callers as a non-throwing procedure's. -/
 def transformModifiesClauses (model: SemanticModel)
-    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array DiagnosticModel) Procedure :=
+    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
   match proc.body with
-  | .External => .ok proc
-  | .Opaque postconds impl modifiesExprs =>
-      if hasModifiesWildcard modifiesExprs then
+  | .Opaque postconds impl modifiesGroups =>
+      let src := proc.name.source
+      let heapIn := mkMd (.Old (mkMd (.Var (.Local heapVarName)) src)) src
+      let heapOut := mkMd (.Var (.Local heapVarName)) src
+      let guardWith (guard? : Option StmtExprMd) (c : StmtExprMd) : StmtExprMd :=
+        match guard? with
+        | some g => mkMd (.StaticCall (mkId Operation.Implies.procName) [g, c]) src
+        | none => c
+      if !(hasHeapOut proc) then
+        -- No heap to frame over; the groups are moot.
         .ok { proc with body := .Opaque postconds impl [] }
-      else if hasHeapOut proc then
-        let entries := extractModifiesEntries model modifiesExprs
-        let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapVarName)))
-        let heapOut := mkMd <| .Var (.Local heapVarName)
-        if useEnumeratedFrame && onlyIndividualRefs entries then
-          -- Callers assume the quantifier-free frame (assume-only); the body
-          -- checks the pointwise frame (assert-only) at every exit, so the
-          -- quantified frame is verified but never exposed to callers.
-          let enumeratedPost : Condition :=
-            { condition := buildEnumeratedFrame proc entries heapIn heapOut,
-              summary := "modifies clause", mode := ConditionMode.Assume }
-          let pointwisePost : Condition :=
-            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
-              summary := "modifies clause", mode := ConditionMode.Assert }
-          .ok { proc with body := .Opaque (postconds ++ [enumeratedPost, pointwisePost]) impl [] }
-        else
-          let framePost : Condition :=
-            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
-              summary := "modifies clause" }
-          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl [] }
       else
-        .ok proc
+        let framePosts : List Condition := modifiesGroups.flatMap fun g =>
+          if hasModifiesWildcard g.targets then []
+          else
+            let entries := extractModifiesEntries model g.targets
+            let summary := g.summary.getD "modifies clause"
+            if useEnumeratedFrame && onlyIndividualRefs entries then
+              -- Callers assume the quantifier-free frame (assume-only); the body
+              -- checks the pointwise frame (assert-only) at every exit, so the
+              -- quantified frame is verified but never exposed to callers. A
+              -- guarded group splits the same way under its guard (see the
+              -- docstring for why that stays sound).
+              [{ condition := guardWith g.guard (buildEnumeratedFrame proc entries heapIn heapOut),
+                 summary := summary, mode := ConditionMode.Assume },
+               { condition := guardWith g.guard (buildQuantifiedFrame proc entries heapIn heapOut),
+                 summary := summary, mode := ConditionMode.Assert }]
+            else
+              -- Anchor the diagnostic at the procedure name, so a failed frame
+              -- points at the procedure rather than at a source-less synthesized
+              -- node.
+              [{ condition := ⟨(guardWith g.guard
+                   (buildQuantifiedFrame proc entries heapIn heapOut)).val,
+                   proc.name.source ⟩,
+                 summary := summary,
+                 -- A bodiless procedure has no exit to check a frame at, so its
+                 -- frame is assumption-only; `Both` would add a vacuous assert.
+                 -- Pinned by ModifiesClausesLayerTest §3.
+                 mode := if impl.isNone then ConditionMode.Assume else ConditionMode.Both }]
+        .ok { proc with body := .Opaque (postconds ++ framePosts) impl [] }
   | _ => .ok proc
 
 /--
@@ -210,7 +248,7 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List DiagnosticModel :=
+def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List Message :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
     match transformModifiesClauses model proc useEnumeratedFrame with
     | .ok proc' => (acc ++ [proc'], errs)

@@ -49,8 +49,19 @@ instance : Std.ToFormat File2dRange where
 instance : Std.ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.range}"
 
-/-- A default file range for errors without source location.
-This should only be used for generated nodes that are guaranteed to be correct. -/
+/-- A sentinel file range indicating no real source location is available.
+
+Do not add new uses: propagate a real source location from the context instead
+(e.g. the procedure name, or the expression being transformed). Where the type
+only needs *some* `FileRange` to satisfy an `Inhabited` obligation, use
+`default` — `FileRange` derives `Inhabited`, and `default` reads as "placeholder"
+rather than as a location worth reporting.
+
+The uses that remain are all migrations still in flight:
+- `Identifier.source`'s default, until every `mkId` call site supplies a range.
+- The `Option FileRange`-to-`FileRange` bridges in Core (`getD`), until Core's
+  metadata carries a `FileRange` unconditionally.
+- `Message.fromString`/`fromFormat`, for diagnostics not yet located. -/
 def FileRange.unknown : FileRange :=
   { file := .file "<unknown>", range := SourceRange.none }
 
@@ -60,6 +71,7 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
                   | .file path => (path.splitToList (· == '/')).getLast!
   match fileMap with
   | some fm =>
+    if fr.range.isNone then f!"" else
     -- Lean's InputContext may have a fileMap which has an empty source and
     -- position. This can happen when InputContext is assigned Inhabited.default.
     if fm.source.isEmpty ∧ fm.positions.isEmpty then f!"" else
@@ -77,60 +89,6 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
       f!""
     else
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
-
-inductive DiagnosticType where | Warning | UserError | NotYetImplemented | StrataBug
-  deriving Repr, BEq, Inhabited, Lean.ToExpr, Hashable
-
-/-- A diagnostic model that holds a file range and a message.
-    This can be converted to a formatted string using a FileMap. -/
-structure DiagnosticModel where
-  fileRange : FileRange
-  message : String
-  type : DiagnosticType
-  deriving Repr, BEq, Inhabited, Hashable
-
-instance : Inhabited DiagnosticModel where
-  default := { fileRange := FileRange.unknown, message := "", type := .UserError }
-
-/-- Create a DiagnosticModel from just a message (using default location).
-This should not be called, it only exists temporarily to enable incrementally
-migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := msg, type := type }
-
-/-- Create a DiagnosticModel from a Format (using default location).
-This should not be called, it only exists temporarily to enable incrementally
-migrating code without error locations -/
-def DiagnosticModel.fromFormat (fmt : Std.Format) : DiagnosticModel :=
-  { fileRange := FileRange.unknown, message := toString fmt, type := .UserError }
-
-/-- Create a DiagnosticModel with source location. -/
-def DiagnosticModel.withRange (fr : FileRange) (msg : Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
-  { fileRange := fr, message := toString msg, type := type }
-
-/-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
-def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if rangeStr.isEmpty then
-    f!"{dm.message}"
-  else
-    f!"{rangeStr} {dm.message}"
-
-/-- Format just the file range portion of a DiagnosticModel. -/
-def DiagnosticModel.formatRange (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
-  dm.fileRange.format fileMap includeEnd?
-
-/-- Update the file range of a DiagnosticModel if it's currently unknown.
-This should not be called, it only exists temporarily to enable incrementally
-migrating code without error locations -/
-def DiagnosticModel.withRangeIfUnknown (dm : DiagnosticModel) (fr : FileRange) : DiagnosticModel :=
-  if dm.fileRange.range.isNone then
-    { dm with fileRange := fr }
-  else
-    dm
-
-instance : ToString DiagnosticModel where
-  toString dm := dm.format none |> toString
 
 end Strata
 end

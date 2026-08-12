@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Transform.CoreTransform
 public import Strata.DL.Imperative.SMTUtils
@@ -53,7 +54,12 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     its model validation. This coupling ensures that adding a new transform
     also requires specifying its soundness annotation, and vice versa. -/
 structure PipelinePhase where
-  /-- The program-to-program transformation. -/
+  /-- The program-to-program transformation.
+    Returns false if the output Program is identical to the input Program
+    and the CoreTransformState didn't modify the factory field.
+    It can conservatively return true even if they were changed, to save
+    comparison cost.
+  -/
   transform : Program → Transform.CoreTransformM (Bool × Program)
   /-- The model validation for this phase. -/
   phase : AbstractedPhase
@@ -85,9 +91,10 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     (keepAllFilesPrefix : Option String := none)
     : EIO Transform.Err (Program × Transform.CoreTransformState) := do
+  let initState := { initState with currentProgram := .some p }
   if let some pfx := keepAllFilesPrefix then
     if let some parent := (System.FilePath.mk pfx).parent then
-      IO.toEIO (fun e => Strata.DiagnosticModel.fromFormat f!"{e}")
+      IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
         (IO.FS.createDirAll parent)
   let mut current := p
   let mut state := initState
@@ -110,7 +117,7 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
       step := step + 1
       if let some pfx := keepAllFilesPrefix then
         let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
-        IO.toEIO (fun e => Strata.DiagnosticModel.fromFormat f!"{e}")
+        IO.toEIO (fun e => Strata.Message.fromFormat f!"{e}")
           (IO.FS.writeFile path (toString current ++ "\n"))
     | .error e => throw e
   pure (current, state)

@@ -9,7 +9,6 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.Transform.CoreTransform
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen
-import all Strata.DL.Util.Maps
 
 public section
 
@@ -87,15 +86,52 @@ cross-site unification — is fully proven here.
 namespace Core
 namespace Transform
 
-variable (prefixStr : String)
+/-! ## Monad plumbing for `CoreTransformM`
 
-/-- `Map.values` is `map Prod.snd` (used to reason about the substitution
-    range below; file-local — promote to a `Map` properties file if needed
-    more widely). -/
-private theorem map_values_eq_map_snd (m : Map α β) : m.values = m.map Prod.snd := by
-  induction m with
-  | nil => rfl
-  | cons p m ih => cases p; simp [Map.values, ih]
+`CoreTransformM = ExceptT Err (StateM CoreTransformState)`, so a computation
+applied to a state `σ` returns an `(Except Err _) × CoreTransformState` pair.
+The lemmas here expose the facts about `pure`, `throw`, `>>=`, and `Except.ok`
+pair equalities that transform-correctness proofs need — letting them treat the
+effectful sub-computations (`genLiftVar`, `mapM`, `capturedVars`, …) as opaque. -/
+
+/-- Running `pure v` from state `σ` yields `.ok v` with `σ` unchanged. -/
+theorem pure_apply {α : Type} (v : α) (σ : CoreTransformState) :
+    (pure v : CoreTransformM α) σ = (Except.ok v, σ) := rfl
+
+/-- Running `throw e` from state `σ` yields `.error e` with `σ` unchanged. -/
+theorem throw_apply {α : Type} (e : Err) (σ : CoreTransformState) :
+    (throw e : CoreTransformM α) σ = (Except.error e, σ) := rfl
+
+/-- Inversion for a successful `>>=` run: if `(x >>= k) σ` returns `.ok b`, then
+`x` first ran to some `.ok a` at an intermediate state `σ2`, and `k a` ran from
+`σ2` to `.ok b`. -/
+theorem bind_ok_inv {α β : Type} (x : CoreTransformM α) (k : α → CoreTransformM β)
+    {σ σ' : CoreTransformState} {b : β}
+    (h : (x >>= k) σ = (Except.ok b, σ')) :
+    ∃ a σ2, x σ = (Except.ok a, σ2) ∧ k a σ2 = (Except.ok b, σ') := by
+  rcases hx : x σ with ⟨r, σ2⟩
+  cases r with
+  | ok a =>
+    refine ⟨a, σ2, rfl, ?_⟩
+    have hred : (x >>= k) σ = k a σ2 := by
+      simp only [bind, ExceptT.bind, ExceptT.mk, StateT.bind, ExceptT.bindCont, hx]
+    rw [hred] at h; exact h
+  | error e =>
+    exfalso
+    have hred : (x >>= k) σ = (Except.error e, σ2) := by
+      simp only [bind, ExceptT.bind, ExceptT.mk, StateT.bind, ExceptT.bindCont, hx, pure, StateT.pure]
+    rw [hred] at h
+    injection h with he _
+    nomatch he
+
+/-- Injectivity of `(Except.ok _, _)` pairs: from
+`(Except.ok a, s) = (Except.ok b, t)` recover `a = b ∧ s = t`. -/
+theorem ok_pair_inj {ε α σT : Type} {a b : α} {s t : σT}
+    (h : ((@Except.ok ε α a), s) = (Except.ok b, t)) : a = b ∧ s = t := by
+  simp only [Prod.mk.injEq, Except.ok.injEq] at h
+  exact h
+
+variable (prefixStr : String)
 
 /-- `genTyVarName` is `CoreGenState.gen` at the fresh type-var prefix, with the
     generated string reified back into the `CoreIdent`. -/
@@ -232,7 +268,8 @@ private theorem freshenTypeArgsSubst_nonempty {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      S = [(typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2))] := by
+      S = [Strata.Util.HMap.ofList
+        ((typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2)))] := by
   unfold freshenTypeArgsSubst at h
   rw [if_neg (by simp [hne])] at h
   simp only [bind, StateT.bind, pure, StateT.pure] at h
@@ -247,13 +284,16 @@ private theorem freshenTypeArgsSubst_range {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      ∀ v ∈ Maps.values S, ∃ f ∈ fresh, v = Lambda.LMonoTy.ftvar f := by
+      ∀ v ∈ S.values, ∃ f ∈ fresh, v = Lambda.LMonoTy.ftvar f := by
   obtain ⟨fresh, hgen, hS⟩ := freshenTypeArgsSubst_nonempty prefixStr typeArgs γ γ' hne h
   refine ⟨fresh, hgen, ?_⟩
   intro v hv
   subst hS
-  simp only [Maps.values, List.append_nil, map_values_eq_map_snd, List.map_map, List.mem_map] at hv
-  obtain ⟨tf, htf, hveq⟩ := hv
+  obtain ⟨m, hm, hvm⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
+  simp only [List.mem_singleton] at hm; subst hm
+  have hv' := Strata.Util.HMap.mem_values_ofList _ v hvm
+  simp only [List.map_map, List.mem_map] at hv'
+  obtain ⟨tf, htf, hveq⟩ := hv'
   exact ⟨tf.2, (List.of_mem_zip htf).2, hveq.symm⟩
 
 /-- Freshness: for a polymorphic callee, every type in the range of the
@@ -266,14 +306,16 @@ theorem freshenTypeArgsSubst_fresh {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hwf : γ.WF) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     γ'.WF ∧
-    ∀ v ∈ Maps.values S, ∃ f, v = Lambda.LMonoTy.ftvar f ∧
+    ∀ v ∈ S.values, ∃ f, v = Lambda.LMonoTy.ftvar f ∧
       (∃ n : Nat, f = prefixStr ++ "_" ++ toString n) ∧
       (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated ∧ (⟨f, ()⟩ : CoreIdent) ∉ γ.generated := by
   by_cases hne : typeArgs = []
   · subst hne
     have := freshenTypeArgsSubst_empty prefixStr γ
     rw [h] at this; injection this with hS hγ; subst hS hγ
-    exact ⟨hwf, by simp [Maps.values]⟩
+    refine ⟨hwf, fun v hv => ?_⟩
+    obtain ⟨m, hm, _⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
+    simp at hm
   obtain ⟨fresh, hgen, hrange⟩ := freshenTypeArgsSubst_range prefixStr typeArgs γ γ' hne h
   refine ⟨genTyVarNames_wf prefixStr _ γ γ' fresh hwf hgen, ?_⟩
   intro v hv
@@ -294,7 +336,7 @@ theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
     (hwf : γ.WF)
     (h1 : freshenTypeArgsSubst prefixStr ta1 γ = (S1, γ1))
     (h2 : freshenTypeArgsSubst prefixStr ta2 γ1 = (S2, γ2)) :
-    ∀ v ∈ Maps.values S1, v ∉ Maps.values S2 := by
+    ∀ v ∈ S1.values, v ∉ S2.values := by
   have hwf1 : γ1.WF := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).1
   intro v hv1 hv2
   obtain ⟨g, hveq, _, hg_in1, _⟩ := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).2 v hv1

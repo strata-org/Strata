@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Util.FileRange
 import Std.Data.HashMap.Lemmas
@@ -26,6 +27,18 @@ structure Identifier (IDMeta : Type) : Type where
   identifier. -/
   metadata : IDMeta
 deriving Repr, DecidableEq, Inhabited, Hashable
+
+/-- `BEq` for identifiers, derived from `DecidableEq`. Provided explicitly (rather
+    than relying on `instBEqOfDecidableEq`) so that the `LawfulBEq` instance below
+    is about a named `BEq`, which in turn gives `LawfulHashable` for free. This is
+    what makes `Identifier` usable as a `HMap`/`HMaps` key. -/
+instance instBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] : BEq (Identifier IDMeta) :=
+  ⟨fun a b => decide (a = b)⟩
+
+instance instLawfulBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] :
+    LawfulBEq (Identifier IDMeta) where
+  eq_of_beq {a b} h := by simp only [BEq.beq, decide_eq_true_eq] at h; exact h
+  rfl {a} := by simp [BEq.beq]
 
 instance : ToFormat (Identifier IDMeta) where
   format i := i.name
@@ -64,17 +77,17 @@ def IdentTs.tys? (xs : (IdentTs ITy IDMeta)) : List (Option ITy) :=
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
 /-
-For an informative error message, takes in a `DiagnosticModel`
+For an informative error message, takes in a `Message`
 -/
-def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: DiagnosticModel) : Except DiagnosticModel (Identifiers IDMeta) :=
+def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: Message) : Except Message (Identifiers IDMeta) :=
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
   if b then .error f else .ok m'
 
-def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → DiagnosticModel) :=
+def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → Message) :=
   x.foldlM (fun m x => Identifiers.addWithError m x (f x)) m
 
-def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except DiagnosticModel (Identifiers IDMeta) :=
-  m.addWithError x <| DiagnosticModel.fromFormat f!"Error: duplicate identifier {x.name}"
+def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except Message (Identifiers IDMeta) :=
+  m.addWithError x <| Message.fromFormat f!"Error: duplicate identifier {x.name}"
 
 def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (x: Identifier IDMeta) : Bool :=
   match m[x.name]?with

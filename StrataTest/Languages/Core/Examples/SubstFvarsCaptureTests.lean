@@ -28,7 +28,7 @@ def issue653Pgm : Program :=
 #strata
 program Core;
 
-inline function foo(x : int, $__y0 : int) : int { x + $__y0 }
+inline function foo(x : int, $__y0 : int) : int { int.add(x, $__y0) }
 
 procedure TestFoo()
 {
@@ -120,7 +120,7 @@ private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
 -- Correct (with lifting): `forall z :: bvar 1 > bvar 0` (bvar 1 = outer y).
 -- The "out of bounds" error is expected: bvar!1 is only in-bounds when the iterated version incorrectly captures it.
 /--
-info: forall z : int :: bvar!1 > z
+info: forall z : int :: int.gt(bvar!1, z)
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 1
 Context: Global scope:
 Scope 1:
@@ -151,7 +151,7 @@ private def testEnv : Env :=
 
 -- body: x + y, store: x → y+1, y → 0
 -- Iterated [x→(y+1)][y→0]: `(0+1) + 0`. Correct: `(y+1) + 0`.
-/-- info: y + 1 + 0 -/
+/-- info: int.add(int.add(y, 1), 0) -/
 #guard_msgs in
 #eval Std.ToFormat.format (captureFreevars testEnv [] (mkAdd (mkFv "x") (mkFv "y")))
 

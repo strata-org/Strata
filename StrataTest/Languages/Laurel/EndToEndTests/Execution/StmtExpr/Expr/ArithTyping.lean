@@ -40,11 +40,15 @@ procedure homogeneousReal()
 };
 
 // [⇐] Op-Arith: check path (the `var: real` annotation drives it).
+// `+` is a call to the overloaded `$add` wrapper, so a mixed `int`/`real` pair
+// matches neither the `int` nor the `real` overload and is reported as an
+// overload-resolution failure over the whole call rather than as a mismatch
+// against one operand.
 procedure heterogeneousCheckPath()
   opaque
 {
   var x: real := 1 + 2.0
-//               ^ error: expected 'real', got 'int'
+//               ^^^^^^^ error: no overload of '$add' matches the argument types
 };
 
 // [⇒] Op-Arith: synth path (the `<` forces `1 + 2.0` into synth position).
@@ -52,7 +56,7 @@ procedure heterogeneousSynthPath()
   opaque
 {
   assert (1 + 2.0) < 5
-//        ^^^^^^^ error: cannot apply '+' to operands of types 'int', 'real'
+//        ^^^^^^^ error: no overload of '$add' matches the argument types
 };
 
 procedure unaryNegHomogeneous()

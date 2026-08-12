@@ -629,8 +629,10 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
                     it returns a function type '{func.output}'. \
                     Higher-order functions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
-        -- Note: hasAbs does not special-case directly-applied lambdas (let expressions)
-        -- because the partial evaluator beta-reduces those before SMT encoding.
+        -- Lambda redexes (let-alias bindings such as Core's `have`; see
+        -- `Strata/Transform/BetaReduce.lean`) are contracted by the
+        -- `betaReduce` pipeline phase before encoding, so an abstraction here
+        -- is a genuine higher-order body and is correctly rejected.
         else if func.body.any LExpr.hasAbs then
           .error f!"Cannot encode function '{func.name}' to SMT: \
                     its body contains a lambda expression. \
@@ -985,7 +987,11 @@ def ProofObligation.toSMTTerms (factory : @Lambda.Factory CoreLParams)
   let distinct_assumptions := distinct_terms.reverse.map
     (λ ts => Term.app (.core .distinct) ts .bool)
 
-  -- 3. Encode assumptions.
+  -- 3. Encode assumptions. Lambda redexes in assumption/obligation terms
+  -- (e.g. an argument-value precondition modelled as
+  -- `(fun _ : string => true)(arg)`) are contracted by the `betaReduce`
+  -- pipeline phase; a redex reaching `appToSMTTerm`'s catch-all here would
+  -- fail with "Cannot encode .app expression".
   let (assumptions_terms, ctx, pending) ← Core.toSMTTerms factory assumptionExprs ctx pending
 
   -- 4. Encode variable definitions (`init name ty (.det e)`), emitted by the
