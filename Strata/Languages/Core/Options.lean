@@ -155,10 +155,6 @@ structure VerifyOptions where
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
-  /-- Use globally unique `$__bv{N}` names for quantifier-bound
-      variables instead of human-readable names derived from
-      user-provided names. -/
-  uniqueBoundNames : Bool
   /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
   useArrayTheory : Bool
   -- Verification behavior
@@ -234,7 +230,6 @@ def VerifyOptions.default : VerifyOptions := {
   checkMode := .deductive
   checkLevel := .minimal
   alwaysGenerateSMT := false
-  uniqueBoundNames := false
   skipSolver := false
   profile := false
   incremental := false

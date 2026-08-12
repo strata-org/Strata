@@ -1864,7 +1864,7 @@ def verifySingleEnv (oblProgram : Program)
     let (disposition, encStats) ← pctx.withRepeatedPhase "smtDischarge" do
       -- Seed the encoding context with the env's datatypes and encoder flags.
       let smtCtx := { SMT.Context.default with
-        uniqueBoundNames := options.uniqueBoundNames, datatypes,
+        datatypes,
         useArrayTheory := options.useArrayTheory }
       -- `toSMTTerms` is pure, so it must go through the `*Pure` helper
       -- otherwise the compiler will evaluate it before the phase is entered.
