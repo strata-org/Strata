@@ -352,7 +352,10 @@ via its contract. If the body is present, it is verified against the specificati
 structure Procedure where
   /-- The procedure header: name, type parameters, and parameter signatures. -/
   header : Procedure.Header
-  /-- The procedure's contract: modifies clause, preconditions, and postconditions. -/
+  /-- The procedure's contract: preconditions and postconditions. There is no
+      modifies clause: a body may write only its outputs and locals, enforced by
+      the modification-rights check (`checkModificationRights`) during type
+      checking. -/
   spec   : Procedure.Spec
   /-- The procedure body. -/
   body   : Procedure.Body := .structured []

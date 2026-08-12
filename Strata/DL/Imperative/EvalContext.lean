@@ -233,11 +233,13 @@ class EvalContext (P : PureExpr) (State : Type) where
       also overriding `recordAssertFailure`, failed assertions are silently
       dropped. -/
   continuePastAssert : State → Bool := fun _ => false
-  /-- Record a failed assertion (by label and evaluated condition) *without*
-      halting execution. Only consulted by `Cmd.run` when `continuePastAssert`
-      returns `true`; the default is a no-op since the default
-      `continuePastAssert` never triggers it. -/
-  recordAssertFailure : State → String → P.Expr → State := fun s _ _ => s
+  /-- Record a failed assertion (by label, evaluated condition, and the
+      statement's metadata) *without* halting execution. Only consulted by
+      `Cmd.run` when `continuePastAssert` returns `true`; the default is a no-op
+      since the default `continuePastAssert` never triggers it. The metadata lets
+      a consumer resolve the failure's source location without going through the
+      label. -/
+  recordAssertFailure : State → String → P.Expr → MetaData P → State := fun s _ _ _ => s
 
   /-- Whether concrete execution (`Cmd.run`) should treat `assume` statements as
       no-ops instead of enforcing them. Defaults to `false` (assumes are

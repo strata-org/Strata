@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LTyProps
 
 public import Strata.Languages.Core.Function
 import Strata.DL.Lambda.LExprT
@@ -52,7 +53,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   -- Only pairs where the fresh name actually survived alias resolution are included.
   let userTypeArgs := func.typeArgs.zip origTypeArgs
   let userSubst : Subst :=
-    [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
+    Strata.Util.HMaps.ofScopes [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
   | none =>
     let func := { func with
@@ -69,7 +70,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let Env := Env.addInNewestContext func.inputMonoSignature
+    let Env := Env.addInNewestContext (Strata.Util.HMap.ofList func.inputMonoSignature)
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
@@ -94,7 +95,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     let bodya := LExpr.applySubstT bodya S.subst
     -- Identity entries are no-ops: bijectivity of bwdMap ensures no other key maps to k.
     let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
+      Strata.Util.HMaps.ofScopes [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
     let bodya := LExpr.applySubstT bodya renameSubst
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck

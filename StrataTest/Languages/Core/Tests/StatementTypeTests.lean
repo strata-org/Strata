@@ -27,7 +27,7 @@ info: ok: {
 }
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := Strata.Util.HMaps.ofScopes [[("xinit", t[int])]] })
                    Program.init
                    none
                    [.init "x" t[int] (.det eb[xinit]) .empty,
@@ -38,7 +38,7 @@ info: ok: {
 
 /-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
-#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[bool])]] })
                    Program.init
                    none
                    [
@@ -48,7 +48,7 @@ info: ok: {
 
 /--
 info: ok: context:
-types:   [(zinit, bool) (x, int) (y, int)]
+types:   [(x, int) (y, int) (zinit, bool)]
 aliases: []
 state:
 tyGen: 0
@@ -58,7 +58,7 @@ exprPrefix: $__var
 subst:
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("zinit", t[bool])]] })
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("zinit", t[bool])]] })
                     Program.init
                     none
                     [
@@ -150,10 +150,10 @@ tyGen: 8
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: [($__ty0, int) ($__ty1, int) ($__ty4, (arrow bool int)) ($__ty5, bool) ($__ty3, (arrow bool int)) ($__ty2, (arrow bool int)) ($__ty7, int)]
+subst: [($__ty0, int) ($__ty1, int) ($__ty2, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty4, (arrow bool int)) ($__ty5, bool) ($__ty7, int)]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("fn", t[∀a. %a → %a])]] })
                       Program.init none
               [
               .init "m1" t[∀a. %a → int] (.det eb[fn]) .empty, -- var m : <a>[a]int
@@ -228,7 +228,7 @@ info: error: Function 'f': body contains undeclared type variables [a] (not in t
 #guard_msgs in
 #eval do
   -- "a" is in the outer context as a type variable (simulating a polymorphic procedure)
-  let Env := TEnv.default.updateContext {types := [[("x", .forAll ["a"] (.ftvar "a"))]]}
+  let Env := TEnv.default.updateContext {types := Strata.Util.HMaps.ofScopes [[("x", .forAll ["a"] (.ftvar "a"))]]}
   let ans ← typeCheck LContext.default Env Program.init none testOuterTyVarCapture
   return format ans.fst
 
@@ -291,7 +291,7 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
 -/
 #guard_msgs in
 #eval do
-  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let env := TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let ans ← typeCheck LContext.default env testProgram none
     [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ans
@@ -300,7 +300,7 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
 /-- info: ok: () -/
 #guard_msgs in
 #eval do
-  let env := TEnv.default.updateContext { types := [[("x", t[int]), ("y", t[int])]] }
+  let env := TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let _ ← typeCheck LContext.default env testProgram none
     [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ()

@@ -4,10 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.LExprEvalProps
 public import Strata.DL.Lambda.LExprT
+public import Strata.DL.Lambda.LExprWFProps
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
@@ -35,7 +37,7 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {T: LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [Inhabited (LExpr T.mono)] [BEq T.Metadata] [Traceable LExpr.EvalProvenance T.Metadata]
+variable {T: LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [Inhabited (LExpr T.mono)] [BEq T.Metadata] [Traceable LExpr.EvalProvenance T.Metadata]
 
 /--
 Top-level type checking and partial evaluation function for the Lambda
@@ -44,14 +46,16 @@ dialect.
 def typeCheckAndPartialEval
   [Inhabited T.Metadata]
   [Inhabited T.IDMeta]
+  [Hashable T.IDMeta]
+  [HasGen T.IDMeta]
   (t: TypeFactory (IDMeta:=T.IDMeta) := TypeFactory.default)
   (f : Factory (T:=T) := Factory.default)
   (e : LExpr T.mono) :
-  Except DiagnosticModel (LExpr T.mono) := do
+  Except Message (LExpr T.mono) := do
   let E := TEnv.default
   let C := LContext.default (functions := f)
   let C ← C.addTypeFactory t
-  let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
+  let (et, _T) ← LExpr.annotate C E e |>.mapError Message.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory C.functions
   return (LExpr.evalWithLState σ.config.fuel σ et).fst

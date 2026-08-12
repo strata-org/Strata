@@ -45,13 +45,13 @@ info: ok: verify_Test: {
   var x : int;
   var y : int;
   var |old g| : int := g;
-  assume [Test_requires_0]: x > 0;
+  assume [Test_requires_0]: int.gt(x, 0);
   body_Test: {
     y := x;
-    g := g + 1;
+    g := int.add(g, 1);
   }
-  assert [Test_ensures_1]: y > 0;
-  assert [Test_ensures_2]: g == old g + 1;
+  assert [Test_ensures_1]: int.gt(y, 0);
+  assert [Test_ensures_2]: g == int.add(old g, 1);
 }
 -/
 #guard_msgs in
@@ -60,13 +60,13 @@ info: ok: verify_Test: {
   program Core;
   procedure Test(inout g : int, x : int, out y : int)
   spec {
-    requires (x > 0);
-    ensures (y > 0);
-    ensures (g == old g + 1);
+    requires (int.gt(x, 0));
+    ensures (int.gt(y, 0));
+    ensures (g == int.add(old g, 1));
   }
   {
     y := x;
-    g := g + 1;
+    g := int.add(g, 1);
   };
   #end)
   "Test"
@@ -107,8 +107,8 @@ info: ok: verify_Simple: {
 info: ok: verify_WithFree: {
   var x : int;
   var y : int;
-  assume [WithFree_requires_0]: x >= 0;
-  assume [WithFree_requires_1]: x > 0;
+  assume [WithFree_requires_0]: int.ge(x, 0);
+  assume [WithFree_requires_1]: int.gt(x, 0);
   body_WithFree: {
     y := x;
   }
@@ -121,9 +121,9 @@ info: ok: verify_WithFree: {
   program Core;
   procedure WithFree(x : int, out y : int)
   spec {
-    free requires (x >= 0);
-    requires (x > 0);
-    free ensures (y >= 0);
+    free requires (int.ge(x, 0));
+    requires (int.gt(x, 0));
+    free ensures (int.ge(y, 0));
     ensures (y == x);
   }
   {
@@ -143,14 +143,14 @@ info: ok: verify_MultipleModifies: {
   var y : int;
   var |old g1| : int := g1;
   var |old g2| : bool := g2;
-  assume [MultipleModifies_requires_0]: x > 0;
+  assume [MultipleModifies_requires_0]: int.gt(x, 0);
   body_MultipleModifies: {
     y := x;
-    g1 := g1 + 1;
+    g1 := int.add(g1, 1);
     g2 := true;
   }
   assert [MultipleModifies_ensures_1]: y == x;
-  assert [MultipleModifies_ensures_2]: g1 == old g1 + 1;
+  assert [MultipleModifies_ensures_2]: g1 == int.add(old g1, 1);
   assert [MultipleModifies_ensures_3]: g2;
 }
 -/
@@ -160,14 +160,14 @@ info: ok: verify_MultipleModifies: {
   program Core;
   procedure MultipleModifies(inout g1 : int, inout g2 : bool, x : int, out y : int)
   spec {
-    requires (x > 0);
+    requires (int.gt(x, 0));
     ensures (y == x);
-    ensures (g1 == old g1 + 1);
+    ensures (g1 == int.add(old g1, 1));
     ensures g2;
   }
   {
     y := x;
-    g1 := g1 + 1;
+    g1 := int.add(g1, 1);
     g2 := true;
   };
   #end)

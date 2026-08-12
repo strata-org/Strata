@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Util.FileRange
 import Std.Data.HashMap.Lemmas
@@ -26,6 +27,18 @@ structure Identifier (IDMeta : Type) : Type where
   identifier. -/
   metadata : IDMeta
 deriving Repr, DecidableEq, Inhabited, Hashable
+
+/-- `BEq` for identifiers, derived from `DecidableEq`. Provided explicitly (rather
+    than relying on `instBEqOfDecidableEq`) so that the `LawfulBEq` instance below
+    is about a named `BEq`, which in turn gives `LawfulHashable` for free. This is
+    what makes `Identifier` usable as a `HMap`/`HMaps` key. -/
+instance instBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] : BEq (Identifier IDMeta) :=
+  ⟨fun a b => decide (a = b)⟩
+
+instance instLawfulBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] :
+    LawfulBEq (Identifier IDMeta) where
+  eq_of_beq {a b} h := by simp only [BEq.beq, decide_eq_true_eq] at h; exact h
+  rfl {a} := by simp [BEq.beq]
 
 instance : ToFormat (Identifier IDMeta) where
   format i := i.name
@@ -64,17 +77,17 @@ def IdentTs.tys? (xs : (IdentTs ITy IDMeta)) : List (Option ITy) :=
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
 /-
-For an informative error message, takes in a `DiagnosticModel`
+For an informative error message, takes in a `Message`
 -/
-def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: DiagnosticModel) : Except DiagnosticModel (Identifiers IDMeta) :=
+def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: Message) : Except Message (Identifiers IDMeta) :=
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
   if b then .error f else .ok m'
 
-def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → DiagnosticModel) :=
+def Identifiers.addListWithError {IDMeta} (m: Identifiers IDMeta) (x: List (Identifier IDMeta)) (f: Identifier IDMeta → Message) :=
   x.foldlM (fun m x => Identifiers.addWithError m x (f x)) m
 
-def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except DiagnosticModel (Identifiers IDMeta) :=
-  m.addWithError x <| DiagnosticModel.fromFormat f!"Error: duplicate identifier {x.name}"
+def Identifiers.add {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) : Except Message (Identifiers IDMeta) :=
+  m.addWithError x <| Message.fromFormat f!"Error: duplicate identifier {x.name}"
 
 def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (x: Identifier IDMeta) : Bool :=
   match m[x.name]?with
@@ -83,76 +96,6 @@ def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (
 
 def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (n: String) : Bool :=
   m[n]?.isSome
-
-theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → m.contains x = false := by
-  unfold addWithError contains
-  simp
-  grind
-
-theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
-  unfold addWithError contains;
-  have m_contains := (Std.HashMap.containsThenInsertIfNew_fst (m:=m) (k:=x.name) (v:=x.metadata));
-  have m'_def := (Std.HashMap.containsThenInsertIfNew_snd (m:=m) (k:=x.name) (v:=x.metadata));
-  revert m_contains m'_def
-  rcases (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with ⟨b, m''⟩; simp; intros b_eq m''_eq; subst b m'';
-  split <;> intros m_contains; contradiction
-  injection m_contains; subst m'; intros y; rw[Std.HashMap.getElem?_insertIfNew]
-  cases name_eq: (x.name == y.name); grind
-  rw[beq_iff_eq] at name_eq
-  rename_i m_contains
-  have name_notin : ¬ x.name ∈ m := by grind
-  simp; rw[if_neg name_notin]
-  cases meta_eq: (x.metadata == y.metadata); grind
-  rw[beq_iff_eq] at meta_eq
-  constructor
-  . intros _; apply Or.inl; cases x; cases y; grind
-  . rw[meta_eq]; intros _; simp
-
-theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}:
-  m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by
-  unfold addListWithError
-  induction l generalizing m m' with
-  | nil => simp
-  | cons h t IH =>
-    simp only[List.foldlM, bind, Except.bind]
-    split <;> intros Hid; try contradiction
-    intros x
-    rw[List.mem_cons]
-    rename_i Heq
-    have Hin := Identifiers.addWithErrorNotin Heq
-    have := addWithErrorContains Heq x; grind
-
-theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
-  unfold addListWithError
-  induction l generalizing m m' with
-  | nil => simp; intros Heq; cases Heq; grind
-  | cons h t IH =>
-    simp only[List.foldlM, bind, Except.bind]
-    split <;> intros Hid; try contradiction
-    intros x
-    rw[List.mem_cons]
-    rename_i Heq
-    have Hcont := Identifiers.addWithErrorContains Heq x
-    have Hin := Identifiers.addWithErrorNotin Heq
-    grind
-
-theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta]
-  {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → DiagnosticModel}: m.addListWithError l f = .ok m' → l.Nodup := by
-  unfold addListWithError
-  induction l generalizing m m' with
-  | nil => simp
-  | cons h t IH =>
-    simp only[List.foldlM, bind, Except.bind]
-    split <;> intros Hid; try contradiction
-    apply List.nodup_cons.mpr
-    constructor <;> try grind
-    intros h_in_t
-    rename_i Hadd
-    have := Identifiers.addWithErrorContains Hadd h
-    have := Identifiers.addListWithErrorNotin Hid h
-    grind
 
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)

@@ -30,16 +30,16 @@ procedure Register(id : int, value : int, inout registry : Map int OptionInt, in
 spec {
     requires [id_not_in_registry]: !is_present(registry[id]);
     ensures  [registry_id_eq_val]: registry[id] == Some(value);
-    ensures  [count_incremented]:  count == old count + 1;
+    ensures  [count_incremented]:  count == int.add(old count, 1);
 }
 {
     registry := registry[id := Some(value)];
-    count := count + 1;
+    count := int.add(count, 1);
 };
 
 procedure GetValue(id : int, registry : Map int OptionInt, out res : OptionInt)
 spec {
-    requires [id_ge_zero]:  id >= 0;
+    requires [id_ge_zero]:  int.ge(id, 0);
     ensures [value_for_id]: res == registry[id];
 }
 {

@@ -31,7 +31,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 procedure TestListLen() spec {
@@ -60,11 +60,11 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilLen
 Property: assert
@@ -198,7 +198,7 @@ rec function sumList (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0
   else if IntList..isNil(IntList..tl(xs)) then IntList..hd(xs)
-  else IntList..hd(xs) + sumList(IntList..tl(xs))
+  else int.add(IntList..hd(xs), sumList(IntList..tl(xs)))
 };
 #end
 
@@ -296,12 +296,12 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 rec function listSum (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else IntList..hd(xs) + listSum(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(IntList..hd(xs), listSum(IntList..tl(xs)))
 };
 
 procedure Test() spec {
@@ -326,11 +326,11 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: listSum_body_calls_IntList..hd_0
 Property: assert
@@ -346,11 +346,11 @@ Label: listSum_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@4)) ==> IntList..adtRank(IntList..tl(xs@4)) < IntList..adtRank(xs@4)
+!(IntList..isNil(xs@4)) ==> int.lt(IntList..adtRank(IntList..tl(xs@4)), IntList..adtRank(xs@4))
 
 Label: lenNil
 Property: assert
@@ -418,8 +418,8 @@ datatype Tree { Leaf(val: int), Branch(left: Tree, right: Tree), Chain(head: int
 rec function treeSize (@[cases] t : Tree) : int
 {
   if Tree..isLeaf(t) then 1
-  else if Tree..isBranch(t) then treeSize(Tree..left(t)) + treeSize(Tree..right(t))
-  else 1 + treeSize(Tree..tail(t))
+  else if Tree..isBranch(t) then int.add(treeSize(Tree..left(t)), treeSize(Tree..right(t)))
+  else int.add(1, treeSize(Tree..tail(t)))
 };
 
 procedure TestTreeSize() spec {
@@ -455,43 +455,43 @@ Label: treeSize_terminates_0
 Property: assert
 Assumptions:
 Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  Tree..adtRank(x) >= 0
+  int.ge(Tree..adtRank(x), 0)
 Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..left(t@2)) < Tree..adtRank(t@2)
+Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..left(t@2)), Tree..adtRank(t@2))
 
 Label: treeSize_terminates_1
 Property: assert
 Assumptions:
 Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  Tree..adtRank(x) >= 0
+  int.ge(Tree..adtRank(x), 0)
 Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..right(t@2)) < Tree..adtRank(t@2)
+Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..right(t@2)), Tree..adtRank(t@2))
 
 Label: treeSize_terminates_2
 Property: assert
 Assumptions:
 Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  Tree..adtRank(x) >= 0
+  int.ge(Tree..adtRank(x), 0)
 Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(left) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  Tree..adtRank(right) < Tree..adtRank(Branch(left, right))
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
 Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  Tree..adtRank(tail) < Tree..adtRank(Chain(head, tail))
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-!(Tree..isBranch(t@2)) ==> !(Tree..isLeaf(t@2)) ==> Tree..adtRank(Tree..tail(t@2)) < Tree..adtRank(t@2)
+!(Tree..isBranch(t@2)) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..tail(t@2)), Tree..adtRank(t@2))
 
 Label: leaf
 Property: assert
@@ -570,7 +570,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
 rec function intListLen (@[cases] xs : MyList int) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + intListLen(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, intListLen(MyList..tl(xs)))
 };
 #end
 
@@ -587,11 +587,11 @@ Label: intListLen_terminates_0
 Property: assert
 Assumptions:
 MyList..adtRank_0: forall x : (MyList int) ::  { MyList..adtRank(x) }
-  MyList..adtRank(x) >= 0
+  int.ge(MyList..adtRank(x), 0)
 MyList..adtRank_1: forall hd : int :: forall tl : (MyList int) ::  { MyList..adtRank(Cons(hd, tl)) }
-  MyList..adtRank(tl) < MyList..adtRank(Cons(hd, tl))
+  int.lt(MyList..adtRank(tl), MyList..adtRank(Cons(hd, tl)))
 Obligation:
-!(MyList..isNil(xs@2)) ==> MyList..adtRank(MyList..tl(xs@2)) < MyList..adtRank(xs@2)
+!(MyList..isNil(xs@2)) ==> int.lt(MyList..adtRank(MyList..tl(xs@2)), MyList..adtRank(xs@2))
 
 ---
 info:
@@ -618,7 +618,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
   decreases xs
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 #end
 
@@ -649,7 +649,7 @@ rec function zipLen (@[cases] xs : IntList, ys : IntList) : int
 {
   if IntList..isNil(xs) then 0
   else if IntList..isNil(ys) then 0
-  else 1 + zipLen(IntList..tl(xs), IntList..tl(ys))
+  else int.add(1, zipLen(IntList..tl(xs), IntList..tl(ys)))
 };
 
 procedure TestZipLen() spec {
@@ -680,11 +680,11 @@ Label: zipLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(ys@2)) < IntList..adtRank(ys@2)
+!(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(ys@2)), IntList..adtRank(ys@2))
 
 Label: nilCases
 Property: assert
@@ -732,7 +732,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function bad (xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + bad(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, bad(IntList..tl(xs)))
 };
 #end
 
@@ -753,7 +753,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function bad (@[cases] xs : IntList, n : int) : int
   decreases n
 {
-  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), n - 1)
+  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), int.sub(n, 1))
 };
 #end
 
@@ -791,7 +791,7 @@ rec function treeSize (@[cases] t : RoseTree) : int
 }
 function listSize (@[cases] xs : RoseList) : int
 {
-  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+  if RoseList..isRNil(xs) then 0 else int.add(treeSize(RoseList..hd(xs)), listSize(RoseList..tl(xs)))
 };
 
 procedure TestMutualDt() spec {
@@ -897,7 +897,7 @@ rec function intTreeSize (@[cases] t : GenTree int) : int
 }
 function intListSize (@[cases] xs : GenList int) : int
 {
-  if GenList..isGNil(xs) then 0 else intTreeSize(GenList..hd(xs)) + intListSize(GenList..tl(xs))
+  if GenList..isGNil(xs) then 0 else int.add(intTreeSize(GenList..hd(xs)), intListSize(GenList..tl(xs)))
 };
 #end
 
@@ -943,7 +943,7 @@ datatype MyNat { Zero(), Succ(pred: MyNat) };
 rec function predVal (@[cases] n : MyNat) : int
   requires !MyNat..isZero(n);
 {
-  if MyNat..isZero(MyNat..pred(n)) then 0 else 1 + predVal(MyNat..pred(n))
+  if MyNat..isZero(MyNat..pred(n)) then 0 else int.add(1, predVal(MyNat..pred(n)))
 };
 
 #end
@@ -980,7 +980,7 @@ function f (xs : IntList) : IntList { xs }
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(f(IntList..tl(xs)))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(f(IntList..tl(xs))))
 };
 #end
 
@@ -1051,7 +1051,7 @@ function g (xs : IntList) : IntList { xs }
 
 rec function bad (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + bad(g(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, bad(g(xs)))
 };
 #end
 
@@ -1109,7 +1109,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (@[cases] xs : IntList) : int
 {
   if IntList..isNil(xs) then 0
-  else (fun y : int => 1 + listLen(IntList..tl(xs)))(IntList..hd(xs))
+  else (fun y : int => int.add(1, listLen(IntList..tl(xs))))(IntList..hd(xs))
 };
 #end
 
@@ -1143,11 +1143,11 @@ datatype MyNat { Zero(), Succ(pred: MyNat) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 }
 function natToInt (@[cases] n : MyNat) : int
 {
-  if MyNat..isZero(n) then 0 else 1 + natToInt(MyNat..pred(n))
+  if MyNat..isZero(n) then 0 else int.add(1, natToInt(MyNat..pred(n)))
 };
 #end
 
@@ -1169,21 +1169,21 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: natToInt_terminates_0
 Property: assert
 Assumptions:
 MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
+  int.ge(MyNat..adtRank(x), 0)
 MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@2)) ==> MyNat..adtRank(MyNat..pred(n@2)) < MyNat..adtRank(n@2)
+!(MyNat..isZero(n@2)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@2)), MyNat..adtRank(n@2))
 
 ---
 info:
@@ -1218,7 +1218,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function bad (@[cases] xs : IntList) : int
   decreases IntList..tl(xs)
 {
-  if IntList..isNil(xs) then 0 else 1 + bad(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, bad(IntList..tl(xs)))
 };
 #end
 
@@ -1226,6 +1226,100 @@ rec function bad (@[cases] xs : IntList) : int
 recursive function 'bad': non-variable decreases expression must have type int, got 'IntList'. For structural recursion, use a parameter name -/
 #guard_msgs in
 #eval Core.verify decreasesNonVarPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test: structural recursion through a let-alias (β-redex) — should pass.
+-- A front-end binding that names an intermediate value (see the module
+-- docstring of `Strata/Transform/BetaReduce.lean`) lowers to a redex
+-- `(λ c. ... f(tl(c))) xs`. The decreasing argument `tl(c)` references the
+-- *bound* `c`; β-reducing the alias rewrites it to `tl(xs)` so structural
+-- termination goes through instead of erroring on a bound var.
+---------------------------------------------------------------------
+
+def letAliasTermPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLenAlias (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else (fun c : IntList => int.add(1, listLenAlias(IntList..tl(c))))(xs)
+};
+#end
+
+/-- info:
+Obligation: listLenAlias_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLenAlias_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify letAliasTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Same shape via Core's surface syntax: `have c : T = v in body` is sugar
+-- for the redex `(fun c : T => body)(v)`. The decreasing argument `tl(c)`
+-- again references the bound `c`; the checker's non-erasing reduction
+-- rewrites it to `tl(xs)` and structural termination passes.
+---------------------------------------------------------------------
+
+def haveAliasTermPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLenHave (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else have c : IntList = xs in int.add(1, listLenHave(IntList..tl(c)))
+};
+#end
+
+/-- info:
+Obligation: listLenHave_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLenHave_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify haveAliasTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Regression: a constant-lambda redex must NOT erase a
+-- recursive call. `(fun ignored => 0)(bad(xs))` is a constant lambda whose
+-- argument carries a non-decreasing recursive call. Plain β-reduction would
+-- drop the argument (value-preserving but not call-preserving), hiding the
+-- call from the termination checker so the function is silently accepted.
+-- `betaReduceRedexesPreservingArgs` leaves such redexes un-reduced, so the
+-- obligation is still emitted (and here unprovable, as it should be).
+---------------------------------------------------------------------
+
+def constLambdaEraseRecCallPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else (fun ignored : int => 0)(bad(xs))
+};
+#end
+
+/-- info:
+Obligation: bad_terminates_0
+Property: assert
+Result: ❓ unknown -/
+#guard_msgs in
+#eval Core.verify constLambdaEraseRecCallPgm (options := .quiet)
 
 end Strata.TerminationCheckTest
 

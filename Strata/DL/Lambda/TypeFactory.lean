@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
+import all Strata.DL.Lambda.LTyProps
 
 import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Factory
@@ -113,10 +115,10 @@ def tyNameAppearsIn (n: String) (t: LMonoTy) : Bool :=
 Determines whether all occurences of type name `n` within type `t` have
 arguments `args`. `c` appears only for error message information.
 -/
-def checkUniform (c: Format) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except DiagnosticModel Unit :=
+def checkUniform (c: Format) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except Message Unit :=
   match t with
   | .tcons n1 args1 => if n == n1 && args == args1 then .ok ()
-    else if n == n1 then .error <| DiagnosticModel.fromFormat f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
+    else if n == n1 then .error <| Message.fromFormat f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
     else List.foldrM (fun t u => do
       let _ ← checkUniform c n args t
       .ok u
@@ -129,7 +131,7 @@ type constructor's arguments.
 The format `c` appears only for error message information.
 -/
 def checkNotNested (c: Format) (block: MutualDatatype IDMeta) (t: LMonoTy) :
-Except DiagnosticModel Unit :=
+Except Message Unit :=
   match t with
   | .arrow t1 t2 => do
     checkNotNested c block t1
@@ -139,7 +141,7 @@ Except DiagnosticModel Unit :=
     else
       match block.find? (fun d => args1.any (tyNameAppearsIn d.name)) with
       | some d =>
-        .error <| DiagnosticModel.fromFormat
+        .error <| Message.fromFormat
         f!"Error in constructor {c}: Datatype {d.name} appears nested inside {t}. Nested datatypes are not supported in Strata Core."
       | none => List.foldlM (fun _ => checkNotNested c block) () args1
   | _ => .ok ()
@@ -149,12 +151,12 @@ Except DiagnosticModel Unit :=
 Check for strict positivity and uniformity of all datatypes in a mutual block
 within type `ty`. `c` appears only for error message information.
 -/
-def checkStrictPosUnifTy (c: Format) (block: MutualDatatype IDMeta) (ty: LMonoTy) : Except DiagnosticModel Unit :=
+def checkStrictPosUnifTy (c: Format) (block: MutualDatatype IDMeta) (ty: LMonoTy) : Except Message Unit :=
   match ty with
   | .arrow t1 t2 =>
     -- Check that no datatype in the block appears in the left side of an arrow
     match block.find? (fun d => tyNameAppearsIn d.name t1) with
-    | some d => .error <| DiagnosticModel.fromFormat f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
+    | some d => .error <| Message.fromFormat f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
     | none => checkStrictPosUnifTy c block t2
   | _ =>
     -- Check uniformity for all datatypes in the block
@@ -164,7 +166,7 @@ def checkStrictPosUnifTy (c: Format) (block: MutualDatatype IDMeta) (ty: LMonoTy
 Check strict positivity, uniformity, and non-nesting of constructor arguments
  across a mutual block of datatypes
 -/
-def checkConstructorArgsWF (block: MutualDatatype IDMeta) : Except DiagnosticModel Unit :=
+def checkConstructorArgsWF (block: MutualDatatype IDMeta) : Except Message Unit :=
   block.foldlM (fun _ d =>
     d.constrs.foldlM (fun _ ⟨name, args, _⟩ =>
       args.foldlM (fun _ ⟨_, ty⟩ => do
@@ -177,12 +179,12 @@ def checkConstructorArgsWF (block: MutualDatatype IDMeta) : Except DiagnosticMod
 /--
 Validate a mutual block: check non-empty and no duplicate names.
 -/
-def validateMutualBlock (block: MutualDatatype IDMeta) : Except DiagnosticModel Unit := do
+def validateMutualBlock (block: MutualDatatype IDMeta) : Except Message Unit := do
   if block.isEmpty then
-    .error <| DiagnosticModel.fromFormat f!"Error: Empty mutual block is not allowed"
+    .error <| Message.fromFormat f!"Error: Empty mutual block is not allowed"
   match (block.foldl (fun (o, names) d =>
     if d.name ∈ names then (some d, names) else (o, Std.HashSet.insert names d.name)) (none, ∅)).1 with
-  | some dup => .error <| DiagnosticModel.fromFormat f!"Duplicate datatype name in mutual block: {dup}"
+  | some dup => .error <| Message.fromFormat f!"Duplicate datatype name in mutual block: {dup}"
   | none => .ok ()
 
 ---------------------------------------------------------------------
@@ -617,7 +619,7 @@ def getTypeRefs (ty: LMonoTy) : List String :=
 Ensures all type occuring a constructor are only primitive types,
 types defined previously, or types in the same mutual block.
 -/
-def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String) : Except DiagnosticModel Unit := do
+def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String) : Except Message Unit := do
   let validNames : Std.HashSet String :=
     Std.HashSet.ofList (knownTypes ++ t.allTypeNames ++ block.map (·.name))
   for d in block do
@@ -625,7 +627,7 @@ def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : Mutual
       for (_, ty) in c.args do
         for ref in getTypeRefs ty do
           if !validNames.contains ref then
-            throw <| DiagnosticModel.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
+            throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
 
 ---------------------------------------------------------------------
 
@@ -762,7 +764,7 @@ def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM inhabMap Bool
 Check that all datatypes in a mutual block are inhabited, given the full
 TypeFactory (which must already contain the block).
 -/
-def TypeFactory.checkMutualBlockInhab (adts: @TypeFactory IDMeta) (block : MutualDatatype IDMeta) : Except DiagnosticModel Unit :=
+def TypeFactory.checkMutualBlockInhab (adts: @TypeFactory IDMeta) (block : MutualDatatype IDMeta) : Except Message Unit :=
   let x := (block.foldlM (fun (x: Option String) (d: LDatatype IDMeta) => do
     match x with
     | some a => pure (some a)
@@ -772,11 +774,11 @@ def TypeFactory.checkMutualBlockInhab (adts: @TypeFactory IDMeta) (block : Mutua
   ) none)
   match (StateT.run x []).1 with
   | none => .ok ()
-  | some a => .error <| DiagnosticModel.fromFormat f!"Error: datatype {a} not inhabited"
+  | some a => .error <| Message.fromFormat f!"Error: datatype {a} not inhabited"
 
 /-- Add a mutual block to the TypeFactory, checking for duplicates,
   inconsistent types, and positivity. -/
-def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except DiagnosticModel (@TypeFactory IDMeta) := do
+def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except Message (@TypeFactory IDMeta) := do
   -- Check for name clashes within block
   validateMutualBlock block
   -- Check for positivity, uniformity, nesting
@@ -784,7 +786,7 @@ def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype
   -- Check for duplicate names with existing types
   for d in block do
     match t.getType d.name with
-    | some d' => throw <| DiagnosticModel.fromFormat f!"A datatype of name {d.name} already exists! \
+    | some d' => throw <| Message.fromFormat f!"A datatype of name {d.name} already exists! \
                 Redefinitions are not allowed.\n\
                 Existing Type: {d'}\n\
                 New Type:{d}"
@@ -818,7 +820,7 @@ Generates the Factory (containing eliminators, constructors, testers, and destru
 for a mutual block of datatypes.
 -/
 def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
-    (block : MutualDatatype T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) := do
+    (block : MutualDatatype T.IDMeta) : Except Message (@Lambda.Factory T) := do
   if block.isEmpty then return Factory.default
   let elims := elimFuncs block inst.default
   let constrs := block.flatMap (fun d => d.constrs.map (fun c => constrFunc c d))
@@ -830,7 +832,7 @@ def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.I
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
 -/
-def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except DiagnosticModel (@Lambda.Factory T) :=
+def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Message (@Lambda.Factory T) :=
   t.foldlM (init := .default) fun f block => do
     let f' ← genBlockFactory block
     f.addFactory f'

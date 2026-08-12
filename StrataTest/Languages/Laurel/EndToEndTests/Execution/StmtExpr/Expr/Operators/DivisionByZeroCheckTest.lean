@@ -11,9 +11,10 @@ open Strata
 
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error)
 
-Division and modulo in Laurel translate to Core's safe operators, which have
-built-in preconditions (divisor ≠ 0). The PrecondElim transform automatically
-generates verification conditions for these preconditions.
+Division and modulo in Laurel are calls to the built-in wrappers `$div` / `$mod`,
+which declare `requires y != 0` and delegate to Core's safe operators. The
+PrecondElim transform automatically generates verification conditions for these
+preconditions, so an unconstrained divisor surfaces as a failed precondition.
 -/
 
 /-! ### Safe paths verify cleanly -/
@@ -49,9 +50,11 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
--- We can't make this a testLaurelMultiple,
--- because unsafe division is checked through Core's safe division operator
--- and Core interpretation does not detect unsafe division
+-- `/` is a call to the `$div` wrapper, which declares `requires y != 0`, so the
+-- unconstrained divisor surfaces as that precondition rather than an assertion.
+-- Verify-only: `x` is an unconstrained parameter and nothing marks an `entry`,
+-- so there is no concrete path for the interpreter to walk. The failure is
+-- inherently symbolic — it says the precondition cannot be proved for *all* `x`.
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -59,13 +62,24 @@ procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
-#eval testLaurelMultiple <|
+-- Verify-only: the two phases disagree about how many diagnostics this program
+-- produces, and `testLaurelMultiple` holds both to the same annotations.
+--
+-- `root` calls `callPureDivUnsafe(0)`, so concrete execution reaches `x / y`
+-- with `y = 0`. `/` is a call to the `$div` wrapper, which declares
+-- `requires y != 0`, and that precondition fails at runtime — the interpreter
+-- reports a second diagnostic, inside `pureDiv`'s body, that the verifier does
+-- not: to the verifier `pureDiv` is correct, since its own `requires y != 0`
+-- discharges `$div`'s. Only the unsatisfied precondition at the *call site* is
+-- common to both. Per `TestLaurel`'s rule, a block whose negatives are
+-- phase-asymmetric belongs in `testLaurel`.
+#eval testLaurel <|
 #strata
 program Laurel;
 procedure pureDiv(x: int, y: int): int

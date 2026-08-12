@@ -8,6 +8,8 @@ module
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
+import Strata.Transform.BetaReduce
+import Strata.Languages.Core.ObligationExtraction
 
 meta section
 
@@ -466,12 +468,12 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
   (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
     (.fvar () "s2" (.some .string)))
 
-/-! ## `ProofObligation.toSMTTerms` preserves the input `typeFactory`
+/-! ## `ProofObligation.toSMTTerms` preserves the input datatype factory
 
-`SMT.Context.typeFactory` is seeded by the caller from the env's datatype
+`SMT.Context.datatypes` is seeded by the caller from the env's datatype
 TypeFactory and is never modified during encoding (encoding a datatype marks it
-`seen` and registers its function maps, but never extends `typeFactory`). These
-checks pin that invariant: the output context's `typeFactory` equals the
+`seen` and registers its function maps, but never extends `datatypes`). These
+checks pin that invariant: the output context's datatype factory equals the
 datatype factory the caller seeded it with. -/
 
 private def intListDatatypeRT : Lambda.LDatatype Unit :=
@@ -489,14 +491,14 @@ private def assertOb (obligation : LExpr CoreLParams.mono) :
     obligation := obligation, metadata := {} }
 
 /-- Build an env from the given datatype blocks, encode `ob` with its
-    `typeFactory` seeded from the env's datatypes, and return whether the output
-    context's `typeFactory` still equals that input datatype factory. -/
+    `datatypes` seeded from the env's datatypes, and return whether the output
+    context's datatype factory still equals that input datatype factory. -/
 private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
     (ob : Imperative.ProofObligation Expression) : Except Std.Format Bool := do
   let env ← (Env.init.addDatatypes blocks).mapError (f!"{·}")
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   let (_, _, _, _, ctx', _) ← ProofObligation.toSMTTerms env.factory ob ctx
-  .ok (ctx'.typeFactory == env.datatypes)
+  .ok (ctx'.datatypes.factory == env.datatypes)
 
 -- Obligation referencing the `IntList` datatype (via its `Nil` constructor).
 /-- info: ok: true -/
@@ -516,6 +518,115 @@ private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
 /-- info: ok: true -/
 #guard_msgs in
 #eval typeFactoryPreserved [] (assertOb (.boolConst () true))
+
+/-! ## Regression: a directly-applied lambda redex in an obligation term encodes
+    (rather than hitting `appToSMTTerm`'s "Cannot encode .app expression").
+
+    A front-end argument-value precondition can lower to a constant-lambda
+    redex `(fun _ : string => true)(v)` that is injected into the proof
+    obligation as an ASSUMPTION. Unlike a Core-surface function body it is not
+    partial-evaluated first. The `betaReduce` pipeline phase contracts such
+    redexes in every program expression before obligation extraction, so the
+    SMT encoder (a pure Core-to-SMT mapping) never sees them; these tests pin
+    the phase's coverage of each obligation-feeding position. -/
+
+/-- `(fun _ : string => true)("v1")` — a constant-lambda redex, the shape
+    an argument-value constraint lowers to. -/
+private def constLambdaRedex : LExpr CoreLParams.mono :=
+  .app ()
+    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () true))
+    (.strConst () "v1")
+
+/-- A second constant-lambda redex reducing to `false`, for the distinctness test. -/
+private def constLambdaRedexFalse : LExpr CoreLParams.mono :=
+  .app ()
+    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () false))
+    (.strConst () "x")
+
+/-- A program carrying `constLambdaRedex` in each obligation-feeding position:
+    an `assume` (the argument-precondition shape), a variable definition
+    (`init`), an `assert` goal, and a `distinct` declaration. -/
+private def redexTestPgm : Program :=
+  { decls := [
+      .distinct ⟨"d", ()⟩ [constLambdaRedex, constLambdaRedexFalse] #[],
+      .proc
+        { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured [
+            Statement.assume "arg_precondition" constLambdaRedex #[],
+            Statement.init ⟨"v", ()⟩ (.forAll [] (.tcons "bool" [])) (.det constLambdaRedex) #[],
+            Statement.assert "goal" constLambdaRedex #[]] } #[]] }
+
+-- The `betaReduce` phase contracts the redex in all four positions: the
+-- assumption, the variable definition's RHS, the goal, and both distinctness
+-- operands. Each position's concrete reduced expression is pinned on its own
+-- output line, so a failure names the position that broke.
+/--
+info: distinct operands: [true, false]
+assume: true
+init rhs: true
+assert goal: true
+-/
+#guard_msgs in
+#eval show IO Unit from
+  match (Core.BetaReduce.betaReduceProgram redexTestPgm).decls with
+  | [.distinct _ es _, .proc p _] => do
+    IO.println s!"distinct operands: {es.map (f!"{·}".pretty)}"
+    match p.body with
+    | .structured [
+        Statement.assume _ a _,
+        Statement.init _ _ (.det rhs) _,
+        Statement.assert _ g _] => do
+      IO.println s!"assume: {f!"{a}".pretty}"
+      IO.println s!"init rhs: {f!"{rhs}".pretty}"
+      IO.println s!"assert goal: {f!"{g}".pretty}"
+    | _ => IO.println "UNEXPECTED body shape"
+  | _ => IO.println "UNEXPECTED decl shape"
+
+/-- Render each obligation of `pgm` for `#guard_msgs`: obligation count, then
+    per obligation its label and either the encoded shape (assumption terms
+    rendered through SMTDDM, definition/declaration counts, the goal term) or
+    the encoder's error text. Pins the concrete encoder output, not just
+    `.ok`/`.error`. -/
+private def printRedexObligations (pgm : Program) : IO Unit := do
+  match Core.ObligationExtraction.extractObligations pgm with
+  | .error e => IO.println s!"extract error: {e}"
+  | .ok obs =>
+    IO.println s!"{obs.toList.length} obligation(s)"
+    for ob in obs.toList do
+      match (Env.init.addDatatypes []).mapError (f!"{·}") >>= fun env =>
+            ProofObligation.toSMTTerms env.factory ob SMT.Context.default with
+      | .ok (assumptions, defs, decls, goal, _, _) =>
+        let render (t : Term) : String :=
+          match Strata.SMTDDM.termToString t with
+          | .ok s => s
+          | .error e => s!"<render error: {e}>"
+        IO.println s!"{ob.label}: assumptions [{", ".intercalate (assumptions.map render)}], \
+          {defs.length} def(s), {decls.length} decl(s), goal {render goal}"
+      | .error e => IO.println s!"{ob.label}: ERROR: {e.pretty}"
+
+-- Composed seam test: obligations extracted from the reduced program encode
+-- cleanly through `ProofObligation.toSMTTerms`, and the encoded terms are the
+-- reduced constants — pinning that the phase leaves nothing the encoder
+-- rejects and what the encoder actually produces.
+/--
+info: 1 obligation(s)
+goal: assumptions [(distinct true false), true], 1 def(s), 0 decl(s), goal true
+-/
+#guard_msgs in
+#eval printRedexObligations (Core.BetaReduce.betaReduceProgram redexTestPgm)
+
+-- Un-reduced control: the same program WITHOUT the phase fails to encode —
+-- the redex reaches `appToSMTTerm`'s catch-all, pinned by the concrete
+-- "Cannot encode .app expression" error on the named obligation. This shows
+-- the phase is load-bearing (if the encoder ever learns to reduce, this
+-- expectation should be revisited together with the phase).
+/--
+info: 1 obligation(s)
+goal: ERROR: Cannot encode .app expression (fun ignored : string => true)("v1")
+-/
+#guard_msgs in
+#eval printRedexObligations redexTestPgm
 
 end Core
 
@@ -594,8 +705,8 @@ program Core;
 
 procedure P()
 {
-  assert [three_thirds]: frac{1, 3} + frac{1, 3} + frac{1, 3} == 1.0;
-  assert [neg_neq_pos]: -frac{2, 3} == frac{2, 3};
+  assert [three_thirds]: real.add(real.add(frac{1, 3}, frac{1, 3}), frac{1, 3}) == 1.0;
+  assert [neg_neq_pos]: real.neg(frac{2, 3}) == frac{2, 3};
 };
 #end
 

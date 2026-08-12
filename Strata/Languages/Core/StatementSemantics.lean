@@ -307,7 +307,9 @@ end
 
 /-! ## Old-variable environment augmentation -/
 
-/-- Augment an environment with old-variable bindings for the modifies clause.
+/-- Augment an environment with old-variable bindings for a set of variables
+    whose pre-state values are snapshotted (the inout parameters / referenced
+    globals of a procedure).
 
     For each `g ∈ modifies`, the store is extended so that
     `(withOldBindings modifies ρ).store (CoreIdent.mkOld g.name) = ρ.store g`.

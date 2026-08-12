@@ -31,6 +31,23 @@ instance : DecidableEq CoreLParams.IDMeta :=
 instance : ToFormat CoreLParams.IDMeta :=
   show ToFormat Unit from inferInstance
 
+/--
+Build a constant: a nullary function named `name` of type `ty`.
+
+`value`, when given, is the constant's right-hand side. As for a function
+definition, the value is substituted at each use only when `attr` contains
+`.inline`; without it the value still reaches the solver through the encoded
+body.
+
+A constant is monomorphic. A polymorphic nullary value is a function: build it
+as one, so the quantification is visible.
+-/
+@[expose]
+def Function.const (name : CoreIdent) (ty : LMonoTy)
+    (value : Option Expression.Expr := none)
+    (attr : Array Strata.DL.Util.FuncAttr := #[]) : Function :=
+  { name, inputs := [], output := ty, body := value, attr }
+
 /-- Convert a `PureFunc Expression` (with polytypes) to a `Function` (with monotypes).
     Returns an error if any type is not a monotype. -/
 @[expose]

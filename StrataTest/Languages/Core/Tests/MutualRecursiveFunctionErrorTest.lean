@@ -32,11 +32,11 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
 rec function len<a>(@[cases] xs : MyList a) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + lenHelper(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, lenHelper(MyList..tl(xs)))
 }
 function lenHelper<a>(@[cases] xs : MyList a) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
 };
 
 #end

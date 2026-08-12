@@ -128,6 +128,19 @@ def Decl.getRecFuncBlock? (d : Decl) : Option (List Function) :=
   | .recFuncBlock fs _ => some fs
   | _ => none
 
+/--
+Build a constant declaration: `const name : ty;`, or `const name : ty := value;`
+when `value` is given.
+
+A constant is a nullary function, so this produces a `.func` declaration. See
+`Core.Function.const` for the meaning of `value` and `attr`.
+-/
+def Decl.const (name : Expression.Ident) (ty : Lambda.LMonoTy)
+    (value : Option Expression.Expr := none)
+    (attr : Array Strata.DL.Util.FuncAttr := #[])
+    (md : MetaData Expression := .empty) : Decl :=
+  .func (Function.const name ty value attr) md
+
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md

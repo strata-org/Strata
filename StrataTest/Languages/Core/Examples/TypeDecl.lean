@@ -55,10 +55,6 @@ Result: ✅ pass
 
 --------------------------------------------------------------------
 
-/--
-error: Expression has type Foo bool int when Foo bool bool expected.
--/
-#guard_msgs in
 def typeDeclPgm2 :=
 #strata
 program Core;
@@ -71,6 +67,17 @@ procedure P () {
   assert [f_test]: (f1 == f2);
 };
 #end
+
+-- The `Foo bool bool` vs `Foo int bool` mismatch is now caught by Core's own
+-- type checker (`resolve`) rather than DDM. If Core ever relies on DDM type
+-- checking again, this could instead be caught at DDM parse time.
+/--
+error: ❌ Type checking error.
+Impossible to unify (Foo bool bool) with (Foo int bool).
+First mismatch: bool with int.
+-/
+#guard_msgs in
+#eval Core.verify typeDeclPgm2 (options := .quiet)
 
 --------------------------------------------------------------------
 

@@ -145,3 +145,46 @@ procedure pure(x: int) returns (r: int)
 //             ^^^^^^ warning: `old(...)` has no effect
 { r := x };
 #end
+
+/-! ### Overloads are distinguished by `uniqueId`, not by name
+
+`heapReaders` is keyed by resolution-assigned `uniqueId`, so two overloads named
+`foo` — one reading the heap (`foo(c: C)`), one not (`foo(x: int)`) — stay
+distinct. `caller_int` writes the heap (via `writer`), so the warning is gated on
+whether the operand *reads* the heap. `old(foo(x))` calls the `int` overload,
+which does not read the heap, so the "no heap reads" warning must fire. If the
+sets were keyed by the text name `foo`, the heap-reading overload would collapse
+the two and spuriously suppress the warning. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+procedure foo(x: int) returns (r: int) opaque ensures r == x;
+procedure foo(c: C) returns (r: int) opaque ensures r == c#v;
+procedure writer(c: C) opaque modifies c { c#v := 0 };
+procedure caller_int(x: int, c: C) opaque
+  ensures old(foo(x)) == foo(x)
+//        ^^^^^^^^^^^ warning: `old(...)` has no effect: expression contains no heap reads
+  modifies c
+{ writer(c) };
+#end
+
+/-! ### The heap-reading overload of the same name is *not* warned
+
+Companion to the case above: `old(foo(c))` calls the `C` overload, which reads
+the heap, so the operand genuinely reads heap state and the warning must NOT
+fire. Together the two cases show the overloads are classified independently. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+procedure foo(x: int) returns (r: int) opaque ensures r == x;
+procedure foo(c: C) returns (r: int) opaque ensures r == c#v;
+procedure writer(c: C) opaque modifies c { c#v := 0 };
+procedure caller_c(c: C) opaque
+  ensures old(foo(c)) == foo(c)
+  modifies c
+{ writer(c) };
+#end

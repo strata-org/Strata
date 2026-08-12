@@ -4,12 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 
 public section
 
@@ -18,11 +19,11 @@ public section
 /--
 Type checker for an Imperative Command.
 
-The `TypeError` parameter for the `TypeContext` instance `TC` is `DiagnosticModel`.
+The `TypeError` parameter for the `TypeContext` instance `TC` is `Message`.
 -/
 def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
-    (ctx: C) (τ : T) (c : Cmd P) : Except DiagnosticModel (Cmd P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T Message]
+    (ctx: C) (τ : T) (c : Cmd P) : Except Message (Cmd P × T) := do
 
   try match c with
 
@@ -98,8 +99,8 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 Type checker for Imperative's Commands.
 -/
 def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T DiagnosticModel]
-    (ctx: C) (τ : T) (cs : Cmds P) : Except DiagnosticModel (Cmds P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T Message]
+    (ctx: C) (τ : T) (cs : Cmds P) : Except Message (Cmds P × T) := do
   match cs with
   | [] => .ok ([], τ)
   | c :: crest =>

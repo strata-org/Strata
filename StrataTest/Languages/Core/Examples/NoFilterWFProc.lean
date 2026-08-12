@@ -24,10 +24,10 @@ program Core;
 procedure P(a : int, b : int, out r : int)
 spec {
   requires [b_nonzero]: (b != 0);
-  ensures [result_ok]: (r == a / b);
+  ensures [result_ok]: (r == int.safeDiv(a, b));
 }
 {
-  r := a / b;
+  r := int.safeDiv(a, b);
 };
 
 #end

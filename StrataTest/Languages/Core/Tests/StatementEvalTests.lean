@@ -394,7 +394,7 @@ Evaluation Config:
 Eval Depth: 200
 Factory Functions:
 func double :  ((x : int)) → int :=
-  (x + x)
+  (int.add(x, x))
 
 
 Datatypes:
@@ -451,7 +451,7 @@ Evaluation Config:
 Eval Depth: 200
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  (x + 10)
+  (int.add(x, 10))
 
 
 Datatypes:

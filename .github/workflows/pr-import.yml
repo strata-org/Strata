@@ -1,0 +1,85 @@
+name: PR Import
+
+# Both triggers are required for merge queue to work correctly — merge_group fires the
+# actual import, pull_request creates a skipped status check required by the queue.
+# See: https://github.com/orgs/community/discussions/51120#discussioncomment-6312578
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+# One import per queue entry; each entry gets a unique group via the SHA in head_ref.
+concurrency:
+  group: pr-import-${{ github.event.merge_group.head_ref || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  DOWNLOAD_FOLDER: '.build-scripts/'
+  SCRIPT_LOCATION: 'scripts/pr-import-build.sh'
+  IAM_ROLE_ARN: 'arn:aws:iam::361103952626:role/StrataGitHubActions-Role-Prod'
+  ROLE_SESSION_DURATION_SECONDS: 7200
+  TIMEOUT_MINUTES: 120
+  AWS_REGION: 'us-west-2'
+  # To target a non-default stage, set START_FUNCTION and STATUS_FUNCTION here.
+  # Defaults in pr-import-build.sh are used otherwise.
+
+jobs:
+  import:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    steps:
+      # merge_group has no prNumber; it lives in the queue head ref:
+      #   gh-readonly-queue/<base>/pr-<N>-<headsha>
+      - name: Extract PR metadata
+        id: meta
+        env:
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          BASE_REF: ${{ github.event.merge_group.base_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" =~ pr-([0-9]+)-[0-9a-f]+$ ]]; then
+            pr_number="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse PR number from head_ref: $HEAD_REF"
+            exit 1
+          fi
+          base_branch="${BASE_REF#refs/heads/}"
+          {
+            echo "pr_number=$pr_number"
+            echo "base_branch=$base_branch"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.IAM_ROLE_ARN }}
+          role-session-name: PrImportGitHubAction
+          role-duration-seconds: ${{ env.ROLE_SESSION_DURATION_SECONDS }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download build script
+        run: |
+          set -euo pipefail
+          aws s3 cp "s3://prod-us-west-2-strata-git-sync-bucket/$SCRIPT_LOCATION" \
+            "./$DOWNLOAD_FOLDER/$SCRIPT_LOCATION" --no-progress
+          chmod +x "./$DOWNLOAD_FOLDER/$SCRIPT_LOCATION"
+
+      - name: Run import (blocks merge on failure)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          PR_NUMBER: ${{ steps.meta.outputs.pr_number }}
+          BASE_BRANCH: ${{ steps.meta.outputs.base_branch }}
+        run: |
+          "./$DOWNLOAD_FOLDER/$SCRIPT_LOCATION" \
+            --repo "$REPO" \
+            --pr-number "$PR_NUMBER" \
+            --base-branch "$BASE_BRANCH" \
+            --head-sha "$HEAD_SHA"
+        timeout-minutes: ${{ fromJSON(env.TIMEOUT_MINUTES) }}

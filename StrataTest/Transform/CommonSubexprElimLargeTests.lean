@@ -76,19 +76,19 @@ function ancestorsPerType () : Map TypeTag (Map TypeTag bool) {
   (mapConst<TypeTag>(mapConst<TypeTag>(false)))[Container_TypeTag:=ancestorsForContainer]
 }
 function modifyOne$post0 ($heap : Heap, c : Composite, $heap$out : Heap) : bool {
-  Heap..data!($heap$out) == (Heap..data!($heap))[c:=(Heap..data!($heap$out))[c]] && Heap..nextReference!($heap) <= Heap..nextReference!($heap$out)
+  Heap..data!($heap$out) == (Heap..data!($heap))[c:=(Heap..data!($heap$out))[c]] && int.le(Heap..nextReference!($heap), Heap..nextReference!($heap$out))
 }
 function readField (heap : Heap, obj : Composite, field : Field) : Box {
   ((Heap..data!(heap))[obj])[field]
 }
 function modifyOne$post1 ($heap : Heap, c : Composite, $heap$out : Heap) : bool {
-  forall $modifies_obj : Composite :: forall $modifies_fld : Field :: (if Composite..ref!($modifies_obj) < Heap..nextReference!($heap) && !($modifies_obj == c) then readField($heap, $modifies_obj, $modifies_fld) == readField($heap$out, $modifies_obj, $modifies_fld) else true)
+  forall $modifies_obj : Composite :: forall $modifies_fld : Field :: (if int.lt(Composite..ref!($modifies_obj), Heap..nextReference!($heap)) && !($modifies_obj == c) then readField($heap, $modifies_obj, $modifies_fld) == readField($heap$out, $modifies_obj, $modifies_fld) else true)
 }
 function updateField (heap : Heap, obj : Composite, field : Field, val : Box) : Heap {
   MkHeap((Heap..data!(heap))[obj:=((Heap..data!(heap))[obj])[field:=val]], Heap..nextReference!(heap))
 }
 function increment (heap : Heap) : Heap {
-  MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
+  MkHeap(Heap..data!(heap), int.add(Heap..nextReference!(heap), 1))
 }
 function modifyOne$asFunction ($heap : Heap, c : Composite) : Heap;
 function stress$asFunction ($heap : Heap) : Heap;
@@ -215,7 +215,7 @@ private def gen12Oblig : Core.Program :=
 /-- Run CSE on the obligation program. -/
 private def gen12Cse : Bool × Core.Program :=
   match Core.Transform.run gen12Oblig Core.CSE.runCSE
-      { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .ok res => res
   | .error e => panic! s!"CSE failed: {e}"
 

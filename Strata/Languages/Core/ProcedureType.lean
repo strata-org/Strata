@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 import Strata.DL.Lambda.LExprT
@@ -17,49 +18,49 @@ namespace Core
 
 open Std (ToFormat Format format)
 open Imperative (MetaData HasVarsImp)
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 
 namespace Procedure
 
 private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   if !proc.header.inputs.keys.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
   let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
-    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
+    .error <| Message.withRange sourceLoc f!"[{proc.header.name}]: This procedure modifies variables it \
               is not allowed to!\n\
               Variables actually modified: {modifiedVars}\n\
               Modification allowed for these variables: {allowedVars}"
 
 private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (sourceLoc : FileRange) :
-    Except DiagnosticModel (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv) := do
+    Except Message (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv) := do
   let Env := Env.pushEmptyContext
   let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
-                            proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
+                            proc.header.inputs |>.mapError (fun e => Message.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
-  let Env := Env.addInNewestContext inp_lty_sig
+  let Env := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
   return (inp_mty_sig, Env)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
-    (md : MetaData Expression) : DiagnosticModel :=
+    (md : MetaData Expression) : Message :=
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions.
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
-    Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) := do
+    Except Message (Array Expression.Expr × Core.Expression.TyEnv) := do
   let mut results := #[]
   let mut currentEnv := Env
   for (name, condition) in (conditions.keys, conditions.values) do
@@ -73,7 +74,7 @@ private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expr
   return (results, currentEnv)
 
 def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
-    (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
+    (proc : Procedure) (md : MetaData Expression) : Except Message (Procedure × Core.Expression.TyEnv) := do
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
 
   -- Validate well-formedness of formals and returns.
@@ -93,16 +94,16 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Temporarily add returns into the context.
   let (out_mty_sig, envWithOutputs) ← Lambda.LMonoTySignature.instantiate C
                                         envAfterPreconds proc.header.typeArgs
-                                        proc.header.outputs |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+                                        proc.header.outputs |>.mapError (fun e => Message.withRange fileRange e)
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := envWithOutputs.addInNewestContext out_lty_sig
+  let envWithOutputs := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList out_lty_sig)
 
   -- Add "old" variables for in-out parameters (those in both inputs and outputs)
   -- so that postconditions and body can reference `old x`.
   let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
     proc.header.getInoutParams.toList.map fun (id, ty) =>
       (CoreIdent.mkOld id.name, .forAll [] ty)
-  let envWithOldVars := envWithOutputs.addInNewestContext oldInoutBindings
+  let envWithOldVars := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList oldInoutBindings)
 
   -- Type check postconditions.
   let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars
@@ -114,7 +115,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let bodyStmts : List Statement ← match proc.body with
     | .structured ss => pure ss
     | .cfg _ =>
-      Except.error (DiagnosticModel.withRange fileRange
+      Except.error (Message.withRange fileRange
         f!"[{proc.header.name}]: CFG procedures not supported yet")
   let (annotated_body, finalEnv) ← Statement.typeCheck C envAfterPostconds p (.some proc) bodyStmts
 

@@ -21,17 +21,17 @@ program Core;
 procedure Helper(n : int, out result : int)
 spec {
   // NOTE: This precondition is not satisfied in MainProc.
-  requires [n_positive]: (n > 0);
-  ensures [result_correct]: (result == n * 2);
+  requires [n_positive]: int.gt(n, 0);
+  ensures [result_correct]: (result == int.mul(n, 2));
 }
 {
-  result := n + n;
+  result := int.add(n, n);
 };
 
 procedure MainProc(x : int, out output : int)
 spec {
-  requires [x_nonneg]: (x >= 0);
-  ensures [output_property]: (output == x * 4);
+  requires [x_nonneg]: int.ge(x, 0);
+  ensures [output_property]: (output == int.mul(x, 4));
 }
 {
   call Helper(x, out output);

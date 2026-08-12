@@ -138,12 +138,11 @@ shortTitle := "Laurel User Guide"
 
 Laurel is an intermediate analysis language. Its purpose is to reduce the cost of analysing code for
 popular languages. Currently Laurel is focused on enabling analysis of Java, Python, and JavaScript,
-but this list will grow and you can already use it for other languages as well. We recommend
-targeting Laurel when trying to analyse any programming language using Strata.
+but this list will grow and you can already use it for other languages as well.
 
-Laurel is a good target when your source language has a procedure-like construct and its features
-map onto Laurel's. Some source-language features must be compiled away before or during translation,
-because Laurel does not model them directly:
+Laurel is a good target when your source language has mutation and a function-like construct. Some
+source-language features must be compiled away before or during translation, because Laurel does not
+model them directly:
 - metaprogramming (macros, reflection, runtime code generation);
 - type-system features that do not fit Laurel's type system, which is close to C#'s (for example
   higher-kinded types or advanced generics);
@@ -151,8 +150,7 @@ because Laurel does not model them directly:
 
 Laurel is *not* a good target for languages that use none of its features — typically languages with
 no procedure-like construct, such as assembly, or inputs that are not programming languages at all.
-For those, target Strata Core directly. A stack-based language like JVM bytecode still benefits from
-targeting Laurel.
+A stack-based language like JVM bytecode still benefits from targeting Laurel.
 
 You use Laurel by building a compiler from your source language to Laurel. This guide will help you
 understand Laurel and thus help build such compilers.
@@ -293,7 +291,9 @@ The following notation recurs throughout the rules:
   $`\mathsf{TBv}_w` (a bitvector of any width $`w`), with $`\mathsf{Unknown}`
   admitted as the gradual escape hatch.
 - $`\dashv \Gamma'` — a rule's *output scope*: the judgment threads $`\Gamma` in
-  and produces $`\Gamma'` out. Only \[⇐\] Var-Declare extends the scope; the
+  and produces $`\Gamma'` out. Only the declaring rules extend the scope —
+  \[⇒\] Var-Declare / Var-Declare-Infer, the Decl-Synth pair, and
+  \[⇒\]/\[⇐\] Assign when a target is a `Declare`; the
   block rules thread it statement-to-statement (the $`\Gamma_{i-1} \to
   \Gamma_i` chain in \[⇐\] Block / \[⇒\] Block-Synth).
 - $`\rightsquigarrow \text{error: …}` — the rule emits an error and aborts; no
@@ -307,7 +307,8 @@ The Index below links to each construct's subsection.
 
 - {ref "rules-subsumption"}[*Subsumption*] — \[⇐\] Sub
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
-- {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇒\] Var-Declare
+- {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field,
+  \[⇒\] Var-Declare, \[⇒\] Var-Declare-Infer
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse,
   \[⇒\] If-Synth, \[⇒\] If-Synth-NoElse;
   \[⇐\] Block, \[⇒\] Block-Synth, \[⋄\] Synth-Discard,
@@ -316,11 +317,13 @@ The Index below links to each construct's subsection.
   \[⇒\] Return-Some, \[⇒\] Return-Void-Error,
   \[⇒\] Return-Multi-Error; \[⇒\] While
 - {ref "rules-verification-statements"}[*Verification statements*] — \[⇒\] Assert, \[⇒\] Assume
-- {ref "rules-assignment"}[*Assignment*] — \[⇒\] Assign, \[⇐\] Assign
+- {ref "rules-assignment"}[*Assignment*] — \[⇒\] Assign, \[⇐\] Assign,
+  \[⇒\] Decl-Synth, \[⇐\] Decl-Synth
 - {ref "rules-calls"}[*Calls*] — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi,
   \[⇒\] Instance-Call, \[⇒\] Instance-Call-Multi
-- {ref "rules-primitive-operations"}[*Primitive operations*] — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq,
-  \[⇒\] Op-Arith, \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
+- {ref "rules-primitive-operations"}[*Operators*] — no operator-specific rules:
+  operators are calls, typed by \[⇒\] Static-Call. Equality is the one
+  special case: \[⇒\] Op-Eq
 - {ref "rules-object-forms"}[*Object forms*] — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
 - {ref "rules-verification-expressions"}[*Verification expressions*] — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
@@ -375,7 +378,21 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
-$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Rightarrow \mathsf{TVoid} \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇒] Var-Declare)}`
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, \mathsf{some}\;T_x\rangle) \Rightarrow \mathsf{TVoid} \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇒] Var-Declare)}`
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle) \Rightarrow \mathsf{TVoid} \quad [\text{emits “cannot infer a type …”}] \quad \dashv \quad \Gamma, x : \mathsf{Unknown}} \quad \text{([⇒] Var-Declare-Infer)}`
+
+The type annotation is optional in the AST (`type : Option`). A bare
+`var x` (annotation `none`) has *neither* an annotation *nor* an
+initializer to read a type from, so \[⇒\] Var-Declare-Infer diagnoses it
+and binds $`x : \mathsf{Unknown}` so later uses of $`x` don't cascade
+further type errors. An unannotated declaration *with* an initializer
+(`var x := e`) never reaches these rules: it parses as an `Assign` with a
+sole `Declare` target and is handled by the \[⇒\]/\[⇐\] Decl-Synth rules
+(see {ref "rules-assignment"}[*Assignment*]), which recover the
+binding's type from the initializer. Either way the node is rewritten to a
+fully-annotated `Declare x (some T)`, so no `none` annotation survives
+resolution.
 
 $`x \notin \mathrm{dom}(\Gamma)` is a soft side condition rather than a
 hard premise: when $`x` is already bound in the current scope the rule still
@@ -461,8 +478,9 @@ is accepted in statement position — the `f(x);` idiom works regardless
 of `f`'s return type, and `x++;` is admitted even though `++`
 synthesizes the target's type.
 
-Only `Var (.Declare …)` actually extends the scope $`\Gamma_i`; every
-other statement leaves it unchanged. The block opens a fresh nested
+Only declarations actually extend the scope $`\Gamma_i` — `Var (.Declare …)`
+and `Assign` statements with `Declare` targets (`var x := e`,
+`assign var x, y := call()`); every other statement leaves it unchanged. The block opens a fresh nested
 scope, so declarations made inside don't leak out — once the block ends,
 the surrounding $`\Gamma` is restored. It also emits a
 `"dead code after '<terminator>'"` diagnostic when an `Exit` or
@@ -611,6 +629,32 @@ discarded.
 
 {docstring Strata.Laurel.Resolution.Check.assign}
 
+An *unannotated* declaring assignment — `var x := e`, i.e. an `Assign`
+whose sole target is `Declare x none` — is dispatched to a dedicated
+rule pair *before* \[⇒\]/\[⇐\] Assign. The target has no declared type
+to push into the RHS, so the direction flips: the initializer is
+*synthesized* and the binding adopts its type.
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \Gamma \vdash e \Rightarrow T}{\Gamma \vdash \mathsf{Assign}\;[\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle]\;e \Rightarrow T \quad \dashv \quad \Gamma, x : T} \quad \text{([⇒] Decl-Synth)}`
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \Gamma \vdash e \Rightarrow T \quad T' = \mathsf{TVoid} \lor T <:_\sim T'}{\Gamma \vdash \mathsf{Assign}\;[\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle]\;e \Leftarrow T' \quad \dashv \quad \Gamma, x : T} \quad \text{([⇐] Decl-Synth)}`
+
+The adopted type $`T` must be a *value* type: a $`\mathsf{TVoid}`
+initializer (a void call, a `while`, …) or a
+$`\mathsf{MultiValuedExpr}` (a multi-output call)
+$`[\text{emits “cannot infer a type …”}]` and binds
+$`x : \mathsf{Unknown}` instead, suppressing cascades on later uses.
+As in \[⇒\] Var-Declare, the node is rewritten to carry
+$`\mathsf{some}\;T`, so no `none` annotation survives resolution.
+Unannotated declared targets of a *multi-target*
+`assign var x, y := call()` don't take this rule; they are recovered
+component-wise from the synthesized RHS tuple inside
+\[⇒\]/\[⇐\] Assign (see the docstrings above).
+
+{docstring Strata.Laurel.Resolution.Synth.declInfer}
+
+{docstring Strata.Laurel.Resolution.Check.declInfer}
+
 ### Calls
 %%%
 tag := "rules-calls"
@@ -641,60 +685,89 @@ $`\mathsf{MultiValuedExpr}`.
 
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
-### Primitive operations
+### Operators
 %%%
 tag := "rules-primitive-operations"
 %%%
 
-`Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
-{name Strata.Laurel.HighType.TReal}`TReal`,
-{name Strata.Laurel.HighType.TFloat64}`TFloat64`, or
-{name Strata.Laurel.HighType.TBv}`TBv` (a bitvector of any width)", with
-`Unknown` admitted as the gradual escape hatch.
+Operators are *not* a distinct kind of expression, and there are no
+operator-specific typing rules. `x + y` parses as
+$`\mathsf{StaticCall}\;\$\mathsf{add}\;[x; y]`, a call to an overloaded
+built-in wrapper procedure declared in `CoreDefinitionsForLaurel` and
+prepended to every program, so operators are typed entirely by
+\[⇒\] Static-Call above. What used to be an operator's admissible
+operand types is now just the set of declared overloads:
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
+```
+procedure $add(x: int, y: int) : int    return intAdd(x, y);
+procedure $add(x: real, y: real) : real return realAdd(x, y);
+```
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
+Each wrapper is a thin transparent procedure delegating to a
+type-specific external (`intAdd`, `realAdd`, …) that
+`LaurelToCoreSchemaPass` recognizes and lowers to the corresponding
+Core operator. The wrappers of one operator must all share a name —
+the parser cannot know which overload a `+` denotes — while the
+externals they delegate to do not.
 
-$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
+Two consequences of typing operators as calls:
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad T = \bigsqcup_i U_i \text{ (consistency join)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+: Operand admissibility is overload selection
 
-The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
-to $`n` operands. Each operand is synthesized and required to be
-$`\mathsf{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
-$`\mathsf{TFloat64}`, $`\mathsf{TBv}_w` (a bitvector of any width), or
-the gradual $`\mathsf{Unknown}`). The
-result type is the *consistency join* $`\bigsqcup_i U_i` — a fold of
-the operand types under
-{name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
-$`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
-combination is rejected. The fold runs via `join`, a pure function, so
-the search has no diagnostic side-effects.
+  There is no `Numeric` side-condition. `1 + 2.0` is rejected not
+  because a rule demands equal operand types, but because neither the
+  `int` nor the `real` overload of `$add` accepts an
+  $`(\mathsf{TInt}, \mathsf{TReal})` pair — reported as *no overload of
+  '$add' matches the argument types*. Likewise `<` on bitvectors
+  resolves only at the widths Core provides operators for
+  (1, 8, 16, 32, 64), rather than silently mistranslating other widths.
 
-:::example "Arithmetic operand join"
-- `1 + 2` synthesizes $`\mathsf{TInt}`
-- `1.5 + 2.5` synthesizes $`\mathsf{TReal}`
-- `<?> + 1` synthesizes $`\mathsf{TInt}` — the $`\mathsf{Unknown}` operand promotes to its neighbour
-- `<?> + <?>` synthesizes $`\mathsf{Unknown}`
-- `1 + 2.0` is rejected: *cannot apply '+' to operands of types 'int', 'real'*
+: Preconditions come from the wrapper
+
+  Because a wrapper is an ordinary procedure it can carry a contract.
+  `$div` declares `requires y != 0` and delegates to Core's *safe*
+  division, so a possible division by zero surfaces as a failed
+  precondition on the call.
+
+The gradual $`\mathsf{Unknown}` still flows freely: it is a consistent
+subtype of every parameter type, so it never rules an overload out. An
+$`\mathsf{Unknown}` argument therefore cannot *discriminate* between
+overloads, but the other arguments still can — selection runs on the
+informative arguments alone, and only an unresolved result caused by an
+$`\mathsf{Unknown}` argument is passed over silently (the argument's own
+error already covers it) instead of being reported as a no-match or an
+ambiguity.
+
+:::example "Operator overload selection"
+- `1 + 2` selects the `int` overload and synthesizes $`\mathsf{TInt}`
+- `1.5 + 2.5` selects the `real` overload and synthesizes $`\mathsf{TReal}`
+- `<?> + 1` selects the `int` overload — the informative operand decides
+- `<?> + <?>` is unresolved and synthesizes $`\mathsf{Unknown}`; no error is reported
+- `1 + 2.0` is rejected: *no overload of '$add' matches the argument types*
 :::
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
+Equality is the one operator that is *not* a transparent wrapper.
+`$eq` / `$neq` are declared `external`, because equality is polymorphic
+and Laurel has no polymorphic types: a wrapper body would carry a
+placeholder $`\mathsf{int} \to \mathsf{int} \to \mathsf{bool}`
+signature into Core and fail to unify against a composite, a datatype,
+or a bool. `Synth.staticCall` special-cases these two names to require
+only that the operands be consistent ($`T_l \sim T_r`), and
+`LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic
+equality.
 
-{docstring Strata.Laurel.Resolution.Synth.primitiveOp}
+$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad T_l \neq \mathsf{TVoid} \quad T_r \neq \mathsf{TVoid} \quad \mathit{callee} \in \{\$\mathsf{eq}, \$\mathsf{neq}\}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-The arithmetic and boolean families also have a check-mode rule, used
-when the surrounding context provides an `expected` type. The rule
-pushes the operand type into each operand via
-`Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
-discipline with bidirectional check.
+The $`\neq \mathsf{TVoid}` premises reject void operands even though
+$`\mathsf{TVoid} \sim \mathsf{TVoid}` holds: a void expression carries no
+value to compare.
 
-$$`\frac{\mathsf{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
-
-$$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Bool)}`
-
-{docstring Strata.Laurel.Resolution.Check.primitiveOp}
+Since an operator is a call, the check-mode rule for one is
+\[⇐\] Sub applied to \[⇒\] Static-Call: the call's synthesized
+result type is compared against the expected type. There is no separate
+operand-pushing rule, so a mixed-type operator expression reports one
+overload-resolution failure over the whole call rather than a mismatch
+against an individual operand.
 
 ### Object forms
 %%%
@@ -930,6 +1003,25 @@ Procedures are the main unit of specification and verification in Laurel.
 A Laurel program consists of procedures, global variables, type definitions, and constants.
 
 {docstring Strata.Laurel.Program}
+
+### File-scope globals
+
+A program-level `var counter: int` defines shared mutable state. Laurel lowers
+direct and transitive global effects to hidden parameters in declaration order;
+initial values come from the caller or runtime.
+
+**Supported:** reads and writes in procedure bodies (including instance and
+transitive calls), current global values in contracts, and multiple globals
+alongside heap state.
+
+**Not yet supported** (reported with source diagnostics):
+- Global-dependent `old(...)` expressions.
+- Globals in entry procedures, constants, or constrained-type predicates and witnesses.
+- Explicit inout/global interactions and global-writing `invokeOn` procedures.
+- Writes in restricted expressions, ambiguous bodiless postconditions, and
+  unsupported multi-output call shapes.
+
+Names containing `$` are reserved for compiler-generated variables.
 
 ### Primitive types
 
@@ -1421,6 +1513,10 @@ procedure makeOne()
 };
 ```
 
+A `modifies` clause frames the *normal* return only. A procedure that can also finish
+by throwing frames that exit separately, with a `throwsOn` case's `modifies` — see the Exceptions
+section.
+
 ## Reads clauses
 
 To be designed..
@@ -1531,6 +1627,358 @@ To be designed..
 ## Concurrency
 
 To be designed..
+
+# Exceptions
+
+Mainstream languages use exceptions to signal that an operation cannot complete
+normally, and to transfer control from the point of failure to the code prepared to
+handle it. Laurel models this directly: a procedure declares what it may throw with
+`throws`, a `throw` statement raises a value, and `try` / `catch` / `finally`
+handles it. Modelling exceptions here means each frontend does not have to
+re-implement them.
+
+Laurel imposes no root exception type, and does not require a thrown value to belong
+to any particular hierarchy — a procedure may declare `throws int` and `throw 3`.
+What Laurel provides instead is subtype-aware typing of the `catch` binding, so each
+frontend uses its own hierarchy directly: Java's `Throwable`, Python's
+`BaseException`, or JavaScript's convention of throwing an `Error`.
+
+## Declaring and throwing
+
+`throws T` in a procedure's signature says the procedure may finish by throwing a
+`T`. In the body, `throw e` raises `e` and abandons the rest of the procedure.
+
+```laurel
+composite Exception {}
+composite ArithmeticException extends Exception {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+{
+  if b == 0 then {
+    var ae: ArithmeticException := new ArithmeticException;
+    throw ae
+  };
+  r := a / b
+};
+```
+
+`throws` is part of the signature — it changes what callers have to deal with — so
+it sits with `returns`, before `opaque`.
+
+## Catch or declare
+
+Laurel enforces *catch-or-declare*, the discipline Java applies to its checked
+exceptions. A procedure that declares no `throws` may not let an exception escape,
+whether thrown directly or propagated from a callee, and a procedure declaring
+`throws T` may only let exceptions escape whose type is a subtype of `T`.
+
+```laurel
+composite ArithError {}
+composite ParseError {}
+
+procedure wrongThrows()
+  throws (e: ArithError)
+  opaque
+{
+  var e: ParseError := new ParseError;
+  throw e
+  // error: procedure 'wrongThrows' may throw 'ParseError', which is not a
+  // subtype of its declared `throws` type 'ArithError'
+};
+```
+
+The check is about the program as you wrote it rather than about how it lowers, so
+it runs during resolution and reports at the offending `throw` or call. Whether the
+*source* language requires catch-or-declare is a separate question: procedures
+coming from Python or JavaScript carry a `throws` clause too, even though neither
+language has that surface construct.
+
+## Handling: try, catch, finally
+
+`catch` dispatches on a *predicate* rather than on a type, written
+`catch e when <condition on e>`. Type-based dispatch is one such predicate:
+`catch e when e is NotFound`. Clauses are ordered and first-match-wins, and a clause
+with no `when` guard is a catch-all. `finally` runs on the way out of the `try`.
+
+```laurel
+composite Exception {}
+composite NotFound extends Exception {}
+composite Invalid extends Exception {}
+
+procedure handle(fail: int) returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    if fail == 1 then {
+      var e: NotFound := new NotFound;
+      throw e
+    };
+    if fail == 2 then {
+      var i: Invalid := new Invalid;
+      throw i
+    }
+  } catch e when e is NotFound {
+    r := 1
+  } catch e {
+    r := 2
+  } finally {
+    assert r >= 0
+  }
+};
+```
+
+`finally` runs after a normal completion, after a caught exception, on the way out
+with an uncaught one, and when a handler itself throws or returns. A `return` or an
+`exit` that leaves the `try` runs it too, and nested `finally` arms chain outward.
+
+One rule decides the rest: if the `finally` arm itself completes abruptly — it
+returns, throws, or exits — that completion wins, and whatever was pending is
+discarded. This is Java's rule (JLS 14.20.2), so `try { throw e } finally { return }`
+returns normally and the exception is gone.
+
+## The type of a catch binding
+
+A `catch` binding is typed at the *least common ancestor* of the exception types
+that can reach it: the types thrown directly in the `try` body, and the declared
+`throws` types of the procedures the body calls. When those share a common ancestor
+`T`, the binding has type `T`, and reading a field of `e` needs no downcast.
+
+```laurel
+composite Exception {
+  var message: string
+}
+composite NotFound extends Exception {}
+composite Invalid extends Exception {}
+
+procedure logFailure(which: int) returns (out: string)
+  opaque
+{
+  out := "";
+  try {
+    if which == 1 then {
+      var f: NotFound := new NotFound;
+      f#message := "missing";
+      throw f
+    };
+    var i: Invalid := new Invalid;
+    i#message := "invalid";
+    throw i
+  } catch e {
+    // `NotFound` and `Invalid` join at `Exception`, so `e` is an `Exception` and
+    // the inherited field is readable without a cast.
+    out := e#message
+  }
+};
+```
+
+If the types reaching a `catch` share no common ancestor, Laurel reports an error
+rather than leaving the binding untyped. If the body throws nothing determinable,
+no exception can reach the clauses, and they are dropped as unreachable.
+
+A frontend that needs to catch values with no useful common ancestor — unrelated
+types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a
+composite field when throwing, and unwrap it in the handler.
+
+## Exceptional contracts
+
+`requires` and `ensures` describe the entry condition and the normal return. A
+procedure that can throw has a second exit, described by one or more `throwsOn`
+*behavior cases*. They follow `opaque`, alongside `ensures` and `modifies`, because
+they constrain an exit rather than form part of the signature.
+
+A case pairs a pre-state guard with the contract for the throwing path it selects:
+
+```laurel
+composite Exception {}
+composite ArithmeticException extends Exception {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures e is ArithmeticException
+  }
+{
+  if b == 0 then {
+    var ae: ArithmeticException := new ArithmeticException;
+    throw ae
+  };
+  r := a / b
+};
+```
+
+The guard *forces* the throw. If `b == 0` holds on entry the procedure is guaranteed
+to exit by throwing, and the thrown value satisfies the case's `ensures` clauses. So a
+caller can prove ahead of time that a given input will fail, and knows what it will get.
+
+`throws (e: T)` names the thrown value as well as its type, and scopes that name over
+every case's `ensures`. There is one spelling, always binding: a procedure that says
+nothing about its exception today would otherwise have to change its signature the moment
+it wants to. `e` is deliberately *not* in scope in a `requires`, in a top-level `ensures`,
+or in a guard — all three are evaluated where no exception exists.
+
+The declaration already tells callers what was thrown. `throws (e: T)` on its own
+guarantees
+
+    it threw  ==>  e is T
+
+on *every* throwing path, so a case never has to restate the declared type. That is why
+the example above says `ensures e is ArithmeticException` and not `ensures e is Exception`:
+a case's type test earns its place only when it *narrows* the declaration to a subtype for
+that particular path. Restating the declared type would in fact say less, since the case's
+`ensures` holds only when that case's guard held, while the declaration holds always.
+
+A case with nothing left to say may therefore be empty, and is still meaningful — its
+guard alone forces the throw:
+
+```laurel
+composite Exception {}
+
+procedure mustThrow(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+  };
+```
+
+A caller passing `b == 0` learns that the call throws, and learns from the declaration
+that what it gets is an `Exception`.
+
+Stating cases also settles the converse. Because a guard forces its throw, writing any
+case is a claim to have enumerated them, so the verifier checks
+
+    it threw  ==>  one of the guards held
+
+A caller that can refute every guard therefore learns the call cannot have thrown. Two
+consequences worth knowing: a throwing path that matches no guard is reported rather
+than quietly accepted, and the two boundary cases read as you would hope —
+`throwsOn true { … }` means the procedure always throws, and `throwsOn false { }` means
+it never does.
+
+None of this is documentation only. For a procedure with a body the verifier proves the
+body honours the cases; at a call site they are assumed, so a caller can reason about a
+throwing procedure without seeing its code.
+
+### What a case may contain
+
+A case takes `ensures` and `modifies`, mirroring their normal-exit counterparts but scoped
+to the path its guard selects. An `ensures` inside a case also takes `summary "…"`, exactly
+as a top-level one does, so a failing exceptional postcondition can report in your words:
+
+```
+  throwsOn b == 0 {
+    ensures e is ArithmeticException summary "dividing by zero throws"
+  }
+```
+
+Two forms that exist on the normal exit are deliberately absent inside a case, so a parse
+error there is the surface telling you to write something else:
+
+* No `free` or `checked` variant of a case's `ensures`. This is a deferral rather than a
+  rule about exceptions; until it lands, a case's `ensures` is always both checked against
+  the body and assumed by callers.
+* No `modifies *`. It would say nothing new: a case that names no `modifies` already leaves
+  its throwing path unframed, which is exactly what the wildcard means on the normal exit.
+  Write `throwsOn C { }` — or omit the `modifies` and keep the `ensures` — instead.
+
+The reasoning behind both is in the exceptions section of the Laurel Designer Guide.
+
+### Stating no case
+
+Cases are optional, and omitting them is not the same as `throwsOn false`. A procedure
+with no case makes no claim about its throwing paths at all:
+
+```laurel
+composite Err {}
+
+procedure thrower(x: int) returns (r: int)
+  throws (e: Err)
+  opaque
+{
+  if x < 0 then {
+    var e: Err := new Err;
+    throw e
+  };
+  r := x
+};
+```
+
+A caller of `thrower` learns exactly one thing about the throwing exit — that what comes
+out is an `Err`, from the declaration. It cannot tell *when* the call throws, so it must
+allow for both exits; and because no case names a frame, it must also assume the heap may
+have changed. Nothing is checked against the body either: with no guards to enumerate,
+the `it threw ==> one of the guards held` obligation is not emitted.
+
+That is weaker than stating a case, but it is weak in the safe direction — the contract
+claims nothing, so nothing it claims can be wrong. The dangerous shape is *partial*
+enumeration, cases with a gap between them, and that is what the check above catches.
+
+Saying nothing is the right choice when the throwing condition is not expressible in the
+procedure's own pre-state. The clearest example is a procedure that propagates a callee's
+exception: it throws exactly when the callee does, and the callee's contract need not say
+when that is. Where the condition *is* available — as `x < 0` is to `thrower` — stating a
+case is strictly more informative, and worth doing.
+
+## Exceptional frames
+
+`modifies` at the top level frames the normal return. A `modifies` inside a case frames
+that case's throwing path: it names the locations that may change when the procedure
+throws for that reason.
+
+```laurel
+composite Cell {
+  value: int
+}
+composite Err {}
+
+procedure doWork(c: Cell, logCell: Cell, fail: bool) returns (r: int)
+  throws (e: Err)
+  opaque
+  modifies c
+  throwsOn fail {
+    modifies logCell
+  }
+{
+  if fail then {
+    logCell#value := 1;
+    var e: Err := new Err;
+    throw e
+  };
+  c#value := 42;
+  r := 0
+};
+```
+
+Only `c` may change on the normal path, and only `logCell` when it throws because
+`fail`. All frames are checked against the body and assumed at call sites, a case's
+`modifies` accepts the same targets the top-level one does including field-granular ones
+(`modifies logCell#value`), and an object allocated inside the body is exempt from all of
+them.
+
+Because each case carries its own frame, a procedure that writes different locations for
+different reasons can say so — one case each — rather than declaring only their union.
+A caller that rules out one case can then conclude the others' targets are unchanged.
+
+Two things to keep in mind. Guards are not checked for overlap: if two can hold at once
+both frames apply, and a caller gets only their intersection, which is rarely what was
+meant. And framing a throwing path means naming its condition, so a procedure whose
+throwing condition cannot be stated — one that propagates a callee's exception, say —
+has to leave that path unframed by stating no case.
+
+## Not yet supported
+
+Two shapes are rejected during resolution with a *not yet supported* diagnostic
+rather than lowered, because the alternatives would be an internal error or a silent
+miscompile:
+
+- a call to a procedure that `throws` in a nested expression position. Only a whole
+  statement or a whole assignment right-hand side is handled, so `s := f()` is fine
+  while `s := 1 + f()` is rejected;
+- a `catch` handler that re-declares its own exception binding, because the
+  substitution that rewrites the binding matches by name and is not scope-aware.
 
 # Verification - Proof hints
 

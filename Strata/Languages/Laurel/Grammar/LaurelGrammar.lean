@@ -5,13 +5,21 @@
 -/
 
 module
--- Laurel dialect definition, loaded from LaurelGrammar.st
+-- Laurel dialect definition, loaded from LaurelGrammar.st.
+-- The grammar includes compound-assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`),
+-- an optional `entry` clause on procedures, `free`/`checked` modifiers on
+-- requires/ensures clauses, and an optional type annotation on assignTargetDecl
+-- (at explicit @[prec(0)], like varDecl, so it prints without parentheses).
+-- It also includes the exceptional channel: `throw`, `try`/`catch`/`finally`, a
+-- `throws (e: T)` signature clause that always binds the thrown value (there is
+-- no unbound form), and repeatable `throwsOn <guard> { ensures … modifies … }`
+-- behavior-case blocks inside `opaqueSpec`, beside `ensures`/`modifies`.
+-- A pass-generated `modifiesWhenClause` (`modifies <refs> when <guard>`) renders
+-- the guarded frames `EliminateExceptions` leaves behind; users never write it.
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
--- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added compound assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`).
--- (prior: added optional `entry` clause on procedure (producer-set entry point for interpretation).)
--- (prior: added `free`/`checked` modifiers to requires/ensures clauses.)
--- Rebuild trigger: refresh stale grammar cache for compound-assignment operator tokens.
+-- Update this file (e.g. the token below) to trigger a recompile after modifying LaurelGrammar.st.
+-- Rebuild trigger token: guarded-modifies-groups
+-- Rebuild trigger: file-scope global declarations.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

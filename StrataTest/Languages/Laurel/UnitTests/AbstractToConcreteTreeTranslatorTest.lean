@@ -36,7 +36,8 @@ private def laurelToText (prog : Program) : String :=
 /-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
-  match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
+  match Laurel.TransM.run (.file "AbstractToConcreteTreeTranslatorTest.lean")
+      (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 
@@ -383,6 +384,36 @@ procedure modify(c: Container)
 { c#value := c#value + 1; true };
 #end)
 
+-- A guarded group — `modifies <refs> when <guard>` — is pass-generated
+-- (`EliminateExceptions` guards frames on the `Result` carrier), but it must
+-- survive print → parse because between-pass output is re-parsed: the printer
+-- renders the guard via `modifiesWhenClause` and the parser reads it back as
+-- a guarded `ModifiesGroup`. The `roundtrip` harness checks convergence, so a
+-- desync between the two translators fails here rather than mid-pipeline.
+/--
+info: composite Container { var value: int }
+
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{
+  c#value := c#value + 1;
+  true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Container { var value: int }
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{ c#value := c#value + 1; true };
+#end)
+
 -- Additional coverage: nondeterministic holes
 
 /--
@@ -470,5 +501,183 @@ procedure loop()
   do { x := x + 1 } while(x < 3) invariant 0 <= x && x <= 2
 };
 #end)
+
+/--
+info: var counter: int := 0
+
+var enabled: bool := false
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 0
+var enabled: bool := false
+#end)
+
+/--
+info: var counter: int := 1 + 2 * 3
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 1 + 2 * 3
+#end)
+
+
+-- Generic datatype: the `<T>` type-parameter list survives Abstract→Concrete→Abstract.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+#end)
+
+-- Multiple type parameters: their ORDER (`<A, B>`, not `<B, A>`) is preserved.
+/--
+info: datatype Either<A, B> { First(a: A), Second(b: B) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Either<A, B> { First(a: A), Second(b: B) }
+#end)
+
+-- Applied type in a type-annotation position (a procedure parameter): the
+-- `Option<int>` annotation uses the new `appliedType` grammar op — distinct from
+-- the `<T>` typeParams on the datatype declaration — so this exercises its
+-- serialize (`.Applied` → `appliedType`) and deserialize (`appliedType` →
+-- `.Applied`) arms, which the datatype-declaration round-trips above do not.
+-- The pretty-printer parenthesizes a non-atomic type in a type-argument slot, so
+-- `Option<int>` prints as `(Option<int>)`; the `parenType` grammar production
+-- makes that re-parse, so the program still converges.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: (Option<int>) := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<int> := Nothing()
+};
+#end)
+
+-- Nested applied type as a type argument (`Option<Option<int>>`): exercises the
+-- serializer's `args.map highTypeToArg` and deserializer's `mapM translateHighType`
+-- recursion, and the `parenType` wrapping the pretty-printer inserts at each
+-- nesting level.
+-- Only the outer application is parenthesized (the var-type slot); the inner
+-- `Option<int>` sits in the `<…>`-delimited argument slot, which needs no parens.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: (Option<Option<int>>) := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<Option<int>> := Nothing()
+};
+#end)
+
+-- Additional coverage: multi-target assignment with an annotated declared target.
+-- assignTargetDecl needs @[prec(0)] (like varDecl) or the formatter parenthesizes
+-- the trailing Option TypeAnnotation and prints the unparseable `var x(: int)`.
+
+/--
+info: procedure twoOut()
+  returns (a: int, b: int)
+  opaque
+{
+  a := 1;
+  b := 2
+};
+
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure twoOut() returns (a: int, b: int)
+  opaque
+{ a := 1; b := 2 };
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+#end)
+
+-- Resolution's Decl-Synth rewrites every unannotated declared target to the
+-- annotated form (`some T`), so every resolved program with declared targets
+-- prints with `: T` on each one. Build that post-resolution AST shape directly
+-- (there is no surface syntax that parses to it here) and check that the
+-- printed text parses back and converges.
+
+private def node {t : Type} (v : t) : AstNode t := { val := v, source := default }
+
+private def declTarget (nm : String) (ty : HighType) : AstNode Variable :=
+  node (.Declare { name := mkId nm, type := some (node ty) })
+
+private def resolvedMultiAssign : Program :=
+  { staticProcedures := [
+      { name := mkId "p", inputs := [], outputs := [],
+        preconditions := [], decreases := none,
+        body := .Opaque []
+          (some (node (.Block [
+            node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
+              (node (.StaticCall (mkId "twoOut") [])))
+          ] none)))
+          [] }
+    ],
+    staticFields := [], types := [] }
+
+/--
+info: procedure p()
+  opaque
+{
+  assign var x: int, var y: bool := twoOut()
+};
+-/
+#guard_msgs in
+#eval do
+  let text := laurelToText resolvedMultiAssign
+  -- The printed text must re-parse; unparseable output is the bug this pins.
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" text
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let reparsedStrata ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let reparsed ← parseFromStrata reparsedStrata
+  if laurelToText reparsed != text then
+    throw (IO.userError s!"multiAssign print does not re-parse to the same text:\n{text}")
+  IO.println text
 
 end Strata.Laurel

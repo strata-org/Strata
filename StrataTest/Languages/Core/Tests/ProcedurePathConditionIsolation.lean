@@ -28,12 +28,12 @@ program Core;
 
 procedure first(n : int)
 spec {
-  requires [c1]: (n >= 1);
-  requires [c2]: (n <= 0);
+  requires [c1]: int.ge(n, 1);
+  requires [c2]: int.le(n, 0);
 }
 {
   body: {
-    if (n > 5) { exit body; }
+    if (int.gt(n, 5)) { exit body; }
   }
 };
 

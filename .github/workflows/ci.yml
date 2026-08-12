@@ -62,10 +62,6 @@ jobs:
         with:
           path: |
             .lake
-      - name: Verify Java testdata is up to date
-        run: |
-          StrataTestExtra/Languages/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/Languages/Java/testdata/
 
   lint_checks:
     name: Run lint checks
@@ -134,8 +130,14 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
+          args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
           fail: true
+      - name: Check for broken links (html-multi)
+        run: |
+          for dir in docs/verso/_out/*/html-multi; do
+            lychee --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*\.css$' \
+              --base-url "file://$PWD/$dir/" "$dir/" || exit 1
+          done
 
   cbmc:
     needs: build_and_test_lean

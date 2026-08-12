@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Util.Statistics
@@ -48,6 +49,20 @@ structure LaurelTranslateOptions where
   /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify
+  /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
+      Used by language frontends (e.g. Python registers "Any" here). -/
+  gradualTypes : Std.HashSet String := {}
+  /-- Frontend-supplied realizer for the abstract `Coercion` verdict of the
+      proof-relevant subtyping judgment: maps a verdict + the coerced term to a
+      rewritten term carrying the concrete box/unbox call. `none` = identity
+      (native Laurel inserts no coercion). Threaded onto `TypeLattice`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
+  /-- Caller truthiness hook (Python str_to_bool/etc.); threaded to TypeLattice.toBool. -/
+  toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
+  /-- Names reserved by the frontend's coercion machinery (the realizer's box/unbox bridge
+      procedures + datatype constructors/accessors). A value binding may not shadow one; see
+      `TypeLattice.reservedNames`. Threaded onto `TypeLattice`. Empty for native Laurel. -/
+  reservedNames : Std.HashSet String := {}
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
@@ -83,7 +98,7 @@ end
     metadata fields remain directly accessible (e.g. `p.name`). -/
 structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
   /-- The pass action. -/
-  run : LaurelTranslateOptions → Input → SemanticModel → Output × List DiagnosticModel × Statistics
+  run : LaurelTranslateOptions → Input → SemanticModel → Output × List Message × Statistics
 
 abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
 

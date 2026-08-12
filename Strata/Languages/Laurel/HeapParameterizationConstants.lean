@@ -31,7 +31,7 @@ The heap model uses:
 - `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` / `increment` - heap access functions
 
-Note: The `Box` datatype is generated dynamically by `heapParameterization`
+Note: The `$Box` datatype is generated dynamically by `heapParameterization`
 based on which field types are actually used in the program.
 -/
 
@@ -46,15 +46,15 @@ datatype NotSupportedYet {}
 
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
-  MkHeap(data: Map Composite Map Field Box, nextReference: int)
+  MkHeap(data: Map Composite Map Field $Box, nextReference: int)
 }
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
-procedure readField(heap: Heap, obj: Composite, field: Field): Box
+procedure readField(heap: Heap, obj: Composite, field: Field): $Box
   return select(select(Heap..data!(heap), obj), field);
 
 // Update a field in the heap
-procedure updateField(heap: Heap, obj: Composite, field: Field, val: Box): Heap
+procedure updateField(heap: Heap, obj: Composite, field: Field, val: $Box): Heap
   return MkHeap(
     update(Heap..data!(heap), obj,
       update(select(Heap..data!(heap), obj), field, val)),
@@ -68,7 +68,9 @@ procedure increment(heap: Heap): Heap
 
 /-- The Laurel Core prelude as a Laurel Program. -/
 def heapConstants : Program :=
-  match Laurel.TransM.run none (Laurel.parseProgram laurelPreludeDDM) with
+  match Laurel.TransM.run
+      (.file "Strata/Languages/Laurel/HeapParameterizationConstants.lean")
+      (Laurel.parseProgram laurelPreludeDDM) (synthesized := true) with
   | .ok program => program
   | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
 
