@@ -107,19 +107,19 @@ procedure outer<T>(b: Box<T>) returns (r: T) opaque ensures r == b#val { r := in
 -- (pure value-`T` stays on freshening). The `tc_*` cases pin that #1121's gradual checker is
 -- NOT weakened by the `.TVar`-consistency arms — wrong programs still reject.
 private def polyProcedureCorpus : List Case := [
-  { name := "poly_proc_sound", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_sound", outcome := .failsExactly 1,
     why := "single inst: true verifies, the false `assert b == 6` fails (sound + complete)"
     src := polyProcSound },
-  { name := "poly_proc_multi", knownEncoderErrors := 1, outcome := .verifies,
+  { name := "poly_proc_multi", outcome := .verifies,
     why := "multi-inst (idp(5)+idp(true) in one body) verifies — per-call-site freshening, no 'unify T with bool'"
     src := polyProcMultiInst },
-  { name := "poly_proc_no_abort_mask", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_no_abort_mask", outcome := .failsExactly 1,
     why := "a poison multi-inst must NOT abort whole-program checking and mask realBug's `assert 1==2` (the ship-blocker)"
     src := polyProcNoAbortMask },
-  { name := "poly_proc_false_among_many", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_false_among_many", outcome := .failsExactly 1,
     why := "false `assert c==99` on the 3rd inst still caught — freshening per-site postcondition non-vacuous, no drift"
     src := polyProcFalseAmongMany },
-  { name := "poly_proc_precond_gated", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_precond_gated", outcome := .failsExactly 1,
     why := "a freshened precondition (`x>0` violated by pos(-3,..)) still gates a bad call"
     src := polyProcPrecondGated },
   -- CROSS-SLOT freshening: `callElimCmd` applies the same fresh subst to input types, output
@@ -128,19 +128,19 @@ private def polyProcedureCorpus : List Case := [
   -- vacuous (silently unsound, invisible to the typechecker AND the sorry-stubbed CallElim
   -- proof). Verified at int+bool together, with a must-fail twin on EACH slot. This is the
   -- execution guardrail for the freshening, which has no live correctness proof.
-  { name := "poly_proc_freshen_crossslot", knownEncoderErrors := 1, outcome := .verifies,
+  { name := "poly_proc_freshen_crossslot", outcome := .verifies,
     why := "`ensures r==x` coupling input+output type verifies at int AND bool (no cross-slot drift)"
     src := r"
 procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
 procedure u() opaque { var gi: int := idp(7); var gb: bool := idp(true); assert gi == 7 && gb == true };"},
 
-  { name := "poly_proc_freshen_crossslot_wrong_int", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_freshen_crossslot_wrong_int", outcome := .failsExactly 1,
     why := "a wrong INT result must FAIL (one slot) — freshening soundness"
     src := r"
 procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
 procedure u() opaque { var gi: int := idp(7); var gb: bool := idp(true); assert gi == 8 && gb == true };"},
 
-  { name := "poly_proc_freshen_crossslot_wrong_bool", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "poly_proc_freshen_crossslot_wrong_bool", outcome := .failsExactly 1,
     why := "a wrong BOOL result must FAIL (the other slot) — freshening soundness"
     src := r"
 procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
@@ -295,7 +295,7 @@ composite Box<T> { var val: T }
 procedure mkl<T>(x: T) returns (r: T) opaque ensures r == x { var t: Box<T> := new Box<T>; t#val := x; r := t#val };
 procedure u() opaque { var got: int := mkl(7); assert got == 8 };"},
 
-  { name := "poly_proc_value_t_still_freshens", knownEncoderErrors := 1, outcome := .verifies,
+  { name := "poly_proc_value_t_still_freshens", outcome := .verifies,
     why := "HYBRID PARTITION: a value-T proc touching NO generic composite still rides freshening (body-scan must not over-capture) — int AND bool"
     src := r"
 procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
@@ -303,16 +303,16 @@ procedure u() opaque { var gi: int := idp(7); var gb: bool := idp(true); assert 
   -- An UNCALLED value-`T` poly proc (kept verbatim, NOT witness-cloned — it touches no generic
   -- composite) still has its own body VC emitted + discharged: a TRUE postcondition verifies,
   -- a FALSE one fails loud. Pins that the uncalled value-`T` path is never silently unchecked.
-  -- TRANSITIONAL: as with the `forall_over_tvar` twin, only the `_true` half currently pins
-  -- its property; the `_false` half's single failure is the encoding error, so it is
-  -- `inertUntilEncoderFix` until the two Core SMT-encoder fixes land.
-  { name := "poly_proc_value_t_uncalled_true", knownEncoderErrors := 1, outcome := .verifies,
+  -- Both halves assert their property: MonomorphizeProcedures replaces the type
+  -- variable with an opaque type before type checking, so the body VC encodes and the
+  -- `_false` half fails via a genuine solver verdict.
+  { name := "poly_proc_value_t_uncalled_true", outcome := .verifies,
     why := "an uncalled value-T poly proc with a TRUE postcondition (`ensures r==x`) verifies — its body VC is checked even with no call site"
     src := r"
 procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
 procedure u() opaque { assert 1 == 1 };"},
 
-  { name := "poly_proc_value_t_uncalled_false", knownEncoderErrors := 1, inertUntilEncoderFix := true, outcome := .failsExactly 1,
+  { name := "poly_proc_value_t_uncalled_false", outcome := .failsExactly 1,
     why := "an uncalled value-T poly proc with a FALSE postcondition (`ensures r==z` but `r:=x`) must FAIL — uncalled value-T contracts are not silently unchecked"
     src := r"
 procedure bad<T>(x: T, z: T) returns (r: T) opaque ensures r == z { r := x };

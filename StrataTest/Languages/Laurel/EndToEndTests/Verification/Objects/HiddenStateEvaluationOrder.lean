@@ -84,7 +84,7 @@ procedure castOnce(counter: Counter)
     own `is`-check cleanly, isolating the evaluation-count property. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }
@@ -106,7 +106,7 @@ procedure castOnceNeutral(cc: Parent)
     assertion — that is the property this twin guards. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }
@@ -132,7 +132,7 @@ procedure castOnceNeutralFalse(cc: Parent)
     would fail to translate at all if the capture temp were rejected in the function twin. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }
@@ -153,7 +153,7 @@ procedure caller(c: Child)
     confirming the function twin carries the real return value through the lowered cast. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }
@@ -181,7 +181,7 @@ procedure caller(c: Child)
     a precondition read like this one lowers cleanly.) -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }
@@ -199,7 +199,7 @@ procedure usePre(c: Child)
     vacuous. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Parent { var p: int }

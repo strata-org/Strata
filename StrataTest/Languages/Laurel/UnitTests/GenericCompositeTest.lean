@@ -91,13 +91,13 @@ procedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii
   -- `Map K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. The
   -- `ensures r == m` makes the accept OBSERVABLE (a real obligation), not just translatable;
   -- the strictness twin pins that concrete-vs-concrete stays strict.
-  { name := "generic_map_param", knownEncoderErrors := 1, outcome := .verifies,
+  { name := "generic_map_param", outcome := .verifies,
     why := "a concrete `Map int bool` into a generic `Map K V` proc param verifies, returned map observed via `ensures r == m`"
     src := r"
 procedure idm<K,V>(m: Map K V) returns (r: Map K V) opaque ensures r == m { r := m };
 procedure u() opaque { var mm: Map int bool; var rr: Map int bool := idm(mm); assert rr == mm };"},
 
-  { name := "generic_map_param_wrong", knownEncoderErrors := 1, outcome := .failsExactly 1,
+  { name := "generic_map_param_wrong", outcome := .failsExactly 1,
     why := "the returned map equals `mm`, not the unrelated `nn` — `assert rr == nn` must FAIL (accept is sound, not vacuous)"
     src := r"
 procedure idm<K,V>(m: Map K V) returns (r: Map K V) opaque ensures r == m { r := m };
