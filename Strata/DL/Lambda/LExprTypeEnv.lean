@@ -482,7 +482,7 @@ def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToForma
   for d in block do
     if C.knownTypes.containsName d.name then
       throw <| Message.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
-  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes
   -- Add factory functions, checking for name clashes
   let f ← genBlockFactory block
   let fs ← C.functions.addFactory f
@@ -937,6 +937,17 @@ end
 
 def isInstanceOfKnownType {T : LExprParams} (ty : LMonoTy) (C : LContext T) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
+
+/--
+Well-kindedness of `ty` under an arity assignment: every type-constructor
+reference in `ty` is applied at the arity `arity` assigns to it.
+-/
+def LMonoTy.WellKinded (arity : String → Option Nat) (ty : LMonoTy) : Prop :=
+  ∀ ref n, (ref, n) ∈ getTypeConsArities ty → arity ref = some n
+
+/-- `LMonoTy.WellKinded` against the arities registered in `C`'s known types. -/
+def LContext.WellKindedTy (C : LContext T) (ty : LMonoTy) : Prop :=
+  LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty
 
 /-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
     with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
