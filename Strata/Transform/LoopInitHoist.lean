@@ -40,14 +40,6 @@ helper lemmas consumed by the downstream proof files. The measure-free-loop
 precondition they use is `Block.noMeasureLoops` from `Stmt.lean`.
 -/
 
-/-- The fixed prefix carried by the hoist's `hoistKind` label classification in
-`LoopInitHoistCorrect` (the same-name pass here generates no names of its own).
-`hoistKind` uses it to recognise "a label some hoist generator could have
-produced"; uniqueness of any such label comes from the underlying
-`StringGenState` counter, not from the prefix, which only makes generated names
-human-recognisable. -/
-@[expose] def hoistFreshPrefix : String := "$__hoist$"
-
 /-! ## Same-name lift and hoist (pure, no rename)
 
 The pipeline relation is `StoreAgreement` (source-on-left), which constrains
@@ -72,7 +64,7 @@ Returns a pair `(havocs, body')`:
   havoc rhs), and
 * `body'` is `s` with each lifted init rewritten as `Cmd.set y rhs md` (SAME
   name `y`; no rename pair, no substitution). -/
-@[expose] def Stmt.liftInitsInLoopBody {P : PureExpr}
+def Stmt.liftInitsInLoopBody {P : PureExpr}
     (s : Stmt P (Cmd P)) :
     List (Cmd P) × List (Stmt P (Cmd P)) :=
   match s with
@@ -94,7 +86,7 @@ Returns a pair `(havocs, body')`:
 
 /-- Apply `Stmt.liftInitsInLoopBody` to every statement in the block,
 concatenating the harvested havocs and rewritten residuals. -/
-@[expose] def Block.liftInitsInLoopBody {P : PureExpr}
+def Block.liftInitsInLoopBody {P : PureExpr}
     (ss : List (Stmt P (Cmd P))) :
     List (Cmd P) × List (Stmt P (Cmd P)) :=
   match ss with
@@ -113,7 +105,7 @@ recurse into the body first (so nested loops are hoist-processed), then call
 body inits with their SAME names. The havocs are emitted as SIBLING commands
 *before* the rewritten loop; the body is NOT renamed (same names). For `.block`
 and `.ite`, recurse structurally. Other statements are identity. -/
-@[expose] def Stmt.hoistLoopPrefixInits {P : PureExpr}
+def Stmt.hoistLoopPrefixInits {P : PureExpr}
     (s : Stmt P (Cmd P)) : List (Stmt P (Cmd P)) :=
   match s with
   | .cmd c => [.cmd c]
@@ -131,7 +123,7 @@ and `.ite`, recurse structurally. Other statements are identity. -/
 
 /-- Apply `Stmt.hoistLoopPrefixInits` to each statement of the block,
 concatenating the resulting lists. -/
-@[expose] def Block.hoistLoopPrefixInits {P : PureExpr}
+def Block.hoistLoopPrefixInits {P : PureExpr}
     (ss : List (Stmt P (Cmd P))) : List (Stmt P (Cmd P)) :=
   match ss with
   | [] => []

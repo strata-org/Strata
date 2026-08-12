@@ -44,6 +44,7 @@ import Strata.Transform.FunctionInliningProps
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
+import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
