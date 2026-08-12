@@ -52,6 +52,8 @@ import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredCorrect
+import Strata.Transform.StructuredToUnstructuredPipeline
+import Strata.Transform.StructuredToUnstructuredPipelineCorrect
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3

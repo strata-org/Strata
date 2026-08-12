@@ -405,6 +405,12 @@ every nesting depth (see the mutual definitions in `Stmt.lean`). The lemmas
 below are all definitional unfoldings (`rfl`) but stated as named lemmas so
 proofs can `rw` against them without unfolding the whole mutual block. -/
 
+/-- Nil-decomposition of `Block.initVars` (definitional; complements the
+`_cons`/`_block`/`_ite`/`_loop` structural equations). -/
+@[simp] theorem Block.initVars_nil {P : PureExpr} :
+    Block.initVars ([] : List (Stmt P (Cmd P))) = [] := by
+  simp [Block.initVars]
+
 /-- Cons-decomposition of `Block.initVars`. -/
 @[simp] theorem Block.initVars_cons {P : PureExpr}
     (s : Stmt P (Cmd P)) (ss : List (Stmt P (Cmd P))) :
@@ -1429,6 +1435,30 @@ theorem Block.namesFreshInRhsExprs_of_forall_mem {P : PureExpr}
     exact Block.namesFreshInRhsExprs_cons_names hd tl ss
       (h hd (List.mem_cons_self ..)) (ih (fun z hz => h z (List.mem_cons_of_mem _ hz)))
 
+/-- A `.cmd (init _ _ .nondet _)` has an empty-vars RHS, so any names list is
+RHS-fresh in it. -/
+theorem Stmt.namesFreshInRhsExprs_cmd_init_nondet {P : PureExpr}
+    [HasVarsPure P P.Expr] [HasFvars P] (names : List P.Ident) (ident : P.Ident)
+    (ty : P.Ty) (md : MetaData P) :
+    Stmt.namesFreshInRhsExprs (P := P) names
+      (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
+  show Stmt.namesFreshInRhsExprs (P := P) names
+    (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
+  simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
+  intro z _ hz; simp at hz
+
+/-- A `.cmd (havoc _)` has an empty-vars RHS, so any names list is RHS-fresh in
+it. -/
+theorem Stmt.namesFreshInRhsExprs_cmd_havoc {P : PureExpr}
+    [HasVarsPure P P.Expr] [HasFvars P] (names : List P.Ident) (ident : P.Ident)
+    (md : MetaData P) :
+    Stmt.namesFreshInRhsExprs (P := P) names
+      (Stmt.cmd (HasHavoc.havoc ident md)) := by
+  show Stmt.namesFreshInRhsExprs (P := P) names
+    (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
+  simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
+  intro z _ hz; simp at hz
+
 /-- The empty name list is fresh in every statement's expressions:
 `namesFreshInExprs` is `List.Disjoint [] _`, which holds vacuously. -/
 theorem Stmt.namesFreshInExprs_nil {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
@@ -1552,6 +1582,26 @@ theorem Stmt.exprsShapeFree_cmd {P : PureExpr} [HasIdent P] [HasFvars P]
     simp only [Stmt.getVars, HasVarsPure.getVars] at hmem
     exact h str hQ hmem
 
+/-- A `.cmd (init _ _ .nondet _)` reads nothing, so it is `exprsShapeFree`. -/
+theorem Stmt.exprsShapeFree_cmd_init_nondet {P : PureExpr} [HasIdent P]
+    [HasVarsPure P P.Expr] [HasFvars P] {Q : String → Prop} (ident : P.Ident)
+    (ty : P.Ty) (md : MetaData P) :
+    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
+  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
+  rw [Stmt.exprsShapeFree_cmd]
+  simp only [Cmd.getVars, ExprOrNondet.getVars]
+  exact fun str _ hmem => absurd hmem List.not_mem_nil
+
+/-- A `.cmd (havoc _)` reads nothing, so it is `exprsShapeFree`. -/
+theorem Stmt.exprsShapeFree_cmd_havoc {P : PureExpr} [HasIdent P]
+    [HasVarsPure P P.Expr] [HasFvars P] {Q : String → Prop} (ident : P.Ident)
+    (md : MetaData P) :
+    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasHavoc.havoc ident md)) := by
+  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
+  rw [Stmt.exprsShapeFree_cmd]
+  simp only [Cmd.getVars, ExprOrNondet.getVars]
+  exact fun str _ hmem => absurd hmem List.not_mem_nil
+
 theorem Stmt.exprsShapeFree_block {P : PureExpr} [HasIdent P] [HasFvars P]
     [HasVarsPure P (Cmd P)] {Q : String → Prop} {lbl : String}
     {bss : List (Stmt P (Cmd P))} {md : MetaData P} :
@@ -1604,6 +1654,82 @@ theorem Stmt.exprsShapeFree_loop {P : PureExpr} [HasIdent P] [HasFvars P]
       · obtain ⟨p, hp, hpmem⟩ := List.mem_flatMap.mp hinv
         exact h_inv p hp str hQ hpmem
     · exact h_body str hQ hbody
+
+/-! ## Shape predicates on a `.cmd`-only block (`cs.map Stmt.cmd`)
+
+A list of bare commands lifted to statements via `Stmt.cmd` trivially satisfies
+the structural shape predicates, since each `.cmd` leaf discharges the per-stmt
+obligation and the block predicate folds over nil/cons. -/
+
+/-- A block predicate that folds over nil/cons and holds on every `.cmd` leaf
+holds on any `.cmd`-only block `cs.map Stmt.cmd`. -/
+theorem block_pred_map_cmd_true {P : PureExpr}
+    (blockP : List (Stmt P (Cmd P)) → Bool) (stmtP : Stmt P (Cmd P) → Bool)
+    (hnil : blockP [] = true)
+    (hcons : ∀ s rest, blockP (s :: rest) = (stmtP s && blockP rest))
+    (hcmd : ∀ c, stmtP (Stmt.cmd c) = true)
+    (cs : List (Cmd P)) :
+    blockP (cs.map Stmt.cmd) = true := by
+  induction cs with
+  | nil => simpa using hnil
+  | cons c rest ih => rw [List.map_cons, hcons, hcmd, ih]; rfl
+
+/-- `Block.initVars` of a `.cmd`-only block is the commands' `definedVars`. -/
+theorem initVars_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+    Block.initVars (cs.map Stmt.cmd) = Cmds.definedVars cs := by
+  induction cs with
+  | nil => simp [Block.initVars, Cmds.definedVars]
+  | cons c rest ih =>
+    simp only [List.map_cons, Block.initVars_cons, Cmds.definedVars]
+    rw [ih]; congr 1; cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
+
+/-- A `.cmd`-only block has `noFuncDecl`. -/
+theorem noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+    Block.noFuncDecl (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.noFuncDecl Stmt.noFuncDecl (by simp [Block.noFuncDecl])
+    (fun _ _ => by simp [Block.noFuncDecl]) (fun _ => by simp [Stmt.noFuncDecl]) cs
+
+/-- A `.cmd`-only block has `transportShape`. -/
+theorem Block.transportShape_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+    Block.transportShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.transportShape Stmt.transportShape (by simp [Block.transportShape])
+    (fun _ _ => by simp [Block.transportShape])
+    (fun c => by
+      cases c with
+      | init _ _ e _ => cases e <;> simp [Stmt.transportShape]
+      | set _ e _ => cases e <;> simp [Stmt.transportShape]
+      | assert _ _ _ => simp [Stmt.transportShape]
+      | assume _ _ _ => simp [Stmt.transportShape]
+      | cover _ _ _ => simp [Stmt.transportShape]) cs
+
+/-- A `.cmd`-only block has `loopBodyNoInits`. -/
+theorem Block.loopBodyNoInits_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+    Block.loopBodyNoInits (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.loopBodyNoInits Stmt.loopBodyNoInits
+      (by simp [Block.loopBodyNoInits])
+    (fun _ _ => by simp [Block.loopBodyNoInits]) (fun _ => by simp [Stmt.loopBodyNoInits]) cs
+
+/-- A `.cmd`-only block has `simpleShape`. -/
+theorem simpleShape_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+    Block.simpleShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.simpleShape Stmt.simpleShape (by simp [Block.simpleShape])
+    (fun _ _ => by simp [Block.simpleShape]) (fun _ => by simp [Stmt.simpleShape]) cs
+
+/-- A `.cmd`-only block has `loopHasNoInvariants`. -/
+theorem loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+    Block.loopHasNoInvariants (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.loopHasNoInvariants Stmt.loopHasNoInvariants
+    (by simp [Block.loopHasNoInvariants])
+    (fun _ _ => by simp [Block.loopHasNoInvariants])
+    (fun _ => by simp [Stmt.loopHasNoInvariants]) cs
+
+/-- A `.cmd`-only block has `noMeasureLoops`. -/
+theorem noMeasureLoops_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+    Block.noMeasureLoops (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.noMeasureLoops Stmt.noMeasureLoops
+    (by simp [Block.noMeasureLoops])
+    (fun _ _ => by simp [Block.noMeasureLoops])
+    (fun _ => by simp [Stmt.noMeasureLoops]) cs
 
 end -- public section
 

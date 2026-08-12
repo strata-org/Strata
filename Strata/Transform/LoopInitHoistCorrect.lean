@@ -46,12 +46,6 @@ public section
 
 namespace Imperative
 
-/-- Nil-decomposition of `Block.initVars` (definitional; complements the
-`_cons`/`_block`/`_ite`/`_loop` structural equations). -/
-@[simp] theorem Block.initVars_nil {P : PureExpr} :
-    Block.initVars ([] : List (Stmt P (Cmd P))) = [] := by
-  simp [Block.initVars]
-
 /-! The `namesFreshInExprs`/`namesFreshInRhsExprs`/`exprsShapeFree` predicate
 property lemmas (`_of_namesFreshInExprs`, `_subset`, `_append`, `_nil`,
 `_cons_names`, `_of_forall_mem`, `_of_exprsShapeFree'`) are proved upstream in
@@ -462,9 +456,9 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
                                factory := ρ_hoist.factory }) := by
           have hb : StepStmtStar P (EvalCmd P) extendFactory
               (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-          have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+          have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
             (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-          · simpa [ρ_h_body] using this
+          · simpa [ρ_h_body] using hbld
           · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
             show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
           · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -610,9 +604,9 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
                                  factory := ρ_hoist.factory }) := by
             have hb : StepStmtStar P (EvalCmd P) extendFactory
                 (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
               (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using this
+            · simpa [ρ_h_body] using hbld
             · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
               show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
             · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -857,9 +851,9 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
                                factory := ρ_hoist.factory }) := by
           have hb : StepStmtStar P (EvalCmd P) extendFactory
               (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-          have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+          have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
             (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-          · simpa [ρ_h_body] using this
+          · simpa [ρ_h_body] using hbld
           · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
             show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
           · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -1031,9 +1025,9 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
                                  factory := ρ_hoist.factory }) := by
             have hb : StepStmtStar P (EvalCmd P) extendFactory
                 (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
               (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using this
+            · simpa [ρ_h_body] using hbld
             · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
               show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
             · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -1257,9 +1251,9 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
                                  factory := ρ_hoist.factory }) := by
             have hb : StepStmtStar P (EvalCmd P) extendFactory
                 (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
               (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using this
+            · simpa [ρ_h_body] using hbld
             · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
               show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
             · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -1456,9 +1450,9 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
                                  factory := ρ_hoist.factory }) := by
             have hb : StepStmtStar P (EvalCmd P) extendFactory
                 (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
               (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using this
+            · simpa [ρ_h_body] using hbld
             · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
               show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
             · show WellFormedSemanticEvalBool ρ_h_body.factory
@@ -3308,29 +3302,6 @@ private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [
       h_agree', h_hf', h_eval'⟩
 
 
-/-- Generic walker: a `Bool.and`-homomorphic block predicate that is `true` on
-every `.cmd` leaf holds on a block synthesised entirely from commands. The
-per-predicate `*_map_cmd` corollaries are one-line instances. -/
-theorem block_pred_map_cmd_true {P : PureExpr}
-    (blockP : List (Stmt P (Cmd P)) → Bool) (stmtP : Stmt P (Cmd P) → Bool)
-    (hnil : blockP [] = true)
-    (hcons : ∀ s rest, blockP (s :: rest) = (stmtP s && blockP rest))
-    (hcmd : ∀ c, stmtP (Stmt.cmd c) = true)
-    (cs : List (Cmd P)) :
-    blockP (cs.map Stmt.cmd) = true := by
-  induction cs with
-  | nil => simpa using hnil
-  | cons c rest ih => rw [List.map_cons, hcons, hcmd, ih]; rfl
-
-theorem initVars_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
-    Block.initVars (cs.map Stmt.cmd) = Cmds.definedVars cs := by
-  induction cs with
-  | nil => simp [Block.initVars, Cmds.definedVars]
-  | cons c rest ih =>
-    simp only [List.map_cons, Block.initVars_cons, Cmds.definedVars]
-    rw [ih]; congr 1; cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
-
-
 /-! ## Lift-level init-name membership (iff). -/
 mutual
 theorem Stmt.liftP_initVars_mem {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident) :
@@ -3478,11 +3449,6 @@ theorem Block.liftP_noFuncDecl_res {P : PureExpr} (ss : List (Stmt P (Cmd P))) (
       rw [Stmt.liftP_noFuncDecl_res s h.1, Block.liftP_noFuncDecl_res rest h.2]; rfl
   termination_by sizeOf ss
 end
-
-theorem noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
-    Block.noFuncDecl (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.noFuncDecl Stmt.noFuncDecl (by simp [Block.noFuncDecl])
-    (fun _ _ => by simp [Block.noFuncDecl]) (fun _ => by simp [Stmt.noFuncDecl]) cs
 
 mutual
 theorem Stmt.hoistP_noFuncDecl {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noFuncDecl s = true) :
@@ -3805,20 +3771,8 @@ theorem Block.liftP_res_noInits {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h :
   termination_by sizeOf ss
 end
 
-/-! ## transportShape is trivial on `.cmd`-maps, preserved by lift residual.
-(`Block.transportShape_append` is proved upstream in `StmtProps`.) -/
-theorem Block.transportShape_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
-    Block.transportShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.transportShape Stmt.transportShape (by simp [Block.transportShape])
-    (fun _ _ => by simp [Block.transportShape])
-    (fun c => by
-      cases c with
-      | init _ _ e _ => cases e <;> simp [Stmt.transportShape]
-      | set _ e _ => cases e <;> simp [Stmt.transportShape]
-      | assert _ _ _ => simp [Stmt.transportShape]
-      | assume _ _ _ => simp [Stmt.transportShape]
-      | cover _ _ _ => simp [Stmt.transportShape]) cs
-
+/-! ## transportShape preserved by lift residual.
+(`Block.transportShape_map_cmd` / `_append` are proved upstream in `StmtProps`.) -/
 mutual
 theorem Stmt.liftP_res_transportShape {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.transportShape s
     = true) :
@@ -3953,56 +3907,6 @@ theorem Block.liftP_res_allLoop {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h :
       simp only [Block.loopBodyNoInits, Bool.and_eq_true] at h
       rw [Block.liftInitsInLoopBody, Block.loopBodyNoInits_append,
           Stmt.liftP_res_allLoop s h.1, Block.liftP_res_allLoop rest h.2]; rfl
-  termination_by sizeOf ss
-end
-
-theorem Block.loopBodyNoInits_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
-    Block.loopBodyNoInits (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.loopBodyNoInits Stmt.loopBodyNoInits
-      (by simp [Block.loopBodyNoInits])
-    (fun _ _ => by simp [Block.loopBodyNoInits]) (fun _ => by simp [Stmt.loopBodyNoInits]) cs
-
-mutual
-theorem Stmt.hoistP_allLoop {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.loopBodyNoInits s = true)
-    :
-    Block.loopBodyNoInits (Stmt.hoistLoopPrefixInits s) = true := by
-  match s with
-  | .cmd c => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
-  | .block lbl bss md =>
-      simp only [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits,
-          Bool.and_true]
-      exact Block.hoistP_allLoop bss (by simpa [Stmt.loopBodyNoInits] using h)
-  | .ite g tss ess md =>
-      simp only [Stmt.loopBodyNoInits, Bool.and_eq_true] at h
-      simp only [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits,
-          Bool.and_true]
-      rw [Block.hoistP_allLoop tss h.1, Block.hoistP_allLoop ess h.2]; rfl
-  | .loop g m inv body md =>
-      -- hoist = havocs.map .cmd ++ [.loop g m inv body₂ md]; need loopBodyNoInits of the loop arm.
-      simp only [Stmt.loopBodyNoInits, Bool.and_eq_true] at h
-      have h_body : Block.loopBodyNoInits body = true := h.2
-      have h_hb : Block.loopBodyNoInits (Block.hoistLoopPrefixInits body) = true :=
-        Block.hoistP_allLoop body h_body
-      simp only [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits_append]
-      rw [Block.loopBodyNoInits_map_cmd']
-      simp only [Block.loopBodyNoInits, Stmt.loopBodyNoInits, Bool.true_and, Bool.and_true,
-        Block.isEmpty_initVars_eq_noInitsAnywhere]
-      rw [Block.liftP_res_noInits (Block.hoistLoopPrefixInits body) h_hb,
-          Block.liftP_res_allLoop (Block.hoistLoopPrefixInits body) h_hb]; rfl
-  | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
-  | .funcDecl d md => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
-  | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
-  termination_by sizeOf s
-
-theorem Block.hoistP_allLoop {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h : Block.loopBodyNoInits
-    ss = true) :
-    Block.loopBodyNoInits (Block.hoistLoopPrefixInits ss) = true := by
-  match ss with
-  | [] => simp [Block.hoistLoopPrefixInits, Block.loopBodyNoInits]
-  | s :: rest =>
-      simp only [Block.loopBodyNoInits, Bool.and_eq_true] at h
-      rw [Block.hoistLoopPrefixInits, Block.loopBodyNoInits_append,
-          Stmt.hoistP_allLoop s h.1, Block.hoistP_allLoop rest h.2]; rfl
   termination_by sizeOf ss
 end
 
@@ -4206,11 +4110,6 @@ theorem Block.liftP_res_simpleShape {P : PureExpr} (ss : List (Stmt P (Cmd P))) 
   termination_by sizeOf ss
 end
 
-theorem simpleShape_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
-    Block.simpleShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.simpleShape Stmt.simpleShape (by simp [Block.simpleShape])
-    (fun _ _ => by simp [Block.simpleShape]) (fun _ => by simp [Stmt.simpleShape]) cs
-
 mutual
 theorem Stmt.hoistP_simpleShape {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.simpleShape s = true)
     :
@@ -4291,13 +4190,6 @@ theorem Block.liftP_res_loopHasNoInvariants {P : PureExpr} (ss : List (Stmt P (C
   termination_by sizeOf ss
 end
 
-theorem loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
-    Block.loopHasNoInvariants (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.loopHasNoInvariants Stmt.loopHasNoInvariants
-    (by simp [Block.loopHasNoInvariants])
-    (fun _ _ => by simp [Block.loopHasNoInvariants])
-    (fun _ => by simp [Stmt.loopHasNoInvariants]) cs
-
 mutual
 theorem Stmt.hoistP_loopHasNoInvariants {P : PureExpr} (s : Stmt P (Cmd P))
     (h : Stmt.loopHasNoInvariants s = true) :
@@ -4374,13 +4266,6 @@ theorem Block.liftP_res_noMeasureLoops {P : PureExpr} (ss : List (Stmt P (Cmd P)
           Block.noMeasureLoops]
   termination_by sizeOf ss
 end
-
-theorem noMeasureLoops_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
-    Block.noMeasureLoops (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.noMeasureLoops Stmt.noMeasureLoops
-    (by simp [Block.noMeasureLoops])
-    (fun _ _ => by simp [Block.noMeasureLoops])
-    (fun _ => by simp [Stmt.noMeasureLoops]) cs
 
 mutual
 theorem Stmt.hoistP_noMeasureLoops {P : PureExpr} (s : Stmt P (Cmd P))
@@ -6039,15 +5924,14 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
         ∧ Block.exitsCoveredByBlocks [] ss
         ∧ Block.simpleShape ss = true
         ∧ Block.userLabelsShapeNodup ss
-        ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ Block.initVars ss)
-        ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ Block.modifiedVars ss))
+        ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ Block.initVars ss))
       s2uKind s2uKind := by
   intro ss ss' ht hpre ρ₀ ρ₀' hEq hwf
   subst hEq
   simp only [Option.some.injEq] at ht
   subst ht
   obtain ⟨h_no_nd, h_no_fd, h_no_inv, h_no_measure, h_unique, _,
-    _, _, _, _⟩ := hpre
+    _, _, _⟩ := hpre
   have h_inits := hwf.defsUndefined
   have h_s2u := hwf.definedVarsNotReserved
   have hwfbool₀ := hwf.bool
@@ -6122,35 +6006,13 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 
 end HoistOverapprox
 
-/-! ## Relocated nondetElim structural lemmas (exprsShapeFree-dependent)
+/-! ## `nondetElim` structural lemmas depending on `exprsShapeFree`
 
-These lemmas about `Block.nondetElim` land here (rather than in `NondetElimCorrect`)
-because their statements or proofs mention `Block.exprsShapeFree`/`Stmt.exprsShapeFree`,
-`namesFreshInRhsExprs`, or the file-private `Block.namesFreshInExprs_of_exprsShapeFree'`,
-all of which are introduced in this module.  The `initVars`-nodup classification also
-lives here because it consumes `HoistInitClass`/`hoistInitClass_disjoint`.  The two
-hoist exit-coverage mutuals close out the coverage-preservation story for this pass. -/
+Covers the `Block.nondetElim` shape-free / `namesFreshInRhsExprs` lemmas, the
+`initVars`-nodup classification (built on `HoistInitClass`/`hoistInitClass_disjoint`),
+and the two hoist exit-coverage mutuals. -/
 
 section NondetElimShapeFree
-
-/-- A `.cmd (init _ _ .nondet _)` reads nothing, so it is `exprsShapeFree`. -/
-private theorem init_nondet_sf {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr] [HasFvars P] {Q :
-    String → Prop} (ident : P.Ident) (ty : P.Ty)
-    (md : MetaData P) :
-    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
-  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
-  rw [Stmt.exprsShapeFree_cmd]
-  simp only [Cmd.getVars, ExprOrNondet.getVars]
-  exact fun str _ hmem => absurd hmem List.not_mem_nil
-
-/-- A `.cmd (havoc _)` reads nothing, so it is `exprsShapeFree`. -/
-private theorem havoc_sf {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr] [HasFvars P] {Q : String
-    → Prop} (ident : P.Ident) (md : MetaData P) :
-    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasHavoc.havoc ident md)) := by
-  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
-  rw [Stmt.exprsShapeFree_cmd]
-  simp only [Cmd.getVars, ExprOrNondet.getVars]
-  exact fun str _ hmem => absurd hmem List.not_mem_nil
 
 /-- The freshly generated ndelim guard ident is `∉ getVars` of any `Q`-foreign
 read-var slot: the only read is `mkFvar ident` whose vars ⊆ `[ident]` and `ident`
@@ -6218,7 +6080,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       rw [Stmt.nondetElimM_ite_nondet_out]
       rw [Stmt.exprsShapeFree_ite] at h
       rw [Block.exprsShapeFree_cons_iff]
-      refine ⟨init_nondet_sf _ _ _, ?_⟩
+      refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton, Stmt.exprsShapeFree_ite]
       refine ⟨ndelim_guard_fresh ndelimItePrefix σ (hfi σ),
               Block.nondetElimM_exprsShapeFree hfi hfl tss _ h.2.1,
@@ -6233,7 +6095,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       rw [Stmt.nondetElimM_loop_nondet_out]
       obtain ⟨-, -, -, hbody⟩ := Stmt.exprsShapeFree_loop.mp h
       rw [Block.exprsShapeFree_cons_iff]
-      refine ⟨init_nondet_sf _ _ _, ?_⟩
+      refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton]
       refine loop_sf_transport .nondet
         (.det (HasFvar.mkFvar (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)))
@@ -6241,7 +6103,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
         (ndelim_guard_fresh ndelimLoopPrefix σ (hfl σ)) ?_
       refine Block.exprsShapeFree_append _ _
         ⟨Block.nondetElimM_exprsShapeFree hfi hfl body _ hbody, ?_⟩
-      exact Block.exprsShapeFree_singleton.mpr (havoc_sf _ _)
+      exact Block.exprsShapeFree_singleton.mpr (Stmt.exprsShapeFree_cmd_havoc _ _)
   | .exit lbl md | .typeDecl _ md =>
       simp only [Stmt.nondetElimM]
       rw [Block.exprsShapeFree_singleton]
@@ -6615,30 +6477,6 @@ theorem Block.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasI
   termination_by sizeOf ss
 end
 
-/-- A `.cmd (init _ _ .nondet _)` has an empty-vars RHS, so any names list is
-RHS-fresh in it. -/
-private theorem init_nondet_rhsfree {P : PureExpr} [HasVarsPure P P.Expr] [HasFvars P] (names : List
-    P.Ident) (ident : P.Ident)
-    (ty : P.Ty) (md : MetaData P) :
-    Stmt.namesFreshInRhsExprs (P := P) names
-      (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
-  show Stmt.namesFreshInRhsExprs (P := P) names
-    (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
-  simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
-  intro z _ hz; simp at hz
-
-/-- A `.cmd (havoc _)` has an empty-vars RHS, so any names list is RHS-fresh in
-it. -/
-private theorem havoc_rhsfree {P : PureExpr} [HasVarsPure P P.Expr] [HasFvars P] (names : List
-    P.Ident) (ident : P.Ident)
-    (md : MetaData P) :
-    Stmt.namesFreshInRhsExprs (P := P) names
-      (Stmt.cmd (HasHavoc.havoc ident md)) := by
-  show Stmt.namesFreshInRhsExprs (P := P) names
-    (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
-  simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
-  intro z _ hz; simp at hz
-
 mutual
 /-- `nondetElim` preserves `namesFreshInRhsExprs names` for a fixed name list:
 all introduced command RHS positions read nothing, and source RHS positions are
@@ -6667,7 +6505,7 @@ theorem Stmt.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFv
       rw [Stmt.nondetElimM_ite_nondet_out]
       simp only [Stmt.namesFreshInRhsExprs] at h
       simp only [Block.namesFreshInRhsExprs, and_true]
-      refine ⟨init_nondet_rhsfree _ _ _ _, ?_⟩
+      refine ⟨Stmt.namesFreshInRhsExprs_cmd_init_nondet _ _ _ _, ?_⟩
       simp only [Stmt.namesFreshInRhsExprs]
       exact ⟨Block.nondetElimM_namesFreshInRhsExprs names tss _ h.1,
              Block.nondetElimM_namesFreshInRhsExprs names ess _ h.2⟩
@@ -6684,8 +6522,8 @@ theorem Stmt.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFv
           [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix
               σ).1) md)] := by
         simp only [Block.namesFreshInRhsExprs, and_true]
-        exact havoc_rhsfree _ _ _
-      refine ⟨init_nondet_rhsfree _ _ _ _, ?_⟩
+        exact Stmt.namesFreshInRhsExprs_cmd_havoc _ _ _
+      refine ⟨Stmt.namesFreshInRhsExprs_cmd_init_nondet _ _ _ _, ?_⟩
       exact Block.namesFreshInRhsExprs_append _ _
         (Block.nondetElimM_namesFreshInRhsExprs names body _ h) h_havoc
   | .exit lbl md =>
