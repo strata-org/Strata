@@ -8,6 +8,7 @@ Run:
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -204,8 +205,38 @@ def test_parse_prover_cost_time():
     print("✓ test_parse_prover_cost_time")
 
 
+def test_proof_filename_escapes_and_avoids_clashes():
+    """Proof filenames must escape unsafe chars AND never collide across distinct
+    lemmas — including the real IMO case where Q2/Q4/Q5/Q6 all have `main_theorem`."""
+    from bench.execute import proof_filename, _sanitize
+
+    # 1. Same theorem name in different files → DIFFERENT files (the real clash).
+    names = {proof_filename(f"IMO2026/Q{q}/problem.lean", "main_theorem") for q in (2, 4, 5, 6)}
+    assert len(names) == 4, f"main_theorem across Q2/Q4/Q5/Q6 collided: {names}"
+
+    # 2. Deterministic: same lemma → same filename (best-of-N attempts overwrite).
+    a = proof_filename("IMO2026/Q1/problem.lean", "Mval_gt_one")
+    b = proof_filename("IMO2026/Q1/problem.lean", "Mval_gt_one")
+    assert a == b
+
+    # 3. Unsafe chars escaped (namespaces, Greek/subscripts, guillemets, primes, /).
+    for thm in ["CallElim.foo", "pieceLengths_lengthₙ", "«weird»", "foo'", "a/b c"]:
+        fn = proof_filename("X/Y.lean", thm)
+        assert fn.endswith(".lean")
+        stem = fn[:-5]
+        assert re.fullmatch(r"[A-Za-z0-9._-]+", stem), f"unsafe filename: {fn}"
+
+    # 4. Distinct unicode names that sanitize to the same string still differ (hash).
+    n1 = proof_filename("F.lean", "αβ")
+    n2 = proof_filename("F.lean", "γδ")   # both → "_" under sanitize, hash disambiguates
+    assert n1 != n2
+    assert _sanitize("a/b:c") == "a_b_c"
+    print("✓ test_proof_filename_escapes_and_avoids_clashes")
+
+
 def _main():
     for fn in (test_config_parse, test_config_expands_home_and_env,
+               test_proof_filename_escapes_and_avoids_clashes,
                test_config_rejects_bad,
                test_allocate_clones_proportional,
                test_allocate_clones_fewer_workers_than_projects,

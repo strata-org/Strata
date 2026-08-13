@@ -1,0 +1,41 @@
+# Headless benchmark config for the IMO2026 problems.
+#
+# Run:
+#   StrataAgent/.venv/bin/python StrataAgent/run_benchmark.py StrataAgent/bench/imo2026.yaml --plan-only
+#   StrataAgent/.venv/bin/python StrataAgent/run_benchmark.py StrataAgent/bench/imo2026.yaml --dry-run
+#   StrataAgent/.venv/bin/python StrataAgent/run_benchmark.py StrataAgent/bench/imo2026.yaml
+
+clone_dir:   ~/projects/temp/experiments/IMO2026/run1/clones    # <clone_dir>/IMO2026_1, _2, ...
+persist_dir: ~/projects/temp/experiments/IMO2026/run1/proofs    # proven <theorem>.lean copied here
+report_dir:  ~/projects/temp/experiments/IMO2026/run1/reports   # attempts.jsonl / summary.jsonl / summary.txt
+
+parallelism:
+  workers: 3       # total project clones (raise for more parallelism / disk)
+  attempts: 2      # independent attempts per lemma (best-of-N; reported as k/N)
+
+# IMO problems are hard — give each attempt a long ceiling.
+per_attempt_minutes: 240
+
+# No cheat sheet for IMO (it's Strata-transform specific). Set a path to enable one.
+cheat_sheet: ""
+
+seed: 0
+
+projects:
+  - name: IMO2026
+    root: ~/projects/IMO2026            # the lake project (has lakefile.toml)
+    targets:                            # the six problem files, all sorry-theorems
+      - file: IMO2026/Q1/problem.lean
+        theorems: "*"
+      - file: IMO2026/Q2/problem.lean
+        theorems: "*"
+      - file: IMO2026/Q3/problem.lean
+        theorems: "*"
+      - file: IMO2026/Q4/problem.lean
+        theorems: "*"
+      - file: IMO2026/Q5/problem.lean
+        theorems: "*"
+      - file: IMO2026/Q6/problem.lean
+        theorems: "*"
+    # Equivalent shorthand for "everything under the project":
+    #   targets: "*"

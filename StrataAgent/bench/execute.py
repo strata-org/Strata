@@ -12,8 +12,10 @@ Prover_v5 log, and on success copy the proven Stub.lean into persist_dir for reu
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,6 +23,35 @@ from pathlib import Path
 from .config import BenchConfig
 from .plan import AttemptTask
 from .report import AttemptResult, find_prover_log, parse_prover_cost_time
+
+
+def _sanitize(s: str) -> str:
+    """Make a string safe as a single filename component: keep [A-Za-z0-9._-],
+    collapse everything else (dots-in-namespaces, Greek, subscripts, «», primes,
+    slashes, spaces) to '_'. Never empty."""
+    out = re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("._-")
+    return out or "x"
+
+
+def proof_filename(file_rel: str, theorem: str) -> str:
+    """A filesystem-safe, COLLISION-FREE proof filename for one lemma.
+
+    Escapes both the file path and the theorem name, and appends a short hash of
+    the ORIGINAL (file_rel, theorem) so that:
+      * two DIFFERENT lemmas never collide — even if they share a theorem name
+        across files (Q2/Q4/Q5/Q6 all have `main_theorem`), or sanitize to the
+        same string (unicode → '_');
+      * the SAME lemma always maps to the SAME file (deterministic — best-of-N
+        attempts of one lemma overwrite, which is intended: same proof target).
+    The file-path component (parent dirs included) disambiguates same-named
+    theorems in different files even before the hash."""
+    stem = _sanitize(file_rel[:-5] if file_rel.endswith(".lean") else file_rel)
+    thm = _sanitize(theorem)
+    h = hashlib.sha1(f"{file_rel}::{theorem}".encode("utf-8")).hexdigest()[:8]
+    name = f"{stem}__{thm}__{h}.lean"
+    if len(name) > 200:  # stay well under the 255-byte filename limit
+        name = f"{thm[:80]}__{h}.lean"
+    return name
 
 # This repo's StrataAgent (source for installing into project clones that lack one).
 _STRATA_AGENT_SRC = Path(__file__).resolve().parent.parent   # .../StrataAgent
@@ -108,14 +139,15 @@ def _parse_result_line(stdout: str) -> dict | None:
 
 def _persist_proof(cfg: BenchConfig, clone: Path, task: AttemptTask,
                    stub_rel: str) -> str:
-    """Copy the proven Stub.lean into persist_dir/<project>/<theorem>.lean. Returns
-    the persisted path (str), or "" on failure."""
+    """Copy the proven Stub.lean into
+    persist_dir/<project>/<escaped-file>__<escaped-theorem>__<hash>.lean.
+    Escaped + hash-suffixed so distinct lemmas never clash (see proof_filename).
+    Returns the persisted path (str), or "" on failure."""
     src = clone / stub_rel
     if not src.exists():
         return ""
-    # Sanitize theorem name for a filename (namespaced names carry dots).
-    safe = task.lemma.theorem.replace("/", "_")
-    dst = cfg.persist_dir / task.lemma.project / f"{safe}.lean"
+    dst = cfg.persist_dir / task.lemma.project / proof_filename(
+        task.lemma.file_rel, task.lemma.theorem)
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.copy2(src, dst)

@@ -39,17 +39,31 @@ def _iter_lean_files(root: Path, spec: TargetSpec) -> list[Path]:
     return out
 
 
-def _sorry_theorems(root: Path, file_abs: Path) -> tuple[list[str], str | None]:
-    """(names of sorry-stubbed theorems in file_abs, error). Uses list_theorems.
+# Per-project Lean tools instances (each rooted at THAT project). The global
+# get_lean_tools() singleton is rooted at the RUNNING StrataAgent (a different
+# project), so it cannot resolve a benchmark project's files — we key a tools
+# instance to each project root instead.
+_TOOLS_BY_ROOT: dict[str, object] = {}
 
-    Path is passed RELATIVE to root so the Lean tools resolve it consistently
-    regardless of the caller's CWD (they key off the project root)."""
-    from strataswarm.modules.po_lean import get_lean_tools
+
+def _tools_for(root: Path):
+    from strataswarm.modules.po_lean import SwarmLeanTools
+    key = str(root)
+    inst = _TOOLS_BY_ROOT.get(key)
+    if inst is None:
+        inst = SwarmLeanTools(project_root=str(root))
+        _TOOLS_BY_ROOT[key] = inst
+    return inst
+
+
+def _sorry_theorems(root: Path, file_abs: Path) -> tuple[list[str], str | None]:
+    """(names of sorry-stubbed theorems in file_abs, error). Uses list_theorems on
+    a tools instance ROOTED AT `root`, and passes the path relative to that root."""
     import os
 
     rel = os.path.relpath(file_abs, root)
     try:
-        res = get_lean_tools().list_theorems(rel)
+        res = _tools_for(root).list_theorems(rel)
     except Exception as e:  # noqa: BLE001
         return [], f"list_theorems({rel}) raised: {e}"
     if getattr(res, "error", None):
