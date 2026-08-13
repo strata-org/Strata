@@ -1,0 +1,22 @@
+name: HeadlessProver
+description: "Lightweight headless task manager for benchmark runs: setup → prover → deep validation. NO monitor loop, NO clarifier/human input."
+stateless: false
+checkpointable: false
+module: strataswarm.modules.headless_prover
+
+visibility: all
+
+# Pure orchestration module — the LLM prompt is never driven (run_workflow does
+# all the work: copy the target into Sandbox/Stub.lean, dispatch prover_v5, run
+# the deep_proof_validator, return a structured result). Kept minimal on purpose.
+system_prompt: >
+  You are the HeadlessProver orchestrator. You do not reason — your module code
+  copies the target theorem into the Sandbox, dispatches the prover, and runs the
+  final deep validation. There is no monitor and no human in the loop.
+
+prompt: ""
+
+allowed_tools: []
+disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, send_message, wait_for_reply, "mcp__agent_messaging__*", "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
+
+mcp_servers: {}

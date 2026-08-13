@@ -1,0 +1,55 @@
+# StrataSwarm headless benchmark config.
+#
+# Runs the swarm headless (no dashboard/server UI, no tm_monitor, no human-input
+# loop — just the prover + the final deep validation) over many theorems, in
+# parallel, isolating each concurrent proof in its own repository clone.
+#
+# Run:
+#   StrataAgent/.venv/bin/python StrataAgent/run_benchmark.py path/to/config.yaml
+#   StrataAgent/.venv/bin/python StrataAgent/run_benchmark.py config.yaml --dry-run
+#
+# The single-user interactive dashboard is unaffected — this is a separate entry.
+
+# All paths support ~ (home) and $VARS (env), e.g. ~/benchruns or $HOME/benchruns.
+#
+# Where per-project repo clones are created (one dir per worker slot):
+#   <clone_dir>/<project>_1, <project>_2, ...   (named project + index)
+clone_dir: ~/benchruns/clones
+
+# Where a PROVEN Stub.lean is copied for reuse (persistent, survives clone cleanup):
+#   <persist_dir>/<project>/<theorem>.lean
+persist_dir: ~/benchruns/proofs
+
+# Where the run's report + per-attempt logs go.
+report_dir: ~/benchruns/reports
+
+parallelism:
+  workers: 8        # TOTAL clones across all projects (K). Interactive = 1.
+  attempts: 3       # N independent attempts per lemma (best-of-N). NO killing —
+                    # every attempt runs to completion; we report k/N as confidence.
+
+# Per-attempt hard wall-clock ceiling (minutes). A lemma that stalls this long is
+# recorded as `timeout` and frees the worker. Maps to the prover's --max-run-minutes.
+per_attempt_minutes: 120
+
+# Optional: cheat sheet to enable for every attempt (repo-relative), or "" for none.
+cheat_sheet: "StrataAgent/strataswarm/agent_specs/StrataProofCheatSheet.md"
+
+# Random seed for the shuffled task order (reproducible scheduling).
+seed: 0
+
+projects:
+  # `root` must be a buildable Lean (lake) project. A StrataAgent/ is installed
+  # into each clone of it (via clone_strata_agent.sh) so the swarm can run there.
+  - name: ntp4vc
+    root: ~/projects/Clones/ntp4vc-lean
+    targets: "*"                          # every sorry-theorem in every .lean file
+
+  - name: miniF2F
+    root: ~/projects/Clones/miniF2F
+    targets:
+      - subdir: Valid                     # every sorry-theorem under Valid/
+      - file: Test/Bar.lean
+        theorems: [thm_a, thm_b]          # only these two theorems in this file
+      - file: Test/Baz.lean
+        theorems: "*"                     # every sorry-theorem in this one file
