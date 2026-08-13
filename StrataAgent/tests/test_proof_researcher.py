@@ -167,6 +167,36 @@ def test_report_has_recommendation_section():
     print("✓ test_report_has_recommendation_section")
 
 
+def test_true_goal_never_gives_up_builds_theory():
+    """A TRUE-but-hard goal must NOT be GIVE_UP — the researcher must propose new
+    formalizations (a decomposition) and build cumulatively on its prior report.
+    This is the fix for the IMO run where it gave up on a goal it knew was true."""
+    import yaml
+    d = yaml.safe_load(open(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "strataswarm/agent_specs/agents/proof_researcher.yaml")))
+    sp = " ".join(d["system_prompt"].split()).lower()
+    # A true goal is never give-up.
+    assert "a true goal is always procee" in sp or "true goal is never" in sp, \
+        "no 'true goal is never give_up' rule"
+    # Must propose NEW machinery / decomposition for hard goals.
+    assert "proposed decomposition" in sp
+    assert "hard" in sp and ("propose" in sp or "machinery" in sp)
+    # GIVE_UP narrowed to false / human-signature only.
+    assert "give_up only if the goal is genuinely false" in sp
+    assert "being hard" in sp or "needing new substrate" in sp
+    # Cumulative across passes.
+    assert "build on your own prior" in sp and "cumulative" in sp
+
+    # And the po_v5 researcher loop must NOT push give_up on hard goals.
+    src = open(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "strataswarm/modules/po_v5.py")).read().lower()
+    assert "do not give up on a true goal" in src or "never for 'hard'" in src, \
+        "researcher decision loop still allows give_up on hard true goals"
+    print("✓ test_true_goal_never_gives_up_builds_theory")
+
+
 def test_researcher_loop_gates_on_confidence():
     """The done/not_done loop must NOT exit on a merely-complete report — it requires
     HIGH confidence, else it keeps digging (or lands on UNCERTAIN). Guards the
@@ -280,6 +310,7 @@ if __name__ == "__main__":
     test_guide_decides_after_research()
     test_researcher_runs_a_decision_loop()
     test_report_has_recommendation_section()
+    test_true_goal_never_gives_up_builds_theory()
     test_researcher_loop_gates_on_confidence()
     test_report_hint_surfaces_existing_report_and_verdict()
     test_report_hint_surfaces_path_even_without_parseable_verdict()
