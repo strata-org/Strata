@@ -1522,7 +1522,7 @@ section InitVarsClassified
 
 mutual
 private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr]
+    [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
     (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
             ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
@@ -1600,7 +1600,7 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
   termination_by sizeOf s
 
 private theorem Block.nondetElimM_initVars_classified_Q {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr]
+    [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
     (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
             ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
@@ -2770,107 +2770,22 @@ private theorem havoc_modVars (x : P.Ident) (md : MetaData P) :
     HasVarsImp.modifiedVars (HasHavoc.havoc (CmdT := Cmd P) x md) = [x] := by
   with_unfolding_all rfl
 
-mutual
 /-- Every `initVars` element of the `nondetElim` output of a statement is either
 an original source `initVars` element or a freshly-generated `ndelimKind` guard. -/
 theorem Stmt.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.initVars s ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
-  match s with
-  | .cmd c =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil] at hx ⊢
-      exact Or.inl hx
-  | .block lbl bss md =>
-      intro x hx
-      rw [Stmt.nondetElimM_block_out] at hx
-      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
-        List.append_nil] at hx ⊢
-      exact Block.nondetElimM_initVars_classified bss σ x hx
-  | .ite (.det e) tss ess md =>
-      intro x hx
-      rw [Stmt.nondetElimM_ite_det_out] at hx
-      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
-        List.append_nil, List.mem_append] at hx ⊢
-      rcases hx with h | h
-      · rcases Block.nondetElimM_initVars_classified tss σ x h with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified ess _ x h with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  | .ite .nondet tss ess md =>
-      intro x hx
-      rw [Stmt.nondetElimM_ite_nondet_out] at hx
-      simp only [HasInit.init, Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
-        Cmd.definedVars, Bool.false_eq_true, ↓reduceIte, List.append_nil, List.cons_append,
-        List.nil_append, List.mem_cons, List.mem_append] at hx ⊢
-      rcases hx with h_g | h_t | h_e
-      · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g, ndelimKind_gen.1 σ⟩
-      · rcases Block.nondetElimM_initVars_classified tss _ x h_t with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified ess _ x h_e with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  | .loop (.det e) m inv body md =>
-      intro x hx
-      rw [Stmt.nondetElimM_loop_det_out] at hx
-      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
-        List.append_nil] at hx ⊢
-      exact Block.nondetElimM_initVars_classified body σ x hx
-  | .loop .nondet m inv body md =>
-      intro x hx
-      rw [Stmt.nondetElimM_loop_nondet_out] at hx
-      simp only [HasInit.init, HasHavoc.havoc, Block.definedVars, Stmt.definedVars,
-        HasVarsImp.definedVars, Cmd.definedVars, Bool.false_eq_true, ↓reduceIte,
-        Block.initVars_append, List.append_nil, List.cons_append, List.nil_append,
-        List.mem_cons] at hx ⊢
-      rcases hx with h_g | h_body
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, ndelimKind_gen.2 σ⟩
-      · rcases Block.nondetElimM_initVars_classified body _ x h_body with h' | h'
-        · exact Or.inl h'
-        · exact Or.inr h'
-  | .exit lbl md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
-        List.not_mem_nil] at hx
-  | .funcDecl d md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
-        List.not_mem_nil] at hx
-  | .typeDecl t md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
-        List.not_mem_nil] at hx
-  termination_by sizeOf s
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
+  Stmt.nondetElimM_initVars_classified_Q ndelimKind_gen s σ
 
 /-- Block-level `initVars` classification of the `nondetElim` output. -/
 theorem Block.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.initVars ss ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
-  match ss with
-  | [] =>
-      intro x hx
-      simp only [Block.nondetElimM, Block.definedVars, List.not_mem_nil] at hx
-  | s :: rest =>
-      intro x hx
-      rw [Block.nondetElimM_cons_out, Block.initVars_append] at hx
-      simp only [List.mem_append] at hx
-      rw [Block.initVars_cons, List.mem_append]
-      rcases hx with h | h
-      · rcases Stmt.nondetElimM_initVars_classified s σ x h with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified rest _ x h with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  termination_by sizeOf ss
-end
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
+  Block.nondetElimM_initVars_classified_Q ndelimKind_gen ss σ
 
 mutual
 /-- Every `modifiedVars` element of the `nondetElim` output of a statement is

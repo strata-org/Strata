@@ -7,10 +7,6 @@ module
 
 public import Strata.Languages.Core.Identifiers
 import all Strata.Languages.Core.Identifiers
-import all Init.Data.String.Lemmas.Pattern.String.ForwardPattern
-import all Init.Data.String.TakeDrop
-import all Init.Data.String.Slice
-import all Init.Data.String.Basic
 
 /-!
 # Properties of `Core` identifiers
@@ -29,27 +25,23 @@ public section
 
 namespace Core
 
-/-- `isOldIdent id ↔ ∃ s, id = mkOld s`.  `String.startsWith` in this toolchain
-    routes through the `Slice`/iterator machinery and does not reduce by `decide`;
-    the proof goes via the `startsWith_iff` characterization plus `copy_toSlice`. -/
+/-- `isOldIdent id ↔ ∃ s, id = mkOld s`: the `old`-prefix predicate holds exactly
+    for identifiers produced by `mkOld`. -/
 theorem isOldIdent_iff_exists_mkOld (id : CoreIdent) :
     CoreIdent.isOldIdent id = true ↔ ∃ s, id = CoreIdent.mkOld s := by
   unfold CoreIdent.isOldIdent
-  rw [show (id.name.startsWith CoreIdent.oldStr)
-        = String.Slice.Pattern.ForwardSliceSearcher.startsWith
-            CoreIdent.oldStr.toSlice id.name.toSlice
-      from rfl]
-  rw [String.Slice.Pattern.ForwardSliceSearcher.startsWith_iff,
-      String.copy_toSlice, String.copy_toSlice]
+  rw [List.isPrefixOf_iff_prefix]
   constructor
   · rintro ⟨t, ht⟩
-    refine ⟨t, ?_⟩
+    refine ⟨String.ofList t, ?_⟩
     obtain ⟨name, m⟩ := id
     cases m
-    simp only [CoreIdent.mkOld, CoreIdent.oldStr] at ht ⊢
-    rw [ht]
+    simp only [CoreIdent.mkOld, Lambda.Identifier.mk.injEq, and_true]
+    apply String.ext
+    simp only [String.toList_append, String.toList_ofList]
+    exact ht.symm
   · rintro ⟨s, rfl⟩
-    exact ⟨s, by simp [CoreIdent.mkOld, CoreIdent.oldStr]⟩
+    exact ⟨s.toList, by simp [CoreIdent.mkOld, String.toList_append]⟩
 
 /-- Contrapositive of `isOldIdent_iff_exists_mkOld`: if `id ≠ mkOld x` for all
     `x`, then `id` is not `old`-prefixed. -/

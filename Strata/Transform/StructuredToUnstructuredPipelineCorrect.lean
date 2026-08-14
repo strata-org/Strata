@@ -21,9 +21,7 @@ The whole-pipeline correctness proof.  The key results are:
 
 - `pipeline_overapproximates_upto_via_passes` — the abstract-form top-level
   correctness: the whole-pipeline `OverapproximatesUptoWhen` instance, composing
-  the three per-pass instances (`pipeline_sound` is derived from it).
-- `pipeline_sound` — the concrete-form soundness: a terminating/escaping source
-  run is matched by a CFG run of `s2uPipeline ss`, agreeing on the final store.
+  the three per-pass instances.
 - `pipelinePre_nil` — the syntactic precondition gate is inhabited.
 
 The pipeline definitions themselves live in `StructuredToUnstructuredPipeline`. -/
@@ -75,10 +73,9 @@ variable [HasFvar P] [HasFvars P] [HasBoolOps P]
   [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
   [LawfulHasFvar P] [LawfulHasIdent P]
 
-/-- The pipeline's entry instance: a thin wrapper around
-`nondetElim_overapproximates_upto_local` that re-keys the source
-`BlockInitEnvWF pipelineKind` down to `ndelimKind` and re-bundles the target
-`initEnvWF` up to `s2uKind`. -/
+/-- Under `PipelinePre`, `nondetElim` overapproximates the source imperative-block
+language by itself up to `EnvStoreAgree`, with source kind `pipelineKind` and target
+kind `s2uKind`. -/
 private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
@@ -99,11 +96,9 @@ private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
   simp only [Option.some.injEq] at ht
   subst ht
   have h_gens_ndelim : Env.varsUndefined (P := P) ndelimKind ρ₀ :=
-    Env.varsUndefined_iff.mpr fun s hs =>
-      Env.varsUndefined_apply hwf.definedVarsNotReserved s (Or.inl hs)
+    Env.varsUndefined_of_imp (fun _ hs => Or.inl hs) hwf.definedVarsNotReserved
   have h_gens_s2u : Env.varsUndefined (P := P) StructuredToUnstructuredCorrect.s2uKind ρ₀ :=
-    Env.varsUndefined_iff.mpr fun s hs =>
-      Env.varsUndefined_apply hwf.definedVarsNotReserved s (Or.inr hs)
+    Env.varsUndefined_of_imp (fun _ hs => Or.inr hs) hwf.definedVarsNotReserved
   obtain ⟨h_arms, h_canfail, _⟩ :=
     nondetElim_overapproximates_upto_local (P := P) extendFactory ss (Block.nondetElim ss) rfl
       ⟨hpre.h_nofd, hpre.h_unique, hpre.h_ndelim_writes⟩
@@ -127,10 +122,8 @@ The facts are the structural-preservation properties of the `nondetElim`/`hoist`
 outputs, derived from the statement-only `pre`s. -/
 
 omit [LawfulHasFvar P] in
-/-- `pre_src → pre_ndelim ∘ nondetElim`: the `hoist` instance's `pre` holds on the
-`nondetElim` output, derived from the source (syntactic) `PipelinePre`.  The shape
-facts come from the `nondetElim` shape-preservation lemmas; the two `s2uKind`-freedom
-facts from the `nondetElimM` init/mod-var classification + kind-disjointness. -/
+/-- The `nondetElim` output satisfies the `hoist` pass's precondition whenever the
+source satisfies `PipelinePre`. -/
 private theorem hpre_src_ndelim [HasSubstFvar P] :
     ∀ ss ss', (fun ss => some (Block.nondetElim ss)) ss = some ss' →
       (fun ss => PipelinePre ss) ss →
@@ -175,9 +168,7 @@ private theorem hpre_src_ndelim [HasSubstFvar P] :
 omit [LawfulHasFvar P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
 omit [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P] in
 /-- `pre_ndelim → pre_hoist ∘ hoistLoopPrefixInits`: the `stmtsToCFG` instance's
-`pre` holds on the `hoist` output.  Shape facts come from the `hoist`
-shape-preservation lemmas; the `s2uKind`-freedom facts transport because the
-same-name hoist introduces no fresh names. -/
+`pre` holds on the `hoist` output. -/
 private theorem hpre_ndelim_hoist :
     ∀ ss ss', (fun ss => some (Block.hoistLoopPrefixInits ss)) ss = some ss' →
       (fun ss =>
@@ -232,9 +223,7 @@ private theorem hpre_ndelim_hoist :
 /-- The three per-pass instances chained via `comp_trans_eq` (`EnvStoreAgree` is
 transitive) into one source-`imperativeBlock` → `cfg` instance, with the monadic
 composition of the three pass transforms and `pre = pre_src`.  The source
-language's `initEnvWF` is keyed on the combined `pipelineKind`.
-`pipeline_overapproximates_upto_via_passes` (below) rewrites the transform to
-`some ∘ pipeline`. -/
+language's `initEnvWF` is keyed on the combined `pipelineKind`. -/
 private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
@@ -289,9 +278,7 @@ private theorem pipeline_transform_eq (ss : List (Stmt P (Cmd P))) :
 /-- **Pipeline overapproximation, via per-pass composition.**  The canonical
 whole-pipeline refinement: `fun ss => some (s2uPipeline ss)` overapproximates the
 source statement-list language by the unstructured CFG language up to
-`EnvStoreAgree`.  Obtained by composing the three per-pass instances with
-`comp_trans_eq`, then collapsing the composed transform to `some ∘ pipeline` via
-`pipeline_transform_eq`. -/
+`EnvStoreAgree`. -/
 theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
@@ -325,7 +312,6 @@ theorem pipelinePre_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   h_covered := by simp [Block.exitsCoveredByBlocks]
   h_ndelim_writes := by intro s _ hmem; exact absurd hmem (by simp)
   h_disj_initVars := by intro s _ hmem; exact absurd hmem (by simp [Block.initVars])
-  h_disj_modVars := by intro s _ hmem; exact absurd hmem (by simp [Block.modifiedVars])
 
 end Imperative
 

@@ -1445,7 +1445,7 @@ theorem Stmt.namesFreshInRhsExprs_cmd_init_nondet {P : PureExpr}
   show Stmt.namesFreshInRhsExprs (P := P) names
     (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
   simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
-  intro z _ hz; simp at hz
+  intro z _ hz; simp only [List.not_mem_nil] at hz
 
 /-- A `.cmd (havoc _)` has an empty-vars RHS, so any names list is RHS-fresh in
 it. -/
@@ -1457,7 +1457,7 @@ theorem Stmt.namesFreshInRhsExprs_cmd_havoc {P : PureExpr}
   show Stmt.namesFreshInRhsExprs (P := P) names
     (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
   simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
-  intro z _ hz; simp at hz
+  intro z _ hz; simp only [List.not_mem_nil] at hz
 
 /-- The empty name list is fresh in every statement's expressions:
 `namesFreshInExprs` is `List.Disjoint [] _`, which holds vacuously. -/
@@ -1675,7 +1675,7 @@ theorem block_pred_map_cmd_true {P : PureExpr}
   | cons c rest ih => rw [List.map_cons, hcons, hcmd, ih]; rfl
 
 /-- `Block.initVars` of a `.cmd`-only block is the commands' `definedVars`. -/
-theorem initVars_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+theorem Block.initVars_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
     Block.initVars (cs.map Stmt.cmd) = Cmds.definedVars cs := by
   induction cs with
   | nil => simp [Block.initVars, Cmds.definedVars]
@@ -1684,7 +1684,7 @@ theorem initVars_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
     rw [ih]; congr 1; cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
 
 /-- A `.cmd`-only block has `noFuncDecl`. -/
-theorem noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+theorem Block.noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
     Block.noFuncDecl (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
   block_pred_map_cmd_true Block.noFuncDecl Stmt.noFuncDecl (by simp [Block.noFuncDecl])
     (fun _ _ => by simp [Block.noFuncDecl]) (fun _ => by simp [Stmt.noFuncDecl]) cs
@@ -1710,13 +1710,13 @@ theorem Block.loopBodyNoInits_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     (fun _ _ => by simp [Block.loopBodyNoInits]) (fun _ => by simp [Stmt.loopBodyNoInits]) cs
 
 /-- A `.cmd`-only block has `simpleShape`. -/
-theorem simpleShape_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+theorem Block.simpleShape_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     Block.simpleShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
   block_pred_map_cmd_true Block.simpleShape Stmt.simpleShape (by simp [Block.simpleShape])
     (fun _ _ => by simp [Block.simpleShape]) (fun _ => by simp [Stmt.simpleShape]) cs
 
 /-- A `.cmd`-only block has `loopHasNoInvariants`. -/
-theorem loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+theorem Block.loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     Block.loopHasNoInvariants (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
   block_pred_map_cmd_true Block.loopHasNoInvariants Stmt.loopHasNoInvariants
     (by simp [Block.loopHasNoInvariants])
@@ -1724,7 +1724,7 @@ theorem loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     (fun _ => by simp [Stmt.loopHasNoInvariants]) cs
 
 /-- A `.cmd`-only block has `noMeasureLoops`. -/
-theorem noMeasureLoops_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+theorem Block.noMeasureLoops_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
     Block.noMeasureLoops (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
   block_pred_map_cmd_true Block.noMeasureLoops Stmt.noMeasureLoops
     (by simp [Block.noMeasureLoops])

@@ -53,12 +53,8 @@ structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [Ha
   h_userlabels : Block.userLabelsShapeNodup ss
   h_covered : Block.exitsCoveredByBlocks [] ss
   h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss
-  h_disj_initVars : ∀ str : String,
-    (ndelimKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+  h_disj_initVars : ∀ str : String, pipelineKind str →
     HasIdent.ident (P := P) str ∉ Block.initVars ss
-  h_disj_modVars : ∀ str : String,
-    StructuredToUnstructuredCorrect.s2uKind str →
-    HasIdent.ident (P := P) str ∉ Block.modifiedVars ss
 
 end Imperative
 

@@ -454,15 +454,10 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
             (.stmts [.loop (.det g) none [] body_h md_h]
               { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                factory := ρ_hoist.factory }) := by
-          have hb : StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-          have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-          · simpa [ρ_h_body] using hbld
-          · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-            show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-          · show WellFormedSemanticEvalBool ρ_h_body.factory
-            show WellFormedSemanticEvalBool ρ_hoist.factory; rw [h_eval]; exact hwfb
+          simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h
+            (by show WellFormedSemanticEvalBool ρ_hoist.factory; rw [h_eval]; exact hwfb)
+            h_body_h_run
         -- Next-iteration projected envs.
         let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                  factory := ρ_src.factory }
@@ -602,15 +597,8 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                  factory := ρ_hoist.factory }) := by
-            have hb : StepStmtStar P (EvalCmd P) extendFactory
-                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using hbld
-            · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-              show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-            · show WellFormedSemanticEvalBool ρ_h_body.factory
-              show WellFormedSemanticEvalBool ρ_hoist.factory; exact h_wfb_h
+            simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                    factory := ρ_src.factory }
           let ρ_tgt_next : Env P :=
@@ -849,15 +837,10 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
             (.stmts [.loop (.det g) none [] body_h md_h]
               { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                factory := ρ_hoist.factory }) := by
-          have hb : StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-          have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-          · simpa [ρ_h_body] using hbld
-          · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-            show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-          · show WellFormedSemanticEvalBool ρ_h_body.factory
-            show WellFormedSemanticEvalBool ρ_hoist.factory; rw [h_eval]; exact hwfb
+          simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h
+            (by show WellFormedSemanticEvalBool ρ_hoist.factory; rw [h_eval]; exact hwfb)
+            h_body_h_run
         let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                  factory := ρ_src.factory }
         let ρ_tgt_next : Env P :=
@@ -1023,15 +1006,8 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                  factory := ρ_hoist.factory }) := by
-            have hb : StepStmtStar P (EvalCmd P) extendFactory
-                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using hbld
-            · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-              show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-            · show WellFormedSemanticEvalBool ρ_h_body.factory
-              show WellFormedSemanticEvalBool ρ_hoist.factory; exact h_wfb_h
+            simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                    factory := ρ_src.factory }
           let ρ_tgt_next : Env P :=
@@ -1249,15 +1225,8 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                  factory := ρ_hoist.factory }) := by
-            have hb : StepStmtStar P (EvalCmd P) extendFactory
-                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using hbld
-            · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-              show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-            · show WellFormedSemanticEvalBool ρ_h_body.factory
-              show WellFormedSemanticEvalBool ρ_hoist.factory; exact h_wfb_h
+            simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                    factory := ρ_src.factory }
           let ρ_tgt_next : Env P :=
@@ -1448,15 +1417,8 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                  factory := ρ_hoist.factory }) := by
-            have hb : StepStmtStar P (EvalCmd P) extendFactory
-                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
-            have hbld := buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
-            · simpa [ρ_h_body] using hbld
-            · show P.eval ρ_h_body.factory ρ_h_body.store g = .some HasBool.tt
-              show P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt; exact h_cond_h
-            · show WellFormedSemanticEvalBool ρ_h_body.factory
-              show WellFormedSemanticEvalBool ρ_hoist.factory; exact h_wfb_h
+            simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store,
                                                    factory := ρ_src.factory }
           let ρ_tgt_next : Env P :=
@@ -3393,7 +3355,7 @@ theorem Stmt.hoistP_initVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Iden
       -- hoist = havocs.map .cmd ++ [.loop g m inv body₂ md] where
       -- (havocs, body₂) = lift (hoist body).
       simp only [Stmt.hoistLoopPrefixInits, Block.initVars_append, Block.initVars_cons,
-        Stmt.initVars_loop, Block.initVars_nil, List.append_nil, initVars_map_cmd,
+        Stmt.initVars_loop, Block.initVars_nil, List.append_nil, Block.initVars_map_cmd,
         List.mem_append] at hy ⊢
       -- hy : y ∈ defined havocs ∨ y ∈ initVars body₂  (modulo the [loop] singleton)
       have := (Block.liftP_initVars_mem (Block.hoistLoopPrefixInits body) y).mp hy
@@ -3467,7 +3429,7 @@ theorem Stmt.hoistP_noFuncDecl {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noF
       have h_hb : Block.noFuncDecl (Block.hoistLoopPrefixInits body) = true :=
         Block.hoistP_noFuncDecl body h_body
       simp only [Stmt.hoistLoopPrefixInits, Block.noFuncDecl_append]
-      rw [noFuncDecl_map_cmd]
+      rw [Block.noFuncDecl_map_cmd]
       simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.true_and, Bool.and_true]
       exact Block.liftP_noFuncDecl_res (Block.hoistLoopPrefixInits body) h_hb
   | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.noFuncDecl, Stmt.noFuncDecl]
@@ -4020,7 +3982,7 @@ theorem Stmt.hoistP_initVars_perm {P : PureExpr} (s : Stmt P (Cmd P)) :
       -- initVars (havocs.map .cmd ++ [loop body₂]) = defined havocs ++ initVars body₂
       --   ~ initVars (hoist body) ~ initVars body.
       simp only [Stmt.hoistLoopPrefixInits, Block.initVars_append, Block.initVars_cons,
-        Stmt.initVars_loop, Block.initVars_nil, List.append_nil, initVars_map_cmd]
+        Stmt.initVars_loop, Block.initVars_nil, List.append_nil, Block.initVars_map_cmd]
       exact (Block.liftP_initVars_perm (Block.hoistLoopPrefixInits body)).trans
         (Block.hoistP_initVars_perm body)
   | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.initVars, Stmt.initVars]
@@ -4135,7 +4097,7 @@ theorem Stmt.hoistP_simpleShape {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.si
         have h_hb : Block.simpleShape (Block.hoistLoopPrefixInits body) = true :=
           Block.hoistP_simpleShape body h_body
         simp only [Stmt.hoistLoopPrefixInits, Block.simpleShape_append]
-        rw [simpleShape_map_cmd']
+        rw [Block.simpleShape_map_cmd']
         simp only [Block.simpleShape, Stmt.simpleShape, Bool.true_and, Bool.and_true]
         rw [Block.liftP_res_simpleShape (Block.hoistLoopPrefixInits body)]; exact h_hb
   | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape]
@@ -4211,7 +4173,7 @@ theorem Stmt.hoistP_loopHasNoInvariants {P : PureExpr} (s : Stmt P (Cmd P))
       have h_hb : Block.loopHasNoInvariants (Block.hoistLoopPrefixInits body) = true :=
         Block.hoistP_loopHasNoInvariants body h_body
       simp only [Stmt.hoistLoopPrefixInits, Block.loopHasNoInvariants_append]
-      rw [loopHasNoInvariants_map_cmd']
+      rw [Block.loopHasNoInvariants_map_cmd']
       simp only [Block.loopHasNoInvariants, Stmt.loopHasNoInvariants, Bool.true_and, Bool.and_true,
         Bool.and_eq_true]
       have h_res : Block.loopHasNoInvariants
@@ -4288,7 +4250,7 @@ theorem Stmt.hoistP_noMeasureLoops {P : PureExpr} (s : Stmt P (Cmd P))
       have h_hb : Block.noMeasureLoops (Block.hoistLoopPrefixInits body) = true :=
         Block.hoistP_noMeasureLoops body h_body
       simp only [Stmt.hoistLoopPrefixInits, Block.noMeasureLoops_append]
-      rw [noMeasureLoops_map_cmd']
+      rw [Block.noMeasureLoops_map_cmd']
       simp only [Block.noMeasureLoops, Stmt.noMeasureLoops, Bool.true_and, Bool.and_true,
         Bool.and_eq_true]
       have h_res : Block.noMeasureLoops
