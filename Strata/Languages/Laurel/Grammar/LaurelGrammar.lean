@@ -14,9 +14,12 @@ module
 -- `throws (e: T)` signature clause that always binds the thrown value (there is
 -- no unbound form), and repeatable `throwsOn <guard> { ensures … modifies … }`
 -- behavior-case blocks inside `opaqueSpec`, beside `ensures`/`modifies`.
+-- A pass-generated `modifiesWhenClause` (`modifies <refs> when <guard>`) renders
+-- the guarded frames `EliminateExceptions` leaves behind; users never write it.
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. the token below) to trigger a recompile after modifying LaurelGrammar.st.
--- Rebuild trigger token: exceptions-throwsOn-blocks
+-- Rebuild trigger token: guarded-modifies-groups
+-- Rebuild trigger: file-scope global declarations.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

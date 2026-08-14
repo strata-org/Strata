@@ -144,6 +144,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let out_mtys := proc.header.outputs.values.map (Lambda.LMonoTy.subst tyArgSubst)
   let (out_mtys, envAfterPreconds) ← Lambda.LMonoTys.resolveAliases out_mtys envAfterPreconds
     |>.mapError (fun e => Message.withRange fileRange e)
+  -- Reject output types whose type constructors are unregistered or applied at the
+  -- wrong arity, matching the check `LMonoTySignature.instantiate` performs on inputs.
+  if !Lambda.LMonoTys.knownInstances out_mtys C.knownTypes then
+    .error <| Message.withRange fileRange
+      f!"[{proc.header.name}]: a return type is not an instance of a registered type!\n\
+         Return types: {out_mtys}\nKnown Types: {C.knownTypes}"
   let out_mty_sig : @Lambda.LMonoTySignature Unit := proc.header.outputs.keys.zip out_mtys
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds

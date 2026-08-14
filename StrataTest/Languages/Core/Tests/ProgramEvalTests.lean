@@ -98,6 +98,7 @@ func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
 func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
   requires int.le(0, i) && int.lt(i, Sequence.length(s));
+func Sequence.select! : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
 func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
   requires int.le(0, i) && int.lt(i, Sequence.length(s));
@@ -623,6 +624,24 @@ procedure Test(x : int, out output : int)
 /-- info: output = (some 20) -/
 #guard_msgs in
 #eval runProc chainedCallPgm "Test" [.intConst () 5]
+
+private def inoutCallPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Bump(inout n : int, k : int)
+{
+  n := int.add(n, k);
+};
+procedure Test(out n : int)
+{
+  n := 5;
+  call Bump(inout n, 3);
+};
+#end
+
+/-- info: n = (some 8) -/
+#guard_msgs in
+#eval runProc inoutCallPgm "Test"
 
 -- Loop (sum of 0..n-1)
 private def loopPgm : StrataDDM.Program :=

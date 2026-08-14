@@ -22,7 +22,7 @@
   '(    ))
 
 (defvar core-st-builtins
-  '(    "Sequence.empty" "Sequence.length" "Sequence.select"
+  '(    "Sequence.empty" "Sequence.length" "Sequence.select!" "Sequence.select"
     "Sequence.append" "Sequence.build" "Sequence.update"
     "Sequence.contains" "Sequence.take" "Sequence.drop" "str.len"
     "str.concat" "str.substr" "str.to.re" "str.in.re" "str.prefixof"

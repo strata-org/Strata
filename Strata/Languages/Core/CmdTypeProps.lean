@@ -223,6 +223,29 @@ theorem preprocess_isInstance_rigidAnnotCompat (C : LContext CoreLParams) (Env E
     LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty h_absorbs]
   exact RigidAnnotCompat_subst S (.of_aliasEquiv h_ae) h_wf.aliasesWF h_rigid
 
+/-- After the unification substitution `S` is applied, `preprocess`'s output is
+    well-kinded in `C`. `preprocess` runs `instantiateWithCheck` (whose result is
+    well-kinded), and `S` — being range-well-kinded and absorbing `Env`'s subst —
+    preserves well-kindedness under substitution. -/
+theorem preprocess_subst_WellKindedTy (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (S : Subst) (xty : LTy) (mty_pre : LMonoTy)
+    (h : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, Env'))
+    (h_absorbs : Subst.absorbs S Env.stateSubstInfo.subst)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) S) :
+    C.WellKindedTy (LMonoTy.subst S mty_pre) := by
+  obtain ⟨mty, _, h_iwc, h_eq⟩ := preprocess_decompose C Env xty (.forAll [] mty_pre) Env' h
+  have h_mty_pre : mty_pre = LMonoTy.subst Env'.stateSubstInfo.subst mty :=
+    (LTy.forAll.inj h_eq).2
+  have h_iwc_subst : Env'.stateSubstInfo = Env.stateSubstInfo :=
+    LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env' h_iwc
+  have h_mty_wk : C.WellKindedTy mty :=
+    LTy.instantiateWithCheck_WellKindedTy xty C Env Env' mty h_iwc
+  -- subst S mty_pre = subst S mty (S absorbs Env'.subst = Env.subst)
+  rw [h_mty_pre, congrArg (·.subst) h_iwc_subst,
+    LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty h_absorbs]
+  exact LMonoTy.WellKinded_subst (fun n => C.knownTypes[n]?) S mty h_mty_wk
+    (fun v _ => h_wk.lookup (fun n => C.knownTypes[n]?) v)
+
 /-- `postprocess` on a mono type applies the current substitution and preserves the environment. -/
 theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (mty : LMonoTy) (ty' : LTy)
@@ -238,6 +261,56 @@ theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     · simp only [Except.ok.injEq, Prod.mk.injEq] at h
       exact ⟨h.1.symm, h.2.symm⟩
   · exact absurd h (by simp)
+
+/-- A successful `postprocess` on `forAll [] mty` guarantees every free var of the stored type
+    `subst Env.subst mty` is a rigid procedure type parameter (the stray-var guard: `postprocess`
+    rejects a stored type whose post-subst free vars are not procedure type parameters). -/
+theorem postprocess_stray (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (mty : LMonoTy) (ty' : LTy)
+    (h : CmdType.postprocess C Env (.forAll [] mty) = .ok (ty', Env')) :
+    ∀ v ∈ LMonoTy.freeVars (LMonoTy.subst Env.stateSubstInfo.subst mty), v ∈ C.rigidTypeVars := by
+  simp only [CmdType.postprocess, LTy.isMonoType, LTy.toMonoType, Bind.bind, Except.bind,
+    pure, Except.pure] at h
+  split at h
+  · split at h
+    · exact absurd h (by simp)
+    · rename_i h_stray_empty
+      have h_empty : (List.filter (fun x => decide ¬ x ∈ C.rigidTypeVars)
+          (LMonoTy.subst Env.stateSubstInfo.subst mty).freeVars) = [] := by
+        simp only [bne_iff_ne, ne_eq, Decidable.not_not] at h_stray_empty
+        exact h_stray_empty
+      rw [List.filter_eq_nil_iff] at h_empty
+      intro v hv
+      have h_not := h_empty v hv
+      simpa using h_not
+  · exact absurd h (by simp)
+
+/-- **Step-local form of the init well-kindedness obligation.** Discharges
+    `C.WellKindedTy (subst S mty_pre)` — the stored variable-annotation type stays well-kinded
+    after the inference substitution `S` — WITHOUT a global `RangeWellKinded C S` premise (which
+    is false when a body declares a type and unifies against it). Uses only step-local facts:
+    the current subst is range-WK, `S` fixes rigid vars, `S` absorbs the current subst, and the
+    stored type's free vars are all rigid (the `postprocess` stray guard, `postprocess_stray`). -/
+theorem preprocess_subst_WellKindedTy_local
+    (C : LContext CoreLParams) (Env_u : TEnv Unit)
+    (S : Subst) (mty_pre : LMonoTy)
+    (h_pre_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre)
+    (h_cur_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env_u.stateSubstInfo.subst)
+    (h_stray : ∀ v ∈ LMonoTy.freeVars (LMonoTy.subst Env_u.stateSubstInfo.subst mty_pre),
+                 v ∈ C.rigidTypeVars)
+    (h_rigid : ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v)
+    (h_absorbs : Subst.absorbs S Env_u.stateSubstInfo.subst) :
+    C.WellKindedTy (LMonoTy.subst S mty_pre) := by
+  rw [← LMonoTy.subst_absorbs S Env_u.stateSubstInfo.subst mty_pre h_absorbs]
+  unfold LContext.WellKindedTy
+  have h_stored_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?)
+      (LMonoTy.subst Env_u.stateSubstInfo.subst mty_pre) :=
+    LMonoTy.WellKinded_subst _ _ mty_pre h_pre_wk
+      (fun v _ => h_cur_wk.lookup _ v)
+  apply LMonoTy.WellKinded_subst _ S _ h_stored_wk
+  intro v hv
+  rw [h_rigid v (h_stray v hv)]
+  exact LMonoTy.WellKinded_ftvar _ v
 
 /-- After unification, both sides of a mono constraint are equal under the result substitution. -/
 theorem unifyTypes_eq (Env Env' : TEnv Unit)
@@ -574,6 +647,159 @@ theorem inferType_HasType (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   have ⟨h_ht, _, _⟩ := resolve_HasType_core e ea C Env Env' h_resolve h_wf h_fwf h_ws
   exact ⟨ea.toLMonoTy, h_ety, h_ht⟩
 
+/-- `inferType` (= `LExpr.resolve` = `resolveAux` with a context scope prepended)
+    preserves subst-range well-kindedness and returns a well-kinded inferred type.
+    The scope-prepend touches only `context`, not `stateSubstInfo`, so subst-WK
+    carries through; the WK conjunct is the `resolveAux_RangeWellKinded` output type
+    pushed through the final `applySubstT`. -/
+theorem inferType_RangeWellKinded (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
+    (h : CmdType.inferType C Env c e = .ok (e', ety, Env'))
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+      ∀ mty, ety = .forAll [] mty →
+        LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty := by
+  obtain ⟨ea, h_resolve, _, h_ety⟩ := inferType_decompose C Env c e e' ety Env' h
+  unfold LExpr.resolve at h_resolve
+  simp only [Bind.bind, Except.bind] at h_resolve
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { Env.context with types := [.empty] }
+    else Env) = Env0 at h_resolve
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h_resolve
+  | .ok (et, Env_out) =>
+    simp [h_res] at h_resolve
+    obtain ⟨h_ea, h_env'⟩ := h_resolve
+    subst h_env'
+    have h_subst_eq : Env0.stateSubstInfo = Env.stateSubstInfo := by
+      subst h_init; split <;> simp [TEnv.updateContext]
+    have h_wk0 : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env0.stateSubstInfo.subst := by
+      rw [congrArg (·.subst) h_subst_eq]; exact h_wk
+    have h_props := resolveAux_RangeWellKinded C h_base Env0 e et Env_out h_res h_wk0
+    refine ⟨h_props.1, ?_⟩
+    intro mty h_ety_eq
+    rw [h_ety] at h_ety_eq
+    have h_mty : mty = ea.toLMonoTy := (LTy.forAll.inj h_ety_eq).2.symm
+    subst h_mty
+    rw [← h_ea, applySubstT_toLMonoTy]
+    exact LMonoTy.WellKinded_subst _ _ _ h_props.2
+      (fun v _ => (h_props.1).lookup _ v)
+
+/-- `unifyTypes` on a single monomorphic constraint whose both sides are well-kinded
+    preserves subst-range well-kindedness (Core wrapper of
+    `Constraints.unify_RangeWellKinded`). -/
+theorem unifyTypes_RangeWellKinded (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (xmty emty : LMonoTy)
+    (h : CmdType.unifyTypes Env [(.forAll [] xmty, .forAll [] emty)] = .ok Env')
+    (h_xwk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) xmty)
+    (h_ewk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) emty)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst := by
+  simp [CmdType.unifyTypes, CmdType.canonicalizeConstraints, LTy.isMonoType, LTy.boundVars,
+    LTy.toMonoType, Bind.bind, Except.bind, Except.mapError, pure, Except.pure] at h
+  elim_err h
+  rename_i S hS
+  simp only [Except.ok.injEq] at h
+  subst h
+  have h_unify : Constraints.unify [(xmty, emty)] Env.stateSubstInfo = .ok S := by
+    revert hS; cases Constraints.unify [(xmty, emty)] Env.stateSubstInfo <;> simp
+  have h_cs_wk : Constraints.WellKinded (fun n => C.knownTypes[n]?) [(xmty, emty)] := by
+    intro c h_mem
+    simp only [List.mem_singleton] at h_mem
+    subst h_mem
+    exact ⟨h_xwk, h_ewk⟩
+  simp only [TEnv.updateSubst]
+  exact Constraints.unify_RangeWellKinded _ [(xmty, emty)] Env.stateSubstInfo S h_unify h_cs_wk h_wk
+
+/-- `preprocess`'s output monotype is well-kinded, given the incoming subst is
+    range-well-kinded (specializes `preprocess_subst_WellKindedTy` at `S = Env.subst`,
+    which is idempotent on the output). -/
+theorem preprocess_WellKindedTy (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (xty : LTy) (mty_pre : LMonoTy)
+    (h : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, Env'))
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre := by
+  have h_wk_out := preprocess_subst_WellKindedTy C Env Env' Env.stateSubstInfo.subst xty mty_pre h
+    (Subst.absorbs_refl _ Env.stateSubstInfo.isWF) h_wk
+  obtain ⟨mty, _, h_iwc, h_eq⟩ := preprocess_decompose C Env xty (.forAll [] mty_pre) Env' h
+  have h_iwc_subst : Env'.stateSubstInfo = Env.stateSubstInfo :=
+    LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env' h_iwc
+  have h_mty_pre : mty_pre = LMonoTy.subst Env.stateSubstInfo.subst mty := by
+    rw [(LTy.forAll.inj h_eq).2, congrArg (·.subst) h_iwc_subst]
+  have h_fix : LMonoTy.subst Env.stateSubstInfo.subst mty_pre = mty_pre := by
+    rw [h_mty_pre, LMonoTy.subst_absorbs Env.stateSubstInfo.subst Env.stateSubstInfo.subst mty
+      (Subst.absorbs_refl _ Env.stateSubstInfo.isWF)]
+  rw [← h_fix]
+  exact h_wk_out
+
+/-- The `init … := *` (nondet) well-kindedness obligation, discharged step-locally.
+    `postprocess` runs on `v1.snd` (the `preprocess` output, whose subst is `Env`'s). -/
+theorem init_nondet_WellKindedTy
+    (C : LContext CoreLParams) (Env : TEnv Unit) (S : Subst) (xty : LTy)
+    (v1 : LTy × TEnv Unit) (mty_pre : LMonoTy) (v2 : LTy × TEnv Unit)
+    (h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd))
+    (h_postprocess : CmdType.postprocess C v1.snd (.forAll [] mty_pre) = .ok v2)
+    (h_base : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_rigid : ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v)
+    (h_absorbs : Subst.absorbs S Env.stateSubstInfo.subst) :
+    C.WellKindedTy (LMonoTy.subst S mty_pre) := by
+  have h_v1_subst : v1.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+    congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty _ v1.snd h_pp)
+  have h_pre_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre :=
+    preprocess_WellKindedTy C Env v1.snd xty mty_pre h_pp h_base
+  have h_cur_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) v1.snd.stateSubstInfo.subst := by
+    rw [h_v1_subst]; exact h_base
+  have h_stray := postprocess_stray C v1.snd v2.snd mty_pre v2.fst
+    (by rw [← Prod.eta v2]; exact h_postprocess)
+  have h_absorbs' : Subst.absorbs S v1.snd.stateSubstInfo.subst := by
+    rw [h_v1_subst]; exact h_absorbs
+  exact preprocess_subst_WellKindedTy_local C v1.snd S mty_pre h_pre_wk h_cur_wk h_stray h_rigid h_absorbs'
+
+/-- The `init … := e` (det) well-kindedness obligation, discharged step-locally.
+    `postprocess` runs on `Env_unified`, whose subst is range-well-kinded by threading `Env`'s
+    subst-WK through `inferType` (`inferType_RangeWellKinded`) and `unifyTypes`
+    (`unifyTypes_RangeWellKinded`); needs `BaseTypesWK C` for the resolve step. -/
+theorem init_det_WellKindedTy
+    (C : LContext CoreLParams) (Env : TEnv Unit) (S : Subst) (x : CoreIdent) (xty : LTy)
+    (heq_det : LExpr CoreLParams.mono) (md : MetaData Expression)
+    (v1 : LTy × TEnv Unit) (mty_pre : LMonoTy)
+    (v2 : LExpr CoreLParams.mono × LTy × TEnv Unit) (Env_unified : TEnv Unit)
+    (h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd))
+    (h_infer : CmdType.inferType C v1.snd (Cmd.init x xty (.det heq_det) md) heq_det = .ok v2)
+    (h_unify : CmdType.unifyTypes v2.2.snd [(.forAll [] mty_pre, v2.2.fst)] = .ok Env_unified)
+    (v3 : LTy × TEnv Unit)
+    (h_postprocess : CmdType.postprocess C Env_unified (.forAll [] mty_pre) = .ok v3)
+    (h_wf : LExpr.TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_base_ty : BaseTypesWK C)
+    (h_base : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_rigid : ∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v)
+    (h_absorbs : Subst.absorbs S Env_unified.stateSubstInfo.subst) :
+    C.WellKindedTy (LMonoTy.subst S mty_pre) := by
+  have h_v1_subst : v1.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+    congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty _ v1.snd h_pp)
+  have h_pre_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre :=
+    preprocess_WellKindedTy C Env v1.snd xty mty_pre h_pp h_base
+  have h_wk_v1 : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) v1.snd.stateSubstInfo.subst := by
+    rw [h_v1_subst]; exact h_base
+  obtain ⟨h_wk_infer, h_infer_ty_wk⟩ :=
+    inferType_RangeWellKinded C v1.snd v2.2.snd _ heq_det v2.1 v2.2.fst h_infer h_base_ty h_wk_v1
+  have h_wf_v1 :=
+    CmdType.preprocess_preserves_TEnvWF C Env xty (.forAll [] mty_pre) v1.snd h_pp h_wf
+  obtain ⟨mty_infer, h_ety_eq, _⟩ := inferType_output_fresh C v1.snd v2.2.snd _ heq_det v2.1 v2.2.fst
+    h_infer h_wf_v1 h_fwf
+  have h_infer_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_infer :=
+    h_infer_ty_wk mty_infer h_ety_eq
+  rw [h_ety_eq] at h_unify
+  have h_wk_unified : Subst.RangeWellKinded (fun n => C.knownTypes[n]?)
+      Env_unified.stateSubstInfo.subst :=
+    unifyTypes_RangeWellKinded C v2.2.snd Env_unified mty_pre mty_infer h_unify h_pre_wk
+      h_infer_wk h_wk_infer
+  have h_stray := postprocess_stray C Env_unified v3.snd mty_pre v3.fst
+    (by rw [← Prod.eta v3]; exact h_postprocess)
+  exact preprocess_subst_WellKindedTy_local C Env_unified S mty_pre h_pre_wk h_wk_unified h_stray
+    h_rigid h_absorbs
 
 end CmdType
 

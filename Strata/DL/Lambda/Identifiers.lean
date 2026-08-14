@@ -97,6 +97,15 @@ def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (
 def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (n: String) : Bool :=
   m[n]?.isSome
 
+/-- If `m` contains `x`, then looking up `x`'s name yields exactly `x`'s metadata. -/
+theorem Identifiers.contains_getElem? {IDMeta} [DecidableEq IDMeta]
+    (m : Identifiers IDMeta) (x : Identifier IDMeta) (h : m.contains x = true) :
+    m[x.name]? = some x.metadata := by
+  simp only [Identifiers.contains] at h
+  split at h
+  · rename_i i h_get; simp only [beq_iff_eq] at h; rw [h_get, h]
+  · exact absurd h (by simp)
+
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)
 

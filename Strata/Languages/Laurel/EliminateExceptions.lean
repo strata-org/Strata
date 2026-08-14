@@ -96,9 +96,81 @@ private def exnReturningVar : String := "$returning"
     (an `exit` carries no value, so a bool per label is all the unwind needs);
     cleared when the jump is finally delivered to its label. -/
 private def exitPendingVar (label : String) : String := s!"$exiting_{label}"
-/-- Synthesized output of a throwing procedure: its `Result<Val, T>` for the
-    declared `throws T`. -/
+/-- Preferred spelling for a throwing procedure's synthesized output — the
+    `Result<Val, T>` carrying its outcome. `resultOutputName` because after the
+    lowering the carrier *is* the procedure's result (its only output), and a
+    single output of this name prints in the familiar short form.
+
+    A preference only, never load-bearing: `lowerProc` freshens it against every
+    identifier the procedure binds (so a short-form procedure, whose own value
+    output already takes this name, gets `$result_1`), and every reference to the
+    carrier — the `isGood`/`isBad` guards on postconditions and modifies groups —
+    is emitted by this pass at the point it mints the name. Correctness cannot
+    depend on this spelling — nothing downstream recognizes the carrier at all. -/
 private def exnResultVar : String := resultOutputName
+
+/-- The identifiers `proc` binds where a carrier collision could bite: inputs,
+    outputs, and every name bound in its body and postconditions — declarations,
+    `.Assign` targets, `catch` bindings, and quantifier binders. Binders open
+    nested scopes, but the carrier is referenced from postconditions that a
+    substitution may land inside (an authored `forall($result: …)` would capture
+    a carrier spelled `$result`), so scoping is ignored rather than modelled:
+    every bound name is treated as taken. Used to choose a carrier name that
+    collides with nothing it collects. -/
+private def usedNames (proc : Procedure) : Std.HashSet String :=
+  let fromBody (b : StmtExprMd) (acc : Std.HashSet String) : Std.HashSet String :=
+    foldStmtExpr (fun n acc =>
+      match n.val with
+      | .Var (.Declare p) => acc.insert p.name.text
+      | .Assign targets _ =>
+        targets.foldl (fun acc t =>
+          match t.val with
+          | .Declare p => acc.insert p.name.text
+          | .Local id => acc.insert id.text
+          | .Field _ _ => acc) acc
+      | .Try _ catches _ =>
+        catches.foldl (fun acc c => acc.insert c.binding.text) acc
+      | .Quantifier _ param _ _ => acc.insert param.name.text
+      | _ => acc) acc b
+  let acc := (proc.inputs ++ proc.outputs).foldl
+    (fun (acc : Std.HashSet String) p => acc.insert p.name.text) {}
+  let acc := match proc.body with
+    | .Transparent b => fromBody b acc
+    | .Opaque posts impl _ =>
+      let acc := posts.foldl (fun acc c => fromBody c.condition acc) acc
+      (impl.map (fromBody · acc)).getD acc
+    | .Abstract posts => posts.foldl (fun acc c => fromBody c.condition acc) acc
+    | .External => acc
+  (proc.throwsOn.foldl (fun acc blk =>
+    blk.postconditions.foldl (fun acc c => fromBody c.condition acc) acc) acc)
+
+/-- `base` if unused in `taken`, else `base_1`, `base_2`, … -/
+private def freshName (base : String) (taken : Std.HashSet String) : String :=
+  if !taken.contains base then base
+  else
+    let rec go (i : Nat) (fuel : Nat) : String :=
+      match fuel with
+      -- Unreachable by pigeonhole: the search visits `taken.size + 1` candidates,
+      -- all distinct (`_1`, `_2`, … suffixes), and `taken` can contain at most
+      -- `taken.size` of them — so a free candidate is found before the fuel runs
+      -- out. The fuel exists only to make termination structural; this arm keeps
+      -- the function total without an in-proof pigeonhole argument.
+      | 0 => s!"{base}_{i}"
+      | fuel + 1 =>
+        let cand := s!"{base}_{i}"
+        if taken.contains cand then go (i + 1) fuel else cand
+    go 1 (taken.size + 1)
+
+-- Pin `freshName`'s outputs for the cases the carrier naming relies on: the
+-- preferred spelling when free, the first suffix when taken (the short-form
+-- procedure's case), and stepping past consecutive taken names. Checked at compile
+-- time; the end-to-end tests in `ThrowsClause.lean` only assert that the lowered
+-- program verifies, which would not catch a freshener returning a wrong-but-unused
+-- name.
+#guard freshName "$result" {} == "$result"
+#guard freshName "$result" (Std.HashSet.ofList ["$result"]) == "$result_1"
+#guard freshName "$result" (Std.HashSet.ofList ["$result", "$result_1"]) == "$result_2"
+#guard freshName "$result" (Std.HashSet.ofList ["$result_1"]) == "$result"
 /-- Label of the block a `throw`/`return` exits to leave the body region; the
     `Result` construction is placed immediately after this block. Distinct from
     the translator's `$body` label (which it auto-wraps around every body). -/
@@ -145,6 +217,8 @@ private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
 -- `$implies` nor `$and` is overloaded, so these names survive `UniqueOverloadNames`.
 private def impliesOf (a b : StmtExprMd) : StmtExprMd :=
   nn (.StaticCall (mkId Operation.Implies.procName) [a, b])
+private def orOf (a b : StmtExprMd) : StmtExprMd :=
+  callStatic Operation.Or.procName [a, b]
 private def andOf (a b : StmtExprMd) : StmtExprMd :=
   nn (.StaticCall (mkId Operation.And.procName) [a, b])
 /-- `e as ty` — a downcast. On a propagation edge its runtime cast-assert is
@@ -761,6 +835,12 @@ private def bodyPostconditions (body : Body) : List Condition :=
   | .Abstract posts => posts
   | _ => []
 
+/-- Existing (normal) modifies groups declared on a body, if any. -/
+private def bodyModifies (body : Body) : List ModifiesGroup :=
+  match body with
+  | .Opaque _ _ mods => mods
+  | _ => []
+
 /-- Lower a single procedure. Non-exceptional procedures are returned unchanged. -/
 private def lowerProc (proc : Procedure) : EM Procedure := do
   let procThrows := proc.throwsType.isSome
@@ -812,20 +892,28 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
     return { proc with body := newBody }
 
   -- Throwing procedure: return a single `Result`, build it after the body, and
-  -- turn the exceptional contract into ordinary postconditions over `$result`.
+  -- turn the exceptional contract into ordinary postconditions over the carrier.
   let valTy := valTyOf proc
   -- The declared `throws` type is the `Result`'s `Err` argument.
   let throwsTy := proc.throwsType.getD boolTy
   let valName? := match valueOutputs with | [o] => some o.name.text | _ => none
   let inputNames := proc.inputs.map (·.name.text)
   let inoutOutputs := proc.outputs.filter (fun o => inputNames.contains o.name.text)
-  let newOutputs := inoutOutputs ++ [⟨mkId exnResultVar, resultTyOf valTy throwsTy⟩]
+  -- The carrier's name is *chosen*, not fixed: `exnResultVar` is only the preferred
+  -- spelling, stepped past any identifier the procedure already uses. No other code
+  -- relies on the spelling — every reference to the carrier is emitted below, right
+  -- here — so a taken name costs a suffix, not a collision. The short `: T` return form
+  -- is the ubiquitous case: it mints its value output under this very name, so such
+  -- a procedure's carrier freshens to `$result_1`, keeping the value output and the
+  -- carrier distinct identifiers in the lowered signature's scope.
+  let carrier := freshName exnResultVar (usedNames proc)
+  let newOutputs := inoutOutputs ++ [⟨mkId carrier, resultTyOf valTy throwsTy⟩]
   -- Postconditions.
   let goodWrap (p : StmtExprMd) : StmtExprMd :=
     let p' := match valName? with
-      | some n => substLocal n (resultApp exnResultValue (localRef exnResultVar)) p
+      | some n => substLocal n (resultApp exnResultValue (localRef carrier)) p
       | none => p
-    impliesOf (resultApp exnResultIsGood (localRef exnResultVar)) p'
+    impliesOf (resultApp exnResultIsGood (localRef carrier)) p'
   -- A `free` condition corresponds to `ConditionMode.Assume` internally. A
   -- bodiless (abstract/opaque-no-impl) procedure's postconditions are assumed,
   -- not checked, so force `.Assume` there; otherwise keep the original mode.
@@ -846,8 +934,8 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
       match tyNode.val with
       | .UserDefined _ =>
         [{ condition := fillSrc tyNode.source
-             (impliesOf (resultApp exnResultIsBad (localRef exnResultVar))
-               ⟨.IsType (resultApp exnResultErr (localRef exnResultVar)) tyNode, tyNode.source⟩)
+             (impliesOf (resultApp exnResultIsBad (localRef carrier))
+               ⟨.IsType (resultApp exnResultErr (localRef carrier)) tyNode, tyNode.source⟩)
            mode := if isBodiless then .Assume else .Both }]
       | _ => []
     | none => []
@@ -885,48 +973,87 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- do.
   let throwsOnPosts := proc.throwsOn.flatMap (fun blk =>
     let synthesizedMode := if isBodiless then ConditionMode.Assume else ConditionMode.Both
-    let isBad := resultApp exnResultIsBad (localRef exnResultVar)
+    let isBad := resultApp exnResultIsBad (localRef carrier)
     let forcing : Condition :=
       { condition := fillSrc blk.guard.source (impliesOf blk.guard isBad)
         summary := "throwsOn case forces a throw"
         mode := synthesizedMode }
     let posts := blk.postconditions.map (fun c =>
       let p' := match proc.throwsBinding with
-        | some b => substLocal b.text (resultApp exnResultErr (localRef exnResultVar)) c.condition
+        | some b => substLocal b.text (resultApp exnResultErr (localRef carrier)) c.condition
         | none => c.condition
       ({ c with condition := fillSrc c.condition.source (impliesOf (andOf blk.guard isBad) p')
                 mode := if isBodiless then ConditionMode.Assume else c.mode } : Condition))
     forcing :: posts)
-  -- A case's frame is *not* built here: the two-state frame axiom needs `$heap` and
-  -- the field constants, which only exist after heap parameterization. This pass
-  -- therefore leaves `throwsOn` on the procedure — with each case's postconditions
-  -- cleared, since they are emitted above — for `ModifiesClauses` to consume. That
-  -- pass also emits the exhaustiveness claim over the cases' guards.
-  let allPosts := wrappedPosts ++ throwsTypePosts ++ throwsOnPosts
+  -- Exhaustiveness: `Result..isBad(<carrier>) ==> (C₁ ∨ … ∨ Cₙ)`. Stating at least
+  -- one case is a claim to have enumerated them, so a throwing path matching no
+  -- guard is reported here rather than silently escaping every case frame — where
+  -- it would be unconstrained, since each frame's antecedent is false on such a
+  -- path. Not emitted when the procedure states no cases: it then claims nothing
+  -- about its throwing paths, and an empty disjunction would read as "never
+  -- throws". For a bodiless procedure it is assumed rather than checked, like every
+  -- other clause there — stating the cases *is* the author's enumeration of them.
+  let exhaustivenessPost : List Condition :=
+    match proc.throwsOn with
+    | [] => []
+    | blk :: blks =>
+      let anyGuard := blks.foldl (fun acc b => orOf acc b.guard) blk.guard
+      [{ condition := fillSrc proc.name.source
+           (impliesOf (resultApp exnResultIsBad (localRef carrier)) anyGuard)
+         summary := "throwsOn cases cover every throwing path"
+         mode := if isBodiless then ConditionMode.Assume else ConditionMode.Both }]
+  let allPosts := wrappedPosts ++ throwsTypePosts ++ throwsOnPosts ++ exhaustivenessPost
+  -- The frames. A frame's two-state axiom needs `$heap` and the field constants,
+  -- which only exist after heap parameterization, so it cannot be *built* here —
+  -- but everything exceptional about it can be resolved here, into the guard of an
+  -- ordinary `ModifiesGroup`. The user's own frame applies to the normal exit, so
+  -- it is re-guarded on `Result..isGood(<carrier>)`; each `throwsOn` case
+  -- contributes a group guarded on `Result..isBad(<carrier>) && C`. After this,
+  -- no downstream pass knows this procedure ever had an exceptional channel:
+  -- `ModifiesClauses` lowers "guard implies frame" for any guard.
+  --
+  -- A case with no frame targets contributes nothing (it constrains no locations),
+  -- and a case whose frame is the wildcard `*` likewise: "anything may change" is
+  -- the absence of a frame, and emitting an empty-target group instead would claim
+  -- the opposite ("nothing may change").
+  let isBadGuard (extra : Option StmtExprMd) : StmtExprMd :=
+    let isBad := resultApp exnResultIsBad (localRef carrier)
+    match extra with
+    | some c => andOf isBad c
+    | none => isBad
+  let normalGroups := (bodyModifies proc.body).map (fun g =>
+    { g with guard := some (match g.guard with
+        | some c => andOf (resultApp exnResultIsGood (localRef carrier)) c
+        | none => resultApp exnResultIsGood (localRef carrier)) })
+  let caseGroups : List ModifiesGroup := proc.throwsOn.filterMap (fun blk =>
+    if blk.modifies.isEmpty || hasModifiesWildcard blk.modifies then none
+    else some { targets := blk.modifies
+                guard := some (fillSrc blk.guard.source (isBadGuard (some blk.guard)))
+                summary := some "throwsOn modifies clause" })
+  let newModifies := normalGroups ++ caseGroups
   -- Body assembly (only when there is an implementation).
   let goodArg := match valName? with | some n => localRef n | none => litBool true
   let construct := iteOf (localRef exnThrownVar)
-    (blockOf [setLocal exnResultVar (resultApp exnResultBadCtor (localRef exnExcVar))])
-    (some (blockOf [setLocal exnResultVar (resultApp exnResultGoodCtor goodArg)]))
+    (blockOf [setLocal carrier (resultApp exnResultBadCtor (localRef exnExcVar))])
+    (some (blockOf [setLocal carrier (resultApp exnResultGoodCtor goodArg)]))
   let assembledBody? : Option StmtExprMd := loweredBody?.map (fun bstmts =>
     fillSrc proc.name.source <|
     let excDecls := excStateDecls procExc exitFlags (needed := true)
     let valDecl := match valName? with | some n => [declNoInit n valTy] | none => []
     blockOf (excDecls ++ valDecl ++ [blockOf bstmts (some exnExitLabel), construct]))
-  let origModif := match proc.body with | .Opaque _ _ m => m | _ => []
   let newBody := match proc.body with
     | .Abstract _ => .Abstract allPosts
-    | _ => .Opaque allPosts assembledBody? origModif
-  -- `throwsOn` is intentionally NOT cleared here, only each case's postconditions:
-  -- `ModifiesClauses` (after heap parameterization) still needs the guards and the
-  -- frame targets to build the per-case frames and the exhaustiveness claim, and it
-  -- clears the field once it has.
+    | _ => .Opaque allPosts assembledBody? newModifies
+  -- `throwsOn` is fully consumed: its postconditions became guarded conditions, its
+  -- frames became guarded `ModifiesGroup`s, and the exhaustiveness claim is emitted
+  -- above. After this pass, nothing downstream can tell the procedure ever had an
+  -- exceptional channel.
   return { proc with
     outputs := newOutputs
     body := newBody
     throwsType := none
     throwsBinding := none
-    throwsOn := proc.throwsOn.map (fun blk => { blk with postconditions := [] }) }
+    throwsOn := [] }
 where
   /-- The `$thrown`/`$returning` declarations (always) plus the procedure-level
       `$exc` (only for a throwing procedure, typed at its `throws` type) and one

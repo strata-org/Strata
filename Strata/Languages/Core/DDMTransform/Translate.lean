@@ -1295,6 +1295,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      return .mkApp () fn [s, i]
+  | .fn _ q`Core.seq_select_unsafe, [_, sa, ia] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .SelectUnsafe)
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     return .mkApp () fn [s, i]
   | .fn _ q`Core.seq_append, [_, s1a, s2a] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Append)
      let s1 ← translateExpr p bindings s1a
@@ -2061,21 +2066,57 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
 
 ---------------------------------------------------------------------
 
-def translateConstant (bindings : TransBindings) (op : Operation) :
+def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
+  let .option _ inline := arg
+    | TransM.error s!"translateOptionInline unexpected {repr arg}"
+  match inline with
+  | some f =>
+    let _ ← checkOpArg f q`Core.inline 0
+    return #[.inline]
+  | none => return #[]
+
+/-- Record a constant declaration, making its name available to the declarations
+that follow. -/
+private def constantDecl (decl : Core.Decl) (bindings : TransBindings) :
+  Core.Decl × TransBindings :=
+  (decl, { bindings with freeVars := bindings.freeVars.push decl })
+
+/--
+Translate `const x : T;`, a constant whose value is left unspecified.
+
+It elaborates to a nullary function without a body, so `x` is constrained only
+by whatever axioms mention it.
+-/
+def translateConstantDecl (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 4
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
   let annotsArg := op.args[0]!
   let cname ← translateIdent Core.CoreIdent op.args[1]!
-  let typeArgs ← translateTypeArgs op.args[2]!
-  let ret ← translateLMonoTy bindings op.args[3]!
+  let ret ← translateLMonoTy bindings op.args[2]!
   let md ← getMetaDataWithAnn op annotsArg
-  let decl := .func { name := cname,
-                      typeArgs := typeArgs.toList,
-                      inputs := [],
-                      output := ret,
-                      body := none }
-                    md
-  return (decl, { bindings with freeVars := bindings.freeVars.push decl })
+  return constantDecl (.const cname ret (md := md)) bindings
+
+/--
+Translate `const x : T := v;`, a constant declared together with its value.
+
+It elaborates to a nullary function whose body is `v`, so the value is available
+to the type checker and to symbolic evaluation without an SMT-level axiom
+relating `x` to `v`. As for a function definition, the body is substituted at
+each use only when the declaration is marked `inline`.
+
+Like `const x : T;`, this form takes no type arguments: a constant is
+monomorphic. Write a polymorphic nullary value with `function` syntax instead.
+-/
+def translateConstantDef (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdef 5
+  let annotsArg := op.args[0]!
+  let cname ← translateIdent Core.CoreIdent op.args[1]!
+  let ret ← translateLMonoTy bindings op.args[2]!
+  let body ← translateExpr p bindings op.args[3]!
+  let attr ← translateOptionInline op.args[4]!
+  let md ← getMetaDataWithAnn op annotsArg
+  return constantDecl (.const cname ret (value := some body) (attr := attr) (md := md)) bindings
 
 ---------------------------------------------------------------------
 
@@ -2105,15 +2146,6 @@ inductive FnInterp where
   | Definition
   | Declaration
   deriving Repr
-
-def translateOptionInline (arg : Arg) : TransM (Array Strata.DL.Util.FuncAttr) := do
-  let .option _ inline := arg
-    | TransM.error s!"translateOptionInline unexpected {repr arg}"
-  match inline with
-  | some f =>
-    let _ ← checkOpArg f q`Core.inline 0
-    return #[.inline]
-  | none => return #[]
 
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
@@ -2460,7 +2492,9 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
       | q`Core.command_datatypes =>
         translateDatatypes p bindings op
       | q`Core.command_constdecl =>
-        translateConstant bindings op
+        translateConstantDecl bindings op
+      | q`Core.command_constdef =>
+        translateConstantDef p bindings op
       | q`Core.command_typedecl =>
         translateTypeDecl bindings op
       | q`Core.command_typesynonym =>

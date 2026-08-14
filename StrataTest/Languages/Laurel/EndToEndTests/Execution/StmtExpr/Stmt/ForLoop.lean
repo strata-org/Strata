@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure sumToThree()
@@ -38,7 +38,7 @@ than the whole loop. -/
 
 /-! ### The initial invariant fails on entry -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure forBadInitialInvariant()
@@ -57,7 +57,7 @@ procedure forBadInitialInvariant()
 
 /-! ### A later invariant fails while earlier ones hold -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure forSecondInvFails()

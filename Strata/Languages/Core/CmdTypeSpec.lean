@@ -33,14 +33,20 @@ public section
 class ExprTypingSpec (τ : Type) where
   embed : LMonoTy → τ
   exprTyped : LContext CoreLParams → TContext Unit → Expression.Expr → τ → Prop
+  /-- Matches a declared/annotation signature type against a resolved one. For
+      `HasType` a signature may still contain aliases, so it is alias-equivalence;
+      for `HasTypeA` types are already resolved, so it is equality. -/
+  tyCompat : List TypeAlias → LMonoTy → LMonoTy → Prop
 
 instance instHasType : ExprTypingSpec LTy where
   embed := fun mty => .forAll [] mty
   exprTyped := fun C => HasType C
+  tyCompat := AliasEquiv
 
 instance instHasTypeA : ExprTypingSpec LMonoTy where
   embed := id
   exprTyped := fun _C _Γ e mty => LExpr.HasTypeA [] e mty
+  tyCompat := fun _ ty ty' => ty = ty'
 
 /--
 Declarative typing for imperative commands, parameterized over `ExprTypingSpec`.
@@ -49,7 +55,7 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
   /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
-      an instantiation of `T` up to `RigidAnnotCompat`.
+      an instantiation of `T` up to `RigidAnnotCompat` and well-kinded.
 
       The output `Δ` is required only up to `TContext.Equiv` with the canonical
       `insert`-form: the `HMap`-backed context ignores key/insertion order, so
@@ -59,16 +65,19 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
       x ∉ HasVarsPure.getVars (P := Expression) e →
       tys.length = xty.boundVars.length →
       RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
+      C.WellKindedTy mty →
       S.exprTyped C Γ e (S.embed mty) →
       TContext.Equiv (T := CoreLParams) Δ { Γ with types := Γ.types.insert x (.forAll [] mty) } →
       CmdHasType' C Γ (.init x xty (.det e) md) Δ
 
   /-- `var x : T := *` — `x` must be fresh, and `mty` must be an instantiation of
-      `T` up to `RigidAnnotCompat` (as in `init_det`). Output up to `Equiv`. -/
+      `T` up to `RigidAnnotCompat` and well-kinded (as in `init_det`). Output up
+      to `Equiv`. -/
   | init_nondet : ∀ Γ x (xty : LTy) mty tys md Δ,
       Γ.types.find? x = none →
       tys.length = xty.boundVars.length →
       RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
+      C.WellKindedTy mty →
       TContext.Equiv (T := CoreLParams) Δ { Γ with types := Γ.types.insert x (.forAll [] mty) } →
       CmdHasType' C Γ (.init x xty .nondet md) Δ
 

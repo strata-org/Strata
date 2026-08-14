@@ -1672,6 +1672,76 @@ theorem resolves_HasType_core (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   simp only [List.get_eq_getElem]
   exact h_typ i hi S h_abs_S h_swf h_pkf
 
+/-- `LExpr.resolve` preserves subst-range well-kindedness and returns a well-kinded
+    result type (via `resolveAux_RangeWellKinded` pushed through `applySubstT`). -/
+theorem resolve_RangeWellKinded (C : LContext CoreLParams) (h_base : BaseTypesWK C)
+    (Env : TEnv Unit) (e : LExpr CoreLParams.mono) (et : LExprT CoreLParams.mono) (Env' : TEnv Unit)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+      LMonoTy.WellKinded (fun n => C.knownTypes[n]?) et.toLMonoTy := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { Env.context with types := [.empty] } else Env) = Env0 at h
+  match h_res : LExpr.resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h
+  | .ok (et0, Env_out) =>
+    simp [h_res] at h
+    obtain ⟨h_et, h_env'⟩ := h
+    subst h_env'
+    have h_subst_eq : Env0.stateSubstInfo = Env.stateSubstInfo := by
+      subst h_init; split <;> simp [TEnv.updateContext]
+    have h_wk0 : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env0.stateSubstInfo.subst := by
+      rw [congrArg (·.subst) h_subst_eq]; exact h_wk
+    have h_props := resolveAux_RangeWellKinded C h_base Env0 e et0 Env_out h_res h_wk0
+    refine ⟨h_props.1, ?_⟩
+    rw [← h_et, applySubstT_toLMonoTy]
+    exact LMonoTy.WellKinded_subst _ _ _ h_props.2 (fun v _ => (h_props.1).lookup _ v)
+
+/-- `resolves.go` (accumulator form) preserves subst-range well-kindedness and
+    every resolved element's type is well-kinded. -/
+theorem resolves_go_WK (C : LContext CoreLParams) (h_base : BaseTypesWK C)
+    (es : List (LExpr CoreLParams.mono)) :
+    ∀ (Env Env' : TEnv Unit) (acc ets : List (LExprT CoreLParams.mono)),
+      LExpr.resolves.go C Env es acc = .ok (ets, Env') →
+      Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst →
+      (∀ et ∈ acc, LMonoTy.WellKinded (fun n => C.knownTypes[n]?) et.toLMonoTy) →
+      Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+        (∀ et ∈ ets, LMonoTy.WellKinded (fun n => C.knownTypes[n]?) et.toLMonoTy) := by
+  induction es with
+  | nil =>
+    intro Env Env' acc ets h h_wk h_acc
+    simp only [LExpr.resolves.go, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_ets, h_env⟩ := h; subst h_env; subst h_ets
+    refine ⟨h_wk, ?_⟩
+    intro et h_mem; exact h_acc et (by simpa using h_mem)
+  | cons e erest ih =>
+    intro Env Env' acc ets h h_wk h_acc
+    simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i res h_res
+      obtain ⟨et, Env1⟩ := res
+      obtain ⟨h_wk1, h_et_wk⟩ := resolve_RangeWellKinded C h_base Env e et Env1 h_res h_wk
+      refine ih Env1 Env' (et :: acc) ets h h_wk1 ?_
+      intro et' h_mem
+      rcases List.mem_cons.mp h_mem with h_eq | h_in
+      · subst h_eq; exact h_et_wk
+      · exact h_acc et' h_in
+
+/-- `LExpr.resolves` preserves subst-range well-kindedness and every resolved
+    element's type is well-kinded. -/
+theorem resolves_WK (C : LContext CoreLParams) (h_base : BaseTypesWK C)
+    (Env : TEnv Unit) (es : List (LExpr CoreLParams.mono))
+    (ets : List (LExprT CoreLParams.mono)) (Env' : TEnv Unit)
+    (h : LExpr.resolves C Env es = .ok (ets, Env'))
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+      (∀ et ∈ ets, LMonoTy.WellKinded (fun n => C.knownTypes[n]?) et.toLMonoTy) := by
+  unfold LExpr.resolves at h
+  exact resolves_go_WK C h_base es Env Env' [] ets h h_wk (by simp)
+
 /-- Accumulator-generalized annotated-soundness core for `resolves.go`. Each
     resolved element satisfies `HasTypeA` between its erased form and its monotype
     (the S-independent annotation-consistency property from `resolve_HasTypeA`).
@@ -2030,6 +2100,8 @@ theorem typeCheckCmd_call_inversion (C : LContext CoreLParams) (Env : TEnv Unit)
     elim_err h_eq with v1 h_inst_lhs
     elim_err h_eq with lhs_tys Env1
     elim_err h_eq with v2 h_fvc
+    elim_err h_eq with h_ret_wk
+    elim_err h_eq with _ h_ret_wk_unit
     elim_err h_eq with v3 h_inst_inputs
     elim_err h_eq with v4 h_resolves
     elim_err h_eq with h_rigid_check
@@ -2076,6 +2148,270 @@ theorem typeCheckCmd_call_inversion (C : LContext CoreLParams) (Env : TEnv Unit)
       cases h_cac : CmdType.checkAnnotCompat C (v3.snd.updateSubst v4) with
       | error e => simp
       | ok u => cases u; simp
+
+/-- Every element of `LMonoTys.subst S mtys` is well-kinded given each source
+    element is well-kinded and `S`'s range is well-kinded. -/
+theorem mem_LMonoTys_subst_WellKinded (arity : String → Option Nat) (S : Subst)
+    (mtys : LMonoTys) (h_mtys : ∀ ty ∈ mtys, LMonoTy.WellKinded arity ty)
+    (h_S : Subst.RangeWellKinded arity S) :
+    ∀ ty ∈ LMonoTys.subst S mtys, LMonoTy.WellKinded arity ty := by
+  rw [LMonoTys.subst_eq_map]
+  intro ty h_mem
+  rw [List.mem_map] at h_mem
+  obtain ⟨t, h_t_mem, rfl⟩ := h_mem
+  exact LMonoTy.WellKinded_subst arity S t (h_mtys t h_t_mem)
+    (fun v _ => h_S.lookup arity v)
+
+/-- Every element accepted by `LMonoTys.knownInstances` is well-kinded. -/
+theorem mem_knownInstances_WellKinded (ks : KnownTypes) (mtys : LMonoTys)
+    (h : LMonoTys.knownInstances mtys ks = true) :
+    ∀ ty ∈ mtys, LMonoTy.WellKinded (fun n => ks[n]?) ty := by
+  induction mtys with
+  | nil => intro ty h_mem; simp at h_mem
+  | cons hd tl ih =>
+    simp only [LMonoTys.knownInstances] at h
+    split at h
+    · rename_i h_hd
+      intro ty h_mem
+      rcases List.mem_cons.mp h_mem with h_eq | h_rest
+      · subst h_eq; exact LMonoTy.knownInstance_WellKinded ks _ h_hd
+      · exact ih h ty h_rest
+    · exact absurd h (by simp)
+
+/-- A zip of two lists is well-kinded as a constraint list when every element of
+    each list is well-kinded. -/
+theorem Constraints_WellKinded_zip (arity : String → Option Nat)
+    (as bs : LMonoTys)
+    (h_as : ∀ a ∈ as, LMonoTy.WellKinded arity a)
+    (h_bs : ∀ b ∈ bs, LMonoTy.WellKinded arity b) :
+    Constraints.WellKinded arity (as.zip bs) := by
+  intro c h_mem
+  exact ⟨h_as c.1 (List.of_mem_zip h_mem).1, h_bs c.2 (List.of_mem_zip h_mem).2⟩
+
+/-- Appending two well-kinded constraint lists is well-kinded. -/
+theorem Constraints_WellKinded_append (arity : String → Option Nat)
+    (cs ds : Constraints)
+    (h_cs : Constraints.WellKinded arity cs)
+    (h_ds : Constraints.WellKinded arity ds) :
+    Constraints.WellKinded arity (cs ++ ds) := by
+  intro c h_mem
+  rcases List.mem_append.mp h_mem with h | h
+  · exact h_cs c h
+  · exact h_ds c h
+
+/-- Each type produced by `instantiateWithSubst.go` is well-kinded: every element
+    is the output of `instantiateWithCheck`, which enforces the known-instance
+    guard. -/
+theorem instantiateWithSubst_go_values_WK (C : LContext CoreLParams) (tys : LTys) :
+    ∀ (Env : TEnv Unit) (result : LMonoTys × TEnv Unit),
+      LMonoTySignature.instantiateWithSubst.go C Env tys = .ok result →
+      ∀ ty ∈ result.1, C.WellKindedTy ty := by
+  induction tys with
+  | nil =>
+    intro Env result h ty h_mem
+    simp only [LMonoTySignature.instantiateWithSubst.go] at h
+    injection h with h'; rw [← h'] at h_mem; simp at h_mem
+  | cons t tr ih =>
+    intro Env result h ty h_mem
+    simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
+    elim_err h with v1 h_iwc; obtain ⟨mtHead, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    injection h with h'; rw [← h'] at h_mem
+    simp only at h_mem
+    rcases List.mem_cons.mp h_mem with h_eq | h_rest_mem
+    · subst h_eq
+      exact LTy.instantiateWithCheck_WellKindedTy t C Env Env_mid _ h_iwc
+    · exact ih Env_mid (mtrest, Env_end) h_rest ty h_rest_mem
+
+/-- Each type produced by `instantiateWithSubst` (the input signature values) is
+    well-kinded. -/
+theorem instantiateWithSubst_values_WK (C : LContext CoreLParams)
+    (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
+    (result : LMonoTySignature × TEnv Unit × Subst)
+    (h : LMonoTySignature.instantiateWithSubst C Env tyArgs sig = .ok result) :
+    ∀ ty ∈ ListMap.values result.1, C.WellKindedTy ty := by
+  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  simp only [Except.ok.injEq] at h
+  rw [← h]
+  intro ty h_mem
+  simp only at h_mem
+  have h_mem_new : ty ∈ newtys := by
+    rw [ListMap.values_eq_map_snd (sig.keys.zip newtys), List.mem_map] at h_mem
+    obtain ⟨p, h_p_mem, rfl⟩ := h_mem
+    exact (List.of_mem_zip h_p_mem).2
+  exact instantiateWithSubst_go_values_WK C _ Env₁ (newtys, Env₂) h_go ty h_mem_new
+
+/-- Each type produced by `instantiateAndSubsts` (lhs variable types) is
+    well-kinded, given the incoming substitution's range is well-kinded. Each is
+    the output of `instantiateWithCheck` (WK) then substituted by `Env.subst`. -/
+theorem instantiateAndSubsts_values_WK (xs : List CoreLParams.Identifier)
+    (C : LContext CoreLParams) (Env Env' : TEnv Unit) (v1 : List LMonoTy)
+    (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (v1, Env')))
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    ∀ ty ∈ v1, C.WellKindedTy ty := by
+  induction xs generalizing Env v1 Env' with
+  | nil =>
+    intro ty h_mem
+    simp only [Identifier.instantiateAndSubsts, pure, Except.pure, Except.ok.injEq,
+      Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_v1, _⟩ := h; rw [← h_v1] at h_mem; simp at h_mem
+  | cons x xrest ih =>
+    intro ty h_mem
+    simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
+    elim_err h with ans h_step; cases ans with
+    | none => simp [pure, Except.pure] at h
+    | some p =>
+      obtain ⟨xty, Env_mid⟩ := p
+      simp only at h
+      elim_err h with ans2 h_rest; cases ans2 with
+      | none => simp [pure, Except.pure] at h
+      | some p2 =>
+        obtain ⟨xtys, Env_end⟩ := p2
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_v1, _⟩ := h; rw [← h_v1] at h_mem
+        have h_mid_subst : Env_mid.stateSubstInfo = Env.stateSubstInfo :=
+          Identifier_instantiateAndSubst_stateSubstInfo x C Env Env_mid xty h_step
+        have h_wk_mid : Subst.RangeWellKinded (fun n => C.knownTypes[n]?)
+            Env_mid.stateSubstInfo.subst := by rw [h_mid_subst]; exact h_wk
+        rcases List.mem_cons.mp h_mem with h_eq | h_rest_mem
+        · subst h_eq
+          simp only [Identifier.instantiateAndSubst] at h_step
+          split at h_step
+          · rename_i ty0 h_find
+            simp only [Bind.bind, Except.bind] at h_step
+            elim_err h_step with v_ias h_ias; obtain ⟨mtBody, Ebody⟩ := v_ias
+            simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq,
+              Prod.mk.injEq] at h_step
+            obtain ⟨h_xty, _⟩ := h_step
+            simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h_ias
+            elim_err h_ias with v_iwc h_iwc; obtain ⟨mtIwc, Env_iwc⟩ := v_iwc
+            simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h_ias
+            obtain ⟨h_body, _⟩ := h_ias
+            have h_mt_wk : C.WellKindedTy mtIwc :=
+              LTy.instantiateWithCheck_WellKindedTy ty0 C Env Env_iwc mtIwc h_iwc
+            have h_iwc_subst : Env_iwc.stateSubstInfo = Env.stateSubstInfo :=
+              LTy_instantiateWithCheck_preserves_stateSubstInfo ty0 C Env mtIwc Env_iwc h_iwc
+            rw [← h_xty, ← h_body, h_iwc_subst]
+            unfold LContext.WellKindedTy
+            apply LMonoTy.WellKinded_subst
+            · exact h_mt_wk
+            · intro v _
+              exact h_wk.lookup _ v
+          · simp [pure, Except.pure] at h_step
+        · exact ih Env_mid Env_end xtys h_rest h_wk_mid ty h_rest_mem
+
+/-- The call branch of `typeCheckCmd` preserves subst-range well-kindedness. Every
+    unification constraint is well-kinded: inferred argument types (`resolves_WK`),
+    instantiated input parameter types (`instantiateWithCheck`), LHS variable types
+    (context-WK), and procedure return types (the checker's `knownInstances` guard).
+    So `Constraints.unify_RangeWellKinded` keeps the output substitution range-WK. -/
+theorem typeCheckCmd_call_RangeWellKinded (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (pname : String) (callArgs : List (CallArg Expression))
+    (md : MetaData Expression) (cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P (.call pname callArgs md) = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_cwk : ContextWellKinded C Env.context) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst := by
+  -- Unfold like the inversion so we retain the `knownInstances` return-type guard.
+  unfold Statement.typeCheckCmd at h
+  simp only [Bind.bind, Except.bind] at h
+  split at h
+  · simp only [tryCatchThe, tryCatch, MonadExcept.tryCatch] at h; contradiction
+  · rename_i proc heq_find
+    simp only [tryCatchThe, tryCatch, MonadExcept.tryCatch,
+               MonadExceptOf.tryCatch, Except.tryCatch] at h
+    elim_err h with h_inner h_eq
+    obtain ⟨_, h_env⟩ := Prod.mk.inj (Except.ok.inj h)
+    clear h
+    elim_err h_eq with h_lhs_exist
+    elim_err h_eq with h_out_arity
+    elim_err h_eq with h_inp_arity
+    elim_err h_eq with h_inout_check
+    elim_err h_eq with h_inout_valid
+    elim_err h_eq with v1 h_inst_lhs
+    elim_err h_eq with lhs_tys Env1
+    -- Peel the `instantiateWithSubst` bind, keeping its result equation.
+    split_ns at h_eq
+    · simp at h_eq
+    rename_i v2 h_fvc
+    -- Case on the `knownInstances` return-type guard, keeping the success fact.
+    by_cases h_ki : LMonoTys.knownInstances
+        (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+          (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs)))
+        C.knownTypes = true
+    case neg =>
+      simp only [Bool.not_eq_true] at h_ki
+      simp only [h_ki, Bool.not_false, if_true, Bind.bind, Except.bind] at h_eq
+      exact absurd h_eq (by simp)
+    case pos =>
+    -- Reduce the guard `if` using the success fact, then peel resolves/unify.
+    simp only [h_ki, Bool.not_true, Bool.false_eq_true, if_false, pure, Except.pure,
+      Bind.bind, Except.bind] at h_eq
+    elim_err h_eq with v3 h_resolves
+    elim_err h_eq with v4 h_unify_step
+    elim_err h_eq with h_rigid_check
+    obtain ⟨_, h_env2⟩ := Prod.mk.inj (Except.ok.inj h_eq)
+    -- Raw (mapError-stripped) step equations, mirroring the inversion.
+    have h_unify : Constraints.unify
+        ((List.map toLMonoTy v3.fst).zip
+          (LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst)) ++
+          v1.zip (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+            (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs))))
+        v3.snd.stateSubstInfo = .ok v4 := by
+      revert h_unify_step; simp only [Except.mapError]; split <;> simp_all
+    have h_resolves_raw : LExpr.resolves C v2.2.fst
+        (CallArg.getInputExprs callArgs) = .ok v3 := by
+      revert h_resolves; simp only [Except.mapError]; split <;> simp_all
+    have h_inst_lhs_raw : Identifier.instantiateAndSubsts (CallArg.getLhs callArgs) C Env
+        = .ok (some (v1, h_inst_lhs)) := by
+      revert h_inout_valid; simp only [Except.mapError]; split <;> simp_all
+    have h_inst_inp_raw : LMonoTySignature.instantiateWithSubst C h_inst_lhs
+        proc.header.typeArgs proc.header.inputs = .ok v2 := by
+      revert h_fvc; simp only [Except.mapError]; split <;> simp_all
+    have h_fvc_raw : h_inst_lhs.freeVarChecks (CallArg.getInputExprs callArgs) = .ok () := by
+      revert Env1; simp only [Except.mapError]; split <;> simp_all
+    have F := callFacts C Env h_inst_lhs proc callArgs v1 v2 v3 v4
+      h_inst_lhs_raw h_inst_inp_raw h_fvc_raw h_resolves_raw h_unify h_wf h_fwf h_ne
+    -- `Env'.stateSubstInfo.subst = v4.subst`.
+    have h_env' : Env' = v3.snd.updateSubst v4 := by rw [← h_env, ← h_env2]
+    rw [h_env']
+    show Subst.RangeWellKinded (fun n => C.knownTypes[n]?) (v3.snd.updateSubst v4).stateSubstInfo.subst
+    rw [show (v3.snd.updateSubst v4).stateSubstInfo.subst = v4.subst from rfl]
+    -- `resolves` preserves range-WK and gives WK argument types.
+    have h_wk_v2 : Subst.RangeWellKinded (fun n => C.knownTypes[n]?)
+        v2.2.fst.stateSubstInfo.subst := by rw [F.subst_v2_env]; exact h_wk
+    have h_res := resolves_WK C h_base v2.2.fst (CallArg.getInputExprs callArgs) v3.fst v3.snd
+      h_resolves_raw h_wk_v2
+    -- Every constraint in the unify list is well-kinded.
+    have h_arg_wk : ∀ ty ∈ List.map toLMonoTy v3.fst, LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty := by
+      intro ty h_mem; rw [List.mem_map] at h_mem
+      obtain ⟨e, h_e_mem, rfl⟩ := h_mem; exact h_res.2 e h_e_mem
+    have h_inp_wk : ∀ ty ∈ LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst),
+        LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty := by
+      apply mem_LMonoTys_subst_WellKinded
+      · exact instantiateWithSubst_values_WK C h_inst_lhs proc.header.typeArgs proc.header.inputs v2 h_inst_inp_raw
+      · exact h_wk_v2
+    have h_lhs_wk : ∀ ty ∈ v1, LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty :=
+      instantiateAndSubsts_values_WK (CallArg.getLhs callArgs) C Env h_inst_lhs v1 h_inst_lhs_raw h_wk
+    have h_ret_wk_all : ∀ ty ∈ LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+        (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs)),
+        LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty :=
+      mem_knownInstances_WellKinded C.knownTypes _ h_ki
+    have h_cs_wk : Constraints.WellKinded (fun n => C.knownTypes[n]?)
+        ((List.map toLMonoTy v3.fst).zip
+          (LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst)) ++
+          v1.zip (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+            (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs)))) := by
+      apply Constraints_WellKinded_append
+      · exact Constraints_WellKinded_zip _ _ _ h_arg_wk h_inp_wk
+      · exact Constraints_WellKinded_zip _ _ _ h_lhs_wk h_ret_wk_all
+    exact Constraints.unify_RangeWellKinded (fun n => C.knownTypes[n]?) _ _ _ h_unify h_cs_wk h_res.1
 
 /-! ### Context preservation for call typechecking -/
 
@@ -2312,6 +2648,40 @@ theorem typeCheckCmd_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
       typeCheckCmd_call_preserves_shape C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
     exact ⟨h_wf', h_ne', h_mono', h_abs', h_rigid', h_pop', h_al', h_gen'⟩
 
+/-- A successful `Statement.typeCheckCmd` step preserves BOTH the subst-range and the
+    context-types well-kindedness invariants (relative to `C`'s arities). `.cmd` delegates to
+    `Cmd.typeCheck_preserves_WK`; `.call` uses `typeCheckCmd_call_RangeWellKinded` for the subst
+    and leaves the context unchanged (up to `Equiv`) so `ContextWellKinded` transfers. -/
+theorem typeCheckCmd_preserves_WK (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
+    (h_base : BaseTypesWK C)
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_cwk : ContextWellKinded C Env.context) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+      ContextWellKinded C Env'.context := by
+  cases cmd with
+  | cmd c =>
+    unfold Statement.typeCheckCmd at h
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v h_tc
+    obtain ⟨c', Env_inner⟩ := v
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, h_env_eq⟩ := h
+    subst h_env_eq
+    exact Core.TypeSpec.Cmd.typeCheck_preserves_WK C Env c c' Env_inner h_tc h_base h_wf h_fwf
+      h_ne h_mono h_wk h_cwk
+  | call pname callArgs md =>
+    refine ⟨typeCheckCmd_call_RangeWellKinded C Env P pname callArgs md cmd' Env' h h_wf h_fwf
+      h_ne h_base h_wk h_cwk, ?_⟩
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
+      typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+    exact ContextWellKinded.of_equiv h_ctx.symm h_cwk
+
 /-! ### Call case auxiliary -/
 
 /-- Core lemma for the `.call` case: if `typeCheckCmd` succeeds on a call,
@@ -2439,6 +2809,8 @@ theorem Command.typeCheckCmd_sound_gen (C : LContext CoreLParams) (Env : TEnv Un
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
+    (h_base_ty : BaseTypesWK C)
+    (h_wk_in : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
     (h_closed : ∀ proc pname callArgs md,
       cmd = .call pname callArgs md →
       Program.Procedure.find? P pname = some proc →
@@ -2458,7 +2830,7 @@ theorem Command.typeCheckCmd_sound_gen (C : LContext CoreLParams) (Env : TEnv Un
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
     subst h_cmd_eq; subst h_env_eq
     have h_sound := Core.TypeSpec.Cmd.typeCheck_sound_gen C Env c c' Env'_inner h_tc
-      h_wf h_fwf h_ne h_mono S hS_abs hS_wf hS_rigid
+      h_wf h_fwf h_ne h_mono h_base_ty h_wk_in S hS_abs hS_wf hS_rigid
     exact CmdExtHasType'.cmd _ _ c h_sound
   | call pname callArgs md =>
     have h_closed' := h_closed
@@ -2487,6 +2859,8 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
     (h_closed : ∀ proc pname callArgs md,
@@ -2505,7 +2879,7 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
     subst h_cmd_eq; subst h_env_eq
     have h_sound := Core.TypeSpec.Cmd.typeCheck_sound C Env c c' Env'_inner h_tc
-      h_wf h_fwf h_ne h_mono h_rigid_inv
+      h_wf h_fwf h_ne h_mono h_base h_wk h_rigid_inv
     exact CmdExtHasType'.cmd _ _ c h_sound
   | call pname callArgs md =>
     have h_closed' := h_closed
@@ -2978,15 +3352,18 @@ theorem Command.typeCheckCmd_annotated_sound_gen (C : LContext CoreLParams) (Env
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
     (h_resolved : TContext.AliasesResolved Env.context)
+    (h_base_ty : BaseTypesWK C)
+    (h_wk_in : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
     (h_closed : ∀ proc pname callArgs md,
       cmd = .call pname callArgs md →
       Program.Procedure.find? P pname = some proc →
       ProcHeaderClosed proc) :
     ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
       CmdExtHasTypeA C P (TContext.subst Env.context S)
         (Statement.Command.subst S cmd')
         (TContext.subst Env'.context S) := by
-  intro S hS_abs hS_wf
+  intro S hS_abs hS_wf hS_rigid
   cases cmd with
   | cmd c =>
     unfold Statement.typeCheckCmd at h
@@ -2997,7 +3374,7 @@ theorem Command.typeCheckCmd_annotated_sound_gen (C : LContext CoreLParams) (Env
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
     subst h_cmd_eq; subst h_env_eq
     have h_sound := Core.TypeSpec.Cmd.typeCheck_annotated_sound_gen C Env c c' Env'_inner h_tc
-      h_wf h_fwf h_ne h_mono h_resolved S hS_abs hS_wf
+      h_wf h_fwf h_ne h_mono h_resolved h_base_ty h_wk_in S hS_abs hS_wf hS_rigid
     exact CmdExtHasType'.cmd _ _ _ h_sound
   | call pname callArgs md =>
     have h_closed' := h_closed
@@ -3021,6 +3398,10 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
     (h_resolved : TContext.AliasesResolved Env.context)
     (h_closed : ∀ proc pname callArgs md,
       cmd = .call pname callArgs md →
@@ -3028,10 +3409,27 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
       ProcHeaderClosed proc) :
     CmdExtHasTypeA C P (TContext.subst Env.context Env'.stateSubstInfo.subst)
       (Statement.Command.subst Env'.stateSubstInfo.subst cmd')
-      (TContext.subst Env'.context Env'.stateSubstInfo.subst) :=
-  Command.typeCheckCmd_annotated_sound_gen C Env P cmd cmd' Env' h h_wf h_fwf h_ne h_mono
-    h_resolved h_closed Env'.stateSubstInfo.subst
-    (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
+      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
+  have h_rigid' : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
+    cases cmd with
+    | cmd c =>
+      unfold Statement.typeCheckCmd at h
+      simp only [Bind.bind, Except.bind] at h
+      elim_err h with v h_tc'
+      obtain ⟨c', Env'_inner⟩ := v
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      exact h.2 ▸ Core.Cmd.typeCheck_preserves_rigid_inv C Env c c' Env'_inner h_tc' h_rigid_inv
+    | call pname callArgs md =>
+      -- Rigid-identity at the call's output subst comes from the post-unification
+      -- `checkAnnotCompat` check (via `typeCheckCmd_call_inversion`); needs no closedness.
+      obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, _, h_env, _, _, _, _, _, h_cac⟩ :=
+        typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+      have h_cac' : CmdType.checkAnnotCompat C Env' = .ok () := by rw [h_env]; exact h_cac
+      exact CmdType.checkAnnotCompat_rigid C Env' h_cac'
+  exact Command.typeCheckCmd_annotated_sound_gen C Env P cmd cmd' Env' h h_wf h_fwf h_ne h_mono
+    h_resolved h_base h_wk h_closed Env'.stateSubstInfo.subst
+    (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF h_rigid'
 
 
 /-! ### Ambient-invariant preservation across a command step -/

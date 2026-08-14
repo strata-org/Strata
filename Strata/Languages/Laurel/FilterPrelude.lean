@@ -116,7 +116,9 @@ private def collectBodyNames (body : Body) : CollectM Unit := do
   | .Opaque posts impl modifies =>
     posts.forM (collectExprNames ·.condition)
     impl.forM collectExprNames
-    modifies.forM collectExprNames
+    modifies.forM fun g => do
+      g.targets.forM collectExprNames
+      g.guard.forM collectExprNames
   | .Abstract posts => posts.forM (collectExprNames ·.condition)
   | .External => pure ()
 
@@ -251,20 +253,19 @@ private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
   runCollect do
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
+    prog.staticFields.forM fun field => do
+      collectHighTypeNames field.type
+      field.initializer.forM collectExprNames
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
 public def filterPrelude (prelude user : Laurel.Program)
     : Except String Laurel.Program := do
-  -- Guard: filterPrelude does not yet track dependencies through static fields
-  -- or constants.  Error early if either program contains them so a silent
-  -- under-filtering cannot occur.
+  -- Dependency collection does not model prelude globals or constants.
   unless prelude.staticFields.isEmpty do
     throw "FilterPrelude: prelude contains static fields, which are not yet supported"
   unless prelude.constants.isEmpty do
     throw "FilterPrelude: prelude contains constants, which are not yet supported"
-  unless user.staticFields.isEmpty do
-    throw "FilterPrelude: user program contains static fields, which are not yet supported"
   unless user.constants.isEmpty do
     throw "FilterPrelude: user program contains constants, which are not yet supported"
   let refs := collectProgramRefs user

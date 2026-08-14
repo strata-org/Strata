@@ -805,9 +805,10 @@ def translateStmt (stmt : StmtExprMd)
       let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
-        let (callArgs, _, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
+        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
         let outArgs : List (Core.CallArg Core.Expression) :=
-          lhs.filter (fun id => !calleeInoutNames.contains id.name) |>.map .outArg
+          (lhs.zip calleeOutputs).filterMap fun (target, output) =>
+            if calleeInoutNames.contains output.name.text then none else some (.outArg target)
         return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
       -- Match on the value to decide how to translate
       match _hv : value.val with

@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Util.Relations
 import all Strata.DL.Imperative.CmdSemantics
 
@@ -66,6 +67,14 @@ It is proven that both specifications imply `AssertValid` of the input program:
   that overapproximation preserves `Hoare.Triple`, which is equivalent to
   `AssertValid` by the bidirectional theorems `hoareTriple_implies_assertValid`
   and `assertValid_implies_hoareTriple`.
+
+## Key shared definitions for unstructured Imperative
+
+- `Lang.cfg` — the unstructured CFG `Lang P`, whose steps are `StepDetCFGStar`.
+- `EnvStoreAgree` — an environment relation: store agreement on source-defined
+  names, matching failure flags, preserved factory.
+- `BlockInitEnvWF` — block-level initial-environment well-formedness bundling a
+  well-formed evaluator with freshness preconditions on a generated-name kind.
 -/
 
 public section
@@ -521,12 +530,27 @@ section ImperativeStmts
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
+/-- Block-level initial-environment well-formedness for the imperative-block
+language. -/
+structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
+    {CmdT : Type} [HasVarsImp P CmdT]
+    (Q : String → Prop) (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
+    extends WellFormedSemanticEval (P := P) ρ.factory where
+  /-- Every variable the block defines starts undefined in `ρ`. -/
+  defsUndefined : ∀ x ∈ Block.definedVars ss false, ρ.store x = none
+  /-- No name satisfying `Q` is defined in the initial store. -/
+  definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
 abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
-    (isAtAssertFn : Config P CmdT → AssertId P → Prop) : Lang P where
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
+    {CmdT : Type} [HasVarsImp P CmdT]
+    (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    (isAtAssertFn : Config P CmdT → AssertId P → Prop)
+    (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop) :=
+      ⟨String → Prop, fun Q ss ρ => BlockInitEnvWF Q ss ρ⟩) : Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
   star := StepStmtStar P evalCmd extendFactory
@@ -535,23 +559,38 @@ abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
-  InitEnvWFParamsTy := Unit
-  initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
+  InitEnvWFParamsTy := wfPkg.1
+  initEnvWF := wfPkg.2
 
-/-- Block-level initial-environment well-formedness for the imperative-block
-language: a well-formed evaluator, plus the freshness preconditions the
-structured passes rely on — every variable a block `init`s starts undefined,
-and no `Q`-kind (generated) name is defined in the initial store. `Q` is the
-kind of label the consuming pass generates, so a single initial store can
-satisfy several passes' obligations at disjoint kinds. -/
-structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
-    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    (Q : String → Prop) (ss : List (Stmt P (Cmd P))) (ρ : Env P) : Prop
-    extends WellFormedSemanticEval (P := P) ρ.factory where
-  /-- Every variable the block initializes starts undefined in `ρ`. -/
-  defsUndefined : ∀ x ∈ Block.initVars ss, ρ.store x = none
-  /-- No `Q`-kind (generated-shape) name is defined in the initial store. -/
-  definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+/-- The unstructured CFG language: steps are `StepDetCFGStar` over the factory
+carried in the configuration.
+
+`isAtAssert` is `fun _ _ => False`: a CFG block can carry `assert` commands,
+so a real `isAtAssert` would detect a config sitting at one. It is left trivial
+because the current overapproximation results never consume the target's `isAtAssert`. -/
+abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+    [HasVarsPure P P.Expr]
+    (extendFactory : ExtendFactory P) : Lang P where
+  StmtT := CFG String (DetBlock String (Cmd P) P)
+  CfgT := P.Factory × (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
+  star := fun c d => StepDetCFGStar extendFactory c.1 c.2.1 c.2.2 d.2.2
+  stmtCfg := fun cfg ρ => (ρ.factory, cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
+  terminalCfg := fun ρ => (ρ.factory, ⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
+  exitingCfg := fun lbl ρ => (ρ.factory, ⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
+  isAtAssert := fun _ _ => False
+  getEnv := fun c => { store := c.2.2.getStore, factory := c.1, hasFailure := c.2.2.getFailure }
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ _ => True -- TODO: add wellformedness conditions for unstructured Core
+
+/-- The output relation shared by the structured-pass overapproximation
+instances: the target environment's store agrees with the source's on every
+source-defined name, the failure flags match, and the factory is preserved.
+`nondetElim`, `hoistLoopPrefixInits`/`stmtsToCFG`, and the whole pipeline all
+overapproximate up to this same relation. -/
+@[expose] def EnvStoreAgree {P : PureExpr} (ρ₀ ρ₀' : Env P) : Prop :=
+  StoreAgreement ρ₀.store ρ₀'.store
+  ∧ ρ₀.hasFailure = ρ₀'.hasFailure
+  ∧ ρ₀'.factory = ρ₀.factory
 
 end ImperativeStmts
 

@@ -380,6 +380,32 @@ public theorem mem_keys_ofList [LawfulBEq α] [LawfulHashable α]
   rw [Std.HashMap.mem_ofList] at hk
   exact List.contains_iff_mem.mp hk
 
+/-- Looking up `k` in an identity-keyed map `ofList (l.map (a ↦ (a, g a)))` returns
+    `g k` whenever `k ∈ l`. -/
+public theorem find?_ofList_self_map [LawfulBEq α] [LawfulHashable α]
+    (l : List α) (g : α → β) (k : α) (hk : k ∈ l) :
+    HMap.find? (HMap.ofList (l.map (fun a => (a, g a)))) k = some (g k) := by
+  have hfs : ∀ (L : List α), k ∈ L →
+      List.findSome? (fun x => if (x.fst == k) = true then some x.snd else none)
+        (L.map (fun a => (a, g a))) = some (g k) := by
+    intro L hL
+    induction L with
+    | nil => simp at hL
+    | cons a rest ih =>
+      simp only [List.map_cons, List.findSome?_cons]
+      by_cases h : (a == k) = true
+      · simp only [h, if_true]; rw [beq_iff_eq] at h; rw [h]
+      · simp only [h, Bool.false_eq_true, if_false]
+        apply ih; simp only [List.mem_cons] at hL
+        rcases hL with h' | h'
+        · rw [h'] at h; simp at h
+        · exact h'
+  simp only [find?, ofList, Std.HashMap.get?_eq_getElem?,
+    Std.HashMap.ofList_eq_insertMany_empty, Std.HashMap.getElem?_insertMany_list,
+    Std.HashMap.getElem?_empty, Option.or_none]
+  rw [List.findSomeRev?_eq_findSome?_reverse, ← List.map_reverse]
+  exact hfs l.reverse (by rw [List.mem_reverse]; exact hk)
+
 /-- When `k0` is not among `l`'s keys, `ofList ((k0,v0) :: l)` agrees on `find?`
     with `(ofList l).insert k0 v0` at every key. (The no-duplicate-key condition
     rules out the case where a later `l` entry would shadow `k0`.) -/

@@ -176,6 +176,31 @@ private def freshVarName : TransformM Identifier := do
 private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
 private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val := v, source }
 
+
+/-- Whether an output is the output side of an existing inout parameter. Core
+    emits inout receivers in input order, before output-only receivers. -/
+private def isInoutOutput (proc : Procedure) (output : Parameter) : Bool :=
+  proc.inputs.any (·.name.text == output.name.text)
+
+/-- Insert the heap output after all existing inout outputs and before ordinary
+    outputs. This mirrors Core call-argument order when globals or explicit
+    inouts coexist with the hidden heap. -/
+private def outputsWithHeap (proc : Procedure) (heapParam : Parameter) : List Parameter :=
+  let (inouts, ordinary) := proc.outputs.partition (isInoutOutput proc)
+  inouts ++ [heapParam] ++ ordinary
+
+/-- Apply `outputsWithHeap`'s ordering to an assignment's pre-heap targets. -/
+private def targetsWithHeap (model : SemanticModel) (callee : Identifier)
+    (heapTarget : VariableMd) (targets : List VariableMd) : List VariableMd :=
+  let proc? := match model.get callee with
+    | .staticProcedure proc | .instanceProcedure _ proc => some proc
+    | _ => none
+  match proc? with
+  | some proc =>
+      let paired := proc.outputs.zip targets
+      let (inouts, ordinary) := paired.partition fun (output, _) => isInoutOutput proc output
+      inouts.map (·.2) ++ [heapTarget] ++ ordinary.map (·.2)
+  | none => heapTarget :: targets
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
 Returns the qualified field name "DeclaringType.fieldName".
@@ -351,7 +376,11 @@ where
           | _ =>
             pure (<- recurseOne v, false)
         let allTargets := if addedHeap
-          then ⟨ Variable.Local heapVar, v.source ⟩ :: processedTargets
+          then
+            let heapTarget := mkVarMd (.Local heapVar) v.source
+            match v.val with
+            | .StaticCall callee _ => targetsWithHeap model callee heapTarget processedTargets
+            | _ => heapTarget :: processedTargets
           else processedTargets
         let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
 
@@ -521,13 +550,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure writes the heap — $heap appears in both inputs and outputs
     -- (true inout). Core's two-state semantics provide `old $heap` automatically.
     -- The heap goes LAST in the inputs so explicit arguments evaluate before the
-    -- heap is sampled at call sites (see the module docs). It stays FIRST in the
-    -- outputs: Core's `CallArg.getLhs` yields inout receivers before plain out
-    -- receivers, and `CallElim` pairs receivers with outputs positionally.
+    -- heap is sampled at call sites (see the module docs). In the outputs it
+    -- follows all pre-existing inouts (globals and explicit inout parameters)
+    -- and precedes output-only values, matching Core's receiver order.
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
     let inputs' := proc.inputs ++ [heapParam]
-    let outputs' := heapParam :: proc.outputs
+    let outputs' := outputsWithHeap proc heapParam
 
     -- `proc` already had its specification expressions (preconditions,
     -- relies/guarantees) heap-transformed at the top of this function. Prepend
@@ -552,7 +581,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
                 pure (some implExpr')
             | none => pure none
-          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
+          -- Targets keep field refs symbolic (structural matching in `ModifiesClauses`);
+          -- a guard is an ordinary pre-state predicate and transforms like one.
+          let modif' ← modif.mapM (fun g => do
+            let targets' ← g.targets.mapM (heapTransformModifiesEntry heapName model ·)
+            let guard' ← g.guard.mapM (heapTransformSpecificationExpr heapName model ·)
+            pure ({ g with targets := targets', guard := guard' } : ModifiesGroup))
           pure (.Opaque (wfPostconditions ++ postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
@@ -605,7 +639,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .Opaque postconds impl modif =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
-          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
+          -- Targets keep field refs symbolic (structural matching in `ModifiesClauses`);
+          -- a guard is an ordinary pre-state predicate and transforms like one.
+          let modif' ← modif.mapM (fun g => do
+            let targets' ← g.targets.mapM (heapTransformModifiesEntry heapName model ·)
+            let guard' ← g.guard.mapM (heapTransformSpecificationExpr heapName model ·)
+            pure ({ g with targets := targets', guard := guard' } : ModifiesGroup))
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))

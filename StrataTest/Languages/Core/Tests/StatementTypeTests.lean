@@ -388,6 +388,57 @@ Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
                      testTypeDeclScopedToBlock
          return format ans.fst
 
+/--
+A block-local type must not escape its scope through the running substitution
+either. `goBlock` restores the pre-block `C` but keeps the body's grown subst;
+here the block does `type T; var x : T; var y : b := x`, binding the fresh var
+`b ↦ T`. On block exit `T` is out of scope, so the retained `b ↦ T` binding is
+rejected — otherwise `T` would leak and later statements would type-check
+against it.
+-/
+def testTypeDeclLeaksViaSubst : List Statement :=
+  [ Imperative.Stmt.block "blk"
+      [ Statement.typeDecl { name := "T", params := [] } .empty,
+        Statement.init "x" (.forAll [] tyT) .nondet .empty,
+        -- `var y : b := x` unifies `b := T`
+        Statement.init "y" t[%b] (.det eb[x]) .empty ] .empty ]
+
+/--
+info: error: A type declared inside a block escaped its scope via type inference.
+Substitution: [[(b, T)]]
+Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                     testTypeDeclLeaksViaSubst
+         return format ans.fst
+
+/--
+Contrast: binding a fresh type variable to an IN-SCOPE type across a block is
+fine. The block-exit guard only rejects range types that left scope, so `b ↦ int`
+survives and `var escaped : b` (= int) after the block is accepted.
+-/
+def testSubstBindingInScopeOK : List Statement :=
+  [ Statement.init "x" t[int] .nondet .empty,
+    Imperative.Stmt.block "blk"
+      [ Statement.init "y" t[%b] (.det eb[x]) .empty ] .empty,
+    Statement.init "escaped" t[%b] (.det eb[#1]) .empty ]
+
+/--
+info: ok: {
+  var x : int;
+  blk :
+  {
+    var y : int := x;
+  }
+  var escaped : int := 1;
+}
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                     testSubstBindingInScopeOK
+         return format ans.fst
+
 end ScopeTests
 
 end Core

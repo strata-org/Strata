@@ -1007,6 +1007,28 @@ function f () : real {
 #guard_msgs in
 #eval showReal (.realConst () (1/2 : Rat))
 
+-- Negative terminating decimals are decomposed into `real.neg(…)`.
+/--
+info: program Core;
+
+function f () : real {
+  real.neg(3.0)
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (-3 : Rat))
+
+-- Negative non-integer terminating decimal.
+/--
+info: program Core;
+
+function f () : real {
+  real.neg(0.5)
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (-1/2 : Rat))
+
 -------------------------------------------------------------------------------
 -- Round-trip: `frac{n, d}` written in surface syntax parses back to the exact
 -- rational.
@@ -1141,6 +1163,34 @@ function g () : bool {
 -/
 #guard_msgs in
 #eval ASTtoCST fracIdentifierPgm
+
+-------------------------------------------------------------------------------
+-- Constants built directly as AST nodes with `Core.Decl.const`, which is what
+-- tools that produce Core declarations without going through the concrete
+-- syntax use. A constant is a nullary function, so it prints as one.
+-------------------------------------------------------------------------------
+
+private def constAstPgm : Core.Program := { decls := [
+  Core.Decl.const "opaque" .int,
+  Core.Decl.const "five" .int (value := some (.intConst () 5)),
+  Core.Decl.const "seven" .int
+    (value := some (.app () (.app () Core.intAddOp (.fvar () "five" none)) (.intConst () 2)))
+    (attr := #[.inline])
+]}
+
+/--
+info: program Core;
+
+function opaque () : int;
+function five () : int {
+  5
+}
+inline function seven () : int {
+  int.add(five, 2)
+}
+-/
+#guard_msgs in
+#eval formatCore constAstPgm
 
 end Strata.Test
 

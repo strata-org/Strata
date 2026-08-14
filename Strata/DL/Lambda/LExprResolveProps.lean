@@ -1105,6 +1105,371 @@ theorem resolve_AbsWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMet
     exact applySubstT_AbsWF val.fst val.snd.stateSubstInfo.subst
       (resolveAux_AbsWF C _ val.snd e val.fst h_res h_envwf0 h_ne0 h_fwf)
 
+
+/-- Abbreviation for the Core arity assignment. -/
+private abbrev arOf (C : LContext T) : String → Option Nat := fun n => C.knownTypes[n]?
+
+omit [Std.ToFormat T.IDMeta] in
+/-- A literal's type is well-kinded, given base types are registered correctly. -/
+theorem LConst.ty_WellKinded (C : LContext T) (h : BaseTypesWK C) (c : LConst) :
+    LMonoTy.WellKinded (arOf C) c.ty := by
+  obtain ⟨hi, hb, hr, hs, _⟩ := h
+  -- Each literal type is a nullary `tcons` (or `bitvec`) registered by `BaseTypesWK`.
+  cases c with
+  | intConst _ => exact LMonoTy.WellKinded_nullary_tcons (arOf C) "int" hi
+  | boolConst _ => exact LMonoTy.WellKinded_nullary_tcons (arOf C) "bool" hb
+  | realConst _ => exact LMonoTy.WellKinded_nullary_tcons (arOf C) "real" hr
+  | strConst _ => exact LMonoTy.WellKinded_nullary_tcons (arOf C) "string" hs
+  | bitvecConst n _ => exact LMonoTy.WellKinded_bitvec (arOf C) n
+
+
+omit [Std.ToFormat T.IDMeta] in
+/-- `LExpr.typeBoundVar` returns a well-kinded bound-variable type. -/
+theorem typeBoundVar_WellKinded [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [Std.ToFormat T.IDMeta]
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LExpr.typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    C.WellKindedTy xty := by
+  simp only [LExpr.typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i genResult h_gen
+    split at h
+    · rename_i bty0 h_bty
+      -- annotated: xty from instantiateWithCheck bty0
+      split at h
+      · simp at h
+      · rename_i res h_inst; obtain ⟨mtyi, Env2⟩ := res
+        obtain ⟨_, rfl, _⟩ := h
+        exact LMonoTy.instantiateWithCheck_WellKindedTy _ C _ _ _ h_inst
+    · -- fresh: xty = ftvar
+      split at h
+      · simp at h
+      · rename_i res h_genty; obtain ⟨xtyid, Env2⟩ := res
+        obtain ⟨_, rfl, _⟩ := h
+        exact LMonoTy.WellKinded_ftvar (arOf C) xtyid
+
+/-- **Pipeline invariant (strengthened conjunction).** `resolveAux` preserves
+    `RangeWellKinded` of the env substitution AND returns a well-kinded type. -/
+theorem resolveAux_RangeWellKinded [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (h_base : BaseTypesWK C) :
+    ∀ (Env : TEnv T.IDMeta) (e : LExpr T.mono) (et : LExprT T.mono) (Env' : TEnv T.IDMeta),
+    LExpr.resolveAux C Env e = .ok (et, Env') →
+    Subst.RangeWellKinded (arOf C) Env.stateSubstInfo.subst →
+    Subst.RangeWellKinded (arOf C) Env'.stateSubstInfo.subst ∧
+      LMonoTy.WellKinded (arOf C) et.toLMonoTy := by
+  intro Env e
+  induction Env, e using LExpr.resolveAux.induct (C := C) with
+  | case1 Env m c =>
+    -- const
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i res h_infer; obtain ⟨ty, Env2⟩ := res
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨rfl, rfl⟩ := h_res
+      -- inferConst leaves Env unchanged and returns c.ty
+      simp only [LExpr.inferConst] at h_infer
+      split at h_infer
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h_infer
+        obtain ⟨rfl, rfl⟩ := h_infer
+        refine ⟨h_wk, ?_⟩
+        simpa only [LExpr.toLMonoTy] using LConst.ty_WellKinded C h_base c
+      · simp at h_infer
+  | case2 Env m o oty h_none =>
+    -- op, function not found → error
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind, h_none] at h_res
+    simp at h_res
+  | case3 Env m o oty func h_some =>
+    -- op, function found
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind, h_some] at h_res
+    -- peel: func.type
+    split at h_res
+    · simp at h_res
+    · rename_i ftype h_ftype
+      -- peel: LTy.instantiateWithCheck ftype
+      split at h_res
+      · simp at h_res
+      · rename_i res1 h_inst1; obtain ⟨ty, Env1⟩ := res1
+        have h_ty_wk : C.WellKindedTy ty :=
+          LTy.instantiateWithCheck_WellKindedTy ftype C Env Env1 ty h_inst1
+        have h_env1_sub : Env1.stateSubstInfo = Env.stateSubstInfo :=
+          LExpr.LTy_instantiateWithCheck_preserves_stateSubstInfo ftype C Env ty Env1 h_inst1
+        -- branch on oty
+        cases oty with
+        | none =>
+          simp only at h_res
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+          obtain ⟨rfl, rfl⟩ := h_res
+          refine ⟨h_env1_sub ▸ h_wk, ?_⟩
+          simpa only [LExpr.toLMonoTy] using h_ty_wk
+        | some oty0 =>
+          simp only at h_res
+          split at h_res
+          · simp at h_res
+          · rename_i res2 h_inst2; obtain ⟨oty1, Env2⟩ := res2
+            have h_env2_sub : Env2.stateSubstInfo = Env1.stateSubstInfo :=
+              LMonoTy_instantiateWithCheck_preserves_stateSubstInfo oty0 C Env1 oty1 Env2 h_inst2
+            have h_oty_wk : C.WellKindedTy oty1 :=
+              LMonoTy.instantiateWithCheck_WellKindedTy oty0 C Env1 Env2 oty1 h_inst2
+            split at h_res
+            · simp at h_res
+            · rename_i S h_unify
+              simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+              obtain ⟨rfl, rfl⟩ := h_res
+              have h_unify' := Except.mapError_ok_h' h_unify
+              refine ⟨?_, ?_⟩
+              · -- updateSubst S: S = unify [(ty,oty1)] Env2.subst, both WK
+                show Subst.RangeWellKinded (arOf C) (TEnv.updateSubst Env2 S).stateSubstInfo.subst
+                simp only [TEnv.updateSubst]
+                have h_env2_wk : Subst.RangeWellKinded (arOf C) Env2.stateSubstInfo.subst := by
+                  rw [h_env2_sub, h_env1_sub]; exact h_wk
+                exact Constraints.unify_RangeWellKinded (arOf C) [(ty, oty1)] Env2.stateSubstInfo S
+                  h_unify' (by intro c hc; simp only [List.mem_singleton] at hc; subst hc; exact ⟨h_ty_wk, h_oty_wk⟩)
+                  h_env2_wk
+              · simpa only [LExpr.toLMonoTy] using h_ty_wk
+  | case4 Env m i => intro et Env' h_res h_wk; rw [LExpr.resolveAux] at h_res; simp at h_res
+  | case5 Env m x fty =>
+    -- fvar
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i res h_infer; obtain ⟨ty, Env1⟩ := res
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨rfl, rfl⟩ := h_res
+      -- unfold inferFVar
+      simp only [LExpr.inferFVar] at h_infer
+      split at h_infer
+      · simp at h_infer
+      · rename_i cty h_ctx
+        simp only [bind, Except.bind] at h_infer
+        split at h_infer
+        · simp at h_infer
+        · rename_i res1 h_inst1; obtain ⟨ty1, Env1'⟩ := res1
+          have h_ty1_wk : C.WellKindedTy ty1 :=
+            LTy.instantiateWithCheck_WellKindedTy cty C Env Env1' ty1 h_inst1
+          have h_env1'_sub : Env1'.stateSubstInfo = Env.stateSubstInfo :=
+            LExpr.LTy_instantiateWithCheck_preserves_stateSubstInfo cty C Env ty1 Env1' h_inst1
+          cases fty with
+          | none =>
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h_infer
+            obtain ⟨rfl, rfl⟩ := h_infer
+            refine ⟨h_env1'_sub ▸ h_wk, ?_⟩
+            simpa only [LExpr.toLMonoTy] using h_ty1_wk
+          | some fty0 =>
+            simp only at h_infer
+            split at h_infer
+            · simp at h_infer
+            · rename_i res2 h_inst2; obtain ⟨fty1, Env2⟩ := res2
+              have h_env2_sub : Env2.stateSubstInfo = Env1'.stateSubstInfo :=
+                LMonoTy_instantiateWithCheck_preserves_stateSubstInfo fty0 C Env1' fty1 Env2 h_inst2
+              have h_fty_wk : C.WellKindedTy fty1 :=
+                LMonoTy.instantiateWithCheck_WellKindedTy fty0 C Env1' Env2 fty1 h_inst2
+              split at h_infer
+              · simp at h_infer
+              · rename_i S h_unify
+                simp only [Except.ok.injEq, Prod.mk.injEq] at h_infer
+                obtain ⟨rfl, rfl⟩ := h_infer
+                have h_unify' := Except.mapError_ok_h' h_unify
+                refine ⟨?_, ?_⟩
+                · show Subst.RangeWellKinded (arOf C) (TEnv.updateSubst Env2 S).stateSubstInfo.subst
+                  simp only [TEnv.updateSubst]
+                  have h_env2_wk : Subst.RangeWellKinded (arOf C) Env2.stateSubstInfo.subst := by
+                    rw [h_env2_sub, h_env1'_sub]; exact h_wk
+                  have h_cs_wk : Constraints.WellKinded (arOf C) [(fty1, ty1)] := by
+                    intro c hc; simp only [List.mem_singleton] at hc; subst hc
+                    exact ⟨h_fty_wk, h_ty1_wk⟩
+                  exact Constraints.unify_RangeWellKinded (arOf C) [(fty1, ty1)] Env2.stateSubstInfo S
+                    h_unify' h_cs_wk h_env2_wk
+                · simpa only [LExpr.toLMonoTy] using h_ty1_wk
+  | case6 Env m e1 e2 ih1 ih2 =>
+    -- app
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i res1 h_r1; obtain ⟨e1t, EnvA⟩ := res1
+      obtain ⟨h_A_wk, h_ty1_wk⟩ := ih1 e1t EnvA h_r1 h_wk
+      split at h_res
+      · simp at h_res
+      · rename_i res2 h_r2; obtain ⟨e2t, EnvB⟩ := res2
+        obtain ⟨h_B_wk, h_ty2_wk⟩ := ih2 EnvA e2t EnvB h_r2 h_A_wk
+        split at h_res
+        · simp at h_res
+        · rename_i res3 h_gen; obtain ⟨fresh_name, EnvC⟩ := res3
+          have h_C_wk : Subst.RangeWellKinded (arOf C) EnvC.stateSubstInfo.subst := by
+            rw [TEnv.genTyVar_subst EnvB fresh_name EnvC h_gen]; exact h_B_wk
+          split at h_res
+          · simp at h_res
+          · rename_i S h_unify
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+            obtain ⟨rfl, rfl⟩ := h_res
+            have h_unify' := Except.mapError_ok_h' h_unify
+            -- constraints WK: ty1 WK, arrow[ty2, fresh] WK
+            have h_cs_wk : Constraints.WellKinded (arOf C)
+                [(e1t.toLMonoTy, .tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])] := by
+              intro c hc; simp only [List.mem_singleton] at hc; subst hc
+              exact ⟨h_ty1_wk, LMonoTy.WellKinded_arrow (arOf C) _ _ h_base.2.2.2.2 h_ty2_wk
+                (LMonoTy.WellKinded_ftvar (arOf C) fresh_name)⟩
+            have h_S_wk : Subst.RangeWellKinded (arOf C) S.subst :=
+              Constraints.unify_RangeWellKinded (arOf C) _ EnvC.stateSubstInfo S h_unify' h_cs_wk h_C_wk
+            refine ⟨?_, ?_⟩
+            · show Subst.RangeWellKinded (arOf C) (TEnv.updateSubst EnvC _).stateSubstInfo.subst
+              simp only [TEnv.updateSubst]
+              exact h_S_wk.remove (arOf C) fresh_name
+            · show LMonoTy.WellKinded (arOf C) (LExpr.toLMonoTy (.app _ e1t e2t))
+              simp only [LExpr.toLMonoTy]
+              exact LMonoTy.WellKinded_subst (arOf C) S.subst (.ftvar fresh_name)
+                (LMonoTy.WellKinded_ftvar (arOf C) fresh_name)
+                (fun v _ => h_S_wk.lookup (arOf C) v)
+  | case7 Env m name bty e ih =>
+    -- abs
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i resB h_tbv; obtain ⟨xv, xty, EnvA⟩ := resB
+      have h_xty_wk : C.WellKindedTy xty := typeBoundVar_WellKinded C Env bty xv xty EnvA h_tbv
+      have h_A_sub : EnvA.stateSubstInfo = Env.stateSubstInfo :=
+        typeBoundVar_stateSubstInfo C Env bty xv xty EnvA h_tbv
+      split at h_res
+      · simp at h_res
+      · rename_i resR h_r; obtain ⟨et2, EnvR⟩ := resR
+        have h_A_wk : Subst.RangeWellKinded (arOf C) EnvA.stateSubstInfo.subst := by
+          rw [h_A_sub]; exact h_wk
+        obtain ⟨h_R_wk, h_ety_wk⟩ := ih xv xty EnvA et2 EnvR h_r h_A_wk
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+        obtain ⟨rfl, rfl⟩ := h_res
+        refine ⟨?_, ?_⟩
+        · show Subst.RangeWellKinded (arOf C) (EnvR.eraseFromContext xv).stateSubstInfo.subst
+          simp only [TEnv.eraseFromContext, TEnv.updateContext]
+          exact h_R_wk
+        · -- toLMonoTy of the abs node = mty = subst EnvR.subst (arrow [xty, ety])
+          show LMonoTy.WellKinded (arOf C)
+            (LMonoTy.subst EnvR.stateSubstInfo.subst
+              (.tcons "arrow" [xty, (LExpr.varCloseT 0 xv et2).toLMonoTy]))
+          apply LMonoTy.WellKinded_subst (arOf C) EnvR.stateSubstInfo.subst
+          · apply LMonoTy.WellKinded_arrow (arOf C) _ _ h_base.2.2.2.2 h_xty_wk
+            rw [varCloseT_toLMonoTy]; exact h_ety_wk
+          · exact fun v _ => h_R_wk.lookup (arOf C) v
+  | case8 Env m qk name bty triggers e ihe iht =>
+    -- quant
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i resB h_tbv; obtain ⟨xv, xty, EnvA⟩ := resB
+      have h_A_sub : EnvA.stateSubstInfo = Env.stateSubstInfo :=
+        typeBoundVar_stateSubstInfo C Env bty xv xty EnvA h_tbv
+      have h_A_wk : Subst.RangeWellKinded (arOf C) EnvA.stateSubstInfo.subst := by
+        rw [h_A_sub]; exact h_wk
+      split at h_res
+      · simp at h_res
+      · rename_i resE h_rE; obtain ⟨etE, EnvE⟩ := resE
+        obtain ⟨h_E_wk, h_ety_wk⟩ := ihe xv xty EnvA etE EnvE h_rE h_A_wk
+        split at h_res
+        · simp at h_res
+        · rename_i resTr h_rTr; obtain ⟨etTr, EnvTr⟩ := resTr
+          obtain ⟨h_Tr_wk, _⟩ := iht xv xty EnvE etTr EnvTr h_rTr h_E_wk
+          split at h_res
+          · simp at h_res
+          · rename_i S h_unify
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+            obtain ⟨rfl, rfl⟩ := h_res
+            have h_unify' := Except.mapError_ok_h' h_unify
+            have h_bool_wk : LMonoTy.WellKinded (arOf C) LMonoTy.bool :=
+              LMonoTy.WellKinded_nullary_tcons (arOf C) "bool" h_base.2.1
+            have h_cs_wk : Constraints.WellKinded (arOf C) [(etE.toLMonoTy, LMonoTy.bool)] := by
+              intro c hc; simp only [List.mem_singleton] at hc; subst hc; exact ⟨h_ety_wk, h_bool_wk⟩
+            have h_S_wk : Subst.RangeWellKinded (arOf C) S.subst :=
+              Constraints.unify_RangeWellKinded (arOf C) _ EnvTr.stateSubstInfo S h_unify' h_cs_wk h_Tr_wk
+            refine ⟨?_, ?_⟩
+            · show Subst.RangeWellKinded (arOf C)
+                ((TEnv.updateSubst EnvTr S).eraseFromContext xv).stateSubstInfo.subst
+              simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.updateSubst]
+              exact h_S_wk
+            · exact h_bool_wk
+  | case9 Env m e1 e2 ih1 ih2 =>
+    -- eq
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i res1 h_r1; obtain ⟨e1t, EnvA⟩ := res1
+      obtain ⟨h_A_wk, h_ty1_wk⟩ := ih1 e1t EnvA h_r1 h_wk
+      split at h_res
+      · simp at h_res
+      · rename_i res2 h_r2; obtain ⟨e2t, EnvB⟩ := res2
+        obtain ⟨h_B_wk, h_ty2_wk⟩ := ih2 EnvA e2t EnvB h_r2 h_A_wk
+        split at h_res
+        · simp at h_res
+        · rename_i S h_unify
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+          obtain ⟨rfl, rfl⟩ := h_res
+          have h_unify' := Except.mapError_ok_h' h_unify
+          have h_cs_wk : Constraints.WellKinded (arOf C) [(e1t.toLMonoTy, e2t.toLMonoTy)] := by
+            intro c hc; simp only [List.mem_singleton] at hc; subst hc; exact ⟨h_ty1_wk, h_ty2_wk⟩
+          have h_S_wk : Subst.RangeWellKinded (arOf C) S.subst :=
+            Constraints.unify_RangeWellKinded (arOf C) _ EnvB.stateSubstInfo S h_unify' h_cs_wk h_B_wk
+          refine ⟨?_, ?_⟩
+          · show Subst.RangeWellKinded (arOf C) (TEnv.updateSubst EnvB S).stateSubstInfo.subst
+            simpa only [TEnv.updateSubst] using h_S_wk
+          · show LMonoTy.WellKinded (arOf C) (LExpr.toLMonoTy (.eq _ e1t e2t))
+            simp only [LExpr.toLMonoTy]
+            exact LMonoTy.WellKinded_nullary_tcons (arOf C) "bool" h_base.2.1
+  | case10 Env m cnd th el ihc iht ihe =>
+    -- ite
+    intro et Env' h_res h_wk
+    rw [LExpr.resolveAux] at h_res
+    simp only [bind, Except.bind] at h_res
+    split at h_res
+    · simp at h_res
+    · rename_i resC h_rC; obtain ⟨ct, EnvA⟩ := resC
+      obtain ⟨h_A_wk, _h_cty_wk⟩ := ihc ct EnvA h_rC h_wk
+      split at h_res
+      · simp at h_res
+      · rename_i resT h_rT; obtain ⟨tt, EnvB⟩ := resT
+        obtain ⟨h_B_wk, h_tty_wk⟩ := iht EnvA tt EnvB h_rT h_A_wk
+        split at h_res
+        · simp at h_res
+        · rename_i resE h_rE; obtain ⟨elt, EnvD⟩ := resE
+          obtain ⟨h_D_wk, h_ety_wk⟩ := ihe EnvB elt EnvD h_rE h_B_wk
+          split at h_res
+          · simp at h_res
+          · rename_i S h_unify
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+            obtain ⟨rfl, rfl⟩ := h_res
+            have h_unify' := Except.mapError_ok_h' h_unify
+            have h_cs_wk : Constraints.WellKinded (arOf C)
+                [(ct.toLMonoTy, LMonoTy.bool), (tt.toLMonoTy, elt.toLMonoTy)] := by
+              intro c hc
+              simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+              rcases hc with rfl | rfl
+              · exact ⟨_h_cty_wk, LMonoTy.WellKinded_nullary_tcons (arOf C) "bool" h_base.2.1⟩
+              · exact ⟨h_tty_wk, h_ety_wk⟩
+            have h_S_wk : Subst.RangeWellKinded (arOf C) S.subst :=
+              Constraints.unify_RangeWellKinded (arOf C) _ EnvD.stateSubstInfo S h_unify' h_cs_wk h_D_wk
+            refine ⟨?_, ?_⟩
+            · show Subst.RangeWellKinded (arOf C) (TEnv.updateSubst EnvD S).stateSubstInfo.subst
+              simpa only [TEnv.updateSubst] using h_S_wk
+            · show LMonoTy.WellKinded (arOf C) (LExpr.toLMonoTy (.ite _ ct tt elt))
+              simpa only [LExpr.toLMonoTy] using h_tty_wk
+
+
+
 end
 
 end Lambda

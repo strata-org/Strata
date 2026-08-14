@@ -25,7 +25,7 @@ private def translateCore (p : StrataDDM.Program) : Core.Program :=
     transformed program. -/
 private def cseProgram (p : StrataDDM.Program) : Core.Program :=
   match Core.Transform.run (translateCore p) Core.CSE.runCSE
-      { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .error e => panic! s!"CSE failed: {e}"
   | .ok (_changed, program) => program
 

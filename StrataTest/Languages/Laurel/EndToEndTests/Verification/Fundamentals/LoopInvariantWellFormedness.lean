@@ -27,12 +27,12 @@ expression and cannot carry the `assert callee$pre_i(args)` a call's check
 requires.
 
 These cases are **verifier-only**, so they live here rather than under
-`Execution/` and use `testLaurel`. Each obligation is about the *symbolic*
+`Execution/` and run through `testLaurelVerification` (verification only). Each obligation is about the *symbolic*
 loop-head state, where the loop-carried variables are havoc'd. The interpreter
 walks one concrete path on which those variables hold specific values (`d == 1`
 on the first iteration), so it never reaches the state that violates the
 precondition and cannot reproduce these diagnostics. See the wording and
-strictness notes on `testLaurelMultiple` in `StrataTest/Util/TestLaurel.lean`.
+strictness notes on `testLaurelVerification` / `testLaurelExecution` in `StrataTest/Util/TestLaurel.lean`.
 
 For the interpretable counterpart — an ordinary loop whose verification the
 emitted block leaves undisturbed — see
@@ -50,7 +50,7 @@ The wider one covers the whole invariant: with its call's precondition
 unproven, `pureDiv(10, d)` is an uninterpreted application, so the invariant
 itself cannot be proved at the loop head either. -/
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 
@@ -79,7 +79,7 @@ procedure callInInvariantUnchecked() entry opaque {
 Each invariant is assumed after its own checks, so `d > 0` is available when
 `pureDiv(10, d)`'s precondition is checked and the obligation is discharged. -/
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ obligation holds in the pre-state but not at the loop head, where `d` is havoc'd
 so checking it at the loop head is what surfaces the failure. As above, the
 unproven precondition also leaves the invariant itself unprovable. -/
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 

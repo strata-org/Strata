@@ -327,7 +327,9 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
         pure (.Opaque
           (← postconds.mapM (·.mapM inferCondition))
           (← impl.mapM (inferExpr · outputType outputType))
-          (← modifies.mapM inferValue))
+          (← modifies.mapM (fun g => do
+            pure { g with targets := ← g.targets.mapM inferValue,
+                          guard := ← g.guard.mapM inferValue })))
     | .Abstract postconds =>
         pure (.Abstract (← postconds.mapM (·.mapM inferCondition)))
     | .External => pure .External

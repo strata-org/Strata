@@ -1369,6 +1369,372 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
       rw [ListMap.values_eq_map_snd, List.map_map] at hv
       exact h_finish v hv
 
+/-- Every type in the type-checked output function's signature is well-kinded.
+    Each is `subst userSubst` (a fresh→user renaming) of either a `destructArrow`
+    component of `monoty` (inputs) or the `mkArrow'`-reconstructed output; `monoty`
+    is `WellKindedTy` (from `instantiateWithCheck`), destructArrow/mkArrow' preserve
+    WK (`arrow` at arity 2 from `h_arrow`), and the renaming keeps WK. -/
+theorem Function.typeCheck_signatureWellKinded (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env'))
+    (h_arrow : C.knownTypes["arrow"]? = some 2) :
+    ∀ ty ∈ func'.output :: func'.inputs.values, C.WellKindedTy ty := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h  -- isConstr guard
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  rename_i h_undecl
+  elim_err h
+  elim_err h
+  rename_i v_inst h_inst
+  -- `monoty := v_inst.fst` is WK (from `instantiateWithCheck`); `userSubst` is a
+  -- fresh→user renaming (WK range); `subst userSubst` preserves WK.
+  have h_mono_wk : C.WellKindedTy v_inst.fst :=
+    LTy.instantiateWithCheck_WellKindedTy type C Env v_inst.snd v_inst.fst
+      (by rw [Prod.eta]; exact h_inst)
+  -- Each `destructArrow` component of `monoty` is WK.
+  have h_comp_wk : ∀ t ∈ v_inst.fst.destructArrow, C.WellKindedTy t := fun t h_t =>
+    LMonoTy.WellKinded_of_mem_destructArrow _ v_inst.fst t h_mono_wk h_t
+  -- The reconstructed output `RO` is WK (arrow spine over WK components).
+  have h_RO_wk : C.WellKindedTy
+      (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
+          (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
+        (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast) := by
+    apply LMonoTy.WellKinded_mkArrow' _ h_arrow
+    · -- the return component is in destructArrow
+      cases h_last : (List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast? with
+      | none => simp only [Option.getD_none]
+                exact h_comp_wk _ (List.getLast_mem (LMonoTy.destructArrow_non_empty v_inst.fst))
+      | some r => simp only [Option.getD_some]
+                  exact h_comp_wk _ (List.mem_of_mem_drop (List.mem_of_getLast? h_last))
+    · intro a h_a
+      exact h_comp_wk _ (List.mem_of_mem_drop (List.dropLast_subset _ h_a))
+  -- `subst userSubst` preserves WK, since userSubst is a renaming (WK range).
+  have h_subst_pres : ∀ t, C.WellKindedTy t →
+      C.WellKindedTy (LMonoTy.subst
+        (HMaps.ofScopes [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map
+          (fun x => (x.1, LMonoTy.ftvar x.2))]) t) := by
+    intro t h_t
+    exact LMonoTy.WellKinded_subst _ _ t h_t
+      (fun v _ => (Subst.RangeWellKinded_ofScopes_ftvar (fun n => C.knownTypes[n]?) _).lookup _ v)
+  -- Uniform closer: from a membership in `func'.output :: func'.inputs.values`.
+  have h_finish : ∀ ty ∈
+      (LMonoTy.subst
+          (HMaps.ofScopes [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map
+            (fun x => (x.1, LMonoTy.ftvar x.2))])
+          (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
+              (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
+            (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast)) ::
+        (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)).map
+          (fun x => LMonoTy.subst
+            (HMaps.ofScopes [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map
+              (fun x => (x.1, LMonoTy.ftvar x.2))]) x.2),
+      C.WellKindedTy ty := by
+    intro ty h_mem
+    rcases List.mem_cons.mp h_mem with h_out | h_in
+    · subst h_out; exact h_subst_pres _ h_RO_wk
+    · rw [List.mem_map] at h_in
+      obtain ⟨p, hp_mem, rfl⟩ := h_in
+      have h_p2_destr : p.2 ∈ v_inst.fst.destructArrow :=
+        List.mem_of_mem_take (List.of_mem_zip hp_mem).2
+      exact h_subst_pres _ (h_comp_wk _ h_p2_destr)
+  split at h
+  · -- body = none
+    split at h
+    · simp at h
+    · cases h
+      intro ty h_mem
+      apply h_finish ty
+      rw [List.mem_cons] at h_mem ⊢
+      rcases h_mem with h_out | h_in
+      · exact Or.inl h_out
+      · right; rw [ListMap.values_eq_map_snd, List.map_map] at h_in; exact h_in
+  · -- body = some
+    rename_i body h_body_some
+    elim_err h
+    rename_i h_stray
+    elim_err h  -- body/measure freeVarChecks guard
+    elim_err h
+    elim_err h
+    rename_i v_resolve h_resolve
+    elim_err h
+    rename_i v_unify h_unify
+    split at h <;> try contradiction
+    rename_i alphaMap h_alphaMap
+    elim_err h
+    rename_i bwdMap h_alpha
+    elim_err h
+    elim_err h
+    elim_err h
+    elim_err h
+    split at h
+    · split at h
+      · elim_err h; cases h
+        intro ty h_mem
+        apply h_finish ty
+        rw [List.mem_cons] at h_mem ⊢
+        rcases h_mem with h_out | h_in
+        · exact Or.inl h_out
+        · right; rw [ListMap.values_eq_map_snd, List.map_map] at h_in; exact h_in
+      · elim_err h
+        rename_i v_measure h_measure_resolve
+        elim_err h
+        rename_i h_measure_ty
+        elim_err h; cases h
+        intro ty h_mem
+        apply h_finish ty
+        rw [List.mem_cons] at h_mem ⊢
+        rcases h_mem with h_out | h_in
+        · exact Or.inl h_out
+        · right; rw [ListMap.values_eq_map_snd, List.map_map] at h_in; exact h_in
+    · elim_err h; cases h
+      intro ty h_mem
+      apply h_finish ty
+      rw [List.mem_cons] at h_mem ⊢
+      rcases h_mem with h_out | h_in
+      · exact Or.inl h_out
+      · right; rw [ListMap.values_eq_map_snd, List.map_map] at h_in; exact h_in
+
+/-- From an `AliasEquivList` and a membership in the RHS list, recover the
+    positionally-corresponding LHS element and its per-element `AliasEquiv`. -/
+theorem AliasEquivList.mem_right {aliases : List TypeAlias} :
+    ∀ {as bs : LMonoTys}, AliasEquivList aliases as bs → ∀ b ∈ bs,
+      ∃ a ∈ as, AliasEquiv aliases a b := by
+  intro as
+  induction as with
+  | nil =>
+    intro bs h b hb; cases h; simp at hb
+  | cons hd tl ih =>
+    intro bs h b hb
+    cases h with
+    | cons h_hd h_tl =>
+      rename_i hd' tl'
+      rcases List.mem_cons.mp hb with h_eq | h_rest
+      · subst h_eq; exact ⟨hd, List.mem_cons_self, h_hd⟩
+      · obtain ⟨a, ha_mem, ha_ae⟩ := ih h_tl b h_rest
+        exact ⟨a, List.mem_cons_of_mem _ ha_mem, ha_ae⟩
+
+/-- A successful `Function.typeCheck` preserves substitution range-well-kindedness against
+    `C`. Unlike a block, a function BODY is an expression — no `typeDecl` is reachable inside
+    it — so `Function.typeCheck` never registers a new type (C is unchanged) and cannot leak an
+    out-of-scope type into the substitution. The signature is arity-checked by
+    `LTy.instantiateWithCheck` (output WK), and the body unification joins that WK output type
+    with the body type (WK via `resolve_RangeWellKinded`), so the unify result stays range-WK. -/
+theorem Function.typeCheck_RangeWellKinded (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env'))
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  rename_i h_undecl
+  elim_err h
+  elim_err h
+  rename_i v_inst h_inst
+  have h_inst_subst : v_inst.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst := by
+    have := LTy_instantiateWithCheck_preserves_stateSubstInfo type C Env v_inst.fst v_inst.snd
+      (by rw [Prod.eta]; exact h_inst)
+    rw [this]
+  have h_mono_wk : C.WellKindedTy v_inst.fst :=
+    LTy.instantiateWithCheck_WellKindedTy type C Env v_inst.snd v_inst.fst
+      (by rw [Prod.eta]; exact h_inst)
+  split at h
+  · -- func.body = none: `Env'` is the instantiation env; subst preserved.
+    split at h
+    · simp only [reduceCtorEq] at h
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨_, h_env⟩ := h
+      subst h_env
+      rw [h_inst_subst]; exact h_wk
+  · -- func.body = some body
+    rename_i body h_body_eq
+    elim_err h with h_stray
+    elim_err h
+    elim_err h
+    rename_i v_fvc h_fvc
+    elim_err h
+    rename_i v_res h_res
+    obtain ⟨v_res_t, v_res_e⟩ := v_res
+    elim_err h
+    rename_i v_unify h_unify
+    -- The remaining guards (alphaEquivMap / rigid-find / gen-find / measure) only reject or set
+    -- `new_func`/`measure'`; none touches the subst, and `popContext` preserves it. So the final
+    -- env's subst is `v_unify.subst`.
+    have h_env_subst : Env'.stateSubstInfo.subst = v_unify.subst := by
+      simp only [pure, Except.pure] at h
+      split at h
+      case h_2 => simp only [reduceCtorEq] at h
+      rename_i h_alpha
+      split at h
+      · simp only [reduceCtorEq] at h
+      split at h
+      · simp only [reduceCtorEq] at h
+      split at h
+      · -- some measure
+        split at h
+        · -- fvar measure
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨_, h_env⟩ := h; subst h_env; rfl
+        · -- non-fvar measure: resolve + int-check + rigid-find
+          elim_err h
+          split at h
+          · simp only [reduceCtorEq] at h
+          · split at h
+            · simp only [reduceCtorEq] at h
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+              obtain ⟨_, h_env⟩ := h; subst h_env; rfl
+      · -- no measure
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨_, h_env⟩ := h; subst h_env; rfl
+    rw [h_env_subst]
+    -- The pre-resolve internal env's subst equals `Env.subst` (push/addInNewest keep it), so it
+    -- is range-WK; `resolve_RangeWellKinded` gives resolved-subst WK and body-type WK.
+    obtain ⟨h_res_wk, h_body_wk⟩ := resolve_RangeWellKinded C h_base _ body v_res_t v_res_e h_res
+      (by simp only [TEnv.addInNewestContext, TEnv.pushEmptyContext, TEnv.updateContext,
+            h_inst_subst]; exact h_wk)
+    have h_comp_wk : ∀ t ∈ v_inst.fst.destructArrow, C.WellKindedTy t := fun t h_t =>
+      LMonoTy.WellKinded_of_mem_destructArrow _ v_inst.fst t h_mono_wk h_t
+    have h_out_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?)
+        (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
+            (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
+          (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast) := by
+      apply LMonoTy.WellKinded_mkArrow' _ h_base.2.2.2.2
+      · cases h_last : (List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast? with
+        | none => simp only [Option.getD_none]
+                  exact h_comp_wk _ (List.getLast_mem (LMonoTy.destructArrow_non_empty v_inst.fst))
+        | some r => simp only [Option.getD_some]
+                    exact h_comp_wk _ (List.mem_of_mem_drop (List.mem_of_getLast? h_last))
+      · intro a h_a
+        exact h_comp_wk _ (List.mem_of_mem_drop (List.dropLast_subset _ h_a))
+    have h_cs_wk : Constraints.WellKinded (fun n => C.knownTypes[n]?)
+        [(((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
+            (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
+          (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast, v_res_t.toLMonoTy)] := by
+      intro c h_c
+      simp only [List.mem_singleton] at h_c
+      subst h_c
+      exact ⟨h_out_wk, h_body_wk⟩
+    have h_unify' := Except.mapError_ok_h' h_unify
+    exact Constraints.unify_RangeWellKinded (fun n => C.knownTypes[n]?) _ _ _ h_unify' h_cs_wk h_res_wk
+
+/-- The **original** function's signature types are each `AliasEquiv` to a
+    well-kinded type (the `signatureWellKinded` field of `FuncHasType`, whose
+    `tyCompat` is `AliasEquiv`). The witness is `subst ρ` of a `destructArrow`
+    component / reconstructed output of `monoty` (WK, as in the `func'` twin);
+    the `AliasEquiv` is `typeCheck_inverse_components` (symmetrised). -/
+theorem Function.typeCheck_signatureWellKinded_orig (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_aliases_not_known : ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
+    (h_arrow_wf : ArrowKnownBinary C) :
+    ∀ ty ∈ func.output :: func.inputs.values,
+      ∃ ty', AliasEquiv Env.context.aliases ty ty' ∧ C.WellKindedTy ty' := by
+  have h_arrow : C.knownTypes["arrow"]? = some 2 := h_arrow_wf.getElem?_eq_two
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h  -- isConstr guard
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  rename_i h_undecl
+  elim_err h
+  elim_err h
+  rename_i v_inst h_inst
+  -- `monoty := v_inst.fst` is WK; the fresh→user inverse `ρ` is a renaming (WK range).
+  have h_mono_wk : C.WellKindedTy v_inst.fst :=
+    LTy.instantiateWithCheck_WellKindedTy type C Env v_inst.snd v_inst.fst
+      (by rw [Prod.eta]; exact h_inst)
+  have h_comp_wk : ∀ t ∈ v_inst.fst.destructArrow, C.WellKindedTy t := fun t h_t =>
+    LMonoTy.WellKinded_of_mem_destructArrow _ v_inst.fst t h_mono_wk h_t
+  have h_RO_wk : C.WellKindedTy
+      (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
+          (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
+        (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast) := by
+    apply LMonoTy.WellKinded_mkArrow' _ h_arrow
+    · cases h_last : (List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast? with
+      | none => simp only [Option.getD_none]
+                exact h_comp_wk _ (List.getLast_mem (LMonoTy.destructArrow_non_empty v_inst.fst))
+      | some r => simp only [Option.getD_some]
+                  exact h_comp_wk _ (List.mem_of_mem_drop (List.mem_of_getLast? h_last))
+    · intro a h_a
+      exact h_comp_wk _ (List.mem_of_mem_drop (List.dropLast_subset _ h_a))
+  -- Obtain the declaration-order inverse renaming `ρ = [ρ₀]` and the per-component
+  -- alias facts via the shared adapter.
+  have h_closed : LTy.freeVars type = [] := by
+    simp only [bne_iff_ne, ne_eq, Decidable.not_not] at h_undecl; exact h_undecl
+  have h_no_gen : ∀ x ∈ LTy.boundVars type,
+      ¬ (TState.tyPrefix.toList.isPrefixOf x.toList = true) := by
+    have h_filter_nil : List.filter
+        (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs = [] := by
+      simpa [bne_iff_ne] using h_genprefix
+    intro x hx h_pref
+    rw [LFuncDefined.type_boundVars_eq_typeArgs func type h_type] at hx
+    have h_mem : x ∈ List.filter
+        (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs := by
+      rw [List.mem_filter]; exact ⟨hx, by simpa [TState.tyPrefix] using h_pref⟩
+    rw [h_filter_nil] at h_mem; exact absurd h_mem (by simp)
+  obtain ⟨ρ₀, Env_r, h_wf_ρ, h_ra, h_ρ₀_keys, h_ρ₀_cover, h_ρ₀_range, h_ρ₀_ftvar⟩ :=
+    LTy_instantiateWithCheck_inverse type C Env v_inst.fst v_inst.snd
+      (by rw [Prod.eta]; exact h_inst) h_wf.aliasesWF h_closed h_no_gen
+  let ρ : Subst := [ρ₀]
+  have hρ : ρ = [ρ₀] := rfl
+  obtain ⟨h_ae_out, h_ae_ins⟩ :=
+    Function.typeCheck_inverse_components C Env func type v_inst ρ Env_r h_type h_ra
+      h_wf.aliasesWF h_aliases_not_known
+      (by intro mty hmty; apply h_ρ₀_ftvar mty
+          simpa [hρ, HMaps.values, HMap.values, List.append_nil] using hmty)
+      h_arrow_wf
+      (knownInstance_of_instantiateWithCheck type C Env v_inst h_inst)
+  -- `subst ρ` preserves WK (ρ is a renaming: WK range).
+  have h_subst_pres : ∀ t, C.WellKindedTy t → C.WellKindedTy (LMonoTy.subst ρ t) := by
+    intro t h_t
+    exact LMonoTy.WellKinded_subst _ ρ t h_t
+      (fun v _ => by
+        have h_range : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) ρ := by
+          intro w sty h_find
+          rw [hρ, HMaps.find?] at h_find
+          cases h_pf : HMap.find? ρ₀ w with
+          | none => rw [h_pf] at h_find; simp [HMaps.find?] at h_find
+          | some sty' =>
+            rw [h_pf] at h_find; simp only [Option.some.injEq] at h_find; subst h_find
+            obtain ⟨u, rfl⟩ := h_ρ₀_ftvar sty' (HMap.find?_mem_values ρ₀ h_pf)
+            exact LMonoTy.WellKinded_ftvar _ u
+        exact h_range.lookup _ v)
+  intro ty h_mem
+  rcases List.mem_cons.mp h_mem with h_out | h_in
+  · -- output
+    subst h_out
+    exact ⟨_, AliasEquiv.symm h_ae_out, h_subst_pres _ h_RO_wk⟩
+  · -- input
+    obtain ⟨a, ha_mem, ha_ae⟩ := AliasEquivList.mem_right h_ae_ins ty h_in
+    refine ⟨a, AliasEquiv.symm ha_ae, ?_⟩
+    -- `a ∈ subst ρ <$> (take ... destructArrow)`, so a = subst ρ (component).
+    rw [show (LMonoTy.subst ρ <$> List.take func.inputs.keys.length v_inst.fst.destructArrow)
+        = (List.take func.inputs.keys.length v_inst.fst.destructArrow).map (LMonoTy.subst ρ)
+      from rfl, List.mem_map] at ha_mem
+    obtain ⟨c, hc_mem, rfl⟩ := ha_mem
+    exact h_subst_pres _ (h_comp_wk _ (List.mem_of_mem_take hc_mem))
+
 /-- A type-checked function's body (if present) has the declared output type under
     `HasTypeA` (the `bodyTyped` field of `FuncHasTypeA`). -/
 theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -1713,13 +2079,17 @@ theorem Function.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEn
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
-    (h_resolved : TContext.AliasesResolved Env.context) :
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_arrow_wf : ArrowKnownBinary C) :
     ∀ Γ, FuncHasTypeA C Γ func' := by
   intro Γ
+  have h_arrow : C.knownTypes["arrow"]? = some 2 := h_arrow_wf.getElem?_eq_two
   exact {
     inputsNodup := Function.typeCheck_inputsNodup C Env func func' Env' h
     typeArgsNodup := Function.typeCheck_typeArgsNodup C Env func func' Env' h
     noUndeclaredVars := Function.typeCheck_noUndeclaredVars C Env func func' Env' h h_wf
+    signatureWellKinded := fun ty h_mem =>
+      ⟨ty, rfl, Function.typeCheck_signatureWellKinded C Env func func' Env' h h_arrow ty h_mem⟩
     bodyTyped := Function.typeCheck_bodyTyped_annotated C Env func func' Env' h h_wf h_fwf h_resolved
     measureTyped := Function.typeCheck_measureTyped_annotated C Env func func' Env' h h_wf h_fwf h_resolved
   }
@@ -4139,6 +4509,57 @@ theorem addKnownTypeWithError_ArrowKnownBinary (C C' : LContext CoreLParams) (kt
     rw [h_mono]
     exact Or.inr h
 
+/-- `addKnownTypeWithError` preserves `RangeWellKinded`: it only extends
+    `knownTypes` with a fresh key, so every previously-registered arity is
+    unchanged and any range-well-kinded subst stays so against the new arities. -/
+theorem addKnownTypeWithError_RangeWellKinded (C C' : LContext CoreLParams) (kt : KnownType)
+    (d : Strata.Message) (S : Subst)
+    (h_add : C.addKnownTypeWithError kt d = .ok C')
+    (h : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) S) :
+    Subst.RangeWellKinded (fun n => C'.knownTypes[n]?) S := by
+  unfold LContext.addKnownTypeWithError at h_add
+  simp only [bind, Except.bind] at h_add
+  cases h_ks : KnownTypes.addWithError C.knownTypes kt d with
+  | error e => rw [h_ks] at h_add; contradiction
+  | ok ks' =>
+    rw [h_ks] at h_add
+    simp only [Except.ok.injEq] at h_add
+    subst h_add
+    apply h.mono_arity
+    intro ref n h_ref
+    show ks'[ref]? = some n
+    unfold KnownTypes.addWithError at h_ks
+    exact Identifiers.addWithError_getElem? h_ks ref n h_ref
+
+/-- `addFactoryFunction` leaves `knownTypes` intact, so `BaseTypesWK` transfers. -/
+theorem addFactoryFunction_BaseTypesWK (C : LContext CoreLParams) (fn : LFunc CoreLParams)
+    (h : BaseTypesWK C) : BaseTypesWK (C.addFactoryFunction fn) := by
+  unfold BaseTypesWK at h ⊢
+  rw [addFactoryFunction_knownTypes]
+  exact h
+
+/-- `addKnownTypeWithError` only adds a fresh key, so every previously-registered base
+    arity is unchanged and `BaseTypesWK` transfers. -/
+theorem addKnownTypeWithError_BaseTypesWK (C C' : LContext CoreLParams) (kt : KnownType)
+    (d : Strata.Message) (h_add : C.addKnownTypeWithError kt d = .ok C')
+    (h : BaseTypesWK C) : BaseTypesWK C' := by
+  unfold LContext.addKnownTypeWithError at h_add
+  simp only [bind, Except.bind] at h_add
+  cases h_ks : KnownTypes.addWithError C.knownTypes kt d with
+  | error e => rw [h_ks] at h_add; contradiction
+  | ok ks' =>
+    rw [h_ks] at h_add
+    simp only [Except.ok.injEq] at h_add
+    subst h_add
+    unfold BaseTypesWK at h ⊢
+    have hpres : ∀ (n : String) v, C.knownTypes[n]? = some v → ks'[n]? = some v := by
+      intro n v hnv
+      show ks'[n]? = some v
+      unfold KnownTypes.addWithError at h_ks
+      exact Identifiers.addWithError_getElem? h_ks n v hnv
+    exact ⟨hpres _ _ h.1, hpres _ _ h.2.1, hpres _ _ h.2.2.1, hpres _ _ h.2.2.2.1,
+      hpres _ _ h.2.2.2.2⟩
+
 /--
 Polymorphic soundness: if `Function.typeCheck` succeeds, the original function
 satisfies `FuncHasType`.
@@ -4165,6 +4586,9 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     inputsNodup := Function.typeCheck_inputsNodup_orig C Env func func' Env' h
     typeArgsNodup := Function.typeCheck_typeArgsNodup_orig C Env func func' Env' h
     noUndeclaredVars := Function.typeCheck_noUndeclaredVars_orig C Env func func' Env' h
+    signatureWellKinded :=
+      Function.typeCheck_signatureWellKinded_orig C Env func func' Env' h h_wf
+        h_aliases_not_known h_arrow_wf
     bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_resolved h_aliases_not_known h_ambient_rigid h_ambient_mono h_ali_nd h_arrow_wf
     measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_resolved h_aliases_not_known h_ambient_rigid h_ambient_mono h_ali_nd h_arrow_wf
   }

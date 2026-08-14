@@ -50,6 +50,25 @@ theorem ArrowKnownBinary.arrow_arity_eq_two {C : LContext CoreLParams} (h : Arro
     simp only [beq_iff_eq] at h hk
     subst h; exact hk
 
+/-- `"arrow"` is registered at arity 2 as a raw `getElem?` fact. This is the form
+    `LMonoTy.WellKinded`/`WellKinded_mkArrow'` consume. -/
+theorem ArrowKnownBinary.getElem?_eq_two {C : LContext CoreLParams} (h : ArrowKnownBinary C) :
+    C.knownTypes["arrow"]? = some 2 := by
+  unfold ArrowKnownBinary at h
+  simp only [Lambda.KnownTypes.contains, Lambda.Identifiers.contains] at h
+  split at h <;> simp_all [Lambda.KnownType.arity]
+
+/-- `BaseTypesWK` (which records `"arrow"` at arity 2 among the base arities) implies
+    `ArrowKnownBinary`. Lets top-level callers supply the single `BaseTypesWK` hypothesis and
+    derive `ArrowKnownBinary` for the intermediate soundness lemmas that still take it. -/
+theorem BaseTypesWK.arrowKnownBinary {C : LContext CoreLParams} (h : BaseTypesWK C) :
+    ArrowKnownBinary C := by
+  have harrow : C.knownTypes["arrow"]? = some 2 := h.2.2.2.2
+  unfold ArrowKnownBinary
+  simp only [Lambda.KnownTypes.contains, Lambda.Identifiers.contains]
+  rw [harrow]
+  simp [Lambda.KnownType.arity]
+
 /-- A successful `instantiateWithCheck` guarantees its result is a known instance: the checker
     returns `.ok` only after the `isInstanceOfKnownType` guard passes. -/
 theorem knownInstance_of_instantiateWithCheck (type : LTy) (C : LContext CoreLParams)

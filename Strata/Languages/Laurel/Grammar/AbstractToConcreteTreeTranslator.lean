@@ -276,12 +276,26 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
   laurelOp (clauseOpName "ensuresClause" c.mode)
     #[stmtExprToArg c.condition, errorSummaryToArg c.summary]
 
-private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
-  let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
+private def modifiesTargetsToArgs (targets : List StmtExprMd) : Array Arg :=
+  let (wildcards, specific) := targets.partition StmtExprMd.isWildcard
   let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
   let specificArgs := if specific.isEmpty then #[]
     else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
   wildcardArgs ++ specificArgs
+
+/-- Guards have no *authored* syntax (only passes create them), so a guarded
+    group prints its guard as a `when`-suffixed clause via `modifiesWhenClause`.
+    The clause is a real grammar op that `ConcreteToAbstractTreeTranslator`
+    parses back — the round-trip is deliberate, so between-pass output stays
+    loadable; do not drop either side. An unguarded group prints exactly as
+    before. -/
+private def modifiesClausesToArgs (groups : List ModifiesGroup) : Array Arg :=
+  groups.foldl (init := #[]) fun acc g =>
+    match g.guard with
+    | none => acc ++ modifiesTargetsToArgs g.targets
+    | some guard =>
+      acc.push (laurelOp "modifiesWhenClause"
+        #[commaSep (g.targets.map stmtExprToArg |>.toArray), stmtExprToArg guard])
 
 private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let params := proc.inputs.map parameterToArg |>.toArray
@@ -417,15 +431,24 @@ private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
     name := { dialect := "Laurel", name := "procedureCommand" }
     args := #[.op (procedureToOp proc)] }
 
+private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
+  { ann := sr
+    name := { dialect := "Laurel", name := "globalVarCommand" }
+    args := #[ident f.name.text, highTypeToArg f.type,
+              optionArg (f.initializer.map fun value =>
+                laurelOp "initializer" #[stmtExprToArg value])] }
+
 /-- Convert a Laurel.Program to a StrataDDM.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
-    Note: `staticFields` and `constants` are not emitted because the Laurel
-    grammar has no top-level commands for them. -/
+    Note: `constants` are not emitted because the Laurel grammar has no
+    top-level command for them. `staticFields` are emitted as `globalVarCommand`s
+    so that a program with globals round-trips through source. -/
 def programToStrata (prog : Laurel.Program) : StrataDDM.Program :=
+  let fieldOps := prog.staticFields.map globalVarCommandOp |>.toArray
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray
-  StrataDDM.Program.create Laurel_map "Laurel" (typeOps ++ procOps)
+  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/

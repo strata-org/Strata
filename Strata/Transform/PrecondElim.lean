@@ -367,13 +367,20 @@ Returns (changed, transformed program).
 -/
 def precondElim (p : Program)
     : CoreTransformM (Bool × Program) := do
-  -- If Factory is not set, there is no Factory function to process; finish early.
-  match (← get).factory with
-  | .none =>
-    return (false, p)
-  | .some _ =>
+  -- The factory is accumulated across declarations *within* this pass so that
+  -- WF-obligation collection can resolve calls to earlier declarations. This
+  -- accumulation is an internal detail of the pass: restore the factory
+  -- afterwards so it does not leak into the pipeline's output state (which is
+  -- threaded into `buildEnv`, where the program's functions are registered
+  -- afresh and duplicates must surface as errors).
+  let savedF ← getFactory
+  try
     let (changed, newDecls) ← transformDecls p.decls
+    setFactory savedF
     return (changed, { decls := newDecls })
+  catch e =>
+    setFactory savedF
+    throw e
 where
   transformDecls (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
@@ -395,7 +402,7 @@ where
               pure (c, { proc with body := .structured body' })
             -- CFG bodies pass through untouched.
             | .cfg _ => pure (false, proc)
-          setFactory F
+          setFactory F -- reset factory
           let procDecl := Decl.proc proc' md
           match mkContractWFProc F proc md with
           | some wfDecl => do

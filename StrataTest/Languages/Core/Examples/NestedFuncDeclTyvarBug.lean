@@ -34,7 +34,7 @@ procedure proc<t>(y : t)
 
 /--
 error: ❌ Type checking error.
-Function 'f': rigid type variable 't' was refined to 'int' by the body
+Function '$__liftfncl_f_1': body constrains the type to '(arrow int int)', incompatible with declared polymorphic signature '(arrow t int)'
 -/
 #guard_msgs in
 #eval Core.verify nestedFuncTyvarPgm

@@ -328,11 +328,8 @@ private def mkAdtRankDecls
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking procedures for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
-  match (← get).factory with
-  | .none => return (false, p)
-  | .some _ =>
-    let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
-    return (changed, { decls := newDecls })
+  let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+  return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)

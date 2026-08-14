@@ -77,6 +77,11 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst
              (proc.header.outputs.values.map (LMonoTy.subst tyArgSubst))
+           -- Reject a call whose procedure return types reference unregistered type
+           -- constructors (or wrong arity), matching the input-side instantiate check.
+           if !LMonoTys.knownInstances ret_mtys C.knownTypes then
+             .error <| md.toDiagnosticF f!"[{c}]: procedure {pname}'s return types are not \
+                       instances of registered types: {ret_mtys}"
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
@@ -237,7 +242,21 @@ where
     -- the `pushEmptyContext`/`popContext` discipline on the `TEnv` type-scope).
     -- The running substitution and generator state in `Env` still persist.
     let (ss', Env, _C) ← go C Env bss acc labels
-    .ok (ss', Env.popContext, C)
+    let Env := Env.popContext
+    -- The running substitution persists across the block, but the block's
+    -- `LContext` (with any block-local `type` declarations) does not. Reject any
+    -- surviving substitution binding whose range type mentions a type constructor
+    -- that is not registered in the restored `C`: otherwise a block-local type can
+    -- escape its scope via type inference (e.g. a block does `type T; var x : T;
+    -- var y : b := x`, binding `b ↦ T`, and a statement after the block is then
+    -- checked against `T`). Uses the same `knownInstances` guard as procedure
+    -- outputs, so the retained subst stays well-kinded against `C`.
+    if !Lambda.LMonoTys.knownInstances (Strata.Util.HMaps.values Env.stateSubstInfo.subst)
+        C.knownTypes then
+      .error <| Message.fromFormat
+        f!"A type declared inside a block escaped its scope via type inference.\n\
+           Substitution: {Env.stateSubstInfo.subst}\nKnown Types: {C.knownTypes}"
+    .ok (ss', Env, C)
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
   match oe with

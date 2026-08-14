@@ -33,7 +33,7 @@ open Strata
 
 -- ∀ frame (array theory off): heap-WF preconditions + monotonic-heap
 -- postcondition supply the facts the solver needs to discharge the assertion.
-#eval testLaurel
+#eval testLaurelVerification
     (options := { defaultLaurelTestOptions with
       translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := false },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := false } }) <|
@@ -78,7 +78,7 @@ procedure stress()
 #end
 
 -- Quantifier-free frame (--use-array-theory): the same program verifies.
-#eval testLaurel
+#eval testLaurelVerification
     (options := { defaultLaurelTestOptions with
       translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }) <|

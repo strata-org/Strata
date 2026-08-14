@@ -474,7 +474,6 @@ variable
   (masterSynth : ∀ e, PostM (Synth.resolveStmtExpr e) (fun r => Clean r.1))
   (masterCheck : ∀ e ty, PostM (Check.resolveStmtExpr e ty) Clean)
 
-/-- validateFullyAnnotated decomposes into per-procedure/type/constant parts. -/
 theorem validate_decompose (program : Program) :
     validateFullyAnnotated program =
       (program.staticProcedures ++ program.types.flatMap fun
@@ -489,7 +488,9 @@ theorem validate_decompose (program : Program) :
             ++ collectStmtExprList unannotatedDeclares ct.witness
         | _ => [])
       ++ program.constants.flatMap (fun c =>
-          c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)) := by
+          c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares))
+      ++ program.staticFields.flatMap (fun f =>
+          f.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)) := by
   rfl
 
 include masterSynth in
@@ -549,25 +550,40 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
     · simp only [hheap]
       exact postM_bind_any fun _ => postM_pure (by simp)
 
+/-- Group cleanliness: every target and the guard (when present) are Clean. -/
+def CleanModifiesGroup (g : ModifiesGroup) : Prop :=
+  (∀ e ∈ g.targets, Clean e) ∧ (∀ c ∈ g.guard, Clean c)
+
 /-- Body cleanliness: every StmtExpr tree in the body is Clean. -/
 def CleanBody (b : Body) : Prop :=
   match b with
   | .Transparent e => Clean e
   | .Opaque posts impl mods =>
-    (∀ p ∈ posts, Clean p.condition) ∧ (∀ e ∈ impl, Clean e) ∧ (∀ e ∈ mods, Clean e)
+    (∀ p ∈ posts, Clean p.condition) ∧ (∀ e ∈ impl, Clean e)
+      ∧ (∀ g ∈ mods, CleanModifiesGroup g)
   | .Abstract posts => ∀ p ∈ posts, Clean p.condition
   | .External => True
 
 include masterSynth in
 omit masterCheck in
-theorem resolveModifies_clean (mods : List StmtExprMd) :
-    PostM (Strata.Laurel.resolveModifies mods) (fun ms => ∀ e ∈ ms, Clean e) := by
-  unfold Strata.Laurel.resolveModifies
+private theorem resolveModifiesTargets_clean (mods : List StmtExprMd) :
+    PostM (Strata.Laurel.resolveModifiesTargets mods) (fun ms => ∀ e ∈ ms, Clean e) := by
+  unfold Strata.Laurel.resolveModifiesTargets
   refine postM_bind (postM_mapM mods _ (fun x _ => resolveModifiesEntry_clean masterSynth x))
     fun rs hrs => postM_pure ?_
   intro e he
   obtain ⟨o, ho, hoe⟩ := List.mem_filterMap.mp he
   exact hrs o ho e hoe
+
+include masterSynth masterCheck in
+theorem resolveModifies_clean (mods : List ModifiesGroup) :
+    PostM (Strata.Laurel.resolveModifies mods) (fun gs => ∀ g ∈ gs, CleanModifiesGroup g) := by
+  unfold Strata.Laurel.resolveModifies
+  refine postM_mapM (P := CleanModifiesGroup) mods _ (fun g _ => ?_)
+  refine postM_bind (resolveModifiesTargets_clean masterSynth _) fun ts hts => ?_
+  refine postM_bind (postM_option_mapM _ _ (fun c =>
+      masterCheck c { val := .TBool, source := c.source })) fun gd hgd => postM_pure ?_
+  exact ⟨hts, hgd⟩
 
 include masterSynth masterCheck in
 theorem resolveBody_clean (body : Body) :
@@ -583,7 +599,7 @@ theorem resolveBody_clean (body : Body) :
       fun posts' hposts => ?_
     refine postM_bind (postM_option_mapM _ _ (fun e => masterSynth e))
       fun impl' himpl => ?_
-    refine postM_bind (resolveModifies_clean masterSynth _)
+    refine postM_bind (resolveModifies_clean masterSynth masterCheck _)
       fun mods' hmods => postM_pure ?_
     refine ⟨fun p hp => hposts p hp, ?_, hmods⟩
     intro e he
@@ -815,13 +831,19 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
         <;> rw [hb] at hbody <;> unfold CleanBody at hbody <;> simp only [] at hbody
       · exact keeps_bind (keeps_visitor _ hbody) (fun _ => keeps_pure _)
       · obtain ⟨hposts, himpl, hmods⟩ := hbody
+        dsimp only
         apply keeps_bind (keeps_mapM _ _ (fun c hc =>
           keeps_condition_mapM c _ (keeps_visitor _ (hposts c hc))))
         intro posts'
         apply keeps_bind (keeps_option_mapM _ _ (fun e he =>
           keeps_visitor _ (himpl e he)))
         intro impl'
-        apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hmods e he)))
+        -- Each modifies group walks its targets, then its optional guard.
+        apply keeps_bind (keeps_mapM _ _ (fun g hg =>
+          keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ ((hmods g hg).1 e he)))
+            (fun targets' => keeps_bind (keeps_option_mapM _ _ (fun c hc =>
+              keeps_visitor _ ((hmods g hg).2 c hc)))
+              (fun guard' => keeps_pure _))))
         intro mods'
         exact keeps_pure _
       · apply keeps_bind (keeps_mapM _ _ (fun c hc =>
@@ -946,20 +968,34 @@ theorem resolveConstant_clean (c : Constant) :
     fun init' hinit => ?_
   exact postM_bind_any fun name' => postM_pure hinit
 
+include masterCheck in
+omit masterSynth in
+theorem resolveField_clean (ownerName : Identifier) (f : Field) :
+    PostM (resolveField ownerName f) (fun f' => ∀ e ∈ f'.initializer, Clean e) := by
+  unfold resolveField
+  refine postM_bind_any fun ty' => ?_
+  refine postM_bind_any fun (_ : Unit) => ?_
+  refine postM_bind_any fun resolved => ?_
+  refine postM_bind (postM_option_mapM _ _ (fun e => masterCheck e ty'))
+    fun init' hinit => ?_
+  exact postM_pure hinit
+
 /-! Final assembly -/
 
 /-- A program is Clean when every tree the validator walks is Clean. -/
 def CleanProgram (program : Program) : Prop :=
   (∀ proc ∈ program.staticProcedures, CleanProcFields proc) ∧
   (∀ td ∈ program.types, CleanTypeDef td) ∧
-  (∀ c ∈ program.constants, ∀ e ∈ c.initializer, Clean e)
+  (∀ c ∈ program.constants, ∀ e ∈ c.initializer, Clean e) ∧
+  (∀ f ∈ program.staticFields, ∀ e ∈ f.initializer, Clean e)
 
 open CollectEmits in
 theorem validate_nil_of_cleanProgram (program : Program)
     (h : CleanProgram program) : validateFullyAnnotated program = [] := by
-  obtain ⟨hprocs, htypes, hconsts⟩ := h
+  obtain ⟨hprocs, htypes, hconsts, hfields⟩ := h
   rw [validate_decompose]
-  refine List.append_eq_nil_iff.mpr ⟨List.append_eq_nil_iff.mpr ⟨?_, ?_⟩, ?_⟩
+  refine List.append_eq_nil_iff.mpr
+    ⟨List.append_eq_nil_iff.mpr ⟨List.append_eq_nil_iff.mpr ⟨?_, ?_⟩, ?_⟩, ?_⟩
   · -- procedures: static ++ instance
     rw [List.flatMap_eq_nil_iff]
     intro proc hp
@@ -994,6 +1030,12 @@ theorem validate_nil_of_cleanProgram (program : Program)
     rw [List.flatMap_eq_nil_iff]
     intro e he
     exact hconsts c hc e (Option.mem_toList.mp (by simpa using he))
+  · -- file-scope globals
+    rw [List.flatMap_eq_nil_iff]
+    intro f hf
+    rw [List.flatMap_eq_nil_iff]
+    intro e he
+    exact hfields f hf e (Option.mem_toList.mp (by simpa using he))
 
 include masterSynth masterCheck in
 theorem phase1_clean (program : Program) :
@@ -1011,10 +1053,11 @@ theorem phase1_clean (program : Program) :
       resolveTypeDefinition_clean masterSynth masterCheck td)) fun types' htypes => ?_
   refine postM_bind (postM_mapM _ _ (fun c _ =>
       resolveConstant_clean masterCheck c)) fun constants' hconsts => ?_
-  refine postM_bind_any fun staticFields' => ?_
+  refine postM_bind (postM_mapM _ _ (fun f _ =>
+      resolveField_clean masterCheck "$static" f)) fun staticFields' hfields => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticProcs' hprocs => ?_
-  exact postM_pure ⟨hprocs, htypes, hconsts⟩
+  exact postM_pure ⟨hprocs, htypes, hconsts, hfields⟩
 
 include masterSynth masterCheck in
 /-- **Resolution establishes the fully-annotated invariant**, conditional on

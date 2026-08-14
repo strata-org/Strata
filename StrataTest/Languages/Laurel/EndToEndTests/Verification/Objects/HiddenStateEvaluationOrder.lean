@@ -13,7 +13,7 @@ open Strata
     the heap after `bump` ran, so it sees 1 while receiving bump's return 0. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Counter {
@@ -46,7 +46,7 @@ procedure evaluationOrder(c: Counter)
     result. Evaluating `makeBase` twice would increment `counter#value` twice. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Base {

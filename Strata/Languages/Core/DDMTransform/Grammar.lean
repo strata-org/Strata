@@ -172,6 +172,7 @@ fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v
 fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
+fn seq_select_unsafe (A : Type, s : Sequence A, i : int) : A => "Sequence.select!" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
   "Sequence.append" "(" s1 ", " s2 ")";
 fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
@@ -775,12 +776,36 @@ op command_typesynonym (annots : Option MetadataAnn,
                         @[scope(args)] rhs : Type) : Command =>
   annots:0 "type " name args " := " targs rhs ";\n";
 
+// The `inline` marker, shared by constant and function definitions. It requests
+// that the body be substituted at each use during symbolic evaluation.
+category Inline;
+op inline () : Inline => "inline ";
+
+// A constant declaration. Sugar for a nullary function without a body.
+//
+// Neither constant form takes type arguments: a constant is monomorphic. A
+// polymorphic nullary value is a function, and is written with `function`
+// syntax, where the quantification is visible and in scope.
 @[declare(name, r)]
 op command_constdecl (annots : Option MetadataAnn,
                       name : Ident,
-                      typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  annots:0 "const " name ":" typeArgs r ";\n";
+  annots:0 "const " name ":" r ";\n";
+
+// A constant with a right-hand side. Sugar for a nullary function whose body is
+// `v`, taking the same defaults as a function definition: the value is recorded
+// on the declaration, and it is substituted at each use only when marked
+// `inline`.
+//
+// As in `command_fndef`, `inline?` is declared last but written first, so that
+// the marker reads as a prefix of the declaration.
+@[declare(name, r)]
+op command_constdef (annots : Option MetadataAnn,
+                     name : Ident,
+                     r : Type,
+                     v : r,
+                     inline? : Option Inline) : Command =>
+  annots:0 inline? "const " name ":" r " := " v ";\n";
 
 @[declareFn(name, b, r)]
 op command_fndecl (annots : Option MetadataAnn,
@@ -789,9 +814,6 @@ op command_fndecl (annots : Option MetadataAnn,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope(typeArgs)] r : Type) : Command =>
   annots:0 "function " name typeArgs b " : " r ";\n";
-
-category Inline;
-op inline () : Inline => "inline ";
 
 // Note: when editing command_fndef, consider whether recfn_decl needs
 // matching edits.

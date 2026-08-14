@@ -9,6 +9,7 @@ public import Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Util.List
 public import Strata.DL.Util.Map
+public import Strata.Util.HMap
 
 /-! ## Well-formedness of Lambda Expressions
 
@@ -30,6 +31,7 @@ theorem.
 
 namespace Lambda
 open Std (ToFormat Format format)
+open Strata.Util (HMap)
 
 public section
 
@@ -476,6 +478,36 @@ where
     | .app m fn e' => .app m (substFvarsAux fn sm) (substFvarsAux e' sm)
     | .ite m c t e' => .ite m (substFvarsAux c sm) (substFvarsAux t sm) (substFvarsAux e' sm)
     | .eq m e1 e2 => .eq m (substFvarsAux e1 sm) (substFvarsAux e2 sm)
+
+/--
+Simultaneous substitution of operator references (`.op`).  Replaces every
+`.op name ty` whose `name` is a key of `sm` with `(sm name) ty` — i.e. the
+mapped *builder* is applied to that occurrence's own type annotation `ty`, so
+the replacement can be annotated in terms of the original one.  A single
+structural pass, keyed on operator names (mirrors `substFvars`, which is keyed
+on free variables).
+
+Like `substFvars`, this does NOT lift de Bruijn indices when going under
+binders, so it is safe only when the replacement expressions contain no bvars.
+(This holds for the closure-conversion use in `LiftInternalFuncDecls`, where a
+replacement is an operator reference applied to free snapshot variables.)
+-/
+def substOps [Hashable T.IDMeta] (e : LExpr ⟨T, GenericTy⟩)
+    (sm : HMap T.Identifier (Option GenericTy → LExpr ⟨T, GenericTy⟩))
+  : LExpr ⟨T, GenericTy⟩ :=
+  if sm.isEmpty then e else substOpsAux e sm
+where
+  substOpsAux (e : LExpr ⟨T, GenericTy⟩)
+      (sm : HMap T.Identifier (Option GenericTy → LExpr ⟨T, GenericTy⟩))
+    : LExpr ⟨T, GenericTy⟩ :=
+    match e with
+    | .const _ _ => e | .bvar _ _ => e | .fvar _ _ _ => e
+    | .op _ name ty => match sm.find? name with | some mk => mk ty | none => e
+    | .abs m name ty e' => .abs m name ty (substOpsAux e' sm)
+    | .quant m qk name ty tr' e' => .quant m qk name ty (substOpsAux tr' sm) (substOpsAux e' sm)
+    | .app m fn e' => .app m (substOpsAux fn sm) (substOpsAux e' sm)
+    | .ite m c t e' => .ite m (substOpsAux c sm) (substOpsAux t sm) (substOpsAux e' sm)
+    | .eq m e1 e2 => .eq m (substOpsAux e1 sm) (substOpsAux e2 sm)
 
 /--
 Simultaneous substitution of multiple free variables with bvar-safe lifting.

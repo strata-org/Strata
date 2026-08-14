@@ -66,6 +66,9 @@ its result is discarded (a non-final statement of a block, a `while` body, …).
 calls per constructor:
 - value-consuming positions (call/operator args, conditions, `Assign` RHS,
   field targets, `Return`/`Assert`/`Assume`/quantifier/… operands) → `true`;
+- result-discarding child positions (`Assigned`'s operand and `ProveBy`'s
+  proof) → `false`. They are still traversed and rewritten; only their ordinary
+  result is unused;
 - a `Block`'s statements → `false`, except the last, which inherits the block's
   own `resultUsed` (the block evaluates to its last statement);
 - `IfThenElse` branches inherit the conditional's `resultUsed`; its condition is
@@ -130,7 +133,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
       (← mapStmtExprUsedM f true body), source⟩
   | .Assigned name =>
-    pure ⟨.Assigned (← mapStmtExprUsedM f true name), source⟩
+    pure ⟨.Assigned (← mapStmtExprUsedM f false name), source⟩
   | .Old value =>
     pure ⟨.Old (← mapStmtExprUsedM f true value), source⟩
   | .Fresh value =>
@@ -152,7 +155,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
           body := (← mapStmtExprUsedM f false c.body) })
       (← finally?.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f false e), source⟩
   | .ProveBy value proof =>
-    pure ⟨.ProveBy (← mapStmtExprUsedM f true value) (← mapStmtExprUsedM f true proof), source⟩
+    pure ⟨.ProveBy (← mapStmtExprUsedM f true value) (← mapStmtExprUsedM f false proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprUsedM f true func), source⟩
   -- Leaves: no StmtExprMd children.
@@ -263,7 +266,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .Quantifier mode param trigger body =>
       pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
         (collapse (← go true body) body.source), source⟩
-    | .Assigned name => pure ⟨.Assigned (collapse (← go true name) name.source), source⟩
+    | .Assigned name => pure ⟨.Assigned (collapse (← go false name) name.source), source⟩
     | .Old value => pure ⟨.Old (collapse (← go true value) value.source), source⟩
     | .Fresh value => pure ⟨.Fresh (collapse (← go true value) value.source), source⟩
     | .Assert cond summary =>
@@ -278,7 +281,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
             body := collapse (← go false c.body) c.body.source })
         (← finally?.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go false x) x.source)), source⟩
     | .ProveBy value proof =>
-      pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go true proof) proof.source), source⟩
+      pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
     | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure e
@@ -499,7 +502,15 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
   | .Opaque posts impl mods =>
-    return { proc with body := .Opaque (← posts.mapM (·.mapM f)) (← impl.mapM f) (← mods.mapM f) }
+    let posts' ← posts.mapM (·.mapM f)
+    let impl' ← impl.mapM f
+    -- Groups keep the documented order: postconditions, implementation, then the
+    -- modifies entries — each group's targets before its guard.
+    let mods' ← mods.mapM fun g => do
+      let targets' ← g.targets.mapM f
+      let guard' ← g.guard.mapM f
+      pure { g with targets := targets', guard := guard' }
+    return { proc with body := .Opaque posts' impl' mods' }
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
@@ -528,7 +539,9 @@ def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure)
   | .Opaque postconditions implementation modifies =>
     postconditions.forM (visit ·.condition)
     implementation.forM visit
-    modifies.forM visit
+    modifies.forM fun g => do
+      g.targets.forM visit
+      g.guard.forM visit
   | .Abstract postconditions => postconditions.forM (visit ·.condition)
   | .External => pure ()
   procedureSpecificationExprs proc |>.forM visit
@@ -703,12 +716,16 @@ def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td 
 def mapConstantHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (c : Constant) : m Constant := do
   pure { c with type := ← f c.type, initializer := ← c.initializer.mapM (mapStmtExprHighTypesM f) }
 
+def mapFieldHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (fld : Field) : m Field := do
+  pure { fld with type := ← f fld.type,
+                  initializer := ← fld.initializer.mapM (mapStmtExprHighTypesM f) }
+
 /-- Apply `f` to every `HighType` annotation anywhere in a program: procedures,
     static fields, type definitions, and constants. -/
 def mapProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : Program) : m Program := do
   return { program with
     staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
-    staticFields := ← program.staticFields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+    staticFields := ← program.staticFields.mapM (mapFieldHighTypesM f)
     types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
     constants := ← program.constants.mapM (mapConstantHighTypesM f) }
 

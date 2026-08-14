@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure testForall()
@@ -73,7 +73,7 @@ The tests below pin both halves of that contract. -/
 
 -- Proof procedure: the goal holds unconditionally, so the quantifier is
 -- provable on its own merits and the body's assume is merely a proof step.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -97,7 +97,7 @@ quantified asserts. These tests pin that no such assume exists. -/
 
 -- A goal that is false for some x must not be provable, even though the
 -- body's assume constrains x. (x = 11 refutes `x > 100`.)
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -111,7 +111,7 @@ procedure proofProcedureGoalNotAssumed()
 
 -- A proof procedure must not leak an antecedent-free fact to a later,
 -- unrelated quantified assert. (y = 0 refutes `y > 5`.)
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -127,7 +127,7 @@ procedure proofProcedureNoAntecedentLeak()
 
 -- Soundness probe for the seal: `assume false` inside a proof body must not
 -- discharge a later procedure-level assert.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -144,7 +144,7 @@ procedure proofProcedureSealSoundness()
 #end
 
 -- Proof procedure with an intermediate assertion step.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -163,7 +163,7 @@ procedure proofProcedureWithAssert()
 An `assert` inside a quantifier body is checked for an arbitrary `x` rather than
 discarded, so a body with a valid goal but a false proof step fails verification.
 The failure is reported against the inner assert, not the enclosing quantifier. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -187,7 +187,7 @@ verifies, a false one fails, a false proof step is reported, and the seal holds.
 
 -- A true existential with a proof body: `exists x, x > 100` holds (e.g. 101),
 -- so this verifies on the quantifier's own merits.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -200,7 +200,7 @@ procedure existsProofProcedure()
 
 -- A false existential must fail even though the body's assume is satisfiable:
 -- no x has x * x < 0.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -213,7 +213,7 @@ procedure existsProofProcedureGoalNotAssumed()
 #end
 
 -- A false proof step inside an `exists` body is reported, just as for `forall`.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -226,7 +226,7 @@ procedure existsProofStepFails()
 #end
 
 -- The seal applies to `exists` bodies as well.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -248,7 +248,7 @@ of type bool already in context". The havoc variable likewise gets a fresh
 identifier, so a nested body's declaration does not collide with the outer one. -/
 
 -- Nested proof procedures: both goals are valid, so this verifies.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -263,7 +263,7 @@ procedure nestedProofProcedure()
 #end
 
 -- A false proof step in the *inner* proof procedure must still be reported.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -279,7 +279,7 @@ procedure nestedProofProcedureInnerStepFails()
 #end
 
 -- Two proof procedures side by side in one procedure.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -304,7 +304,7 @@ aborting translation on well-formed source. All four mode pairings are covered
 because the rewrite is mode-agnostic and each pairing reaches the same code path. -/
 
 -- Both proof step and goal are valid for arbitrary bindings, so this verifies.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -316,7 +316,7 @@ procedure directNestForallForall()
 #end
 
 -- `exists`/`exists` with an `assume` proof step.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -328,7 +328,7 @@ procedure directNestExistsExists()
 #end
 
 -- Mixed pairings: `forall`/`exists` and `exists`/`forall`.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -339,7 +339,7 @@ procedure directNestForallExists()
 };
 #end
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -352,7 +352,7 @@ procedure directNestExistsForall()
 
 -- A false proof step in a directly-nested body is still reported against the
 -- step, so the top-down decision does not silence the inner obligation.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -372,7 +372,7 @@ same name is live, and that shadowing does not survive lowering: Core rejects th
 re-declaration ("Variable x of type int already in context") and nothing renames
 shadowed locals apart on the way there. Since the binder's name is the user's
 choice, matching an outer local is ordinary source — it must keep working. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -388,7 +388,7 @@ procedure binderShadowsLocal()
 -- The rename is keyed on `uniqueId`, not text, so a nested quantifier rebinding
 -- the same name keeps its own references: only the binder being havoc'd here is
 -- redirected, not the inner one that shadows it.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -404,7 +404,7 @@ procedure nestedBindersSameName()
 
 -- A false proof step is still reported when the binder shadows a local, so the
 -- rename does not silence real obligations.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -428,7 +428,7 @@ being stranded below them (which would surface as `Resolution failed: 'x' is not
 defined` after the pass). `G` is uninterpreted here, so the goal is genuinely
 unprovable; the point is that this reports a normal verification failure rather
 than an internal error. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure G(x: int): int;
@@ -442,7 +442,7 @@ procedure proofStepNotMentioningBoundVar()
 #end
 
 -- Proof procedure with trigger.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure F(x: int): int;
@@ -459,7 +459,7 @@ procedure proofProcedureWithTrigger()
 #end
 
 -- Quantified postcondition: without a body, cannot be proved.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure F(x: int): int;
@@ -484,7 +484,7 @@ folds it back into the goal.
 The first procedure has no proof steps, so it exercises the plain quantifier path;
 the second pairs the declaration with an `assert` step so it also runs through the
 transparency pass's proof block, where the binder is renamed to `$havoc_N`. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -512,7 +512,7 @@ procedure binderLocalInPostcondition()
 #end
 
 -- `exists` is the same spec position as `forall`.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -525,7 +525,7 @@ procedure existsBinderLocal()
 
 -- Nested quantifiers, each with a binder-dependent local: the inner declaration
 -- must stay under the inner binder and the outer under the outer.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -541,7 +541,7 @@ procedure nestedBinderLocals()
 
 -- An outer local sharing the binder's name must not be substituted inside the
 -- quantifier: the binder shadows it, and the outer local still reads 5 after.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -562,7 +562,7 @@ stays behind must be inlined before Core. Without the trigger arm of
 `inlineLocalVariablesInProcedureSpecs` this program is rejected with "local
 variables in transparent bodies should have been eliminated by the
 InlineLocalVariablesPass". -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure F(x: int): int;
@@ -581,7 +581,7 @@ A `/` in a quantifier body becomes a call to the `requires`-bearing `$div`
 wrapper, which the contract pass rewrites into argument temporaries. Those are
 left inside the body by the lifting pass and folded back in by
 `InlineLocalVariables`, so the division is re-evaluated per instantiation. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 

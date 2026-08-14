@@ -330,7 +330,13 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
         (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
     match StrataDDM.Decimal.fromRat r with
-    | some d => pure (.realLit default ⟨default, d⟩)
+    | some d =>
+      if d.mantissa < 0 then
+        let posD : StrataDDM.Decimal := ⟨d.mantissa.natAbs, d.exponent⟩
+        pure (.unaryArithReal default (CoreDDM.UnaryArithReal.real_neg default)
+          (.realLit default ⟨default, posD⟩))
+      else
+        pure (.realLit default ⟨default, d⟩)
     | none =>
       -- Exact rational literals that are not parsed by `Decimal.fromRat`.
       let (neg, num, den) := FracLit.fracEncode r
@@ -732,6 +738,7 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | .map .Select => pure (.map_get default ty ty arg1 arg2)
   -- Sequence operations
   | .seq .Select => pure (.seq_select default ty arg1 arg2)
+  | .seq .SelectUnsafe => pure (.seq_select_unsafe default ty arg1 arg2)
   | .seq .Append => pure (.seq_append default ty arg1 arg2)
   | .seq .Build => pure (.seq_build default ty arg1 arg2)
   | .seq .Contains => pure (.seq_contains default ty arg1 arg2)

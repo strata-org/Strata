@@ -14,7 +14,7 @@ A recursive function over a recursive datatype.
 The `isRecursive` flag should be inferred automatically from the self-call.
 -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 datatype IntList {

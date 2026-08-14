@@ -432,7 +432,8 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM rw)
     let impl' ← impl.mapM rw
-    let mods' ← mods.mapM rw
+    let mods' ← mods.mapM fun g => do
+      pure { g with targets := ← g.targets.mapM rw, guard := ← g.guard.mapM rw }
     return { proc with body := Body.Opaque posts' impl' mods' }
   | _ => return proc
 

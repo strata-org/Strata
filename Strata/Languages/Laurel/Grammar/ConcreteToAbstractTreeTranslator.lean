@@ -588,23 +588,36 @@ def translateModifiesExprs (arg : Arg) : TransM (List StmtExprMd) := do
     args.toList.mapM translateStmtExpr
   | _ => pure []
 
-def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
+/-- User `modifies` clauses fold into a single unguarded `ModifiesGroup` — one
+    frame, exactly the pre-guard semantics. A `modifiesWhenClause` (pass-generated,
+    but parsed here so printed output round-trips) contributes its own guarded
+    group. -/
+def translateModifiesClauses (arg : Arg) : TransM (List ModifiesGroup) := do
   match arg with
   | .seq _ _ args => do
-    let mut allModifies : List StmtExprMd := []
+    let mut plainTargets : List StmtExprMd := []
+    let mut guardedGroups : List ModifiesGroup := []
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
-          allModifies := allModifies ++ refs
+          plainTargets := plainTargets ++ refs
         | q`Laurel.modifiesWildcard, #[] =>
           let src := SourceRange.toFileRange (← get).uri clauseOp.ann
-          allModifies := allModifies ++ [mkStmtExprMd .All src]
+          plainTargets := plainTargets ++ [mkStmtExprMd .All src]
+        | q`Laurel.modifiesWhenClause, #[refsArg, guardArg] =>
+          let refs ← translateModifiesExprs refsArg
+          let guard ← translateStmtExpr guardArg
+          guardedGroups := guardedGroups ++ [{ targets := refs, guard := some guard }]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
-    pure allModifies
-  | _ => pure []
+    -- The plain group exists even with no clauses: for an opaque procedure, an
+    -- absent `modifies` means "nothing may change", which is the empty frame —
+    -- not the absence of one. (This function is only reached from an
+    -- `opaqueSpec`, so the group never lands on a transparent body.)
+    pure ({ targets := plainTargets : ModifiesGroup } :: guardedGroups)
+  | _ => pure ModifiesGroup.nothingChanges
 
 /-- Translate the optional `summary "..."` argument of a clause. -/
 private def translateErrorSummary (errMsgArg : Arg) : TransM (Option String) := do
@@ -993,25 +1006,57 @@ def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   | _, _ =>
     TransM.error s!"parseConstrainedType expects constrainedType, got {repr op.name}"
 
-def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+/-- The result of translating one top-level command: at most one of a static
+    procedure, a type definition, or a global (static) field. -/
+private structure TopLevel where
+  proc : Option Procedure := none
+  type : Option TypeDefinition := none
+  field : Option Field := none
+
+private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
   let .op op := arg
     | TransM.error s!"parseTopLevel expects operation"
 
   match op.name, op.args with
   | q`Laurel.procedureCommand, #[procArg] =>
     let proc ← parseProcedure procArg
-    return (some proc, none)
+    return { proc := some proc }
   | q`Laurel.compositeCommand, #[compositeArg] =>
     let typeDef ← parseComposite compositeArg
-    return (none, some typeDef)
+    return { type := some typeDef }
   | q`Laurel.datatypeCommand, #[datatypeArg] =>
     let typeDef ← parseDatatype datatypeArg
-    return (none, some typeDef)
+    return { type := some typeDef }
   | q`Laurel.constrainedTypeCommand, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
-    return (none, some (.Constrained ct))
+    return { type := some (.Constrained ct) }
+  | q`Laurel.globalVarCommand, #[nameArg, typeArg, initArg] =>
+    let name ← translateIdent nameArg
+    let fieldType ← translateHighType typeArg
+    let initializer ← match initArg with
+      | .option _ (some (.op initOp)) => match initOp.name, initOp.args with
+        | q`Laurel.initializer, #[valueArg] => translateStmtExpr valueArg
+        | _, _ => TransM.error s!"global '{name.text}' has a malformed initializer"
+      | .option _ none =>
+        TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
+                        'var {name.text}: <type> := <value>'"
+      | _ => TransM.error s!"global '{name.text}' has a malformed initializer"
+    return { field := some { name := name, isMutable := true, type := fieldType,
+                             initializer := some initializer } }
+  | q`Laurel.globalVarCommand, #[nameArg, _typeArg] =>
+    let name ← translateIdent nameArg
+    TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
+                    'var {name.text}: <type> := <value>'"
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, or globalVarCommand, got {repr op.name}"
+
+/-- Translate one non-global top-level command, preserving the existing public API. -/
+def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
+  let topLevel ← parseTopLevelWithGlobals arg
+  if topLevel.field.isSome then
+    TransM.error
+      "parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got `Laurel.globalVarCommand`"
+  return (topLevel.proc, topLevel.type)
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
@@ -1019,17 +1064,22 @@ Translate concrete Laurel syntax into abstract Laurel syntax
 def parseProgram (prog : StrataDDM.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
+  let mut fields : List Field := []
   for op in prog.commands do
-    let (procOpt, typeOpt) ← parseTopLevel (.op op)
+    let { proc := procOpt, type := typeOpt, field := fieldOpt } ←
+      parseTopLevelWithGlobals (.op op)
     match procOpt with
     | some proc => procedures := procedures ++ [proc]
     | none => pure ()
     match typeOpt with
     | some typeDef => types := types ++ [typeDef]
     | none => pure ()
+    match fieldOpt with
+    | some field => fields := fields ++ [field]
+    | none => pure ()
   return {
     staticProcedures := procedures
-    staticFields := []
+    staticFields := fields
     types := types
   }
 

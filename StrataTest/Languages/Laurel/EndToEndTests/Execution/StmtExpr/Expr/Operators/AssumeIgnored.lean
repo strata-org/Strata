@@ -20,7 +20,7 @@ Both blocks run through `Core.Program.interpretEntries`, the same entry point th
 `laurelInterpret` CLI command uses, so these also pin the CLI's behaviour. -/
 
 #guard_msgs (drop info) in
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure ignoresAssume() entry opaque {
@@ -43,7 +43,7 @@ rest of the caller vacuous — the `assert` after the call is still evaluated an
 still fails. Were `ignoreAssumes` to regress, the interpreter would stop inside
 `mustNotBeCalled` and the second annotation would never fire. -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure mustNotBeCalled()

@@ -228,7 +228,7 @@ private def hasExpectedEffects (expectedCallees : List String) (proc : Procedure
   (effectProcedure (.Opaque
     [{ condition := effectExpr "postcondition" }]
     (some (effectExpr "implementation"))
-    [effectExpr "modifies"]))
+    [{ targets := [effectExpr "modifies"] }]))
 
 #guard hasExpectedEffects
   ["postcondition", "precondition", "decreases", "invokeOn", "axiom"]
@@ -245,7 +245,7 @@ private def opaqueModifiesResult : AnalysisResult :=
     outputs := []
     preconditions := []
     decreases := none
-    body := .Opaque [] none [localExpr "cell"] }
+    body := .Opaque [] none [{ targets := [localExpr "cell"] }] }
 
 #guard opaqueModifiesResult.readsHeapDirectly
 #guard opaqueModifiesResult.writesHeapDirectly
@@ -259,7 +259,7 @@ private def heapSpecificationsProgram : Program :=
     (md (.LiteralInt 1)))
   let writer := addHeapSpecifications {
     externalProc "writer" [cellParam] with
-    body := .Opaque [] (some assignment) [localExpr "cell"] }
+    body := .Opaque [] (some assignment) [{ targets := [localExpr "cell"] }] }
   { staticProcedures := [reader, writer]
     staticFields := []
     types := [.Composite {
@@ -367,7 +367,7 @@ private def specificationCallProgram : Program :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let mutator := {
     externalProc "mutator" [cellParam] [param "$result" .TInt] with
-    body := .Opaque [] none [fieldRead "cell" "value"] }
+    body := .Opaque [] none [{ targets := [fieldRead "cell" "value"] }] }
   let reader := {
     externalProc "heapReader" [cellParam] [param "$result" .TInt] with
     body := .Opaque [] (some (fieldRead "cell" "value")) [] }
@@ -408,7 +408,7 @@ private def impureSpecificationCallProgram : Program :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let mutator := {
     externalProc "mutator" [cellParam] [param "$result" .TInt] with
-    body := .Opaque [] none [fieldRead "cell" "value"] }
+    body := .Opaque [] none [{ targets := [fieldRead "cell" "value"] }] }
   let writerCall := md (.StaticCall (mkId "mutator") [localExpr "cell"])
   let caller := {
     externalProc "caller" [cellParam] [param "$result" .TInt] with
@@ -522,7 +522,7 @@ private def emptySpecificationsProgram : Program :=
     (md (.LiteralInt 1)))
   let staticProc := {
     externalProc "staticEmptySpecifications" [cellParam] with
-    body := .Opaque [] (some assignment) [localExpr "cell"] }
+    body := .Opaque [] (some assignment) [{ targets := [localExpr "cell"] }] }
   let instanceProc := {
     externalProc "instanceEmptySpecifications"
       [param "self" (.UserDefined (mkId "Cell"))]

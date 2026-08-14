@@ -39,7 +39,7 @@ private def hasSubstr (haystack needle : String) : Bool :=
     };
     #end
   try
-    testLaurelMultiple block
+    testLaurelExecution { skipCoreInterpreter := false } block
   catch e =>
     let msg := toString e
     unless hasSubstr msg "raised a non-assertion error" do

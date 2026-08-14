@@ -91,7 +91,12 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   let framesHeapOnThrow := proc.throwsOn.any (!·.modifies.isEmpty)
   match proc.body with
   | .Opaque _ none modifies =>
-      if modifies.isEmpty && !framesHeapOnThrow then result else
+      -- What marks a heap writer is a group with *targets*, never the groups'
+      -- existence: the grammar path always supplies one group (possibly empty —
+      -- the default "nothing changes" frame), but directly-constructed ASTs and
+      -- post-`EliminateExceptions` procedures can carry zero groups, and
+      -- `[].all` being vacuously true classifies those as non-writers too.
+      if modifies.all (·.targets.isEmpty) && !framesHeapOnThrow then result else
         { result with readsHeapDirectly := true, writesHeapDirectly := true }
   | _ =>
       if framesHeapOnThrow then { result with writesHeapDirectly := true } else result

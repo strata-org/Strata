@@ -100,6 +100,10 @@ structure ProcHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
     v ∈ LMonoTys.freeVars proc.header.inputs.values ++
         LMonoTys.freeVars proc.header.outputs.values →
     v ∈ proc.header.typeArgs
+  /-- Each input and output parameter type is `tyCompat` to a type well-kinded in
+      `C` (type constructors applied at their arity). -/
+  signatureWellKinded : ∀ ty ∈ proc.header.inputs.values ++ proc.header.outputs.values,
+    ∃ ty', S.tyCompat Γ.aliases ty ty' ∧ C.WellKindedTy ty'
   /-- Every variable the body modifies is an output parameter or is defined in
       the body (the modification-rights check). -/
   modRights : ∀ v, v ∈ HasVarsImp.modifiedVars (P := Expression) proc.body →

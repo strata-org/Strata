@@ -33,9 +33,9 @@ The failing assert is deliberately in a *called* procedure rather than directly
 in the loop body: an assert inside a loop body is checked at the havoc'd loop
 head, where the verifier cannot establish concrete reachability and falls back to
 `could not be proved`, which the interpret path's `does not hold` can never match
-(see the wording note on `testLaurelMultiple`). -/
+(see the wording note on `testLaurelExecution`). -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure alwaysFails()

@@ -236,6 +236,10 @@ op checkedEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): Ensu
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;
 op modifiesWildcard: ModifiesClause => "\n  modifies *";
+// Internal (pass-generated) form: a frame that applies only when its guard holds.
+// `EliminateExceptions` emits these when consuming `throwsOn` blocks; users write
+// plain `modifies`, which is a single unguarded frame.
+op modifiesWhenClause(refs: CommaSepBy StmtExpr, guard: StmtExpr): ModifiesClause => "\n  modifies " refs:0 " when " guard:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
@@ -298,6 +302,8 @@ category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
+
+op globalVarCommand (name: Ident, varType: LaurelType, init: Option Initializer): Command => @[prec(0)] "var " name ": " varType init;
 
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;

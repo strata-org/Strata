@@ -184,6 +184,108 @@ inline function double(x : int) : int {
 #eval roundtrip testInlineFunctionRoundtrip
 
 -------------------------------------------------------------------------------
+-- Test: Constants
+--
+-- Either form of `const` is sugar for a nullary function, and is formatted back
+-- as one, so a constant reads as a parenthesized call at its use sites.
+-------------------------------------------------------------------------------
+
+-- The valueless form, which takes no type arguments.
+private def testConstRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int;
+const b : bool;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstRoundtrip
+
+/--
+info: program Core;
+
+function x () : int;
+function b () : bool;
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testConstRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+private def testConstWithValueRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int := 5;
+const b : bool := true;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstWithValueRoundtrip
+
+private def testInlineConstWithValueRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int := 5;
+inline const y : int := int.add(x, 2);
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testInlineConstWithValueRoundtrip
+
+/--
+info: program Core;
+
+function x () : int {
+  5
+}
+inline function y () : int {
+  int.add(x, 2)
+}
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testInlineConstWithValueRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+-- An operator-heavy right-hand side: nested arithmetic and a comparison under a
+-- conditional are where the pretty-printer would add spurious parentheses.
+private def testConstValueOperatorsRoundtrip : Program :=
+#strata
+program Core;
+
+const base : int := int.mul(int.add(2, 3), int.sub(10, 4));
+const flag : bool := if int.lt(base, 100) then true else false;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstValueOperatorsRoundtrip
+
+/--
+info: program Core;
+
+function base () : int {
+  int.mul(int.add(2, 3), int.sub(10, 4))
+}
+function flag () : bool {
+  if int.lt(base, 100) then true else false
+}
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testConstValueOperatorsRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+-------------------------------------------------------------------------------
 -- Test: Parameterized type arguments (the reversed-args bug)
 -------------------------------------------------------------------------------
 
@@ -357,6 +459,41 @@ private def roundtripText (text : String) : IO Unit := do
 /-- info: OK -/
 #guard_msgs in
 #eval roundtripText allOpsProgramText
+
+-------------------------------------------------------------------------------
+-- Test: a negative real literal prints as `real.neg(<positive>)`, so a leading
+-- minus is always a parenthesized `real.neg` that re-parses. Surface syntax has
+-- no negative-real-literal token, so these ASTs are built directly.
+-------------------------------------------------------------------------------
+
+/-- `Real.Neg` applied to expression `e`. -/
+private def rNeg (e : Core.Expression.Expr) : Core.Expression.Expr :=
+  .app () (.op () ⟨"Real.Neg", ()⟩ (some (.arrow .real .real))) e
+
+/-- A bare negative real literal, and `Real.Neg` applied to one. -/
+private def negRealLitPgm : Core.Program := { decls := [
+  .func { name := "negLit", typeArgs := [], inputs := [], output := .real,
+          body := some (.realConst () (-3 : Rat)) } .empty,
+  .func { name := "negNegLit", typeArgs := [], inputs := [], output := .real,
+          body := some (rNeg (.realConst () (-3 : Rat))) } .empty
+]}
+
+/--
+info: program Core;
+
+function negLit () : real {
+  real.neg(3.0)
+}
+function negNegLit () : real {
+  real.neg(real.neg(3.0))
+}
+-/
+#guard_msgs in
+#eval do IO.println f!"{Core.formatProgram negRealLitPgm}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtripText (Core.formatProgram negRealLitPgm).pretty
 
 end Strata.Test.Roundtrip
 

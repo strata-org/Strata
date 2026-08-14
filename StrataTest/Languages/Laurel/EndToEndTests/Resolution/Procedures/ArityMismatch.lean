@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Function called with too many arguments
 
-`showLocations := true` makes `testLaurel` echo each diagnostic's file-relative
+`showLocations := true` makes `testLaurelExecution` echo each diagnostic's file-relative
 `line:col` range (computed from the snippet's base line — no manual offsets),
 while the inline `// ^^^` annotation still asserts the error. The golden below
 thus *shows* the localization without catching a spurious "unexpected
@@ -21,7 +21,7 @@ diagnostic". (Other tests omit the flag and stay silent on success.) -/
 info: 32:16-23  error: call to 'f' expects 1 argument(s) but 2 were provided
 -/
 #guard_msgs in
-#eval testLaurel (showLocations := true) <|
+#eval testLaurelExecution {} (showLocations := true) <|
 #strata
 program Laurel;
 procedure f(x: int): int { return x };
@@ -36,7 +36,7 @@ procedure caller()
 
 /-! ## Multi-return procedure assigned to single target -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure twoReturns() returns (a: int, b: int)

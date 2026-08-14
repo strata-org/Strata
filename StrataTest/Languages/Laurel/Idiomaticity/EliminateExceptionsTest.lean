@@ -109,8 +109,8 @@ info: procedure parsePositive(input: int): (Result<int, NegativeInputException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NegativeInputException
   free ensures input < 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
-  throwsOn input < 0 {
-  };
+  free ensures Result..isBad($result) ==> input < 0( summary "throwsOn cases cover every throwing path")
+  modifies  when Result..isGood($result);
 -/
 #guard_msgs in
 #eval (fmtProcs (runPass throwsOnContract))
@@ -141,8 +141,8 @@ info: procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
   free ensures Result..isBad($result) ==> Result..err($result) is ArithmeticException
   free ensures b == 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
   free ensures b == 0 & Result..isBad($result) ==> Result..err($result) is ArithmeticException
-  throwsOn b == 0 {
-  };
+  free ensures Result..isBad($result) ==> b == 0( summary "throwsOn cases cover every throwing path")
+  modifies  when Result..isGood($result);
 -/
 #guard_msgs in
 #eval (fmtProcs (runPass throwsOnCaseSplit))
@@ -320,6 +320,7 @@ info: procedure attempt(x: int): (Result<int, NetworkError>)
 procedure retry(x: int): (Result<int, NetworkError>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is NetworkError
+  modifies  when Result..isGood($result)
 {
   var $thrown: bool := false;
   var $exc: NetworkError;
@@ -684,6 +685,7 @@ procedure doOrThrow(fail: bool)
 info: procedure doOrThrow(fail: bool): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
+  modifies  when Result..isGood($result)
 {
   var $thrown: bool := false;
   var $exc: Err;
@@ -753,6 +755,7 @@ procedure propagateNarrow(pick: bool)
 info: procedure propagateNarrow(pick: bool): (Result<bool, ParseError>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is ParseError
+  modifies  when Result..isGood($result)
 {
   var $thrown: bool := false;
   var $exc: ParseError;

@@ -72,17 +72,10 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
     generic `FuncClosed`: the body and preconditions have no free variables
     beyond the function's inputs.
 
-    NOTE: `LFuncClosed` (and its factory-level counterpart `FactoryClosed`) does
-    NOT hold of freshly typechecked functions. A local `funcDecl` statement's
-    body may legitimately reference variables from the surrounding lexical
-    context, so its raw `LFunc` is not closed. The evaluator handles this by
-    capturing those variables at `funcDecl`-evaluation time (see
-    `Core.captureFreevars` / `Statement.evalAux` for `funcDecl`). TODO: add a
-    dedicated pass that performs this capture-elimination on typechecked
-    functions up front, at which point the stronger `LFuncClosed`/`FactoryClosed`
-    condition becomes true for them. Until then, the typing proofs assume only
-    `LFuncWF`/`FactoryWF`, and only the evaluation proofs additionally assume
-    `LFuncClosed`/`FactoryClosed`. -/
+    In Imperative, a local `funcDecl` statement's body may legitimately reference
+    variables from the surrounding lexical context, so its raw `LFunc` is not
+    closed. The `LiftInternalFuncDecls` pass lifts all internal function
+    declarations and makes every function declaration closed. -/
 structure LFuncClosed {T : LExprParams} (f : LFunc T) extends
     FuncClosed
       (fun id => id.name) -- getName

@@ -7,6 +7,8 @@ module
 
 import Strata.Languages.Core.CmdTypeSpec
 import Strata.Languages.Core.CmdTypeProps
+import all Strata.Languages.Core.CmdType
+import all Strata.Languages.Core.CmdTypeProps
 import all Strata.Languages.Core.StatementType
 import Strata.DL.Imperative.CmdType
 import all Strata.DL.Imperative.CmdType
@@ -66,6 +68,213 @@ private theorem Subst.polyKeysFresh_of_mono (S : Subst) (Γ : TContext Unit)
     Subst.polyKeysFresh (T := CoreLParams) S Γ := by
   intro a _ x ty h_find h_bv
   exact absurd (h_mono x ty h_find) h_bv
+
+/-- All context types are well-kinded (relative to `C`'s registered arities).
+    A `TEnv`-level invariant preserved by `Cmd.typeCheck`, mirroring `ContextMono`.
+    The `set`-det case unifies against a context type, so its output subst is
+    range-well-kinded only if context types are themselves well-kinded. -/
+def ContextWellKinded (C : LContext CoreLParams) (Γ : TContext Unit) : Prop :=
+  ∀ x mty, Γ.types.find? x = some (.forAll [] mty) →
+    LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty
+
+/-- `ContextWellKinded` transports across context equivalence (reads via `find?`). -/
+theorem ContextWellKinded.of_equiv {C : LContext CoreLParams} {Γ Γ' : TContext Unit}
+    (h : TContext.Equiv (T := CoreLParams) Γ Γ') (h_wk : ContextWellKinded C Γ) :
+    ContextWellKinded C Γ' := by
+  intro x mty h_find
+  exact h_wk x mty ((h.find? x).trans h_find)
+
+/-- **Bundled WK preservation.** A successful `Cmd.typeCheck` step preserves BOTH
+    the subst-range well-kindedness AND the context-types well-kindedness invariants
+    (relative to `C`'s registered arities). The two are bundled because they are
+    coupled: after `init`/`set` the stored context type is the unified/substituted
+    result, well-kinded only given a range-well-kinded subst. -/
+theorem Cmd.typeCheck_preserves_WK (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_base : BaseTypesWK C)
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_cwk : ContextWellKinded C Env.context) :
+    Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env'.stateSubstInfo.subst ∧
+      ContextWellKinded C Env'.context := by
+  cases cmd with
+  | init x xty e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i h_lookup
+    split at h
+    · rename_i expr _
+      elim_err h; rename_i h_not_in_fv
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check
+      elim_err h; rename_i v3 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
+        TypeContext.postprocess, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.freeVars, TypeContext.checkAnnotCompat] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨e', ety, Env_infer⟩ := v2
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      have h_pre_subst : Env_pre.stateSubstInfo = Env.stateSubstInfo :=
+        CmdType.preprocess_preserves_stateSubstInfo C Env xty _ Env_pre h_preprocess
+      have h_wk_pre : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env_pre.stateSubstInfo.subst := by
+        rw [congrArg (·.subst) h_pre_subst]; exact h_wk
+      have h_pre_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre :=
+        CmdType.preprocess_WellKindedTy C Env Env_pre xty mty_pre h_preprocess h_wk
+      obtain ⟨h_wk_infer, h_infer_wk⟩ :=
+        CmdType.inferType_RangeWellKinded C Env_pre Env_infer _ _ e' ety h_infer h_base h_wk_pre
+      obtain ⟨mty_inf, h_ety_eq, _⟩ :=
+        CmdType.inferType_output_fresh C Env_pre Env_infer _ _ e' ety h_infer
+          (CmdType.preprocess_preserves_TEnvWF C Env xty _ Env_pre h_preprocess h_wf) h_fwf
+      have h_inf_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_inf :=
+        h_infer_wk mty_inf h_ety_eq
+      subst h_ety_eq
+      have h_wk_unified : Subst.RangeWellKinded (fun n => C.knownTypes[n]?)
+          Env_unified.stateSubstInfo.subst :=
+        CmdType.unifyTypes_RangeWellKinded C Env_infer Env_unified mty_pre mty_inf h_unify
+          h_pre_wk h_inf_wk h_wk_infer
+      obtain ⟨v3fst, v3snd⟩ := v3
+      obtain ⟨h_v3_fst, h_v3_snd⟩ := CmdType.postprocess_result C Env_unified v3snd mty_pre v3fst
+        (by rw [h_postprocess])
+      refine ⟨by rw [CmdType.update_preserves_subst, h_v3_snd]; exact h_wk_unified, ?_⟩
+      rw [h_v3_snd, h_v3_fst]
+      have h_stored_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?)
+          (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre) :=
+        LMonoTy.WellKinded_subst _ _ _ h_pre_wk
+          (fun v _ => h_wk_unified.lookup _ v)
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      have h_ne_pre : Env_pre.context.types ≠ [] := h_ctx_pre ▸ h_ne
+      have h_ctx_infer : TContext.Equiv (T := CoreLParams) Env_infer.context Env_pre.context :=
+        CmdType.inferType_preserves_context C Env_pre Env_infer _ _ e' _
+          h_infer (CmdType.preprocess_preserves_TEnvWF C Env xty _ Env_pre h_preprocess h_wf)
+          h_ne_pre h_fwf
+      have h_ctx_unify : Env_unified.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env_unified _ h_unify
+      have h_cwk_unified : ContextWellKinded C Env_unified.context := by
+        rw [h_ctx_unify]
+        exact ContextWellKinded.of_equiv (h_ctx_infer.trans (TContext.Equiv.of_eq h_ctx_pre)).symm h_cwk
+      intro y mty h_find
+      simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+      rcases Strata.Util.HMaps.find?_addInNewest_single Env_unified.genEnv.context.types x
+          (.forAll [] (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre)) y with
+        ⟨h_new, _⟩ | h_old
+      · rw [h_new] at h_find; injection h_find with h_find
+        injection h_find with _ h_mty; subst h_mty; exact h_stored_wk
+      · rw [h_old] at h_find
+        exact h_cwk_unified y mty (by simpa only [TEnv.context] using h_find)
+    · rename_i _
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.preprocess, TypeContext.postprocess] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      obtain ⟨v2fst, v2snd⟩ := v2
+      obtain ⟨h_v2_fst, h_v2_snd⟩ := CmdType.postprocess_result C Env_pre v2snd mty_pre v2fst
+        (by rw [h_postprocess])
+      have h_pre_subst : Env_pre.stateSubstInfo = Env.stateSubstInfo :=
+        CmdType.preprocess_preserves_stateSubstInfo C Env xty _ Env_pre h_preprocess
+      have h_pre_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_pre :=
+        CmdType.preprocess_WellKindedTy C Env Env_pre xty mty_pre h_preprocess h_wk
+      refine ⟨by rw [CmdType.update_preserves_subst, h_v2_snd, congrArg (·.subst) h_pre_subst]; exact h_wk, ?_⟩
+      rw [h_v2_snd, h_v2_fst]
+      have h_stored_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?)
+          (LMonoTy.subst Env_pre.stateSubstInfo.subst mty_pre) := by
+        rw [congrArg (·.subst) h_pre_subst]
+        exact LMonoTy.WellKinded_subst _ _ _ h_pre_wk (fun v _ => h_wk.lookup _ v)
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      have h_cwk_pre : ContextWellKinded C Env_pre.context := h_ctx_pre ▸ h_cwk
+      intro y mty h_find
+      simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+      rcases Strata.Util.HMaps.find?_addInNewest_single Env_pre.genEnv.context.types x
+          (.forAll [] (LMonoTy.subst Env_pre.stateSubstInfo.subst mty_pre)) y with
+        ⟨h_new, _⟩ | h_old
+      · rw [h_new] at h_find; injection h_find with h_find
+        injection h_find with _ h_mty; subst h_mty; exact h_stored_wk
+      · rw [h_old] at h_find
+        exact h_cwk_pre y mty (by simpa only [TEnv.context] using h_find)
+  | set x e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i xty h_lookup
+    cases e with
+    | det expr =>
+      simp only [] at h
+      elim_err h; rename_i v h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check; cases h
+      simp only [TypeContext.lookup, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.checkAnnotCompat] at *
+      obtain ⟨e', ety, Env_infer⟩ := v
+      have h_find := (CmdType.lookup_some_iff_find_some Env x xty).mp h_lookup
+      have h_xty_bv : LTy.boundVars xty = [] := h_mono x xty h_find
+      obtain ⟨xs, mty_x⟩ := xty
+      simp only [LTy.boundVars] at h_xty_bv; subst h_xty_bv
+      have h_xty_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_x := h_cwk x mty_x h_find
+      obtain ⟨h_wk_infer, h_infer_wk⟩ :=
+        CmdType.inferType_RangeWellKinded C Env Env_infer _ _ e' ety h_infer h_base h_wk
+      obtain ⟨mty_inf, h_ety_eq, _⟩ :=
+        CmdType.inferType_output_fresh C Env Env_infer _ expr e' ety h_infer h_wf h_fwf
+      have h_inf_wk : LMonoTy.WellKinded (fun n => C.knownTypes[n]?) mty_inf :=
+        h_infer_wk mty_inf h_ety_eq
+      subst h_ety_eq
+      simp only [] at h_unify
+      have h_wk_unified : Subst.RangeWellKinded (fun n => C.knownTypes[n]?)
+          Env'.stateSubstInfo.subst :=
+        CmdType.unifyTypes_RangeWellKinded C Env_infer Env' mty_x mty_inf h_unify
+          h_xty_wk h_inf_wk h_wk_infer
+      refine ⟨h_wk_unified, ?_⟩
+      have h_ctx_infer : TContext.Equiv (T := CoreLParams) Env_infer.context Env.context :=
+        CmdType.inferType_preserves_context C Env Env_infer _ expr e' _ h_infer h_wf h_ne h_fwf
+      have h_ctx_unify : Env'.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env' _ h_unify
+      rw [h_ctx_unify]
+      exact ContextWellKinded.of_equiv h_ctx_infer.symm h_cwk
+    | nondet =>
+      simp at h; cases h
+      exact ⟨h_wk, h_cwk⟩
+  | assert label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    obtain ⟨h_wk_infer, _⟩ :=
+      CmdType.inferType_RangeWellKinded C Env Env_infer _ _ e' ety h_infer h_base h_wk
+    refine ⟨h_wk_infer, ?_⟩
+    exact ContextWellKinded.of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm
+      h_cwk
+  | assume label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    obtain ⟨h_wk_infer, _⟩ :=
+      CmdType.inferType_RangeWellKinded C Env Env_infer _ _ e' ety h_infer h_base h_wk
+    refine ⟨h_wk_infer, ?_⟩
+    exact ContextWellKinded.of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm
+      h_cwk
+  | cover label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    obtain ⟨h_wk_infer, _⟩ :=
+      CmdType.inferType_RangeWellKinded C Env Env_infer _ _ e' ety h_infer h_base h_wk
+    refine ⟨h_wk_infer, ?_⟩
+    exact ContextWellKinded.of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm
+      h_cwk
 
 /-! ### Inversion lemmas -/
 
@@ -306,7 +515,12 @@ theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_mono : ContextMono Env.context) :
+    (h_mono : ContextMono Env.context)
+    -- Step-local well-kindedness inputs (replace the false global `RangeWellKinded S`): the
+    -- CURRENT subst is range-WK against `C`, and `C` registers the base type arities. Consumed
+    -- only by the `init` case's `WellKindedTy` obligation (see `init_(non)det_WellKindedTy`).
+    (h_base_ty : BaseTypesWK C)
+    (h_wk_in : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
     ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
       (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
       CmdHasType C (TContext.subst Env.context S) cmd
@@ -390,8 +604,12 @@ theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
         refine h_update_ctx.trans ?_
         rw [h_stored]
         exact TContext.Equiv.insert (h_ctx_eq.subst S) x (.forAll [] (LMonoTy.subst S mty_pre))
+      have h_wk_stored : C.WellKindedTy (LMonoTy.subst S mty_pre) :=
+        CmdType.init_det_WellKindedTy C Env S x xty heq_det md v1 mty_pre v2 Env_unified h_pp
+          h_infer (h_mty_pre ▸ h_unify) v3 (h_mty_pre ▸ h_postprocess)
+          h_wf h_fwf h_base_ty h_wk_in hS_rigid hS_abs_unified
       exact CmdHasType'.init_det _ x xty heq_det _ tys md _
-        h_find_none_subst h_not_in_vars h_tys_len h_rac h_hastype h_out_equiv
+        h_find_none_subst h_not_in_vars h_tys_len h_rac h_wk_stored h_hastype h_out_equiv
     · -- nondet case
       rename_i heq_nondet
       elim_err h
@@ -442,8 +660,11 @@ theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
         rw [h_stored]
         exact TContext.Equiv.insert ((TContext.Equiv.of_eq (T := CoreLParams) h_ctx_eq).subst S) x
           (.forAll [] (LMonoTy.subst S mty_pre))
+      have h_wk_stored : C.WellKindedTy (LMonoTy.subst S mty_pre) :=
+        CmdType.init_nondet_WellKindedTy C Env S xty v1 mty_pre v2 h_pp
+          (h_mty_pre ▸ h_postprocess) h_wk_in hS_rigid hS_abs_env
       exact CmdHasType'.init_nondet _ x xty (LMonoTy.subst S mty_pre) tys md _
-        h_find_none_subst h_tys_len h_rac0 h_out_equiv
+        h_find_none_subst h_tys_len h_rac0 h_wk_stored h_out_equiv
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -536,6 +757,8 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) :
     CmdHasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) cmd
@@ -543,7 +766,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
   have h_rigid' : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v :=
     Core.Cmd.typeCheck_preserves_rigid_inv C Env cmd cmd' Env' h h_rigid_inv
-  exact Cmd.typeCheck_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono
+  exact Cmd.typeCheck_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono h_base h_wk
     Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
     Env'.stateSubstInfo.isWF h_rigid'
 
@@ -1003,12 +1226,17 @@ theorem Cmd.typeCheck_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
-    (h_resolved : TContext.AliasesResolved Env.context) :
+    (h_resolved : TContext.AliasesResolved Env.context)
+    -- Step-local well-kindedness inputs (replace the false global `RangeWellKinded S`): see
+    -- `Cmd.typeCheck_sound_gen`. Consumed only by the `init` case.
+    (h_base_ty : BaseTypesWK C)
+    (h_wk_in : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst) :
     ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
       CmdHasTypeA C (TContext.subst Env.context S)
         (Core.Statement.Cmd.subst S cmd')
         (TContext.subst Env'.context S) := by
-  intro S hS_abs hS_wf
+  intro S hS_abs hS_wf hS_rigid
   cases cmd with
   | init x xty e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -1115,9 +1343,22 @@ theorem Cmd.typeCheck_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv
         rw [h_stored]
         exact TContext.Equiv.insert (h_ctx_eq.subst S) x (.forAll [] (LMonoTy.subst S mty_pre))
       rw [h_stored]
+      have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
+        rw [h_preprocess, ← h_mty_pre]
+      have hS_abs_env : Subst.absorbs S Env.stateSubstInfo.subst := by
+        have h_pp_subst := CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
+        have h_infer_absorbs := CmdType.inferType_absorbs C v1.snd v2.2.snd
+          (.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst h_infer h_wf_pre h_fwf
+        have h_unify_absorbs := CmdType.unifyTypes_absorbs v2.2.snd Env_unified _ h_unify
+        exact Subst.absorbs_trans _ _ _
+          (Subst.absorbs_trans _ _ _ (h_pp_subst ▸ h_infer_absorbs) h_unify_absorbs) hS_abs_unified
+      have h_wk_stored : C.WellKindedTy (LMonoTy.subst S mty_pre) :=
+        CmdType.init_det_WellKindedTy C Env S x xty heq_det md v1 mty_pre v2 Env_unified h_pp
+          h_infer (h_mty_pre ▸ h_unify) v3 (h_mty_pre ▸ h_postprocess)
+          h_wf h_fwf h_base_ty h_wk_in hS_rigid hS_abs_unified
       exact CmdHasType'.init_det _ x (LTy.forAll [] (LMonoTy.subst S mty_pre))
         (v2.fst.applySubst S) _ [] md
-        _ h_find_none_subst h_not_in_v2 h_tyslen h_rac h_hta_subst h_out_equiv
+        _ h_find_none_subst h_not_in_v2 h_tyslen h_rac h_wk_stored h_hta_subst h_out_equiv
     · -- nondet case
       rename_i heq_nondet
       elim_err h
@@ -1169,8 +1410,13 @@ theorem Cmd.typeCheck_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv
         exact TContext.Equiv.insert ((TContext.Equiv.of_eq (T := CoreLParams) h_ctx_eq).subst S) x
           (.forAll [] (LMonoTy.subst S mty_pre))
       rw [h_stored]
+      have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
+        rw [h_preprocess, ← h_mty_pre]
+      have h_wk_stored : C.WellKindedTy (LMonoTy.subst S mty_pre) :=
+        CmdType.init_nondet_WellKindedTy C Env S xty v1 mty_pre v2 h_pp
+          (h_mty_pre ▸ h_postprocess) h_wk_in hS_rigid hS_abs_env
       exact CmdHasType'.init_nondet _ x (LTy.forAll [] (LMonoTy.subst S mty_pre))
-        (LMonoTy.subst S mty_pre) [] md _ h_find_none_subst h_tyslen h_rac h_out_equiv
+        (LMonoTy.subst S mty_pre) [] md _ h_find_none_subst h_tyslen h_rac h_wk_stored h_out_equiv
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -1281,13 +1527,20 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
+    (h_base : BaseTypesWK C)
+    (h_wk : Subst.RangeWellKinded (fun n => C.knownTypes[n]?) Env.stateSubstInfo.subst)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
     (h_resolved : TContext.AliasesResolved Env.context) :
     CmdHasTypeA C (TContext.subst Env.context Env'.stateSubstInfo.subst)
       (Core.Statement.Cmd.subst Env'.stateSubstInfo.subst cmd')
-      (TContext.subst Env'.context Env'.stateSubstInfo.subst) :=
-  Cmd.typeCheck_annotated_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono h_resolved
-    Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
-    Env'.stateSubstInfo.isWF
+      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
+  have h_rigid' : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v :=
+    Core.Cmd.typeCheck_preserves_rigid_inv C Env cmd cmd' Env' h h_rigid_inv
+  exact Cmd.typeCheck_annotated_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono h_resolved
+    h_base h_wk Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
+    Env'.stateSubstInfo.isWF h_rigid'
 
 end TypeSpec
 end Core

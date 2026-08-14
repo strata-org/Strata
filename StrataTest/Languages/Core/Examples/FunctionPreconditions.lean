@@ -455,7 +455,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: init_calls_addPositive_0
+Label: init_calls_$__liftfncl_addPositive_1_0
 Property: assert
 Obligation:
 true
@@ -463,11 +463,11 @@ true
 Label: assert_0
 Property: assert
 Obligation:
-addPositive(3) == 8
+$__liftfncl_addPositive_1(5, 3) == 8
 
 ---
 info:
-Obligation: init_calls_addPositive_0
+Obligation: init_calls_$__liftfncl_addPositive_1_0
 Property: assert
 Result: ✅ pass
 

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Util.StringGen
+import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Util.ListUtils
 
@@ -32,10 +33,9 @@ Equational theory for the boolean shape walkers defined in
 - Distribution of the block-level walkers over `++`
   (`initVars`/`simpleShape`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
-- Under `noFuncDecl`, defined variables coincide with init variables
-  (`Stmt`/`Block.definedVars_eq_initVars_of_noFuncDecl`), the block-to-statement
-  non-membership projection `all_not_mem_definedVars_of_block`, and the
-  init-⊆-defined inclusion (`Stmt`/`Block.mem_initVars_mem_definedVars`).
+- `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
+  the expressions in a statement or block never introduces or removes a
+  `funcDecl`.
 -/
 
 /-! ### Disjointness of funcDeclNames from definedVars
@@ -678,7 +678,7 @@ theorem Block.noMeasureLoops_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih => simp [Block.noMeasureLoops, ih, Bool.and_assoc]
 
 /-- Concatenation distributes over `Block.noFuncDecl`. -/
-theorem Block.noFuncDecl_append (xs ys : List (Stmt P (Cmd P))) :
+theorem Block.noFuncDecl_append (xs ys : List (Stmt P C)) :
     Block.noFuncDecl (xs ++ ys) =
       (Block.noFuncDecl xs && Block.noFuncDecl ys) := by
   induction xs with
@@ -686,42 +686,43 @@ theorem Block.noFuncDecl_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih => simp [Block.noFuncDecl, ih, Bool.and_assoc]
 
 mutual
-/-- Under `noFuncDecl`, a statement's defined variables coincide with its
-init variables (no `funcDecl` means no scoped-only definitions). -/
-theorem Stmt.definedVars_eq_initVars_of_noFuncDecl [HasIdent P] [HasVarsPure P P.Expr]
-    (s : Stmt P (Cmd P)) (h : Stmt.noFuncDecl s = true) :
-    Stmt.definedVars (P := P) (C := Cmd P) s false = Stmt.initVars s := by
+/-- `Stmt.mapExpr` preserves `noFuncDecl`: it recurses structurally and passes
+`funcDecl` through unchanged, so it never changes whether a statement contains a
+function declaration. -/
+theorem Stmt.noFuncDecl_mapExpr
+    (fe : P.Expr → P.Expr) (fc : C → C) (s : Stmt P C) :
+    Stmt.noFuncDecl (Stmt.mapExpr fe fc s) = Stmt.noFuncDecl s := by
   match s with
-  | .cmd c =>
-      cases c <;>
-        simp only [Stmt.definedVars, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
-  | .block lbl bss md =>
-      rw [Stmt.definedVars, Stmt.initVars_block, Stmt.noFuncDecl] at *
-      simp only [Bool.false_eq_true, if_false]
-      exact Block.definedVars_eq_initVars_of_noFuncDecl bss h
-  | .ite g tss ess md =>
-      rw [Stmt.definedVars, Stmt.initVars_ite, Stmt.noFuncDecl, Bool.and_eq_true] at *
-      simp only [Bool.false_eq_true, if_false]
-      rw [Block.definedVars_eq_initVars_of_noFuncDecl tss h.1,
-          Block.definedVars_eq_initVars_of_noFuncDecl ess h.2]
-  | .loop g m inv body md =>
-      rw [Stmt.definedVars, Stmt.initVars_loop, Stmt.noFuncDecl] at *
-      simp only [Bool.false_eq_true, if_false]
-      exact Block.definedVars_eq_initVars_of_noFuncDecl body h
-  | .exit lbl md => simp [Stmt.definedVars, Stmt.initVars]
-  | .funcDecl d md => rw [Stmt.noFuncDecl] at h; exact absurd h (by simp)
-  | .typeDecl t md => simp [Stmt.definedVars, Stmt.initVars]
+  | .cmd c => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .block l ss md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc ss
+  | .ite (.det c) t e md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
+               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
+  | .ite .nondet t e md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
+               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
+  | .loop (.det g) mea inv b md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc b
+  | .loop .nondet mea inv b md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc b
+  | .exit l md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .funcDecl decl md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .typeDecl tc md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
   termination_by sizeOf s
 
-theorem Block.definedVars_eq_initVars_of_noFuncDecl [HasIdent P] [HasVarsPure P P.Expr]
-    (ss : List (Stmt P (Cmd P))) (h : Block.noFuncDecl ss = true) :
-    Block.definedVars (P := P) (C := Cmd P) ss false = Block.initVars ss := by
+/-- `Block.mapExpr` preserves `noFuncDecl` (pointwise over the block). -/
+theorem Block.noFuncDecl_mapExpr
+    (fe : P.Expr → P.Expr) (fc : C → C) (ss : Block P C) :
+    Block.noFuncDecl (Block.mapExpr fe fc ss) = Block.noFuncDecl ss := by
   match ss with
-  | [] => simp [Block.definedVars, Block.initVars]
+  | [] => simp [Block.mapExpr, Block.noFuncDecl]
   | s :: rest =>
-      rw [Block.definedVars, Block.initVars_cons, Block.noFuncDecl, Bool.and_eq_true] at *
-      rw [Stmt.definedVars_eq_initVars_of_noFuncDecl s h.1,
-          Block.definedVars_eq_initVars_of_noFuncDecl rest h.2]
+    simp only [Block.mapExpr, Block.noFuncDecl,
+               Stmt.noFuncDecl_mapExpr fe fc s, Block.noFuncDecl_mapExpr fe fc rest]
   termination_by sizeOf ss
 end
 
@@ -738,49 +739,6 @@ theorem all_not_mem_definedVars_of_block [HasIdent P] [HasVarsPure P P.Expr]
     rcases List.mem_cons.mp hs' with h_eq | h_in
     · exact h_eq ▸ (fun hc => h (List.mem_append.mpr (Or.inl hc)))
     · exact ih (fun hc => h (List.mem_append.mpr (Or.inr hc))) s' h_in
-
-mutual
-/-- Every init variable of a statement is one of its defined variables. -/
-theorem Stmt.mem_initVars_mem_definedVars {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr]
-    {y : P.Ident} {s : Stmt P (Cmd P)} (hy : y ∈ Stmt.initVars s) :
-    y ∈ Stmt.definedVars (P := P) (C := Cmd P) s false := by
-  match s with
-  | .cmd c =>
-    cases c <;>
-      simp_all only [Stmt.initVars, Stmt.definedVars, Cmd.definedVars,
-        HasVarsImp.definedVars, List.not_mem_nil, List.mem_singleton]
-  | .block lbl bss md =>
-    rw [Stmt.initVars_block] at hy
-    rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]
-    exact Block.mem_initVars_mem_definedVars hy
-  | .ite g tss ess md =>
-    rw [Stmt.initVars_ite] at hy
-    rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]
-    rcases List.mem_append.mp hy with h | h
-    · exact List.mem_append_left _ (Block.mem_initVars_mem_definedVars h)
-    · exact List.mem_append_right _ (Block.mem_initVars_mem_definedVars h)
-  | .loop g m inv body md =>
-    rw [Stmt.initVars_loop] at hy
-    rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]
-    exact Block.mem_initVars_mem_definedVars hy
-  | .exit lbl md => simp only [Stmt.initVars] at hy; exact absurd hy (by simp)
-  | .funcDecl d md => simp only [Stmt.initVars] at hy; exact absurd hy (by simp)
-  | .typeDecl t md => simp only [Stmt.initVars] at hy; exact absurd hy (by simp)
-  termination_by sizeOf s
-
-theorem Block.mem_initVars_mem_definedVars {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr]
-    {y : P.Ident} {ss : List (Stmt P (Cmd P))} (hy : y ∈ Block.initVars ss) :
-    y ∈ Block.definedVars (P := P) (C := Cmd P) ss false := by
-  match ss with
-  | [] => simp only [Block.initVars] at hy; exact absurd hy (by simp)
-  | s :: rest =>
-    rw [Block.initVars_cons] at hy
-    rw [Block.definedVars]
-    rcases List.mem_append.mp hy with h | h
-    · exact List.mem_append_left _ (Stmt.mem_initVars_mem_definedVars h)
-    · exact List.mem_append_right _ (Block.mem_initVars_mem_definedVars h)
-  termination_by sizeOf ss
-end
 
 mutual
 /-- A simple-shape statement contains no nondeterministic loop. -/
@@ -1062,14 +1020,14 @@ theorem Block.uniqueInits.tail {P : PureExpr}
     {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
     (h : Block.uniqueInits (s :: ss)) : Block.uniqueInits ss := by
   unfold Block.uniqueInits at h ⊢
-  rw [Block.initVars] at h
+  rw [Block.initVars_cons] at h
   exact (List.nodup_append.mp h).2.1
 
 theorem Block.uniqueInits.head_stmt {P : PureExpr}
     {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
     (h : Block.uniqueInits (s :: ss)) : (Stmt.initVars s).Nodup := by
   unfold Block.uniqueInits at h
-  rw [Block.initVars] at h
+  rw [Block.initVars_cons] at h
   exact (List.nodup_append.mp h).1
 
 theorem Block.uniqueInits.block_body {P : PureExpr}
@@ -1079,7 +1037,7 @@ theorem Block.uniqueInits.block_body {P : PureExpr}
     Block.uniqueInits bss := by
   have h_head := Block.uniqueInits.head_stmt h
   -- Stmt.initVars (.block ...) = Block.initVars bss; so Nodup carries over.
-  unfold Stmt.initVars at h_head
+  rw [Stmt.initVars_block] at h_head
   exact h_head
 
 theorem Block.uniqueInits.ite_then {P : PureExpr}
@@ -1089,7 +1047,7 @@ theorem Block.uniqueInits.ite_then {P : PureExpr}
     Block.uniqueInits tss := by
   have h_head := Block.uniqueInits.head_stmt h
   -- Stmt.initVars (.ite _ tss ess _) = Block.initVars tss ++ Block.initVars ess
-  unfold Stmt.initVars at h_head
+  rw [Stmt.initVars_ite] at h_head
   exact (List.nodup_append.mp h_head).1
 
 theorem Block.uniqueInits.ite_else {P : PureExpr}
@@ -1098,7 +1056,7 @@ theorem Block.uniqueInits.ite_else {P : PureExpr}
     (h : Block.uniqueInits (.ite g tss ess md :: rest)) :
     Block.uniqueInits ess := by
   have h_head := Block.uniqueInits.head_stmt h
-  unfold Stmt.initVars at h_head
+  rw [Stmt.initVars_ite] at h_head
   exact (List.nodup_append.mp h_head).2.1
 
 /-! ## `loopBodyNoInits` peel helpers. -/
@@ -1166,9 +1124,9 @@ theorem stmt_definedVars_nil_of_noInits_noFuncDecl {P : PureExpr} (s : Stmt P (C
       rw [Stmt.definedVars]; show Block.definedVars body false = []
       exact block_definedVars_nil_of_noInits_noFuncDecl body
         (by simpa [Stmt.noInitsAnywhere] using h_ni) (by simpa [Stmt.noFuncDecl] using h_nf)
-  | .exit lbl md => simp [Stmt.definedVars]
+  | .exit lbl md => simp
   | .funcDecl d md => exact absurd h_nf (by simp [Stmt.noFuncDecl])
-  | .typeDecl t md => simp [Stmt.definedVars]
+  | .typeDecl t md => simp
   termination_by sizeOf s
 
 theorem block_definedVars_nil_of_noInits_noFuncDecl {P : PureExpr} (body : List (Stmt P (Cmd P)))

@@ -53,6 +53,37 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   . intros _; apply Or.inl; cases x; cases y; grind
   . rw[meta_eq]; intros _; simp
 
+/-- `addWithError` is monotone on `getElem?`: it only inserts a fresh key, so any
+    existing binding is preserved. -/
+theorem Identifiers.addWithError_getElem? {IDMeta} [DecidableEq IDMeta]
+    {m m' : Identifiers IDMeta} {x : Identifier IDMeta} {f : Message}
+    (h : m.addWithError x f = .ok m') :
+    ∀ (n : String) v, m[n]? = some v → m'[n]? = some v := by
+  intro n v hnv
+  unfold Identifiers.addWithError at h
+  have m'_def := (Std.HashMap.containsThenInsertIfNew_snd (m := m) (k := x.name) (v := x.metadata))
+  have m_contains := (Std.HashMap.containsThenInsertIfNew_fst (m := m) (k := x.name) (v := x.metadata))
+  revert h m'_def m_contains
+  rcases (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with ⟨b, m''⟩
+  simp only
+  intro h m'_def m_contains
+  cases hb : b with
+  | true => rw [hb] at h; simp at h
+  | false =>
+    rw [hb] at h
+    injection h with h_eq; subst h_eq
+    subst m'_def
+    rw [Std.HashMap.getElem?_insertIfNew]
+    by_cases hn : x.name = n
+    · exfalso
+      subst hn
+      have h_ncontains : Std.HashMap.contains m x.name = false := by rw [← m_contains, hb]
+      have h_nkey : ¬ (x.name ∈ m) := by
+        rw [Std.HashMap.mem_iff_contains]; simp [h_ncontains]
+      rw [Std.HashMap.getElem?_eq_none (by simpa using h_nkey)] at hnv
+      simp at hnv
+    · rw [if_neg (by simp [hn])]; exact hnv
+
 theorem Identifiers.addListWithErrorNotin {IDMeta} [DecidableEq IDMeta]
   {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Message}:
   m.addListWithError l f = .ok m' → forall x, x ∈ l → m.contains x = false := by

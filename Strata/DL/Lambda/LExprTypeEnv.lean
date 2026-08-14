@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.TypeFactory
+import all Strata.DL.Lambda.TypeFactory
 import Strata.DL.Util.String
 public import Strata.DL.Util.Maps
 
@@ -516,7 +517,7 @@ def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToForma
   for d in block do
     if C.knownTypes.containsName d.name then
       throw <| Message.fromFormat f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
-  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes
   -- Add factory functions, checking for name clashes
   let f ← genBlockFactory block
   let fs ← C.functions.addFactory f
@@ -1018,6 +1019,236 @@ end
 def isInstanceOfKnownType {T : LExprParams} (ty : LMonoTy) (C : LContext T) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
 
+/--
+Well-kindedness of `ty` under an arity assignment: every type-constructor
+reference in `ty` is applied at the arity `arity` assigns to it.
+-/
+def LMonoTy.WellKinded (arity : String → Option Nat) (ty : LMonoTy) : Prop :=
+  ∀ ref n, (ref, n) ∈ getTypeConsArities ty → arity ref = some n
+
+/-- `LMonoTy.WellKinded` against the arities registered in `C`'s known types. -/
+def LContext.WellKindedTy (C : LContext T) (ty : LMonoTy) : Prop :=
+  LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty
+
+/-- Base-type-arity context hypothesis: the standard nullary base types (int, bool,
+    real, string) and binary `arrow` are registered at their expected arities.
+    Mirrors `ArrowKnownBinary`; discharged for `Core.KnownTypes` at Core entry points. -/
+def BaseTypesWK (C : LContext T) : Prop :=
+  C.knownTypes["int"]? = some 0 ∧ C.knownTypes["bool"]? = some 0 ∧
+  C.knownTypes["real"]? = some 0 ∧ C.knownTypes["string"]? = some 0 ∧
+  C.knownTypes["arrow"]? = some 2
+
+/-- `bitvec` types have no type-constructor occurrences, so are trivially WK. -/
+theorem LMonoTy.WellKinded_bitvec (arity : String → Option Nat) (n : Nat) :
+    LMonoTy.WellKinded arity (.bitvec n) := by
+  intro ref k h_mem; simp only [getTypeConsArities, List.not_mem_nil] at h_mem
+
+/-- `ftvar` types are trivially WK. -/
+theorem LMonoTy.WellKinded_ftvar (arity : String → Option Nat) (v : TyIdentifier) :
+    LMonoTy.WellKinded arity (.ftvar v) := by
+  intro ref k h_mem; simp only [getTypeConsArities, List.not_mem_nil] at h_mem
+
+/-- Well-kindedness is monotone under arity extension: if every registered arity
+    of `arity` agrees with `arity'`, a WK type stays WK. -/
+theorem LMonoTy.WellKinded.mono_arity {arity arity' : String → Option Nat} {ty : LMonoTy}
+    (h_sub : ∀ ref n, arity ref = some n → arity' ref = some n)
+    (h : LMonoTy.WellKinded arity ty) : LMonoTy.WellKinded arity' ty :=
+  fun ref n h_mem => h_sub ref n (h ref n h_mem)
+
+/-- A binary arrow is WK iff both components are and `"arrow"` is registered at
+    arity 2 (the arrow head contributes `("arrow", 2)`). -/
+theorem LMonoTy.WellKinded_arrow (arity : String → Option Nat) (a b : LMonoTy)
+    (h_arrow : arity "arrow" = some 2)
+    (ha : LMonoTy.WellKinded arity a) (hb : LMonoTy.WellKinded arity b) :
+    LMonoTy.WellKinded arity (.tcons "arrow" [a, b]) := by
+  intro ref k h_mem
+  simp only [getTypeConsArities, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+    List.mem_cons, List.mem_append] at h_mem
+  rcases h_mem with h_head | h_a | h_b
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h_head; exact h_arrow
+  · exact ha ref k h_a
+  · exact hb ref k h_b
+
+/-- A nullary type constructor is WK iff its name is registered at arity 0. -/
+theorem LMonoTy.WellKinded_nullary_tcons (arity : String → Option Nat) (nm : String)
+    (h : arity nm = some 0) : LMonoTy.WellKinded arity (.tcons nm []) := by
+  intro ref k hk
+  simp only [getTypeConsArities, List.length_nil, List.flatMap_nil,
+    List.mem_singleton, Prod.mk.injEq] at hk
+  obtain ⟨rfl, rfl⟩ := hk; exact h
+
+/-- An iterated arrow `mkArrow' ret args` is WK when the return type and every
+    argument type are WK and `"arrow"` is registered at arity 2. -/
+theorem LMonoTy.WellKinded_mkArrow' (arity : String → Option Nat)
+    (h_arrow : arity "arrow" = some 2)
+    (ret : LMonoTy) (args : LMonoTys)
+    (h_ret : LMonoTy.WellKinded arity ret)
+    (h_args : ∀ a ∈ args, LMonoTy.WellKinded arity a) :
+    LMonoTy.WellKinded arity (LMonoTy.mkArrow' ret args) := by
+  induction args with
+  | nil => rw [LMonoTy.mkArrow'_nil]; exact h_ret
+  | cons a rest ih =>
+    rw [LMonoTy.mkArrow'_cons]
+    show LMonoTy.WellKinded arity (.tcons "arrow" [a, LMonoTy.mkArrow' ret rest])
+    apply LMonoTy.WellKinded_arrow arity _ _ h_arrow
+    · exact h_args a (List.mem_cons_self)
+    · exact ih (fun b hb => h_args b (List.mem_cons_of_mem a hb))
+
+/-- Applying a substitution preserves well-kindedness when the type and the
+    substitution's action on each free variable are well-kinded. -/
+theorem LMonoTy.WellKinded_subst (arity : String → Option Nat) (S : Subst) (t : LMonoTy)
+    (h_t : LMonoTy.WellKinded arity t)
+    (h_S : ∀ v ∈ LMonoTy.freeVars t, LMonoTy.WellKinded arity (LMonoTy.subst S (.ftvar v))) :
+    LMonoTy.WellKinded arity (LMonoTy.subst S t) := by
+  induction t with
+  | ftvar v => exact h_S v (by simp [LMonoTy.freeVars])
+  | bitvec n =>
+    intro ref n h_mem
+    rw [LMonoTy.subst_bitvec] at h_mem
+    simp only [getTypeConsArities, List.not_mem_nil] at h_mem
+  | tcons name args ih =>
+    intro ref m h_mem
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map] at h_mem
+    simp only [getTypeConsArities, List.length_map, List.mem_cons] at h_mem
+    rcases h_mem with h_head | h_tail
+    · obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h_head
+      exact h_t ref args.length (by simp [getTypeConsArities])
+    · rw [List.mem_flatMap] at h_tail
+      obtain ⟨b, h_b_mem, h_in_b⟩ := h_tail
+      rw [List.mem_map] at h_b_mem
+      obtain ⟨a, h_a_mem, rfl⟩ := h_b_mem
+      have h_t_a : LMonoTy.WellKinded arity a := by
+        intro r k hk
+        exact h_t r k (by
+          simp only [getTypeConsArities, List.mem_cons]; right
+          rw [List.mem_flatMap]; exact ⟨a, h_a_mem, hk⟩)
+      have h_mem_sub : ∀ (l : LMonoTys), a ∈ l → ∀ v, v ∈ LMonoTy.freeVars a →
+          v ∈ LMonoTys.freeVars l := by
+        intro l h_al v hv
+        induction l with
+        | nil => simp at h_al
+        | cons hd tl ihl =>
+          rw [LMonoTys.freeVars_of_cons, List.mem_append]
+          rcases List.mem_cons.mp h_al with h_eq | h_rest
+          · subst h_eq; exact Or.inl hv
+          · exact Or.inr (ihl h_rest)
+      have h_S_a : ∀ v ∈ LMonoTy.freeVars a,
+          LMonoTy.WellKinded arity (LMonoTy.subst S (.ftvar v)) := by
+        intro v hv
+        exact h_S v (by simp only [LMonoTy.freeVars]; exact h_mem_sub args h_a_mem v hv)
+      exact ih a h_a_mem h_t_a h_S_a ref m h_in_b
+
+mutual
+/-- Local structural size for the well-founded `destructArrow` subset lemma. -/
+private def LMonoTy.wkSize (mty : LMonoTy) : Nat :=
+  match mty with
+  | .ftvar _ => 1
+  | .bitvec _ => 1
+  | .tcons _ args => 1 + (LMonoTy.wkSizes args)
+private def LMonoTy.wkSizes (mtys : LMonoTys) : Nat :=
+  match mtys with
+  | [] => 0
+  | mty :: rest => 1 + LMonoTy.wkSize mty + LMonoTy.wkSizes rest
+end
+
+private theorem arities_destructArrow_subset_combined (n : Nat) :
+    (∀ (mty : LMonoTy), LMonoTy.wkSize mty ≤ n → ∀ p,
+      p ∈ (LMonoTy.destructArrow mty).flatMap getTypeConsArities →
+      p ∈ getTypeConsArities mty) ∧
+    (∀ (mtys : LMonoTys), LMonoTy.wkSizes mtys ≤ n → ∀ p,
+      p ∈ (LMonoTys.destructArrow mtys).flatMap getTypeConsArities →
+      p ∈ mtys.flatMap getTypeConsArities) := by
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  refine ⟨?_, ?_⟩
+  · intro mty h_sz p hp
+    unfold LMonoTy.destructArrow at hp
+    split at hp
+    · rename_i t1 trest
+      simp only [List.flatMap_cons, List.mem_append] at hp
+      simp only [getTypeConsArities, List.flatMap_cons, List.mem_cons, List.mem_append]
+      cases hp with
+      | inl h1 => right; left; exact h1
+      | inr h2 =>
+        right; right
+        have h_trest_sz : LMonoTy.wkSizes trest < n := by
+          simp only [LMonoTy.wkSize, LMonoTy.wkSizes] at h_sz ⊢
+          omega
+        exact (ih (LMonoTy.wkSizes trest) h_trest_sz).2 trest (Nat.le_refl _) p h2
+    · simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil] at hp; exact hp
+  · intro mtys h_sz p hp
+    match mtys with
+    | [] => simp only [LMonoTys.destructArrow, List.flatMap_nil, List.not_mem_nil] at hp
+    | mty :: mrest =>
+      simp only [LMonoTys.destructArrow, List.flatMap_append, List.mem_append] at hp
+      simp only [List.flatMap_cons, List.mem_append]
+      cases hp with
+      | inl h1 =>
+        have h_mty_sz : LMonoTy.wkSize mty < n := by
+          simp only [LMonoTy.wkSizes] at h_sz; omega
+        left; exact (ih (LMonoTy.wkSize mty) h_mty_sz).1 mty (Nat.le_refl _) p h1
+      | inr h2 =>
+        have h_mrest_sz : LMonoTy.wkSizes mrest < n := by
+          simp only [LMonoTy.wkSizes] at h_sz; omega
+        right; exact (ih (LMonoTy.wkSizes mrest) h_mrest_sz).2 mrest (Nat.le_refl _) p h2
+
+/-- A `destructArrow` component of a WK type is WK. -/
+theorem LMonoTy.WellKinded_of_mem_destructArrow (arity : String → Option Nat)
+    (mty t : LMonoTy) (h_wk : LMonoTy.WellKinded arity mty)
+    (h_mem : t ∈ mty.destructArrow) :
+    LMonoTy.WellKinded arity t := by
+  intro ref k hk
+  apply h_wk ref k
+  exact (arities_destructArrow_subset_combined (LMonoTy.wkSize mty)).1 mty (Nat.le_refl _) (ref, k)
+    (List.mem_flatMap.mpr ⟨t, h_mem, hk⟩)
+
+/-- A `knownInstance` type is well-kinded against the arities in `ks`: every
+    type-constructor occurrence is registered at exactly its applied arity. This
+    bridges the checker's `isInstanceOfKnownType` guard to the declarative
+    `WellKinded` obligation. -/
+theorem LMonoTy.knownInstance_WellKinded (ks : KnownTypes) :
+    ∀ (ty : LMonoTy), LMonoTy.knownInstance ty ks = true →
+      LMonoTy.WellKinded (fun n => ks[n]?) ty := by
+  intro ty
+  induction ty with
+  | ftvar _ => intro _ ref n h_mem; simp only [getTypeConsArities, List.not_mem_nil] at h_mem
+  | bitvec _ => intro _ ref n h_mem; simp only [getTypeConsArities, List.not_mem_nil] at h_mem
+  | tcons name args ih =>
+    intro h_ki ref n h_mem
+    simp only [LMonoTy.knownInstance, Bool.and_eq_true] at h_ki
+    obtain ⟨h_contains, h_args⟩ := h_ki
+    simp only [getTypeConsArities, List.mem_cons] at h_mem
+    rcases h_mem with h_head | h_tail
+    · -- head occurrence: `(name, args.length) = (ref, n)`
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h_head
+      simp only [KnownTypes.contains] at h_contains
+      have h_get := Identifiers.contains_getElem? ks ⟨ref, args.length⟩ h_contains
+      simpa using h_get
+    · -- occurrence inside an argument: use the per-element hypothesis
+      rw [List.mem_flatMap] at h_tail
+      obtain ⟨a, h_a_mem, h_in_a⟩ := h_tail
+      have h_a_ki : LMonoTy.knownInstance a ks = true := by
+        clear ih h_in_a h_contains
+        induction args with
+        | nil => simp at h_a_mem
+        | cons hd tl ih_list =>
+          simp only [LMonoTys.knownInstances] at h_args
+          split at h_args
+          · rename_i h_hd
+            rcases List.mem_cons.mp h_a_mem with h_eq | h_rest
+            · subst h_eq; exact h_hd
+            · exact ih_list h_args h_rest
+          · exact absurd h_args (by simp)
+      exact ih a h_a_mem h_a_ki ref n h_in_a
+
+/-- The checker's `isInstanceOfKnownType` guard entails the declarative
+    `WellKindedTy` obligation: a type accepted as a known instance has every
+    type constructor applied at its registered arity. -/
+theorem LContext.isInstanceOfKnownType_WellKindedTy {T : LExprParams}
+    (ty : LMonoTy) (C : LContext T) (h : isInstanceOfKnownType ty C = true) :
+    C.WellKindedTy ty :=
+  LMonoTy.knownInstance_WellKinded C.knownTypes ty h
+
 /-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
     with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
     not appear in a type at this point.
@@ -1110,6 +1341,50 @@ def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env
   then return (mty, Env)
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
                  Known Types: {C.knownTypes}"
+
+omit [ToFormat T.Metadata] in
+/-- The type returned by `LTy.instantiateWithCheck` is well-kinded in `C`: the
+    final `isInstanceOfKnownType` guard is exactly the `WellKindedTy` property
+    (via `isInstanceOfKnownType_WellKindedTy`). -/
+theorem LTy.instantiateWithCheck_WellKindedTy
+    (ty : LTy) (C : LContext T) (Env Env' : TEnv T.IDMeta) (mty : LMonoTy)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    C.WellKindedTy mty := by
+  dsimp only [LTy.instantiateWithCheck, bind, Except.instMonad, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i res h_ra; obtain ⟨mty_ra, Env_ra⟩ := res
+    split at h
+    · simp at h
+    · split at h
+      · rename_i h_inst
+        simp only [Pure.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h1, _⟩ := h; subst h1
+        exact C.isInstanceOfKnownType_WellKindedTy mty_ra h_inst
+      · simp at h
+
+omit [ToFormat T.Metadata] in
+/-- `LMonoTy.instantiateWithCheck` output is well-kinded (final
+    `isInstanceOfKnownType` guard = `WellKindedTy`). -/
+theorem LMonoTy.instantiateWithCheck_WellKindedTy
+    (mty0 : LMonoTy) (C : LContext T) (Env Env' : TEnv T.IDMeta) (mty : LMonoTy)
+    (h : LMonoTy.instantiateWithCheck mty0 C Env = .ok (mty, Env')) :
+    C.WellKindedTy mty := by
+  dsimp only [LMonoTy.instantiateWithCheck, bind, Except.instMonad, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i instTypes Env_ie h_ie
+    split at h
+    · simp at h
+    · rename_i res h_ra; obtain ⟨mty_ra, Env_ra⟩ := res
+      split at h
+      · simp at h
+      · split at h
+        · rename_i h_inst
+          simp only [Pure.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨h1, _⟩ := h; subst h1
+          exact C.isInstanceOfKnownType_WellKindedTy mty_ra h_inst
+        · simp at h
 
 /--
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
