@@ -822,18 +822,8 @@ private def bodyHasExn (model : SemanticModel) (proc : Procedure) : Bool :=
 
 /-! ### Procedure lowering -/
 
-/-- Existing (normal) postconditions declared on a body, if any. -/
-private def bodyPostconditions (body : Body) : List Condition :=
-  match body with
-  | .Opaque posts _ _ => posts
-  | .Abstract posts => posts
-  | _ => []
-
-/-- Existing (normal) modifies groups declared on a body, if any. -/
-private def bodyModifies (body : Body) : List ModifiesGroup :=
-  match body with
-  | .Opaque _ _ mods => mods
-  | _ => []
+-- `bodyPostconditions` / `bodyModifies` (the body-contract accessors used by `lowerProc`
+-- below) are shared defs on `Body` in `LaurelAST`.
 
 /-- Lower a single procedure. Non-exceptional procedures are returned unchanged. -/
 private def lowerProc (proc : Procedure) : EM Procedure := do

@@ -51,7 +51,7 @@ procedure typeCheckingAndCasting()
   var c: Base := b;
   var d: Extender := c as Extender;
   var e: Extender := a as Extender
-//                   ^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 composite Top {

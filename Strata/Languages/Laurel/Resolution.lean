@@ -3232,11 +3232,16 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       -- declarer, rejecting an incomparable diamond rather than picking silently. The
       -- receiver reaches the winner's `self` parameter by the ordinary subtype check.
       --
-      -- SOUND ONLY because Laurel has no dynamic dispatch: the DECLARED type selects
-      -- the member, so for `b : Base` holding a `Sub` that overrides `m`, `b#m` binds
-      -- Base.m's contract and Base.m runs. Adding dispatch would need a monomorphism
-      -- check here (jverify already enforces one on its side); flagged so the
-      -- dependency is not silent.
+      -- The DECLARED type selects the member DECLARER: `b : Base` binds the lifted key
+      -- `Base$m`. Under dynamic dispatch,
+      -- `LiftInstanceProcedures` generates `Base$m` as a runtime-tag DISPATCHER (with the
+      -- real body at `Base$m$impl`), so for `b : Base` holding a `Sub` that overrides `m`,
+      -- `b#m` binds Base.m's contract but the Sub override actually RUNS. This is sound
+      -- because `CheckOverrideRefinement` (the Liskov pass, gated on the same
+      -- `isVirtualDispatchMethod` predicate as dispatcher generation) proves every override
+      -- refines its parent's contract (Parent.pre ⇒ Child.pre, Child.post ⇒ Parent.post), so
+      -- the parent contract bound here holds for whatever override dispatch selects. (jverify
+      -- enforces its own monomorphism check on its side.)
       let s ← get
       let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
       match s.typeLattice.resolveInheritedMember tyName declares with
@@ -3372,6 +3377,37 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     else { val := HighType.Applied { val := .UserDefined ref', source := source } typeArgs', source := source }
   pure (.New ref' typeArgs', ty)
 
+/-- Is the target type of an `is`/`as` a NON-composite (so the cast is unsupported)?
+    `is`/`as` are only implemented for composite types — lowering keys off a runtime type tag
+    only composites carry (`TypeHierarchy`), and only a composite target has a `downcast$T` helper
+    (`HeapParameterization`). A non-composite target that slips through reaches lowering and fails
+    as an internal error (dangling `downcast$T`, or a silently mis-verifying `.Hole`); rejecting it
+    here turns that into a clean diagnostic. Rejected shapes:
+    - datatype / primitive / collection: no type tag, no `downcast$T`.
+    - `.TVar`: Laurel type parameters are unconstrained (no `<T extends C>`), so `x as T` can never
+      be statically known to target a composite. Rejecting up front also pre-empts the case where
+      monomorphization concretizes `T` to a non-composite and trips this check *after* resolution,
+      where the user error would surface as a compiler bug.
+    `unfold` first, so an alias/constrained type is judged by its base (an alias OF a composite is
+    fine); `.Unknown` (a prior error) passes through, stacking no cascading diagnostic.
+    A gradual dynamic-top `.UserDefined` (e.g. Python's `Any`, registered in `gradualTypes`) is
+    deliberately NOT exempted here: it IS rejected as a non-composite target. `coerce` would accept
+    it at resolution (it is a boxable wildcard), but there is no downstream lowering for `as`/`is`
+    against a gradual top — `HeapParameterization` would synthesize a `downcast$Any` call and
+    `TypeHierarchy` an `Any_TypeTag`, neither of which is minted (both are composite-only), so a
+    leaked gradual top faults as an internal error after re-resolution. Rejecting it up front keeps
+    the guard and the (composite-only) lowering consistent and yields a clean user diagnostic.
+    Reachability is nil today (no frontend builds `as`/`is` nodes against a gradual name), so this
+    is defensive; if such lowering is ever added, give the gradual top a real lowering
+    (`as Any` ↦ identity, `is Any` ↦ `true`) rather than relaxing this guard. -/
+def castTargetIsNonComposite (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
+  match (ctx.unfold ty).val with
+  | .Unknown => false
+  | .TVar _ => true
+  | u => match highBaseName? u with
+         | some name => ! ctx.parentExprMap.contains name.text
+         | none => true
+
 /-- (AsType)
     ```
     Γ ⊢ target ⇒ U
@@ -3387,7 +3423,10 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     upcast `cat as Animal`). Sibling casts (`Dog as Cat`) and casts
     between unrelated primitives (`"hi" as int`) are rejected. The
     synthesized type is `T` — the user's claim is honored once the
-    relation check passes. -/
+    relation check passes.
+
+    `is`/`as` are supported only for COMPOSITE targets (see
+    `castTargetIsNonComposite`); a non-composite target is rejected up front. -/
 def Synth.asType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
@@ -3395,7 +3434,11 @@ def Synth.asType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  if castTargetIsNonComposite ctx ty' then
+    let diag := diagnosticFromSource ty.source
+      s!"'as' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+    modify fun s => { s with errors := s.errors.push diag }
+  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
       s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
@@ -3424,7 +3467,11 @@ def Synth.isType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  if castTargetIsNonComposite ctx ty' then
+    let diag := diagnosticFromSource ty.source
+      s!"'is' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+    modify fun s => { s with errors := s.errors.push diag }
+  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
       s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }

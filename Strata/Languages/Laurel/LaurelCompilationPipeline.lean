@@ -33,6 +33,7 @@ import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.CoroutineElaboration
 import Strata.Languages.Laurel.YieldElim
+import Strata.Languages.Laurel.CheckOverrideRefinement
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Laurel.EliminateExceptions
 import Strata.Languages.Laurel.MonomorphizeComposites
@@ -108,10 +109,18 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × P
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
-  -- Coroutine elaboration emits instance procedures, so it must precede
-  -- instance lifting. Polymorphism then requires lifting and alias elimination
-  -- before monomorphization.
+  -- Coroutine elaboration emits instance procedures, so it must precede instance lifting.
   coroutineElaborationPass,
+  -- Behavioral-subtyping (Liskov) check for method overrides: purely additive (appends
+  -- checker procedures), and the soundness prerequisite for dynamic dispatch. Its two
+  -- ordering constraints matter for soundness, not just tidiness, so they are pinned via
+  -- `comesBefore`/`comesAfter` below (machine-checked by `orderingRespected` at `initialize`)
+  -- rather than left to a comment — see those strings for the rationale.
+  { checkOverrideRefinementPass with
+      comesAfter := [⟨coroutineElaborationPass.meta, "coroutine elaboration emits overrides (from resume/has_next bodies) that must themselves be Liskov-checked, so the checker must see the post-elaboration program."⟩]
+      comesBefore := [⟨liftInstanceProceduresPass.meta, "the Liskov checker reads the still-intact `extending` chain and composite-attached methods; LiftInstanceProcedures flattens methods to top-level procs and clears the override relation, so a checker running afterward would emit zero checkers and silently accept a Liskov-violating override (covariance is guarded by the checker alone)."⟩] },
+  -- Polymorphism: lift instance procedures, then monomorphize (the lift must precede
+  -- monomorphization).
   liftInstanceProceduresPass,
   -- TypeAliasElim runs BEFORE monomorphization: an alias of a generic-composite instantiation
   -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
@@ -124,9 +133,9 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateIncrDecrAndCompoundAssignPass,
   constrainedTypeElimPass,
   mergeAndLiftReturnsPass,
-  -- `liftInstanceProceduresPass` runs before monomorphization;
-  -- that also places it before `eliminateValueInReturnsPass`, as value-returning
-  -- instance methods require, so no entry is needed here.
+  -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
+  -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
+  -- is needed here.
   -- Note: the exception contract checks (catch-or-declare, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial

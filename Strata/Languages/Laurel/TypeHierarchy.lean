@@ -166,7 +166,23 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants ← generateTypeHierarchyDecls model program
-  let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
+  -- One downcast helper per composite — `function downcast$C(p: C): C requires (p is C) { p }`
+  -- — called by the `AsType` arms in `HeapParameterization` so an `x as C` cast works in a
+  -- contract formula (the `is C` guard is a pure term; PrecondElim discharges it as a
+  -- well-definedness obligation). `C` flattens to `Composite` below, so `{ p }` type-checks.
+  let downcastHelpers : List Procedure := program.types.filterMap fun td =>
+    match td with
+    | .Composite ct =>
+      let cty : HighTypeMd := ⟨.UserDefined ct.name, syntheticSource⟩
+      let pRef : StmtExprMd := mkMd (.Var (.Local "p")) syntheticSource
+      some { name := downcastProcName ct.name, typeArgs := [],
+             inputs := [{ name := "p", type := cty }],
+             outputs := [{ name := "r", type := cty }],
+             preconditions := [{ condition := lowerIsType pRef cty syntheticSource }],
+             decreases := none,
+             body := .Transparent pRef }
+    | _ => none
+  let (procs', _) := ((program.staticProcedures ++ downcastHelpers).mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", syntheticSource⟩
   let remainingTypes := program.types.map fun td =>
