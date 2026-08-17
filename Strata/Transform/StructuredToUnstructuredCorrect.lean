@@ -19,7 +19,8 @@ public import Strata.DL.Util.StringGen
 public import Strata.Languages.Core.StatementSemantics
 import Strata.DL.Imperative.BasicBlock
 import all Strata.DL.Imperative.Cmd
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 /-! # Structured-to-Unstructured Transformation Correctness
 

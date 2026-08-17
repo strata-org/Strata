@@ -16,7 +16,8 @@ import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.CmdSemantics
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 import Std.Tactic.BVDecide.Normalize.Bool
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Imperative.KleeneSemanticsProps

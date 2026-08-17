@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
-import Strata.Util.List
+import Strata.Util.ListUtils
 public import Strata.Util.PtrCache
 import Lean.Util.ShareCommon
 

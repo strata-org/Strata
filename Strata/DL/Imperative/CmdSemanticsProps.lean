@@ -9,7 +9,8 @@ public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
-import all Strata.DL.Util.ListUtils
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 
 ---------------------------------------------------------------------
 

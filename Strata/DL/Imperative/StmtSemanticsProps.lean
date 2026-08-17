@@ -11,7 +11,8 @@ public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 namespace Imperative
 

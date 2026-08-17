@@ -14,7 +14,8 @@ public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Util.StringGen
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 public section
 

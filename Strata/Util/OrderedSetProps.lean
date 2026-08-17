@@ -6,7 +6,7 @@
 module
 public import Strata.Util.OrderedSet
 import all Strata.Util.OrderedSet
-import Strata.Util.ListProps
+import Strata.Util.ListUtilsProps
 import Std.Data.HashSet.Lemmas
 
 /-!

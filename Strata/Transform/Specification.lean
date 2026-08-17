@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
-public import Strata.DL.Util.Relations
+public import Strata.Util.RelationsProps
 import all Strata.DL.Imperative.CmdSemantics
 
 /-! # Soundness Specification

@@ -8,7 +8,8 @@ module
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.Util.ExceptProps
 import all Strata.DL.Lambda.LTyUnify
-import all Strata.DL.Util.List
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Util.HMaps
 import all Strata.Util.HMap
 import Std.Tactic.BVDecide.Normalize.BitVec

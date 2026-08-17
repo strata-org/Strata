@@ -11,7 +11,7 @@ import all Strata.Transform.Specification
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
-import Strata.DL.Util.ListUtils
+import Strata.Util.ListUtilsProps
 
 /-! # Soundness Specification — Theorems
 

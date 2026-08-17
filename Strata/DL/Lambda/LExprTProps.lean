@@ -19,8 +19,10 @@ import all Strata.Util.HMap
 import all Strata.Util.HMaps
 import all Strata.DL.Lambda.Identifiers
 import all Strata.DL.Util.Func
-import all Strata.DL.Util.ListMap
-import all Strata.DL.Util.List
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.FactoryProps
 public import Strata.DL.Lambda.LExprTypeSpec

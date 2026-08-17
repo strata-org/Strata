@@ -8,8 +8,8 @@ public import Strata.Pipeline.Messages
 
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.TypeFactory
-import Strata.DL.Util.String
-public import Strata.DL.Util.Maps
+import Strata.Util.StringProps
+public import Strata.Util.ListMapsProps
 
 /-! ## Type Environment
 

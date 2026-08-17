@@ -17,8 +17,8 @@ public import Strata.Transform.CoreTransformProps
 
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
-import all Strata.DL.Util.ListUtils
-import all Strata.DL.Util.List
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Transform.LoopInitHoist
 import all Strata.Transform.DetToKleeneCorrect
 import all Strata.Transform.NondetElimCorrect

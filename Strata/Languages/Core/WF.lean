@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.Languages.Core.Program
 
 public section

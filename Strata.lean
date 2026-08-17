@@ -110,7 +110,7 @@ import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
-import Strata.DL.Util.HList
+import Strata.Util.HListProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF
