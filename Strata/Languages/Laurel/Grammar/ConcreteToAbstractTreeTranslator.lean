@@ -1246,6 +1246,15 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
       let target ← translateHighType targetArg
       return { type := some (.Alias { name := name, typeArgs := typeArgs, target := target }) }
     | _, _ => TransM.error s!"typeAliasCommand expects typeAlias op, got {repr aliasOp.name}"
+  | q`Laurel.opaqueTypeCommand, #[opaqueArg] =>
+    let .op opaqueOp := opaqueArg
+      | TransM.error s!"opaqueTypeCommand expects operation"
+    match opaqueOp.name, opaqueOp.args with
+    | q`Laurel.opaqueType, #[nameArg, typeParamsArg] =>
+      let name ← translateIdent nameArg
+      let typeArgs ← translateTypeParams typeParamsArg
+      return { type := some (.Opaque { name := name, typeArgs := typeArgs }) }
+    | _, _ => TransM.error s!"opaqueTypeCommand expects opaqueType op, got {repr opaqueOp.name}"
   | q`Laurel.globalVarCommand, #[nameArg, typeArg, initArg] =>
     let name ← translateIdent nameArg
     let fieldType ← translateHighType typeArg

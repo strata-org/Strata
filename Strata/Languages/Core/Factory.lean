@@ -31,6 +31,17 @@ def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
 def seqTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Sequence" [elemTy]
 
+/-- A mathematical (immutable, unordered, extensional) set of `elemTy`.
+
+    A distinct sort rather than a `Map elemTy bool` alias: keeping it distinct is what
+    lets the SMT encoder later target a dedicated set theory (or a specialized
+    axiomatization) without every `Map` paying for it. Until then it encodes as an
+    uninterpreted sort constrained by the `Set.*` axioms below, which is sound but not
+    especially efficient. -/
+@[expose, match_pattern]
+def setTy (elemTy : LMonoTy) : LMonoTy :=
+  .tcons "Set" [elemTy]
+
 def KnownLTys : LTys :=
   [t[bool],
    t[int],
@@ -44,7 +55,8 @@ def KnownLTys : LTys :=
    t[∀n. bitvec n],
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b],
-   t[∀a. Sequence %a]]
+   t[∀a. Sequence %a],
+   t[∀a. Set %a]]
 
 def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
@@ -442,6 +454,137 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ==
                     ((((~select : (Map %k %v) → %k → %v) %3) %2)))
                     ))))]
+    ])
+
+/-! ## `Set` operations
+
+Every operation is characterized *pointwise through membership*: each axiom states what
+`Set.contains` yields on the result. That is the whole specification — two sets with the
+same members are interchangeable in every `Set.contains` position, so no operation can
+observe anything else about them.
+
+`Set.contains` itself carries no axiom: it is the primitive the others are defined against.
+
+Each axiom is triggered on the `Set.contains`-of-the-operation pattern, so it fires exactly
+when a membership question is asked about a constructed set, rather than eagerly on every
+construction.
+
+Note what is deliberately absent: there is no cardinality operation. `Set.card` cannot be
+axiomatized pointwise (it needs induction over a finite domain), so adding it would mean
+either an unsound partial axiomatization or real finite-set support in the encoder. It is
+left out until the encoder targets a set theory that provides it. -/
+
+/- The empty `Set`, with type `∀a. Set a`.
+   Like `Sequence.empty` this takes no value arguments, so the element type is not
+   inferable from a call site and must come from the `.op` type annotation. -/
+def setEmptyFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.empty" ["a"] [] (setTy mty[%a])
+    (axioms := [
+      -- forall x :: !contains(empty, x)
+      esM[∀ (%a): -- %0 x
+          {(((~Set.contains : (Set %a) → %a → bool)
+              (~Set.empty : (Set %a))) %0)}
+          (((~Set.contains : (Set %a) → %a → bool)
+              (~Set.empty : (Set %a))) %0) == #false]
+    ])
+
+def setContainsFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.contains" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] mty[bool]
+
+/- A `Set` insertion with type `∀a. Set a → a → Set a`. Returns a NEW set; `s` is
+   unchanged, which is what makes the type immutable. -/
+def setInsertFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.insert" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, x, y :: contains(insert(s, x), y) == (y == x || contains(s, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (%a):    -- %1 x
+            (∀ (%a):  -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.insert : (Set %a) → %a → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.insert : (Set %a) → %a → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.Or : bool → bool → bool)
+                (%0 == %1))
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))))]
+    ])
+
+/- A `Set` removal with type `∀a. Set a → a → Set a`. Removing an absent element is a
+   no-op rather than an error, so the operation is total. -/
+def setRemoveFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.remove" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, x, y :: contains(remove(s, x), y) == (!(y == x) && contains(s, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (%a):    -- %1 x
+            (∀ (%a):  -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.remove : (Set %a) → %a → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.remove : (Set %a) → %a → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                ((~Bool.Not : bool → bool) (%0 == %1)))
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))))]
+    ])
+
+def setUnionFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.union" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(union(s, t), y) == (contains(s, y) || contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.union : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.union : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.Or : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                (((~Set.contains : (Set %a) → %a → bool) %1) %0))))]
+    ])
+
+def setIntersectFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.intersect" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(intersect(s, t), y) == (contains(s, y) && contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.intersect : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.intersect : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                (((~Set.contains : (Set %a) → %a → bool) %1) %0))))]
+    ])
+
+def setDifferenceFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.difference" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(difference(s, t), y) == (contains(s, y) && !contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.difference : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.difference : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                ((~Bool.Not : bool → bool)
+                  (((~Set.contains : (Set %a) → %a → bool) %1) %0)))))]
     ])
 
 /- A `Sequence` length function with type `∀a. Sequence a → int`. -/
@@ -975,6 +1118,14 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   mapSelectFunc,
   mapUpdateFunc,
 
+  setEmptyFunc,
+  setContainsFunc,
+  setInsertFunc,
+  setRemoveFunc,
+  setUnionFunc,
+  setIntersectFunc,
+  setDifferenceFunc,
+
   seqLengthFunc,
   seqEmptyFunc,
   seqAppendFunc,
@@ -1176,6 +1327,20 @@ def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+/-- `Set.empty` takes no value arguments, so its element type cannot be inferred from a
+    call site. Pass `elemTy` to annotate the op with the concrete `Set τ`; without it the
+    type variable reaches the SMT encoder unresolved. Mirrors `seqEmptyOp`. -/
+def setEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
+  match elemTy with
+  | none => setEmptyFunc.opExpr
+  | some ty => .op default "Set.empty" (some (setTy ty))
+def setContainsOp : Expression.Expr := setContainsFunc.opExpr
+def setInsertOp : Expression.Expr := setInsertFunc.opExpr
+def setRemoveOp : Expression.Expr := setRemoveFunc.opExpr
+def setUnionOp : Expression.Expr := setUnionFunc.opExpr
+def setIntersectOp : Expression.Expr := setIntersectFunc.opExpr
+def setDifferenceOp : Expression.Expr := setDifferenceFunc.opExpr
+
 def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
 def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
   match elemTy with

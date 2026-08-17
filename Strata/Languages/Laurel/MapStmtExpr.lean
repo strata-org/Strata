@@ -809,6 +809,7 @@ def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td 
       constructors := ← dt.constructors.mapM (fun ctor => do
         pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) })
   | .Alias ta => pure (.Alias { ta with target := ← f ta.target })
+  | .Opaque ot => pure (.Opaque ot)
 
 /-- Apply `f` to a constant's declared type and (optional) initializer. -/
 def mapConstantHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (c : Constant) : m Constant := do
