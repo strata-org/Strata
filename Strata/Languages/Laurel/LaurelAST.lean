@@ -1096,6 +1096,70 @@ instance : BEq HighType where
   beq a b := highEq ⟨a, default⟩ ⟨b, default⟩
 
 
+/-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
+    against an ACTUAL type, accumulating bindings `tv ↦ actual`. This is the
+    type-argument inference for procedure monomorphization: matching the declared
+    param `Box<T>` against an arg of type `Box<int>` yields `T ↦ int`.
+
+    Matching, not unification (binds a `.TVar` only on the DECLARED side): we infer one
+    procedure's type args from a single call's arg types, so no two-sided `F<X>` vs `F<Y>`
+    constraint ever arises. The actual side is NOT always ground — a pristine poly body's
+    internal call can pass `b : Box<T>` — so matching may bind `T ↦ .TVar T`; that bogus
+    binding isn't special-cased here but rejected by `inferProcInst`'s concreteness gate
+    (every inferred arg must be `tyTag`-taggable), deferring the call until cloning makes
+    the arg concrete. (The occurs-check analogue — a divergent recursive generic — is the
+    worklist depth cap's job.)
+
+    Returns the extended binding map, or `none` on a structural mismatch (different
+    head constructors / arities) or an INCONSISTENT binding (a `tv` matched to two
+    different types — a genuine type error the caller surfaces loudly).
+    `acc` threads bindings across multiple parameters. -/
+def matchTypeArg (declared actual : HighType)
+    (acc : Std.HashMap String HighType) : Option (Std.HashMap String HighType) :=
+  match _h : declared with
+  | .TVar tv =>
+    match acc.get? tv.text with
+    | some prev => if highEq ⟨prev, .unknown⟩ ⟨actual, .unknown⟩ then some acc else none  -- inconsistent
+    | none => some (acc.insert tv.text actual)
+  | .Applied db dargs =>
+    match actual with
+    | .Applied ab aargs =>
+      if dargs.length != aargs.length then none
+      -- SELF-GUARD: two `.UserDefined` heads with different base names must NOT match.
+      -- The head recursion below binds nothing for `.UserDefined`/`.UserDefined` (it hits
+      -- the catch-all), so without this `Box<T>` would structurally match `Pair<int>` on
+      -- arity alone (MatchTypeArgTest case 7). No live wrong-accept today — the earlier
+      -- gradual-assignability gate rejects such args — but this makes monomorphization
+      -- self-guarding rather than trusting an upstream pass. Only the both-named-mismatch
+      -- case is constrained; every other head shape keeps the prior behavior.
+      else if (match db.val, ab.val with
+               | .UserDefined dn, .UserDefined an => dn.text != an.text
+               | _, _ => false) then none
+      else
+        -- match the head, then each arg positionally, threading `acc`
+        match matchTypeArg db.val ab.val acc with
+        | none => none
+        | some acc1 =>
+          -- `.attach` on the zipped pairs exposes `⟨d,a⟩ ∈ dargs.zip aargs`, from which
+          -- `List.of_mem_zip` recovers `d ∈ dargs` for the termination measure.
+          (dargs.zip aargs).attach.foldl (fun acc? ⟨(d, a), _⟩ =>
+            acc?.bind (fun m => matchTypeArg d.val a.val m)) (some acc1)
+    | _ => none
+  | .TSet dv => match actual with | .TSet av => matchTypeArg dv.val av.val acc | _ => none
+  | .TMap dk dv => match actual with
+    | .TMap ak av => (matchTypeArg dk.val ak.val acc).bind (fun m => matchTypeArg dv.val av.val m)
+    | _ => none
+  -- A concrete declared type (no tyvar) need only be consistent with the actual;
+  -- we don't constrain it (any mismatch is a separate type error, not our concern).
+  | _ => some acc
+  termination_by declared
+  decreasing_by
+    -- Most goals recurse into a `.val` child (`db`/`dv`/`dk`), closed by the shared tactic.
+    -- The `.Applied` args case recurses on `d.val` for `⟨d,a⟩ ∈ dargs.zip aargs`; recover
+    -- `d ∈ dargs` via `List.of_mem_zip` first, then it too closes by the shared tactic.
+    all_goals (try (rename_i h; have := (List.of_mem_zip h).1))
+    all_goals ast_recursion_decreasing
+
 /-- The proof-relevant verdict of `coerce sub sup`: not just "is `sub <: sup`?" but
     *how* to realize the coercion. `coerce` returns `some verdict` exactly when the
     subtype holds (so `isConsistentSubtype := (coerce ..).isSome`), and the verdict
@@ -1745,6 +1809,55 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
     `C<args> <: P<pargs>` holds, all as a `refl` witness. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
+
+/-- Call-site type-argument inference: the substitution a call makes for its callee's type
+    parameters, derived by matching each DECLARED parameter type against the ACTUAL argument
+    type. `select<K,V>(map: Map K V, key: K)` applied to a `Map int bool` and an `int` yields
+    `{K ↦ int, V ↦ bool}`, so the declared return `V` can be reported as `bool` rather than as
+    a bare `.TVar` — which `isConsistent` treats as a gradual wildcard, i.e. unchecked.
+
+    Deliberately BEST-EFFORT, unlike `MonomorphizeComposites.inferProcInst`, whose
+    all-or-nothing concreteness gate is right for cloning and wrong here: a parameter that
+    fails to match contributes nothing instead of abandoning the whole call, and a type
+    parameter that no argument determines (`mapConst<K,V>(value: V)` never fixes `K`) is left
+    unbound — substitution then leaves it the `.TVar` it already was, which `isConsistent`
+    treats as a gradual wildcard. Inference therefore only sharpens a call site; an
+    undetermined parameter is no stricter than an unsubstituted one.
+
+    Each parameter matches under its OWN accumulator and the results are merged here, so a
+    type variable occurring in two parameters (`$eq<T>(x: T, y: T)`) is reconciled by
+    CONSISTENCY rather than by `matchTypeArg`'s strict `highEq`. That distinction matters: a
+    hole or unresolved operand synthesizes `Unknown`, which must still be comparable against a
+    concrete operand, whereas `highEq` would call that a conflict.
+    Genuine disagreements are returned in the second component for the caller to report, and
+    the first binding is kept so one bad slot cannot poison the others.
+
+    A binding whose type still MENTIONS a type variable is dropped rather than recorded: that
+    is the abstract-internal-call case (`outer<T>`'s body calling `inner(b)` at `b : Box<T>`),
+    where binding `T ↦ T` teaches nothing and would read as if inference had succeeded.
+
+    Actuals are `unfold`ed first so an alias-typed argument (`type IM = Map int bool`) matches
+    a `Map K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
+    `.UserDefined IM` against `.TMap` and fail. -/
+def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
+    : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
+  (params.zip actuals).foldl (init := ({}, [])) fun acc (p, a) =>
+    match matchTypeArg p.val (ctx.unfold a).val {} with
+    | none => acc
+    | some bindings =>
+      bindings.toList.foldl (init := acc) fun (subst, conflicts) (name, ty) =>
+        if mentionsTVar ty then (subst, conflicts)
+        else
+          let tyMd : HighTypeMd := { val := ty, source := a.source }
+          match subst.get? name with
+          | none => (subst.insert name tyMd, conflicts)
+          | some prev =>
+            if isConsistent ctx prev tyMd then
+              -- The more concrete side wins: a gradual `Unknown` binding learns nothing, so
+              -- `<?> == 1` still infers `T ↦ int` rather than stalling at `Unknown`.
+              if prev.val matches .Unknown then (subst.insert name tyMd, conflicts)
+              else (subst, conflicts)
+            else (subst, (name, prev, tyMd) :: conflicts)
 
 def HighType.isBool : HighType → Bool
   | TBool => true

@@ -25,8 +25,11 @@ Includes:
   type-specific externals. The parser emits `StaticCall "add"` and resolution
   picks the right overload based on argument types.
 
-Since Laurel doesn't have polymorphic types, `int` is used as a placeholder type
-for map parameters — the actual types are inferred during Core translation.
+The map primitives and the equality wrappers carry generic signatures
+(`select<K,V>(map: Map K V, key: K) : V`). Resolution instantiates them per call site
+from the actual argument types (`callSiteTypeSubst`), so `select` on a `Map int bool`
+reports `bool`. A bare `.TVar` there would be a gradual wildcard under `isConsistent`,
+leaving every use of the result unchecked.
 
 The generic `Result` datatype that the exceptional-channel lowering targets is
 *not* part of this always-on prelude: it is injected by `EliminateExceptions`
@@ -44,16 +47,18 @@ datatype LaurelUnit { MkLaurelUnit() }
 // These are internal stand-ins for Core's native, already-polymorphic map primitives
 // (the real signatures live in Core.Factory). Declared `external`, they are filtered out
 // before Core translation and never reach Core; calls resolve to the Core primitives by
-// name. The `int` parameter/return types are inert placeholders: being `external`, these never
-// reach Core, so nothing observes them — and the polymorphism callers rely on is the Core
-// primitives' own.
-procedure select(map: int, key: int) : int
+// name. Nothing observes these signatures at translation time, but resolution does: the generic
+// form lets a call site infer `K`/`V` from its actual arguments (`callSiteTypeSubst`) and report
+// a concrete result type. The polymorphism callers ultimately rely on is the Core primitives' own.
+procedure select<K, V>(map: Map K V, key: K) : V
   external;
 
-procedure update(map: int, key: int, value: int) : int
+procedure update<K, V>(map: Map K V, key: K, value: V) : Map K V
   external;
 
-procedure mapConst(value: int) : int
+// `K` is not determined by the single value argument; `LaurelToCoreSchemaPass` recovers it
+// from the binding's declared type (`expectedType`), defaulting to `TypeTag`.
+procedure mapConst<K, V>(value: V) : Map K V
   external;
 
 // --- Type-specific external operators (Core primitives) ---
@@ -94,11 +99,11 @@ procedure $realGe(x: real, y: real) : bool external;
 // Bitvector comparisons, per width.
 //
 // Bitvector types are width-parameterized, so unlike `int`/`real` they cannot be
-// covered by a single overload. Core provides its bitvector operators per width
-// (`Bv32.SLt`, …) for widths 1, 8, 16, 32 and 64 (see `Factory.lean`'s
-// `DefBVOpFuncExprs`), so the wrappers are declared for exactly those widths —
-// a comparison at any other width reports "no overload matches" rather than
-// silently mistranslating.
+// covered by a single overload. Core generates its bitvector operators per width
+// (`Bv32.SLt`, …) for widths 1, 8, 16, 32, 64 and 128 (see `Factory.lean`'s
+// `DefBVOpFuncExprs`); the wrappers below cover 1 through 64, so a comparison at
+// any other width — including the 128 that Core does support — reports "no overload
+// matches" rather than silently mistranslating.
 //
 // These are the *signed* comparisons, which preserves the previous behaviour:
 // before operators became procedure calls, a bitvector comparison was lowered to
@@ -249,18 +254,16 @@ procedure $implies(x: bool, y: bool) : bool
 procedure $andThen(x: bool, y: bool) : bool external;
 procedure $orElse(x: bool, y: bool) : bool external;
 
-// Equality. Declared `external` rather than as a wrapper delegating to `eq`,
-// because equality must work at EVERY type, which user-level polymorphism does not
-// provide here: a generic composite is monomorphized per instantiation and a poly
-// procedure's type variables are freshened per call site, so neither yields one
-// definition quantified over all types — and this prelude declaration has no call
-// site to infer from. A transparent body would therefore carry the placeholder
-// `int → int → bool` signature into Core and fail to unify against `Composite`,
-// `$Box`, `bool`, … . `Synth.staticCall`
-// special-cases these names to require only operand consistency, and
-// `LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic equality.
-procedure $eq(x: int, y: int) : bool external;
-procedure $neq(x: int, y: int) : bool external;
+// Equality. `T` binds from the operands at each call site, so `1 == true` is a type error.
+// These stay `external`: a transparent body would carry this signature into Core and fail to
+// unify against `Composite`, `$Box`, `bool`, … , whereas `LaurelToCoreSchemaPass` lowers the
+// wrapper straight to Core's polymorphic equality, which is what holds at every type. The
+// generic signature is a resolution-time device and gives no such single definition —
+// composites monomorphize per instantiation, poly type variables freshen per call site.
+// `Synth.staticCall` additionally guards the operand SHAPES (`MultiValuedExpr`, `TVoid`) and
+// phrases a type-argument conflict as `==`/`!=`, neither of which a signature can state.
+procedure $eq<T>(x: T, y: T) : bool external;
+procedure $neq<T>(x: T, y: T) : bool external;
 
 // String
 procedure $strConcat(x: string, y: string) : string external;

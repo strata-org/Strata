@@ -31,7 +31,7 @@ import Strata.Languages.Core.WFProps
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.MonomorphizeCompositesProps
+import Strata.Languages.Laurel.LaurelASTProps
 import Strata.Languages.Laurel.ResolutionProps
 
 /- Code Transforms -/

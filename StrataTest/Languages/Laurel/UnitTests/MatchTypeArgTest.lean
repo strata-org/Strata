@@ -5,16 +5,16 @@
 -/
 module
 /-
-Unit tests for `matchTypeArg` (MonomorphizeComposites), the type-argument inference
+Unit tests for `matchTypeArg` (LaurelAST), the type-argument inference
 that binds a declared type's type variables against a concrete actual type (e.g.
 `Box<T>` vs `Box<int>` ⇒ `T = int`) to drive procedure monomorphization. Covers
 recursion, consistent/inconsistent repeated vars, arity + base-name mismatches.
 -/
 -- `import all` exposes `matchTypeArg`'s definition body so the monotonicity theorem
 -- can `unfold`/induct on it (a plain `import` keeps the body opaque).
-meta import all Strata.Languages.Laurel.MonomorphizeComposites
+meta import all Strata.Languages.Laurel.LaurelAST
 -- The monotonicity theorem itself lives in the `<A>Props.lean` companion; referenced below.
-import Strata.Languages.Laurel.MonomorphizeCompositesProps
+import Strata.Languages.Laurel.LaurelASTProps
 meta section
 open Strata.Laurel
 namespace Strata.Laurel.MatchTypeArgTest
@@ -85,7 +85,7 @@ private def e : Std.HashMap String HighType := {}
 
 -- The semantic invariant the args-fold in the `.Applied` case relies on — matching only ever
 -- EXTENDS the accumulator, never drops a prior binding — is proved as `matchTypeArg_monotone`
--- in `MonomorphizeCompositesProps.lean` (the `<A>Props.lean` home for facts about `A`). It is
+-- in `LaurelASTProps.lean` (the `<A>Props.lean` home for facts about `A`). It is
 -- the whole-function monotonicity the fold needs: a `.TVar` bound while matching an earlier
 -- `.Applied` argument must survive so the consistency check against it fires for a later one
 -- (cases 3/4). Referenced here so this test file's coverage note stays anchored to the theorem.

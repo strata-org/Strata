@@ -134,6 +134,73 @@ procedure cmp(x: int, y: string): bool {
 };
 #end
 
+/-! ### The operand types come from call-site type-argument inference
+
+`select<K,V>(map: Map K V, key: K) : V` only reports `bool` here because the call's type
+arguments are inferred from the actual argument types (`callSiteTypeSubst`). Without that the
+declared `V` reaches the comparison as a bare `.TVar`, which `isConsistent` treats as a gradual
+wildcard, and NO resolution diagnostic is emitted — the program is then rejected much later by
+Core's own type checking, so a coarse "is it rejected?" corpus case cannot tell the two apart.
+This annotated form can: it pins the diagnostic AND its source range at resolution time. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure mapRead(m: Map int bool): bool {
+  select(m, 1) == 9
+//^^^^^^^^^^^^^^^^^ error: cannot compare 'bool' with 'int' using '=='
+};
+#end
+
+/-! ### A generic datatype destructor reports its field type at the receiver's instantiation
+
+`Opt..value!` is declared to return `T`. Unlike a procedure the instantiation is not in a
+parameter — a destructor's only argument IS the datatype value — so `Synth.staticCall` pairs the
+datatype's declared parameters with the RECEIVER's type arguments (`Opt<int>` ⊢ `T ↦ int`).
+`getCallInfo` cannot do this, seeing only the callee, so without that pairing the slot is the
+gradual `Unknown` and comparisons against it are accepted unchecked. This case pins the
+substituted result: `int`, so comparing it with a `bool` is reported. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Opt<T> { Som(value: T), Non() }
+procedure readOpt(o: Opt<int>): bool {
+  Opt..value!(o) == true
+//^^^^^^^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'bool' using '=='
+};
+#end
+
+/-! The pairing needs the receiver's type to CARRY an instantiation, and a constructor call used
+directly as the receiver does not: `getCallInfo`'s constructor arm reports the bare
+`.UserDefined Opt` with no type arguments. So this stays gradual and is accepted, where the same
+comparison through a declared `Opt<int>` binding above is rejected. Pinned deliberately — it is
+the remaining gap, and recovering it means making a constructor call report its own
+instantiation, which is a separate change. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Opt<T> { Som(value: T), Non() }
+procedure readCtorDirect(): bool {
+  Opt..value!(Som(5)) == true
+};
+#end
+
+/-! A NON-generic datatype's destructor was already precise via `getCallInfo`, and a concrete
+field of a generic one likewise — neither goes through the receiver pairing, so both keep the
+ordinary call path. Pinned so the destructor branch's guard does not silently widen. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Pair<T> { MkPair(tag: int, item: T) }
+procedure readTag(p: Pair<bool>): bool {
+  Pair..tag!(p) == true
+//^^^^^^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'bool' using '=='
+};
+#end
+
 /-! ## Multi-output procedures -/
 
 #eval testLaurelResolution <|

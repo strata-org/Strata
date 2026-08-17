@@ -72,69 +72,9 @@ private def tyDepth : HighType → Nat
   termination_by ty => ty
   decreasing_by ast_recursion_decreasing
 
-/-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
-    against an ACTUAL type, accumulating bindings `tv ↦ actual`. This is the
-    type-argument inference for procedure monomorphization: matching the declared
-    param `Box<T>` against an arg of type `Box<int>` yields `T ↦ int`.
-
-    Matching, not unification (binds a `.TVar` only on the DECLARED side): we infer one
-    procedure's type args from a single call's arg types, so no two-sided `F<X>` vs `F<Y>`
-    constraint ever arises. The actual side is NOT always ground — a pristine poly body's
-    internal call can pass `b : Box<T>` — so matching may bind `T ↦ .TVar T`; that bogus
-    binding isn't special-cased here but rejected by `inferProcInst`'s concreteness gate
-    (every inferred arg must be `tyTag`-taggable), deferring the call until cloning makes
-    the arg concrete. (The occurs-check analogue — a divergent recursive generic — is the
-    worklist depth cap's job.)
-
-    Returns the extended binding map, or `none` on a structural mismatch (different
-    head constructors / arities) or an INCONSISTENT binding (a `tv` matched to two
-    different types — a genuine type error the caller surfaces loudly).
-    `acc` threads bindings across multiple parameters. -/
-def matchTypeArg (declared actual : HighType)
-    (acc : Std.HashMap String HighType) : Option (Std.HashMap String HighType) :=
-  match _h : declared with
-  | .TVar tv =>
-    match acc.get? tv.text with
-    | some prev => if highEq ⟨prev, .unknown⟩ ⟨actual, .unknown⟩ then some acc else none  -- inconsistent
-    | none => some (acc.insert tv.text actual)
-  | .Applied db dargs =>
-    match actual with
-    | .Applied ab aargs =>
-      if dargs.length != aargs.length then none
-      -- SELF-GUARD: two `.UserDefined` heads with different base names must NOT match.
-      -- The head recursion below binds nothing for `.UserDefined`/`.UserDefined` (it hits
-      -- the catch-all), so without this `Box<T>` would structurally match `Pair<int>` on
-      -- arity alone (MatchTypeArgTest case 7). No live wrong-accept today — the earlier
-      -- gradual-assignability gate rejects such args — but this makes monomorphization
-      -- self-guarding rather than trusting an upstream pass. Only the both-named-mismatch
-      -- case is constrained; every other head shape keeps the prior behavior.
-      else if (match db.val, ab.val with
-               | .UserDefined dn, .UserDefined an => dn.text != an.text
-               | _, _ => false) then none
-      else
-        -- match the head, then each arg positionally, threading `acc`
-        match matchTypeArg db.val ab.val acc with
-        | none => none
-        | some acc1 =>
-          -- `.attach` on the zipped pairs exposes `⟨d,a⟩ ∈ dargs.zip aargs`, from which
-          -- `List.of_mem_zip` recovers `d ∈ dargs` for the termination measure.
-          (dargs.zip aargs).attach.foldl (fun acc? ⟨(d, a), _⟩ =>
-            acc?.bind (fun m => matchTypeArg d.val a.val m)) (some acc1)
-    | _ => none
-  | .TSet dv => match actual with | .TSet av => matchTypeArg dv.val av.val acc | _ => none
-  | .TMap dk dv => match actual with
-    | .TMap ak av => (matchTypeArg dk.val ak.val acc).bind (fun m => matchTypeArg dv.val av.val m)
-    | _ => none
-  -- A concrete declared type (no tyvar) need only be consistent with the actual;
-  -- we don't constrain it (any mismatch is a separate type error, not our concern).
-  | _ => some acc
-  termination_by declared
-  decreasing_by
-    -- Most goals recurse into a `.val` child (`db`/`dv`/`dk`), closed by the shared tactic.
-    -- The `.Applied` args case recurses on `d.val` for `⟨d,a⟩ ∈ dargs.zip aargs`; recover
-    -- `d ∈ dargs` via `List.of_mem_zip` first, then it too closes by the shared tactic.
-    all_goals (try (rename_i h; have := (List.of_mem_zip h).1))
-    all_goals ast_recursion_decreasing
+-- `matchTypeArg` (the structural type-argument inference primitive this pass uses in
+-- `inferProcInst`) lives in `LaurelAST`: `Resolution` needs it too, for call-site type-argument
+-- inference, and this module imports `Resolution` — so it cannot be the owner.
 
 /-- Mangled monomorphic name for `C` instantiated at `args`, e.g. `Box$a1$int`,
     or `none` if any arg can't be tagged. Identifier-legal only
