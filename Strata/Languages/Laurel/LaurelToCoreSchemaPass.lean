@@ -806,9 +806,13 @@ def translateStmt (stmt : StmtExprMd)
       return [Core.Statement.assume label coreExpr md]
   | .Block stmts label =>
       let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
-      match label with
-      | some l => return [Imperative.Stmt.block l innerStmts md]
-      | none   => return innerStmts
+      -- A Laurel block is a lexical scope. Core only pushes/pops a variable
+      -- scope for a `Stmt.block`, so every block must lower to one -- returning
+      -- statements inline would leak declarations into the enclosing scope.
+      let blockLabel ← match label with
+        | some l => pure l
+        | none   => freshStmtLabel "$block" s!"_{← freshId}"
+      return [Imperative.Stmt.block blockLabel innerStmts md]
   | .Var (.Declare param) =>
       -- Post-resolution every declaration is annotated; default to `Unknown`.
       let coreMonoType ← translateType (param.type.getD ⟨.Unknown, stmt.source⟩)
