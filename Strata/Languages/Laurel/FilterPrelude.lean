@@ -114,6 +114,9 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
     | .Quantifier _ param _ _ => collectHighTypeNames param.type
     | .AsType _ ty | .IsType _ ty => collectHighTypeNames ty
     | .Hole _ ty => ty.forM collectHighTypeNames
+    -- Coroutine constructors (Yield/Resume/HasNext/OldGuarantee)
+    -- introduce no new name or type reference; their sub-expressions are
+    -- traversed automatically by foldStmtExprM.
     | _ => pure ()) expr
 
 /-- Collect names from a procedure body. -/

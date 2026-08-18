@@ -208,10 +208,13 @@ If new references or definitions are created during compilation, the program mus
 get a complete model. A pass does not call `Resolution.resolve` itself; instead it sets
 `needsResolves := true` in its definition, and the pipeline driver
 (`LaurelCompilationPipeline.lean`) runs `resolve` after the pass and threads the refreshed
-`SemanticModel` into the next pass. The passes `HeapParameterization`, `TypeHierarchy`, and
-`ModifiesClauses` (in pipeline order) are logically one step: the first two set
-`needsResolves := false` to suppress the intermediate re-resolutions, and the last member
-(`ModifiesClauses`) sets `needsResolves := true`, so the group is re-resolved once at its end.
+`SemanticModel` into the next pass. The passes `YieldElim`,
+`HeapParameterization`, `TypeHierarchy`, and `ModifiesClauses` (in pipeline order) are
+logically one step: all but the last set `needsResolves := false` to suppress the intermediate
+re-resolutions, and the last member (`ModifiesClauses`) sets `needsResolves := true`, so the group
+is re-resolved once at its end. The coroutine lowering relies on this: `YieldElim` emits transient
+`Snapshot`/labeled-`Old` artifacts (and a `havocHeap()` call) that have no resolution support
+and must reach `HeapParameterization` — which lowers them — without an intervening re-resolve.
 
 *Eliminated constructs stay eliminated*
 Several passes exist to eliminate a construct: after `EliminateReturnStatements` no `Return`
@@ -248,6 +251,87 @@ The following passes make up the compilation of Laurel to Core:
 The following graph shows the ordering constraints between passes.
 
 {laurelPipelineDependencyGraph}
+
+# Concurrency
+
+Coroutines are lowered along one of two paths, selected by the
+`LaurelTranslateOptions.verifyCoroutine` flag. The default path elaborates each
+coroutine into an executable state machine; the opt-in verification path generates
+verification conditions directly from the coroutine body under rely/guarantee. The two
+paths live in `CoroutineElaboration.lean` and `YieldElim.lean` respectively.
+`CoroutineElaboration` runs before `LiftInstanceProcedures` (it emits instance calls that
+pass must lift); the coroutine-lowering pass `YieldElim` runs later,
+just before `HeapParameterization`.
+
+## Verification path: `YieldElim`
+
+`YieldElim` (enabled by `verifyCoroutine := true`) verifies each coroutine as a
+straight-line procedure, so the verifier never reasons about a dispatch loop. It
+rewrites every `yield` in the body into an inline block
+
+```
+assert ⋀guarantees;
+snapshot $old_heap;   // = $heap, pre-havoc (for the rely's old)
+havocHeap();          // the environment acts (a havoc)
+assume ⋀relies;
+snapshot $old_heap    // = $heap, post-havoc (start of the next step)
+```
+
+and clears the coroutine's `relies`/`guarantees` clauses, turning it into a regular
+procedure. The `assert` discharges the coroutine's own step guarantee; the
+`havocHeap()` call (a bodiless `opaque modifies *` preamble procedure) models the
+environment acting while suspended; the `assume` grants the rely about that
+environment step. `havocHeap`'s monotonic-counter postcondition records that the
+environment step allocates but never deallocates, so a post-yield allocation cannot
+alias a pre-yield reference.
+
+Both clause families are two-state, and each relates a prior heap to the current
+`$heap`. A single reassigned snapshot `$old_heap` serves both sides, since a coroutine
+step is linear:
+
+- A guarantee's `old(...)` — spelled `oldGuarantee(...)` in body asserts and loop
+  invariants — reads `$old_heap` while it holds the *start of the current step*
+  (procedure entry, or the post-havoc heap after the previous yield).
+- A rely's `old(...)` — spelled `oldRelies(...)` — reads `$old_heap` after the
+  pre-havoc reassignment, so an assumed rely is `R($old_heap, $heap)` = "what the
+  environment did across this step".
+
+Both are emitted as a labeled `Old (some $old_heap)`, which heap parameterization
+evaluates against `$old_heap`; heap-param also declares the `$old_heap` local (seeded to
+the entry heap) and lowers each `Snapshot` to `$old_heap := $heap`. The per-yield asserts
+cover each `resume → yield` step; a separate pass step (`addExitGuarantees`) asserts
+the guarantee on every path out of the body (before each `return` and at the body end),
+covering the final `resume → halt` segment that the caller also observes.
+
+`YieldElim` runs *before* `HeapParameterization`: it never touches `$heap` directly,
+emitting `Snapshot`/labeled-`Old`/`havocHeap()` for heap-param to lower. Resolution
+is disabled across that gap, so those transient artifacts reach heap-param untouched.
+`YieldElim` also handles the caller-side dual (the `coroutineRelyHeap` step): it threads a
+per-instance `$h1_co` snapshot through resume callers and adds the `$h_rely_old`
+parameter to the generated `resume` procedures. Unlike the body rewrite, this caller-side
+step runs regardless of `verifyCoroutine`, since the default elaboration path also emits
+the `oldRelies`/`oldGuarantees` markers it lowers.
+
+## Execution path: state-machine linearization
+
+The default path (`CoroutineElaboration.lean`) compiles a coroutine body into a
+state-machine lookup table indexed by a `$pc` field on a generated `<c>State`
+composite, with `resume` and `has_next` instance procedures. Linearization assigns each
+straight-line fragment of the body a `$pc` label and rewrites control flow into
+transitions between labels: a `yield` stamps the resume target and returns to the
+scheduler (a suspend), while ordinary sequencing falls through to the next label (a
+transition). `resume` dispatches on `$pc`; `has_next` is `$pc != END`. This form is
+convenient for concrete execution but reasons through the heap and `$pc` at every step,
+which is why the verification path bypasses it.
+
+## Contract representation
+
+The four coroutine clause families (`relies`, `guarantees`, `yields`, `resumes`) live
+on `Procedure.contracts : CoroutineContracts`, a sum type whose `Coroutine` case
+carries all four lists and whose `Regular` case carries none. `Procedure.kind` is
+recovered from which case is present, so a regular procedure cannot hold a stray
+`relies` clause. Both lowering paths consume these clauses and reset `contracts` to
+`Regular`, so downstream passes treat the result as an ordinary procedure.
 
 ## Exception lowering
 

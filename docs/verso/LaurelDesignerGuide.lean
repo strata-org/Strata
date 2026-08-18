@@ -982,6 +982,178 @@ var z: int;
 hasThreeOutputs(out x, out y, out z);
 ```
 
+# Coroutines
+Laurel supports reasoning about concurrent programs encoded as *cooperative coroutines*.
+In this model, coroutine procedures can voluntarily suspend their execution, yielding
+control back to the caller. This concurrency model is chosen to support a wide range of
+upstream programming languages that make extensive use of generators, coroutines, and
+async/await constructs. The various design choices are explained below.
+
+## Where to extend
+Broadly, the design choices are made on four axes:
+
+- *Communication model* — how tasks exchange information: shared state versus message
+  passing. To support both, Laurel pairs coroutines with shared memory: coroutines may
+  interleave their executions while reading and writing shared memory. Additionally,
+  `yield`/`resume` may carry payloads, playing the role of message channels between
+  asynchronous procedures.
+- *Scheduling model* — who decides when a task runs: cooperative versus preemptive.
+  Laurel chooses cooperative, since this model matches the semantics of a wide range of
+  concurrent programs from upstream languages. The counterpart, preemptive concurrency,
+  is commonly seen in operating systems, where an interrupt can suspend a process's
+  execution; it can be modeled by instrumenting cooperative coroutines with a `yield`
+  inserted between atomic commands.
+- *Language feature* — the surface construct. By choosing the cooperative concurrency
+  model, Laurel mirrors the surface syntax of many upstream languages. For instance, in
+  Python a coroutine suspends via `yield` and resumes via `next(...)`; in JavaScript a
+  coroutine suspends via `yield` and resumes via `coro.next(...)`, where `coro` is a
+  suspended coroutine. Laurel's `yield`/`resume` constructs act as the `yield`/`next` of
+  these languages.
+- *Runtime model* — how a suspended task's state is represented: stackful versus
+  stackless. Laurel chooses stackless coroutines, since as of now none of the upstream
+  languages Laurel targets have stackful coroutines. Moreover, stackful coroutines can be
+  encoded with stackless ones by propagating suspensions outward, so if Laurel later
+  extends support to languages with such semantics, the basic building block is ready.
+
+## Example: encoding `async`/`await`
+In Python and JavaScript, concurrent programs are commonly written with generators, which
+are essentially coroutines. The following `asyncio` program fetches pages one round-trip at
+a time:
+
+```
+import asyncio
+
+async def fetch_pages(num_pages):                # fetch every page: one round-trip per page
+    results = []
+    for page_num in range(num_pages):
+        await asyncio.sleep(0.1)                  # network I/O for this page
+        results.extend([page_num * 10 + i for i in range(2)])
+    return results
+
+async def download_all(num_pages):
+    items = await fetch_pages(num_pages)          # suspend on each of fetch_pages's awaits
+    return items
+
+print(asyncio.run(download_all(3)))               # [0, 1, 10, 11, 20, 21]
+```
+
+The same program written with plain generators makes the suspend/resume mechanism explicit:
+`await` becomes `yield`, `await coro` becomes `yield from`, and `asyncio.run` becomes a
+driver loop that repeatedly advances the coroutine (`coro.send(None)`, i.e. `next(coro)`)
+until it raises `StopIteration`:
+
+```
+def fetch_pages(num_pages):
+    results = []
+    for page_num in range(num_pages):
+        yield                                     # models `await asyncio.sleep(0.1)`
+        results.extend([page_num * 10 + i for i in range(2)])
+    return results
+
+def download_all(num_pages):
+    items = yield from fetch_pages(num_pages)     # `await fetch_pages(...)`: delegate,
+    return items                                  #   re-yielding each suspension
+
+def run(coro):
+    try:
+        while True:
+            coro.send(None)                       # the driver's resume: advance one suspension
+    except StopIteration as done:
+        return done.value
+
+print(run(download_all(3)))                       # [0, 1, 10, 11, 20, 21]
+```
+
+The Laurel encoding below mirrors this generator form: `yield` for `await asyncio.sleep`,
+`return` for the final result, a driver loop in `run` for the trampoline, and inside
+`download_all` the loop that `yield from fetch_pages(num_pages)` compiles to. Two of the
+ingredients are not implemented yet — a coroutine `return` value and the `await` /
+`yield from` sugar itself — and both depend on the `Future` channel described in
+[Planned: `Future` channels for `await`](#planned-future-channels-for-await); the encoding
+spells them out manually. One representational simplification keeps it small: items are
+summed into a running `int` rather than collected into a list (Laurel has no growable list
+yet).
+
+```
+coroutine fetch_pages(num_pages: int): int
+{
+  var results:  int := 0;
+  var page_num: int := 0;
+  while (page_num < num_pages) {               // Python: `for page_num in range(num_pages)`
+    yield;                                     // models `await asyncio.sleep(0.1)`
+    // This page's items, summed: `[page_num*10, page_num*10+1]`.
+    results  := results + page_num * 10 + (page_num * 10 + 1);
+    page_num := page_num + 1
+  };
+  return results                               // models `return results`
+};
+
+coroutine download_all(num_pages: int): int
+{
+  // `await fetch_pages(num_pages)` / `yield from fetch_pages(num_pages)`, expanded to
+  // the loop it compiles to (see below):
+  var co: fetch_pages := fetch_pages(num_pages);  // spawn the delegate
+  while (has_next(co)) {                          // while it has more steps to run
+    resume(co);                                   // advance it one step (Pending or Done)
+    if has_next(co) then {                        // it suspended (Pending), not finished →
+      status := Pending(); yield                  //   re-surface as download_all's suspension
+    }
+  };
+  return done_value(co)                           // delegate done: read its Done payload
+};
+
+procedure run(): int                    // Python's trampoline (`run`): drive to completion
+{
+  var co: download_all := download_all(3);
+  while (has_next(co)) {                // Python: `while True: coro.send(None)`
+    resume(co)                          // the driver's one-step advance
+  };
+  return done_value(co)                 // Python: the `StopIteration.value` (co's Done payload)
+};
+```
+
+Two operations at opposite ends of a control transfer appear here. `resume` is the
+*driver* side: `run` advances a coroutine by one suspension, mirroring `coro.send(None)`
+(≡ `next(coro)`). `await` / `yield from` is the *delegate* side. It is not a primitive
+but the `while (has_next(co)) { … }` loop shown, which a single
+`var items := await fetch_pages(num_pages)` would compile to. It drives `fetch_pages`
+step by step and, since `download_all` itself returns a value (channel `Future<int>`),
+re-surfaces each delegate suspension as its own `Pending` (`status := Pending(); yield`).
+That is why `download_all`, though it delegates internally, is still advanced only by an
+outer `resume` from `run`.
+
+The same `has_next` serves as both loop guard and inner test: before a step, "more to
+do?"; after it, "suspended or finished?". On finish, `done_value(co)` reads the delegate's
+`Done` payload — the value stored at completion — so the result is recovered even if some
+other resume drove the delegate to completion while `download_all` was suspended.
+
+## Specifying step boundaries: rely/guarantee
+Laurel chooses rely/guarantee contracts for coroutines. This is a general form that
+enables *modular verification*. Each coroutine can be annotated with a *rely* `R` and a
+*guarantee* `G`, where `R` is a two-state predicate describing every environment step
+while the coroutine is suspended, and `G` is a two-state predicate describing the
+coroutine's own step. Each coroutine's guarantee is what its peers are entitled to assume
+as their rely, which is what makes per-coroutine verification compose into a whole-program
+argument.
+
+## Planned: `Future` channels for `await`
+A coroutine today can `yield` a value at each suspension but cannot `return` a final
+result: there is no channel for the completion value. The planned fix is to make a
+coroutine's channel carry a `Future`, the two-case status of a delayed computation:
+
+```
+datatype Future<A> { Pending(), Done(value: A) }
+```
+
+Every ordinary suspension yields `Pending()`; a `return e` desugars to yielding
+`Done(e)` once, at completion. A coroutine that returns an `A` is then exactly one
+whose channel is `Future<A>`. This one addition unifies three planned constructs:
+a coroutine `return` value (yield `Done(e)` and halt), a driver's read of the finished
+coroutine's result (the `Done` payload), and `has_next` (which becomes "is the status
+`Pending`?"). The `async`/`await` sugar then desugars to a loop that drives a delegate
+coroutine with `resume` until its status is `Done`, re-surfacing each `Pending` as the
+awaiter's own suspension.
+
 # Planned features
 Everything in this section is liable to change.
 

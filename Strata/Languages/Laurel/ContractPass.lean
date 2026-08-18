@@ -111,7 +111,7 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
   mapStmtExprPrePostM (m := Id)
     (fun e =>
       match e.val with
-      | .Old value =>
+      | .Old value _ =>
         match value.val with
         | .Var (.Local _) => some value
         | _ => none

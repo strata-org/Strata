@@ -265,6 +265,14 @@ procedure $neq(x: int, y: int) : bool external;
 // String
 procedure $strConcat(x: string, y: string) : string external;
 
+// Havoc the entire heap: a bodiless `opaque modifies *` procedure whose
+// `modifies *` lets the heap change arbitrarily while its monotonic-counter
+// postcondition still holds across the change. Emitted to model an arbitrary
+// environment step on the heap.
+procedure $havocHeap()
+  opaque
+  modifies *;
+
 #end
 
 /--

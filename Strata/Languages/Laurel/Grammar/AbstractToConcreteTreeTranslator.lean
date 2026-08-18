@@ -209,6 +209,13 @@ where
         laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
     | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
     | .Return none => laurelOp "return" #[optionArg none]
+    | .Yield => laurelOp "yield" #[]
+    | .Resume target none =>
+      laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target]]
+    | .Resume target (some value) =>
+      laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target, stmtExprToArg value]]
+    | .HasNext target =>
+      laurelOp "call" #[laurelOp "identifier" #[ident "has_next"], commaSep #[stmtExprToArg target]]
     | .Exit label => laurelOp "exit" #[ident label]
     | .Assert cond summary =>
       let errOpt := optionArg (summary.map fun msg =>
@@ -243,7 +250,17 @@ where
     | .ReferenceEquals lhs rhs =>
       laurelOp "eq" #[stmtExprToArg lhs, stmtExprToArg rhs]
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
-    | .Old value => laurelOp "old" #[stmtExprToArg value]
+    | .Old value none => laurelOp "old" #[stmtExprToArg value]
+    -- A labeled `old` has no surface syntax (a transient lowering artifact);
+    -- printed as a call only for `.laurel.st` debug dumps.
+    | .Old value (some label) =>
+      laurelOp "call" #[laurelOp "identifier" #[ident "oldAt"], commaSep #[laurelOp "identifier" #[ident label.text], stmtExprToArg value]]
+    | .OldGuarantee value => laurelOp "oldGuarantee" #[stmtExprToArg value]
+    | .OldRelies value => laurelOp "oldRelies" #[stmtExprToArg value]
+    -- No surface syntax (a transient lowering artifact); printed as a call
+    -- only for `.laurel.st` debug dumps.
+    | .Snapshot label =>
+      laurelOp "call" #[laurelOp "identifier" #[ident "snapshot"], commaSep #[laurelOp "identifier" #[ident label.text]]]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
     | .ProveBy value _proof => go value.val
     | .ContractOf _type fn => go fn.val
@@ -556,6 +573,14 @@ instance : Repr HighType where
 
 deriving instance Repr for Strata.Laurel.ConditionMode
 deriving instance Repr for Strata.Laurel.Parameter
+-- `Condition` and `Body` used to get their `Repr` derived implicitly, as members
+-- of the same `mutual` clique as `Procedure`, when `Procedure` was derived below.
+-- `Procedure` now lives outside that block, so derive them explicitly and in
+-- dependency order (`Body` carries `List Condition`) before the types that use them.
+deriving instance Repr for Strata.Laurel.Condition
+deriving instance Repr for Strata.Laurel.Body
+deriving instance Repr for Strata.Laurel.ThrowsOnBlock
+deriving instance Repr for Strata.Laurel.CoroutineContracts
 deriving instance Repr for Strata.Laurel.Procedure
 deriving instance Repr for Strata.Laurel.Field
 deriving instance Repr for Strata.Laurel.CompositeType

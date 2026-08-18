@@ -46,6 +46,15 @@ structure LaurelTranslateOptions where
       this option has no effect. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
+  /-- Verify coroutines via rely/guarantee.
+
+      NOTE (v1 limitation): on the caller-verification path, `has_next(co)` is
+      elaborated as constant `true` (the opaque `resume` summary carries no
+      completion information). An obligation of the form `!has_next(co) ==> P`
+      therefore discharges *vacuously* — a vacuous pass, not a real proof that
+      `P` holds when the coroutine has finished. Proving completion-dependent
+      properties across the opaque resume is future work. -/
+  verifyCoroutine : Bool := false
   /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify

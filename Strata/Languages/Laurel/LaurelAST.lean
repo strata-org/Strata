@@ -254,6 +254,12 @@ inductive IncrDecrOp where
   | Decr
   deriving Repr, BEq, Inhabited
 
+/-- Whether a procedure is an ordinary procedure or a coroutine. -/
+inductive ProcedureKind where
+  | Regular
+  | Coroutine
+  deriving Repr, BEq, Inhabited
+
 /-- How a pre/postcondition should be lowered.
 
     A condition has a "natural assert" site and a "natural assume" site that
@@ -280,63 +286,6 @@ def ConditionMode.doesAssume : ConditionMode → Bool
   | .Assert => false
 
 mutual
-
-/--
-A procedure in Laurel. Procedures are the main unit of specification and
-verification. Unlike separate functions and methods, Laurel uses a single
-general concept that covers both.
--/
-structure Procedure : Type where
-  /-- The procedure's name. -/
-  name : Identifier
-  /-- Type parameters, e.g. `T` in `procedure f<T>(...)`. Empty for monomorphic
-      procedures (the default keeps every existing construction site compiling).
-      Brought into scope by resolution so `T` in a signature resolves to `.TVar`. -/
-  typeArgs : List Identifier := []
-  /-- Input parameters with their types. -/
-  inputs : List Parameter
-  /-- Output parameters with their types. Multiple outputs are supported. -/
-  outputs : List Parameter
-  /-- The preconditions that callers must satisfy. -/
-  preconditions : List Condition
-  /-- Optional termination measure for recursive procedures. -/
-  decreases : Option (AstNode StmtExpr) -- optionally prove termination
-  /-- The procedure body: transparent, opaque, or abstract. -/
-  body : Body
-  /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
-      whose body is the ensures clause universally quantified over the procedure's inputs,
-      with this expression as the SMT trigger. -/
-  invokeOn : Option (AstNode StmtExpr) := none
-  /-- When `true`, the producer marked this procedure as an entry point for
-      concrete interpretation (`laurelInterpret`). It has no effect on
-      verification.
-
-      Distinct from `Core.EntryPoint` (the verifier's `.main | .roots | .all`
-      target selector) — this marker drives the concrete interpreter only. -/
-  isInterpretEntry : Bool := false
-  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
-      `invokeOn` and ensures clauses. -/
-  axioms : List (AstNode StmtExpr) := []
-  /-- Optional declared exception type: the single type this procedure may
-      throw, drawn from the front end's own hierarchy (no built-in upper bound).
-      Catch-or-declare *is* enforced against it, by `validateExceptionEscapes`
-      during resolution (only a subtype of this type may escape; a procedure with
-      no `throwsType` may let nothing escape). Not lowered until
-      `EliminateExceptions`, which turns it into the `Err` argument of the
-      procedure's `Result<Val, Err>`. -/
-  throwsType : Option (AstNode HighType) := none
-  /-- The name the `throws (e: T)` clause binds to the thrown value. Scoped over the
-      `throwsOn` blocks' postconditions — not over their guards, which are pre-state
-      conditions evaluated on entry.
-
-      Paired with `throwsType`: the grammar has a single `throws` op, which carries
-      both, so a parsed procedure has either both fields or neither. Code that only
-      needs to know whether a procedure throws should therefore test `throwsType`. -/
-  throwsBinding : Option Identifier := none
-  /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
-      case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
-      its throwing paths beyond the declared `throwsType`. -/
-  throwsOn : List ThrowsOnBlock := []
 
 /--
 A typed parameter for a procedure.
@@ -613,8 +562,43 @@ inductive StmtExpr : Type where
   | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
   | Assigned (name : AstNode StmtExpr)
-  /-- Refer to the pre-state value of an expression in a postcondition. -/
-  | Old (value : AstNode StmtExpr)
+  /-- Refer to the value of `value` at an earlier program point.
+
+      `label?` names *which* earlier state:
+      * `none` — the procedure's native pre-state (Core's two-state `old`). This
+        is the only form on the regular path; surface `old(e)` produces it.
+      * `some h` — a named earlier state `h`, so `old` reads that state rather
+        than the procedure entry state. `h` is bound either by a `Snapshot h`
+        earlier in the body or by a threaded `Heap` parameter. -/
+  | Old (value : AstNode StmtExpr) (label? : Option Identifier := none)
+  /-- Coroutine-only: refer to the value of `value` at the start of the
+      *current* coroutine step. Surface form: `oldGuarantee(value)`.
+
+      Outside a coroutine body it is a resolution error. The lowering depends on
+      the path:
+      * **Body path** — the start-of-step heap is the previous yield's
+        post-havoc snapshot (or procedure entry for the first yield), so it
+        lowers to a labeled `Old value (some $old_heap)` reading the
+        start-of-step `Snapshot` — the same lowering as an implicit `old(...)`
+        inside a `guarantees` clause.
+      * **Caller path** — the start-of-step heap is `resume`'s native entry
+        state (`H2`), so it lowers to a plain `Old value` (no label) that
+        push-old distributes onto the inout `$heap`.
+
+      The user uses this in body asserts and loop invariants where the
+      framework needs to relate the current heap to the previous yield's
+      resume point. -/
+  | OldGuarantee (value : AstNode StmtExpr)
+  /-- Coroutine-only: the `old` state of a two-state `relies R(old, now)`
+      — the heap at the coroutine's most recent suspension (`H1`). Surface
+      form: `oldRelies(value)`. Unlike `OldGuarantee` (whose `old` heap is
+      `resume`'s native entry state), `H1` is tracked by the caller per
+      instance and threaded in as an explicit `$h_rely_old : Heap`
+      parameter, so on the caller path `oldRelies(e)` lowers to
+      `Old e (some $h_rely_old)` (no Core `old`, since relies become `resume`
+      preconditions). Seeded to the current heap on the first resume, so
+      `R(H1, now)` becomes `R(H0, H0)` there. -/
+  | OldRelies (value : AstNode StmtExpr)
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
   | Fresh (value : AstNode StmtExpr)
   /-- Assert a condition, generating a proof obligation. The optional summary is
@@ -651,10 +635,138 @@ inductive StmtExpr : Type where
       - `type`: this property is used internally by Laurel and can be left to its default value.
         Internal usage: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
+  /-- Yield expression used inside coroutines.
+
+      Statement position: suspends the coroutine; the resumed value is dropped.
+      Expression position (`z := yield`): suspends; evaluates to the value the
+      next `resume(co, v)` sends in (type matches the coroutine's `resumes`
+      binding).
+
+      To yield a value outward, the user assigns it to the coroutine's
+      `yields` binding before the suspension: `x := e; yield`. -/
+  | Yield
+  /-- Resume a coroutine instance, optionally sending it a value.
+      `target` evaluates to the coroutine instance to resume.
+      `value` is the value sent into the coroutine (the binding for the
+      yield expression that suspended it); `none` for a unit-valued resume.
+      As a statement, the resumed value (the next yield's payload) is dropped;
+      in expression position (`x := resume(g, v)`) it is bound to `x`. -/
+  | Resume (target : AstNode StmtExpr) (value : Option (AstNode StmtExpr))
+  /-- Has-next test on a coroutine instance: `has_next(co)` evaluates to
+      `true` iff `co` has not yet run to completion (its internal `$pc`
+      has not reached the END state). -/
+  | HasNext (target : AstNode StmtExpr)
+  /-- Lowering artifact (no surface syntax): capture the current state at this
+      program point under the opaque label `label`, so a later
+      `Old e (some label)` reads `e` against it. -/
+  | Snapshot (label : Identifier)
 
 inductive ContractType where
-  | Reads | Modifies | Precondition | PostCondition
+  | Reads | Modifies | Precondition | PostCondition | Relies | Guarantees
 end
+
+/--
+The coroutine-specific contract clauses of a procedure.
+
+A regular procedure carries none of these (`Regular`); a coroutine carries all
+four (`Coroutine`), any of which may be empty. Bundling them in one sum type —
+rather than four independent fields guarded by a separate `ProcedureKind` flag —
+makes the illegal state "a regular procedure with a non-empty `relies`"
+unrepresentable: the clauses exist *only* in the `Coroutine` case. `Procedure.kind`
+is recovered from which constructor is present, so `ProcedureKind` remains the
+public spelling for the regular/coroutine distinction.
+-/
+inductive CoroutineContracts where
+  /-- An ordinary (non-coroutine) procedure: no coroutine clauses. -/
+  | Regular
+  /-- A coroutine's four contract clauses.
+
+      - `relies`: a property the caller is required to (re-)establish between
+        yields, and which the body may assume on entry and immediately after
+        every `yield`. The `resumes (y: U)` binding is in scope here.
+      - `guarantees`: a property the body must establish at every `yield` site
+        (and at the implicit yield on construction-spec exit, if any). The
+        `yields (x: T)` binding is in scope here.
+      - `yields`: the outgoing-channel bindings declared by
+        `yields (x1: T1, ...)`. Names are in scope inside the body, inside the
+        `guarantees` clauses (per-yield guarantee), and inside the halt
+        `ensures` clauses if the body assigns to them before falling off. The
+        grammar rejects empty parens.
+      - `resumes`: the incoming-channel bindings declared by
+        `resumes (y1: U1, ...)`. Names are in scope inside the `relies` clauses
+        (per-yield rely); the body retrieves resumed values via the
+        expression-form of `yield`. -/
+  | Coroutine
+      (relies : List Condition)
+      (guarantees : List Condition)
+      (yields : List Parameter)
+      (resumes : List Parameter)
+
+/--
+A procedure in Laurel. Procedures are the main unit of specification and
+verification. Unlike separate functions and methods, Laurel uses a single
+general concept that covers both.
+-/
+structure Procedure : Type where
+  /-- The procedure's name. -/
+  name : Identifier
+  /-- Type parameters, e.g. `T` in `procedure f<T>(...)`. Empty for monomorphic
+      procedures. Brought into scope by resolution so `T` in a signature
+      resolves to `.TVar`. -/
+  typeArgs : List Identifier := []
+  /-- Input parameters with their types. -/
+  inputs : List Parameter
+  /-- Output parameters with their types. Multiple outputs are supported. -/
+  outputs : List Parameter
+  /-- The preconditions that callers must satisfy. For regular
+      procedures, the standard call-time precondition. For coroutines,
+      the construction precondition: fires once at spawn time (when
+      the coroutine value is first created) and is *not* re-checked at
+      each resume. -/
+  preconditions : List Condition
+  /-- The coroutine-specific contract clauses (`relies` / `guarantees` /
+      `yields` / `resumes`). `Regular` for an ordinary procedure; a
+      `Coroutine` bundle for a coroutine. This field also determines
+      `Procedure.kind`. -/
+  contracts : CoroutineContracts := .Regular
+  /-- Optional termination measure for recursive procedures. -/
+  decreases : Option (AstNode StmtExpr) -- optionally prove termination
+  /-- The procedure body: transparent, opaque, or abstract. -/
+  body : Body
+  /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
+      whose body is the ensures clause universally quantified over the procedure's inputs,
+      with this expression as the SMT trigger. -/
+  invokeOn : Option (AstNode StmtExpr) := none
+  /-- When `true`, the producer marked this procedure as an entry point for
+      concrete interpretation (`laurelInterpret`). It has no effect on
+      verification.
+
+      Distinct from `Core.EntryPoint` (the verifier's `.main | .roots | .all`
+      target selector) — this marker drives the concrete interpreter only. -/
+  isInterpretEntry : Bool := false
+  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
+      `invokeOn` and ensures clauses. -/
+  axioms : List (AstNode StmtExpr) := []
+  /-- Optional declared exception type: the single type this procedure may
+      throw, drawn from the front end's own hierarchy (no built-in upper bound).
+      Catch-or-declare *is* enforced against it, by `validateExceptionEscapes`
+      during resolution (only a subtype of this type may escape; a procedure with
+      no `throwsType` may let nothing escape). Not lowered until
+      `EliminateExceptions`, which turns it into the `Err` argument of the
+      procedure's `Result<Val, Err>`. -/
+  throwsType : Option (AstNode HighType) := none
+  /-- The name the `throws (e: T)` clause binds to the thrown value. Scoped over the
+      `throwsOn` blocks' postconditions — not over their guards, which are pre-state
+      conditions evaluated on entry.
+
+      Paired with `throwsType`: the grammar has a single `throws` op, which carries
+      both, so a parsed procedure has either both fields or neither. Code that only
+      needs to know whether a procedure throws should therefore test `throwsType`. -/
+  throwsBinding : Option Identifier := none
+  /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
+      case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
+      its throwing paths beyond the declared `throwsType`. -/
+  throwsOn : List ThrowsOnBlock := []
 
 /-- A short user-facing name for the construct, used in diagnostic messages. -/
 def StmtExpr.constrName : StmtExpr → String
@@ -684,6 +796,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .Quantifier ..       => "quantifier"
   | .Assigned ..         => "assigned"
   | .Old ..              => "old"
+  | .OldGuarantee ..     => "oldGuarantee"
+  | .OldRelies ..        => "oldRelies"
   | .Fresh ..            => "fresh"
   | .Assert ..           => "assert"
   | .Assume ..           => "assume"
@@ -694,6 +808,10 @@ def StmtExpr.constrName : StmtExpr → String
   | .Abstract            => "abstract"
   | .All                 => "all"
   | .Hole ..             => "hole"
+  | .Yield               => "yield"
+  | .Resume ..           => "resume"
+  | .HasNext ..          => "has_next"
+  | .Snapshot ..         => "snapshot"
 
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
@@ -1562,6 +1680,8 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Quantifier .. => "Quantifier"
   | .Assigned .. => "Assigned"
   | .Old .. => "Old"
+  | .OldGuarantee .. => "OldGuarantee"
+  | .OldRelies .. => "OldRelies"
   | .Fresh .. => "Fresh"
   | .Assert .. => "Assert"
   | .Assume .. => "Assume"
@@ -1573,6 +1693,10 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .All => "All"
   | .Hole .. => "Hole"
   | .IncrDecr .. => "IncrDecr"
+  | .Yield => "Yield"
+  | .Resume .. => "Resume"
+  | .HasNext .. => "HasNext"
+  | .Snapshot .. => "Snapshot"
   | .CompoundAssign .. => "CompoundAssign"
 
 /-- Build an expression that reads back the value of a variable reference.
@@ -1596,6 +1720,67 @@ def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => 
 /-- Check whether a modifies list contains the wildcard (`*`). -/
 def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
   modifiesExprs.any StmtExprMd.isWildcard
+
+/-- The per-yield `relies` clauses; `[]` for a regular procedure. -/
+def CoroutineContracts.relies : CoroutineContracts → List Condition
+  | .Regular => []
+  | .Coroutine r _ _ _ => r
+
+/-- The per-yield `guarantees` clauses; `[]` for a regular procedure. -/
+def CoroutineContracts.guarantees : CoroutineContracts → List Condition
+  | .Regular => []
+  | .Coroutine _ g _ _ => g
+
+/-- The outgoing-channel `yields` bindings; `[]` for a regular procedure. -/
+def CoroutineContracts.yields : CoroutineContracts → List Parameter
+  | .Regular => []
+  | .Coroutine _ _ y _ => y
+
+/-- The incoming-channel `resumes` bindings; `[]` for a regular procedure. -/
+def CoroutineContracts.resumes : CoroutineContracts → List Parameter
+  | .Regular => []
+  | .Coroutine _ _ _ rs => rs
+
+/-- The `ProcedureKind` implied by which contract bundle is present. -/
+def CoroutineContracts.kind : CoroutineContracts → ProcedureKind
+  | .Regular => .Regular
+  | .Coroutine .. => .Coroutine
+
+/-- Replace the clause lists of a `Coroutine` bundle, keeping it a coroutine.
+    A no-op on `Regular` (a regular procedure has no clauses to carry). -/
+def CoroutineContracts.withClauses (c : CoroutineContracts)
+    (relies : List Condition := c.relies) (guarantees : List Condition := c.guarantees)
+    (yields : List Parameter := c.yields) (resumes : List Parameter := c.resumes)
+    : CoroutineContracts :=
+  match c with
+  | .Regular => .Regular
+  | .Coroutine .. => .Coroutine relies guarantees yields resumes
+
+/-- Map a transformation over the `relies` and `guarantees` clause lists,
+    leaving the channel bindings (`yields` / `resumes`) untouched. A no-op on
+    `Regular`. -/
+def CoroutineContracts.mapConditions (c : CoroutineContracts)
+    (f : Condition → Condition) : CoroutineContracts :=
+  c.withClauses (relies := c.relies.map f) (guarantees := c.guarantees.map f)
+
+/-- Kind of the procedure, either a regular procedure or a coroutine.
+    Recovered from `contracts`. -/
+def Procedure.kind (p : Procedure) : ProcedureKind := p.contracts.kind
+
+/-- The coroutine's per-yield `relies` clauses; `[]` for a regular procedure. -/
+def Procedure.relies (p : Procedure) : List Condition := p.contracts.relies
+
+/-- The coroutine's per-yield `guarantees` clauses; `[]` for a regular procedure. -/
+def Procedure.guarantees (p : Procedure) : List Condition := p.contracts.guarantees
+
+/-- The coroutine's outgoing-channel `yields` bindings; `[]` for a regular procedure. -/
+def Procedure.yields (p : Procedure) : List Parameter := p.contracts.yields
+
+/-- The coroutine's incoming-channel `resumes` bindings; `[]` for a regular procedure. -/
+def Procedure.resumes (p : Procedure) : List Parameter := p.contracts.resumes
+
+def Procedure.is_coroutine (p : Procedure) : Bool :=
+  match p.kind with | .Coroutine => true | _ => false
 
 def Body.isExternal : Body → Bool
   | .External => true
