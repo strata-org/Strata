@@ -233,6 +233,63 @@ def translateParameters (arg : Arg) : TransM (List Parameter) := do
     args.toList.mapM translateParameter
   | _ => pure []
 
+/-- Parse an `Option TypeParams` arg (`<T, U>`) into the list of type-parameter
+    identifiers. Absent (monomorphic) yields `[]`. -/
+private def translateTypeParams (arg : Arg) : TransM (List Identifier) := do
+  match arg with
+  | .option _ (some (.op op)) =>
+    match op.name, op.args with
+    | q`Laurel.typeParams, #[paramsArg] =>
+      match paramsArg with
+      | .seq _ .comma args => args.toList.mapM translateIdent
+      | single => do let i ← translateIdent single; pure [i]
+    | _, _ => TransM.error s!"Expected typeParams operation, got {repr op.name}"
+  | _ => pure []
+
+/-- Parse an `Option NewTypeArgs` arg (`<int, bool>` on a `new`) into the list of
+    type arguments. Absent (bare `new C`) yields `[]`. Mirrors `appliedType`. -/
+private def translateNewTypeArgs (arg : Arg) : TransM (List HighTypeMd) := do
+  match arg with
+  | .option _ (some (.op op)) =>
+    match op.name, op.args with
+    | q`Laurel.newTypeArgs, #[argsArg] =>
+      match argsArg with
+      | .seq _ .comma args => args.toList.mapM translateHighType
+      | single => do let a ← translateHighType single; pure [a]
+    | _, _ => TransM.error s!"Expected newTypeArgs operation, got {repr op.name}"
+  | _ => pure []
+
+/-- Translate a `FieldPath` (the chained-field-write target object) into a `StmtExprMd`:
+    `fieldPathRoot name` → `.Var (.Local name)`; `fieldPathStep obj field` → `.Var (.Field
+    <obj> field)`, recursively. This builds the same `.Var (.Field …)` chain a field READ
+    produces, so downstream lowering is uniform. (`FieldPath` is a dedicated grammar category
+    rather than `StmtExpr` — see `LaurelGrammar.st` for why.) -/
+private def translateFieldPath (arg : Arg) : TransM StmtExprMd := do
+  let src ← getArgFileRange arg
+  let .op op := arg
+    | TransM.error s!"translateFieldPath expects operation, got {repr arg}"
+  -- Match on `op.args.toList` (not the `#[...]` array literal) so Lean can generate
+  -- the unfold equations needed for the well-founded definition; `_hargs` names the
+  -- discriminant equation, consumed by `decreasing_by` to prove `objArg` is a strict
+  -- subterm of `arg`.
+  match op.name, _hargs : op.args.toList with
+  | q`Laurel.fieldPathRoot, [nameArg] =>
+    let name ← translateIdent nameArg
+    return mkStmtExprMd (.Var (.Local name)) src
+  | q`Laurel.fieldPathStep, [objArg, fieldArg] =>
+    let obj ← translateFieldPath objArg
+    let field ← translateIdent fieldArg
+    return mkStmtExprMd (.Var (.Field obj field)) src
+  | _, _ => TransM.error s!"translateFieldPath: unexpected {repr op.name}"
+  termination_by sizeOf arg
+  decreasing_by
+    -- `objArg ∈ op.args`, so `sizeOf objArg < sizeOf op.args < sizeOf op ≤ sizeOf arg`.
+    have hmem : objArg ∈ op.args := Array.mem_def.mpr (by rw [_hargs]; exact List.mem_cons_self ..)
+    have h1 := Array.sizeOf_lt_of_mem hmem
+    have h2 : sizeOf op.args < sizeOf op := by
+      cases op; simp only [StrataDDM.OperationF.mk.sizeOf_spec]; omega
+    simp_wf; omega
+
 instance : Inhabited Procedure where
   default := {
     name := ""
@@ -440,24 +497,28 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetField, #[objArg, fieldArg] =>
-            let obj ← translateIdent objArg
+            -- `obj` is a `FieldPath` (chained writes `w#b#val := …`); translate
+            -- it to the `.Var (.Field …)` chain. The common single-level `x#f :=` is a
+            -- `fieldPathRoot` → `.Var (.Local x)`, exactly as before the chained form.
+            let obj ← translateFieldPath objArg
             let field ← translateIdent fieldArg
-            pure (⟨.Field ⟨.Var (.Local obj), tSrc⟩ field, tSrc⟩ : VariableMd)
+            pure (⟨.Field obj field, tSrc⟩ : VariableMd)
           | _, _ => TransM.error s!"multiAssign: unexpected target {repr top.name}"
         | _ => pure []
       let value ← translateStmtExpr valueArg
       return mkStmtExprMd (.Assign targets value) src
-    | q`Laurel.new, #[nameArg] =>
+    | q`Laurel.new, #[nameArg, typeArgsArg] =>
       let name ← translateIdent nameArg
-      return mkStmtExprMd (.New name) src
-    | q`Laurel.isType, #[targetArg, typeNameArg] =>
+      let typeArgs ← translateNewTypeArgs typeArgsArg
+      return mkStmtExprMd (.New name typeArgs) src
+    | q`Laurel.isType, #[targetArg, typeArg] =>
       let target ← translateStmtExpr targetArg
-      let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.IsType target (mkHighTypeMd (.UserDefined typeName) src)) src
-    | q`Laurel.asType, #[targetArg, typeNameArg] =>
+      let ty ← translateHighType typeArg
+      return mkStmtExprMd (.IsType target ty) src
+    | q`Laurel.asType, #[targetArg, typeArg] =>
       let target ← translateStmtExpr targetArg
-      let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) src)) src
+      let ty ← translateHighType typeArg
+      return mkStmtExprMd (.AsType target ty) src
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let argsList ← match argsSeq with
@@ -708,32 +769,42 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | TransM.error s!"parseProcedure expects operation"
 
   -- Transitional shim: normalize legacy `procedure` shapes to the current
-  -- 10-argument form (`… returnParameters throws requires invokeOn entry
-  -- opaqueSpec body`). Older producers emitted either the pre-`entry` 8-arg
-  -- shape or the pre-exception 9-arg shape (with `entry`), neither of which had
-  -- any exceptional-contract clauses: splice in an absent `throws` before
-  -- `requires`, and an absent `entry` where it is missing, so a post-CR binary
-  -- can still consume Ion artifacts produced against a previous grammar. (The
-  -- exceptional postcondition/frame clauses now live inside `opaqueSpec`, whose
-  -- own legacy 2-argument shape is normalized where it is parsed below.)
+  -- 11-argument form (`name typeParams parameters returnType returnParameters
+  -- throws requires invokeOn entry opaqueSpec body`). Older producers emitted a
+  -- shape lacking the newer args — `typeParams` (polymorphism), `throws`
+  -- (exceptions), and `entry` — in various combinations: an absent slot is
+  -- spliced for each missing arg so a post-CR binary can still consume Ion
+  -- artifacts produced against a previous grammar. (The exceptional
+  -- postcondition/frame clauses now live inside `opaqueSpec`, whose own legacy
+  -- 2-argument shape is normalized where it is parsed below.)
   let absentOpt : Arg := .option SourceRange.none none
   let args : Array Arg ← match op.name, op.args with
+    -- 8-arg: pre-typeParams, pre-throws, pre-entry.
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
-      pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+      pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
              absentOpt, requiresArg, invokeOnArg, absentOpt,
              opaqueSpecArg, bodyArg]
+    -- 9-arg: pre-typeParams, pre-throws, has entry.
     | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
         requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
-      pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+      pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
              absentOpt, requiresArg, invokeOnArg, entryArg,
+             opaqueSpecArg, bodyArg]
+    -- 10-arg: pre-typeParams, has throws + entry (the pre-polymorphism shape).
+    | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+        throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+      pure #[nameArg, absentOpt, paramArg, returnTypeArg, returnParamsArg,
+             throwsArg, requiresArg, invokeOnArg, entryArg,
              opaqueSpecArg, bodyArg]
     | _, other => pure other
 
   match op.name, args with
-  | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+  | q`Laurel.procedure, #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
       throwsArg, requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
+
     let name ← translateIdent nameArg
+    let typeArgs ← translateTypeParams typeParamsArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
@@ -860,6 +931,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | none => Body.Opaque [] none modifies
     return {
       name := name
+      typeArgs := typeArgs
       inputs := parameters
       outputs := returnParameters
       preconditions := preconditions
@@ -872,7 +944,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       body := procBody
     }
   | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 8, 9, or 10 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 11 arguments (or a legacy 8/9/10-arg shape the \
+      shim upgrades), got {args.size} (stale-arity op — regenerate the producer's Laurel \
+      bindings, e.g. `strata javaGen Laurel`)"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
@@ -895,14 +969,18 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseComposite expects operation"
   match op.name, op.args with
-  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg, procsArg] =>
+  | q`Laurel.composite, #[nameArg, typeParamsArg, extendsArg, fieldsArg, procsArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← translateTypeParams typeParamsArg
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
         | q`Laurel.extends, #[parentsArg] =>
+          -- Parents are a `CommaSepBy LaurelType`: each is a full type
+          -- (`Base` or generic `Base<T>`), translated via `translateHighType` — the same
+          -- path `appliedType` args already use.
           match parentsArg with
-          | .seq _ .comma args => args.toList.mapM translateIdent
-          | singleArg => do let parent ← translateIdent singleArg; pure [parent]
+          | .seq _ .comma args => args.toList.mapM translateHighType
+          | singleArg => do let parent ← translateHighType singleArg; pure [parent]
         | _, _ => TransM.error s!"Expected optionalExtends operation, got {repr extendsOp.name}"
       | .option _ none => pure []
       | _ => TransM.error s!"Expected optionalExtends, got {repr extendsArg}"
@@ -912,7 +990,7 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let instanceProcedures ← match procsArg with
       | .seq _ _ args => args.toList.mapM parseProcedure
       | _ => pure []
-    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
+    return .Composite { name := name, typeArgs := typeArgs, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
@@ -982,16 +1060,6 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 
-def parseOpaqueType (arg : Arg) : TransM TypeDefinition := do
-  let .op op := arg
-    | TransM.error s!"parseOpaqueType expects operation"
-  match op.name, op.args with
-  | q`Laurel.opaqueType, #[nameArg] =>
-    let name ← translateIdent nameArg
-    return .Datatype { name := name, typeArgs := [], constructors := [] }
-  | _, _ =>
-    TransM.error s!"parseOpaqueType expects opaqueType, got {repr op.name}"
-
 def parseConstrainedType (arg : Arg) : TransM ConstrainedType := do
   let .op op := arg
     | TransM.error s!"parseConstrainedType expects operation"
@@ -1030,6 +1098,16 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
   | q`Laurel.constrainedTypeCommand, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
     return { type := some (.Constrained ct) }
+  | q`Laurel.typeAliasCommand, #[aliasArg] =>
+    let .op aliasOp := aliasArg
+      | TransM.error s!"typeAliasCommand expects operation"
+    match aliasOp.name, aliasOp.args with
+    | q`Laurel.typeAlias, #[nameArg, typeParamsArg, targetArg] =>
+      let name ← translateIdent nameArg
+      let typeArgs ← translateTypeParams typeParamsArg
+      let target ← translateHighType targetArg
+      return { type := some (.Alias { name := name, typeArgs := typeArgs, target := target }) }
+    | _, _ => TransM.error s!"typeAliasCommand expects typeAlias op, got {repr aliasOp.name}"
   | q`Laurel.globalVarCommand, #[nameArg, typeArg, initArg] =>
     let name ← translateIdent nameArg
     let fieldType ← translateHighType typeArg
@@ -1048,7 +1126,7 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
     TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
                     'var {name.text}: <type> := <value>'"
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, or globalVarCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, typeAliasCommand, or globalVarCommand, got {repr op.name}"
 
 /-- Translate one non-global top-level command, preserving the existing public API. -/
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do

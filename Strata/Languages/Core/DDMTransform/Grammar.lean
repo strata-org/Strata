@@ -172,6 +172,7 @@ fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v
 fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
+fn seq_select_unsafe (A : Type, s : Sequence A, i : int) : A => "Sequence.select!" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
   "Sequence.append" "(" s1 ", " s2 ")";
 fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>

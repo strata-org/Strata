@@ -163,7 +163,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
+  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure expr
   f resultUsed rebuilt
 termination_by sizeOf expr
 decreasing_by
@@ -284,7 +284,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
     | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-    | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure e
+    | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure e
     post used rebuilt
   termination_by sizeOf e
   decreasing_by map_stmt_expr_decreasing e
@@ -384,7 +384,7 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
+  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure expr
   post rebuilt
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
@@ -480,7 +480,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f func
   -- Leaves: no StmtExprMd children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure ()
+  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
 

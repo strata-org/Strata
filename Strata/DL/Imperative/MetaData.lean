@@ -7,7 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.PureExpr
-public import Strata.DL.Util.DecidableEq
+public import Strata.Util.DecidableEq
 public import Strata.Util.Provenance
 
 namespace Imperative

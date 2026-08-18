@@ -150,7 +150,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
             [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] [])
 
--- Test that all bound variables get globally unique generated names
+-- Nested empty-named binders get distinct generated names by de Bruijn depth: outer at depth 0
+-- (`$__bv0`), inner at depth 1 (`$__bv1`).
 /-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -179,6 +180,19 @@ info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
     (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
      (.eq () (.bvar () 0) (.bvar () 2)))))
 
+-- Test mixed named/unnamed nesting: de Bruijn depth (`bvs.length`) counts user-named binders too, so
+-- the inner unnamed binder gets `$__bv2` (its stack depth), not `$__bv1`. (The two adjacent `forall`s
+-- coalesce into one binder group; the inner `exists` stays separate but still sees depth 2.)
+/--
+info: "(assert (forall (($__bv0 Int) (x Int)) (exists (($__bv2 Int)) (= $__bv0 $__bv2))))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 2) (.bvar () 0)))))
+
 
 /--
 info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
@@ -188,8 +202,10 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
--- Test that bound variable names are globally unique across multiple terms.
--- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
+-- Empty-named quantifier binders are named by de Bruijn depth (`$__bv{depth}`). Each term encoded
+-- via toSMTTerms starts from an empty binder stack, so two independent top-level foralls each get
+-- depth 0 → both `$__bv0`. This is sound because the two binders are never simultaneously in scope
+-- (distinct depths only arise for nested binders within one term).
 #guard
   match toSMTTerms Lambda.Factory.default [
     -- Term 1: ∀ x:Int. x = x
@@ -203,7 +219,7 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
     | .ok s1, .ok s2 =>
       s1 == "(forall (($__bv0 Int)) true)" &&
-      s2 == "(forall (($__bv1 Bool)) $__bv1)"
+      s2 == "(forall (($__bv0 Bool)) $__bv0)"
     | _, _ => false
   | _ => false
 

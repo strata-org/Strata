@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Util.Maps
+public import Strata.Util.ListMapsProps
 public import Strata.DL.Lambda.LExpr
 
 namespace Lambda

@@ -98,6 +98,7 @@ func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
 func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
   requires int.le(0, i) && int.lt(i, Sequence.length(s));
+func Sequence.select! : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
 func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
   requires int.le(0, i) && int.lt(i, Sequence.length(s));

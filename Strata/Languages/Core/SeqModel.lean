@@ -19,6 +19,7 @@ a doc-comment referencing the corresponding Factory function.
 | `Sequence a`              | `List α`                            |
 | `Sequence.length(s)`      | `s.length`                          |
 | `Sequence.select(s, i)`   | `s[i]`                              |
+| `Sequence.select!(s, i)`  | `s[i]`  (same model as `select`)    |
 | `Sequence.empty`          | `[]`                                |
 | `Sequence.append(s0, s1)` | `s0 ++ s1`                          |
 | `Sequence.build(s, v)`    | `s ++ [v]`  (snoc)                  |
@@ -29,6 +30,10 @@ a doc-comment referencing the corresponding Factory function.
 
 All index variables are `Nat` (the natural model of the non-negative `Int`
 indices used in the SMT axioms).
+
+`Sequence.select!` models to `s[i]` like `Sequence.select`, so its
+interaction axioms are the same statements and are modeled by the
+identically-named `select` theorems below.
 -/
 
 namespace Strata.SeqModel

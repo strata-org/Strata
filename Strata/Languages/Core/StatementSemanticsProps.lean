@@ -13,8 +13,9 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.HasVars
 import all Strata.DL.Util.Nodup
-public import Strata.DL.Util.ListUtils
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.StatementSemantics

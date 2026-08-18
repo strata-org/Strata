@@ -204,7 +204,7 @@ instance (P : PureExpr) [HasFvars P]
 
 
 /-- Get all variables defined by the command `c`. -/
-def Cmd.definedVars (c : Cmd P) : List P.Ident :=
+@[expose] def Cmd.definedVars (c : Cmd P) : List P.Ident :=
   match c with
   | .init name _ _ _ => [name]
   | _ => []

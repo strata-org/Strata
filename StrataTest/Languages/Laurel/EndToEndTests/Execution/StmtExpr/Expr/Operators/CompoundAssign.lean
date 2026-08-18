@@ -29,7 +29,7 @@ local. `c#n += e` parses paren-free because `fieldAccess` (prec 95) binds tighte
 than `+=` (prec 10).
 -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 constrained nat = v: int where v >= 0 witness 0
@@ -141,7 +141,7 @@ procedure rightAssocChain()
 #end
 
 -- Compound assignment on composite-type fields, including chained targets.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Counter {

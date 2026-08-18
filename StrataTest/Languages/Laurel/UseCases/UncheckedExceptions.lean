@@ -46,7 +46,7 @@ Java:
 that the result equals `x.f` on the normal path, and that an escaping
 `NullPointerException` implies `x` was null. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Exception {}
@@ -73,7 +73,7 @@ procedure getF(xIsNull: bool, x: Obj)
 
 -- Negative: the contract claims an escaping NPE implies the reference was
 -- NON-null, contradicting the guard, so it cannot be proved.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Exception {}
@@ -111,7 +111,7 @@ directions a caller needs:
     was out of bounds" — so a caller that caught the exception can reason back, and one
     with an in-bounds index knows the call cannot have thrown. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Exception {}
@@ -144,7 +144,7 @@ division-by-zero obligation). A postcondition mentioning `a / b` directly is
 avoided, since evaluating a partial operation in a contract raises the safety
 obligation outside the guard's scope. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Exception {}
@@ -172,7 +172,7 @@ Java:
 The cast `(Sub) x` throws when `x` is not actually a `Sub`; the contract records
 that an escaping `ClassCastException` implies `x` was not a `Sub`. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Exception {}

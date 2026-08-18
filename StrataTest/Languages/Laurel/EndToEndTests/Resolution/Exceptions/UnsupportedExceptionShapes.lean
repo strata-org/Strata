@@ -37,7 +37,7 @@ it through the crossed `finally` arms, and its behavior is pinned in
 -- (1) A call to a `throws` procedure nested in an expression (`1 + f()`) is
 -- rejected. `g` declares `throws` so the escape check is satisfied; only the
 -- position guard fires.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -49,7 +49,7 @@ procedure g() returns (s: int) throws (e: MyError) opaque {
 #end
 
 -- (2) A `catch` handler that re-declares its binding name (`c`) is rejected.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -73,7 +73,7 @@ procedure catchShadowsBinding()
 -- after the pass reports a duplicate definition plus a cascade of type errors
 -- against the wrong `Result` — all of them internal-error diagnostics anchored on
 -- synthesized nodes rather than on the user's declaration.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -91,7 +91,7 @@ procedure usesExceptions() returns (r: int) throws (e: MyError) opaque {
 -- A user type named `Result` is fine in a program that does *not* use exceptions:
 -- nothing is injected, so there is nothing to collide with. This pins the guard to
 -- the collision rather than to the name.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Result<A, B> {
@@ -111,7 +111,7 @@ procedure usesOwnResult() returns (r: Result<int, bool>) opaque {
 -- widening nor a downcast type-checks), and before this guard the procedure-level
 -- exception variable was simply left unassigned: the case below then failed with a
 -- misleading "postcondition could not be proved".
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A {}
@@ -140,7 +140,7 @@ procedure propagatesUnrelated(pick: bool)
 -- absorbs both thrown types, so the lowering never needs a copy. This pins the
 -- guard to an actual escape rather than to the types alone — the earlier,
 -- single-inheritance-only reasoning would have rejected this too.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A {}
@@ -168,7 +168,7 @@ procedure handlesUnrelated(pick: bool)
 -- degrading the `Result` payload to a placeholder). The diagnostic names the
 -- exceptional cause, not just the arity, so a front end reading it can tell why
 -- an otherwise legal two-output signature was refused.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite E {}
@@ -193,7 +193,7 @@ procedure twoOut()
 -- field *without* throwing, so under the documented semantics it must fail — yet
 -- before this rejection it verified, letting a caller prove from the contract that
 -- the call throws when it does not.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -217,7 +217,7 @@ procedure guardHeldNoThrow(c: Counter)
 -- pre-state semantics it is correct; read in the post-state the exhaustiveness
 -- disjunct sees the flipped value and cannot prove the cases cover the throwing
 -- path. Rejecting the guard replaces that misleading failure with the real cause.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -246,7 +246,7 @@ procedure flipThenThrow(c: Counter)
 -- field with a `requires`, as `Execution/Exceptions/ThrowsOnClause.lean` does for
 -- the array-bounds case. The guard may still be *about* heap state; it just may
 -- not read it.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}

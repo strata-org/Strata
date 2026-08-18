@@ -9,7 +9,7 @@ public import Strata.Languages.GOTO.LambdaToCProverGOTO
 public import Strata.Languages.GOTO.ToCProverGOTO
 public import Strata.Languages.GOTO.Program
 public import Strata.Languages.Core.Program
-public import Strata.DL.Util.Map
+public import Strata.Util.ListMapProps
 public import Lean.Data.Json
 import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.Factory

@@ -20,7 +20,7 @@ This test pins the harness to `.Execute` mode: if someone accidentally
 reverts to `.Verify`, the annotation below stops matching and the build
 breaks. -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 

@@ -20,7 +20,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 

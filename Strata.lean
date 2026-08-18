@@ -27,26 +27,33 @@ import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.WFProps
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+import Strata.Languages.Laurel.MonomorphizeCompositesProps
 import Strata.Languages.Laurel.ResolutionProps
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
+import Strata.Transform.FunctionInliningProps
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
+import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredCorrect
+import Strata.Transform.StructuredToUnstructuredPipeline
+import Strata.Transform.StructuredToUnstructuredPipelineCorrect
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
@@ -98,11 +105,12 @@ import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
-import Strata.DL.Util.HList
+import Strata.Util.HListProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF

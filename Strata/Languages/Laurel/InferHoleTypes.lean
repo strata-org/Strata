@@ -298,7 +298,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
   | .Exit _ | .Return none | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
-  | .New _ | .This | .Abstract | .All => return expr
+  | .New .. | .This | .Abstract | .All => return expr
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf

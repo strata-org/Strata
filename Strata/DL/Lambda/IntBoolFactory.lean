@@ -10,7 +10,8 @@ import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Util.ListMap
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
 
 /-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
 

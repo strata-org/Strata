@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure transparentBody(): int

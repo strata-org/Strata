@@ -22,7 +22,7 @@ the block does not make later obligations vacuous.
 
 The loop below therefore verifies, and its post-loop assertion — which depends on
 the loop-carried `i` — still holds. Because both properties hold, the verifier and
-the interpreter agree, so this case runs through both via `testLaurelMultiple`.
+the interpreter agree, so this case runs through both via `testLaurelExecution`.
 
 The cases where the pass changes the outcome are verifier-only (their obligations
 concern the havoc'd loop-head state, which the interpreter's single concrete path
@@ -30,7 +30,7 @@ never reaches) and live in
 `Verification/Fundamentals/LoopInvariantWellFormedness.lean`.
 -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure ordinaryLoopUnaffected() entry opaque {

@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.TypeConstructor
-public import Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
 
 namespace Imperative
 
@@ -454,6 +454,17 @@ def Block.definedVars [HasVarsImp P C] (ss : Block P C)
   | s :: srest => Stmt.definedVars s excludeScoped ++ Block.definedVars srest excludeScoped
 end
 
+/-- Deep init-variable list of a statement: the variables it defines at any
+nesting level.  Definitionally `Stmt.definedVars s false`. -/
+@[reducible, expose]
+def Stmt.initVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+  Stmt.definedVars s false
+
+/-- Deep init-variable list of a block.  Definitionally `Block.definedVars ss false`. -/
+@[reducible, expose]
+def Block.initVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+  Block.definedVars ss false
+
 mutual
 /-- Get all variables modified by the statement `s`. -/
 @[simp, expose]
@@ -721,28 +732,6 @@ the edge case where a name is projected away by `step_block_done` and then
 reinitialized — a pattern the unstructured CFG cannot replicate because its
 flat namespace has no projection.
 -/
-
-mutual
-/-- Collect every variable initialized by an `init` command in a statement. -/
-@[expose] def Stmt.initVars (s : Stmt P (Cmd P)) : List P.Ident :=
-  match s with
-  | .cmd (.init x _ _ _) => [x]
-  | .cmd _ => []
-  | .block _ bss _ => Block.initVars bss
-  | .ite _ tss ess _ => Block.initVars tss ++ Block.initVars ess
-  | .loop _ _ _ bss _ => Block.initVars bss
-  | .exit _ _ => []
-  | .funcDecl _ _ => []
-  | .typeDecl _ _ => []
-  termination_by (Stmt.sizeOf s)
-
-/-- Collect every variable initialized by an `init` command in a block. -/
-@[expose] def Block.initVars (ss : List (Stmt P (Cmd P))) : List P.Ident :=
-  match ss with
-  | [] => []
-  | s :: rest => Stmt.initVars s ++ Block.initVars rest
-  termination_by (Block.sizeOf ss)
-end
 
 /-- Every `init` in the program (across all nesting levels) names a unique
 variable. The flat-namespace CFG can simulate the structured semantics only

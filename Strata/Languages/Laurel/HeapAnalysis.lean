@@ -54,7 +54,7 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
     | .StaticCall callee _ => modify fun s => { s with callees := callee :: s.callees }
     | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
-    | .New _ => modify fun s => { s with writesHeapDirectly := true }
+    | .New .. => modify fun s => { s with writesHeapDirectly := true }
     | .Assign assignTargets _ =>
         for ⟨assignTarget, _⟩ in assignTargets.attach do
           match assignTarget.val with

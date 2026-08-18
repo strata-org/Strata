@@ -20,7 +20,7 @@ prelude name is a hard source-compatibility break rather than a shadowing nuisan
 
 Every prelude procedure therefore carries Laurel's reserved `$` prefix — the
 type-specific delegates (`$intAdd`, `$boolNot`, `$bv32SLt`, …) as well as the
-overloaded operator wrappers (`$add`, `$lt`, …) and the `$Box` placeholder.
+overloaded operator wrappers (`$add`, `$lt`, …).
 `LaurelToCoreSchemaPass` matches on the bare names via `dropReservedPrefix`, so the
 prefix lives in one place rather than in every match arm.
 
@@ -70,7 +70,9 @@ procedure strConcat(a: string, b: string) : string
 };
 
 // A user datatype named `Box` must also survive: `HeapParameterization` generates
-// its own `$Box`, which is a distinct, reserved name.
+// its own `$Box`, which is a distinct, reserved name. NB this file stops at
+// resolution, so it cannot see a later pass reserving the name — the end-to-end
+// guarantee is pinned by the source-compatibility cases in `GenericCompositeTest`.
 datatype Box { MkUserBox(contents: int) }
 
 procedure useThem(x: int, s: string) opaque {
@@ -87,7 +89,7 @@ procedure useThem(x: int, s: string) opaque {
 -- the *semantics*: each body deliberately computes something other than the
 -- operator it shares a name with, so the asserts hold only if the user's procedure
 -- is the one being called.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

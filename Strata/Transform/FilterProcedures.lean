@@ -79,7 +79,7 @@ end FilterProcedures
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String)
     (respectNoFilter : Bool := true) : PipelinePhase :=
-  modelPreservingPipelinePhase "FilterProcedures" fun prog => do
+  modelPreservingPipelinePhase "filterProcedures" fun prog => do
     let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
     return (changed, filtered)
 

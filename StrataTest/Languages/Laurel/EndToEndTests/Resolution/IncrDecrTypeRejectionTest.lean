@@ -55,7 +55,7 @@ composite IncrCounter {
 
 /-! ## Accepted: `++`/`--` on an int-based constrained type (e.g. `nat`) -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 constrained nat = v: int where v >= 0 witness 0
