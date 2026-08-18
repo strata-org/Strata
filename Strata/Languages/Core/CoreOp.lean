@@ -211,13 +211,13 @@ def MapOpKind.ofString? (s : String) : Option MapOpKind := lookupKind names s
 /-! ### Sequence Operations -/
 
 inductive SeqOpKind where
-  | Length | Empty | Append | Select | Build | Update | Contains | Take | Drop
+  | Length | Empty | Append | Select | SelectUnsafe | Build | Update | Contains | Take | Drop
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def SeqOpKind.names : List (SeqOpKind × String) :=
   [(.Length, "length"), (.Empty, "empty"), (.Append, "append"),
-   (.Select, "select"), (.Build, "build"), (.Update, "update"),
-   (.Contains, "contains"), (.Take, "take"), (.Drop, "drop")]
+   (.Select, "select"), (.SelectUnsafe, "select!"), (.Build, "build"),
+   (.Update, "update"), (.Contains, "contains"), (.Take, "take"), (.Drop, "drop")]
 
 def SeqOpKind.toString (k : SeqOpKind) : String := lookupName names k
 instance : ToString SeqOpKind := ⟨SeqOpKind.toString⟩

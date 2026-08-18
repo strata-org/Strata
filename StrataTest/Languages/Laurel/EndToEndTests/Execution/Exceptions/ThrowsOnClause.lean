@@ -42,7 +42,7 @@ wildcard case frame do not exist. See the exceptions section of the Laurel Desig
 Guide for why (in short: an empty case frame already means "unframed", so a wildcard
 would be a second spelling of it).
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 throw composite values, which live on the heap, and the interpret path does not
 support the heap yet. Where a construct can be exercised without the heap it is run
 both ways instead; see `Throw.lean`.
@@ -69,7 +69,7 @@ case's `ensures` — but not over the guards, which are evaluated on entry, befo
 throw. There is no unbound form: `throws` always names its value, whether or not any
 case mentions it.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 allocate on the heap — a thrown exception is a composite value, and some cases also
 `new` inside the region — and the interpret path does not support the heap yet. Where
 a construct can be exercised without the heap it is run both ways instead; see
@@ -78,7 +78,7 @@ a construct can be exercised without the heap it is run both ways instead; see
 
 -- Positive: the body throws exactly when `b == 0`, and the thrown value is an
 -- `ArithmeticException`, so the case holds.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -101,7 +101,7 @@ procedure div(a: int, b: int)
 
 -- Negative: the case declares a throw when `b == 0`, but the body never throws,
 -- so the forcing part cannot be proved on exit.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -124,7 +124,7 @@ procedure divBad(a: int, b: int)
 -- the `catch` branch (so `out` ends at 99, never 1). A case with nothing to say
 -- about the thrown value needs no `ensures` at all; the guard alone forces the
 -- throw.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -178,12 +178,12 @@ against a body that branched on the pre-state value. The guards below are theref
 parameters, which are immutable and so read the same in both states. Heap-reading guards
 are therefore unsupported rather than merely untested.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: a thrown
+Using `testLaurelExecution` but skiping the Core interpreter test path: a thrown
 exception is a composite, and the interpret path does not support the heap yet.
 -/
 
 -- Positive: one case, and it covers the only throwing path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -212,7 +212,7 @@ procedure oneCase(c: Cell, logCell: Cell, fail: bool)
 -- Negative: a second throwing path that no guard covers. Before the exhaustiveness
 -- claim this verified — the `fail` frame is vacuous on that path, so the write to
 -- `logCell` went unchecked.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -245,7 +245,7 @@ procedure missedCase(c: Cell, logCell: Cell, fail: bool)
 #end
 
 -- The fix is to state the missing case.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -281,7 +281,7 @@ procedure bothCases(c: Cell, logCell: Cell, fail: bool, alsoFail: bool)
 
 -- `throwsOn false` states that the procedure never throws. Verifies here, because it
 -- does not.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -297,7 +297,7 @@ procedure neverThrows(x: int)
 #end
 
 -- ...and fails when it does throw, since no guard can cover that path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -319,7 +319,7 @@ procedure claimsNeverThrows(x: int)
 
 -- Stating no case at all leaves the throwing paths unconstrained rather than ruled
 -- out: the same body as above verifies, because no exhaustiveness claim is emitted.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -340,7 +340,7 @@ procedure saysNothing(x: int)
 -- A case's `ensures` is checked on the exceptional path: `alwaysThrows` throws a value
 -- of type `Err`, so `ensures e is Err` holds on the Bad path. (The normal
 -- `ensures r > 0` is vacuous here — the Good path is never taken.)
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -361,7 +361,7 @@ procedure alwaysThrows()
 -- Negative: the case claims the escaping value is `Other`, but `wrongThrownType`
 -- throws an `Err` (a disjoint sibling), so the exceptional postcondition cannot
 -- be proved on the Bad path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite AppException {}
@@ -410,7 +410,7 @@ real throwing path rather than vacuously. -/
 -- Positive: the out-of-bounds path throws `IndexError` (with `i >= a#length`),
 -- and the in-bounds fall-through returns `select(elems, i)` — so the case
 -- clause and the `ensures` discharge.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -439,7 +439,7 @@ procedure value(a: IntArray, elems: Map int int, i: int, alen: int)
 -- Negative: a wrong case postcondition — claiming `IndexError` implies the index
 -- is in bounds, when it is thrown precisely when out of bounds — cannot be
 -- proved on the Bad path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -480,7 +480,7 @@ value. The array is a `Map int int` with a separate `alen` length. -/
 -- `i` is out of bounds, and the case states that the recorded index is out
 -- of bounds (a condition, no specific value) — which holds because it equals `i`
 -- on the throwing path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -507,7 +507,7 @@ procedure value(a: Map int int, alen: int, i: int)
 
 -- Negative: the case claims the recorded index is *in* bounds, which
 -- contradicts the throwing condition, so it cannot be proved.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -547,7 +547,7 @@ conjunction of type tests. -/
 -- Note the bodies in this section actually throw. A case's guard *forces* its throw, so
 -- `throwsOn true` on a body that returns normally would fail its forcing claim. The
 -- contracts here are therefore exercised rather than merely recorded.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -579,7 +579,7 @@ procedure multiThrows(pick: bool)
 -- `ensures e is ParseError ==> (e as ParseError)#position >= 0`; the `e is T`
 -- antecedent is what discharges the cast's embedded type-test assertion; the
 -- "dereferencing the thrown value" section above exercises that form.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -603,7 +603,7 @@ procedure perTypeClaims(pick: bool)
 #end
 
 -- Deeper hierarchy: a tighter `throws` type (an intermediate ancestor).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite AppException {}
@@ -639,7 +639,7 @@ a claim to have enumerated them, and `ModifiesClauses` emits a checked
 throwing path matching no guard is rejected rather than silently unframed, and a
 caller that refutes every guard learns the call cannot have thrown.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 allocate on the heap — a thrown exception is a composite value, and some cases also
 `new` inside the region — and the interpret path does not support the heap yet. Where
 a construct can be exercised without the heap it is run both ways instead; see
@@ -649,7 +649,7 @@ a construct can be exercised without the heap it is run both ways instead; see
 -- Positive: the body honours both frames — on the normal path only `c` changes,
 -- on the `fail` throwing path only `logCell` changes (the freshly-allocated `Err`
 -- is excluded from the frame, since it did not exist in the pre-state heap).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -678,7 +678,7 @@ procedure doWork(c: Cell, logCell: Cell, fail: bool)
 -- Negative: on the throwing path this modifies `c`, but the case's frame claims
 -- only `logCell` may change there, so the exceptional frame check fails. The
 -- guard is `true` because this procedure throws (e: unconditionally).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -706,7 +706,7 @@ procedure doWorkBad(c: Cell, logCell: Cell)
 -- does on the normal path. This needs the clause's refs to parse at precedence 0
 -- (see `throwsOnModifies` in the grammar); otherwise `logCell#value` does not
 -- parse as a field target here.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -735,7 +735,7 @@ procedure fieldGranularThrowFrame(c: Cell, logCell: Cell, fail: bool)
 
 -- Negative for the same shape: the throwing path writes `logCell#other`, which
 -- the field-granular exceptional frame does not name, so the check fails.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -773,7 +773,7 @@ extra, it is what the case is keyed on. -/
 -- `isBad ==> fail`, hence `!isBad`. The handler is unreachable (`assert false`
 -- holds) and the caller frames only `c`, even though the callee's exceptional
 -- frame mentions `logCell`.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -824,7 +824,7 @@ procedure handlerIsDead(c: Cell, l: Cell)
 -- guard forces its throw, so `throwsOn true` would claim the procedure always
 -- throws, which is false here; there is no way to frame a conditional throwing path
 -- without naming its condition.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -878,14 +878,14 @@ it is where the two contract directions pay off separately:
 - from a case's guard, the caller reasons *forwards* — it passed an input that
   forces a throw, so the handler definitely runs.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 allocate a composite exception value, which the interpret path does not support yet.
 -/
 
 -- Backwards direction: the handler learns `id < 0` without seeing the body. The case
 -- guards on `id < 0`, and because stating cases enumerates them, the exhaustiveness
 -- claim `isBad ==> id < 0` is available to callers.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite NotFound {}
@@ -912,7 +912,7 @@ procedure caller(id: int) returns (out: int)
 
 -- Forwards direction: the case's guard *forces* the throw for that input, so the
 -- normal path is unreachable and the handler's assignment is the only outcome.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite NotFound {}
@@ -957,13 +957,13 @@ property of the modifies encoding rather than of exceptions.
 Note the callers declare no case of their own: they catch, so they have no exceptional
 exit, and a case without a `throws` type is rejected.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 allocate composite values, which the interpret path does not support yet.
 -/
 
 -- Caught the exception: the callee's exceptional frame covers only `logCell`, so the
 -- caller's snapshot of `c` still holds.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -1007,7 +1007,7 @@ procedure callerAfterCatch()
 
 -- Fell through normally: the normal frame covers only `c`, so `logCell` is unchanged
 -- and the callee's `ensures` is available.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -1061,7 +1061,7 @@ The case below is the evidence: its `mode == 1` path writes `ioLog` and then thr
 `ParseError`, and that write is rejected because it is checked against the `mode == 1`
 case's own frame, which names only `parseLog`. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -1098,7 +1098,7 @@ terms. This is the one place the `throwsOn` clause surface is *not* narrower tha
 normal one; `free`/`checked` have no case equivalent, and a wildcard frame would be
 redundant with an empty one. See the Laurel Designer Guide. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}

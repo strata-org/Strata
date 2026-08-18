@@ -6,8 +6,9 @@
 module
 
 public import Strata.DL.Imperative.Cmd
-public import Strata.DL.Util.Map
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListMapProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 
 ---------------------------------------------------------------------
 

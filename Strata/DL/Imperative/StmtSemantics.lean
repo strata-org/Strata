@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Util.Relations
+public import Strata.Util.RelationsProps
 
 ---------------------------------------------------------------------
 

@@ -18,7 +18,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelVerification
     (options := { defaultLaurelTestOptions with
       translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }) <|

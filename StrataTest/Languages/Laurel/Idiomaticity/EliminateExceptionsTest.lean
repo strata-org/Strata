@@ -185,7 +185,7 @@ procedure loadUser(id: int)
       {
         {
           {
-            var $callres_1: (Result<int, NotFoundException>) := fetchRecord(id);
+            var $callres_1: Result<int, NotFoundException> := fetchRecord(id);
             if Result..isBad($callres_1)
               then {
                 $exc_0 := Result..err($callres_1);
@@ -332,7 +332,7 @@ procedure retry(x: int): (Result<int, NetworkError>)
       {
         {
           {
-            var $callres_1: (Result<int, NetworkError>) := attempt(x);
+            var $callres_1: Result<int, NetworkError> := attempt(x);
             if Result..isBad($callres_1)
               then {
                 $exc_0 := Result..err($callres_1);
@@ -521,7 +521,7 @@ procedure parseDocument(input: int)
       {
         {
           {
-            var $callres_1: (Result<int, SyntaxError>) := parseStrict(input);
+            var $callres_1: Result<int, SyntaxError> := parseStrict(input);
             if Result..isBad($callres_1)
               then {
                 $exc_0 := Result..err($callres_1);

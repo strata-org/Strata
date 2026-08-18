@@ -50,6 +50,15 @@ structure MutualADTWF (C : LContext CoreLParams) (block : MutualDatatype Unit) :
       `C`, an existing datatype of `C`, or a name declared in the block. -/
   refsKnown : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, ∀ ref ∈ getTypeRefs arg.2,
       ref ∈ C.knownTypes.keywords ∨ ref ∈ C.datatypes.allTypeNames ∨ ref ∈ block.map (·.name)
+  /-- Every type-constructor reference in a constructor argument is applied at the
+      right arity: its argument count equals the referenced type's arity — a known
+      type's registered arity, or a datatype's number of `typeArgs` (an existing
+      datatype of `C` or one declared in the block). -/
+  argsWellKinded : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args,
+      ∀ ref n, (ref, n) ∈ getTypeConsArities arg.2 →
+        C.knownTypes[ref]? = some n ∨
+        (∃ d' ∈ C.datatypes.allDatatypes, d'.name = ref ∧ d'.typeArgs.length = n) ∨
+        (∃ d' ∈ block, d'.name = ref ∧ d'.typeArgs.length = n)
   /-- Every datatype in the block is inhabited. -/
   inhabited : ∀ d ∈ block, TySymInhab (C.datatypes.push block) d.name
 

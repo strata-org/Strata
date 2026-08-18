@@ -51,6 +51,10 @@ structure FuncHasType' (τ : Type) [S : ExprTypingSpec τ]
   /-- All free type variables in the signature are declared in `typeArgs`. -/
   noUndeclaredVars : ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.mkArrow' func.output func.inputs.values) →
     v ∈ func.typeArgs
+  /-- Each input and output type is `tyCompat` to a type well-kinded in `C`
+      (type constructors applied at their arity). -/
+  signatureWellKinded : ∀ ty ∈ func.output :: func.inputs.values,
+    ∃ ty', S.tyCompat Γ.aliases ty ty' ∧ C.WellKindedTy ty'
   /-- If a body exists, it has the declared return type in the ambient context
       extended with a scope binding each formal to its monomorphic type (up to
       consistent renaming of type variables). -/

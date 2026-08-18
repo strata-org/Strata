@@ -7,7 +7,8 @@ module
 
 public import Strata.DL.Imperative.KleeneStmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 /-! # Properties of Kleene (nondeterministic) small-step semantics
 

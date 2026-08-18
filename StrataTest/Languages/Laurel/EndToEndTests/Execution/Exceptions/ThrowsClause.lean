@@ -39,7 +39,7 @@ Also here:
 The escape rules for the declaration — no-escape and the subtype upper bound —
 are rejections, so they live in `Resolution/Exceptions/ThrowsEscape.lean`.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: these cases
+Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
 throw composite values, which live on the heap, and the interpret path does not
 support the heap yet. Where a construct can be exercised without the heap it is run
 both ways instead; see `Throw.lean`.
@@ -48,7 +48,7 @@ both ways instead; see `Throw.lean`.
 /-! ## A normal `ensures` under `throws` -/
 -- Good-path `ensures` is checked on exit: `safeInc` establishes `r > x` on the
 -- (only, non-throwing) path, so the guarded postcondition discharges.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -65,7 +65,7 @@ procedure safeInc(x: int)
 -- Good-path `ensures` is assumed at a call site: inside the `try`, the call to
 -- `produce` returns on the Good path, so the caller may rely on `ensures r > 10`
 -- for the unwrapped value and prove `out > 10`.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -92,7 +92,7 @@ procedure consume()
 
 -- Negative: the good-path `ensures` does not hold — `badInc` returns `x - 1`,
 -- which is not `> x` — so the guarded postcondition fails on the Good path.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -123,7 +123,7 @@ statements following the call. -/
 
 -- A callee's exception propagates through a procedure that only declares `throws`,
 -- and is caught by its caller.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -158,7 +158,7 @@ procedure catchesPropagated(x: int) returns (out: int)
 -- After a throwing call, the statements that follow run only on the `Good` path, so
 -- the callee's normal postcondition is available to them unconditionally. If a `Bad`
 -- result could fall through, `r >= 0` would not hold here.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -199,7 +199,7 @@ then the throwing-call combinations are covered with an opaque callee, in
 `ThrowsOnClause.lean`. -/
 
 -- A transparent (no `opaque`) procedure that throws: rejected, at the `throw`.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -232,7 +232,7 @@ before any `Result` exists to be `Good` or `Bad`. So the ordinary contract appli
 body may assume it, and each call site must establish it. -/
 
 -- Positive: the body assumes the precondition, and a caller that satisfies it verifies.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -257,7 +257,7 @@ procedure callsWithGoodInput()
 
 -- Negative: a caller that violates it is reported at the call site, in the author's
 -- words rather than the default phrasing.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -288,7 +288,7 @@ By the time the exceptional channel is lowered there is no value riding on the
 `return` for the `Result` assembly to lose — which is why that ordering is a declared
 dependency of the pass rather than a comment. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -333,7 +333,7 @@ tell. The third case pins that program; the arm-by-arm collision coverage is
 
 -- Short form, with a `throwsOn` case and an `ensures` so the contract rewriting has
 -- to reach the postconditions and not just the body.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -353,7 +353,7 @@ procedure shortFormOrThrows(x: int): int
 
 -- The explicit form with the output named `$result` by hand: the same program as far
 -- as this pass is concerned, since `: T` desugars to exactly this.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -374,7 +374,7 @@ procedure explicitDollarResult(x: int)
 -- A quantifier binder named `$result` inside a case postcondition: the carrier
 -- freshens to `$result_1`, so the `e` substituted into the case's `ensures`
 -- refers to the carrier, not the authored quantified variable.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -414,7 +414,7 @@ lowered and its frame gets guarded by a `Result..isGood` that resolution then
 rejects, surfacing as an internal error from a pass that did nothing wrong. It
 must verify cleanly. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -437,7 +437,7 @@ procedure baitForCarrierInference(c: Cell)
 -- Control: the identical procedure with an ordinary output name and type. Pinning
 -- both means a regression to name- or type-inference fails the bait case while this
 -- one still passes, pointing straight at the cause.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {

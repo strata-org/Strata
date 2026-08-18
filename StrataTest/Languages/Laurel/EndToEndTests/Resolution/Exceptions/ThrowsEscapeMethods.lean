@@ -20,7 +20,7 @@ it does a static one). Diagnostics name the method with a dot
 
 -- A method that throws without declaring `throws` is rejected (the hole that
 -- existed while the check only scanned top-level procedures).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -41,7 +41,7 @@ procedure useIt() opaque {
 #end
 
 -- A method that declares `throws` and throws it: allowed (verifies).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -60,7 +60,7 @@ composite Account2 {
 -- method -> method propagation: `caller` invokes a throwing method without
 -- catching it and without declaring `throws`. This is caught only because the
 -- check runs after lifting, when `self#risky()`'s callee `throws` resolves.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}

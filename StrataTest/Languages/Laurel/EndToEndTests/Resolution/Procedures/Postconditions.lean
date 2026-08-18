@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Procedures with postconditions -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

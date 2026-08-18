@@ -111,12 +111,6 @@ structure SMT.Context where
   datatypes : SMT.Datatypes := .empty
   seenDatatypes : Std.HashSet String := {}
   datatypeFuns : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := {}
-  /-- Global counter for generating unique bound variable names across all terms. -/
-  bvCounter : Nat := 0
-  /-- When true, always use `$__bv{N}` names for bound variables instead of
-      human-readable names derived from user-provided names.
-      Invariant during translation. -/
-  uniqueBoundNames : Bool := false
   /-- When true, encode `Map` types/operations using the SMT Array theory
       (`select`/`store`) instead of an uninterpreted `Map` sort.
       Invariant during translation. -/
@@ -351,7 +345,8 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
-                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
+                    | _ =>
+                      .error f!"Cannot encode unresolved type variable '{tyv}' to SMT, polymorphic function body verification is not yet supported."
 
 def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
@@ -699,16 +694,18 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
   | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk name (.some ty) tr e =>
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
-    -- Generate base name using global counter to ensure uniqueness across terms.
-    -- The `$__` prefix is reserved for internal use and cannot appear in user
-    -- identifiers.
+    -- Prefer the user-provided binder name; when absent, fall back to a
+    -- depth-based `$__bv{N}` name (`N` = the binder's de Bruijn depth, i.e. the
+    -- current binder-stack size). The `$__` prefix is reserved for internal use
+    -- and cannot appear in user identifiers. `findUnique` (below) then resolves
+    -- any residual clash against the names in scope, so the base need only be
+    -- unique along a root-to-leaf binder path — which depth guarantees.
     let (baseName, startSuffix) :=
-      if ctx.uniqueBoundNames || name.isEmpty then
-        (s!"$__bv{ctx.bvCounter}", 1)
+      if name.isEmpty then
+        (s!"$__bv{bvs.length}", 1)
       else
         let (b, s) := Strata.Name.breakDisambiguated name
         (Encoder.sanitizeSmtName b, s)
-    let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
     -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
     let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
       ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)

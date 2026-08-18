@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelVerification
     (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
 #strata
 program Laurel;

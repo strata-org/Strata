@@ -37,7 +37,7 @@ A precondition is asserted at the call site and assumed in the body. -/
 
 /-! A violated plain `requires` FAILS at the call site; the same clause written
     `free` VERIFIES because a free precondition is never asserted at callers. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure needsPositive(x: int) returns (r: int)
@@ -67,7 +67,7 @@ procedure callsRequires()
 /-! A `checked requires` is asserted at the call site but NOT assumed in the
     body (assert-only): the body cannot rely on it, so an in-body `assert` of the
     same fact fails. A plain `requires` IS assumed, so the same assert verifies. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure checkedReqNotAssumed(x: int) returns (r: int)
@@ -94,7 +94,7 @@ site. -/
 
 /-! A violated plain `ensures` FAILS at the end of the body; the same clause
     written `free` VERIFIES because a free postcondition is never checked. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure plainEnsuresViolated(x: int) returns (r: int)
@@ -115,7 +115,7 @@ procedure freeEnsuresViolated(x: int) returns (r: int)
 /-! A `checked ensures` that holds VERIFIES; and it is asserted at the body but
     NOT assumed at the call site (assert-only), so a caller may not rely on it —
     an `assert` of the same fact after the call fails. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure checkedEnsuresCallee(x: int) returns (r: int)

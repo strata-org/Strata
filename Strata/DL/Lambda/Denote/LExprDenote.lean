@@ -10,7 +10,7 @@ import Strata.DL.Lambda.Factory
 meta import Init.Grind.Cases
 import Std.Tactic.BVDecide.Normalize.BitVec
 import Std.Tactic.BVDecide.Normalize.Prop
-import Strata.DL.Util.HList
+import Strata.Util.HListProps
 
 /-!
 ## Core Denotational Semantics

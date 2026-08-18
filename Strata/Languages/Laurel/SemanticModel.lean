@@ -117,6 +117,10 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
+ -- A type parameter (`T` in `procedure f<T>` / `datatype D<T>`) carries the
+ -- polymorphism substrate: it resolves to `HighType.TVar`, not erased to
+ -- `Unknown`.
+ | .typeParameter name => ⟨ .TVar name, name.source ⟩
  | .unresolved source => ⟨ .Unknown, source ⟩
  | .staticProcedure proc => ⟨ .Unknown, proc.name.source ⟩
  | .instanceProcedure _ proc => ⟨ .Unknown, proc.name.source ⟩
@@ -124,7 +128,6 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constrainedType ty => ⟨ .Unknown, ty.name.source ⟩
  | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
  | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
- | .typeParameter name => ⟨ .Unknown, name.source ⟩
 
 /-! ## Resolution result -/
 
@@ -166,7 +169,10 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : Except String 
     | fuel' + 1 =>
       match model.get current with
         | .compositeType (ty : CompositeType) =>
-          [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
+          -- `extending` is `List HighTypeMd`; ancestry keys on the parent NAME (an
+          -- instantiation `Base<T>` shares `Base`'s ancestor chain), so peel the base.
+          [ty] ++ ty.extending.flatMap (fun parent =>
+            match highBaseName? parent.val with | some n => go fuel' n | none => [])
         | _ => []
   let mut seen : Std.HashSet Nat := {}
   let mut acc : List CompositeType := []

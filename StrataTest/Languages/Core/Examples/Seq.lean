@@ -614,5 +614,139 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify seqEmptyTypesPgm
 
+-- select! on a ground-pinned sequence: no out-of-bounds obligation emitted.
+
+private def seqSelectBangPgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+
+procedure P()
+{
+  // Pin a length-2 sequence [10, 20] with ground facts.
+  assume [g_len]: Sequence.length(g) == 2;
+  assume [g_0]: Sequence.select!(g, 0) == 10;
+  assume [g_1]: Sequence.select!(g, 1) == 20;
+
+  assert [read_0]: Sequence.select!(g, 0) == 10;
+  assert [read_1]: Sequence.select!(g, 1) == 20;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run Inhabited.default (translateProgram seqSelectBangPgm) |>.snd |>.isEmpty
+
+/--
+info: program Core;
+
+function g () : Sequence int;
+procedure P ()
+{
+  assume [g_len]: Sequence.length(g) == 2;
+  assume [g_0]: Sequence.select!(g, 0) == 10;
+  assume [g_1]: Sequence.select!(g, 1) == 20;
+  assert [read_0]: Sequence.select!(g, 0) == 10;
+  assert [read_1]: Sequence.select!(g, 1) == 20;
+};
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram seqSelectBangPgm) |>.fst
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: read_0
+Property: assert
+Assumptions:
+g_len: Sequence.length(g) == 2
+g_0: Sequence.select!(g, 0) == 10
+g_1: Sequence.select!(g, 1) == 20
+Obligation:
+Sequence.select!(g, 0) == 10
+
+Label: read_1
+Property: assert
+Assumptions:
+g_len: Sequence.length(g) == 2
+g_0: Sequence.select!(g, 0) == 10
+g_1: Sequence.select!(g, 1) == 20
+Obligation:
+Sequence.select!(g, 1) == 20
+
+---
+info:
+Obligation: read_0
+Property: assert
+Result: ✅ pass
+
+Obligation: read_1
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqSelectBangPgm
+
+-- select! reasons through constructors (build) via its interaction axioms.
+
+private def seqSelectBangBuildPgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+
+procedure P()
+{
+  var t : Sequence int;
+
+  t := Sequence.build(Sequence.build(s, 10), 20);
+  assume [s_empty]: Sequence.length(s) == 0;
+
+  assert [reads_20]: Sequence.select!(t, 1) == 20;
+  assert [reads_10]: Sequence.select!(t, 0) == 10;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run Inhabited.default (translateProgram seqSelectBangBuildPgm) |>.snd |>.isEmpty
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: reads_20
+Property: assert
+Assumptions:
+s_empty: Sequence.length(s) == 0
+Obligation:
+Sequence.select!(Sequence.build(Sequence.build(s, 10), 20), 1) == 20
+
+Label: reads_10
+Property: assert
+Assumptions:
+s_empty: Sequence.length(s) == 0
+Obligation:
+Sequence.select!(Sequence.build(Sequence.build(s, 10), 20), 0) == 10
+
+---
+info:
+Obligation: reads_20
+Property: assert
+Result: ✅ pass
+
+Obligation: reads_10
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqSelectBangBuildPgm
+
 end
 ----------------------------------------------------------------------

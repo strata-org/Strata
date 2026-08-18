@@ -1010,11 +1010,11 @@ A program-level `var counter: int` defines shared mutable state. Laurel lowers
 direct and transitive global effects to hidden parameters in declaration order;
 initial values come from the caller or runtime.
 
-**Supported:** reads and writes in procedure bodies (including instance and
+*Supported:* reads and writes in procedure bodies (including instance and
 transitive calls), current global values in contracts, and multiple globals
 alongside heap state.
 
-**Not yet supported** (reported with source diagnostics):
+*Not yet supported* (reported with source diagnostics):
 - Global-dependent `old(...)` expressions.
 - Globals in entry procedures, constants, or constrained-type predicates and witnesses.
 - Explicit inout/global interactions and global-writing `invokeOn` procedures.

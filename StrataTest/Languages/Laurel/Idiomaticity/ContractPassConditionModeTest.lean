@@ -40,7 +40,7 @@ namespace Strata.Laurel
 private def parseAndLower (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
-  pure (lowerContracts result.program)
+  pure (lowerContracts result.model result.program)
 
 private def printLowered (program : StrataDDM.Program) : IO Unit := do
   let lowered ← parseAndLower program

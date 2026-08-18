@@ -45,7 +45,7 @@ key soundness property is that a caller does NOT get to assume it. -/
     postcondition, so the caller's `assert false` verified — any caller could
     prove anything. Now the clause is dropped, so `assert false` at the call
     site is (correctly) unprovable. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure bad() returns (r: int)
@@ -67,7 +67,7 @@ A bodiless procedure's plain and `free` postconditions are assumed at call
 sites, so callers can rely on them. -/
 
 /-! A plain `ensures` on a bodiless procedure is assumed at the call site. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure bodilessPlain(x: int) returns (r: int)
@@ -84,7 +84,7 @@ procedure usesBodilessPlain()
 
 /-! A `free ensures` on a bodiless procedure is likewise assumed at the call
     site (this is the `free := true` behavior the mode replaced). -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure bodilessFree(x: int) returns (r: int)
@@ -105,7 +105,7 @@ A precondition is asserted at the (always-present) call site, so bodilessness
 does not weaken it: a violated `checked requires` still fails at the caller. -/
 
 /-! A `checked requires` on a bodiless procedure is still asserted at callers. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure bodilessNeedsPositive(x: int) returns (r: int)

@@ -32,7 +32,7 @@ parameterization which interacts poorly with counterexample search
 for the failing tests in this file).
 -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 

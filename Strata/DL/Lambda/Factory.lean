@@ -12,7 +12,7 @@ import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Util.Func
-import Strata.Util.ListProps
+import Strata.Util.ListUtilsProps
 import Std.Data.HashMap.Lemmas
 
 /-!

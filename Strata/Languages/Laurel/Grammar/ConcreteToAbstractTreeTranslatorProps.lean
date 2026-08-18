@@ -137,7 +137,7 @@ theorem translateHighType_highTypeValToArg_roundtrip
       simp [laurelOp, getArgFileRange_ok, bind, StateT.bind, pure, StateT.pure, Except.pure,
             mkHighTypeMd, Except.bind, hk_eq, hv_eq, hk', hv']
     | .TVoid | .TSet _ | .Applied _ _ | .Intersection _ | .Unknown
-    | .MultiValuedExpr _ =>
+    | .MultiValuedExpr _ | .TVar _ =>
       simp [HighType.grammarRepresentable] at hrep
 
 /-! ## Correspondence to the golden round-trip tests

@@ -7,7 +7,7 @@ module
 
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.EvalError
-import Strata.DL.Util.Maps
+import Strata.Util.ListMapsProps
 
 namespace Arith
 open Std (ToFormat Format format)

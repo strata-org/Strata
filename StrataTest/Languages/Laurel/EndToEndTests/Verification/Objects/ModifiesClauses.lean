@@ -19,7 +19,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Container {
@@ -162,7 +162,7 @@ A `modifies o#f` clause frames only the `(o, f)` pair: every *other* field of `o
 (and every other object) is preserved across the call, while `o#f` may change.
 This is strictly more precise than the object-granular `modifies o`.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Account {
@@ -207,7 +207,7 @@ Callee-side enforcement: a body that writes a field OUTSIDE its field-granular
 modifies clause must fail to verify. Here `modifies self#balance` is declared
 but the body also writes `self#count`, which is not framed.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Account2 {
@@ -232,7 +232,7 @@ SOUNDNESS GATE (issue #1402): cross-type shared field name.
 Cross-type field names: `Box1.x` and `Box2.x` are distinct constants, so framing
 `b1#x` must not leak to `b2#x`. The three sibling asserts hold; modified `b1#x` is UNKNOWN.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Box1 {
@@ -278,7 +278,7 @@ procedure crossTypeCaller()
 Vacuity trap: a BODILESS opaque stub must still emit its field frame. The mixed
 PROVED/UNKNOWN outcome proves the frame is emitted and non-vacuous with no body.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite AccountA {
@@ -314,7 +314,7 @@ procedure vacuityTrapCaller()
 Multi-field: `modifies self#x, self#y` frames two fields of one object; the
 third field `z` stays preserved while `x` and `y` may change.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Triple {
@@ -353,7 +353,7 @@ procedure multiFieldCaller()
 Mixed: `modifies o, p#f` combines a whole-object entry with a field entry.
 `p`'s other field and a sibling stay preserved; `o#w` and `p#f` go UNKNOWN.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Whole {
@@ -400,7 +400,7 @@ procedure mixedCaller()
 Inheritance: `modifies d#bval` names an INHERITED field (declared in `Base`,
 qualified `Base.bval`). Derived-only `dval` stays preserved; inherited `bval` is UNKNOWN.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Base {
@@ -436,7 +436,7 @@ procedure inheritanceCaller()
 /-
 Callee-side field enforcement: declaring modifies o.x but writing o.y must fail.
 -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Pair {

@@ -16,6 +16,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
+import Strata.Transform.MonomorphizeProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
@@ -1525,27 +1526,50 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
-/-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and common subexpression elim.
-    CSE runs after symbolic evaluation to extract common
-    subexpressions introduced by partial evaluation inlining. -/
-def corePipelinePhases (procs : Option (List String) := none)
+/-- Type-checking pipeline phase: runs `Core.typeCheck` on the program. -/
+def typeCheckPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  let typeCheckPhase : PipelinePhase :=
-    modelPreservingPipelinePhase "typeCheck" fun prog => do
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "typeCheck"
+    fun prog => do
       match Core.typeCheck options prog moreFns with
       | .ok prog' => return (true, prog')
       | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
-  let symbolicEvalPhase : PipelinePhase :=
-    modelPreservingPipelinePhase "symbolicEval" fun prog => do
+
+/-- Symbolic-evaluation pipeline phase: partially evaluates the program into
+    the passive proof-obligation form consumed by obligation extraction. -/
+def symbolicEvalPipelinePhase
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "symbolicEval"
+    fun prog => do
       let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, betaReducePipelinePhase, commonSubexprElimPhase]
 
-/-- The abstracted phases derived from the Core pipeline phases. -/
+
+/-- The full pipeline phases for program-to-program transforms, including
+    type checking, symbolic evaluation, and common subexpression elim.
+    CSE runs after symbolic evaluation to extract common
+    subexpressions introduced by partial evaluation inlining; it is
+    model-preserving (skipping it via `options.disableCSE` is sound,
+    though solver outcomes may differ on individual obligations). -/
+def corePipelinePhases (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
+  transformPipelinePhases procs
+    ++ [monomorphizeProceduresPipelinePhase,
+        typeCheckPipelinePhase options moreFns, symbolicEvalPipelinePhase options moreFns]
+    ++ [betaReducePipelinePhase] ++ csePhases
+
+/-- The abstracted phases derived from the Core pipeline phases.
+
+    Must be called with the same `procs`/`options` as the corresponding
+    `corePipelinePhases` run: the phase list's membership is
+    options-dependent (`disableCSE`), so a list computed with different
+    options describes phases that did not actually run. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
@@ -1875,7 +1899,7 @@ def verifySingleEnv (oblProgram : Program)
     let (disposition, encStats) ← pctx.withRepeatedPhase "smtDischarge" do
       -- Seed the encoding context with the env's datatypes and encoder flags.
       let smtCtx := { SMT.Context.default with
-        uniqueBoundNames := options.uniqueBoundNames, datatypes,
+        datatypes,
         useArrayTheory := options.useArrayTheory }
       -- `toSMTTerms` is pure, so it must go through the `*Pure` helper
       -- otherwise the compiler will evaluate it before the phase is entered.

@@ -16,7 +16,7 @@ open Strata
 -- one is genuinely caught. (`int32` is exactly what the Java frontend
 -- emits for a Java `int` record field.)
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
@@ -50,7 +50,7 @@ procedure falseAssertionIsCaught()
 -- reference dangles after the constrained-type definition is dropped and the
 -- Laurel-to-Core translator fails. (Laurel surface `Set` carries no element
 -- type, so `Map` is the vehicle for wrapping the constrained type.)
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0

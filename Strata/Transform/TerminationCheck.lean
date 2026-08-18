@@ -424,7 +424,7 @@ end TermCheck
     recursive functions. Model-preserving because it only adds new
     assertions and procedures. -/
 def termCheckPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "TermCheck" fun prog => do
+  modelPreservingPipelinePhase "termCheck" fun prog => do
     TermCheck.termCheck prog
 
 end Core

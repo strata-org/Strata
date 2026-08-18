@@ -21,7 +21,7 @@ exercises the chaining enabled by three changes:
     `FieldSelect` is eliminated rather than leaking raw into `readField`.
 -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Inner {

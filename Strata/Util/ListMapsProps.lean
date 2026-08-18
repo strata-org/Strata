@@ -5,178 +5,23 @@
 -/
 module
 
-public import Strata.DL.Util.Map
-import all Strata.DL.Util.Map
+public import Strata.Util.ListMaps
+import all Strata.Util.ListMaps
+public import Strata.Util.ListMapProps
+import all Strata.Util.ListMapProps
 
 open Std (ToFormat Format format)
+/-!
+# Properties of `Maps` (stacks of `Map`s)
+
+## Key theorems
+
+* `find?_insert_self`, `find?_insert_ne`, `find?_update_self`
+* `find?_remove_self`, `find?_remove_ne`, `find?_addInNewest_self`
+* `find?_toSingleMap` — flattening agrees with scoped lookup
+-/
 
 public section
-
-@[expose] abbrev Maps (α : Type u) (β : Type v) := List (Map α β)
-
-instance : Inhabited (Maps α β) where
-  default := []
-
-def Maps.format' [ToFormat (Map α β)] (ms : Maps α β) : Format :=
-  match ms with
-  | [] => ""
-  | [m] => (format f!"[{m}]")
-  | m :: rest =>
-    (format f!"[{m}]{Format.line}") ++ Maps.format' rest
-
-instance[ToFormat (Map α β)] : ToFormat (Maps α β) where
-  format := Maps.format'
-
-def Maps.keys (ms : Maps α β) : List α :=
-  match ms with
-  | [] => []
-  | m :: mrest => m.keys ++ Maps.keys mrest
-
-def Maps.values (ms : Maps α β) : List β :=
-  match ms with
-  | [] => []
-  | m :: mrest => m.values ++ Maps.values mrest
-
-def Maps.isEmpty (m : Maps α β) : Bool :=
-  match m with
-  | [] => true
-  | _ => false
-
-/--
-Add Map `m` to the beginning of Maps `ms`.
--/
-def Maps.push (ms : Maps α β) (m : Map α β) : Maps α β :=
-  m :: ms
-
-/--
-Remove the newest Map in `ms`. Do nothing if `ms` is empty.
--/
-def Maps.pop (ms : Maps α β) : Maps α β :=
-  match ms with
-  | [] => []
-  | _ :: rest => rest
-
-/--
-Get the oldest map (i.e., from the end) in `ms`.
--/
-def Maps.oldest (ms : Maps α β) : Map α β :=
-  ms.getLastD []
-
-/--
-Drop the oldest map in `ms`.
--/
-def Maps.dropOldest (ms : Maps α β) : Maps α β :=
-  ms.dropLast
-
-/--
-Get the newest map (i.e., from the beginning) in `ms`.
--/
-def Maps.newest (ms : Maps α β) : Map α β :=
-  match ms with | [] => [] | m :: _ => m
-
-/--
-Append `m` to the end of the newest map in `ms`.
--/
-def Maps.addInNewest (ms : Maps α β) (m : Map α β) : Maps α β :=
-  let new := ms.newest ++ m
-  let ms := ms.pop
-  ms.push new
-
-/--
-Flatten the Maps `ms` to get a single map.
-
-Searching for `(x : α)` after flattening will proceed from the newest to
-the oldest Map.
--/
-@[expose] def Maps.toSingleMap (ms : Maps α β) : Map α β :=
-  ms.flatten
-
-/--
-Look up `(x : α)` in all the maps in `ms`.
--/
-@[expose] def Maps.find? [DecidableEq α] (ms : Maps α β) (x : α) : Option β :=
-  match ms with
-  | [] => none
-  | m :: rest =>
-    match m.find? x with
-    | none => Maps.find? rest x
-    | some v => some v
-
-/--
-Look up `(x : α)` in all the maps in `ms`, returning the default element `d` if
-`x` is not found.
--/
-@[expose] def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
-  match ms with
-  | [] => d
-  | m :: rest =>
-    match m.find? x with
-    | none => Maps.findD rest x d
-    | some v => v
-
-/--
-Remove `x` and its associated value from `ms`.
--/
-def Maps.remove [DecidableEq α] (ms : Maps α β) (x : α) : Maps α β :=
-  match ms with
-  | [] => []
-  | m :: rest => Map.erase m x :: Maps.remove rest x
-
-/--
-Update `x` with `v` in `ms`. Do nothing if `x` is not in `ms`.
--/
-def Maps.update [DecidableEq α] (ms : Maps α β) (x : α) (v : β) : Maps α β :=
-  match ms with
-  | [] => []
-  | m :: rest =>
-    match m.find? x with
-    | none => m :: (Maps.update rest x v)
-    | some _ => (m.insert x v) :: rest
-
-/--
-Insert `(x, v)` in `ms`. If `x` is already in `ms`, update that entry.
-Else add it to the most recent map.
--/
-def Maps.insert [DecidableEq α] (ms : Maps α β) (x : α) (v : β) : Maps α β :=
-  let x_exists := ms.find? x
-  match x_exists with
-  | none =>
-    let m := ms.newest
-    let m' := m.insert x v
-    (ms.pop).push m'
-  | some _ => Maps.update ms x v
-
-/--
-Insert `(x, v)` in the oldest map in `ms`. Do nothing if `x` is already in `ms`.
--/
-def Maps.insertInOldest [DecidableEq α] (ms : Maps α β) (x : α) (v : β) : Maps α β :=
-  let rec go (acc : Maps α β) : Maps α β → Maps α β
-    | [] =>
-      let m_elem := Map.ofList [(x, v)]
-      if acc.isEmpty then [m_elem]
-      else acc.reverse ++ [m_elem]
-    | [m] =>
-      match m.find? x with
-      | some _ => acc.reverse ++ [m]
-      | none =>
-        let m_elem := Map.ofList [(x, v)]
-        acc.reverse ++ [m ++ m_elem]
-    | m :: rest =>
-      match m.find? x with
-      | some _ => acc.reverse ++ (m :: rest)
-      | none => go (m :: acc) rest
-  go [] ms
-
-/--
-Insert `(xi, vi)` -- where `xi` and `vi` are corresponding elements of `xs` and
-`vs` -- in the oldest map in `ms`, only if `xi` is not in `ms`.
--/
-def Maps.addInOldest [DecidableEq α] (ms : Maps α β) (xs : List α) (vs : List β) : Maps α β :=
-  match xs, vs with
-  | [], _ | _, [] => ms
-  | x :: xrest, v :: vrest =>
-    let ms := Maps.insertInOldest ms x v
-    Maps.addInOldest ms xrest vrest
 
 ---------------------------------------------------------------------
 
@@ -196,6 +41,7 @@ theorem Maps.find?_mem_keys [DecidableEq α] (m : Maps α β)
       simp_all
   done
 
+
 theorem Maps.find?_mem_values [DecidableEq α] (m : Maps α β)
   (h : Maps.find? m k = some v) :
   v ∈ Maps.values m := by
@@ -211,6 +57,7 @@ theorem Maps.find?_mem_values [DecidableEq α] (m : Maps α β)
       have := @Map.find?_mem_values α β k v _ head heq
       simp_all
 
+
 theorem Maps.find?_of_not_mem_values [DecidableEq α] (S : Maps α β)
   (h1 : Maps.find? S i = none) : i ∉ Maps.keys S := by
   induction S; all_goals simp_all [Maps.keys]
@@ -220,6 +67,7 @@ theorem Maps.find?_of_not_mem_values [DecidableEq α] (S : Maps α β)
   rename_i h
   exact Map.find?_of_not_mem_values head h
   done
+
 
 private theorem Maps.insert_fresh_key_subset [DecidableEq α] (ms : Maps α β)
   (h : Maps.find? ms key = none) :
@@ -231,6 +79,7 @@ private theorem Maps.insert_fresh_key_subset [DecidableEq α] (ms : Maps α β)
   grind
   done
 
+
 private theorem Maps.insert_fresh_key_subset_value [DecidableEq α] (ms : Maps α β)
   (h : Maps.find? ms key = none) :
   (Maps.insert ms key val).values ⊆ val :: Maps.values ms := by
@@ -240,6 +89,7 @@ private theorem Maps.insert_fresh_key_subset_value [DecidableEq α] (ms : Maps �
   have := @Map.insert_values _ _ key val _ m
   grind
   done
+
 
 private theorem Maps.insert_key_update_subset [DecidableEq α] (ms : Maps α β)
   (h : ¬ Maps.find? ms key = none) :
@@ -257,6 +107,7 @@ private theorem Maps.insert_key_update_subset [DecidableEq α] (ms : Maps α β)
     have := @Map.insert_keys _ _ key val _ hd
     grind
   done
+
 
 private theorem Maps.insert_key_update_subset_value [DecidableEq α] (ms : Maps α β)
   (h : ¬ Maps.find? ms key = none) :
@@ -278,6 +129,7 @@ private theorem Maps.insert_key_update_subset_value [DecidableEq α] (ms : Maps 
       grind
   done
 
+
 theorem Maps.insert_keys_subset [DecidableEq α] (ms : Maps α β) :
   (Maps.insert ms key val).keys ⊆ key :: Maps.keys ms := by
   have h1 := @Maps.insert_fresh_key_subset _ _ key val _ ms
@@ -285,21 +137,25 @@ theorem Maps.insert_keys_subset [DecidableEq α] (ms : Maps α β) :
   grind
   done
 
+
 theorem Maps.insert_values_subset [DecidableEq α] (ms : Maps α β) :
   (Maps.insert ms key val).values ⊆ val :: Maps.values ms := by
   have h1 := @Maps.insert_fresh_key_subset_value _ _ key val _ ms
   have h2 := @Maps.insert_key_update_subset_value _ _ key val _ ms
   grind
 
+
 @[simp]
 theorem Maps.keys_of_push_empty :
   (Maps.push ms []).keys = ms.keys := by
   simp_all [Maps.push, Maps.keys, Map.keys]
 
+
 @[simp]
 theorem Maps.values_of_push_empty :
   (Maps.push ms []).values = ms.values := by
   simp_all [Maps.push, Maps.values, Map.values]
+
 
 /-- `Maps.find?` returns `none` when the key is not in `Maps.keys`. -/
 theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
@@ -309,6 +165,7 @@ theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
   | cons m rest ih =>
     simp [Maps.keys] at h; simp [Maps.find?]
     simp [Map.find?_none_of_not_mem_keys' m i h.1]; exact ih h.2
+
 
 /-- If a key is in `Maps.keys`, then `Maps.find?` returns `some`. -/
 theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
@@ -324,6 +181,7 @@ theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
       have h_not_in_m : i ∉ Map.keys m := Map.find?_of_not_mem_values m h_eq
       exact ih (by cases h with | inl h => exact absurd h h_not_in_m | inr h => exact h)
 
+
 /-- `Maps.update ms x v` maps `x` to `v`. -/
 theorem Maps.find?_update_self [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (h : ms.find? x ≠ none) :
@@ -336,6 +194,7 @@ theorem Maps.find?_update_self [DecidableEq α]
       simp [Maps.find?, h_none] at h; exact h
     · simp [Maps.find?, Map.find?_insert_self]
 
+
 /-- `Maps.insert ms x v` maps `x` to `v`. -/
 theorem Maps.find?_insert_self [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) :
@@ -345,6 +204,7 @@ theorem Maps.find?_insert_self [DecidableEq α]
     | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
     | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
   · exact Maps.find?_update_self ms x v (by simp_all)
+
 
 /-- `Maps.find?` is unchanged for a different key after `Maps.insert`. -/
 theorem Maps.find?_insert_ne [DecidableEq α]
@@ -375,6 +235,7 @@ theorem Maps.find?_insert_ne [DecidableEq α]
       · simp only [Maps.find?]
         rw [Map.find?_insert_ne _ _ _ _ h_ne]
 
+
 /-- `Maps.remove` on a key not in any scope is identity. -/
 theorem Maps.remove_of_fresh [DecidableEq α]
     (ms : Maps α β) (x : α) (h : ∀ m, m ∈ ms → Map.find? m x = none) :
@@ -385,6 +246,7 @@ theorem Maps.remove_of_fresh [DecidableEq α]
     simp only [Maps.remove]; congr 1
     · exact Map.erase_of_find?_none m x (h m List.mem_cons_self)
     · exact ih (fun r hr => h r (List.mem_cons_of_mem m hr))
+
 
 /-- Removing a key that was just added to the newest scope restores the original value,
     provided the key didn't exist in the original and the maps are non-empty. -/
@@ -397,6 +259,7 @@ theorem Maps.remove_addInNewest_fresh [DecidableEq α]
   congr 1
   · exact Map.erase_append_singleton m x v (h_fresh m List.mem_cons_self)
   · exact Maps.remove_of_fresh rest x (fun r hr => h_fresh r (List.mem_cons_of_mem m hr))
+
 
 /-- Looking up in `addInNewest ms [(x, v)]` either returns the new binding or
     falls through to the original map. -/
@@ -426,6 +289,7 @@ theorem Maps.find?_addInNewest_single [DecidableEq α]
     · left; rw [h1]; exact ⟨rfl, h2⟩
     · right; rw [h1]
 
+
 /-- Looking up `y` in `addInNewest ms [(x, v)]` is unchanged when `y != x`. -/
 theorem Maps.find?_addInNewest_ne [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (y : α) (h_ne : y ≠ x) :
@@ -433,6 +297,7 @@ theorem Maps.find?_addInNewest_ne [DecidableEq α]
   rcases Maps.find?_addInNewest_single ms x v y with ⟨_, h_eq⟩ | h
   · exact absurd h_eq h_ne
   · exact h
+
 
 /-- If every scope gives `none` for `x`, then `Maps.find?` gives `none`. -/
 theorem Maps.find?_of_all_none [DecidableEq α]
@@ -444,6 +309,7 @@ theorem Maps.find?_of_all_none [DecidableEq α]
     simp only [Maps.find?]
     rw [h m (.head _)]
     exact ih (fun m' hm' => h m' (.tail _ hm'))
+
 
 /-- When `x` is fresh (not found in any scope), `addInNewest` makes it findable. -/
 theorem Maps.find?_addInNewest_self [DecidableEq α]
@@ -460,6 +326,7 @@ theorem Maps.find?_addInNewest_self [DecidableEq α]
     rw [Map.find?_map_append, h_fresh m (.head _)]
     simp [Map.find?]
 
+
 /-- When `Maps.find? ms x = none`, the newest scope also has `find? = none`. -/
 theorem Maps.find?_none_newest [DecidableEq α]
     (ms : Maps α β) (x : α) (h : Maps.find? ms x = none) :
@@ -473,6 +340,7 @@ theorem Maps.find?_none_newest [DecidableEq α]
     · assumption
     · exact absurd h (by simp)
 
+
 /-- When the key is fresh (not found in any scope), `Maps.insert` equals `Maps.addInNewest`. -/
 theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (h : Maps.find? ms x = none) :
@@ -483,6 +351,7 @@ theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
   unfold Maps.addInNewest
   rfl
 
+
 /-- After removing key `x` from all scopes, looking up `x` returns `none`. -/
 theorem Maps.find?_remove_self [DecidableEq α]
     (ms : Maps α β) (x : α) :
@@ -491,6 +360,7 @@ theorem Maps.find?_remove_self [DecidableEq α]
   | nil => simp [Maps.remove, Maps.find?]
   | cons m rest ih =>
     simp only [Maps.remove, Maps.find?, Map.find?_erase_self, ih]
+
 
 /-- Removing key `x` from all scopes does not affect lookups for `y ≠ x`. -/
 theorem Maps.find?_remove_ne [DecidableEq α]
@@ -501,6 +371,7 @@ theorem Maps.find?_remove_ne [DecidableEq α]
   | cons m rest ih =>
     simp only [Maps.remove, Maps.find?, Map.find?_erase_ne m x y h_ne, ih]
 
+
 theorem Maps.keys_remove_subset [DecidableEq α] (S : Maps α β) (x : α) :
     ∀ k, k ∈ Maps.keys (Maps.remove S x) → k ∈ Maps.keys S := by
   intro k hk; induction S with
@@ -510,6 +381,7 @@ theorem Maps.keys_remove_subset [DecidableEq α] (S : Maps α β) (x : α) :
     rcases List.mem_append.mp hk with h | h
     · exact List.mem_append_left _ (Map.keys_erase_subset scope x k h)
     · exact List.mem_append_right _ (ih h)
+
 
 /-- Removing key `a` from Maps `S` removes `a` from the keys. -/
 theorem Maps.keys_remove_self_not_mem [DecidableEq α]
@@ -523,6 +395,7 @@ theorem Maps.keys_remove_self_not_mem [DecidableEq α]
     · exact Map.keys_erase_self_not_mem scope a h_scope
     · exact ih h_rest
 
+
 theorem Maps.values_remove_subset [DecidableEq α] (ms : Maps α β) (x : α) :
     ∀ v, v ∈ Maps.values (Maps.remove ms x) → v ∈ Maps.values ms := by
   induction ms with
@@ -532,6 +405,7 @@ theorem Maps.values_remove_subset [DecidableEq α] (ms : Maps α β) (x : α) :
     rcases List.mem_append.mp hv with h | h
     · exact List.mem_append_left _ (Map.values_erase_subset scope x v h)
     · exact List.mem_append_right _ (ih v h)
+
 
 theorem Maps.keys_remove_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
     (h_key : a ∈ Maps.keys S) (h_ne : a ≠ x) :
@@ -544,10 +418,12 @@ theorem Maps.keys_remove_mem_of_ne [DecidableEq α] {S : Maps α β} {a x : α}
     · exact List.mem_append_left _ (Map.keys_erase_mem_of_ne scope h h_ne)
     · exact List.mem_append_right _ (ih h)
 
+
 -- addInNewest on cons simplifies to appending to the first scope
 theorem Maps.addInNewest_cons (scope : Map α β) (rest : Maps α β) (m : Map α β) :
     Maps.addInNewest (scope :: rest) m = (scope ++ m) :: rest := by
   simp [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+
 
 /-- `Maps.findD` returns the default when `Maps.find?` is `none`. -/
 theorem Maps.findD_find?_none [DecidableEq α]
@@ -560,6 +436,7 @@ theorem Maps.findD_find?_none [DecidableEq α]
     simp only [Maps.find?, Maps.findD] at h ⊢
     split <;> simp_all
 
+
 /-- `Maps.findD` returns the found value when `Maps.find?` is `some v`. -/
 theorem Maps.findD_find?_some [DecidableEq α]
     (ms : Maps α β) (x : α) (d : β) (v : β)
@@ -570,6 +447,7 @@ theorem Maps.findD_find?_some [DecidableEq α]
   | cons m rest ih =>
     simp only [Maps.find?, Maps.findD] at h ⊢
     split <;> simp_all
+
 
 /-- `Maps.find?` returning `some v` implies `(x, v)` is in `toSingleMap`. -/
 theorem Maps.find?_mem_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) (v : β)
@@ -584,6 +462,7 @@ theorem Maps.find?_mem_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) (
     | some w =>
       rw [hf] at h; injection h with h; subst h
       exact List.mem_append_left _ (Map.find?_mem m x w hf)
+
 
 /-- If `Maps.find?` returns `none`, then `Map.find?` on the flattened map also returns `none`. -/
 theorem Maps.find?_none_toSingleMap [DecidableEq α]
@@ -606,6 +485,7 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
       show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
       grind
 
+
 theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
     Map.find? ms.toSingleMap x = Maps.find? ms x := by
   induction ms with
@@ -619,5 +499,4 @@ theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :
     | none => exact ih
     | some v => rfl
 
----------------------------------------------------------------------
 end

@@ -13,7 +13,7 @@ open Strata
 
 The resolution tests (`EndToEndTests/Resolution/Procedures/Overloading.lean`)
 stop at resolution. These tests run overloaded procedures through the *entire*
-pipeline (`testLaurelMultiple`: translate + all lowering passes + verify +
+pipeline (`testLaurelExecution`: translate + all lowering passes + verify +
 interpret), ensuring that overloads distinguished by `uniqueId` flow correctly
 through the pipeline.
 
@@ -22,7 +22,7 @@ caller asserts the concrete result. If overload selection picked the wrong
 overload — or if the two overloads collapsed onto a single id/name during
 lowering — the wrong body would execute and the assertion would fail. -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 
@@ -73,7 +73,7 @@ The caller asserts the result the *other* overload would have produced. The
 assertion must fail — confirming the tests above are actually pinning the
 selected overload's postcondition, not passing vacuously. -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure f(x: int): int { return x + 1 };
@@ -90,7 +90,7 @@ procedure caller()
 
 /-! ## A no-overload call produces the expected error through the full pipeline -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure f(x: int) returns (r: int) opaque ensures r == x;
@@ -103,7 +103,7 @@ procedure caller() opaque {
 
 /-! ## Identical signatures are rejected without a spurious internal-error banner -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure foo(x: int) opaque { };

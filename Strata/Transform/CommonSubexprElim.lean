@@ -6,7 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
-import Strata.Util.List
+import Strata.Util.ListUtils
 public import Strata.Util.PtrCache
 import Lean.Util.ShareCommon
 
@@ -384,8 +384,11 @@ end Core.CSE
 
 /-- CSE pipeline phase: extracts common subexpressions into fresh
     variable declarations. Model-preserving because it only introduces
-    definitional equalities without changing program semantics. -/
+    definitional equalities without changing program semantics.
+    Skipping it (`VerifyOptions.disableCSE`) is therefore sound, though it
+    changes the SMT encoding's shape and can affect whether the solver
+    reaches a conclusive result. -/
 def Core.commonSubexprElimPhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "CommonSubexprElim" Core.CSE.runCSE
+  Core.modelPreservingPipelinePhase "commonSubexprElim" Core.CSE.runCSE
 
 end -- public section

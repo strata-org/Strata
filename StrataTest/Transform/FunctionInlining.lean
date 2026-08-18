@@ -215,4 +215,161 @@ inlining traversal (changing the result vs. `id`). -/
           (.app m (.op m ⟨"f", ()⟩ none) (.const m (.intConst 42)))))
   | .error _ => false
 
+/-! ## Program-level tests (`Core.FunctionInlining.run`)
+
+Local fixtures: `myConst() : bool := true` and `wrapper() : bool := myConst()`,
+so a single inline step and a two-step (nested) inline are both observable. -/
+
+/-- Run `Core.FunctionInlining.run` with `factory` installed in the transform
+    state (the state the pipeline supplies), returning the changed flag and
+    the transformed program. -/
+private def runInlining (pgm : Core.Program)
+    (factory : Lambda.Factory Core.CoreLParams) (maxDepth : Option Nat := none) :
+    Option (Bool × Core.Program) :=
+  match Core.FunctionInlining.run pgm maxDepth { Core.Transform.CoreTransformState.emp with factory := factory } with
+  | ⟨.ok r, _⟩ => some r
+  | ⟨.error _, _⟩ => none
+
+/-- Run inlining and return the first `.proc` declaration of the transformed
+    program (shared accessor for the procedure-shaped tests below). -/
+private def runInliningGetProc (pgm : Core.Program)
+    (factory : Lambda.Factory Core.CoreLParams) (maxDepth : Option Nat := none) :
+    Option Core.Procedure :=
+  ((runInlining pgm factory maxDepth).map (·.2.decls)).getD [] |>.findSome?
+    (fun d => match d with | .proc p _ => some p | _ => none)
+
+private def bodyTrue : Lambda.LExpr Core.CoreLParams.mono := .const default (.boolConst true)
+
+private def myConst : Lambda.LFunc Core.CoreLParams :=
+  Lambda.LFunc.mk (name := ⟨"myConst", ()⟩) (inputs := []) (output := .bool) (body := some bodyTrue)
+
+private def wrapper : Lambda.LFunc Core.CoreLParams :=
+  Lambda.LFunc.mk (name := ⟨"wrapper", ()⟩) (inputs := []) (output := .bool)
+    (body := some myConst.opExpr)
+
+/-! ### Test: `inlineFuncDefsInProgram` inlines through an axiom
+
+Exercises the `mapProgramExprs` plumbing of the program-level entry point
+end-to-end: a one-axiom program whose body is a call to `myConst` has that call
+inlined to `true`, confirming the traversal reaches (and rewrites) axiom
+expressions. -/
+
+private def axCallPgm : Core.Program :=
+  { decls := [.ax { name := "myConstAx", e := myConst.opExpr } default] }
+
+#guard
+  let factory := Core.Factory.pushIfNew myConst
+  match runInlining axCallPgm factory with
+  | some (changed, pgm') =>
+    changed && (match pgm'.decls with
+                | [.ax a _] => a.e == bodyTrue
+                | _ => false)
+  | none => false
+
+/-! ### Test: `inlineFuncDefsBoundedInProgram` (bounded unrolling)
+
+A one-axiom program whose body is a call to `wrapper` (→ `myConst()` → `true`)
+is fully unrolled at depth 2, confirming the bounded mode plumbs through
+`mapProgramExprs`. -/
+
+private def wrapperAxPgm : Core.Program :=
+  { decls := [.ax { name := "wrapperAx", e := wrapper.opExpr } default] }
+
+#guard
+  let factory := (Core.Factory.pushIfNew myConst).pushIfNew wrapper
+  match runInlining wrapperAxPgm factory (maxDepth := some 2) with
+  | some (changed, pgm') =>
+    changed && (match pgm'.decls with
+                | [.ax a _] => a.e == bodyTrue
+                | _ => false)
+  | none => false
+
+/-! ### Test: `mapProgramExprs` traverses the `.proc` branch (precondition `Check.expr`s) -/
+
+private def procWithCallPgm : Core.Program :=
+  let preCheck : Core.Procedure.Check := { expr := myConst.opExpr }
+  let proc : Core.Procedure := { (default : Core.Procedure) with
+    spec := { preconditions := [("pre", preCheck)], postconditions := [] } }
+  { decls := [.proc proc default] }
+
+#guard
+  let factory := Core.Factory.pushIfNew myConst
+  match runInliningGetProc procWithCallPgm factory (maxDepth := some 2) with
+  | some p =>
+    match p.spec.preconditions with
+    | [(_, c)] => c.expr == bodyTrue
+    | _ => false
+  | _ => false
+
+/-! ### Test: `mapProgramExprs` also maps postcondition `Check.expr`s -/
+
+private def procWithPostPgm : Core.Program :=
+  let postCheck : Core.Procedure.Check := { expr := myConst.opExpr }
+  let proc : Core.Procedure := { (default : Core.Procedure) with
+    spec := { preconditions := [], postconditions := [("post", postCheck)] } }
+  { decls := [.proc proc default] }
+
+#guard
+  let factory := Core.Factory.pushIfNew myConst
+  match runInliningGetProc procWithPostPgm factory (maxDepth := some 2) with
+  | some p =>
+    match p.spec.postconditions with
+    | [(_, c)] => c.expr == bodyTrue
+    | _ => false
+  | _ => false
+
+/-! ### Test: `mapProgramExprs` inlines within a non-empty `.structured` procedure body
+
+Covers the `.structured ss => Core.Statements.mapExprs f ss` branch: a procedure
+whose structured body is `set x := myConst()` has that assignment RHS inlined to
+`true`. -/
+
+private def procStructBodyPgm : Core.Program :=
+  let setStmt : Core.Statement := Core.Statement.set ⟨"x", ()⟩ myConst.opExpr default
+  let proc : Core.Procedure := { (default : Core.Procedure) with
+    body := .structured [setStmt] }
+  { decls := [.proc proc default] }
+
+#guard
+  let factory := Core.Factory.pushIfNew myConst
+  match runInliningGetProc procStructBodyPgm factory with
+  | some p =>
+    match p.body with
+    | .structured [Core.Statement.set _ e _] => e == bodyTrue
+    | _ => false
+  | _ => false
+
+/-! ### Test: a `.cfg` procedure body survives inlining unchanged (`mapProgramExprs` no-op)
+
+`mapProgramExprs` leaves `.cfg` procedure bodies untouched (`| .cfg _ => p.body`).
+A procedure whose `.cfg` body asserts `myConst()` — a call that WOULD inline to
+`true` in a `.structured` body — must be returned verbatim, with the call
+surviving un-inlined, locking in that the `.cfg` branch is a genuine no-op for
+the program-level entry point. -/
+
+private def cfgCallPgm : Core.Program :=
+  let cmd : Core.Command := .cmd (.assert "a" myConst.opExpr default)
+  let blk : Imperative.DetBlock String Core.Command Core.Expression :=
+    { cmds := [cmd], transfer := .finish default }
+  let cfg : Core.DetCFG := { entry := "b0", blocks := [("b0", blk)] }
+  let proc : Core.Procedure := { (default : Core.Procedure) with body := .cfg cfg }
+  { decls := [.proc proc default] }
+
+#guard
+  let factory := Core.Factory.pushIfNew myConst
+  match runInliningGetProc cfgCallPgm factory with
+  | some p =>
+    match p.body with
+    | .cfg c =>
+      c.entry == "b0" &&
+      (match c.blocks with
+       | [(lbl, blk)] =>
+         lbl == "b0" &&
+         (match blk.cmds with
+          | [.cmd (.assert _ e _)] => e == myConst.opExpr  -- un-inlined: .cfg branch is a no-op
+          | _ => false)
+       | _ => false)
+    | _ => false
+  | _ => false
+
 end FunctionInliningTests

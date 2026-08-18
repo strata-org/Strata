@@ -22,7 +22,7 @@ private def arrayTheoryOpts :=
 
 /-! ## 1. Illegal writes are rejected -/
 
-#eval testLaurel (options := arrayTheoryOpts) <|
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
 #strata
 program Laurel;
 composite Container {
@@ -84,7 +84,7 @@ procedure writeNestedIf(c: Container, d: Container)
 
 /-! ## 2. Legal shapes still verify -/
 
-#eval testLaurel (options := arrayTheoryOpts) <|
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
 #strata
 program Laurel;
 composite Container {
@@ -132,7 +132,7 @@ procedure allocThenModifyDeclared(c: Container)
 
 /-! ## 3. Callers may assume the free frame; it does not over-promise -/
 
-#eval testLaurel (options := arrayTheoryOpts) <|
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
 #strata
 program Laurel;
 composite Container {
@@ -220,7 +220,7 @@ procedure callerMultiUnrelated()
 
 /-! ## 4. Multiple exits and bodiless/body parity -/
 
-#eval testLaurel (options := arrayTheoryOpts) <|
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
 #strata
 program Laurel;
 composite Container {
@@ -270,7 +270,7 @@ procedure callerOfBodiless()
 
 /-! ## 5. A fresh object exposed to a caller is not pinned by the frame -/
 
-#eval testLaurel (options := arrayTheoryOpts) <|
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
 #strata
 program Laurel;
 composite Container {

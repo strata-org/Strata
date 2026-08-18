@@ -5,7 +5,11 @@
 -/
 module
 
+public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
+public import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.PipelinePhase
 
 namespace Strata
 
@@ -122,3 +126,54 @@ def inlineFuncDefsBounded
 end -- public section
 
 end Strata
+
+public section
+
+namespace Core
+namespace FunctionInlining
+
+open Strata (inlineFuncDefs inlineFuncDefsBounded)
+
+/-- Apply a Core expression transform to every expression in a program:
+    axiom bodies and procedures (pre/postcondition checks and structured
+    bodies via `Procedure.mapExprs`; CFG bodies unchanged). All other
+    declaration kinds pass through untouched — deliberately so for inlining:
+    `.func`/`.recFuncBlock` are the inlining *source* (rewriting their bodies
+    would fold definitions into each other), and `.distinct` declares
+    pairwise-distinct names rather than evaluable expressions. -/
+@[expose] def mapProgramExprs
+    (f : Lambda.LExpr Core.CoreLParams.mono → Lambda.LExpr Core.CoreLParams.mono)
+    (pgm : Core.Program) : Core.Program :=
+  { pgm with decls := pgm.decls.map fun d =>
+    match d with
+    | .ax ax md => .ax { ax with e := f ax.e } md
+    | .proc p md => .proc (p.mapExprs f) md
+    | other => other }
+
+/-- Program-level function inlining, with the factory taken from the
+    transform state: `maxDepth = none` inlines non-recursive definitions to a
+    fixpoint (`inlineFuncDefs`), `maxDepth = some d` unrolls up to depth `d`
+    (`inlineFuncDefsBounded`; depth 0 is the identity). Returns whether the
+    program changed alongside the transformed program. -/
+def run (prog : Program) (maxDepth : Option Nat := none) :
+    Transform.CoreTransformM (Bool × Program) := do
+  let factory ← Transform.getFactory
+  let inline : Lambda.LExpr Core.CoreLParams.mono → Lambda.LExpr Core.CoreLParams.mono :=
+    match maxDepth with
+    | none => fun e => inlineFuncDefs factory id e
+    | some d => fun e => inlineFuncDefsBounded factory d e
+  let prog' := mapProgramExprs inline prog
+  return (decide (prog' ≠ prog), prog')
+
+end FunctionInlining
+
+/-- FunctionInlining pipeline phase: inlines known function definitions
+    throughout every expression of the program. Model-preserving because a
+    call is replaced by the called function's definitional body. -/
+def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhase :=
+  modelPreservingPipelinePhase "FunctionInlining" fun prog =>
+    FunctionInlining.run prog maxDepth
+
+end Core
+
+end -- public section

@@ -8,7 +8,7 @@ public import Strata.Pipeline.Messages
 
 meta import Strata.DL.Imperative.CmdType
 import all StrataTest.DL.Imperative.ArithExpr
-public meta import Strata.DL.Util.Map
+public meta import Strata.Util.ListMap
 
 open Strata
 

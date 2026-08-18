@@ -194,7 +194,7 @@ def insertLoopInvariantAsserts (p : Program) : Transform.CoreTransformM (Bool ×
     conditions. -/
 def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
   transform := insertLoopInvariantAsserts
-  phase.name := "InsertLoopInvariantAsserts"
+  phase.name := "insertLoopInvariantAsserts"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation insertLoopInvAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)

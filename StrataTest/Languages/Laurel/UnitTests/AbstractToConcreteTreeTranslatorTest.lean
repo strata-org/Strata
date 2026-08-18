@@ -562,7 +562,7 @@ info: datatype Option<T> { Nothing, Some(value: T) }
 procedure foo()
   opaque
 {
-  var o: (Option<int>) := Nothing()
+  var o: Option<int> := Nothing()
 };
 -/
 #guard_msgs in
@@ -587,7 +587,7 @@ info: datatype Option<T> { Nothing, Some(value: T) }
 procedure foo()
   opaque
 {
-  var o: (Option<Option<int>>) := Nothing()
+  var o: Option<Option<int>> := Nothing()
 };
 -/
 #guard_msgs in
@@ -679,5 +679,191 @@ info: procedure p()
   if laurelToText reparsed != text then
     throw (IO.userError s!"multiAssign print does not re-parse to the same text:\n{text}")
   IO.println text
+
+-- Generic composite: `<T>` binder, `Box<int>` applied type in a var decl, and
+-- `new Box<int>` carrying its instantiation. The `newTypeArgs` op carries `prec(80)`
+-- for parse disambiguation (`appliedType` has none — `parenType` wraps it in
+-- type-arg slots instead); the `: varType:0` / `new … typeArgs:0`
+-- annotations keep the formatter from wrapping them (`(Box<int>)`, `new Box(<int>)`),
+-- which would not re-parse — so this case also guards that emission fix.
+/--
+info: composite Box<T> { var val: T }
+
+procedure useBox(): int
+  opaque
+{
+  var b: Box<int> := new Box<int>;
+  b#val := 5;
+  b#val
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+procedure useBox(): int
+  opaque
+{ var b: Box<int> := new Box<int>; b#val := 5; b#val };
+#end)
+
+-- Generic datatype: `<T>` binder on a datatype with a type-param field.
+/--
+info: datatype Bx<T> { MkBx(v: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+#end)
+
+-- Generic `extends`: a generic child extending a generic parent at an instantiation.
+/--
+info: composite Base<T> { var tag: T }
+
+composite Box<T> extends Base<T> { var val: T }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Base<T> { var tag: T }
+composite Box<T> extends Base<T> { var val: T }
+#end)
+
+-- Chained field-path write `o#i#v := …` (the dedicated FieldPath production).
+/--
+info: composite Inner { var v: int }
+
+composite Outer { var i: Inner }
+
+procedure test()
+  opaque
+{
+  var o: Outer := new Outer;
+  var x: Inner := new Inner;
+  o#i := x;
+  o#i#v := 5
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Inner { var v: int }
+composite Outer { var i: Inner }
+procedure test()
+  opaque
+{ var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5 };
+#end)
+
+-- Polymorphic function: a `<T>` binder on a function signature.
+/--
+info: procedure id<T>(x: T): T
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure id<T>(x: T): T
+{ x };
+#end)
+
+-- Polymorphic procedure: a `<T>` binder on a procedure signature.
+/--
+info: procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{ x };
+#end)
+
+-- Generic type aliases round-trip: `<T>` binders + a Map/composite target emit without
+-- parens (grammar `target:0`) and re-parse identically.
+/--
+info: composite Box<T> { var val: T }
+
+type MyPair<A, B> = Map A B
+
+type Foo<T> = Box<T>
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+type MyPair<A, B> = Map A B
+type Foo<T> = Box<T>
+#end)
+
+/-! ## Legacy-arity artifacts fail loud
+
+Pre-typeParams grammar artifacts (serialized DDM trees from before the
+polymorphism grammar change) carry OLD op shapes: 4-arg `composite` (no
+typeParams slot), 2-arg `datatype`, etc. The `composite` translator rejects
+its stale shape loudly; the `datatype` translator keeps an upstream transitional
+shim that coerces the 2-arg shape to the current 3-arg one. Every DDM producer
+regenerates in lockstep with the grammar anyway (this CR regenerates
+StrataJavaFrontEnd's `Laurel.java` bindings via `strata javaGen Laurel`). -/
+
+private def legacySr : StrataDDM.SourceRange := .none
+
+private def legacyIdent (s : String) : StrataDDM.Arg := .ident legacySr s
+
+private def legacyOp (name : String) (args : Array StrataDDM.Arg) : StrataDDM.Operation :=
+  { ann := legacySr, name := { dialect := "Laurel", name := name }, args := args }
+
+/-- A 4-arg legacy `composite Sub extends Base { }` command: no typeParams slot,
+    extends parents as bare idents. -/
+private def legacyCompositeCmd : StrataDDM.Operation :=
+  legacyOp "compositeCommand" #[.op (legacyOp "composite" #[
+    legacyIdent "Sub",
+    .option legacySr (some (.op (legacyOp "extends" #[legacyIdent "Base"]))),
+    .seq legacySr .none #[],
+    .seq legacySr .none #[]])]
+
+/-- A 2-arg legacy `datatype D { MkD() }` command: no typeParams slot. -/
+private def legacyDatatypeCmd : StrataDDM.Operation :=
+  legacyOp "datatypeCommand" #[.op (legacyOp "datatype" #[
+    legacyIdent "D",
+    .op (legacyOp "datatypeConstructorList" #[.op (legacyOp "datatypeConstructorNoArgs" #[legacyIdent "MkD"])])])]
+
+-- The `composite` translator rejects the stale 4-arg shape loudly. The
+-- `datatype` translator, by contrast, carries an upstream transitional shim
+-- (`parseDatatype` rewrites a 2-arg `datatype` to the 3-arg typeParams shape,
+-- treating the missing slot as absent), so a legacy 2-arg datatype is accepted
+-- (deterministically coerced), not rejected. Both are the mainline behavior.
+/--
+info: legacy composite rejected: true
+legacy datatype rejected: false
+-/
+#guard_msgs in
+#eval do
+  let progC : StrataDDM.Program :=
+    StrataDDM.Program.create Laurel_map "Laurel" #[legacyCompositeCmd]
+  let rejectedC := match Laurel.TransM.run (Strata.Uri.file "legacy") (Laurel.parseProgram progC) with
+    | .error _ => true
+    | .ok _ => false
+  IO.println s!"legacy composite rejected: {rejectedC}"
+  let progD : StrataDDM.Program :=
+    StrataDDM.Program.create Laurel_map "Laurel" #[legacyDatatypeCmd]
+  let rejectedD := match Laurel.TransM.run (Strata.Uri.file "legacy") (Laurel.parseProgram progD) with
+    | .error _ => true
+    | .ok _ => false
+  IO.println s!"legacy datatype rejected: {rejectedD}"
 
 end Strata.Laurel

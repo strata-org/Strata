@@ -94,7 +94,7 @@ procedure strConcatIntRhs() opaque {
 
 /-! ## Accepted: `+=` on int, real, and a constrained int -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 constrained nat = v: int where v >= 0 witness 0
@@ -147,7 +147,7 @@ procedure modConstrainedReal() opaque {
 / `$mod` built-in wrappers, which declare `requires y != 0`. With an
 unconstrained divisor that precondition cannot be discharged. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure divByZero(d: int) opaque {
