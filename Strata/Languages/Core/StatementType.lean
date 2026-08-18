@@ -220,7 +220,7 @@ where
     (labels : List String) :
     Except Message (List Statement × TEnv Unit × LContext CoreLParams) := do
     let Env := Env.pushEmptyContext
-    let (ss', Env, C) ← go C Env bss acc labels
+    let (ss', Env, _C) ← go C Env bss acc labels
     .ok (ss', Env.popContext, C)
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
