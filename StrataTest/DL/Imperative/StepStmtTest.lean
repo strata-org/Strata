@@ -338,15 +338,8 @@ def Expr2.getVars : Expr2 → List String
   | .not e => e.getVars
   | _ => []
 
-/-- `HasVarsPure` for `Expr2`: only `.var` contributes a variable. -/
-instance : HasVarsPure MiniPureExpr2 Expr2 where
-  getVars := Expr2.getVars
-
 instance : HasFvars MiniPureExpr2 where
   getFvars := Expr2.getVars
-
-instance : HasVarsPure MiniPureExpr2 (Cmd MiniPureExpr2) where
-  getVars := Cmd.getVars
 
 /-- Test: `set x := var "y"` has `modifiedOrDefinedVars = ["x"]` (write-set only)
     but `touchedVars = ["x", "y"]` (includes the read variable "y"). -/

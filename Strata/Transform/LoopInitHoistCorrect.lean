@@ -61,7 +61,7 @@ body run reaching `.terminal ρ_body`, the loop steps from `ρ_pre` to the resid
 `.loop` stmts at `ρ_body`, with the loop-locals projected back out via
 `projectStore` and the factory restored to `ρ_pre.factory`. -/
 private theorem buildLoopIterationDet {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [HasVarsPure P P.Expr]
+    [HasFvars P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {ρ_pre ρ_body : Env P}
@@ -119,8 +119,8 @@ Structure of the recursion (fuel `n` on the source run length):
   `projectStore` at the block boundary re-caps `x` to `none` (it was `none` in the
   parent), so the invariant is re-established at the inner env and the recursion
   closes via `ih` on the residual loop. -/
-public theorem loopDet_preserves_none_terminal_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBoolOps P] [HasVarsPure P P.Expr]
+public theorem loopDet_preserves_none_terminal_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
+    [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {x : P.Ident} :
@@ -172,8 +172,8 @@ public theorem loopDet_preserves_none_terminal_fuel {P : PureExpr} [HasFvar P] [
         exact ih h_none_inner h_loop_T (by simp only [ReflTransT.len] at hlen; omega)
 
 /-- Prop-level corollary of `loopDet_preserves_none_terminal_fuel`. -/
-public theorem loopDet_preserves_none_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
-    P] [HasVarsPure P P.Expr]
+public theorem loopDet_preserves_none_terminal {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps
+    P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {x : P.Ident} {ρ ρ_post : Env P}
@@ -206,8 +206,8 @@ agreement and the target-definedness invariant `D` (the prelude-defined slots,
 which the prelude keeps defined across iterations).  This is the same-name
 `StoreAgreement` analogue of `BodySimSum`, and the slot the same-name driver
 consumes. -/
-public def BodySimSumSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+public def BodySimSumSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -240,8 +240,8 @@ target (`h_tgt_y_def`), supplied by the prelude.  Source pre: `y = none`; both
 post-stores land `y ↦ v` for the SAME `v` (`e`'s reads are source-defined so the
 values agree), and every other slot is unchanged on both sides — so
 `StoreAgreement` is re-established with no rename. -/
-public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
-    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P)
     (ρ_src ρ_src' ρ_tgt : Env P)
@@ -302,8 +302,8 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 simulated by hoist body `[.cmd (.set y e md)]`, in the `BodySimSumSA` body-sim
 shape the driver consumes.  A single `.cmd` can only TERMINATE (never `.exit`s);
 the per-step transport is `initToSetStepSA`. -/
-public theorem samenameBodySimInitSet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+public theorem samenameBodySimInitSet {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P) :
     BodySimSumSA (extendFactory := extendFactory) [y]
@@ -366,7 +366,7 @@ inversions (`seqT_reaches_terminal`, `blockT_none_reaches_terminal`,
 `StoreAgreement.of_projectStore_parents` and keeps `D` defined because parent-defined
 keys are kept under `projectStore`. -/
 private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -504,7 +504,7 @@ run reaching `.exiting label ρ_post_h`.  Either this iteration's body exits (fe
 exiting clause, build the early `.none`-block-mismatch exit) or it terminates and the
 recursive loop exits (feed the terminal clause, recurse via `ih`). -/
 private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -642,8 +642,8 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
 
 /-- Prop-level wrapper of `samenameLoopDetSA_TE_fuel`: the same-name `StoreAgreement`
 TERMINAL-target driver. -/
-public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -672,8 +672,8 @@ public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 
 /-- Prop-level wrapper of `samenameLoopDetSA_E_fuel`: the same-name `StoreAgreement`
 EXITING-target driver. -/
-public theorem samenameLoopDetSA_E {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem samenameLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -717,8 +717,8 @@ source body run from a store where `U` is source-AND-target-undefined is matched
 a hoist body run preserving `StoreAgreement` / `eval` / `hasFailure`.  No
 definedness invariant is reported (the outer iteration restores undefinedness from
 the parent store, not from the body output). -/
-public def BodyDualUndefSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+public def BodyDualUndefSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -748,7 +748,7 @@ The dual-undefinedness analogue of `samenameLoopDetSA_TE_fuel`: instead of keepi
 `D` defined, it keeps `U` UNDEFINED on both sides at every iteration entry,
 re-established after each iteration's `projectStore` by `projectStore_undef_at`. -/
 private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {U : List P.Ident}
@@ -886,8 +886,8 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
               ht hwf) hrest))
 
 /-- Prop-level wrapper of `dualUndefLoopDetSA_TE_fuel`. -/
-public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {U : List P.Ident}
@@ -918,7 +918,7 @@ public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 
 /-- **Dual-undef `StoreAgreement` EXITING-target fuel recursion.** -/
 private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {U : List P.Ident}
@@ -1052,8 +1052,8 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
               | .step _ _ _ hd _ => exact nomatch hd
 
 /-- Prop-level wrapper of `dualUndefLoopDetSA_E_fuel`. -/
-public theorem dualUndefLoopDetSA_E {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem dualUndefLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {U : List P.Ident}
@@ -1086,8 +1086,8 @@ The failing-config sibling of `BodyDualUndefSA`'s terminal clause: a source body
 run from a dual-undef store that reaches a *failing* config is matched by a hoist
 body run that reaches a failing config too.  No `StoreAgreement`/eval/hf
 re-establishment at the failing point (the loop is abandoned there). -/
-public def BodyDualUndefFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+public def BodyDualUndefFailSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -1119,8 +1119,8 @@ fuel bounding the source run length (finite by failure monotonicity).
     `BodyDualUndefSA`'s terminal clause drives one hoist iteration and the
     recursion (`ih`) handles the residual loop at strictly smaller fuel (the `U`
     undefinedness re-established per iteration by `projectStore_undef_at`). -/
-public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {U : List P.Ident}
@@ -1278,8 +1278,8 @@ threads (target slots stay defined; source slots may be undefined under the
 config is matched by a hoist body run that reaches a failing config too.  No
 `StoreAgreement`/eval/hf re-establishment at the failing point (the loop is
 abandoned there). -/
-public def BodySimSumFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+public def BodySimSumFailSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -1314,7 +1314,7 @@ source run length.
     is re-established per iteration because `projectStore` keeps parent-defined
     keys (exactly as in `samenameLoopDetSA_TE_fuel`). -/
 private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -1462,8 +1462,8 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
 
 /-- Prop-level wrapper of `samenameLoopDetSA_F_fuel`: the same-name `StoreAgreement`
 FAILING-target driver, instantiating the fuel at the source run length. -/
-public theorem samenameLoopDetSA_F {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+public theorem samenameLoopDetSA_F {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {D : List P.Ident}
@@ -1516,8 +1516,8 @@ assert passed) is matched by a terminating hoist body run; the EXITING clause is
 vacuous (neither `.cmd` exits).  The per-step transport is `initToSetStepSA` for
 the `init→set`, then assert-pass replay (stores agree, so the predicate evaluates
 to the same `tt`). -/
-public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (x : P.Ident) (ty : P.Ty) (e : P.Expr) (lbl : String) (Q : P.Expr) (md : MetaData P) :
     BodySimSumSA (extendFactory := extendFactory) [x]
@@ -1645,9 +1645,9 @@ failing source `[init x := e, assert lbl Q md]` run is matched by a failing hois
 `[set x := e, assert lbl Q md]` run.  Since `init`/`set` never set `hasFailure`,
 the failure is the `assert Q` (the head `init` must have terminated first); the
 hoist `set` re-establishes `StoreAgreement` so the hoist `assert Q` fails too. -/
-public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
+public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps
     P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (x : P.Ident) (ty : P.Ty) (e : P.Expr) (lbl : String) (Q : P.Expr) (md : MetaData P) :
     BodySimSumFailSA (extendFactory := extendFactory) [x]
@@ -1750,9 +1750,9 @@ body slots from the build-verified witnesses `samenameBodySimInitSetAssert`
 that the asymmetric `D = [x]` invariant (target `x` persistently defined, source `x`
 possibly `none`) is satisfiable on the canonical example with no hidden side
 condition. -/
-public theorem samenameLoopDetSA_F_initSetAssert {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
+public theorem samenameLoopDetSA_F_initSetAssert {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps
     P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {x : P.Ident} {ty : P.Ty} {e : P.Expr} {lbl : String} {Q : P.Expr}
     {md md_s md_h : MetaData P}
@@ -1792,8 +1792,8 @@ the hoist actually produces. -/
 /-- End-to-end TERMINAL same-name loop transport: source loop with body
 `[init y := rhs]` simulated by hoist loop with body `[set y := rhs]`, given the
 prelude defined `y` once before the loop (`h_tgt_y_def`). -/
-public theorem samenameLoopDetSA_TE_initSet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+public theorem samenameLoopDetSA_TE_initSet {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {y : P.Ident} {ty : P.Ty} {rhs : P.Expr} {md md_s md_h : MetaData P}
     {ρ_src ρ_hoist ρ_post : Env P}
@@ -1840,7 +1840,7 @@ StepB provider (`bodySimSA_*`) that assembles a body simulation over the lifted 
 
 /-! ## `loopBodyNoInits` peel helpers. -/
 
-theorem initfree_loop_noinits {P : PureExpr}
+theorem initfree_loop_noinits {P : PureExpr} [HasFvars P]
     {g : ExprOrNondet P} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (h : Stmt.loopBodyNoInits (.loop g none [] body md) = true) :
     Block.noInitsAnywhere body = true ∧ Block.loopBodyNoInits body = true := by
@@ -1894,7 +1894,7 @@ open LoopInitHoistLoopDriver (BodySimSumSA initToSetStepSA samenameLoopDetSA_TE 
 A `StmtSimSA D s s'` is the single-statement (eval-carrying) terminal-OR-exiting
 StoreAgreement simulation, the head shape `bodySimSA_cons` stitches. -/
 private def StmtSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -1921,7 +1921,7 @@ private def StmtSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
 
 /-- The empty body is a `BodySimSumSA`. -/
 theorem bodySimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) :
     BodySimSumSA (extendFactory := extendFactory) D [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
@@ -1948,7 +1948,7 @@ theorem bodySimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- A head `StmtSimSA` (with source `noFuncDecl` to transport eval-wfness to the
 mid env) and tail `BodySimSumSA` compose to a cons `BodySimSumSA`. -/
 private theorem bodySimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
     (hhead : StmtSimSA (extendFactory := extendFactory) D s s')
@@ -2007,7 +2007,7 @@ private theorem bodySimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 
 Requires `y ∈ D` (the prelude defined it). A `.cmd` never reaches `.exiting`. -/
 private theorem initSet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P)
     (h_y_D : y ∈ D) :
@@ -2048,7 +2048,7 @@ private theorem initSet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
 /-- A `.nondet`-rhs source `init y` step is simulated by a hoist `set y .nondet`
 step picking the SAME arbitrary value, maintaining StoreAgreement. -/
 theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
-    [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (y : P.Ident) (ty : P.Ty) (md : MetaData P)
     (ρ_src ρ_src' ρ_tgt : Env P)
@@ -2105,7 +2105,7 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 `init y ty .nondet` on the source is matched by `set y .nondet` on the hoisted side under
 `StmtSimSA D`, provided `y` is already in the tracked defined set `D`. -/
 private theorem initSet_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (md : MetaData P)
     (h_y_D : y ∈ D) :
@@ -2148,7 +2148,7 @@ because no `EvalCmd` step undefines a slot (`Config.varsDefined_star`). The
 `h_no_init` premise (`Cmd.definedVars c = []`) discharges the cmd-replay's
 init-undefinedness side-condition vacuously. -/
 private theorem cmd_id_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {D : List P.Ident} (c : Cmd P)
     (h_no_init : Cmd.definedVars c = []) :
@@ -2175,7 +2175,7 @@ private theorem cmd_id_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
 /-! ## The `.block` arm. -/
 
 private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h) :
     StmtSimSA (extendFactory := extendFactory) D (.block lbl inner md) (.block lbl inner_h md) := by
@@ -2256,7 +2256,7 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
 /-! ## The `.ite` arms (same guard, no rename). -/
 
 private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
         P}
     (then_sim : BodySimSumSA (extendFactory := extendFactory) D tss_s tss_h)
@@ -2364,7 +2364,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
 simulations of each branch: from `then`/`else` body simulations, the whole
 `.ite .nondet` statement's hoisted form matches the source. -/
 private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_sim : BodySimSumSA (extendFactory := extendFactory) D tss_s tss_h)
     (else_sim : BodySimSumSA (extendFactory := extendFactory) D ess_s ess_h) :
@@ -2461,7 +2461,7 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 /-! ## The nested `.loop` arm (verbatim body, same guard). -/
 
 private theorem nestedLoop_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
         P}
     (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h)
@@ -2485,7 +2485,7 @@ private theorem nestedLoop_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 /-! ## The `.exit` and `.typeDecl` identity arms. -/
 
 private theorem exit_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} (lbl : String) (md : MetaData P) :
     StmtSimSA (extendFactory := extendFactory) D (.exit lbl md) (.exit lbl md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
@@ -2513,7 +2513,7 @@ private theorem exit_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 /-- A `typeDecl` is left unchanged by hoisting and simulates itself under `StmtSimSA D`
 (it neither reads nor writes the store). -/
 private theorem typeDecl_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} (tc : TypeConstructor) (md : MetaData P) :
     StmtSimSA (extendFactory := extendFactory) D (.typeDecl tc md) (.typeDecl tc md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
@@ -2597,7 +2597,7 @@ end
 /-! ## Single-outcome reachability classifiers (used by the FAILING per-arm producers). -/
 
 theorem cmd_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {c : Cmd P} {ρ : Env P} {d : Config P (Cmd P)}
     (h_run : StepStmtStar P (EvalCmd P) extendFactory (.stmt (.cmd c) ρ) d) :
     (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.cmd c) ρ := by
@@ -2614,7 +2614,7 @@ theorem cmd_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 at the start config, or has taken the single exit step to an `.exiting lbl` config
 (a terminal config is also admitted by the disjunction). -/
 theorem exit_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {lbl : String} {md : MetaData P} {ρ : Env P} {d : Config P (Cmd P)}
     (h_run : StepStmtStar P (EvalCmd P) extendFactory (.stmt (.exit lbl md) ρ) d) :
     (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.exit lbl md) ρ := by
@@ -2629,7 +2629,7 @@ theorem exit_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- Inversion of a small-step run started from a `.typeDecl` config: it is either still
 at the start config or has stepped to a terminal config (`.typeDecl` performs no exit). -/
 theorem typeDecl_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {tc : TypeConstructor} {md : MetaData P} {ρ : Env P} {d : Config P (Cmd P)}
     (h_run : StepStmtStar P (EvalCmd P) extendFactory (.stmt (.typeDecl tc md) ρ) d) :
     (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.typeDecl tc md) ρ := by
@@ -2651,7 +2651,7 @@ config too.  These per-statement failing sims feed the combined lift producer
 sims (for completed head statements) and the failing ones (for the failure) in a
 single walk over the body. -/
 private def StmtSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -2668,7 +2668,7 @@ private def StmtSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
 
 /-- The empty body cannot fail mid-run. -/
 theorem bodySimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (D : List P.Ident) :
     BodySimSumFailSA (extendFactory := extendFactory) D [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def d h_run hd_fail
@@ -2686,7 +2686,7 @@ theorem bodySimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 
 /-- The cons sequencer for failing body sims. -/
 private theorem bodySimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
     (hhead_term : StmtSimSA (extendFactory := extendFactory) D s s')
@@ -2719,7 +2719,7 @@ private theorem bodySimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 /-- A single-outcome statement's failing sim follows from its terminal+exiting
 `StmtSimSA`. -/
 private theorem stmtSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {s s' : Stmt P (Cmd P)}
     (h_outcome : ∀ {ρ : Env P} {d : Config P (Cmd P)},
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) d →
@@ -2746,7 +2746,7 @@ private theorem stmtSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasFv
 
 /-- The `.block` failing arm. -/
 private theorem block_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (inner_fail : BodySimSumFailSA (extendFactory := extendFactory) D inner inner_h) :
     StmtSimFailSA (extendFactory := extendFactory) D (.block lbl inner md) (.block lbl inner_h md)
@@ -2770,7 +2770,7 @@ private theorem block_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 
 /-- The `.ite (.det g)` failing arm. -/
 private theorem ite_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
         P}
     (then_fail : BodySimSumFailSA (extendFactory := extendFactory) D tss_s tss_h)
@@ -2812,7 +2812,7 @@ private theorem ite_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
 
 /-- The `.ite .nondet` failing arm. -/
 private theorem ite_nondet_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_fail : BodySimSumFailSA (extendFactory := extendFactory) D tss_s tss_h)
     (else_fail : BodySimSumFailSA (extendFactory := extendFactory) D ess_s ess_h) :
@@ -2847,7 +2847,7 @@ private theorem ite_nondet_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P]
 
 /-- The nested `.loop` failing arm. -/
 private theorem nestedLoop_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
         P}
     (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h)
@@ -2864,7 +2864,7 @@ private theorem nestedLoop_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P]
 /-- The combined cons sequencer: a head `StmtSimSA` + `StmtSimFailSA` (with source
 `noFuncDecl`) and a combined tail sim stitch onto a combined cons sim. -/
 private theorem bodySimBothSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
     (hhead_term : StmtSimSA (extendFactory := extendFactory) D s s')
@@ -2887,7 +2887,7 @@ reachable in `body₁` (`Block.definedVars body₁ ⊆ D`); the nested `.loop` a
 supplies that the prelude havocs (whose names are exactly `Block.definedVars
 body₁`) are all defined in the target store before the loop. -/
 private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} {D : List P.Ident}
     (body₁ : List (Stmt P (Cmd P)))
     (h_if : Block.loopBodyNoInits body₁ = true)
@@ -3123,7 +3123,7 @@ eval/hasFailure fields unchanged, and every prelude name target-defined.  This i
 list generalisation of `step_init_havoc_to`; the per-step `StoreAgreement` transport
 is `storeAgreement_storeWith` and the definedness carry-through is
 `stmts_preserves_isSome`. -/
-theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (hs : List (P.Ident × P.Ty × MetaData P))
     (ρ_s ρ_h : Env P)
@@ -3194,7 +3194,7 @@ the prelude names DUAL-undefined at entry (source-undefined, target-undefined) a
 `Nodup`, a source loop run is matched by a hoist run reaching the same outcome with
 `StoreAgreement` re-established and eval/hasFailure agreement preserved. -/
 private def HoistSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (hoist : List (Stmt P (Cmd P)))
     (names : List P.Ident) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -3221,7 +3221,7 @@ names `Nodup`.  The recipe runs the prelude on the target via `prelude_runner`
 the terminal/exiting loop drivers, then stitches prelude ++ loop via
 `stmts_prefix_terminal_append` + `stmt_to_singleton_stmts`.  No pivot env. -/
 private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body body₂ : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {hs : List (P.Ident × P.Ty × MetaData P)}
@@ -3266,7 +3266,7 @@ private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [
 
 /-! ## Lift-level init-name membership (iff). -/
 mutual
-theorem Stmt.liftP_initVars_mem {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident) :
+theorem Stmt.liftP_initVars_mem {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (y : P.Ident) :
     (y ∈ Cmds.definedVars (Stmt.liftInitsInLoopBody s).1
       ∨ y ∈ Block.initVars (Stmt.liftInitsInLoopBody s).2) ↔ y ∈ Stmt.initVars s := by
   match s with
@@ -3305,7 +3305,7 @@ theorem Stmt.liftP_initVars_mem {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident
       simp [Stmt.liftInitsInLoopBody, Cmds.definedVars, Block.initVars, Stmt.initVars]
   termination_by sizeOf s
 
-theorem Block.liftP_initVars_mem {P : PureExpr} (ss : List (Stmt P (Cmd P))) (y : P.Ident) :
+theorem Block.liftP_initVars_mem {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (y : P.Ident) :
     (y ∈ Cmds.definedVars (Block.liftInitsInLoopBody ss).1
       ∨ y ∈ Block.initVars (Block.liftInitsInLoopBody ss).2) ↔ y ∈ Block.initVars ss := by
   match ss with
@@ -3335,7 +3335,7 @@ end
 
 /-! ## Hoist-level init-name membership subset. -/
 mutual
-theorem Stmt.hoistP_initVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident)
+theorem Stmt.hoistP_initVars_sub {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (y : P.Ident)
     (hy : y ∈ Block.initVars (Stmt.hoistLoopPrefixInits s)) : y ∈ Stmt.initVars s := by
   match s with
   | .cmd c =>
@@ -3365,7 +3365,7 @@ theorem Stmt.hoistP_initVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Iden
   | .typeDecl t md => simp_all [Stmt.hoistLoopPrefixInits, Block.initVars]
   termination_by sizeOf s
 
-theorem Block.hoistP_initVars_sub {P : PureExpr} (ss : List (Stmt P (Cmd P))) (y : P.Ident)
+theorem Block.hoistP_initVars_sub {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (y : P.Ident)
     (hy : y ∈ Block.initVars (Block.hoistLoopPrefixInits ss)) : y ∈ Block.initVars ss := by
   match ss with
   | [] => simp_all [Block.hoistLoopPrefixInits, Block.initVars]
@@ -3451,7 +3451,7 @@ end
 
 /-! ## The body-level dual-undef hoist simulation relation. -/
 private def BodyHoistSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) (body hoist : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -3471,7 +3471,7 @@ private def BodyHoistSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
 
 /-- The empty body. -/
 private theorem bodyHoistSimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) :
     BodyHoistSimSA (extendFactory := extendFactory) U [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ oc ρ_post h_run
@@ -3491,7 +3491,7 @@ private theorem bodyHoistSimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 + eval/hf agreement at any outcome, with no init dependency, inhabits
 `HoistSimSA s [s] U` for any `U`. -/
 private theorem hoistSimSA_of_identity {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {s : Stmt P (Cmd P)}
     (h_id : ∀ (ρ_s ρ_h : Env P),
       ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -3515,7 +3515,7 @@ private theorem hoistSimSA_of_identity {P : PureExpr} [HasFvar P] [HasFvars P] [
 
 /-! ## The cons sequencer. -/
 private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         {extendFactory : ExtendFactory P}
     {s : Stmt P (Cmd P)} {rest hoist_s hoist_rest : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
@@ -3592,7 +3592,7 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 
 /-! ## Bridge: a `StmtSimSA [] s s` identity sim gives `HoistSimSA s [s] U`. -/
 private theorem hoistSimSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {s : Stmt P (Cmd P)}
     (h : StmtSimSA (extendFactory := extendFactory) ([] : List P.Ident) s s) :
     HoistSimSA (extendFactory := extendFactory) s [s] U := by
@@ -3678,7 +3678,7 @@ theorem nondet_cmds_to_prelude {P : PureExpr} (cs : List (Cmd P))
 
 /-! ## Converter: Env.outcomeConfig dual-undef body sim → split dual-undef body sim. -/
 private theorem bodyDualUndefSA_of_bodyHoistSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h : BodyHoistSimSA (extendFactory := extendFactory) U body hoist) :
     BodyDualUndefSA (extendFactory := extendFactory) U body hoist := by
@@ -3696,7 +3696,7 @@ private theorem bodyDualUndefSA_of_bodyHoistSimSA {P : PureExpr} [HasFvar P] [Ha
 
 -- residual `.2` of the same-name lift is noInitsAnywhere when input is loopBodyNoInits.
 mutual
-theorem Stmt.liftP_res_noInits {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.loopBodyNoInits s =
+theorem Stmt.liftP_res_noInits {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (h : Stmt.loopBodyNoInits s =
     true) :
     Block.noInitsAnywhere (Stmt.liftInitsInLoopBody s).2 = true := by
   match s with
@@ -3721,7 +3721,7 @@ theorem Stmt.liftP_res_noInits {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.loo
   | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.noInitsAnywhere, Stmt.noInitsAnywhere]
   termination_by sizeOf s
 
-theorem Block.liftP_res_noInits {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h :
+theorem Block.liftP_res_noInits {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (h :
     Block.loopBodyNoInits ss = true) :
     Block.noInitsAnywhere (Block.liftInitsInLoopBody ss).2 = true := by
   match ss with
@@ -3836,7 +3836,7 @@ end
 
 /-! ## Hoist preserves loopBodyNoInits. -/
 mutual
-theorem Stmt.liftP_res_allLoop {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.loopBodyNoInits s =
+theorem Stmt.liftP_res_allLoop {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (h : Stmt.loopBodyNoInits s =
     true) :
     Block.loopBodyNoInits (Stmt.liftInitsInLoopBody s).2 = true := by
   match s with
@@ -3860,7 +3860,7 @@ theorem Stmt.liftP_res_allLoop {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.loo
   | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
   termination_by sizeOf s
 
-theorem Block.liftP_res_allLoop {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h :
+theorem Block.liftP_res_allLoop {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (h :
     Block.loopBodyNoInits ss = true) :
     Block.loopBodyNoInits (Block.liftInitsInLoopBody ss).2 = true := by
   match ss with
@@ -3880,7 +3880,7 @@ commands out of the body and into a havoc prelude. The result therefore has no
 `.init` inside any loop body regardless of the source shape: the property holds
 of the OUTPUT with no precondition on the input. -/
 mutual
-theorem Stmt.hoistP_allLoop_uncond {P : PureExpr} (s : Stmt P (Cmd P)) :
+theorem Stmt.hoistP_allLoop_uncond {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     Block.loopBodyNoInits (Stmt.hoistLoopPrefixInits s) = true := by
   match s with
   | .cmd c => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
@@ -3908,7 +3908,7 @@ theorem Stmt.hoistP_allLoop_uncond {P : PureExpr} (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.loopBodyNoInits, Stmt.loopBodyNoInits]
   termination_by sizeOf s
 
-theorem Block.hoistP_allLoop_uncond {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+theorem Block.hoistP_allLoop_uncond {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
     Block.loopBodyNoInits (Block.hoistLoopPrefixInits ss) = true := by
   match ss with
   | [] => simp [Block.hoistLoopPrefixInits, Block.loopBodyNoInits]
@@ -3921,7 +3921,7 @@ end
 /-! ## initVars multiset is preserved (List.Perm) by lift and hoist → Nodup transfers. -/
 
 mutual
-theorem Stmt.liftP_initVars_perm {P : PureExpr} (s : Stmt P (Cmd P)) :
+theorem Stmt.liftP_initVars_perm {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     List.Perm (Cmds.definedVars (Stmt.liftInitsInLoopBody s).1
       ++ Block.initVars (Stmt.liftInitsInLoopBody s).2) (Stmt.initVars s) := by
   match s with
@@ -3949,7 +3949,7 @@ theorem Stmt.liftP_initVars_perm {P : PureExpr} (s : Stmt P (Cmd P)) :
       simp [Stmt.liftInitsInLoopBody, Cmds.definedVars, Block.initVars, Stmt.initVars]
   termination_by sizeOf s
 
-theorem Block.liftP_initVars_perm {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+theorem Block.liftP_initVars_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
     List.Perm (Cmds.definedVars (Block.liftInitsInLoopBody ss).1
       ++ Block.initVars (Block.liftInitsInLoopBody ss).2) (Block.initVars ss) := by
   match ss with
@@ -3965,7 +3965,7 @@ theorem Block.liftP_initVars_perm {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
 end
 
 mutual
-theorem Stmt.hoistP_initVars_perm {P : PureExpr} (s : Stmt P (Cmd P)) :
+theorem Stmt.hoistP_initVars_perm {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     List.Perm (Block.initVars (Stmt.hoistLoopPrefixInits s)) (Stmt.initVars s) := by
   match s with
   | .cmd c => cases c <;> simp [Stmt.hoistLoopPrefixInits, Block.initVars, Stmt.initVars,
@@ -3990,7 +3990,7 @@ theorem Stmt.hoistP_initVars_perm {P : PureExpr} (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.initVars, Stmt.initVars]
   termination_by sizeOf s
 
-theorem Block.hoistP_initVars_perm {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+theorem Block.hoistP_initVars_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
     List.Perm (Block.initVars (Block.hoistLoopPrefixInits ss)) (Block.initVars ss) := by
   match ss with
   | [] => simp [Block.hoistLoopPrefixInits, Block.initVars]
@@ -4012,7 +4012,7 @@ but is structurally simpler: there is no rename, so the residual is the plain
 -- The lift's harvested prelude commands are all `.init` havocs, so mapping them to
 -- `.cmd` statements contributes no modified variables.
 mutual
-theorem Stmt.liftP_havocs_modVars_nil {P : PureExpr} (s : Stmt P (Cmd P)) :
+theorem Stmt.liftP_havocs_modVars_nil {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     Block.modifiedVars ((Stmt.liftInitsInLoopBody s).1.map
       (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = [] := by
   match s with
@@ -4032,7 +4032,7 @@ theorem Stmt.liftP_havocs_modVars_nil {P : PureExpr} (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.modifiedVars]
   termination_by sizeOf s
 
-theorem Block.liftP_havocs_modVars_nil {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+theorem Block.liftP_havocs_modVars_nil {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
     Block.modifiedVars ((Block.liftInitsInLoopBody ss).1.map
       (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = [] := by
   match ss with
@@ -4275,7 +4275,7 @@ theorem Block.hoistP_noMeasureLoops {P : PureExpr} (ss : List (Stmt P (Cmd P)))
 end
 
 /-! ### `loopBodyNoInits` is established (same-name), unconditionally. -/
-theorem Block.hoistP_loopBodyNoInits {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+theorem Block.hoistP_loopBodyNoInits {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
     Block.loopBodyNoInits (Block.hoistLoopPrefixInits ss) = true :=
   Block.hoistP_allLoop_uncond ss
 
@@ -4349,7 +4349,7 @@ end
 but the lift rewrites a lifted `.init y` to `.set y`, which turns `y` (an original
 `initVar`) into a modvar of the residual — hence the `++ initVars` slack. -/
 mutual
-theorem Stmt.liftP_res_modVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident)
+theorem Stmt.liftP_res_modVars_sub {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (y : P.Ident)
     (hy : y ∈ Block.modifiedVars (Stmt.liftInitsInLoopBody s).2) :
     y ∈ Stmt.modifiedVars s ++ Stmt.initVars s := by
   match s with
@@ -4386,7 +4386,7 @@ theorem Stmt.liftP_res_modVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Id
   | .typeDecl t md => simp_all [Stmt.liftInitsInLoopBody, Block.modifiedVars, Stmt.modifiedVars]
   termination_by sizeOf s
 
-theorem Block.liftP_res_modVars_sub {P : PureExpr} (ss : List (Stmt P (Cmd P))) (y : P.Ident)
+theorem Block.liftP_res_modVars_sub {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (y : P.Ident)
     (hy : y ∈ Block.modifiedVars (Block.liftInitsInLoopBody ss).2) :
     y ∈ Block.modifiedVars ss ++ Block.initVars ss := by
   match ss with
@@ -4406,7 +4406,7 @@ theorem Block.liftP_res_modVars_sub {P : PureExpr} (ss : List (Stmt P (Cmd P))) 
 end
 
 mutual
-theorem Stmt.hoistP_modVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident)
+theorem Stmt.hoistP_modVars_sub {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) (y : P.Ident)
     (hy : y ∈ Block.modifiedVars (Stmt.hoistLoopPrefixInits s)) :
     y ∈ Stmt.modifiedVars s ++ Stmt.initVars s := by
   match s with
@@ -4453,7 +4453,7 @@ theorem Stmt.hoistP_modVars_sub {P : PureExpr} (s : Stmt P (Cmd P)) (y : P.Ident
   | .typeDecl t md => simp_all [Stmt.hoistLoopPrefixInits, Block.modifiedVars, Stmt.modifiedVars]
   termination_by sizeOf s
 
-theorem Block.hoistP_modVars_sub {P : PureExpr} (ss : List (Stmt P (Cmd P))) (y : P.Ident)
+theorem Block.hoistP_modVars_sub {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) (y : P.Ident)
     (hy : y ∈ Block.modifiedVars (Block.hoistLoopPrefixInits ss)) :
     y ∈ Block.modifiedVars ss ++ Block.initVars ss := by
   match ss with
@@ -4484,7 +4484,7 @@ intermediate loop `.loop … (hoist body)` (NO prelude), consuming the converted
 `prelude ++ [.loop … body₂]`, consuming `bodySimBothSA_of_lift (hoist body)`.  The two
 legs compose through the TARGET pivot `ρ_h` (refl `StoreAgreement`). -/
 private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -4609,7 +4609,7 @@ private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 
 /-! ## The `.cmd` head sim (identity; consumes the dual-undef premise for `init`). -/
 private theorem hoistSimSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} {U : List P.Ident} (c : Cmd P)
     (h_sub : ∀ x ∈ Cmd.definedVars c, x ∈ U) :
     HoistSimSA (extendFactory := extendFactory) (.cmd c) [.cmd c] U := by
@@ -4634,7 +4634,7 @@ private theorem hoistSimSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 
 /-! ## The `.block` dual-undef arm. -/
 private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (inner_sim : BodyHoistSimSA (extendFactory := extendFactory) U inner inner_h) :
     HoistSimSA (extendFactory := extendFactory) (.block lbl inner md) [.block lbl inner_h md] U :=
@@ -4710,7 +4710,7 @@ private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
 
 /-! ## Monotonicity of `BodyHoistSimSA` in the undef-set `U` (larger U = more premises). -/
 private theorem bodyHoistSimSA_weaken {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U U' : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h_sub : ∀ y ∈ U', y ∈ U)
     (h : BodyHoistSimSA (extendFactory := extendFactory) U' body hoist) :
@@ -4721,7 +4721,7 @@ private theorem bodyHoistSimSA_weaken {P : PureExpr} [HasFvar P] [HasFvars P] [H
 
 /-! ## The `.ite` dual-undef arm (det guard). -/
 private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {g : P.Expr} {tss tss_h ess ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_sim : BodyHoistSimSA (extendFactory := extendFactory) U tss tss_h)
     (else_sim : BodyHoistSimSA (extendFactory := extendFactory) U ess ess_h) :
@@ -4786,7 +4786,7 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 
 /-! ## The `.ite` dual-undef arm (nondet guard). -/
 private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {tss tss_h ess ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_sim : BodyHoistSimSA (extendFactory := extendFactory) U tss tss_h)
     (else_sim : BodyHoistSimSA (extendFactory := extendFactory) U ess ess_h) :
@@ -4841,7 +4841,7 @@ private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [H
 /-! ## The structural mutual producer. -/
 mutual
 private theorem Stmt.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P))
     (h_shape : Stmt.transportShape s = true)
@@ -4929,7 +4929,7 @@ private theorem Stmt.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
   termination_by sizeOf s
 
 private theorem Block.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (ss : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape ss = true)
@@ -4981,7 +4981,7 @@ genuine `.loop`-arm Bool preconditions (`loopBodyNoInits`, `transportShape`,
 producer the `.loop` arm consumes: no fresh names, no rename, no `subst`, no pivot
 through an intermediate `body₁`. -/
 private theorem hoistSimSA_of_hoist {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (body : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape body = true)
@@ -5004,7 +5004,7 @@ structural mutual, and public producer carry NO `loopBodyNoInits` precondition �
 the output `loopBodyNoInits` fact is supplied unconditionally by
 `Block.hoistP_allLoop_uncond`. -/
 private def HoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (hoist : List (Stmt P (Cmd P)))
     (names : List P.Ident) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -5022,7 +5022,7 @@ private def HoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
         ∧ d'.getEnv.hasFailure = true)
 
 private def BodyHoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) (body hoist : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
@@ -5043,7 +5043,7 @@ private def BodyHoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
 consumes. -/
 private theorem bodyDualUndefFailSA_of_bodyHoistSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P]
     [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P} {U : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h : BodyHoistSimFailSA (extendFactory := extendFactory) U body hoist) :
     BodyDualUndefFailSA (extendFactory := extendFactory) U body hoist := by
@@ -5058,7 +5058,7 @@ target (terminal, never fails), feeds the source loop's failing run into the
 failing `BodySimSumFailSA`), then stitches `prelude ++ loop` via
 `stmts_prefix_terminal_append` and a `.step step_stmts_cons` failing prepend. -/
 private theorem hoistSimFailSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body body₂ : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {hs : List (P.Ident × P.Ty × MetaData P)}
@@ -5096,7 +5096,7 @@ private theorem hoistSimFailSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars 
 through the target pivot, mirroring `hoistSimSA_loop_arm`.  No `loopBodyNoInits`
 precondition; the output initfree fact is `Block.hoistP_allLoop_uncond`. -/
 private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -5186,7 +5186,7 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
 
 /-- Monotonicity of `BodyHoistSimFailSA` in the undef-set (larger set = more premises). -/
 private theorem bodyHoistSimFailSA_weaken {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U U' : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h_sub : ∀ y ∈ U', y ∈ U)
     (h : BodyHoistSimFailSA (extendFactory := extendFactory) U' body hoist) :
@@ -5197,7 +5197,7 @@ private theorem bodyHoistSimFailSA_weaken {P : PureExpr} [HasFvar P] [HasFvars P
 
 /-- A nil body cannot fail mid-run.  Mirrors `bodyHoistSimSA_nil` at the failing level. -/
 private theorem bodyHoistSimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) :
     BodyHoistSimFailSA (extendFactory := extendFactory) U [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ d h_run hd_fail
@@ -5215,7 +5215,7 @@ private theorem bodyHoistSimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [
 
 /-- The FAILING cons sequencer. -/
 private theorem bodyHoistSimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         {extendFactory : ExtendFactory P}
     {s : Stmt P (Cmd P)} {rest hoist_s hoist_rest : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
@@ -5280,7 +5280,7 @@ private theorem bodyHoistSimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] 
 /-- A single-outcome statement's FAILING sim follows from its terminal/exiting
 `HoistSimSA`. -/
 private theorem hoistSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {s : Stmt P (Cmd P)} {hoist_s : List (Stmt P (Cmd P))}
     (h_outcome : ∀ {ρ : Env P} {d : Config P (Cmd P)},
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) d →
@@ -5309,7 +5309,7 @@ private theorem hoistSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasF
 
 /-- The `.cmd` FAILING arm. -/
 private theorem hoistSimFailSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} {U : List P.Ident} (c : Cmd P)
     (h_sub : ∀ x ∈ Cmd.definedVars c, x ∈ U) :
     HoistSimFailSA (extendFactory := extendFactory) (.cmd c) [.cmd c] U :=
@@ -5317,7 +5317,7 @@ private theorem hoistSimFailSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 
 /-- The `.block` FAILING arm. -/
 private theorem hoistSimFailSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (inner_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U inner inner_h) :
     HoistSimFailSA (extendFactory := extendFactory) (.block lbl inner md) [.block lbl inner_h md] U
@@ -5344,7 +5344,7 @@ private theorem hoistSimFailSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 
 /-- The `.ite (.det g)` FAILING arm. -/
 private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {g : P.Expr} {tss tss_h ess ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U tss tss_h)
     (else_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U ess ess_h) :
@@ -5391,7 +5391,7 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 
 /-- The `.ite .nondet` FAILING arm. -/
 private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {tss tss_h ess ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
     (then_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U tss tss_h)
     (else_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U ess ess_h) :
@@ -5433,7 +5433,7 @@ private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P
 /-- Bridge: a single-outcome identity statement (`.exit` / `.typeDecl`) reduces to its
 terminal `HoistSimSA s [s] U`. -/
 private theorem hoistSimFailSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {U : List P.Ident} {s : Stmt P (Cmd P)}
     (h_outcome : ∀ {ρ : Env P} {d : Config P (Cmd P)},
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) d →
@@ -5447,7 +5447,7 @@ private theorem hoistSimFailSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [Has
 `loopBodyNoInits` precondition). -/
 mutual
 private theorem Stmt.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P))
     (h_shape : Stmt.transportShape s = true)
@@ -5536,7 +5536,7 @@ private theorem Stmt.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
   termination_by sizeOf s
 
 private theorem Block.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (ss : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape ss = true)
@@ -5588,7 +5588,7 @@ carrying the dual-undefinedness of every init name (`Block.initVars body`) at en
 under the `.loop`-arm Bool preconditions `transportShape` / `noFuncDecl` and
 `uniqueInits` — NO `loopBodyNoInits`. -/
 private theorem hoistSimFailSA_of_hoist {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
         [LawfulHasIdent P]
     {extendFactory : ExtendFactory P} (body : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape body = true)
@@ -5726,7 +5726,7 @@ terminal store and the same `hasFailure` flag.  Forwards to the structural produ
 `hoistSimSA_of_hoist` (its `BodyHoistSimSA` unfolded at the `none` outcome). -/
 theorem hoistLoopPrefixInits_preserves_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
@@ -5769,7 +5769,7 @@ flag.  Forwards to `hoistSimSA_of_hoist` (its `BodyHoistSimSA` unfolded at the `
 lbl` outcome). -/
 theorem hoistLoopPrefixInits_preserves_exit_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
@@ -5816,7 +5816,7 @@ the WF bundle + dual init-undef + `StoreAgreement` + eval/hf agreement) — NO
 `hoistSimFailSA_of_hoist` (its `BodyHoistSimFailSA`). -/
 theorem hoistLoopPrefixInits_to_fail_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
@@ -5869,7 +5869,7 @@ ending in a store-agreeing, failure-matching, factory-preserving target state.  
 the middle per-pass instance the pipeline capstone composes. -/
 theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent
     P]
-    [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasIdent P]
     [HasSubstFvar P] (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
@@ -5979,8 +5979,7 @@ section NondetElimShapeFree
 /-- The freshly generated ndelim guard ident is `∉ getVars` of any `Q`-foreign
 read-var slot: the only read is `mkFvar ident` whose vars ⊆ `[ident]` and `ident`
 carries the ndelim kind, foreign to `Q`. -/
-private theorem ndelim_guard_fresh {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasVarsPure
-    P P.Expr]
+private theorem ndelim_guard_fresh {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
     (pf : String) (σ : StringGenState)
     (hforeign : ¬ Q (StringGenState.gen pf σ).1) :
@@ -5998,7 +5997,7 @@ private theorem ndelim_guard_fresh {P : PureExpr} [HasIdent P] [HasFvar P] [HasF
 /-- Transport `exprsShapeFree` across a `.loop` whose guard/body are replaced but
 whose measure/invariants are unchanged: the measure/invariant freshness conjuncts
 carry over verbatim from the source loop. -/
-private theorem loop_sf_transport {P : PureExpr} [HasIdent P] [HasVarsPure P P.Expr] [HasFvars P] {Q
+private theorem loop_sf_transport {P : PureExpr} [HasIdent P] [HasFvars P] {Q
     : String → Prop} (g₀ g₁ : ExprOrNondet P)
     (m : Option P.Expr) (inv : List (String × P.Expr))
     (body₀ body₁ : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -6016,7 +6015,7 @@ two ndelim guard prefixes) are foreign to `Q`: source read-vars stay `Q`-free,
 and the only new read-var is the freshly-generated guard ident, which is `¬ Q` by
 foreignness. -/
 theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
-    [LawfulHasFvars P] [HasBool P] [HasVarsPure P P.Expr]
+    [LawfulHasFvars P] [HasBool P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
@@ -6078,7 +6077,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
 
 /-- Block-level `exprsShapeFree Q` preservation through `nondetElim`. -/
 theorem Block.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
-    [LawfulHasFvars P] [HasBool P] [HasVarsPure P P.Expr]
+    [LawfulHasFvars P] [HasBool P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
@@ -6444,7 +6443,7 @@ mutual
 all introduced command RHS positions read nothing, and source RHS positions are
 unchanged. -/
 theorem Stmt.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
-    [HasBool P] [HasVarsPure P P.Expr] (names : List P.Ident)
+    [HasBool P] (names : List P.Ident)
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.namesFreshInRhsExprs (P := P) names s) :
     Block.namesFreshInRhsExprs (P := P) names (Stmt.nondetElimM s σ).1 := by
@@ -6500,7 +6499,7 @@ theorem Stmt.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFv
   termination_by sizeOf s
 
 theorem Block.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
-    [HasBool P] [HasVarsPure P P.Expr] (names : List P.Ident)
+    [HasBool P] (names : List P.Ident)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.namesFreshInRhsExprs (P := P) names ss) :
     Block.namesFreshInRhsExprs (P := P) names (Block.nondetElimM ss σ).1 := by
@@ -6518,8 +6517,7 @@ end
 /-- An `ndelimKind` guard ident is RHS-fresh in the kind-free source: it is the
 identifier of an `ndelimKind` label, and the source reads no `ndelimKind` ident
 in any expression (`exprsShapeFree ndelimKind`), so a fortiori not in any RHS. -/
-private theorem ndelim_guard_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P] [HasVarsPure P
-    P.Expr] [HasFvars P]
+private theorem ndelim_guard_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P] [HasFvars P]
     {str : String} (h_kind : ndelimKind str) (ss : List (Stmt P (Cmd P)))
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
     Block.namesFreshInRhsExprs (P := P) [HasIdent.ident (P := P) str] ss :=
@@ -6533,7 +6531,7 @@ private theorem ndelim_guard_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P
 source inits inherit the source RHS-freshness; freshly generated `ndelimKind`
 guards are RHS-fresh by source kind-freedom. -/
 theorem nondetElim_initVars_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P] [HasFvar P]
-    [HasFvars P] [HasBool P] [HasVarsPure P P.Expr]
+    [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
@@ -6551,7 +6549,7 @@ theorem nondetElim_initVars_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P]
 fact (every output init RHS-fresh in the source) is transported through the pass
 (which only adds variable-free command RHS positions). -/
 theorem nondetElim_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
-    [HasBool P] [HasVarsPure P P.Expr]
+    [HasBool P]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
@@ -6568,7 +6566,7 @@ the `nondetElim` output: the predicate is the RHS-only `initVars` freshness,
 preserved verbatim because `nondetElim` only ever adds variable-free command
 RHS positions (its fresh guard is read only in a `.ite`/`.loop` guard). -/
 theorem nondetElim_hoistedNamesFreshInRhsAndGuards {P : PureExpr} [HasIdent P] [LawfulHasIdent P]
-    [HasFvar P] [HasFvars P] [HasBool P] [HasVarsPure P P.Expr] [LawfulHasFvar P] [LawfulHasFvars P]
+    [HasFvar P] [HasFvars P] [HasBool P] [LawfulHasFvar P] [LawfulHasFvars P]
     (ss : List (Stmt P (Cmd P)))
     (h_fresh_src : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :

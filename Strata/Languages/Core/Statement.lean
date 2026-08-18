@@ -273,9 +273,6 @@ end
   | .cmd c => c.getVars
   | .call _ args _ => (CallArg.getInputExprs args).flatMap HasFvars.getFvars
 
-instance : HasVarsPure Expression Command where
-  getVars := Command.getVars
-
 @[expose] def Command.getOps (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => Cmd.getOps c
@@ -300,14 +297,17 @@ def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
 instance : HasVarsImp Expression Command where
   definedVars c _ := Command.definedVars c
   modifiedVars := Command.modifiedVars
+  readVars := Command.getVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
+  readVars := Stmt.getVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
+  readVars := Block.getVars
 
 ---------------------------------------------------------------------
 

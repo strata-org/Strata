@@ -42,7 +42,7 @@ demand, each recovered by the corresponding disjunct. -/
 
 /-- The purely syntactic precondition under which `s2uPipeline ss` refines `ss`:
 source shape restrictions, exit-coverage, and generated-name disjointness. -/
-structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) : Prop where

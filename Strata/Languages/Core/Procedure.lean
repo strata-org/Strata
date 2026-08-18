@@ -306,17 +306,22 @@ def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
+/-- Variables read (referenced in expressions) by a CFG body. -/
+@[simp]
+def DetCFG.getVars (cfg : DetCFG) : List Expression.Ident :=
+  cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap Imperative.HasVarsImp.readVars ++
+    (match blk.transfer with
+      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
+      | .finish _ => [])
+
 /-- Get variables referenced in the body. For a CFG body, this includes the
 variables read by the guard of each conditional transfer (`condGoto`), mirroring
 how the structured form collects the condition variables of `if`/`while`. -/
 @[simp]
 def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
-  | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
-  | .cfg c => c.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Imperative.HasVarsPure.getVars ++
-    (match blk.transfer with
-      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
-      | .finish _ => [])
+  | .structured ss => ss.flatMap Imperative.HasVarsImp.readVars
+  | .cfg c => DetCFG.getVars c
 
 /-- Is this body abstract (no implementation)? Only empty structured bodies
     are abstract. CFG bodies always have an implementation. -/
@@ -384,17 +389,12 @@ def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
   p.body.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
-instance : HasVarsPure Expression Procedure where
-  getVars := Procedure.getVars
-
-instance : HasVarsPure Expression Procedure.Body where
-  getVars := Procedure.Body.getVars
-
 instance : HasVarsImp Expression DetCFG where
   definedVars cfg _ := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.definedVars
   modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.modifiedVars
+  readVars := DetCFG.getVars
 
 instance : HasVarsImp Expression Procedure.Body where
   definedVars b excludeScoped := match b with
@@ -403,10 +403,12 @@ instance : HasVarsImp Expression Procedure.Body where
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
     | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
+  readVars := Procedure.Body.getVars
 
 instance : HasVarsImp Expression Procedure where
   definedVars _ _ := []
   modifiedVars p := p.header.outputs.keys
+  readVars := Procedure.getVars
 
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
@@ -458,8 +460,8 @@ def Procedure.modifiedVarsTrans
 def Procedure.getVarsTrans
   (_ : String → Option Procedure)
   (p: Procedure) : List Expression.Ident :=
-  HasVarsPure.getVars p ++
-  HasVarsPure.getVars p.body
+  HasVarsImp.readVars p ++
+  HasVarsImp.readVars p.body
 
 instance : HasVarsProcTrans Expression Procedure where
   modifiedVarsTrans := Procedure.modifiedVarsTrans

@@ -352,9 +352,9 @@ end
 mutual
 /-- Get all variables accessed by `s`. -/
 @[expose]
-def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+def Stmt.getVars [HasFvars P] [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .cmd cmd => HasVarsPure.getVars cmd
+  | .cmd cmd => HasVarsImp.readVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
   | .loop guard measure invariants bss _ =>
@@ -375,19 +375,11 @@ def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
 @[expose]
-def Block.getVars [HasFvars P] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+def Block.getVars [HasFvars P] [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
 end
-
-instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
-  : HasVarsPure P (Stmt P C) where
-  getVars := Stmt.getVars
-
-instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
-  : HasVarsPure P (Block P C) where
-  getVars := Block.getVars
 
 mutual
 /-- Get all operator/function names referenced by `s`.  Mirrors
@@ -499,12 +491,12 @@ def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C)
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
 @[simp, expose]
-def Stmt.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+def Stmt.touchedVars [HasVarsImp P C] [HasFvars P]
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
 
 @[simp, expose]
-def Block.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+def Block.touchedVars [HasVarsImp P C] [HasFvars P]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end
@@ -565,12 +557,12 @@ mutual
     TODO: prove that `Statement.typeCheck` in
     `Strata/Languages/Core/StatementType.lean` guarantees this well-formedness. -/
 @[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
-    [HasOpsImp P C] [HasVarsPure P C] [DecidableEq P.Ident]
+    [HasOpsImp P C] [DecidableEq P.Ident]
     (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
     (s : Stmt P C) : Bool :=
   match s with
   | .cmd c =>
-    (HasVarsPure.getVars (P := P) c).all (fun n => definedVars n) &&
+    (HasVarsImp.readVars (P := P) c).all (fun n => definedVars n) &&
     (HasVarsImp.modifiedVars (P := P) c).all (fun n => definedVars n) &&
     -- All fresh variable names that are being initialized in command c must not
     -- have existed in the already defined vars 'definedVars'. Otherwise, var
@@ -614,7 +606,7 @@ mutual
   | .typeDecl _ _ => true
 
 @[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
-    [HasOpsImp P C] [HasVarsPure P C] [DecidableEq P.Ident]
+    [HasOpsImp P C] [DecidableEq P.Ident]
     (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
     (bss : Block P C) : Bool :=
   match bss with
@@ -630,13 +622,15 @@ mutual
 end
 
 
-instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
+instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
+  readVars := Stmt.getVars
 
-instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
+instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
+  readVars := Block.getVars
 
 ---------------------------------------------------------------------
 
@@ -738,7 +732,7 @@ variable. The flat-namespace CFG can simulate the structured semantics only
 when this holds — without uniqueness, structured `step_block_done` can
 project a name away that the structured semantics later reinitializes, a
 pattern the CFG cannot replicate. -/
-@[expose] def Block.uniqueInits (ss : List (Stmt P (Cmd P))) : Prop :=
+@[expose] def Block.uniqueInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Prop :=
   (Block.initVars ss).Nodup
 
 ---------------------------------------------------------------------
@@ -832,7 +826,7 @@ body declares no local variables.
 
 mutual
 /-- Returns true if every reachable loop's body declares no local vars. -/
-@[expose] def Stmt.loopBodyNoInits (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.loopBodyNoInits [HasFvars P] (s : Stmt P (Cmd P)) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.loopBodyNoInits bss
@@ -845,7 +839,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
-@[expose] def Block.loopBodyNoInits (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.loopBodyNoInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest

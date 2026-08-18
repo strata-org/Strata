@@ -410,7 +410,7 @@ theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
 /-- A single `EvalCmd` never undefines a slot: any `y` that was `isSome` stays
 `isSome` (`init`/`set` only assign `some`; `assert`/`assume`/`cover` keep the
 store). -/
-theorem EvalCmd_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+theorem EvalCmd_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     {δ : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
     (h : EvalCmd P δ σ c σ' haf)
     {y : P.Ident} (h_some : (σ y).isSome = true) :
@@ -468,7 +468,7 @@ theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
 /-- A single `EvalCmd` whose command neither defines nor modifies `y` preserves
 a `none` slot at `y`. -/
 theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr]
+   
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
     (h : EvalCmd P f σ c σ' haf)
     {y : P.Ident}
@@ -509,7 +509,7 @@ theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 /-- A single command preserves a `none` slot `y` that the command does not
 `init`/`set` as its target. -/
 theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {hf : Bool} {y : P.Ident}
     (h_eval : EvalCmd P f σ c σ' hf)
     (h_none : σ y = none)

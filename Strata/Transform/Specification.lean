@@ -569,7 +569,7 @@ carried in the configuration.
 so a real `isAtAssert` would detect a config sitting at one. It is left trivial
 because the current overapproximation results never consume the target's `isAtAssert`. -/
 abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
-    [HasVarsPure P P.Expr]
+   
     (extendFactory : ExtendFactory P) : Lang P where
   StmtT := CFG String (DetBlock String (Cmd P) P)
   CfgT := P.Factory × (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)

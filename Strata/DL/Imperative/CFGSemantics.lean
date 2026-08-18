@@ -164,7 +164,7 @@ inductive EvalCmds
     EvalCmds P EvalCmdR δ σ' cs σ'' failed' →
     EvalCmds P EvalCmdR δ σ (c :: cs) σ'' (failed || failed')
 
-abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     (cfg : CFG String (DetBlock String (Cmd P) P)) :=

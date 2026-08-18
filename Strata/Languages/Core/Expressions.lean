@@ -38,9 +38,6 @@ abbrev Expression : PureExpr :=
 instance : HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
 
-instance : HasVarsPure Expression Expression.Expr where
-  getVars := Lambda.LExpr.LExpr.getVars
-
 instance : HasOps Expression where
   getOps := Lambda.LExpr.getOps
 
