@@ -7,6 +7,7 @@ module
 
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.NondetElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
@@ -77,7 +78,10 @@ abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let transform : Transform.CoreTransformM (Bool × Program) := do
     let (_, program') ← insertLoopInvariantAsserts program
-    loopElim program'
+    let (_, program'') ← loopElim program'
+    -- nondetElim must run before symbolic evaluation, which rejects surviving
+    -- nondeterministic guards.
+    nondetElim program''
   let (res, _) := StateT.run (ExceptT.run transform) Transform.CoreTransformState.emp
   let (_, program) ← res.toOption
   match Core.typeCheck options program with

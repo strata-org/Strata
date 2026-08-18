@@ -148,15 +148,6 @@ private theorem Block.loopBodyNoInits_map_cmd {P : PureExpr} [HasFvars P]
     simp [List.map_cons, Block.loopBodyNoInits,
           Stmt.loopBodyNoInits, ih]
 
-/-- A list of `.cmd`s trivially has `simpleShape = true`. -/
-private theorem Block.simpleShape_map_cmd {P : PureExpr}
-    (cs : List (Cmd P)) :
-    Block.simpleShape (cs.map Stmt.cmd) = true := by
-  induction cs with
-  | nil => simp [Block.simpleShape]
-  | cons c rest ih =>
-    simp [List.map_cons, Block.simpleShape, Stmt.simpleShape, ih]
-
 /-- A list of `.cmd`s trivially has `loopHasNoInvariants = true`. -/
 private theorem Block.loopHasNoInvariants_map_cmd {P : PureExpr}
     (cs : List (Cmd P)) :

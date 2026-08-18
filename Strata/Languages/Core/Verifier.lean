@@ -17,6 +17,7 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
 import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
@@ -781,6 +782,20 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
+  -- Precondition: nondeterministic `if *` / `while *` guards must have been
+  -- eliminated (by `nondetElim`) first. `Core.Statement.eval` rejects such a
+  -- guard per-path, but `Program.eval` isolates per-procedure `Env.error`, so
+  -- that rejection would not surface here and its path's obligations would be
+  -- dropped silently. Check the input structurally and fail loudly instead.
+  match program.decls.findSome? (fun d => match d with
+    | .proc proc _ => (match proc.body with
+        | .structured ss => if Imperative.Block.simpleShape ss then none else some proc.header.name.1
+        | .cfg _ => none)
+    | _ => none) with
+  | some name => throw (Message.fromString
+      s!"toCoreProofObligationProgram: procedure '{name}' contains a \
+         nondeterministic if/loop guard; run nondetElim before symbolic evaluation.")
+  | none => pure ()
   let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
@@ -1532,7 +1547,10 @@ def typeCheckPipelinePhase
       | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
 
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
-    the passive proof-obligation form consumed by obligation extraction. -/
+    the passive proof-obligation form consumed by obligation extraction.
+
+    Assumes `nondetElimPipelinePhase` has already run: `Core.Statement.eval`
+    rejects any surviving nondeterministic `if *` / `while *` guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
@@ -1556,7 +1574,8 @@ def corePipelinePhases (procs : Option (List String) := none)
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
   transformPipelinePhases procs
     ++ [monomorphizeProceduresPipelinePhase,
-        typeCheckPipelinePhase options moreFns, symbolicEvalPipelinePhase options moreFns]
+        typeCheckPipelinePhase options moreFns,
+        nondetElimPipelinePhase, symbolicEvalPipelinePhase options moreFns]
     ++ [betaReducePipelinePhase] ++ csePhases
 
 /-- The abstracted phases derived from the Core pipeline phases.

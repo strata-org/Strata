@@ -755,7 +755,7 @@ and `.typeDecl` are all allowed.
 
 mutual
 /-- Returns true if the statement satisfies the simple-shape restriction. -/
-@[expose] def Stmt.simpleShape (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.simpleShape (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.simpleShape bss
@@ -769,7 +769,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Returns true if the block satisfies the simple-shape restriction. -/
-@[expose] def Block.simpleShape (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.simpleShape (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.simpleShape s && Block.simpleShape srest

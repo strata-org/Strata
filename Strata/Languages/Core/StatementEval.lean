@@ -583,11 +583,15 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .ite cond then_ss else_ss _ =>
     match cond with
     | .nondet =>
-      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.scopes.length}", ()⟩
-      let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      evalSub Ewn [initStmt, iteStmt] nextSplitId
+      -- A nondeterministic `if *` must be eliminated (by the `nondetElim`
+      -- transform) before symbolic evaluation. Reject it so the failure
+      -- surfaces rather than producing an incomplete obligation set.
+      ([{ Ewn with
+            env := { Ewn.env with error := some (.Misc
+              f!"nondeterministic `if *` reached symbolic evaluation; run the \
+                 nondetElim transform to eliminate nondeterministic control first") },
+            exitLabel := .none }],
+        noStats, nextSplitId)
     | .det c =>
       let cond' := Ewn.env.exprEval c
       match cond' with
