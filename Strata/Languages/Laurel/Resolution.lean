@@ -5845,27 +5845,58 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
     | _ => pure ()
     return node) false expr |>.run []).2
 
+/-- Expressions with a pre/post reading; only these may contain
+    `old(<global>)`. Guards belong here: they lower into postconditions. -/
+private def postconditionExpressions (proc : Procedure) : List StmtExprMd :=
+  (match proc.body with
+    | .Opaque postconditions _ modifies =>
+      postconditions.map (·.condition) ++ modifies.flatMap (·.guard.toList)
+    | .Abstract postconditions => postconditions.map (·.condition)
+    | .Transparent _ | .External => []) ++
+  proc.throwsOn.flatMap fun blk =>
+    blk.guard :: blk.postconditions.map (·.condition)
+
+/-- Contract expressions with no pre/post reading. -/
 private def contractExpressions (proc : Procedure) : List StmtExprMd :=
   proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
-    proc.invokeOn.toList ++ proc.axioms ++ match proc.body with
-    | .Opaque postconditions _ modifies =>
-      postconditions.map (·.condition) ++
-        modifies.flatMap (fun g => g.targets ++ g.guard.toList)
-    | .Abstract postconditions => postconditions.map (·.condition)
-    | .Transparent _ | .External => []
+    proc.invokeOn.toList ++ proc.axioms ++
+    proc.throwsOn.flatMap (·.modifies) ++
+    match proc.body with
+    | .Opaque _ _ modifies => modifies.flatMap (·.targets)
+    | .Abstract _ | .Transparent _ | .External => []
 
 private def bodyExpressions (proc : Procedure) : List StmtExprMd :=
   proc.body.implementation.toList
 
-/-- Reject `old(...)` operands that directly or transitively depend on globals. -/
+/-- Reject globals under `old(...)`; `allowDirectReads` permits plain variable
+    reads, while calls and writes are always blocked. -/
 private def oldGlobalErrorsInExpr (model : SemanticModel)
-    (dependentIds : Std.HashSet Nat) (expr : StmtExprMd) : List Message :=
+    (dependentIds : Std.HashSet Nat) (allowDirectReads : Bool)
+    (expr : StmtExprMd) : List Message :=
+  let effectMessage :=
+    "calls to global-dependent procedures and global writes are not yet supported inside `old(...)`"
+  let blockedMessage (node : StmtExprMd) : Option String :=
+    match node.val with
+    | .Var _ =>
+      if !allowDirectReads && isGlobalRef model node then
+        some "file-scope globals inside `old(...)` are only supported in postconditions and guards"
+      else none
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+      if containsProcId dependentIds callee then some effectMessage else none
+    | .Assign targets _ =>
+      if targets.any (isGlobalTarget model) then some effectMessage else none
+    | .IncrDecr _ _ target | .CompoundAssign _ target _ =>
+      if isGlobalTarget model target then some effectMessage else none
+    | _ => none
+  let firstBlocked (operand : StmtExprMd) : Option (FileRange × String) :=
+    (foldStmtExprM (m := StateM (Option (FileRange × String))) (fun node => do
+      if (← get).isNone then
+        if let some message := blockedMessage node then
+          set (some (node.source, message))) operand |>.run none).2
   let visit (node : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     if let .Old operand _ := node.val then
-      if let some source := firstGlobalUseSource model dependentIds operand then
-        modify (· ++ [diagnosticFromSource source
-          "file-scope globals are not yet supported inside `old(...)`"
-          MessageKind.userError])
+      if let some (source, message) := firstBlocked operand then
+        modify (· ++ [diagnosticFromSource source message MessageKind.userError])
       return some node
     return none
   (mapStmtExprPrePostM (m := StateM (List Message)) visit pure expr |>.run []).2
@@ -5877,14 +5908,22 @@ private def validateUnsupportedGlobalCalls (model : SemanticModel)
   let writerIds := globalWriterIds program analysis
   let dependentIds := writerIds.union (globalReaderIds program analysis)
   let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
-  let errorsIn (restricted checkUsedResults : Bool) (expr : StmtExprMd) :=
-    let oldErrors := oldGlobalErrorsInExpr model dependentIds expr
+  let errorsIn (restricted checkUsedResults allowOldDirectReads : Bool)
+      (expr : StmtExprMd) :=
+    let oldErrors := oldGlobalErrorsInExpr model dependentIds allowOldDirectReads expr
     if !oldErrors.isEmpty then oldErrors
     else globalCallErrors ctx restricted expr ++
       if checkUsedResults then resultUseGlobalCallErrors ctx expr else []
   analysis.allProcs.flatMap fun proc =>
-    (contractExpressions proc).flatMap (errorsIn true false) ++
-      (bodyExpressions proc).flatMap (errorsIn false true)
+    (postconditionExpressions proc).flatMap
+        (errorsIn (restricted := true) (checkUsedResults := false)
+          (allowOldDirectReads := true)) ++
+      (contractExpressions proc).flatMap
+        (errorsIn (restricted := true) (checkUsedResults := false)
+          (allowOldDirectReads := false)) ++
+      (bodyExpressions proc).flatMap
+        (errorsIn (restricted := false) (checkUsedResults := true)
+          (allowOldDirectReads := false))
 
 
 /-- Without an implementation there is no source statement from which to infer
@@ -5970,9 +6009,10 @@ private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalys
     containsProcId (globalEffectIdsFor analysis.globals.readers field) proc.name ||
     containsProcId (globalEffectIdsFor analysis.globals.writers field) proc.name
 
+/-- All contract expressions; `postconditionExpressions` and
+    `contractExpressions` must partition the full contract surface. -/
 private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
-  contractExpressions proc ++ proc.throwsOn.flatMap fun blk =>
-    blk.guard :: (blk.postconditions.map (·.condition) ++ blk.modifies)
+  postconditionExpressions proc ++ contractExpressions proc
 
 private def validateEntryContractGlobalUse (model : SemanticModel)
     (program : Program) (analysis : InitialEffectAnalysis) : List Message :=

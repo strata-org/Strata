@@ -88,7 +88,257 @@ var g: int := 0
 procedure keep()
   opaque
   ensures g == old(g)
-//                 ^ error: file-scope globals are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepPre()
+  requires old(g) == 0
+//             ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  opaque
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepInv() opaque {
+  g := g;
+  while (false)
+    invariant old(g) == 0 {
+//                ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepWrite()
+  opaque
+  ensures old((g := 3)) == 3
+//             ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepCompound()
+  opaque
+  ensures old((g += 1)) == 1
+//             ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepIncr()
+  opaque
+  ensures old((g++)) == 1
+//             ^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+/-! `throwsOn`: case `ensures` and guard admit `old(<global>)`. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrow(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures g == old(g)
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowGuard(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn old(g) == 0 {
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure readG() returns (r: int) opaque
+  ensures r == g;
+procedure mayThrowGuardCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn old(readG()) == 0 {
+//             ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure readG() returns (r: int) opaque
+  ensures r == g;
+procedure mayThrowCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures g == old(readG())
+//                   ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+  }
+{
+  g := g
+};
+#end
+
+/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowModifiesOld(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    modifies old(g)
+//               ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+{
+  g := g
+};
+#end
+
+/-! Bare writes and writer calls in `throwsOn` are rejected. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowBareWrite(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures (g := 1) == 1
+//           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure bumpR() returns (r: int) opaque
+  ensures r == g
+{
+  g := g + 1;
+  r := g
+};
+procedure mayThrowBareCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn bumpR() == 0 {
+//         ^^^^^ error: calls to global-writing procedure 'bumpR' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+/-! Guards reject calls/writes under `old(...)`; `invokeOn` stays fully strict. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure P(x: int): bool;
+procedure invokesOld()
+  invokeOn P(old(g))
+//               ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  opaque;
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure guardedFrame()
+  opaque
+  modifies when old(g) == 0
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure guardedFrameWrite()
+  opaque
+  modifies when old((g := 1)) == 1
+//                   ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
 {
   g := g
 };
@@ -105,7 +355,26 @@ procedure readG() returns (r: int)
 procedure keep()
   opaque
   ensures g == old(readG())
-//                 ^^^^^^^ error: file-scope globals are not yet supported inside `old(...)`
+//                 ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Box {
+  procedure getG(self: Box) returns (r: int)
+    opaque
+    ensures r == g;
+}
+procedure keepInstance(b: Box)
+  opaque
+  ensures g == old(b#getG())
+//                 ^^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
 {
   g := g
 };
@@ -535,7 +804,7 @@ procedure bump() returns (r: int) opaque {
 };
 procedure caller() opaque
   ensures g == old(bump())
-//                 ^^^^^^ error: file-scope globals are not yet supported inside `old(...)`
+//                 ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
 {
   g := g
 };
@@ -553,7 +822,7 @@ procedure bump() returns (r: int) opaque {
 procedure caller() opaque {
   while (false)
     invariant forall(x: int) => old(bump()) > x {
-//                                  ^^^^^^ error: file-scope globals are not yet supported inside `old(...)`
+//                                  ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
   }
 };
 #end
@@ -820,7 +1089,7 @@ procedure caller() opaque {
   var x: int;
   var y: int;
   assign x, y := old(pair(1))
-//                   ^^^^^^^ error: file-scope globals are not yet supported inside `old(...)`
+//                   ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
 };
 #end
 
