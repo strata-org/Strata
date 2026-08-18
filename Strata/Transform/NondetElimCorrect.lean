@@ -14,7 +14,8 @@ public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Util.StringGen
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 public section
 
@@ -1522,7 +1523,7 @@ section InitVarsClassified
 
 mutual
 private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr]
+    [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
     (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
             ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
@@ -1533,18 +1534,18 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
   match s with
   | .cmd c =>
       intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, List.append_nil] at hx
+      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil] at hx ⊢
       exact Or.inl hx
   | .block lbl bss md =>
       intro x hx
       rw [Stmt.nondetElimM_block_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_block, Block.initVars,
+      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
         List.append_nil] at hx ⊢
       exact Block.nondetElimM_initVars_classified_Q hQgen bss σ x hx
   | .ite (.det e) tss ess md =>
       intro x hx
       rw [Stmt.nondetElimM_ite_det_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_ite, Block.initVars,
+      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
         List.append_nil, List.mem_append] at hx ⊢
       rcases hx with h | h
       · rcases Block.nondetElimM_initVars_classified_Q hQgen tss σ x h with h' | h'
@@ -1556,14 +1557,9 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
   | .ite .nondet tss ess md =>
       intro x hx
       rw [Stmt.nondetElimM_ite_nondet_out] at hx
-      rw [Block.initVars_cons] at hx
-      rw [show Stmt.initVars (P := P)
-            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1)
-              HasBool.boolTy ExprOrNondet.nondet md)) =
-            [HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1]
-          from by simp only [HasInit.init, Stmt.initVars]] at hx
-      simp only [Stmt.initVars_ite, Block.initVars_cons, Block.initVars, List.append_nil,
-        List.singleton_append, List.mem_cons, List.mem_append] at hx ⊢
+      simp only [HasInit.init, Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
+        Cmd.definedVars, Bool.false_eq_true, ↓reduceIte, List.append_nil, List.cons_append,
+        List.nil_append, List.mem_cons, List.mem_append] at hx ⊢
       rcases hx with h_g | h_t | h_e
       · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g, hQgen.1 σ⟩
       · rcases Block.nondetElimM_initVars_classified_Q hQgen tss _ x h_t with h' | h'
@@ -1575,48 +1571,37 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
   | .loop (.det e) m inv body md =>
       intro x hx
       rw [Stmt.nondetElimM_loop_det_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_loop, Block.initVars,
+      simp only [Block.definedVars, Stmt.definedVars, Bool.false_eq_true, ↓reduceIte,
         List.append_nil] at hx ⊢
       exact Block.nondetElimM_initVars_classified_Q hQgen body σ x hx
   | .loop .nondet m inv body md =>
       intro x hx
       rw [Stmt.nondetElimM_loop_nondet_out] at hx
-      rw [Block.initVars_cons] at hx
-      rw [show Stmt.initVars (P := P)
-            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)
-              HasBool.boolTy ExprOrNondet.nondet md)) =
-            [HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1]
-          from by simp only [HasInit.init, Stmt.initVars]] at hx
-      have h_havoc : Block.initVars (P := P)
-          [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1) md)] = [] := by
-        simp only [HasHavoc.havoc, Block.initVars_cons, Stmt.initVars, Block.initVars, List.append_nil]
-      simp only [Stmt.initVars_loop, Block.initVars_cons, Block.initVars, List.append_nil,
-        List.singleton_append, List.mem_cons] at hx ⊢
+      simp only [HasInit.init, HasHavoc.havoc, Block.definedVars, Stmt.definedVars,
+        HasVarsImp.definedVars, Cmd.definedVars, Bool.false_eq_true, ↓reduceIte,
+        Block.initVars_append, List.append_nil, List.cons_append, List.nil_append,
+        List.mem_cons] at hx ⊢
       rcases hx with h_g | h_body
       · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, hQgen.2 σ⟩
-      · rw [Block.initVars_append, h_havoc, List.append_nil] at h_body
-        rcases Block.nondetElimM_initVars_classified_Q hQgen body _ x h_body with h' | h'
+      · rcases Block.nondetElimM_initVars_classified_Q hQgen body _ x h_body with h' | h'
         · exact Or.inl h'
         · exact Or.inr h'
   | .exit lbl md =>
       intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
+      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
+        List.not_mem_nil] at hx
   | .funcDecl d md =>
       intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
+      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
+        List.not_mem_nil] at hx
   | .typeDecl t md =>
       intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
+      simp only [Stmt.nondetElimM, Block.definedVars, Stmt.definedVars, List.append_nil,
+        List.not_mem_nil] at hx
   termination_by sizeOf s
 
 private theorem Block.nondetElimM_initVars_classified_Q {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasVarsPure P P.Expr]
+    [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
     (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
             ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
@@ -1627,8 +1612,7 @@ private theorem Block.nondetElimM_initVars_classified_Q {P : PureExpr}
   match ss with
   | [] =>
       intro x hx
-      simp only [Block.nondetElimM, Block.initVars] at hx
-      exact absurd hx List.not_mem_nil
+      simp only [Block.nondetElimM, Block.definedVars, List.not_mem_nil] at hx
   | s :: rest =>
       intro x hx
       rw [Block.nondetElimM_cons_out, Block.initVars_append] at hx
@@ -1717,8 +1701,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     -- `Cmd.definedVars c = Stmt.initVars (.cmd c)` (both `[x]` for init, `[]` else).
     have h_tgt_init_undef_c : ∀ x ∈ Cmd.definedVars c, ρ_tgt.store x = none := by
       have h_dv : Cmd.definedVars c = Stmt.initVars (P := P) (.cmd c) := by
-        cases c <;>
-          simp only [Stmt.initVars, Cmd.definedVars]
+        with_unfolding_all rfl
       rw [h_dv]; exact h_tgt_init_undef
     -- Derive source post-store gen-freshness separately (the `_sa` cmd replay does
     -- not produce it), mirroring `cmd_replay_agreement_storeAgree`'s body.
@@ -2030,7 +2013,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) v) y = none := by
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.ite .nondet tss ess md) false := by
-        rw [h_dv]; exact List.mem_append_left _ (Block.mem_initVars_mem_definedVars hy)
+        rw [h_dv]; exact List.mem_append_left _ (hy)
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -2040,7 +2023,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) v) y = none := by
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.ite .nondet tss ess md) false := by
-        rw [h_dv]; exact List.mem_append_right _ (Block.mem_initVars_mem_definedVars hy)
+        rw [h_dv]; exact List.mem_append_right _ (hy)
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -2235,7 +2218,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.loop .nondet m inv body md) false := by
         rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]
-        exact Block.mem_initVars_mem_definedVars hy
+        exact hy
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -2547,8 +2530,6 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
       -- and source names are non-`Q` (`h_no_writes_rest`).  By the output
       -- `initVars`-classification + `definedVars = initVars` (head is funcDecl-free),
       -- `y ∉ Block.definedVars (head)`, so its `none` slot survives the head's run.
-      have h_head_nofd : Block.noFuncDecl (Stmt.nondetElimM s σ).1 = true :=
-        Stmt.nondetElimM_noFuncDecl s σ h_nofd_s
       have h_tgt_iu_rest : ∀ y ∈ Block.initVars rest, ρ_mid_tgt.store y = none := by
         intro y hy
         have h_y_tgt_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -2556,13 +2537,12 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
         have h_y_not_init_s : y ∉ Stmt.initVars s := fun hc => h_disjoint_s_rest y hc hy
         -- `y` is a source name, hence not a `Q`-kind generated guard.
         have h_y_not_def_head : y ∉ Block.definedVars (P := P) (C := Cmd P) (Stmt.nondetElimM s σ).1 false := by
-          rw [Block.definedVars_eq_initVars_of_noFuncDecl _ h_head_nofd]
           intro h_mem
           rcases Stmt.nondetElimM_initVars_classified_Q hQgen s σ y h_mem with h_orig | ⟨str, h_eq, h_Q⟩
           · exact h_y_not_init_s h_orig
           · -- `y = ident str` with `Q str`: but `y ∈ definedVars rest` is non-`Q`.
             have h_y_def_rest : y ∈ Block.definedVars (P := P) (C := Cmd P) rest false :=
-              Block.mem_initVars_mem_definedVars hy
+              hy
             exact h_no_writes_rest str h_Q (h_eq ▸ List.mem_append_left _ h_y_def_rest)
         exact block_run_terminal_preserves_none_of_not_definedVars
           h_y_not_def_head h_y_tgt_none (by simpa only [Env.outcomeConfig] using h_s_tgt)
@@ -2791,124 +2771,22 @@ private theorem havoc_modVars (x : P.Ident) (md : MetaData P) :
     HasVarsImp.modifiedVars (HasHavoc.havoc (CmdT := Cmd P) x md) = [x] := by
   with_unfolding_all rfl
 
-mutual
 /-- Every `initVars` element of the `nondetElim` output of a statement is either
 an original source `initVars` element or a freshly-generated `ndelimKind` guard. -/
 theorem Stmt.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.initVars s ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
-  match s with
-  | .cmd c =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, List.append_nil] at hx
-      exact Or.inl hx
-  | .block lbl bss md =>
-      intro x hx
-      rw [Stmt.nondetElimM_block_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_block, Block.initVars,
-        List.append_nil] at hx ⊢
-      exact Block.nondetElimM_initVars_classified bss σ x hx
-  | .ite (.det e) tss ess md =>
-      intro x hx
-      rw [Stmt.nondetElimM_ite_det_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_ite, Block.initVars,
-        List.append_nil, List.mem_append] at hx ⊢
-      rcases hx with h | h
-      · rcases Block.nondetElimM_initVars_classified tss σ x h with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified ess _ x h with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  | .ite .nondet tss ess md =>
-      intro x hx
-      rw [Stmt.nondetElimM_ite_nondet_out] at hx
-      rw [Block.initVars_cons] at hx
-      rw [show Stmt.initVars (P := P)
-            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1)
-              HasBool.boolTy ExprOrNondet.nondet md)) =
-            [HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1]
-          from by simp only [HasInit.init, Stmt.initVars]] at hx
-      simp only [Stmt.initVars_ite, Block.initVars_cons, Block.initVars, List.append_nil,
-        List.singleton_append, List.mem_cons, List.mem_append] at hx ⊢
-      rcases hx with h_g | h_t | h_e
-      · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g, ndelimKind_gen.1 σ⟩
-      · rcases Block.nondetElimM_initVars_classified tss _ x h_t with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified ess _ x h_e with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  | .loop (.det e) m inv body md =>
-      intro x hx
-      rw [Stmt.nondetElimM_loop_det_out] at hx
-      simp only [Block.initVars_cons, Stmt.initVars_loop, Block.initVars,
-        List.append_nil] at hx ⊢
-      exact Block.nondetElimM_initVars_classified body σ x hx
-  | .loop .nondet m inv body md =>
-      intro x hx
-      rw [Stmt.nondetElimM_loop_nondet_out] at hx
-      rw [Block.initVars_cons] at hx
-      rw [show Stmt.initVars (P := P)
-            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)
-              HasBool.boolTy ExprOrNondet.nondet md)) =
-            [HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1]
-          from by simp only [HasInit.init, Stmt.initVars]] at hx
-      have h_havoc : Block.initVars (P := P)
-          [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1) md)] = [] := by
-        simp only [HasHavoc.havoc, Block.initVars_cons, Stmt.initVars, Block.initVars, List.append_nil]
-      simp only [Stmt.initVars_loop, Block.initVars_cons, Block.initVars, List.append_nil,
-        List.singleton_append, List.mem_cons] at hx ⊢
-      rcases hx with h_g | h_body
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, ndelimKind_gen.2 σ⟩
-      · rw [Block.initVars_append, h_havoc, List.append_nil] at h_body
-        rcases Block.nondetElimM_initVars_classified body _ x h_body with h' | h'
-        · exact Or.inl h'
-        · exact Or.inr h'
-  | .exit lbl md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
-  | .funcDecl d md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
-  | .typeDecl t md =>
-      intro x hx
-      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
-        List.append_nil] at hx
-      exact absurd hx List.not_mem_nil
-  termination_by sizeOf s
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
+  Stmt.nondetElimM_initVars_classified_Q ndelimKind_gen s σ
 
 /-- Block-level `initVars` classification of the `nondetElim` output. -/
 theorem Block.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.initVars ss ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
-  match ss with
-  | [] =>
-      intro x hx
-      simp only [Block.nondetElimM, Block.initVars] at hx
-      exact absurd hx List.not_mem_nil
-  | s :: rest =>
-      intro x hx
-      rw [Block.nondetElimM_cons_out, Block.initVars_append] at hx
-      simp only [List.mem_append] at hx
-      rw [Block.initVars_cons, List.mem_append]
-      rcases hx with h | h
-      · rcases Stmt.nondetElimM_initVars_classified s σ x h with h' | h'
-        · exact Or.inl (Or.inl h')
-        · exact Or.inr h'
-      · rcases Block.nondetElimM_initVars_classified rest _ x h with h' | h'
-        · exact Or.inl (Or.inr h')
-        · exact Or.inr h'
-  termination_by sizeOf ss
-end
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
+  Block.nondetElimM_initVars_classified_Q ndelimKind_gen ss σ
 
 mutual
 /-- Every `modifiedVars` element of the `nondetElim` output of a statement is
@@ -3794,7 +3672,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
     -- `Cmd.definedVars c0 = Stmt.initVars (.cmd c0)`: the cmd replay's init-undef arg.
     have h_tgt_init_undef_c : ∀ x ∈ Cmd.definedVars c0, ρ_tgt.store x = none := by
       have h_dv : Cmd.definedVars c0 = Stmt.initVars (P := P) (.cmd c0) := by
-        cases c0 <;> simp only [Stmt.initVars, Cmd.definedVars]
+        with_unfolding_all rfl
       rw [h_dv]; exact h_tgt_init_undef
     obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendFactory := extendFactory) h_reach h_c_fail h_ρsrc_nofail
     cases hstep with
@@ -3962,7 +3840,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) v) y = none := by
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.ite .nondet tss ess md) false := by
-        rw [h_dv]; exact List.mem_append_left _ (Block.mem_initVars_mem_definedVars hy)
+        rw [h_dv]; exact List.mem_append_left _ (hy)
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -3972,7 +3850,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) v) y = none := by
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.ite .nondet tss ess md) false := by
-        rw [h_dv]; exact List.mem_append_right _ (Block.mem_initVars_mem_definedVars hy)
+        rw [h_dv]; exact List.mem_append_right _ (hy)
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -4109,7 +3987,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       intro v y hy
       have h_y_dv : y ∈ Stmt.definedVars (P := P) (.loop .nondet m inv body md) false := by
         rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]
-        exact Block.mem_initVars_mem_definedVars hy
+        exact hy
       have h_y_ne : y ≠ HasIdent.ident (P := P) g := fun h_eq =>
         h_no_writes g h_g_gen (h_eq ▸ List.mem_append_left _ h_y_dv)
       have h_y_none : ρ_tgt.store y = none := h_tgt_init_undef y
@@ -4331,20 +4209,17 @@ private theorem nondetElim_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P
         smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory s ρ_src ρ_mid h_nofd_pair.1 h_head_term
       have hwf_mid : WellFormedSemanticEval ρ_mid.factory := h_eval_mid_src ▸ hwf
       -- Tail init-target undefinedness at the advanced TARGET env `ρ_mid_tgt`.
-      have h_head_nofd : Block.noFuncDecl (Stmt.nondetElimM s σ).1 = true :=
-        Stmt.nondetElimM_noFuncDecl s σ h_nofd_pair.1
       have h_tgt_iu_rest : ∀ y ∈ Block.initVars rest, ρ_mid_tgt.store y = none := by
         intro y hy
         have h_y_tgt_none : ρ_tgt.store y = none := h_tgt_init_undef y
           (by rw [Block.initVars_cons]; exact List.mem_append_right _ hy)
         have h_y_not_init_s : y ∉ Stmt.initVars s := fun hc => h_disjoint_s_rest y hc hy
         have h_y_not_def_head : y ∉ Block.definedVars (P := P) (C := Cmd P) (Stmt.nondetElimM s σ).1 false := by
-          rw [Block.definedVars_eq_initVars_of_noFuncDecl _ h_head_nofd]
           intro h_mem
           rcases Stmt.nondetElimM_initVars_classified_Q hQgen s σ y h_mem with h_orig | ⟨str, h_eq, h_Q⟩
           · exact h_y_not_init_s h_orig
           · have h_y_def_rest : y ∈ Block.definedVars (P := P) (C := Cmd P) rest false :=
-              Block.mem_initVars_mem_definedVars hy
+              hy
             exact h_no_writes_rest str h_Q (h_eq ▸ List.mem_append_left _ h_y_def_rest)
         exact block_run_terminal_preserves_none_of_not_definedVars
           h_y_not_def_head h_y_tgt_none (by simpa only [Env.outcomeConfig] using h_s_tgt)
@@ -4555,23 +4430,6 @@ factory triple (the shared `EnvStoreAgree`).  Terminal / exiting reuse the
 section NondetElimOverapprox
 open Specification Specification.Transform
 
-/-- The pass-local intermediate `initEnvWF` for the `nondetElim` pass: the program's
-own `initVars` undefined, the pass's own kind `ndelimKind` undefined in the store,
-and the single-`ρ₀` well-formed-evaluator bundle. -/
-@[expose] def NdelimInitEnvWF {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
-    [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) : Prop :=
-  Specification.Transform.BlockInitEnvWF (P := P) ndelimKind ss ρ₀
-
-/-- Pass-local source/target language for the `nondetElim` pass: `imperativeBlock`
-with the ndelim-only `NdelimInitEnvWF` override. -/
-abbrev Lang.ndelimLocal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
-    [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [HasSubstFvar P]
-    (extendFactory : ExtendFactory P) : Specification.Lang P :=
-  { Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P)
-      (EvalCmd P) extendFactory (isAtAssert P) with
-    initEnvWF := fun _ ss ρ₀ => NdelimInitEnvWF (P := P) ss ρ₀ }
-
 /-- `Block.nondetElim` overapproximates its source up to `EnvStoreAgree`: for a
 block that is func-decl-free, has unique inits, and never writes an `ndelimKind`
 name, every terminating, exiting, or failing source run is matched by a run of the
@@ -4587,14 +4445,14 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (Specification.Transform.EnvStoreAgree (P := P))
-      (Lang.ndelimLocal extendFactory)
-      (Lang.ndelimLocal extendFactory)
+      (Lang.imperativeBlock (EvalCmd P) extendFactory (isAtAssert P))
+      (Lang.imperativeBlock (EvalCmd P) extendFactory (isAtAssert P))
       (fun ss => some (Block.nondetElim ss))
       (fun ss =>
         Block.noFuncDecl ss = true
         ∧ Block.uniqueInits ss
         ∧ SrcNoGenWrites (P := P) ndelimKind ss)
-      () () := by
+      ndelimKind ndelimKind := by
   intro ss ss' ht hpre ρ₀ ρ₀' hEq hwf
   subst hEq
   simp only [Option.some.injEq] at ht
@@ -4604,7 +4462,7 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
   refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, ?_, ?_⟩
   · -- ===== TERMINAL ARM =====
     have h_term : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) (.terminal ρ') := by
-      simpa [Lang.ndelimLocal, Lang.imperativeBlock] using hstar
+      simpa [Lang.imperativeBlock] using hstar
     obtain ⟨ρ_out, h_run, h_off, h_fl⟩ :=
       nondetElim_sound_kind_compositional extendFactory ss ρ₀ ρ' ρ₀
         rfl rfl (StoreAgreement.refl _)
@@ -4617,10 +4475,10 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
         (nondetElim_noFuncDecl ss h_nofd) h_run
     refine ⟨ρ_out, ⟨h_off, h_fl.symm, ?_⟩, ?_⟩
     · rw [h_tgt_eval, h_src_eval]
-    · simpa [Lang.ndelimLocal, Lang.imperativeBlock] using h_run
+    · simpa [Lang.imperativeBlock] using h_run
   · -- ===== EXITING ARM =====
     have h_exit : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) (.exiting lbl ρ') := by
-      simpa [Lang.ndelimLocal, Lang.imperativeBlock] using hstar
+      simpa [Lang.imperativeBlock] using hstar
     obtain ⟨ρ_out, h_run, h_off, h_fl⟩ :=
       nondetElim_sound_kind_exit_compositional extendFactory ss ρ₀ ρ' ρ₀
         rfl rfl (StoreAgreement.refl _)
@@ -4633,26 +4491,26 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
         (Block.nondetElim ss) ρ₀ ρ_out lbl (nondetElim_noFuncDecl ss h_nofd) h_run
     refine ⟨ρ_out, ⟨h_off, h_fl.symm, ?_⟩, ?_⟩
     · rw [h_tgt_eval, h_src_eval]
-    · simpa [Lang.ndelimLocal, Lang.imperativeBlock] using h_run
+    · simpa [Lang.imperativeBlock] using h_run
   · -- ===== CanFail ARM =====
     intro h_src
     by_cases h_ρ₀_fail : ρ₀.hasFailure = true
     · refine ⟨(Config.stmts (Block.nondetElim ss) ρ₀ : Config P (Cmd P)), ?_, ?_⟩
-      · simpa [Lang.ndelimLocal, Lang.imperativeBlock, Config.getEnv] using h_ρ₀_fail
-      · simpa [Lang.ndelimLocal, Lang.imperativeBlock] using
+      · simpa [Lang.imperativeBlock, Config.getEnv] using h_ρ₀_fail
+      · simpa [Lang.imperativeBlock] using
           (ReflTrans.refl (Config.stmts (Block.nondetElim ss) ρ₀ : Config P (Cmd P)))
     · obtain ⟨cfg_s, h_cfg_fail, h_cfg_reach⟩ := h_src
       have h_reach : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ₀) cfg_s := by
-        simpa [Lang.ndelimLocal, Lang.imperativeBlock] using h_cfg_reach
+        simpa [Lang.imperativeBlock] using h_cfg_reach
       have h_fail : cfg_s.getEnv.hasFailure = true := by
-        simpa [Lang.ndelimLocal, Lang.imperativeBlock] using h_cfg_fail
+        simpa [Lang.imperativeBlock] using h_cfg_fail
       obtain ⟨d, hd_run, hd_fail⟩ :=
         nondetElim_to_fail_compositional extendFactory ss ρ₀ ρ₀ cfg_s
           rfl rfl (StoreAgreement.refl _)
           hwf_full
           h_gens h_gens h_inits h_writes h_nofd h_unique h_reach h_fail
-      exact ⟨d, by simpa [Lang.ndelimLocal, Lang.imperativeBlock] using hd_fail,
-        by simpa [Lang.ndelimLocal, Lang.imperativeBlock] using hd_run⟩
+      exact ⟨d, by simpa [Lang.imperativeBlock] using hd_fail,
+        by simpa [Lang.imperativeBlock] using hd_run⟩
   · -- ===== target initEnvWF conjunct (ndelim-only) =====
     refine ⟨hwf_full, ?_, h_gens⟩
     intro x hx

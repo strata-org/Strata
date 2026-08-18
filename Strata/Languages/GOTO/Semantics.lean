@@ -7,7 +7,7 @@
 module
 
 public import Strata.Languages.GOTO.Program
-public import Strata.DL.Util.Relations
+public import Strata.Util.RelationsProps
 import Strata.Util.Tactics
 
 /-!

@@ -612,353 +612,361 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
     | _ => te
   | _ => te
 
-def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expression.Expr :=
-  match ty?, q with
-  | _, q`Core.equiv    => return Core.boolEquivOp
-  | _, q`Core.implies  => return Core.boolImpliesOp
-  | _, q`Core.and      => return Core.boolAndOp
-  | _, q`Core.or       => return Core.boolOrOp
-  | _, q`Core.not      => return Core.boolNotOp
+/-- Hash map from each Core builtin function's qualified identifier to its
+    monomorphic Core operator expression; consumed by `translateFn`. Adding a
+    new builtin is a one-line entry. The mapping depends only on the
+    identifier, not on the expected type. -/
+private def translateFnTable : Std.HashMap QualifiedIdent Core.Expression.Expr := .ofList [
+  (q`Core.equiv, Core.boolEquivOp),
+  (q`Core.implies, Core.boolImpliesOp),
+  (q`Core.and, Core.boolAndOp),
+  (q`Core.or, Core.boolOrOp),
+  (q`Core.not, Core.boolNotOp),
 
   -- int
-  | _, q`Core.int_neg => return Core.intNegOp
-  | _, q`Core.int_add => return Core.intAddOp
-  | _, q`Core.int_sub => return Core.intSubOp
-  | _, q`Core.int_mul => return Core.intMulOp
-  | _, q`Core.int_div => return Core.intDivOp
-  | _, q`Core.int_mod => return Core.intModOp
-  | _, q`Core.int_safeDiv => return Core.intSafeDivOp
-  | _, q`Core.int_safeMod => return Core.intSafeModOp
-  | _, q`Core.int_divT => return Core.intDivTOp
-  | _, q`Core.int_modT => return Core.intModTOp
-  | _, q`Core.int_safeDivT => return Core.intSafeDivTOp
-  | _, q`Core.int_safeModT => return Core.intSafeModTOp
-  | _, q`Core.int_le => return Core.intLeOp
-  | _, q`Core.int_lt => return Core.intLtOp
-  | _, q`Core.int_ge => return Core.intGeOp
-  | _, q`Core.int_gt => return Core.intGtOp
+  (q`Core.int_neg, Core.intNegOp),
+  (q`Core.int_add, Core.intAddOp),
+  (q`Core.int_sub, Core.intSubOp),
+  (q`Core.int_mul, Core.intMulOp),
+  (q`Core.int_div, Core.intDivOp),
+  (q`Core.int_mod, Core.intModOp),
+  (q`Core.int_safeDiv, Core.intSafeDivOp),
+  (q`Core.int_safeMod, Core.intSafeModOp),
+  (q`Core.int_divT, Core.intDivTOp),
+  (q`Core.int_modT, Core.intModTOp),
+  (q`Core.int_safeDivT, Core.intSafeDivTOp),
+  (q`Core.int_safeModT, Core.intSafeModTOp),
+  (q`Core.int_le, Core.intLeOp),
+  (q`Core.int_lt, Core.intLtOp),
+  (q`Core.int_ge, Core.intGeOp),
+  (q`Core.int_gt, Core.intGtOp),
   -- real
-  | _, q`Core.real_neg => return Core.realNegOp
-  | _, q`Core.real_add => return Core.realAddOp
-  | _, q`Core.real_sub => return Core.realSubOp
-  | _, q`Core.real_mul => return Core.realMulOp
-  | _, q`Core.real_div => return Core.realDivOp
-  | _, q`Core.real_le => return Core.realLeOp
-  | _, q`Core.real_lt => return Core.realLtOp
-  | _, q`Core.real_ge => return Core.realGeOp
-  | _, q`Core.real_gt => return Core.realGtOp
+  (q`Core.real_neg, Core.realNegOp),
+  (q`Core.real_add, Core.realAddOp),
+  (q`Core.real_sub, Core.realSubOp),
+  (q`Core.real_mul, Core.realMulOp),
+  (q`Core.real_div, Core.realDivOp),
+  (q`Core.real_le, Core.realLeOp),
+  (q`Core.real_lt, Core.realLtOp),
+  (q`Core.real_ge, Core.realGeOp),
+  (q`Core.real_gt, Core.realGtOp),
   -- bv1
-  | _, q`Core.bv1_neg => return Core.bv1NegOp
-  | _, q`Core.bv1_add => return Core.bv1AddOp
-  | _, q`Core.bv1_sub => return Core.bv1SubOp
-  | _, q`Core.bv1_mul => return Core.bv1MulOp
-  | _, q`Core.bv1_uDiv => return Core.bv1UDivOp
-  | _, q`Core.bv1_uMod => return Core.bv1UModOp
-  | _, q`Core.bv1_sDiv => return Core.bv1SDivOp
-  | _, q`Core.bv1_sMod => return Core.bv1SModOp
-  | _, q`Core.bv1_not => return Core.bv1NotOp
-  | _, q`Core.bv1_and => return Core.bv1AndOp
-  | _, q`Core.bv1_or => return Core.bv1OrOp
-  | _, q`Core.bv1_xor => return Core.bv1XorOp
-  | _, q`Core.bv1_shl => return Core.bv1ShlOp
-  | _, q`Core.bv1_uShr => return Core.bv1UShrOp
-  | _, q`Core.bv1_sShr => return Core.bv1SShrOp
-  | _, q`Core.bv1_uLe => return Core.bv1ULeOp
-  | _, q`Core.bv1_uLt => return Core.bv1ULtOp
-  | _, q`Core.bv1_uGe => return Core.bv1UGeOp
-  | _, q`Core.bv1_uGt => return Core.bv1UGtOp
-  | _, q`Core.bv1_sLe => return Core.bv1SLeOp
-  | _, q`Core.bv1_sLt => return Core.bv1SLtOp
-  | _, q`Core.bv1_sGe => return Core.bv1SGeOp
-  | _, q`Core.bv1_sGt => return Core.bv1SGtOp
-  | _, q`Core.bv1_safeAdd => return Core.bv1SafeAddOp
-  | _, q`Core.bv1_safeSub => return Core.bv1SafeSubOp
-  | _, q`Core.bv1_safeMul => return Core.bv1SafeMulOp
-  | _, q`Core.bv1_safeUAdd => return Core.bv1SafeUAddOp
-  | _, q`Core.bv1_safeUSub => return Core.bv1SafeUSubOp
-  | _, q`Core.bv1_safeUMul => return Core.bv1SafeUMulOp
-  | _, q`Core.bv1_safeNeg => return Core.bv1SafeNegOp
-  | _, q`Core.bv1_safeUNeg => return Core.bv1SafeUNegOp
-  | _, q`Core.bv1_safeSDiv => return Core.bv1SafeSDivOp
-  | _, q`Core.bv1_safeSMod => return Core.bv1SafeSModOp
-  | _, q`Core.bv1_sNegOverflow => return Core.bv1SNegOverflowOp
-  | _, q`Core.bv1_uNegOverflow => return Core.bv1UNegOverflowOp
-  | _, q`Core.bv1_sAddOverflow => return Core.bv1SAddOverflowOp
-  | _, q`Core.bv1_sSubOverflow => return Core.bv1SSubOverflowOp
-  | _, q`Core.bv1_sMulOverflow => return Core.bv1SMulOverflowOp
-  | _, q`Core.bv1_sDivOverflow => return Core.bv1SDivOverflowOp
-  | _, q`Core.bv1_uAddOverflow => return Core.bv1UAddOverflowOp
-  | _, q`Core.bv1_uSubOverflow => return Core.bv1USubOverflowOp
-  | _, q`Core.bv1_uMulOverflow => return Core.bv1UMulOverflowOp
+  (q`Core.bv1_neg, Core.bv1NegOp),
+  (q`Core.bv1_add, Core.bv1AddOp),
+  (q`Core.bv1_sub, Core.bv1SubOp),
+  (q`Core.bv1_mul, Core.bv1MulOp),
+  (q`Core.bv1_uDiv, Core.bv1UDivOp),
+  (q`Core.bv1_uMod, Core.bv1UModOp),
+  (q`Core.bv1_sDiv, Core.bv1SDivOp),
+  (q`Core.bv1_sMod, Core.bv1SModOp),
+  (q`Core.bv1_not, Core.bv1NotOp),
+  (q`Core.bv1_and, Core.bv1AndOp),
+  (q`Core.bv1_or, Core.bv1OrOp),
+  (q`Core.bv1_xor, Core.bv1XorOp),
+  (q`Core.bv1_shl, Core.bv1ShlOp),
+  (q`Core.bv1_uShr, Core.bv1UShrOp),
+  (q`Core.bv1_sShr, Core.bv1SShrOp),
+  (q`Core.bv1_uLe, Core.bv1ULeOp),
+  (q`Core.bv1_uLt, Core.bv1ULtOp),
+  (q`Core.bv1_uGe, Core.bv1UGeOp),
+  (q`Core.bv1_uGt, Core.bv1UGtOp),
+  (q`Core.bv1_sLe, Core.bv1SLeOp),
+  (q`Core.bv1_sLt, Core.bv1SLtOp),
+  (q`Core.bv1_sGe, Core.bv1SGeOp),
+  (q`Core.bv1_sGt, Core.bv1SGtOp),
+  (q`Core.bv1_safeAdd, Core.bv1SafeAddOp),
+  (q`Core.bv1_safeSub, Core.bv1SafeSubOp),
+  (q`Core.bv1_safeMul, Core.bv1SafeMulOp),
+  (q`Core.bv1_safeUAdd, Core.bv1SafeUAddOp),
+  (q`Core.bv1_safeUSub, Core.bv1SafeUSubOp),
+  (q`Core.bv1_safeUMul, Core.bv1SafeUMulOp),
+  (q`Core.bv1_safeNeg, Core.bv1SafeNegOp),
+  (q`Core.bv1_safeUNeg, Core.bv1SafeUNegOp),
+  (q`Core.bv1_safeSDiv, Core.bv1SafeSDivOp),
+  (q`Core.bv1_safeSMod, Core.bv1SafeSModOp),
+  (q`Core.bv1_sNegOverflow, Core.bv1SNegOverflowOp),
+  (q`Core.bv1_uNegOverflow, Core.bv1UNegOverflowOp),
+  (q`Core.bv1_sAddOverflow, Core.bv1SAddOverflowOp),
+  (q`Core.bv1_sSubOverflow, Core.bv1SSubOverflowOp),
+  (q`Core.bv1_sMulOverflow, Core.bv1SMulOverflowOp),
+  (q`Core.bv1_sDivOverflow, Core.bv1SDivOverflowOp),
+  (q`Core.bv1_uAddOverflow, Core.bv1UAddOverflowOp),
+  (q`Core.bv1_uSubOverflow, Core.bv1USubOverflowOp),
+  (q`Core.bv1_uMulOverflow, Core.bv1UMulOverflowOp),
   -- bv8
-  | _, q`Core.bv8_neg => return Core.bv8NegOp
-  | _, q`Core.bv8_add => return Core.bv8AddOp
-  | _, q`Core.bv8_sub => return Core.bv8SubOp
-  | _, q`Core.bv8_mul => return Core.bv8MulOp
-  | _, q`Core.bv8_uDiv => return Core.bv8UDivOp
-  | _, q`Core.bv8_uMod => return Core.bv8UModOp
-  | _, q`Core.bv8_sDiv => return Core.bv8SDivOp
-  | _, q`Core.bv8_sMod => return Core.bv8SModOp
-  | _, q`Core.bv8_not => return Core.bv8NotOp
-  | _, q`Core.bv8_and => return Core.bv8AndOp
-  | _, q`Core.bv8_or => return Core.bv8OrOp
-  | _, q`Core.bv8_xor => return Core.bv8XorOp
-  | _, q`Core.bv8_shl => return Core.bv8ShlOp
-  | _, q`Core.bv8_uShr => return Core.bv8UShrOp
-  | _, q`Core.bv8_sShr => return Core.bv8SShrOp
-  | _, q`Core.bv8_uLe => return Core.bv8ULeOp
-  | _, q`Core.bv8_uLt => return Core.bv8ULtOp
-  | _, q`Core.bv8_uGe => return Core.bv8UGeOp
-  | _, q`Core.bv8_uGt => return Core.bv8UGtOp
-  | _, q`Core.bv8_sLe => return Core.bv8SLeOp
-  | _, q`Core.bv8_sLt => return Core.bv8SLtOp
-  | _, q`Core.bv8_sGe => return Core.bv8SGeOp
-  | _, q`Core.bv8_sGt => return Core.bv8SGtOp
-  | _, q`Core.bv8_safeAdd => return Core.bv8SafeAddOp
-  | _, q`Core.bv8_safeSub => return Core.bv8SafeSubOp
-  | _, q`Core.bv8_safeMul => return Core.bv8SafeMulOp
-  | _, q`Core.bv8_safeUAdd => return Core.bv8SafeUAddOp
-  | _, q`Core.bv8_safeUSub => return Core.bv8SafeUSubOp
-  | _, q`Core.bv8_safeUMul => return Core.bv8SafeUMulOp
-  | _, q`Core.bv8_safeNeg => return Core.bv8SafeNegOp
-  | _, q`Core.bv8_safeUNeg => return Core.bv8SafeUNegOp
-  | _, q`Core.bv8_safeSDiv => return Core.bv8SafeSDivOp
-  | _, q`Core.bv8_safeSMod => return Core.bv8SafeSModOp
-  | _, q`Core.bv8_sNegOverflow => return Core.bv8SNegOverflowOp
-  | _, q`Core.bv8_uNegOverflow => return Core.bv8UNegOverflowOp
-  | _, q`Core.bv8_sAddOverflow => return Core.bv8SAddOverflowOp
-  | _, q`Core.bv8_sSubOverflow => return Core.bv8SSubOverflowOp
-  | _, q`Core.bv8_sMulOverflow => return Core.bv8SMulOverflowOp
-  | _, q`Core.bv8_sDivOverflow => return Core.bv8SDivOverflowOp
-  | _, q`Core.bv8_uAddOverflow => return Core.bv8UAddOverflowOp
-  | _, q`Core.bv8_uSubOverflow => return Core.bv8USubOverflowOp
-  | _, q`Core.bv8_uMulOverflow => return Core.bv8UMulOverflowOp
+  (q`Core.bv8_neg, Core.bv8NegOp),
+  (q`Core.bv8_add, Core.bv8AddOp),
+  (q`Core.bv8_sub, Core.bv8SubOp),
+  (q`Core.bv8_mul, Core.bv8MulOp),
+  (q`Core.bv8_uDiv, Core.bv8UDivOp),
+  (q`Core.bv8_uMod, Core.bv8UModOp),
+  (q`Core.bv8_sDiv, Core.bv8SDivOp),
+  (q`Core.bv8_sMod, Core.bv8SModOp),
+  (q`Core.bv8_not, Core.bv8NotOp),
+  (q`Core.bv8_and, Core.bv8AndOp),
+  (q`Core.bv8_or, Core.bv8OrOp),
+  (q`Core.bv8_xor, Core.bv8XorOp),
+  (q`Core.bv8_shl, Core.bv8ShlOp),
+  (q`Core.bv8_uShr, Core.bv8UShrOp),
+  (q`Core.bv8_sShr, Core.bv8SShrOp),
+  (q`Core.bv8_uLe, Core.bv8ULeOp),
+  (q`Core.bv8_uLt, Core.bv8ULtOp),
+  (q`Core.bv8_uGe, Core.bv8UGeOp),
+  (q`Core.bv8_uGt, Core.bv8UGtOp),
+  (q`Core.bv8_sLe, Core.bv8SLeOp),
+  (q`Core.bv8_sLt, Core.bv8SLtOp),
+  (q`Core.bv8_sGe, Core.bv8SGeOp),
+  (q`Core.bv8_sGt, Core.bv8SGtOp),
+  (q`Core.bv8_safeAdd, Core.bv8SafeAddOp),
+  (q`Core.bv8_safeSub, Core.bv8SafeSubOp),
+  (q`Core.bv8_safeMul, Core.bv8SafeMulOp),
+  (q`Core.bv8_safeUAdd, Core.bv8SafeUAddOp),
+  (q`Core.bv8_safeUSub, Core.bv8SafeUSubOp),
+  (q`Core.bv8_safeUMul, Core.bv8SafeUMulOp),
+  (q`Core.bv8_safeNeg, Core.bv8SafeNegOp),
+  (q`Core.bv8_safeUNeg, Core.bv8SafeUNegOp),
+  (q`Core.bv8_safeSDiv, Core.bv8SafeSDivOp),
+  (q`Core.bv8_safeSMod, Core.bv8SafeSModOp),
+  (q`Core.bv8_sNegOverflow, Core.bv8SNegOverflowOp),
+  (q`Core.bv8_uNegOverflow, Core.bv8UNegOverflowOp),
+  (q`Core.bv8_sAddOverflow, Core.bv8SAddOverflowOp),
+  (q`Core.bv8_sSubOverflow, Core.bv8SSubOverflowOp),
+  (q`Core.bv8_sMulOverflow, Core.bv8SMulOverflowOp),
+  (q`Core.bv8_sDivOverflow, Core.bv8SDivOverflowOp),
+  (q`Core.bv8_uAddOverflow, Core.bv8UAddOverflowOp),
+  (q`Core.bv8_uSubOverflow, Core.bv8USubOverflowOp),
+  (q`Core.bv8_uMulOverflow, Core.bv8UMulOverflowOp),
   -- bv16
-  | _, q`Core.bv16_neg => return Core.bv16NegOp
-  | _, q`Core.bv16_add => return Core.bv16AddOp
-  | _, q`Core.bv16_sub => return Core.bv16SubOp
-  | _, q`Core.bv16_mul => return Core.bv16MulOp
-  | _, q`Core.bv16_uDiv => return Core.bv16UDivOp
-  | _, q`Core.bv16_uMod => return Core.bv16UModOp
-  | _, q`Core.bv16_sDiv => return Core.bv16SDivOp
-  | _, q`Core.bv16_sMod => return Core.bv16SModOp
-  | _, q`Core.bv16_not => return Core.bv16NotOp
-  | _, q`Core.bv16_and => return Core.bv16AndOp
-  | _, q`Core.bv16_or => return Core.bv16OrOp
-  | _, q`Core.bv16_xor => return Core.bv16XorOp
-  | _, q`Core.bv16_shl => return Core.bv16ShlOp
-  | _, q`Core.bv16_uShr => return Core.bv16UShrOp
-  | _, q`Core.bv16_sShr => return Core.bv16SShrOp
-  | _, q`Core.bv16_uLe => return Core.bv16ULeOp
-  | _, q`Core.bv16_uLt => return Core.bv16ULtOp
-  | _, q`Core.bv16_uGe => return Core.bv16UGeOp
-  | _, q`Core.bv16_uGt => return Core.bv16UGtOp
-  | _, q`Core.bv16_sLe => return Core.bv16SLeOp
-  | _, q`Core.bv16_sLt => return Core.bv16SLtOp
-  | _, q`Core.bv16_sGe => return Core.bv16SGeOp
-  | _, q`Core.bv16_sGt => return Core.bv16SGtOp
-  | _, q`Core.bv16_safeAdd => return Core.bv16SafeAddOp
-  | _, q`Core.bv16_safeSub => return Core.bv16SafeSubOp
-  | _, q`Core.bv16_safeMul => return Core.bv16SafeMulOp
-  | _, q`Core.bv16_safeUAdd => return Core.bv16SafeUAddOp
-  | _, q`Core.bv16_safeUSub => return Core.bv16SafeUSubOp
-  | _, q`Core.bv16_safeUMul => return Core.bv16SafeUMulOp
-  | _, q`Core.bv16_safeNeg => return Core.bv16SafeNegOp
-  | _, q`Core.bv16_safeUNeg => return Core.bv16SafeUNegOp
-  | _, q`Core.bv16_safeSDiv => return Core.bv16SafeSDivOp
-  | _, q`Core.bv16_safeSMod => return Core.bv16SafeSModOp
-  | _, q`Core.bv16_sNegOverflow => return Core.bv16SNegOverflowOp
-  | _, q`Core.bv16_uNegOverflow => return Core.bv16UNegOverflowOp
-  | _, q`Core.bv16_sAddOverflow => return Core.bv16SAddOverflowOp
-  | _, q`Core.bv16_sSubOverflow => return Core.bv16SSubOverflowOp
-  | _, q`Core.bv16_sMulOverflow => return Core.bv16SMulOverflowOp
-  | _, q`Core.bv16_sDivOverflow => return Core.bv16SDivOverflowOp
-  | _, q`Core.bv16_uAddOverflow => return Core.bv16UAddOverflowOp
-  | _, q`Core.bv16_uSubOverflow => return Core.bv16USubOverflowOp
-  | _, q`Core.bv16_uMulOverflow => return Core.bv16UMulOverflowOp
+  (q`Core.bv16_neg, Core.bv16NegOp),
+  (q`Core.bv16_add, Core.bv16AddOp),
+  (q`Core.bv16_sub, Core.bv16SubOp),
+  (q`Core.bv16_mul, Core.bv16MulOp),
+  (q`Core.bv16_uDiv, Core.bv16UDivOp),
+  (q`Core.bv16_uMod, Core.bv16UModOp),
+  (q`Core.bv16_sDiv, Core.bv16SDivOp),
+  (q`Core.bv16_sMod, Core.bv16SModOp),
+  (q`Core.bv16_not, Core.bv16NotOp),
+  (q`Core.bv16_and, Core.bv16AndOp),
+  (q`Core.bv16_or, Core.bv16OrOp),
+  (q`Core.bv16_xor, Core.bv16XorOp),
+  (q`Core.bv16_shl, Core.bv16ShlOp),
+  (q`Core.bv16_uShr, Core.bv16UShrOp),
+  (q`Core.bv16_sShr, Core.bv16SShrOp),
+  (q`Core.bv16_uLe, Core.bv16ULeOp),
+  (q`Core.bv16_uLt, Core.bv16ULtOp),
+  (q`Core.bv16_uGe, Core.bv16UGeOp),
+  (q`Core.bv16_uGt, Core.bv16UGtOp),
+  (q`Core.bv16_sLe, Core.bv16SLeOp),
+  (q`Core.bv16_sLt, Core.bv16SLtOp),
+  (q`Core.bv16_sGe, Core.bv16SGeOp),
+  (q`Core.bv16_sGt, Core.bv16SGtOp),
+  (q`Core.bv16_safeAdd, Core.bv16SafeAddOp),
+  (q`Core.bv16_safeSub, Core.bv16SafeSubOp),
+  (q`Core.bv16_safeMul, Core.bv16SafeMulOp),
+  (q`Core.bv16_safeUAdd, Core.bv16SafeUAddOp),
+  (q`Core.bv16_safeUSub, Core.bv16SafeUSubOp),
+  (q`Core.bv16_safeUMul, Core.bv16SafeUMulOp),
+  (q`Core.bv16_safeNeg, Core.bv16SafeNegOp),
+  (q`Core.bv16_safeUNeg, Core.bv16SafeUNegOp),
+  (q`Core.bv16_safeSDiv, Core.bv16SafeSDivOp),
+  (q`Core.bv16_safeSMod, Core.bv16SafeSModOp),
+  (q`Core.bv16_sNegOverflow, Core.bv16SNegOverflowOp),
+  (q`Core.bv16_uNegOverflow, Core.bv16UNegOverflowOp),
+  (q`Core.bv16_sAddOverflow, Core.bv16SAddOverflowOp),
+  (q`Core.bv16_sSubOverflow, Core.bv16SSubOverflowOp),
+  (q`Core.bv16_sMulOverflow, Core.bv16SMulOverflowOp),
+  (q`Core.bv16_sDivOverflow, Core.bv16SDivOverflowOp),
+  (q`Core.bv16_uAddOverflow, Core.bv16UAddOverflowOp),
+  (q`Core.bv16_uSubOverflow, Core.bv16USubOverflowOp),
+  (q`Core.bv16_uMulOverflow, Core.bv16UMulOverflowOp),
   -- bv32
-  | _, q`Core.bv32_neg => return Core.bv32NegOp
-  | _, q`Core.bv32_add => return Core.bv32AddOp
-  | _, q`Core.bv32_sub => return Core.bv32SubOp
-  | _, q`Core.bv32_mul => return Core.bv32MulOp
-  | _, q`Core.bv32_uDiv => return Core.bv32UDivOp
-  | _, q`Core.bv32_uMod => return Core.bv32UModOp
-  | _, q`Core.bv32_sDiv => return Core.bv32SDivOp
-  | _, q`Core.bv32_sMod => return Core.bv32SModOp
-  | _, q`Core.bv32_not => return Core.bv32NotOp
-  | _, q`Core.bv32_and => return Core.bv32AndOp
-  | _, q`Core.bv32_or => return Core.bv32OrOp
-  | _, q`Core.bv32_xor => return Core.bv32XorOp
-  | _, q`Core.bv32_shl => return Core.bv32ShlOp
-  | _, q`Core.bv32_uShr => return Core.bv32UShrOp
-  | _, q`Core.bv32_sShr => return Core.bv32SShrOp
-  | _, q`Core.bv32_uLe => return Core.bv32ULeOp
-  | _, q`Core.bv32_uLt => return Core.bv32ULtOp
-  | _, q`Core.bv32_uGe => return Core.bv32UGeOp
-  | _, q`Core.bv32_uGt => return Core.bv32UGtOp
-  | _, q`Core.bv32_sLe => return Core.bv32SLeOp
-  | _, q`Core.bv32_sLt => return Core.bv32SLtOp
-  | _, q`Core.bv32_sGe => return Core.bv32SGeOp
-  | _, q`Core.bv32_sGt => return Core.bv32SGtOp
-  | _, q`Core.bv32_safeAdd => return Core.bv32SafeAddOp
-  | _, q`Core.bv32_safeSub => return Core.bv32SafeSubOp
-  | _, q`Core.bv32_safeMul => return Core.bv32SafeMulOp
-  | _, q`Core.bv32_safeUAdd => return Core.bv32SafeUAddOp
-  | _, q`Core.bv32_safeUSub => return Core.bv32SafeUSubOp
-  | _, q`Core.bv32_safeUMul => return Core.bv32SafeUMulOp
-  | _, q`Core.bv32_safeNeg => return Core.bv32SafeNegOp
-  | _, q`Core.bv32_safeUNeg => return Core.bv32SafeUNegOp
-  | _, q`Core.bv32_safeSDiv => return Core.bv32SafeSDivOp
-  | _, q`Core.bv32_safeSMod => return Core.bv32SafeSModOp
-  | _, q`Core.bv32_sNegOverflow => return Core.bv32SNegOverflowOp
-  | _, q`Core.bv32_uNegOverflow => return Core.bv32UNegOverflowOp
-  | _, q`Core.bv32_sAddOverflow => return Core.bv32SAddOverflowOp
-  | _, q`Core.bv32_sSubOverflow => return Core.bv32SSubOverflowOp
-  | _, q`Core.bv32_sMulOverflow => return Core.bv32SMulOverflowOp
-  | _, q`Core.bv32_sDivOverflow => return Core.bv32SDivOverflowOp
-  | _, q`Core.bv32_uAddOverflow => return Core.bv32UAddOverflowOp
-  | _, q`Core.bv32_uSubOverflow => return Core.bv32USubOverflowOp
-  | _, q`Core.bv32_uMulOverflow => return Core.bv32UMulOverflowOp
+  (q`Core.bv32_neg, Core.bv32NegOp),
+  (q`Core.bv32_add, Core.bv32AddOp),
+  (q`Core.bv32_sub, Core.bv32SubOp),
+  (q`Core.bv32_mul, Core.bv32MulOp),
+  (q`Core.bv32_uDiv, Core.bv32UDivOp),
+  (q`Core.bv32_uMod, Core.bv32UModOp),
+  (q`Core.bv32_sDiv, Core.bv32SDivOp),
+  (q`Core.bv32_sMod, Core.bv32SModOp),
+  (q`Core.bv32_not, Core.bv32NotOp),
+  (q`Core.bv32_and, Core.bv32AndOp),
+  (q`Core.bv32_or, Core.bv32OrOp),
+  (q`Core.bv32_xor, Core.bv32XorOp),
+  (q`Core.bv32_shl, Core.bv32ShlOp),
+  (q`Core.bv32_uShr, Core.bv32UShrOp),
+  (q`Core.bv32_sShr, Core.bv32SShrOp),
+  (q`Core.bv32_uLe, Core.bv32ULeOp),
+  (q`Core.bv32_uLt, Core.bv32ULtOp),
+  (q`Core.bv32_uGe, Core.bv32UGeOp),
+  (q`Core.bv32_uGt, Core.bv32UGtOp),
+  (q`Core.bv32_sLe, Core.bv32SLeOp),
+  (q`Core.bv32_sLt, Core.bv32SLtOp),
+  (q`Core.bv32_sGe, Core.bv32SGeOp),
+  (q`Core.bv32_sGt, Core.bv32SGtOp),
+  (q`Core.bv32_safeAdd, Core.bv32SafeAddOp),
+  (q`Core.bv32_safeSub, Core.bv32SafeSubOp),
+  (q`Core.bv32_safeMul, Core.bv32SafeMulOp),
+  (q`Core.bv32_safeUAdd, Core.bv32SafeUAddOp),
+  (q`Core.bv32_safeUSub, Core.bv32SafeUSubOp),
+  (q`Core.bv32_safeUMul, Core.bv32SafeUMulOp),
+  (q`Core.bv32_safeNeg, Core.bv32SafeNegOp),
+  (q`Core.bv32_safeUNeg, Core.bv32SafeUNegOp),
+  (q`Core.bv32_safeSDiv, Core.bv32SafeSDivOp),
+  (q`Core.bv32_safeSMod, Core.bv32SafeSModOp),
+  (q`Core.bv32_sNegOverflow, Core.bv32SNegOverflowOp),
+  (q`Core.bv32_uNegOverflow, Core.bv32UNegOverflowOp),
+  (q`Core.bv32_sAddOverflow, Core.bv32SAddOverflowOp),
+  (q`Core.bv32_sSubOverflow, Core.bv32SSubOverflowOp),
+  (q`Core.bv32_sMulOverflow, Core.bv32SMulOverflowOp),
+  (q`Core.bv32_sDivOverflow, Core.bv32SDivOverflowOp),
+  (q`Core.bv32_uAddOverflow, Core.bv32UAddOverflowOp),
+  (q`Core.bv32_uSubOverflow, Core.bv32USubOverflowOp),
+  (q`Core.bv32_uMulOverflow, Core.bv32UMulOverflowOp),
   -- bv64
-  | _, q`Core.bv64_neg => return Core.bv64NegOp
-  | _, q`Core.bv128_neg => return Core.bv128NegOp
-  | _, q`Core.bv64_add => return Core.bv64AddOp
-  | _, q`Core.bv128_add => return Core.bv128AddOp
-  | _, q`Core.bv64_sub => return Core.bv64SubOp
-  | _, q`Core.bv128_sub => return Core.bv128SubOp
-  | _, q`Core.bv64_mul => return Core.bv64MulOp
-  | _, q`Core.bv128_mul => return Core.bv128MulOp
-  | _, q`Core.bv64_uDiv => return Core.bv64UDivOp
-  | _, q`Core.bv128_uDiv => return Core.bv128UDivOp
-  | _, q`Core.bv64_uMod => return Core.bv64UModOp
-  | _, q`Core.bv128_uMod => return Core.bv128UModOp
-  | _, q`Core.bv64_sDiv => return Core.bv64SDivOp
-  | _, q`Core.bv128_sDiv => return Core.bv128SDivOp
-  | _, q`Core.bv64_sMod => return Core.bv64SModOp
-  | _, q`Core.bv128_sMod => return Core.bv128SModOp
-  | _, q`Core.bv64_not => return Core.bv64NotOp
-  | _, q`Core.bv128_not => return Core.bv128NotOp
-  | _, q`Core.bv64_and => return Core.bv64AndOp
-  | _, q`Core.bv128_and => return Core.bv128AndOp
-  | _, q`Core.bv64_or => return Core.bv64OrOp
-  | _, q`Core.bv128_or => return Core.bv128OrOp
-  | _, q`Core.bv64_xor => return Core.bv64XorOp
-  | _, q`Core.bv128_xor => return Core.bv128XorOp
-  | _, q`Core.bv64_shl => return Core.bv64ShlOp
-  | _, q`Core.bv128_shl => return Core.bv128ShlOp
-  | _, q`Core.bv64_uShr => return Core.bv64UShrOp
-  | _, q`Core.bv128_uShr => return Core.bv128UShrOp
-  | _, q`Core.bv64_sShr => return Core.bv64SShrOp
-  | _, q`Core.bv128_sShr => return Core.bv128SShrOp
-  | _, q`Core.bv64_uLe => return Core.bv64ULeOp
-  | _, q`Core.bv128_uLe => return Core.bv128ULeOp
-  | _, q`Core.bv64_uLt => return Core.bv64ULtOp
-  | _, q`Core.bv128_uLt => return Core.bv128ULtOp
-  | _, q`Core.bv64_uGe => return Core.bv64UGeOp
-  | _, q`Core.bv128_uGe => return Core.bv128UGeOp
-  | _, q`Core.bv64_uGt => return Core.bv64UGtOp
-  | _, q`Core.bv128_uGt => return Core.bv128UGtOp
-  | _, q`Core.bv64_sLe => return Core.bv64SLeOp
-  | _, q`Core.bv128_sLe => return Core.bv128SLeOp
-  | _, q`Core.bv64_sLt => return Core.bv64SLtOp
-  | _, q`Core.bv128_sLt => return Core.bv128SLtOp
-  | _, q`Core.bv64_sGe => return Core.bv64SGeOp
-  | _, q`Core.bv128_sGe => return Core.bv128SGeOp
-  | _, q`Core.bv64_sGt => return Core.bv64SGtOp
-  | _, q`Core.bv128_sGt => return Core.bv128SGtOp
-  | _, q`Core.bv64_safeAdd => return Core.bv64SafeAddOp
-  | _, q`Core.bv128_safeAdd => return Core.bv128SafeAddOp
-  | _, q`Core.bv64_safeSub => return Core.bv64SafeSubOp
-  | _, q`Core.bv128_safeSub => return Core.bv128SafeSubOp
-  | _, q`Core.bv64_safeMul => return Core.bv64SafeMulOp
-  | _, q`Core.bv128_safeMul => return Core.bv128SafeMulOp
-  | _, q`Core.bv64_safeUAdd => return Core.bv64SafeUAddOp
-  | _, q`Core.bv128_safeUAdd => return Core.bv128SafeUAddOp
-  | _, q`Core.bv64_safeUSub => return Core.bv64SafeUSubOp
-  | _, q`Core.bv128_safeUSub => return Core.bv128SafeUSubOp
-  | _, q`Core.bv64_safeUMul => return Core.bv64SafeUMulOp
-  | _, q`Core.bv128_safeUMul => return Core.bv128SafeUMulOp
-  | _, q`Core.bv64_safeNeg => return Core.bv64SafeNegOp
-  | _, q`Core.bv128_safeNeg => return Core.bv128SafeNegOp
-  | _, q`Core.bv64_safeUNeg => return Core.bv64SafeUNegOp
-  | _, q`Core.bv128_safeUNeg => return Core.bv128SafeUNegOp
-  | _, q`Core.bv64_safeSDiv => return Core.bv64SafeSDivOp
-  | _, q`Core.bv128_safeSDiv => return Core.bv128SafeSDivOp
-  | _, q`Core.bv64_safeSMod => return Core.bv64SafeSModOp
-  | _, q`Core.bv128_safeSMod => return Core.bv128SafeSModOp
-  | _, q`Core.bv64_sNegOverflow => return Core.bv64SNegOverflowOp
-  | _, q`Core.bv128_sNegOverflow => return Core.bv128SNegOverflowOp
-  | _, q`Core.bv64_uNegOverflow => return Core.bv64UNegOverflowOp
-  | _, q`Core.bv128_uNegOverflow => return Core.bv128UNegOverflowOp
-  | _, q`Core.bv64_sAddOverflow => return Core.bv64SAddOverflowOp
-  | _, q`Core.bv128_sAddOverflow => return Core.bv128SAddOverflowOp
-  | _, q`Core.bv64_sSubOverflow => return Core.bv64SSubOverflowOp
-  | _, q`Core.bv128_sSubOverflow => return Core.bv128SSubOverflowOp
-  | _, q`Core.bv64_sMulOverflow => return Core.bv64SMulOverflowOp
-  | _, q`Core.bv128_sMulOverflow => return Core.bv128SMulOverflowOp
-  | _, q`Core.bv64_sDivOverflow => return Core.bv64SDivOverflowOp
-  | _, q`Core.bv128_sDivOverflow => return Core.bv128SDivOverflowOp
-  | _, q`Core.bv64_uAddOverflow => return Core.bv64UAddOverflowOp
-  | _, q`Core.bv128_uAddOverflow => return Core.bv128UAddOverflowOp
-  | _, q`Core.bv64_uSubOverflow => return Core.bv64USubOverflowOp
-  | _, q`Core.bv128_uSubOverflow => return Core.bv128USubOverflowOp
-  | _, q`Core.bv64_uMulOverflow => return Core.bv64UMulOverflowOp
-  | _, q`Core.bv128_uMulOverflow => return Core.bv128UMulOverflowOp
+  (q`Core.bv64_neg, Core.bv64NegOp),
+  (q`Core.bv128_neg, Core.bv128NegOp),
+  (q`Core.bv64_add, Core.bv64AddOp),
+  (q`Core.bv128_add, Core.bv128AddOp),
+  (q`Core.bv64_sub, Core.bv64SubOp),
+  (q`Core.bv128_sub, Core.bv128SubOp),
+  (q`Core.bv64_mul, Core.bv64MulOp),
+  (q`Core.bv128_mul, Core.bv128MulOp),
+  (q`Core.bv64_uDiv, Core.bv64UDivOp),
+  (q`Core.bv128_uDiv, Core.bv128UDivOp),
+  (q`Core.bv64_uMod, Core.bv64UModOp),
+  (q`Core.bv128_uMod, Core.bv128UModOp),
+  (q`Core.bv64_sDiv, Core.bv64SDivOp),
+  (q`Core.bv128_sDiv, Core.bv128SDivOp),
+  (q`Core.bv64_sMod, Core.bv64SModOp),
+  (q`Core.bv128_sMod, Core.bv128SModOp),
+  (q`Core.bv64_not, Core.bv64NotOp),
+  (q`Core.bv128_not, Core.bv128NotOp),
+  (q`Core.bv64_and, Core.bv64AndOp),
+  (q`Core.bv128_and, Core.bv128AndOp),
+  (q`Core.bv64_or, Core.bv64OrOp),
+  (q`Core.bv128_or, Core.bv128OrOp),
+  (q`Core.bv64_xor, Core.bv64XorOp),
+  (q`Core.bv128_xor, Core.bv128XorOp),
+  (q`Core.bv64_shl, Core.bv64ShlOp),
+  (q`Core.bv128_shl, Core.bv128ShlOp),
+  (q`Core.bv64_uShr, Core.bv64UShrOp),
+  (q`Core.bv128_uShr, Core.bv128UShrOp),
+  (q`Core.bv64_sShr, Core.bv64SShrOp),
+  (q`Core.bv128_sShr, Core.bv128SShrOp),
+  (q`Core.bv64_uLe, Core.bv64ULeOp),
+  (q`Core.bv128_uLe, Core.bv128ULeOp),
+  (q`Core.bv64_uLt, Core.bv64ULtOp),
+  (q`Core.bv128_uLt, Core.bv128ULtOp),
+  (q`Core.bv64_uGe, Core.bv64UGeOp),
+  (q`Core.bv128_uGe, Core.bv128UGeOp),
+  (q`Core.bv64_uGt, Core.bv64UGtOp),
+  (q`Core.bv128_uGt, Core.bv128UGtOp),
+  (q`Core.bv64_sLe, Core.bv64SLeOp),
+  (q`Core.bv128_sLe, Core.bv128SLeOp),
+  (q`Core.bv64_sLt, Core.bv64SLtOp),
+  (q`Core.bv128_sLt, Core.bv128SLtOp),
+  (q`Core.bv64_sGe, Core.bv64SGeOp),
+  (q`Core.bv128_sGe, Core.bv128SGeOp),
+  (q`Core.bv64_sGt, Core.bv64SGtOp),
+  (q`Core.bv128_sGt, Core.bv128SGtOp),
+  (q`Core.bv64_safeAdd, Core.bv64SafeAddOp),
+  (q`Core.bv128_safeAdd, Core.bv128SafeAddOp),
+  (q`Core.bv64_safeSub, Core.bv64SafeSubOp),
+  (q`Core.bv128_safeSub, Core.bv128SafeSubOp),
+  (q`Core.bv64_safeMul, Core.bv64SafeMulOp),
+  (q`Core.bv128_safeMul, Core.bv128SafeMulOp),
+  (q`Core.bv64_safeUAdd, Core.bv64SafeUAddOp),
+  (q`Core.bv128_safeUAdd, Core.bv128SafeUAddOp),
+  (q`Core.bv64_safeUSub, Core.bv64SafeUSubOp),
+  (q`Core.bv128_safeUSub, Core.bv128SafeUSubOp),
+  (q`Core.bv64_safeUMul, Core.bv64SafeUMulOp),
+  (q`Core.bv128_safeUMul, Core.bv128SafeUMulOp),
+  (q`Core.bv64_safeNeg, Core.bv64SafeNegOp),
+  (q`Core.bv128_safeNeg, Core.bv128SafeNegOp),
+  (q`Core.bv64_safeUNeg, Core.bv64SafeUNegOp),
+  (q`Core.bv128_safeUNeg, Core.bv128SafeUNegOp),
+  (q`Core.bv64_safeSDiv, Core.bv64SafeSDivOp),
+  (q`Core.bv128_safeSDiv, Core.bv128SafeSDivOp),
+  (q`Core.bv64_safeSMod, Core.bv64SafeSModOp),
+  (q`Core.bv128_safeSMod, Core.bv128SafeSModOp),
+  (q`Core.bv64_sNegOverflow, Core.bv64SNegOverflowOp),
+  (q`Core.bv128_sNegOverflow, Core.bv128SNegOverflowOp),
+  (q`Core.bv64_uNegOverflow, Core.bv64UNegOverflowOp),
+  (q`Core.bv128_uNegOverflow, Core.bv128UNegOverflowOp),
+  (q`Core.bv64_sAddOverflow, Core.bv64SAddOverflowOp),
+  (q`Core.bv128_sAddOverflow, Core.bv128SAddOverflowOp),
+  (q`Core.bv64_sSubOverflow, Core.bv64SSubOverflowOp),
+  (q`Core.bv128_sSubOverflow, Core.bv128SSubOverflowOp),
+  (q`Core.bv64_sMulOverflow, Core.bv64SMulOverflowOp),
+  (q`Core.bv128_sMulOverflow, Core.bv128SMulOverflowOp),
+  (q`Core.bv64_sDivOverflow, Core.bv64SDivOverflowOp),
+  (q`Core.bv128_sDivOverflow, Core.bv128SDivOverflowOp),
+  (q`Core.bv64_uAddOverflow, Core.bv64UAddOverflowOp),
+  (q`Core.bv128_uAddOverflow, Core.bv128UAddOverflowOp),
+  (q`Core.bv64_uSubOverflow, Core.bv64USubOverflowOp),
+  (q`Core.bv128_uSubOverflow, Core.bv128USubOverflowOp),
+  (q`Core.bv64_uMulOverflow, Core.bv64UMulOverflowOp),
+  (q`Core.bv128_uMulOverflow, Core.bv128UMulOverflowOp),
   -- bitvector -> int casts
-  | _, q`Core.bv1_toUInt => return .op () ⟨"Bv1.ToUInt", ()⟩ (.some (.arrow (.bitvec 1) .int))
-  | _, q`Core.bv1_toInt  => return .op () ⟨"Bv1.ToInt",  ()⟩ (.some (.arrow (.bitvec 1) .int))
-  | _, q`Core.bv8_toUInt => return .op () ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))
-  | _, q`Core.bv8_toInt  => return .op () ⟨"Bv8.ToInt",  ()⟩ (.some (.arrow (.bitvec 8) .int))
-  | _, q`Core.bv16_toUInt => return .op () ⟨"Bv16.ToUInt", ()⟩ (.some (.arrow (.bitvec 16) .int))
-  | _, q`Core.bv16_toInt  => return .op () ⟨"Bv16.ToInt",  ()⟩ (.some (.arrow (.bitvec 16) .int))
-  | _, q`Core.bv32_toUInt => return .op () ⟨"Bv32.ToUInt", ()⟩ (.some (.arrow (.bitvec 32) .int))
-  | _, q`Core.bv32_toInt  => return .op () ⟨"Bv32.ToInt",  ()⟩ (.some (.arrow (.bitvec 32) .int))
-  | _, q`Core.bv64_toUInt => return .op () ⟨"Bv64.ToUInt", ()⟩ (.some (.arrow (.bitvec 64) .int))
-  | _, q`Core.bv64_toInt  => return .op () ⟨"Bv64.ToInt",  ()⟩ (.some (.arrow (.bitvec 64) .int))
-  | _, q`Core.bv128_toUInt => return .op () ⟨"Bv128.ToUInt", ()⟩ (.some (.arrow (.bitvec 128) .int))
-  | _, q`Core.bv128_toInt  => return .op () ⟨"Bv128.ToInt",  ()⟩ (.some (.arrow (.bitvec 128) .int))
+  (q`Core.bv1_toUInt, .op () ⟨"Bv1.ToUInt", ()⟩ (.some (.arrow (.bitvec 1) .int))),
+  (q`Core.bv1_toInt, .op () ⟨"Bv1.ToInt",  ()⟩ (.some (.arrow (.bitvec 1) .int))),
+  (q`Core.bv8_toUInt, .op () ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))),
+  (q`Core.bv8_toInt, .op () ⟨"Bv8.ToInt",  ()⟩ (.some (.arrow (.bitvec 8) .int))),
+  (q`Core.bv16_toUInt, .op () ⟨"Bv16.ToUInt", ()⟩ (.some (.arrow (.bitvec 16) .int))),
+  (q`Core.bv16_toInt, .op () ⟨"Bv16.ToInt",  ()⟩ (.some (.arrow (.bitvec 16) .int))),
+  (q`Core.bv32_toUInt, .op () ⟨"Bv32.ToUInt", ()⟩ (.some (.arrow (.bitvec 32) .int))),
+  (q`Core.bv32_toInt, .op () ⟨"Bv32.ToInt",  ()⟩ (.some (.arrow (.bitvec 32) .int))),
+  (q`Core.bv64_toUInt, .op () ⟨"Bv64.ToUInt", ()⟩ (.some (.arrow (.bitvec 64) .int))),
+  (q`Core.bv64_toInt, .op () ⟨"Bv64.ToInt",  ()⟩ (.some (.arrow (.bitvec 64) .int))),
+  (q`Core.bv128_toUInt, .op () ⟨"Bv128.ToUInt", ()⟩ (.some (.arrow (.bitvec 128) .int))),
+  (q`Core.bv128_toInt, .op () ⟨"Bv128.ToInt",  ()⟩ (.some (.arrow (.bitvec 128) .int))),
 
-  | _, q`Core.bvconcat8 => return Core.bv8ConcatOp
-  | _, q`Core.bvconcat16 => return Core.bv16ConcatOp
-  | _, q`Core.bvconcat32 => return Core.bv32ConcatOp
-  | _, q`Core.bvextract_7_7     => return Core.bv8Extract_7_7_Op
-  | _, q`Core.bvextract_15_15   => return Core.bv16Extract_15_15_Op
-  | _, q`Core.bvextract_31_31   => return Core.bv32Extract_31_31_Op
-  | _, q`Core.bvextract_7_0_16  => return Core.bv16Extract_7_0_Op
-  | _, q`Core.bvextract_7_0_32  => return Core.bv32Extract_7_0_Op
-  | _, q`Core.bvextract_15_0_32 => return Core.bv32Extract_15_0_Op
-  | _, q`Core.bvextract_7_0_64  => return Core.bv64Extract_7_0_Op
-  | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
-  | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
-
-
+  (q`Core.bvconcat8, Core.bv8ConcatOp),
+  (q`Core.bvconcat16, Core.bv16ConcatOp),
+  (q`Core.bvconcat32, Core.bv32ConcatOp),
+  (q`Core.bvextract_7_7, Core.bv8Extract_7_7_Op),
+  (q`Core.bvextract_15_15, Core.bv16Extract_15_15_Op),
+  (q`Core.bvextract_31_31, Core.bv32Extract_31_31_Op),
+  (q`Core.bvextract_7_0_16, Core.bv16Extract_7_0_Op),
+  (q`Core.bvextract_7_0_32, Core.bv32Extract_7_0_Op),
+  (q`Core.bvextract_15_0_32, Core.bv32Extract_15_0_Op),
+  (q`Core.bvextract_7_0_64, Core.bv64Extract_7_0_Op),
+  (q`Core.bvextract_15_0_64, Core.bv64Extract_15_0_Op),
+  (q`Core.bvextract_31_0_64, Core.bv64Extract_31_0_Op),
 
 
-  | _, q`Core.str_len      => return Core.strLengthOp
-  | _, q`Core.str_concat   => return Core.strConcatOp
-  | _, q`Core.str_substr   => return Core.strSubstrOp
-  | _, q`Core.str_toregex  => return Core.strToRegexOp
-  | _, q`Core.str_inregex  => return Core.strInRegexOp
-  | _, q`Core.str_prefixof => return Core.strPrefixOfOp
-  | _, q`Core.str_suffixof => return Core.strSuffixOfOp
-  | _, q`Core.str_contains => return Core.strContainsOp
-  | _, q`Core.str_indexof  => return Core.strIndexOfOp
-  | _, q`Core.str_replace  => return Core.strReplaceOp
-  | _, q`Core.str_at       => return Core.strAtOp
-  | _, q`Core.str_lt       => return Core.strLtOp
-  | _, q`Core.str_le       => return Core.strLeOp
-  | _, q`Core.re_all       => return Core.reAllOp
-  | _, q`Core.re_allchar   => return Core.reAllCharOp
-  | _, q`Core.re_range     => return Core.reRangeOp
-  | _, q`Core.re_concat    => return Core.reConcatOp
-  | _, q`Core.re_star      => return Core.reStarOp
-  | _, q`Core.re_plus      => return Core.rePlusOp
-  | _, q`Core.re_loop      => return Core.reLoopOp
-  | _, q`Core.re_union     => return Core.reUnionOp
-  | _, q`Core.re_inter     => return Core.reInterOp
-  | _, q`Core.re_comp      => return Core.reCompOp
-  | _, q`Core.re_none      => return Core.reNoneOp
-  | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
+
+
+  (q`Core.str_len, Core.strLengthOp),
+  (q`Core.str_concat, Core.strConcatOp),
+  (q`Core.str_substr, Core.strSubstrOp),
+  (q`Core.str_toregex, Core.strToRegexOp),
+  (q`Core.str_inregex, Core.strInRegexOp),
+  (q`Core.str_prefixof, Core.strPrefixOfOp),
+  (q`Core.str_suffixof, Core.strSuffixOfOp),
+  (q`Core.str_contains, Core.strContainsOp),
+  (q`Core.str_indexof, Core.strIndexOfOp),
+  (q`Core.str_replace, Core.strReplaceOp),
+  (q`Core.str_at, Core.strAtOp),
+  (q`Core.str_lt, Core.strLtOp),
+  (q`Core.str_le, Core.strLeOp),
+  (q`Core.re_all, Core.reAllOp),
+  (q`Core.re_allchar, Core.reAllCharOp),
+  (q`Core.re_range, Core.reRangeOp),
+  (q`Core.re_concat, Core.reConcatOp),
+  (q`Core.re_star, Core.reStarOp),
+  (q`Core.re_plus, Core.rePlusOp),
+  (q`Core.re_loop, Core.reLoopOp),
+  (q`Core.re_union, Core.reUnionOp),
+  (q`Core.re_inter, Core.reInterOp),
+  (q`Core.re_comp, Core.reCompOp),
+  (q`Core.re_none, Core.reNoneOp),
+]
+
+def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expression.Expr :=
+  match translateFnTable[q]? with
+  | some op => return op
+  | none => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 /-- Extract the operator name from a grouped-operator wrapper's first argument.
 
@@ -1292,6 +1300,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      return .mkApp () fn [s]
   | .fn _ q`Core.seq_select, [_, sa, ia] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Select)
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     return .mkApp () fn [s, i]
+  | .fn _ q`Core.seq_select_unsafe, [_, sa, ia] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .SelectUnsafe)
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      return .mkApp () fn [s, i]

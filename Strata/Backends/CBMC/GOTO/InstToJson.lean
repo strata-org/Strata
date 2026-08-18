@@ -8,7 +8,7 @@ module
 public import Strata.Languages.GOTO.Program
 
 import Strata.Util.Tactics
-public import Strata.DL.Util.Map
+public import Strata.Util.ListMapProps
 import Strata.Backends.CBMC.Common
 import Strata.Util.Json
 

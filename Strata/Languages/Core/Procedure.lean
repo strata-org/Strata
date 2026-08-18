@@ -361,6 +361,20 @@ structure Procedure where
   body   : Procedure.Body := .structured []
   deriving Inhabited, DecidableEq
 
+/-- Apply `f` to every expression of a procedure: the specification's
+    pre/postcondition checks and the structured body. CFG bodies are left
+    unchanged. -/
+@[expose] def Procedure.mapExprs (f : Expression.Expr → Expression.Expr)
+    (p : Procedure) : Procedure :=
+  let mapCheck (c : Procedure.Check) : Procedure.Check := { c with expr := f c.expr }
+  { p with
+    spec := { p.spec with
+      preconditions := p.spec.preconditions.map (fun (l, c) => (l, mapCheck c))
+      postconditions := p.spec.postconditions.map (fun (l, c) => (l, mapCheck c)) }
+    body := match p.body with
+      | .structured ss => .structured (Statements.mapExprs f ss)
+      | .cfg c => .cfg c }
+
 ---------------------------------------------------------------------
 
 open Imperative

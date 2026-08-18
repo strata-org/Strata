@@ -47,7 +47,7 @@ private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
     | .ok prog => pure prog
     | .error e => IO.println s!"type error: {e.message}"; return
   -- Inline bodied functions so concrete evaluation can reduce them, exactly as
-  -- the real command and `TestLaurel`'s interpret helper do. Operators reach
+  -- the real command and `TestLaurelVerification`'s interpret helper do. Operators reach
   -- Core as calls to their built-in wrapper functions (`$add`, …), so without
   -- this an `assert x + x == 4` never reduces to a bool.
   let core := Core.Program.inlineBodiedFunctions core
@@ -251,18 +251,20 @@ private def procedureOp (prog : StrataDDM.Program) : Option StrataDDM.Operation 
   | some (.op procOp) => some procOp
   | _ => none
 
-/-- Reproduce the legacy pre-`entry`, pre-exception 8-argument procedure shape
-    from the current 10-argument op by keeping only `name, parameters,
-    returnType, returnParameters, requires, invokeOn, opaqueSpec, body`
-    (indices 0,1,2,3,5,6,8,9 — dropping the `throws` and `entry` slots). An
-    older producer — before the `entry` clause and the exceptional-contract
-    clauses were added — would emit exactly this shape; the transitional shim in
-    the concrete-to-abstract translator upgrades it back to the current form. -/
+/-- Reproduce the legacy pre-`typeParams`, pre-`throws`, pre-`entry` 8-argument procedure
+    shape from the current 11-argument op (`name, typeParams, parameters, returnType,
+    returnParameters, throws, requires, invokeOn, entry, opaqueSpec, body`) by keeping only
+    `name, parameters, returnType, returnParameters, requires, invokeOn, opaqueSpec, body`
+    (indices 0,2,3,4,6,7,9,10 — dropping the `typeParams`, `throws`, and `entry` slots). An
+    older producer — before those clauses were added — would emit exactly this shape; the
+    transitional shim in the concrete-to-abstract translator upgrades it back to the current
+    form. -/
 private def dropEntryArg (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  { op with args := #[0, 1, 2, 3, 5, 6, 8, 9].filterMap (fun i => op.args[i]?) }
+  { op with args := #[0, 2, 3, 4, 6, 7, 9, 10].filterMap (fun i => op.args[i]?) }
 
 -- The legacy 8-arg shape parses without error and yields `isInterpretEntry := false`
--- (no entry clause present), rather than the old "expects 9 arguments" failure.
+-- (no entry clause present): the transitional shim upgrades the pre-typeParams/throws/entry
+-- shape to the current 11-arg form by splicing those slots in as absent.
 /-- info: 8-arg parse ok, isInterpretEntry = false
 -/
 #guard_msgs in
@@ -283,13 +285,13 @@ absent exception clauses while keeping `entry` — so, unlike the 8-arg shape
 (which predates `entry`), `isInterpretEntry` stays `true`. This exercises the
 9-arg → 10-arg shim arm, distinct from the 8-arg arm above. -/
 
-/-- Reproduce the pre-exception 9-argument procedure shape (with `entry` but
-    without the exceptional-contract clauses) from the current 10-argument op by
-    keeping only `name, parameters, returnType, returnParameters, requires,
-    invokeOn, entry, opaqueSpec, body` (indices 0,1,2,3,5,6,7,8,9 — dropping the
-    `throws` slot). -/
+/-- Reproduce the pre-`typeParams`, pre-`throws` 9-argument procedure shape (with `entry`
+    but without the polymorphism or exceptional-contract clauses) from the current 11-argument
+    op by keeping only `name, parameters, returnType, returnParameters, requires, invokeOn,
+    entry, opaqueSpec, body` (indices 0,2,3,4,6,7,8,9,10 — dropping the `typeParams` and
+    `throws` slots). -/
 private def drop9ArgShape (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  { op with args := #[0, 1, 2, 3, 5, 6, 7, 8, 9].filterMap (fun i => op.args[i]?) }
+  { op with args := #[0, 2, 3, 4, 6, 7, 8, 9, 10].filterMap (fun i => op.args[i]?) }
 
 -- The legacy 9-arg shape parses without error and preserves `isInterpretEntry := true`,
 -- since the entry clause is kept (only the exceptional-contract clauses are absent).
@@ -313,21 +315,21 @@ arm from the procedure-level ones above: the arity that differs is the *nested*
 `opaqueSpec` operation's, not the enclosing `procedure`'s. -/
 
 /-- Reproduce the 2-argument `opaqueSpec` shape by dropping the `throwsOn` slot
-    from the procedure's `opaqueSpec` argument (index 8), leaving
-    `#[ensures, modifies]`. The enclosing `procedure` keeps its current 10-arg
+    from the procedure's `opaqueSpec` argument (index 9 in the 11-arg op), leaving
+    `#[ensures, modifies]`. The enclosing `procedure` keeps its current 11-arg
     form, so this isolates the `opaqueSpec` shim arm. -/
 private def drop2ArgOpaqueSpec (op : StrataDDM.Operation) : StrataDDM.Operation :=
-  match (op.args[8]? : Option StrataDDM.Arg) with
+  match (op.args[9]? : Option StrataDDM.Arg) with
   | some (.option ann (some (.op os))) =>
     let os' := { os with args := os.args.take 2 }
-    { op with args := op.args.set! 8 (.option ann (some (.op os'))) }
+    { op with args := op.args.set! 9 (.option ann (some (.op os'))) }
   | _ => op
 
-/-- The arity of the `opaqueSpec` operation nested at index 8, or `none` when that
+/-- The arity of the `opaqueSpec` operation nested at index 9, or `none` when that
     argument is not a present `opaqueSpec`. Reported by the test below so the
     shape being parsed is pinned, rather than assumed. -/
 private def opaqueSpecArity (op : StrataDDM.Operation) : Option Nat :=
-  match (op.args[8]? : Option StrataDDM.Arg) with
+  match (op.args[9]? : Option StrataDDM.Arg) with
   | some (.option _ (some (.op os))) => some os.args.size
   | _ => none
 

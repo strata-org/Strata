@@ -8,7 +8,7 @@ module
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
-public import Strata.DL.Util.List
+public import Strata.Util.ListUtilsProps
 
 /-!
 ## Properties of Well-formed Lambda Expressions

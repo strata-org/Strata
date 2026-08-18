@@ -346,6 +346,7 @@ theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
   exact hg'_notin1 hg_in1
 
 end Transform
+
 end Core
 
 end -- public section

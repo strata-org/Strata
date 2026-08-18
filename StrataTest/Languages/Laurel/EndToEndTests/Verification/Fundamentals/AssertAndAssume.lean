@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Failing asserts -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure foo(x: int)
@@ -27,7 +27,7 @@ procedure foo(x: int)
 
 /-! ## Assume false makes assert false trivially provable -/
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 procedure bar()

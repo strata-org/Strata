@@ -11,7 +11,8 @@ public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 namespace Imperative
 
@@ -87,6 +88,13 @@ theorem Env.varsUndefined_apply {P : PureExpr} [HasIdent P]
     {Q : String → Prop} {ρ : Env P} (h : Env.varsUndefined Q ρ)
     (s : String) (hs : Q s) : ρ.store (HasIdent.ident (P := P) s) = none :=
   h (HasIdent.ident (P := P) s) ⟨s, hs, rfl⟩
+
+/-- Monotonicity of `Env.varsUndefined` in its name predicate: if `Q ⊆ R` and every
+`R`-named var is undefined, then every `Q`-named var is. -/
+theorem Env.varsUndefined_of_imp {P : PureExpr} [HasIdent P] {Q R : String → Prop}
+    {ρ : Env P} (himp : ∀ s, Q s → R s) (h : Env.varsUndefined R ρ) :
+    Env.varsUndefined Q ρ :=
+  Env.varsUndefined_iff.mpr (fun s hs => Env.varsUndefined_apply h s (himp s hs))
 
 /-- An empty statement list reaching `.terminal` leaves the environment
 unchanged: the only run of `.stmts [] ρ₀` to `.terminal ρ'` has `ρ₀ = ρ'`. -/

@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Util.ListMap
+public import Strata.Util.ListMapProps
 public import Strata.DL.Util.FuncAttr
 
 /-!

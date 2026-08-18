@@ -11,7 +11,7 @@ public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.SMT.Encoder
 public import Strata.DL.SMT.IncrementalSolver
-public import Strata.DL.Util.Map
+public import Strata.Util.ListMapProps
 public import Strata.Languages.Core.Options
 
 namespace Imperative

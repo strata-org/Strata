@@ -675,6 +675,8 @@ theorem resolveProcedure_clean (proc : Procedure) :
   all_goals
     refine postM_bind_any fun procName' => ?_
     apply postM_withScope
+    -- Polymorphism: `scopeTypeParams proc.typeArgs` is the first bind inside the scope.
+    refine postM_bind_any fun typeArgs' => ?_
     refine postM_bind_any fun inputs' => ?_
     refine postM_bind_any fun outputs' => ?_
     refine postM_bind (postM_mapM _ _ (fun c _ =>
@@ -891,6 +893,8 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
   apply postM_withScope
   refine postM_bind_any fun savedInstType => ?_
   refine postM_bind_any fun _ => ?_
+  -- Polymorphism: `scopeTypeParams proc.typeArgs` binds before the inputs.
+  refine postM_bind_any fun typeArgs' => ?_
   refine postM_bind_any fun inputs' => ?_
   refine postM_bind_any fun outputs' => ?_
   refine postM_bind (postM_mapM _ _ (fun c _ =>
@@ -928,9 +932,17 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
   unfold resolveTypeDefinition
   split
   · -- Composite
+    -- Polymorphism: the composite body now runs inside a `withScope` (to scope the
+    -- `<T>` type params) and returns the `(extending', fields', instProcs')` tuple; the
+    -- cleanliness we need is that each resolved instance procedure has clean fields, which
+    -- the `resolveInstanceProcedure_clean` fold inside the scope establishes. The `repeat'`
+    -- absorbs the intervening plumbing binds (`scopeTypeParams`, `extending'`, the parent
+    -- field-scope loops, `fields'`, `get`, `modify`).
     refine postM_bind_any fun ctName' => ?_
-    refine postM_bind_any fun extending' => ?_
-    refine postM_bind_any fun fields' => ?_
+    refine postM_bind (postM_withScope
+        (P := fun (r : List HighTypeMd × List Field × List Procedure) =>
+          ∀ proc ∈ r.2.2, CleanProcFields proc) ?_)
+      fun r hr => postM_pure hr
     repeat'
       first
       | (refine postM_bind (postM_mapM _ _ (fun p _ =>
@@ -974,7 +986,6 @@ theorem resolveField_clean (ownerName : Identifier) (f : Field) :
     PostM (resolveField ownerName f) (fun f' => ∀ e ∈ f'.initializer, Clean e) := by
   unfold resolveField
   refine postM_bind_any fun ty' => ?_
-  refine postM_bind_any fun (_ : Unit) => ?_
   refine postM_bind_any fun resolved => ?_
   refine postM_bind (postM_option_mapM _ _ (fun e => masterCheck e ty'))
     fun init' hinit => ?_

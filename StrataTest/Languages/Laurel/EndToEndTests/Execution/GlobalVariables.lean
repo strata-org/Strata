@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var answer: int := 42
@@ -25,7 +25,7 @@ procedure readInitial()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var counter: int := 10
@@ -40,7 +40,7 @@ procedure writeThenRead()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var a: int := 1
@@ -57,7 +57,7 @@ procedure framing()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -83,7 +83,7 @@ procedure driver()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 3
@@ -97,7 +97,7 @@ procedure shadows()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var shared: int := 1
@@ -116,7 +116,7 @@ procedure secondEntry()
 };
 #end
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 5

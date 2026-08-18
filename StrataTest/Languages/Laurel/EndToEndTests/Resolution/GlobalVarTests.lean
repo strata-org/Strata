@@ -334,7 +334,7 @@ procedure conditionalWriter(flag: bool) returns ($static.g: int) opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -385,7 +385,7 @@ procedure caller() opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -402,7 +402,7 @@ procedure caller(c: GlobalPair) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -421,7 +421,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var floor: int := 0
@@ -468,7 +468,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: bool := false
@@ -478,7 +478,7 @@ constrained MutatesGlobal = x: bool where (g := true) witness false
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -496,7 +496,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -510,7 +510,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -525,7 +525,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -542,7 +542,7 @@ procedure caller() opaque
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -559,7 +559,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: bool := false
@@ -571,7 +571,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -585,7 +585,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var $result: int := 0
@@ -598,7 +598,7 @@ composite InitialErrorInstance {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -610,7 +610,7 @@ constrained GlobalWitness = x: int where x >= 0 witness readG()
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -622,7 +622,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -637,7 +637,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -685,7 +685,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -707,7 +707,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -719,7 +719,7 @@ procedure setG(v: int)
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -735,7 +735,7 @@ procedure trigger()
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -756,7 +756,7 @@ procedure caller(c: bool) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -769,7 +769,7 @@ procedure setG(v: int) returns (r: int)
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -785,7 +785,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -797,7 +797,7 @@ procedure constrainGlobal() returns (r: int)
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 constrained Nat = x: int where x >= 0 witness 0
@@ -807,7 +807,7 @@ var Nat$constraint: int := 0
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -826,7 +826,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -847,7 +847,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -862,7 +862,7 @@ procedure assertCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -877,7 +877,7 @@ procedure assumeCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 var g: int := 0
@@ -938,4 +938,17 @@ procedure caller() opaque {
   readMutate(x)
 //^^^^^^^^^^ error: bare calls to global-dependent procedure 'readMutate' with explicit inout outputs are not yet supported
 };
+#end
+
+-- A generic-typed file-scope global is rejected (`validateGlobalTypes`): monomorphization does
+-- not reach a global's initializer, so a `.Applied` global type would reach Core un-monomorphized.
+-- A generic COMPOSITE field is supported (#1394); only the file-scope-global case is rejected here.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+var g: Box<int> := new Box<int>
+//     ^^^^^^^^ error: a generic datatype instantiation ('Box<…>') is not yet supported as a file-scope global type
+procedure u() opaque { assert 1 == 1 };
 #end

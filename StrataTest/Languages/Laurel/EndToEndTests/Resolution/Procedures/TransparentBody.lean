@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure assertAndAssumeInFunctions(a: int) returns (r: int)
@@ -40,7 +40,7 @@ procedure localVariableWithoutInitializer(): int {
 
 /-! ## if-then-else must be the last statement in a transparent body -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

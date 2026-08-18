@@ -38,7 +38,7 @@ open Strata
 The upcast reference then reads the field written on the `Dog`, and the postcondition is discharged
 by the solver: the coercion carries real semantics into Core, it is not an opaque cast. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Animal { var legs: int }
@@ -60,7 +60,7 @@ Same `upcast`, but the asserted value is wrong. If the coercion were an informat
 box the assertion could spuriously pass; instead the verifier reports it, confirming the field
 value survives the upcast into Core with its real value. -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite Animal { var legs: int }
@@ -85,7 +85,7 @@ in a bool slot is a strict type error — this is the ONLY path that exercises t
 installing a hook exactly as a frontend does.
 
 The hook below models Python-style integer truthiness (`n` is truthy iff `n != 0`): it maps an
-`int` operand `e` to `e != 0`. It is installed via `translateOptions.toBool` on `testLaurel`'s
+`int` operand `e` to `e != 0`. It is installed via `translateOptions.toBool` on `testLaurelVerification`'s
 options, threaded onto the `TypeLattice` and fired at the bool-context slot inside `resolveStmtExpr`
 (the subsumption fallback). Because the realized `!= 0` term carries the operand's real value into
 the verification condition, the two blocks below prove the hook is not an opaque bool coercion:
@@ -114,7 +114,7 @@ private def toBoolOptions : Laurel.LaurelVerifyOptions :=
 
 /-! ### 3a. A truthy int in a bool slot verifies once the hook rewrites it to `!= 0`. -/
 
-#eval testLaurel (options := toBoolOptions) <|
+#eval testLaurelVerification (options := toBoolOptions) <|
 #strata
 program Laurel;
 procedure p()
@@ -126,7 +126,7 @@ procedure p()
 
 /-! ### 3b. A falsy int is correctly reported: the hook's `0 != 0` is false, so the assert fails. -/
 
-#eval testLaurel (options := toBoolOptions) <|
+#eval testLaurelVerification (options := toBoolOptions) <|
 #strata
 program Laurel;
 procedure p()

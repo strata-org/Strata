@@ -32,7 +32,7 @@ open Strata
 
 /-! ## 1. Basic: instance method body returns a field via `return expr`. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -56,7 +56,7 @@ procedure useGet()
 
 /-! ## 2. Return a computed expression. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -80,7 +80,7 @@ procedure useIncd()
 
 /-! ## 3. Return an expression that uses a (non-self) parameter. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -105,7 +105,7 @@ procedure useAddTo()
 /-! ## 4. Conditional / early returns: a valued `return` in each branch of an
     if-then-else inside the method body. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -133,7 +133,7 @@ procedure useClampPos()
 
 /-! ## 5. Method that mutates a field (modifies clause) and then returns. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -161,7 +161,7 @@ procedure useSetAndGet()
 
 /-! ## 6. Boolean return type. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -186,7 +186,7 @@ procedure useIsPos()
 /-! ## 7. Two composites sharing a method name, both with value-returning
     bodies. Confirms lifting + value-return elimination keep them distinct. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A {
@@ -224,7 +224,7 @@ procedure useBoth()
 /-! ## 8. Value-returning method invoked through a field-selected receiver:
     `o#inner#getX()`. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Inner {
@@ -252,7 +252,7 @@ procedure useOuter()
 
 /-! ## 9. Local variable in the body before a valued return. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -278,7 +278,7 @@ procedure useDoubleV()
 /-! ## 10. Negative: valued return in an instance method with NO output
     parameter is rejected by `EliminateValueInReturns`. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite C {
@@ -295,7 +295,7 @@ composite C {
 /-! ## 11. Negative: valued return in an instance method with MULTIPLE output
     parameters is rejected by `EliminateValueInReturns`. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite D {

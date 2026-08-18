@@ -9,7 +9,7 @@ public import Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Identifiers
 public import Lean.Meta.Basic
 public import Strata.Util.PtrCache
-import Strata.DL.Util.DecidableEq
+import Strata.Util.DecidableEq
 
 /-! ## Lambda Expressions with Quantifiers
 

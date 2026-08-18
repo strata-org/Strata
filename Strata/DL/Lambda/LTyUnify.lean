@@ -8,8 +8,9 @@ import all Strata.DL.Lambda.LTyProps
 
 public import Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LTy
-public import Strata.DL.Util.List
-import all Strata.DL.Util.List
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.Util.HMaps
 import all Strata.Util.HMaps
 import all Strata.Util.HMap

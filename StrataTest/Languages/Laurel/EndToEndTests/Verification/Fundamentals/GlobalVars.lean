@@ -18,7 +18,7 @@ open Strata
     `setG` writes `g` and exposes `g == v`; after `setG(42)`, `g == 42` holds. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -39,7 +39,7 @@ procedure useG() opaque {
     the read observes 7. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -57,7 +57,7 @@ procedure check() opaque {
     An explicit input records that state because `old(global)` is unsupported. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -85,7 +85,7 @@ procedure keepsValue() opaque {
     and the caller's `b` is unchanged across the call. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var a: int := 0
@@ -108,7 +108,7 @@ procedure framing() opaque {
     `g == 42`, so `assert g == 43` must fail to prove. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -132,7 +132,7 @@ procedure wrongClaim() opaque {
     assignment lands the return value in `g`. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -151,7 +151,7 @@ procedure useIt() opaque {
 #end
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -188,7 +188,7 @@ procedure checkShadows() opaque {
     requiring unsupported `old(global)` state. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -221,7 +221,7 @@ procedure setToN(n: int)
     call site passes the current global in). -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -245,7 +245,7 @@ procedure caller() opaque {
     value-preservation suffix this fails re-resolution as a tuple type). -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -269,7 +269,7 @@ procedure useAssign() returns (r: int)
 /-! Global references in non-body procedure fields are threaded too. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite CastCell {
@@ -294,7 +294,7 @@ procedure castCaller() opaque {
 /-! Effectful explicit arguments are evaluated before a callee samples globals. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -322,7 +322,7 @@ procedure argumentOrder() opaque {
     observes 5. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -347,7 +347,7 @@ procedure explicitArgumentOrder() opaque {
 /-! A stale hidden-global capture would incorrectly prove this assertion. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -373,7 +373,7 @@ procedure wrongArgumentOrder() opaque {
 /-! Constrained globals preserve range contracts through global lowering. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -396,7 +396,7 @@ procedure constrainedGlobal() opaque {
 /-! Constrained global contracts cover instance methods and their callers. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -420,7 +420,7 @@ procedure checkInstanceConstraint(c: ConstrainedCounter) opaque {
 /-! ## Lifted instance methods thread file-scope global reads and writes. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -445,7 +445,7 @@ procedure checkInstance(c: GlobalCell) opaque {
 /-! ## Non-mutating arguments remain supported for global-dependent inout calls. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -469,7 +469,7 @@ procedure checkInout() opaque {
 /-! ## Global and heap state threading compose positionally -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var g: int := 0
@@ -503,7 +503,7 @@ procedure checkGlobalAndHeap(c: StateCell)
 /-! ## Effectful heap arguments run before hidden heap state is sampled. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite OrderedCell {
@@ -538,7 +538,7 @@ procedure checkHeapArgumentOrder(c: OrderedCell)
     field is updated through the heap. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite GlobalCell {
@@ -567,7 +567,7 @@ procedure checkGlobalField()
     parameterization passes. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 var mixedGlobal: int := 0
@@ -606,7 +606,7 @@ procedure checkMixedOutputs(state: MixedState)
     exercises exception lowering before global parameterization. -/
 
 #guard_msgs (drop info) in
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 composite GlobalError {}

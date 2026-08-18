@@ -616,18 +616,35 @@ def getTypeRefs (ty: LMonoTy) : List String :=
   | _ => []
 
 /--
-Ensures all type occuring a constructor are only primitive types,
-types defined previously, or types in the same mutual block.
+Every type-constructor reference in a type, paired with the argument count at
+that occurrence.
 -/
-def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String) : Except Message Unit := do
-  let validNames : Std.HashSet String :=
-    Std.HashSet.ofList (knownTypes ++ t.allTypeNames ++ block.map (·.name))
+def getTypeConsArities (ty : LMonoTy) : List (String × Nat) :=
+  match ty with
+  | .tcons n args => (n, args.length) :: args.flatMap getTypeConsArities
+  | .ftvar _ | .bitvec _ => []
+
+/--
+Ensures every type referenced in a constructor is a known type, a previously
+defined type, or a type in the same mutual block, applied at its declared arity.
+
+`knownArities` maps known type-constructor names to arities; a datatype's arity
+is its number of `typeArgs`.
+-/
+def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownArities : Std.HashMap String Nat) : Except Message Unit := do
+  let arities : Std.HashMap String Nat :=
+    (t.allDatatypes ++ block).foldl
+      (fun acc d => acc.insert d.name d.typeArgs.length) knownArities
   for d in block do
     for c in d.constrs do
       for (_, ty) in c.args do
-        for ref in getTypeRefs ty do
-          if !validNames.contains ref then
+        for (ref, appliedArity) in getTypeConsArities ty do
+          match arities[ref]? with
+          | none =>
             throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
+          | some declaredArity =>
+            if appliedArity != declaredArity then
+              throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Type constructor '{ref}' expects {declaredArity} argument(s) but is applied to {appliedArity}"
 
 ---------------------------------------------------------------------
 
@@ -778,7 +795,7 @@ def TypeFactory.checkMutualBlockInhab (adts: @TypeFactory IDMeta) (block : Mutua
 
 /-- Add a mutual block to the TypeFactory, checking for duplicates,
   inconsistent types, and positivity. -/
-def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except Message (@TypeFactory IDMeta) := do
+def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownArities : Std.HashMap String Nat := ∅) : Except Message (@TypeFactory IDMeta) := do
   -- Check for name clashes within block
   validateMutualBlock block
   -- Check for positivity, uniformity, nesting
@@ -792,7 +809,7 @@ def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype
                 New Type:{d}"
     | none => pure ()
   -- Check for consistent type dependencies
-  t.validateTypeReferences block knownTypes
+  t.validateTypeReferences block knownArities
   let t' : TypeFactory := t.push block
   -- Check that all types in the new block are inhabited
   t'.checkMutualBlockInhab block

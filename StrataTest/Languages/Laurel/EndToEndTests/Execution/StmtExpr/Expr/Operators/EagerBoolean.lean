@@ -25,7 +25,7 @@ This file covers:
 
 /-! ### Truth tables and logical laws -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure eagerAndTruthTable()
@@ -73,7 +73,7 @@ the call would be guarded and never reached (see `ShortCircuit.lean`), but `&`
 evaluates it regardless of the left operand, so its precondition must be
 discharged here and fails. -/
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure mustNotBeCalled(): int
@@ -92,7 +92,7 @@ procedure eagerAndEvaluatesRightOperand()
 };
 #end
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure mustNotBeCalled(): int

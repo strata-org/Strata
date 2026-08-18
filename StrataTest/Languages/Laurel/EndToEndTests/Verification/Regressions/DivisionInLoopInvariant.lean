@@ -60,7 +60,7 @@ Upstream impact: this is what broke `StrataJavaFrontEnd`'s `GaussianSum` and
 `WhileLoop`, whose `sumTo` carries `invariant(s == i * (i + 1) / 2)`.
 -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 

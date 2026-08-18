@@ -86,7 +86,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Throw _ => ⟨ .TVoid, source ⟩
   | .Try _ _ _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  | .New name => ⟨ .UserDefined name, source ⟩
+  -- `new C` has type `C`; `new C<τ…>` has the applied type `C<τ…>` so downstream
+  -- (e.g. monomorphization) sees the concrete instantiation.
+  | .New name typeArgs =>
+    if typeArgs.isEmpty then ⟨ .UserDefined name, source ⟩
+    else ⟨ .Applied ⟨ .UserDefined name, source ⟩ typeArgs, source ⟩
   | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty
@@ -114,6 +118,20 @@ non-heap-relevant types. Single source of truth for which types participate
 in modifies clauses and heap parameterization. -/
 def classifyModifiesHighType : HighType → Option ModifiesTypeKind
   | .UserDefined _ => some .composite
+  -- A generic-composite INSTANTIATION (`GHolder<Pair<int,bool>>`) is a composite
+  -- reference too: it peels to a `.UserDefined` base. This predicate gates
+  -- modifies-clause entry survival + classification at RESOLUTION (isHeapRelevantType,
+  -- Resolution.resolveModifiesEntry), which runs BEFORE monomorphization — so a
+  -- `modifies g` on a generically-typed var still sees `.Applied` here and would be
+  -- wrongly dropped as "non-composite" without this arm. (It does NOT feed heap
+  -- parameterization, which keys off write-effects, not this classification; and
+  -- monomorphization later collapses the type to plain `.UserDefined` for the
+  -- post-mono frame builder.) Matches the sibling `.UserDefined` arm's model-free
+  -- fidelity: a generic DATATYPE base would also classify `.composite` here and fail
+  -- loud downstream at Core, exactly as a bare datatype var already does.
+  | .Applied base _ => match base.val with
+    | .UserDefined _ => some .composite
+    | _              => none
   | .TSet _        => some .compositeSet
   | _              => none
 

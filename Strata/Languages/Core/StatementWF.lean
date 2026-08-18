@@ -6,10 +6,12 @@
 module
 
 import all Strata.Languages.Core.StatementType
-import all Strata.DL.Util.ListMap
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
 import all Strata.DL.Imperative.CmdType
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Util.ListUtils
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Languages.Core.Statement
 import all Strata.Languages.Core.FunctionType
 

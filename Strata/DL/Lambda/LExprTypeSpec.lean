@@ -17,8 +17,10 @@ import all Strata.Util.HMap
 import all Strata.Util.HMaps
 import all Strata.DL.Lambda.Identifiers
 import all Strata.DL.Util.Func
-import all Strata.DL.Util.ListMap
-import all Strata.DL.Util.List
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
@@ -61,7 +63,7 @@ no proof-level lemmas. To avoid this, `TState.isFutureGenVar` uses
 suffix-parsing properties trivially provable with standard `List` lemmas.
 
 `Nat.toString_injective`, `isPrefixOf_append_self`, `listCharToNat?_roundtrip`,
-and related helpers are in `Strata.DL.Util.String` (imported transitively
+and related helpers are in `Strata.Util.String` (imported transitively
 via `LExprTypeEnv`).
 -/
 

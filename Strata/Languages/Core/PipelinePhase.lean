@@ -34,7 +34,10 @@ inductive ModelValidation where
     whether its models need validation, based on whether the obligation is
     in the path of something abstracted by this phase. -/
 structure AbstractedPhase where
-  /-- Human-readable name identifying this phase in solver logs. -/
+  /-- Canonical name of this phase. Used in solver logs, telemetry,
+      `--keep-all-files` filenames, and as the phase's user-facing name in
+      the `transform` command's `--pass` flag. By convention camelCase,
+      e.g. `loopElim`. -/
   name : String
   /-- Given an obligation, determine the model validation for this phase. -/
   getValidation : ProofObligation Expression → ModelValidation := fun _ => .modelPreserving

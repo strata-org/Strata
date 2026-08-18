@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
 
 /-! ### Prelude Filtering
 
@@ -68,16 +69,20 @@ private def addTypeName (name : String) : CollectM Unit :=
   modify fun s => { s with typeNames := s.typeNames.insert name }
 
 /-- Collect type names referenced in a HighType. -/
-private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
-  match ty.val with
+private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
+  match _h : ty.val with
   | .UserDefined name => addTypeName name.text
+  -- A type variable references no prelude type name.
+  | .TVar _ => pure ()
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
-    collectHighTypeNames base; args.forM collectHighTypeNames
-  | .Intersection types => types.forM collectHighTypeNames
+    collectHighTypeNames base; args.attach.forM (fun ⟨a, _⟩ => collectHighTypeNames a)
+  | .Intersection types => types.attach.forM (fun ⟨t, _⟩ => collectHighTypeNames t)
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
+  termination_by ty
+  decreasing_by ast_recursion_decreasing
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree.
     Recursion into child nodes is handled by `foldStmtExprM`; the visitor only
@@ -87,7 +92,9 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
     match e.val with
     | .StaticCall callee _ => addProcName callee.text
     | .InstanceCall _ callee _ => addProcName callee.text
-    | .New ref => addTypeName ref.text
+    -- `New` gained a `typeArgs` field with polymorphism; collect any explicit
+    -- instantiation type names (`new Box<int>`) as well as the composite name.
+    | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames
     | .Assign targets _ =>
       for ⟨t, _⟩ in targets.attach do
         match t.val with
@@ -147,7 +154,10 @@ private def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
   match td with
   | .Composite ct =>
     ct.fields.forM fun f => collectHighTypeNames f.type
-    for e in ct.extending do addTypeName e.text
+    -- `extending` is `List HighTypeMd`; prelude dep-collection needs the FULL type
+    -- (both the parent base AND any concrete arg, e.g. `Base<int>` → Base AND int),
+    -- so recurse via `collectHighTypeNames` rather than peeling to the base name.
+    ct.extending.forM collectHighTypeNames
     ct.instanceProcedures.forM collectProcDeps
   | .Constrained ct =>
     collectHighTypeNames ct.base
@@ -171,16 +181,18 @@ private def CollectState.allNames (s : CollectState) : Std.HashSet String :=
     invokeOn expressions are expected to be simple `StaticCall` trees
     like `f(g(x))` with `Identifier` or literal leaves.  Returns an
     error if an unexpected node is encountered. -/
-private partial def collectInvokeOnTargets (expr : StmtExprMd)
+private def collectInvokeOnTargets (expr : StmtExprMd)
     : Except String (List String) := do
-  match expr.val with
+  match _h : expr.val with
   | .StaticCall callee args =>
-    let rest ← args.flatMapM collectInvokeOnTargets
+    let rest ← args.attach.flatMapM (fun ⟨a, _⟩ => collectInvokeOnTargets a)
     return callee.text :: rest
   | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
+  termination_by expr
+  decreasing_by ast_recursion_decreasing
 
 /-- Monad for building the dependency map with duplicate-name detection. -/
 private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except String)

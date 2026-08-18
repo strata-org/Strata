@@ -31,7 +31,7 @@ front-end policy.
 
 -- Upper-bound violation: declares `throws ArithError` but throws a sibling
 -- `ParseError`, which is not a subtype of the declared type.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite ArithError {}
@@ -48,7 +48,7 @@ procedure wrongThrows()
 
 -- No-escape via a propagated call: `callsThrower` invokes a throwing procedure
 -- without catching it and without declaring `throws` itself.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -72,7 +72,7 @@ procedure callsThrower()
 -- Allowed: the declared `throws` type is a supertype of what is thrown, so the
 -- coarsened contract holds (this is how a Java `throws Exception` covering a
 -- more specific throw is represented).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -89,7 +89,7 @@ procedure coarsenedThrows()
 -- Allowed (no-escape via catch): `handled` throws inside a `try` whose `catch`
 -- handles the thrown type, so nothing escapes and no `throws` declaration is
 -- required. Must produce no diagnostics.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite ParseError {}

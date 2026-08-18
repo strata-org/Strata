@@ -28,13 +28,13 @@ Boxing is what a front end needs when the *same* `try` can see values of unrelat
 kinds. It is not what a single primitive throw requires — that case needs no carrier
 at all, and is covered in `Throw.lean`.
 
-Run through `testLaurel` (the verifier) rather than `testLaurelMultiple`: the carrier
-is a composite, so these allocate on the heap, and the interpret path does not support
-the heap yet.
+Run through `testLaurelVerification` (the verifier) rather than `testLaurelExecution`: the
+carrier is a composite, so these allocate on the heap, and the interpret path does not
+support the heap yet.
 -/
 
 -- `throw 42` — a number (not an Error) is boxed, caught, and unwrapped.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype JsValue {
@@ -64,7 +64,7 @@ procedure jsThrowNumber()
 
 -- `throw "boom"` — a string value is boxed and caught; the handler observes it
 -- is a `JsStr`.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype JsValue {
@@ -93,7 +93,7 @@ procedure jsThrowString()
 
 -- Negative: the boxed payload's kind is tracked — a string value is not a
 -- number, so asserting `isJsNum` in the handler cannot be proved.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype JsValue {

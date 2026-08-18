@@ -120,6 +120,12 @@ private def freshId : TranslateM Nat := do
 private def freshTVar : TranslateM LMonoTy := do
   return .ftvar s!"_t{← freshId}"
 
+/-- Shared message for a generic application that reaches Core translation un-monomorphized
+    (a generic composite the monomorphizer should have rewritten, or an unsupported generic). -/
+private def genericReachedCoreMsg : String :=
+  "generic type application reached Core translation (not monomorphized): \
+   unsupported generic type, or a type position missing from MonomorphizeComposites"
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -170,24 +176,30 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
           return .tcons "Any" []
         emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" MessageKind.strataBug)
         return .tcons name.text []
-  -- Generic type application, e.g. `Option<int>` → `.tcons "Option" [int]`.
-  -- Core has real polymorphic datatypes, so the type arguments are forwarded.
-  -- Produced by user-written generic type application (the grammar `appliedType`
-  -- op) — see StrataTest/Languages/Laurel/EndToEndTests/Verification/Objects/GenericDatatype.lean.
+  -- A type variable lowers to a Core free type variable, which Core's HM instantiates
+  -- per call site. Kind-agnostic: a value-kinded `T` unifies with `int`, a reference-kinded
+  -- `T` with the single `Composite` sort every composite lowers to — so reference-`T`
+  -- reaches here as `.TVar` needing no prior erase-to-composite pass (see
+  -- `PolymorphicFunctionTest`).
+  | .TVar name => return .ftvar name.text
+  | .TReal => return LMonoTy.real
+  -- Generic type application. A DATATYPE (`List<int>`, `Option<int>`) lowers to a
+  -- native parametric Core sort (`.tcons "List" [int]`) — datatypes are not
+  -- monomorphized, so they legitimately reach here and forward their args. A type
+  -- *parameter* applied to args (`C<int>` where `C` is a parameter) is rejected.
+  -- Anything else fails loud: a generic COMPOSITE should have been rewritten away
+  -- by `MonomorphizeComposites` (if one reaches here, a type position is missing
+  -- from that pass's traversal), and any other application is an unsupported
+  -- generic. Never silent.
   | .Applied base args =>
     match base.val with
-    | .UserDefined n =>
-      -- A type *parameter* cannot itself be applied to arguments (`C<int>` where
-      -- `C` is a parameter): guard it like the plain `.UserDefined` arm so the
-      -- invalid program is suppressed via a diagnostic rather than leaking a
-      -- bogus `tcons`.
-      if (← get).typeParams.contains n.text then
-        invalidCoreType ty.source s!"type parameter '{n.text}' cannot be applied to type arguments"
-      else
-        let coreArgs ← args.mapM translateType
-        return .tcons n.text coreArgs
-    | _ => invalidCoreType ty.source "generic type application with a non-named base is not supported"
-  | .TReal => return LMonoTy.real
+    | .UserDefined name =>
+      if (← get).typeParams.contains name.text then
+        invalidCoreType ty.source s!"type parameter '{name.text}' cannot be applied to type arguments"
+      else match model.get? name with
+        | some (.datatypeDefinition dt) => return .tcons dt.name.text (← args.mapM translateType)
+        | _ => invalidCoreType ty.source genericReachedCoreMsg
+    | _ => invalidCoreType ty.source genericReachedCoreMsg
   | .TFloat64 =>
     -- `float64` aliases to Core `real` ONLY in gradual mode (a frontend registered gradualTypes,
     -- e.g. Python): Core has no distinct IEEE-754 float64 sort, so a translated Python `float` is
@@ -208,14 +220,15 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       invalidCoreType ty.source "cannot translate Unknown type to Core"
     else
       return .tcons "Any" []
-  | _ => do
-    invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
+  | .Intersection _ => invalidCoreType ty.source "Intersection type not yet supported in Core translation"
+termination_by ty
+decreasing_by ast_recursion_decreasing
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
 
 /-- Compute the Core value type `V` of a `mapConst` argument, i.e. the type of
-    `arg`. Nested `mapConst` calls have the `Box` placeholder as their declared
+    `arg`. Nested `mapConst` calls carry an inert `int` placeholder declared
     return type, so `computeExprType` cannot recover their structural `Map` type;
     we reconstruct it here (`mapConst(x) : Map TypeTag (typeof x)`). -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
@@ -381,9 +394,19 @@ because `liftImperativeExpressions` should have already removed them.
 `boundVars` tracks names bound by enclosing Forall/Exists quantifiers (innermost first).
 When an Identifier matches a bound name at index `i`, it becomes `bvar i` (de Bruijn index)
 instead of `fvar`.
+
+`expectedType` is the declared type this expression is being checked against, when one
+is in scope (e.g. the target type of a `var m: T := <expr>` declaration). It is used
+ONLY to recover the key type of a `mapConst` call — a constant-map builtin whose key type
+is not inferable from its single value argument. When the caller knows the binding is a
+`Map K V`, `K` is threaded here so the emitted op is annotated `V → Map K V` and the
+program round-trips as `mapConst<K>(v)`. When absent (internal calls, e.g. the
+`TypeHierarchy` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
+propagated into subexpressions (every recursive call uses the `none` default).
 -/
 def translateExpr (expr : StmtExprMd)
     (boundVars : List Identifier := []) (isPureContext : Bool := false)
+    (expectedType : Option HighTypeMd := none)
     : TranslateM Core.Expression.Expr := do
   let s ← get
   let model := s.model
@@ -507,18 +530,26 @@ def translateExpr (expr : StmtExprMd)
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
         -- The `mapConst` constant-map builtin has no inferable key type, so we
-        -- annotate its op with the concrete function type `V → Map K V` (from
-        -- the resolved result type). This lets the pretty-printer emit the
-        -- explicit `mapConst<K>(v)` syntax so the program round-trips.
+        -- annotate its op with the concrete function type `V → Map K V`. This
+        -- lets the pretty-printer emit the explicit `mapConst<K>(v)` syntax so
+        -- the program round-trips. The key `K` is CONTEXT-derived:
+        --   * If the call is the initializer of a `var m: T := mapConst(v)` and
+        --     the declared target `T` resolves to a `Map K V` (aliases already
+        --     unfolded by `TypeAliasElim`), we use that `K` — so the user case
+        --     `var m: Map int bool := mapConst(false)` annotates `<int>` and
+        --     unifies with the binding.
+        --   * Otherwise (internal calls with no binding key available, e.g. the
+        --     `TypeHierarchy` ancestor tables), we default to `TypeTag`, the
+        --     type-tag domain of those tables, so their round-trip stays
+        --     `mapConst<TypeTag>`.
         let fnOp : Core.Expression.Expr ←
           if callee.text == "mapConst" then
-            -- `mapConst : V → Map TypeTag V`. Key type is always `TypeTag`
-            -- (the type-tag domain of the ancestor tables); the value type is
-            -- the type of the single argument.
             match args with
             | [valArg] =>
                 let vTy ← mapConstValTy model valArg
-                let kTy : LMonoTy := .tcons "TypeTag" []
+                let kTy : LMonoTy ← match expectedType with
+                  | some ⟨.TMap keyTy _, _⟩ => translateType keyTy
+                  | _ => pure (.tcons "TypeTag" [])
                 pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
             | _ => pure (.op () ⟨callee.text, ()⟩ none)
           else pure (.op () ⟨callee.text, ()⟩ none)
@@ -599,7 +630,7 @@ def translateExpr (expr : StmtExprMd)
   | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" MessageKind.strataBug
   | .IsType _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" MessageKind.strataBug
-  | .New _ => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
+  | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
   | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
   | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
   | .Old value =>
@@ -816,8 +847,20 @@ def translateStmt (stmt : StmtExprMd)
         if (← containsProcedure callee) then
           translateCallTargets callee args
         else
-          -- Function call: translate as a normal expression assignment
-          let coreExpr ← translateExpr value
+          -- Function call: translate as a normal expression assignment.
+          -- Thread the single target's declared type as the expected type so a
+          -- `mapConst` initializer can recover its key type from the binding
+          -- (`var m: Map K V := mapConst(v)` ⇒ `mapConst<K>`); aliases are already
+          -- unfolded by `TypeAliasElim`, so `Map K V` is structural here.
+          let model := (← get).model
+          let expectedType : Option HighTypeMd ← match targets with
+            | [target] =>
+              match target.val with
+              | .Declare param => pure param.type
+              | .Local name => pure (some (model.get name).getType)
+              | _ => pure none
+            | _ => pure none
+          let coreExpr ← translateExpr value [] false expectedType
           match targets with
           | [_target] =>
             let result ← dispatchTargets
@@ -969,9 +1012,15 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
+  -- Propagate the procedure's type parameters to Core. `translateType` lowers
+  -- each `.TVar` to an `.ftvar`, so the procedure's signature and spec carry the
+  -- source type variables. These are instantiated per call site during call
+  -- elimination (see `CallElim.callElimCmd` / `freshenTypeArgsSubst`), which
+  -- renames them to globally-fresh names at each call so the same procedure can
+  -- be called at different concrete types in one body.
   let header : Core.Procedure.Header := {
     name := proc.name.text
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     outputs := outputs
   }
@@ -1080,7 +1129,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     output := outputTy
     body := body
