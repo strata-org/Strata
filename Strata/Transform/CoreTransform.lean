@@ -18,6 +18,7 @@ namespace Core
 namespace Transform
 
 open LabelGen
+open Strata.Util (HMap)
 
 def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
@@ -156,6 +157,9 @@ structure CoreTransformState where
   factory: @Lambda.Factory CoreLParams
   -- Per-transform statistics counters, keyed by string names.
   statistics: Statistics := {}
+  -- Per-transform run counters, keyed by string names. Used to generate unique
+  -- fresh-name prefixes across repeated passes.
+  passCounter : HMap String Nat := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
@@ -173,13 +177,7 @@ abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α :=
   fun coreTransformState =>
     let res := cgm coreTransformState.genState
-    (res.1, {
-      genState := res.2,
-      currentProgram := coreTransformState.currentProgram,
-      currentProcedureName := coreTransformState.currentProcedureName,
-      cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory,
-      statistics := coreTransformState.statistics })
+    (res.1, { coreTransformState with genState := res.2 })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
@@ -201,6 +199,13 @@ def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
 /-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
+
+/-- Fresh counter for `key`, starting at 1. -/
+def bumpCounter (key : String) : CoreTransformM Nat := do
+  let σ ← get
+  let n := (σ.passCounter.find? key).getD 0 + 1
+  set { σ with passCounter := σ.passCounter.insert key n }
+  return n
 
 
 
