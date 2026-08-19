@@ -29,6 +29,7 @@ inductive ResolvedNodeKind where
   | typeAlias
   | constant
   | quantifierVar
+  | coroutineType
   | typeParameter
   | unresolved
   deriving Repr, BEq
@@ -47,6 +48,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .typeAlias         => "type alias"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
+  | .coroutineType     => "coroutine type"
   | .typeParameter     => "type parameter"
   | .unresolved        => "unresolved"
 
@@ -80,6 +82,11 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
+  /-- A coroutine type definition. The coroutine name is dual: it names a
+      type (`co: c`) whose values are coroutine instances, and a constructor
+      (`c(args)` spawns one). Later lowered to a state composite `<c>State`
+      plus a spawn procedure. -/
+  | coroutineType (proc : Procedure)
   /-- A datatype's type parameter (a type variable), in scope only while resolving
       that datatype's constructor argument types. Registering it lets a reference
       to a type parameter resolve through the normal scope lookup — like any other
@@ -106,6 +113,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
+  | .coroutineType ..     => .coroutineType
   | .typeParameter ..     => .typeParameter
   | .unresolved _          => .unresolved
 
@@ -128,6 +136,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .constrainedType ty => ⟨ .Unknown, ty.name.source ⟩
  | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
  | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
+ | .coroutineType proc => ⟨ .Unknown, proc.name.source ⟩
 
 /-! ## Resolution result -/
 

@@ -1624,9 +1624,147 @@ To be designed..
 
 To be designed..
 
-## Concurrency
+# Concurrency
 
-To be designed..
+Currently, Laurel can model concurrency with *cooperative coroutines*: procedures that can
+voluntarily suspend themselves with `yield`, handing control back to their caller, and can
+later be resumed via `resume`. This closely matches Python generators and JavaScript
+coroutines, where `yield` suspends the execution and `next(...)` resumes it.
+
+Behavior at each suspension is specified with *rely/guarantee* contracts: the *rely* is what the
+coroutine may assume the environment did while it was suspended, and the *guarantee*
+is what the coroutine promises at each `yield`.
+
+## Resumable procedures as coroutines
+
+A resumable procedure (or coroutine) is declared with the `coroutine` keyword, and its
+body may contain `yield`. Two optional channel clauses declare the values that flow
+across a suspension:
+`yields (x: T)` is the outgoing channel (the value handed out at a `yield`), and
+`resumes (y: U)` is the incoming channel (the value sent back in on the next resume).
+To yield a value, assign it to the `yields` binding and then `yield`; `yield` itself
+is nullary.
+
+```laurel
+coroutine counter(n: int) yields (x: int)
+{
+  var i: int := 0;
+  while (i < n)
+  {
+    x := i;   // put the value on the outgoing channel
+    yield;    // suspend; the caller sees x
+    i := i + 1
+  }
+};
+```
+
+## Driving a coroutine: `resume` and `has_next`
+
+A caller spawns a coroutine by calling its name, then advances it one suspension at a
+time with `resume`. In expression position, `resume(co)` evaluates to the value the
+coroutine just put on its `yields` channel; `resume(co, v)` additionally sends `v` in
+on the `resumes` channel. `has_next(co)` reports whether the coroutine has more steps
+to run, so a driver loop reads:
+
+```laurel
+procedure drive()
+  opaque
+{
+  var co: counter := counter();
+  while (has_next(co))
+  {
+    resume(co)
+  }
+};
+```
+
+## Rely/guarantee contracts
+
+Because a coroutine is suspended across a `yield`, the environment may act in between.
+The `relies` and `guarantees` clauses specify that boundary, and are checked at every
+`yield`:
+
+- A `guarantees G` clause states a property the coroutine establishes at each `yield`
+  (and when it halts). It is asserted there.
+- A `relies R` clause states a property the coroutine may assume the environment
+  maintained across the suspension. It is assumed on entry and after each `yield`.
+
+Both may be two-state: `old(e)` inside a clause refers to the state at the start of
+the coroutine's current step. The example below verifies: the coroutine relies on the
+environment never decreasing the shared counter, and guarantees that its own step
+strictly increases it.
+
+:::example "A monotonically increasing counter"
+```laurel
+composite Cell { var x: int }
+
+coroutine incMonotonic(s: Cell)
+  requires s#x == 0
+  relies old(s#x) <= s#x
+  guarantees old(s#x) < s#x
+  modifies s
+{
+  while (true)
+      invariant oldGuarantee(s#x) <= s#x
+  {
+    s#x := s#x + 1;
+    yield
+  }
+};
+```
+:::
+
+Inside a loop that contains a `yield`, the per-yield guarantee is not threaded through
+the loop head automatically: write the loop invariant explicitly using
+`oldGuarantee(e)`, which refers to the state at the start of the current step (as
+`old(e)` does inside a `guarantees` clause). The invariant above restates the
+guarantee's baseline so the next iteration's `yield` can discharge it.
+
+## Planned: `async` / `await`
+
+The examples above are supported today. The `async`/`await` surface syntax that source
+languages use is planned, and desugars onto the same coroutine primitives: `await g(y)`
+drives `g` to completion and takes its result. The Python program
+
+```
+# Python
+async def fetch_page(cursor):
+    await asyncio.sleep(0.1)
+    if cursor >= 3:
+        return None
+    return cursor + 1
+
+async def download_all():
+    cursor = 0
+    while cursor is not None:
+        cursor = await fetch_page(cursor)
+```
+
+is intended to be written with coroutine `return` values and `await` as below. This
+does not compile yet: a coroutine `return` value and the `await` sugar are planned (see
+the Designer Guide's concurrency section). The block is shown to illustrate the
+mapping, not as working syntax.
+
+```laurel +unchecked
+coroutine fetch_page(cursor: int): int
+{
+  yield;                          // models `await asyncio.sleep(0.1)`
+  if cursor >= 3 then {
+    return -1                     // models `return None`
+  } else {
+    return cursor + 1
+  }
+};
+
+coroutine download_all(): int
+{
+  var cursor: int := 0;
+  while (cursor >= 0) {
+    cursor := await fetch_page(cursor)   // drives fetch_page to completion
+  };
+  return cursor
+};
+```
 
 # Exceptions
 

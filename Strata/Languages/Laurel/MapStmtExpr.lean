@@ -98,6 +98,12 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
       (← mapStmtExprUsedM f false body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
+  | .Yield => pure ⟨.Yield, source⟩
+  | .Resume target v =>
+    pure ⟨.Resume (← mapStmtExprUsedM f true target)
+      (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
+  | .HasNext target =>
+    pure ⟨.HasNext (← mapStmtExprUsedM f true target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
       let ⟨vv, vs⟩ := v
@@ -134,8 +140,12 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
       (← mapStmtExprUsedM f true body), source⟩
   | .Assigned name =>
     pure ⟨.Assigned (← mapStmtExprUsedM f false name), source⟩
-  | .Old value =>
-    pure ⟨.Old (← mapStmtExprUsedM f true value), source⟩
+  | .Old value label? =>
+    pure ⟨.Old (← mapStmtExprUsedM f true value) label?, source⟩
+  | .OldGuarantee value =>
+    pure ⟨.OldGuarantee (← mapStmtExprUsedM f true value), source⟩
+  | .OldRelies value =>
+    pure ⟨.OldRelies (← mapStmtExprUsedM f true value), source⟩
   | .Fresh value =>
     pure ⟨.Fresh (← mapStmtExprUsedM f true value), source⟩
   | .Assert cond summary =>
@@ -163,7 +173,8 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure expr
+  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Snapshot _ => pure expr
   f resultUsed rebuilt
 termination_by sizeOf expr
 decreasing_by
@@ -186,6 +197,39 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
 /-- Pure bottom-up traversal of `StmtExprMd`. -/
 def mapStmtExpr (f : StmtExprMd → StmtExprMd) (expr : StmtExprMd) : StmtExprMd :=
   (mapStmtExprM (m := Id) f expr)
+
+/-- Prepend `stmts` to `body`, flattening an outer `Block` so the prepended
+    statements become siblings of the body statements rather than a nested block.
+    A no-op when `stmts` is empty. -/
+def prependStmts (stmts : List StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
+  if stmts.isEmpty then body else
+  match body.val with
+  | .Block bodyStmts label => { body with val := .Block (stmts ++ bodyStmts) label }
+  | _ => { body with val := .Block (stmts ++ [body]) none }
+
+/-- Which coroutine-specific two-state form a plain `old` should become when
+    retagged: the last-suspension heap (rely, `H1`) or the start-of-step /
+    resume-entry heap (guarantee, `H2`). -/
+inductive OldKind where | OldRelies | OldGuarantee
+
+/-- Retag every plain `Old(e)` inside `expr` as the coroutine-specific
+    `OldRelies(e)` / `OldGuarantee(e)` form, so the user can keep writing
+    `old(...)` in a `relies` / `guarantees` clause (or a coroutine body
+    invariant / assert) and get the right two-state meaning downstream.
+
+    Shared by the two coroutine-lowering paths (caller-path resume contracts
+    and the inline yield rewrite); both retag the *same* way, so the single
+    definition lives here to keep them from drifting. -/
+def retagOldAs (kind : OldKind) (e : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun n =>
+    match n.val with
+    -- Retagging runs before any labeled `Old` is introduced (that lowering
+    -- happens later), so a plain `old` here never carries a label.
+    | .Old inner _ =>
+      match kind with
+      | .OldRelies => { n with val := .OldRelies inner }
+      | .OldGuarantee => { n with val := .OldGuarantee inner }
+    | _ => n) e
 
 /--
 Bottom-up monadic traversal where `post` returns a list of statements, and both
@@ -230,6 +274,12 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
         (collapse (← go false body) body.source) postTest, source⟩
     | .Return v =>
       pure ⟨.Return (← v.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
+    | .Yield => pure e
+    | .Resume target v =>
+      pure ⟨.Resume (collapse (← go true target) target.source)
+        (← v.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
+    | .HasNext target =>
+      pure ⟨.HasNext (collapse (← go true target) target.source), source⟩
     | .Assign targets value =>
       let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
         let ⟨vv, vs⟩ := v
@@ -267,7 +317,9 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
         (collapse (← go true body) body.source), source⟩
     | .Assigned name => pure ⟨.Assigned (collapse (← go false name) name.source), source⟩
-    | .Old value => pure ⟨.Old (collapse (← go true value) value.source), source⟩
+    | .Old value label? => pure ⟨.Old (collapse (← go true value) value.source) label?, source⟩
+    | .OldGuarantee value => pure ⟨.OldGuarantee (collapse (← go true value) value.source), source⟩
+    | .OldRelies value => pure ⟨.OldRelies (collapse (← go true value) value.source), source⟩
     | .Fresh value => pure ⟨.Fresh (collapse (← go true value) value.source), source⟩
     | .Assert cond summary =>
       pure ⟨.Assert (collapse (← go true cond) cond.source) summary, source⟩
@@ -284,7 +336,8 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
     | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-    | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure e
+    | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+    | .Snapshot _ => pure e
     post used rebuilt
   termination_by sizeOf e
   decreasing_by map_stmt_expr_decreasing e
@@ -319,6 +372,12 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       (← mapStmtExprPrePostM pre post body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .Yield => pure expr
+  | .Resume target v =>
+    pure ⟨.Resume (← mapStmtExprPrePostM pre post target)
+      (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .HasNext target =>
+    pure ⟨.HasNext (← mapStmtExprPrePostM pre post target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
       let ⟨vv, vs⟩ := v
@@ -358,8 +417,12 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       (← mapStmtExprPrePostM pre post body), source⟩
   | .Assigned name =>
     pure ⟨.Assigned (← mapStmtExprPrePostM pre post name), source⟩
-  | .Old value =>
-    pure ⟨.Old (← mapStmtExprPrePostM pre post value), source⟩
+  | .Old value label? =>
+    pure ⟨.Old (← mapStmtExprPrePostM pre post value) label?, source⟩
+  | .OldGuarantee value =>
+    pure ⟨.OldGuarantee (← mapStmtExprPrePostM pre post value), source⟩
+  | .OldRelies value =>
+    pure ⟨.OldRelies (← mapStmtExprPrePostM pre post value), source⟩
   | .Fresh value =>
     pure ⟨.Fresh (← mapStmtExprPrePostM pre post value), source⟩
   | .Assert cond summary =>
@@ -384,7 +447,8 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure expr
+  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Snapshot _ => pure expr
   post rebuilt
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
@@ -458,7 +522,11 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f body
   | .Assigned name =>
     foldStmtExprM f name
-  | .Old value =>
+  | .Old value _ =>
+    foldStmtExprM f value
+  | .OldGuarantee value =>
+    foldStmtExprM f value
+  | .OldRelies value =>
     foldStmtExprM f value
   | .Fresh value =>
     foldStmtExprM f value
@@ -478,7 +546,14 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f value; foldStmtExprM f proof
   | .ContractOf _ func =>
     foldStmtExprM f func
+  | .Resume target v =>
+    foldStmtExprM f target
+    v.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .HasNext target =>
+    foldStmtExprM f target
   -- Leaves: no StmtExprMd children.
+  | .Yield
+  | .Snapshot _
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
 termination_by sizeOf expr
@@ -515,16 +590,20 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .External => return proc
 
 /-- Every expression-bearing specification field outside the procedure body, in
-    declaration order: preconditions, decreases, invoke-on trigger, axioms, then the
-    `throwsOn` behavior cases.
+    declaration order: preconditions, coroutine relies/guarantees, decreases,
+    invoke-on trigger, axioms, then the `throwsOn` behavior cases. The coroutine
+    clauses (`relies`/`guarantees`, empty for a regular procedure) are included
+    so generic traversals such as heap-effect analysis see them without a
+    coroutine-specific special case.
 
-    A case contributes all three of its expression-bearing parts — its guard, its
-    postconditions, and its frame targets — because a pass that walked only some of
-    them would silently miss the rest: `FilterPrelude` would delete a prelude name
-    reachable only from the part it skipped. -/
+    A `throwsOn` case contributes all three of its expression-bearing parts — its
+    guard, its postconditions, and its frame targets — because a pass that walked
+    only some of them would silently miss the rest: `FilterPrelude` would delete a
+    prelude name reachable only from the part it skipped. -/
 def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
-  proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
-    proc.invokeOn.toList ++ proc.axioms ++
+  proc.preconditions.map (·.condition) ++
+    proc.relies.map (·.condition) ++ proc.guarantees.map (·.condition) ++
+    proc.decreases.toList ++ proc.invokeOn.toList ++ proc.axioms ++
     proc.throwsOn.flatMap (fun blk =>
       blk.guard :: blk.postconditions.map (·.condition) ++ blk.modifies)
 
@@ -569,11 +648,30 @@ def mapProcedureSpecificationsWithM [Monad m]
         postconditions := ← blk.postconditions.mapM (·.mapM mapCondition)
         modifies := ← blk.modifies.mapM mapValue }) }
 
+/-- Like `mapProcedureSpecificationsWithM`, but also maps the coroutine
+    `relies`/`guarantees` clauses (empty for a regular procedure) with
+    `mapCondition`. Kept separate so the plain version's bind shape — which
+    proofs in `ResolutionProps` mirror — is unchanged. -/
+def mapProcedureSpecificationsWithCoroutineM [Monad m]
+    (mapCondition mapValue : StmtExprMd → m StmtExprMd)
+    (proc : Procedure) : m Procedure := do
+  let proc ← mapProcedureSpecificationsWithM mapCondition mapValue proc
+  let relies' ← proc.relies.mapM (·.mapM mapCondition)
+  let guarantees' ← proc.guarantees.mapM (·.mapM mapCondition)
+  return { proc with
+    contracts := proc.contracts.withClauses (relies := relies') (guarantees := guarantees') }
+
 /-- Apply one monadic transformation to every expression-bearing specification
     field outside the procedure body. -/
 def mapProcedureSpecificationsM [Monad m] (f : StmtExprMd → m StmtExprMd)
     (proc : Procedure) : m Procedure :=
   mapProcedureSpecificationsWithM f f proc
+
+/-- `mapProcedureSpecificationsM` that also maps the coroutine
+    `relies`/`guarantees` clauses. -/
+def mapProcedureSpecificationsWithCoroutineM' [Monad m] (f : StmtExprMd → m StmtExprMd)
+    (proc : Procedure) : m Procedure :=
+  mapProcedureSpecificationsWithCoroutineM f f proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
     (body, preconditions, decreases, invokeOn, and axioms). -/
@@ -809,11 +907,17 @@ private def covCtorKey : StmtExpr → Nat
   | .LiteralBv ..     => 30
   | .IncrDecr ..      => 31
   | .CompoundAssign .. => 32
-  | .Throw ..         => 33
-  | .Try ..           => 34
+  | .Yield            => 33
+  | .Resume ..        => 34
+  | .HasNext ..       => 35
+  | .OldGuarantee ..  => 36
+  | .OldRelies ..     => 37
+  | .Throw ..         => 38
+  | .Try ..           => 39
+  | .Snapshot ..      => 40
 
 /-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
-private def covCtorCount : Nat := 35
+private def covCtorCount : Nat := 41
 
 /-- One representative per constructor, paired with the number of sentinels it
     places in `StmtExprMd` child positions. -/
@@ -854,11 +958,18 @@ private def covProbes : List (StmtExprMd × Nat) := [
   -- would pass vacuously.
   (covMd (.IncrDecr .Pre .Incr (covVmd (.Field covS (covId "x")))), 1),
   (covMd (.CompoundAssign .Add (covVmd (.Field covS (covId "x"))) covS), 2),
+  (covMd .Yield, 0),
+  -- `Resume target (some value)` places two sentinels (both `StmtExprMd` children).
+  (covMd (.Resume covS (some covS)), 2),
+  (covMd (.HasNext covS), 1),
+  (covMd (.OldGuarantee covS), 1),
+  (covMd (.OldRelies covS), 1),
   (covMd (.Throw covS), 1),
   -- A guarded `catch` clause and a `finally` arm, so the probe covers every
   -- `StmtExprMd` position a `try` can carry: body, guard, handler, finally. A
   -- probe without them would leave those arms unchecked.
-  (covMd (.Try covS [{ binding := covId "e", predicate := some covS, body := covS }] (some covS)), 4)
+  (covMd (.Try covS [{ binding := covId "e", predicate := some covS, body := covS }] (some covS)), 4),
+  (covMd (.Snapshot (covId "h")), 0)
 ]
 
 /-- How many sentinels `mapStmtExprM` actually reaches when traversing `e`. -/

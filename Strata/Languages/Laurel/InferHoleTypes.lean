@@ -286,7 +286,17 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
   | .Try .. => return expr
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr outputType outputType)), source⟩
-  | .Old v => return ⟨.Old (← inferExpr v expectedType outputType), source⟩
+  | .Old v label? => return ⟨.Old (← inferExpr v expectedType outputType) label?, source⟩
+  -- Coroutine two-state `old` forms wrap a value like `.Old`; on both lowering
+  -- paths they are eliminated before this pass, but the match must stay total.
+  | .OldGuarantee v => return ⟨.OldGuarantee (← inferExpr v expectedType outputType), source⟩
+  | .OldRelies v => return ⟨.OldRelies (← inferExpr v expectedType outputType), source⟩
+  | .Resume target value =>
+      let value' ← match value with
+        | some v => pure (some (← inferExpr v ⟨ .Unknown, source ⟩ outputType))
+        | none => pure none
+      return ⟨.Resume (← inferExpr target ⟨ .Unknown, source ⟩ outputType) value', source⟩
+  | .HasNext target => return ⟨.HasNext (← inferExpr target ⟨ .Unknown, source ⟩ outputType), source⟩
   | .Fresh v => return ⟨.Fresh (← inferExpr v ⟨ .Unknown, source ⟩ outputType), source⟩
   | .Assigned n => return ⟨.Assigned (← inferExpr n ⟨ .Unknown, source ⟩ outputType), source⟩
   | .ProveBy v p => return ⟨.ProveBy (← inferExpr v expectedType outputType) (← inferExpr p ⟨ .Unknown, source ⟩ outputType), source⟩
@@ -298,7 +308,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
   | .Exit _ | .Return none | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
-  | .New .. | .This | .Abstract | .All => return expr
+  | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf

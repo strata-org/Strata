@@ -1198,3 +1198,142 @@ procedure multiAssignScalarRhs() opaque {
   assert a
 };
 #end
+
+/-! ## Coroutine channel type checks
+
+`yield` synthesizes the enclosing coroutine's `resumes` type (the value sent
+back in) and `resume(co, v)` checks `v` against the target coroutine's `resumes`
+binding while synthesizing its `yields` type (the value handed back). Both are
+type-checked at initial resolution, so a mismatch is a clean user error rather
+than a `StrataBug` from the post-`CoroutineElaboration` re-resolution. -/
+
+/-! ### `resume(co, v)` checks the sent value against the target's `resumes`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine echo() yields (x: int) resumes (y: int)
+{
+  x := 0; y := yield; x := y
+};
+procedure driver() opaque {
+  var co: echo := echo();
+  resume(co, true)
+//           ^^^^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! ### Sending a value to a coroutine with no `resumes` is rejected. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine prod() yields (x: int)
+{
+  x := 0; yield
+};
+procedure driver() opaque {
+  var co: prod := prod();
+  resume(co, 5)
+//           ^ error: coroutine declares no `resumes` binding to receive a value
+};
+#end
+
+/-! ### A matching `resume` value produces no diagnostics. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine echo() yields (x: int) resumes (y: int)
+{
+  x := 0; y := yield; x := y
+};
+procedure driver() opaque {
+  var co: echo := echo();
+  resume(co, 7)
+};
+#end
+
+/-! ### `var z := resume(co)` infers `z` from the target's `yields` type,
+so a later bool use of the int result is rejected. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine prod() yields (x: int)
+{
+  x := 0; yield
+};
+procedure driver() opaque {
+  var co: prod := prod();
+  var z := resume(co);
+  assert z
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### `var w := yield` infers `w` from the enclosing coroutine's `resumes`
+type; a bool use of the int binding is rejected. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine echo() yields (x: int) resumes (y: int)
+{
+  x := 0;
+  var w := yield;
+  assert w
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### `resume` on a non-coroutine target is rejected. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure driver() opaque {
+  var n: int := 0;
+  var z := resume(n)
+//                ^ error: resume target must be a coroutine, got 'int'
+};
+#end
+
+/-! ### `oldGuarantee` / `oldRelies` are coroutine-only: a use in a regular
+procedure is a clean resolution error, not a `StrataBug` at Core translation. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure driver() opaque {
+  var n: int := 0;
+  assert oldGuarantee(n) == n
+//       ^^^^^^^^^^^^^^^ error: 'oldGuarantee' is only valid inside a coroutine body
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure driver() opaque {
+  var n: int := 0;
+  assert oldRelies(n) == n
+//       ^^^^^^^^^^^^ error: 'oldRelies' is only valid inside a coroutine body
+};
+#end
+
+/-! ### Inside a coroutine body, `oldGuarantee` is accepted (no error). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+coroutine counter() yields (x: int)
+{
+  x := 0;
+  while (true)
+    invariant oldGuarantee(x) <= x
+  {
+    x := x + 1; yield
+  }
+};
+#end

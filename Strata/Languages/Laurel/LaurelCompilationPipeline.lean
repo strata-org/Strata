@@ -31,6 +31,8 @@ import Strata.Languages.Laurel.LoopInvariantWellFormedness
 import Strata.Languages.Laurel.UniqueOverloadNames
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
+import Strata.Languages.Laurel.CoroutineElaboration
+import Strata.Languages.Laurel.YieldElim
 import Strata.Languages.Laurel.TypeAliasElim
 import Strata.Languages.Laurel.EliminateExceptions
 import Strata.Languages.Laurel.MonomorphizeComposites
@@ -106,8 +108,10 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × P
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
-  -- Polymorphism: lift instance procedures, then monomorphize, BEFORE everything else
-  -- (the lift must precede monomorphization, and both must precede heap parameterization).
+  -- Coroutine elaboration emits instance procedures, so it must precede
+  -- instance lifting. Polymorphism then requires lifting and alias elimination
+  -- before monomorphization.
+  coroutineElaborationPass,
   liftInstanceProceduresPass,
   -- TypeAliasElim runs BEFORE monomorphization: an alias of a generic-composite instantiation
   -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
@@ -120,7 +124,7 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateIncrDecrAndCompoundAssignPass,
   constrainedTypeElimPass,
   mergeAndLiftReturnsPass,
-  -- `liftInstanceProceduresPass` runs at position 0 (it must precede monomorphization);
+  -- `liftInstanceProceduresPass` runs before monomorphization;
   -- that also places it before `eliminateValueInReturnsPass`, as value-returning
   -- instance methods require, so no entry is needed here.
   -- Note: the exception contract checks (catch-or-declare, plus the
@@ -135,6 +139,7 @@ def laurelPipeline : Array LoweringPass := #[
   -- `proc.inputs` for per-call-site instantiation inference) and before `heapParameterizationPass`
   -- (globals layered on already-monomorphized concrete procs; heap stays the final hidden input).
   globalParameterizationPass,
+  yieldElimPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -348,12 +353,13 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   -- Sanity check: `LiftInstanceProcedures` should have cleared every
   -- composite's `instanceProcedures` list.
   let mut passDiags := passDiags
-  for td in program.types do
-    if let .Composite ct := td then
-      for proc in ct.instanceProcedures do
-        passDiags := passDiags ++ [diagnosticFromSource proc.name.source
-          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
-          MessageKind.strataBug]
+  unless passDiags.any (·.kind != .warning) do
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          passDiags := passDiags ++ [diagnosticFromSource proc.name.source
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
+            MessageKind.strataBug]
 
   if passDiags.any (·.kind != .warning) then
     return (none, passDiags, program, stats)

@@ -259,7 +259,13 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   | .Quantifier _ _ trigger body =>
     trigger.elim [] (collectStmtExprList g) ++ collectStmtExprList g body
   | .Assigned name => collectStmtExprList g name
-  | .Old value => collectStmtExprList g value
+  | .Old value _ => collectStmtExprList g value
+  | .OldGuarantee value => collectStmtExprList g value
+  | .OldRelies value => collectStmtExprList g value
+  | .Resume target v =>
+    collectStmtExprList g target ++ v.elim [] (collectStmtExprList g)
+  | .HasNext target => collectStmtExprList g target
+  -- `Snapshot` is a leaf (falls to `_ => []`), mirroring `foldStmtExprM`.
   | .Fresh value => collectStmtExprList g value
   | .Assert cond _ => collectStmtExprList g cond
   | .Assume cond => collectStmtExprList g cond
@@ -679,13 +685,22 @@ theorem resolveProcedure_clean (proc : Procedure) :
     refine postM_bind_any fun typeArgs' => ?_
     refine postM_bind_any fun inputs' => ?_
     refine postM_bind_any fun outputs' => ?_
+    -- Coroutine channel bindings (`yields`/`resumes`) are resolved before the
+    -- clauses; they are not tracked by `CleanProcFields`, so skip them.
+    refine postM_bind_any fun yields' => ?_
+    refine postM_bind_any fun resumes' => ?_
     refine postM_bind (postM_mapM _ _ (fun c _ =>
         condition_mapM_clean c _
           (fun e => masterCheck e { val := .TBool, source := e.source })))
       fun pres' hpres => ?_
+    -- Coroutine `relies`/`guarantees` clauses (empty for a regular procedure)
+    -- are also untracked by `CleanProcFields`, so skip them too.
+    refine postM_bind_any fun relies' => ?_
+    refine postM_bind_any fun guarantees' => ?_
     refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
       fun dec' hdec => ?_
     refine postM_bind_any fun savedAnswer => ?_
+    refine postM_bind_any fun savedResume => ?_
     refine postM_bind_any fun _ => ?_
     refine postM_bind (resolveBody_clean masterSynth masterCheck _) fun body' hbody => ?_
     refine postM_bind_any fun _ => ?_

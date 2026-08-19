@@ -62,9 +62,7 @@ namespace Strata.Laurel
 -- Heap-effect analysis (`AnalysisResult`, `analyzeProc`, `computeReadsHeap`,
 -- `computeWritesHeap`) now lives in `Strata.Languages.Laurel.HeapAnalysis`, so
 -- it can be shared with `Resolution` (which uses it to diagnose no-op `old(...)`)
--- without an import cycle. The exceptional-contract heap effects (a case's guard,
--- postconditions and frame) and the `Throw`/`Try` expression cases are
--- handled there.
+-- without an import cycle.
 
 structure TransformState where
   heapReaders : Std.HashSet Nat
@@ -74,6 +72,12 @@ structure TransformState where
   usedBoxConstructors : List DatatypeConstructor := []
 
 @[expose] abbrev TransformM := ExceptT String (StateM TransformState)
+
+/-- The name of the heap-model datatype this pass introduces (`Heap`). -/
+def heapTypeName : Identifier := "Heap"
+
+/-- The `Heap` type as a `HighTypeMd`, at the given source. -/
+private def heapType (source : FileRange) : HighTypeMd := ⟨.UserDefined heapTypeName, source⟩
 
 /-- Check whether a UserDefined type name refers to a Datatype (vs Composite) in the model -/
 private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
@@ -476,7 +480,27 @@ where
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurseOne t
       return [⟨.Quantifier mode p trigger' (← recurseOne b), source⟩]
     | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
-    | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
+    -- Native pre-state `old`: heap-transform `v`; `pushOldInward` later
+    -- distributes the `Old` onto the inout `$heap`.
+    | .Old v none => return [⟨ .Old (← recurseOne v) none, source ⟩]
+    -- Labeled `old`: read `v` against snapshot `h` instead of the live `$heap`.
+    -- Heap-transform `v` (so `s#x` becomes `readField($heap, s, x)`), then substitute
+    -- `h` for `$heap` (yielding `readField(h, s, x)`).
+    | .Old v (some h) =>
+        let v' ← recurseOne v
+        return [mapStmtExpr (fun n => match n.val with
+          | .Var (.Local x) => if x.text == heapVar.text then { n with val := .Var (.Local h) } else n
+          | _ => n) v']
+    -- The coroutine two-state markers are lowered to labeled `Old` / `Snapshot`
+    | .OldGuarantee _ =>
+        throw "oldGuarantee(...) reached heap parameterization; it should have been \
+               lowered to a labeled `Old` by YieldElim"
+    | .OldRelies _ =>
+        throw "oldRelies(...) reached heap parameterization; it should have been \
+               lowered to a labeled `Old` by YieldElim"
+    -- Capture the live heap into snapshot local `h`: `h := $heap`.
+    | .Snapshot h =>
+        return [⟨ .Assign [mkVarMd (.Local h) source] (mkMd (.Var (.Local heapVar)) source), source ⟩]
     | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
     | .Assert condExpr summary =>
         return [⟨ .Assert (← recurseOne condExpr) summary, source ⟩]
@@ -504,10 +528,15 @@ where
       simp_all
       omega)
 
-/-- Check if `p` is a composite (heap-reference) parameter. -/
+/-- Check if `p` is a composite (heap-reference) parameter. A `Heap`-typed
+    parameter (a snapshot heap threaded in as an explicit parameter by an
+    earlier pass) is not a heap reference: `Heap` is the heap-model datatype
+    heap-param itself introduces, so it is absent from the pre-pass model and
+    would otherwise be misclassified as composite — yielding a bogus
+    `Composite..ref!` well-formedness precondition over a `Heap` value. -/
 private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
   match p.type.val with
-  | .UserDefined name => !isDatatype model name
+  | .UserDefined name => name.text != heapTypeName.text && !isDatatype model name
   | _ => false
 
 /-! Heap well-formedness conditions below are emitted `free`:
@@ -573,6 +602,29 @@ def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
       let target' ← heapTransformExpr heapName model target
       return { entry with val := .Var (.Field target' fieldName) }
   | _ => heapTransformExpr heapName model entry
+
+/-- Distinct snapshot-heap locals named by a `Snapshot` or a labeled `Old` in
+    `e`, in first-occurrence order. `HeapParameterization` declares each as a
+    `Heap` local; see `snapshotLocalDecls`. -/
+private def collectSnapshotLocals (e : StmtExprMd) : List Identifier :=
+  -- Dedup by name text via a `HashSet` (O(1) membership) while preserving
+  -- first-occurrence order: prepend to `acc`, then reverse once at the end.
+  let (_, acc) := foldStmtExpr (β := Std.HashSet String × List Identifier)
+    (fun n (seen, acc) => match n.val with
+      | .Snapshot h | .Old _ (some h) =>
+        if seen.contains h.text then (seen, acc) else (seen.insert h.text, h :: acc)
+      | _ => (seen, acc)) (∅, []) e
+  acc.reverse
+
+/-- `var h : Heap := $heap` declarations for each snapshot local in `impl` that is
+    not already a parameter -/
+private def snapshotLocalDecls (heapName : Identifier) (params : List Identifier)
+    (impl : StmtExprMd) : List StmtExprMd :=
+  let heapTy : HighTypeMd := heapType impl.source
+  (collectSnapshotLocals impl).filterMap fun h =>
+    if params.any (·.text == h.text) then none
+    else some ⟨.Assign [⟨.Declare ⟨h, some heapTy⟩, impl.source⟩]
+                       ⟨.Var (.Local heapName), impl.source⟩, impl.source⟩
 
 /-- Lower ONLY `AsType` nodes (via the shared `lowerAsTypeNode`), recursing structurally
     and leaving every other node untouched. This is the heap-INDEPENDENT counterpart to
@@ -651,7 +703,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- heap is sampled at call sites (see the module docs). In the outputs it
     -- follows all pre-existing inouts (globals and explicit inout parameters)
     -- and precedes output-only values, matching Core's receiver order.
-    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
+    let heapParam : Parameter := { name := heapName, type := heapType proc.name.source }
 
     let inputs' := proc.inputs ++ [heapParam]
     let outputs' := outputsWithHeap proc heapParam
@@ -676,8 +728,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
+                -- Collect snapshot locals from the *original* impl before the
+                -- transform erases the `Snapshot`/labeled-`Old` nodes, then
+                -- declare them at the body top (`Heap` did not exist earlier).
+                let decls := snapshotLocalDecls heapName (proc.inputs.map (·.name)) implExpr
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
-                pure (some implExpr')
+                pure (some (prependStmts decls implExpr'))
             | none => pure none
           -- Targets keep field refs symbolic (structural matching in `ModifiesClauses`);
           -- a guard is an ordinary pre-state predicate and transforms like one.
@@ -723,7 +779,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure only reads the heap - add $heap as input only.
     -- Use the prelude `Heap` datatype for the parameter type (see the
     -- writes-heap branch above for rationale).
-    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
+    let heapParam : Parameter := { name := heapName, type := heapType proc.name.source }
     let inputs' := proc.inputs ++ [heapParam]
 
     -- Specifications were heap-transformed at the top of this function; prepend
@@ -777,6 +833,18 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
   let procs' ← match result with
     | .ok ps => pure ps
     | .error e => .error s!"heapParameterization: {e}"
+  -- No `Snapshot` or labeled `Old` may survive: both lower only in the
+  -- writes-heap branch, so a residual node means a snapshot reached a non-writer.
+  let residualSnapshots : List FileRange :=
+    (procs'.forM (m := StateM (List FileRange)) (fun p =>
+      foldProcedureExprsM (fun e => do
+        match e.val with
+        | .Snapshot _ | .Old _ (some _) => modify (e.source :: ·)
+        | _ => pure ()) p) |>.run []).2
+  unless residualSnapshots.isEmpty do
+    .error s!"heapParameterization: {residualSnapshots.length} Snapshot/labeled-old \
+              node(s) survived the pass — a snapshot reached a procedure not classified \
+              as heap-writing, so the snapshot local was never declared"
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
     match td with

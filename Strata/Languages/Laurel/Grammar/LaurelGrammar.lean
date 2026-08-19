@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 module
 -- Laurel dialect definition, loaded from LaurelGrammar.st.
 -- The grammar supports:
@@ -26,6 +25,8 @@ module
 --     it prints without parentheses); and file-scope global declarations.
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. the token below) to trigger a recompile after modifying LaurelGrammar.st.
+-- Rebuild trigger token: coroutines+exceptions merge (assignTargetDecl-prec0,
+-- throwsOn-blocks).
 -- Rebuild trigger token: guarded-modifies-groups
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init

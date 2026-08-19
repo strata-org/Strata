@@ -633,7 +633,14 @@ def translateExpr (expr : StmtExprMd)
   | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
   | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
   | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
-  | .Old value =>
+  | .Old _ (some label) =>
+      -- A labeled `old` is a snapshot read that `HeapParameterization` lowers to
+      -- a plain (unlabeled) `old` against the snapshot heap. Reaching Core with
+      -- the label still present means that pass did not run or missed a node.
+      emitExprDiagnostic $ diagnosticFromSource expr.source
+        s!"old(...) labeled '{label.text}' should have been lowered by heap parameterization"
+        MessageKind.strataBug
+  | .Old value none =>
       -- `pushOldInward` is expected to leave every `Old` wrapping `Var (Local n)`
       -- with `n` an inout parameter of the enclosing procedure. We do not rely on
       -- a static proof of this; the guarantee is enforced at translate time: if
@@ -672,6 +679,21 @@ def translateExpr (expr : StmtExprMd)
   -- reach here (and they type as `TVoid`, never appearing in value position).
   | .Throw _ => emitExprDiagnostic $ diagnosticFromSource expr.source "throw should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
   | .Try _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "try/catch should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
+  -- Coroutine constructs are removed by `CoroutineElaboration` before Core
+  -- translation; reaching here means that pass did not run or missed a node.
+  | .Yield => emitExprDiagnostic $ diagnosticFromSource expr.source "yield should have been eliminated by coroutine elaboration" MessageKind.strataBug
+  | .Resume _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "resume should have been eliminated by coroutine elaboration" MessageKind.strataBug
+  | .HasNext _ => emitExprDiagnostic $ diagnosticFromSource expr.source "has_next should have been eliminated by coroutine elaboration" MessageKind.strataBug
+  -- These are surface forms only valid inside a coroutine body; the
+  -- YieldElim pass substitutes them with snapshot-variable reads.
+  -- Reaching Core translation means the pass didn't run (e.g. the user
+  -- used `oldGuarantee` in a regular procedure) or the substitution
+  -- missed a node.
+  | .OldGuarantee _ => emitExprDiagnostic $ diagnosticFromSource expr.source "oldGuarantee(...) is only valid inside a coroutine body; reaching Core translation indicates either a usage outside `verifyCoroutine := true` or a YieldElim pass bug" MessageKind.strataBug
+  | .OldRelies _ => emitExprDiagnostic $ diagnosticFromSource expr.source "oldRelies(...) should have been rewritten to a snapshot-heap read before Core translation; reaching here indicates a coroutine-relies pass bug" MessageKind.strataBug
+  -- Snapshot artifacts are consumed by HeapParameterization; reaching here means
+  -- that pass did not run or missed a node.
+  | .Snapshot _ => emitExprDiagnostic $ diagnosticFromSource expr.source "Snapshot should have been lowered by heap parameterization" MessageKind.strataBug
   termination_by expr
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)

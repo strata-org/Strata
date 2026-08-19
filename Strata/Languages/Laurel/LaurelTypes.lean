@@ -27,15 +27,43 @@ def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifie
       | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+    -- A coroutine call (`c(args)`) spawns an instance of the coroutine type;
+    -- elaboration later retargets this to the `<c>State` composite.
+    | .coroutineType proc => ⟨ .UserDefined proc.name, source ⟩
     | .unresolved source => { val := HighType.Unknown, source := source }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
       default
 
+/-- Type of `resume(target)` — the target coroutine's first `yields` binding.
+    `targetTy` types as `.UserDefined <coroutine>`, resolved via the model like
+    `getCallType`. `TVoid` when it yields nothing. `Unknown` for an unresolved
+    ref or a gradual `Unknown` target (`Synth.resume` already diagnosed / left
+    those); a target that resolves to any other concrete kind is a resolver-
+    invariant violation, reported as a BUG like `getCallType`. -/
+def getResumeType (source : FileRange) (model : SemanticModel) (targetTy : HighTypeMd) : HighTypeMd :=
+  match targetTy.val with
+  | .Unknown => ⟨ .Unknown, source ⟩
+  | .UserDefined ref =>
+    match model.get ref with
+    | .coroutineType proc => proc.yields.head?.map (·.type) |>.getD ⟨ .TVoid, source ⟩
+    | .unresolved source => ⟨ .Unknown, source ⟩
+    | astNode =>
+      dbg_trace s!"BUG: resume target {ref} not a coroutine but a {repr astNode}"
+      default
+  | _ =>
+    dbg_trace s!"BUG: resume target is not an object type but a {repr targetTy.val}"
+    default
+
 /--
 Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
 No inference is performed — all types are determined by annotations on parameters
 and variable declarations.
+
+A bare `yield` types as `Unknown` here: its type is the enclosing coroutine's
+first `resumes` binding, and this utility has no enclosing-procedure context.
+Resolution types `yield` from `Context.resumeType` instead, so nothing needs it
+from here.
 -/
 def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match _: expr with
@@ -98,7 +126,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Verification specific
   | .Quantifier _ _ _ _ => ⟨ .TBool, source ⟩
   | .Assigned _ => ⟨ .TBool, source ⟩
-  | .Old v => computeExprType model v
+  | .Old v _ => computeExprType model v
+  | .OldGuarantee v => computeExprType model v
+  | .OldRelies v => computeExprType model v
   | .Fresh _ => ⟨ .TBool, source ⟩
   -- Proof related
   | .ProveBy v _ => computeExprType model v
@@ -107,6 +137,13 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Abstract =>default -- TODO: implement
   | .All => default -- TODO: implement
   | .Hole _ typeOption => typeOption.getD  ⟨ HighType.Unknown, source ⟩
+  -- `resume(t)` is `t`'s first `yields` binding (see `getResumeType`); `yield`
+  -- would be the enclosing coroutine's first `resumes` binding (see above).
+  | .Yield => ⟨ .Unknown, source ⟩
+  | .Resume target _ => getResumeType source model (computeExprType model target)
+  | .HasNext _ => ⟨ .TBool, source ⟩
+  -- Snapshot artifact: `Snapshot` is a statement, so it types as `TVoid`.
+  | .Snapshot _ => ⟨ .TVoid, source ⟩
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where

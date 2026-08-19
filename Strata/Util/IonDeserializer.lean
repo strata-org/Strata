@@ -6,6 +6,8 @@
 module
 
 public meta import Lean.Elab.Term.TermElabM
+public meta import Lean.Meta.Reduce
+public meta import Lean.PrettyPrinter.Delaborator
 public import StrataDDM.Util.Ion
 public import StrataDDM.Util.Decimal
 
@@ -213,7 +215,8 @@ private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term
 Generate a read expression for a field accessed via `lookupField` (struct context).
 Supports leaf types and nested inductive/structure types.
 -/
-private meta def mkFieldRead (fieldType : Expr) (fieldNameLit : TSyntax `str) :
+private meta def mkFieldRead (fieldType : Expr) (fieldNameLit : TSyntax `str)
+    (defaultTerm : Option (TSyntax `term) := none) :
     TermElabM (TSyntax `term) := do
   let fieldType' ← whnf fieldType
   if fieldType'.getAppFn.constName? == some ``Option then
@@ -221,6 +224,16 @@ private meta def mkFieldRead (fieldType : Expr) (fieldNameLit : TSyntax `str) :
     let readExpr ← mkValueRead fieldType valExpr
     `(match Strata.Util.IonDeserializer.lookupField? tbl fields $fieldNameLit with
       | none => .ok none
+      | some _fv => $readExpr)
+  else if let some dflt := defaultTerm then
+    -- A field declared with `:= default` is optional on the wire: a missing key
+    -- falls back to that structure default, matching Lean's own field-default
+    -- semantics. This keeps the deserializer readable against older
+    -- serializations that predate the field.
+    let valExpr ← `(_fv)
+    let readExpr ← mkValueRead fieldType valExpr
+    `(match Strata.Util.IonDeserializer.lookupField? tbl fields $fieldNameLit with
+      | none => .ok $dflt
       | some _fv => $readExpr)
   else
     let valExpr ← `(_fv)
@@ -278,7 +291,20 @@ private meta def mkStructReaderBody (sinfo : StructureInfo) (typeArgs : Array Ex
     let fieldLit := Syntax.mkStrLit fieldStr
     let fieldType := fieldTypes[i]!
     let localId := mkIdent fieldName
-    let readExpr ← mkFieldRead fieldType fieldLit
+    -- A field with a *nullary* structure default (`field : T := c`, no
+    -- dependence on earlier fields) is optional on the wire — a missing key
+    -- falls back to that default, delaborated to a term and spliced in. The
+    -- `_default` fn itself is `noncomputable`, so we cannot reference it at
+    -- runtime; instead we reduce its body (`id T c`) and delaborate the value.
+    -- Defaults whose `_default` is arrow-typed (depend on earlier fields) are
+    -- skipped, since threading their arguments here is not supported.
+    let defaultTerm : Option (TSyntax `term) ← do
+      let some fn := getDefaultFnForField? env sinfo.structName fieldName | pure none
+      let some (.defnInfo di) := env.find? fn | pure none
+      if di.type.isForall then pure none else
+        let val ← reduce di.value (skipTypes := false)
+        some <$> (Lean.PrettyPrinter.delab val)
+    let readExpr ← mkFieldRead fieldType fieldLit defaultTerm
     body ← `(Except.bind $readExpr (fun $localId => $body))
   `(Except.bind (Strata.Util.IonDeserializer.asStruct v) (fun fields => $body))
 
