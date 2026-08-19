@@ -8,11 +8,31 @@ module
 public import Strata.DL.Imperative.EvalContext
 import all Strata.DL.Imperative.EvalContext
 
+/-!
+## Properties of path-condition contexts
+
+Key results:
+
+- `PathConditionEntry.fastEq_eq` — a `true` result from the
+  pointer-accelerated `fastEq` is a proof of structural equality.
+- `RevPathConditions.consume_prepend` / `consume_addInNewest` /
+  `consume_push` / `consume_pop` / `consume_newest` — `consume` commutes
+  with each `RevPathConditions` operation, relating the reversed-scope
+  representation to plain `PathConditions`.
+-/
+
 namespace Imperative
 
 public section
 
 variable {P : PureExpr}
+
+/-- When `fastEq` returns `true`, the result is a proof of equality. -/
+theorem PathConditionEntry.fastEq_eq
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    {a b : PathConditionEntry P}
+    (h : a.fastEq b = true) : a = b :=
+  @of_decide_eq_true (a = b) (PathConditionEntry.fastDecEq a b) h
 
 /-- Prepending an entry then consuming is the same as adding that entry to the
     consumed path conditions. -/

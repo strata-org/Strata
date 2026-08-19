@@ -39,7 +39,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
       return ⟨.Old expr, expr.source⟩
     else
       return expr
-  | .Old inner =>
+  | .Old inner _ =>
     -- Nested `old` is redundant; `Resolution` warns. Here we just drop it.
     return inner
   | _ => return expr
@@ -47,7 +47,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
 @[expose]
 def visitOld (expr : StmtExprMd) : PushOldM (Option StmtExprMd) := do
   match expr.val with
-  | .Old inner =>
+  | .Old inner _ =>
     let (inner', _changed) ← (mapStmtExprM insideOld inner).run false
     return some inner'
   | _ => return none

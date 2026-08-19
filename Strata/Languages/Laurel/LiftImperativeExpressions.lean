@@ -564,9 +564,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       -- invariant can.
       return expr
 
-  | .Old value =>
+  | .Old value label? =>
       let seqValue ← transformExpr value
-      return ⟨.Old seqValue, source⟩
+      return ⟨.Old seqValue label?, source⟩
 
   | .Fresh value =>
       let seqValue ← transformExpr value

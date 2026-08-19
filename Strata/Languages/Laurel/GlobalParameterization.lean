@@ -266,6 +266,11 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
   let decreases ← proc.decreases.mapM transformValue
   let invokeOn ← proc.invokeOn.mapM transformValue
   let axioms ← proc.axioms.mapM transformValue
+  -- `relies` / `guarantees` reference globals too, so rename them alongside the
+  -- other specification clauses.
+  let relies' ← proc.relies.mapM (·.mapM transformValue)
+  let guarantees' ← proc.guarantees.mapM (·.mapM transformValue)
+  let contracts := proc.contracts.withClauses (relies := relies') (guarantees := guarantees')
   if proc.isInterpretEntry then
     let prologue ← inGlobals.mapM fun global => do
       let aliasName ← localGlobalName global
@@ -312,7 +317,7 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
                 MessageKind.strataBug] }
           pure (.Abstract (← postconditions.mapM (·.mapM transformValue)))
       | .External => pure .External
-    return { proc with preconditions, decreases, invokeOn, axioms, body }
+    return { proc with preconditions, contracts, decreases, invokeOn, axioms, body }
   let inputs ← inGlobals.mapM (globalParam proc.name)
   let outputs ← outGlobals.mapM (globalParam proc.name)
   let body ← match proc.body with
@@ -332,6 +337,7 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
     inputs := inputs ++ proc.inputs
     outputs := outputs ++ proc.outputs
     preconditions
+    contracts
     decreases
     invokeOn
     axioms

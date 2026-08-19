@@ -177,6 +177,11 @@ structure ResolveState where
       only by `Check.return` to type-check the optional payload of
       `return e`. -/
   answerType : Option (List HighTypeMd) := none
+  /-- The declared type of the enclosing coroutine's first `resumes` binding —
+      the value a bare `yield` evaluates to when the coroutine is resumed.
+      `none` outside a coroutine body or when no `resumes` is declared. Bound by
+      `resolveProcedure` on entry, restored on exit, read only by `Synth.yield`. -/
+  resumeType : Option HighTypeMd := none
   /-- Type-relation tables (alias/constrained unfolding + composite extending
       chains) used by the subtyping/consistency checks. Built once from
       `program.types` at the start of `resolve`. -/
@@ -601,11 +606,11 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : F
     rejection is applied only by the former (an `.Applied` base is not bare). -/
 private def resolveTypeRef (ref : Identifier) (source : FileRange) : ResolveM HighType := do
   let ref' ← resolveRef ref source
-    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter])
+    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType])
   let s ← get
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
-        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter].contains node.kind)
+        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType].contains node.kind)
     | none => false  -- name not defined: resolveRef already reported it
   if kindOk then pure (HighType.UserDefined ref') else pure HighType.Unknown
 
@@ -618,7 +623,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     -- concrete type, or (c) undefined / the wrong kind. Read its scope kind and branch:
     --   (a) `.typeParameter` → reclassify to `HighType.TVar` (#1394 polymorphism
     --       substrate).
-    --   (b) composite/datatype/alias/constrained, or still-`.unresolved` → keep
+    --   (b) composite/datatype/alias/constrained/coroutine, or still-`.unresolved` → keep
     --       `UserDefined` (real subtype checking applies downstream — #1121). A
     --       bare reference to a generic DATATYPE is additionally rejected
     --       (`checkBareGenericDatatype`): its type arguments must be explicit.
@@ -632,11 +637,13 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
       pure (HighType.TVar ref')
     else
       let ref' ← resolveRef ref ty.source
-        (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
+        (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
+          .coroutineType])
       checkBareGenericDatatype ref ty.source
       let kindOk : Bool := match nodeKind? with
         | some k => k == .unresolved ||
-            (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains k)
+            (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition,
+              .typeAlias, .coroutineType].contains k)
         | none => false  -- name not defined: resolveRef already reported it
       if kindOk then pure (HighType.UserDefined ref')
       else pure HighType.Unknown
@@ -1102,6 +1109,15 @@ private def preRegisterStaticProcedure (proc : Procedure) : ResolveM Unit := do
   let id ← match proc.name.uniqueId with
     | some uid => pure uid
     | none => freshId
+  -- A coroutine registers as a coroutine *type* (its name is dual: type `co: c`
+  -- and spawn constructor `c(args)`), not a static procedure, and is not
+  -- overloaded. It is later lowered to a `<c>State` composite + a spawn proc.
+  if proc.is_coroutine then
+    modify fun s => { s with
+      scope := s.scope.insert name (id, .coroutineType proc),
+      idToNode := s.idToNode.insert id (.coroutineType proc),
+      currentScopeNames := s.currentScopeNames.insert name }
+    return
   -- External procedures cannot be overloaded.
   let allOverloads := existing ++ [(id, proc)]
   let externalConflict := allOverloads.length > 1 && allOverloads.any (fun (_, p) => p.body matches .External)
@@ -1604,8 +1620,18 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.assigned exprMd name source (by rw [h_node])
   | .Fresh val =>
     Synth.fresh exprMd expr val source h_expr (by rw [h_node])
-  | .Old val =>
-    Synth.old exprMd val source (by rw [h_node])
+  | .Old val label? =>
+    Synth.old exprMd val label? source (by rw [h_node])
+  | .OldGuarantee val =>
+    Synth.oldGuarantee exprMd val source (by rw [h_node])
+  | .OldRelies val =>
+    Synth.oldRelies exprMd val source (by rw [h_node])
+  | .Yield => Synth.yield source
+  | .Resume target value =>
+    Synth.resume exprMd target value source (by rw [h_node])
+  | .HasNext target =>
+    Synth.hasNext exprMd target source (by rw [h_node])
+  | .Snapshot label => pure (Synth.snapshot label source)
   | .ProveBy val proof =>
     Synth.proveBy exprMd val proof source (by rw [h_node])
   | .ContractOf ty fn =>
@@ -1700,8 +1726,12 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.assign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
-  | .Old val =>
-    Check.old exprMd val expected source (by rw [h_node])
+  | .Old val label? =>
+    Check.old exprMd val label? expected source (by rw [h_node])
+  | .OldGuarantee val =>
+    Check.oldGuarantee exprMd val expected source (by rw [h_node])
+  | .OldRelies val =>
+    Check.oldRelies exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
     Check.proveBy exprMd val proof expected source (by rw [h_node])
   | _ =>
@@ -2969,7 +2999,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
               { val := .Unknown, source := callee.source })
 
   let callee' ← resolveRef callee source
-    (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
+    (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
   let (retTy, paramTypes) ← getCallInfo callee
   -- A datatype constructor call is type-checked here, at resolution time, rather
   -- than deferred to Core: each argument is checked against its declared field
@@ -3435,11 +3465,39 @@ def Synth.assigned (exprMd : StmtExprMd)
     one, so resolution only resolves names inside `v` and checks its
     type; it imposes no syntactic shape on `v`. -/
 def Check.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
-    (h : exprMd.val = .Old val) :
+    (val : StmtExprMd) (label? : Option Identifier) (expected : HighTypeMd) (source : FileRange)
+    (h : exprMd.val = .Old val label?) :
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
-  pure { val := .Old val', source := source }
+  pure { val := .Old val' label?, source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    term_by_mem
+
+/-- `old@guarantee` — same checking shape as `old`. -/
+def Check.oldGuarantee (exprMd : StmtExprMd)
+    (val : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
+    (h : exprMd.val = .OldGuarantee val) :
+    ResolveM StmtExprMd := do
+  let val' ← Check.resolveStmtExpr val expected
+  pure { val := .OldGuarantee val', source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    term_by_mem
+
+/-- `oldRelies` — same checking shape as `old`. -/
+def Check.oldRelies (exprMd : StmtExprMd)
+    (val : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
+    (h : exprMd.val = .OldRelies val) :
+    ResolveM StmtExprMd := do
+  let val' ← Check.resolveStmtExpr val expected
+  pure { val := .OldRelies val', source := source }
   termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
@@ -3463,11 +3521,45 @@ def Check.old (exprMd : StmtExprMd)
     construct would fall into the synth wildcard and spuriously report
     that its type cannot be synthesized. -/
 def Synth.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (source : FileRange)
-    (h : exprMd.val = .Old val) :
+    (val : StmtExprMd) (label? : Option Identifier) (source : FileRange)
+    (h : exprMd.val = .Old val label?) :
     ResolveM (StmtExpr × HighTypeMd) := do
+  let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val
-  pure (.Old val', valTy)
+  pure (.Old val' label?, valTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    term_by_mem
+
+/-- `old@guarantee(v)` — same shape as `old(v)`, but the snapshot points
+    at the previous yield's resume state. Resolution-wise it behaves
+    identically: synthesize `v`'s type and return it. -/
+def Synth.oldGuarantee (exprMd : StmtExprMd)
+    (val : StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .OldGuarantee val) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let _ := source
+  let (val', valTy) ← Synth.resolveStmtExpr val
+  pure (.OldGuarantee val', valTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    term_by_mem
+
+/-- `oldRelies(v)` — same shape as `old(v)`, but the snapshot points at the
+    coroutine's most recent suspension. -/
+def Synth.oldRelies (exprMd : StmtExprMd)
+    (val : StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .OldRelies val) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let _ := source
+  let (val', valTy) ← Synth.resolveStmtExpr val
+  pure (.OldRelies val', valTy)
   termination_by (exprMd, 1)
   decreasing_by
     apply Prod.Lex.left
@@ -3501,6 +3593,123 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
+
+/-- (Yield) A bare `yield` evaluates to the value the next `resume` sends back
+    in — the enclosing coroutine's first `resumes` binding. `Γ_res` is that type
+    (`ResolveState.resumeType`, set by `resolveProcedure`).
+    ```
+    Γ_res = ρ                    Γ_res = ⊥
+    ──────────────────          ──────────────────
+    Γ ⊢ Yield ⇒ ρ               Γ ⊢ Yield ⇒ TVoid
+    ```
+    With no `resumes` the coroutine receives nothing back, so `yield` is `TVoid`;
+    a value use (`x := yield`) then correctly fails as "yields no value" rather
+    than binding `Unknown`. Coroutine elaboration later replaces `yield` with a
+    composite-field read, so this type is consumed only during resolution. -/
+def Synth.yield (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
+  let ty := ((← get).resumeType).getD { val := .TVoid, source := source }
+  pure (.Yield, { ty with source := source })
+
+/-- `Snapshot h` — a lowering artifact that never reaches a resolution pass
+    (it is introduced only after resolution is disabled).
+    Defined for match totality; it is a statement, so it types as `TVoid`. -/
+def Synth.snapshot (label : Identifier) (source : FileRange) : StmtExpr × HighTypeMd :=
+  (.Snapshot label, { val := .TVoid, source := source })
+
+/-- (Resume) `resume(target [, value])` hands back the target coroutine's
+    most-recently-yielded value, so it synthesizes that coroutine's first
+    `yields` binding type. The type comes from the *target* (contrast Yield,
+    which reads the *enclosing* coroutine's `resumes`).
+    ```
+    Γ ⊢ target ⇒ UserDefined c    c ↦ coroutine, yields(c) = x:σ, …
+    ──────────────────────────────────────────────────────────────
+    Γ ⊢ Resume target value? ⇒ σ
+
+    Γ ⊢ target ⇒ UserDefined c    c ↦ coroutine, yields(c) = ·
+    ──────────────────────────────────────────────────────────
+    Γ ⊢ Resume target value? ⇒ TVoid
+
+    Γ ⊢ target ⇒ τ    τ not a resolvable coroutine
+    ──────────────────────────────────────────────
+    Γ ⊢ Resume target value? ⇒ Unknown
+    ```
+    A coroutine that yields nothing hands back no value → `TVoid` (a value use
+    then correctly fails). `Unknown` only when the target does not resolve to a
+    coroutine, to suppress cascades on that already-reported error. `value?` is
+    resolved for its own effects but does not affect the result type. -/
+def Synth.resume (exprMd : StmtExprMd)
+    (target : StmtExprMd) (value : Option StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .Resume target value) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (target', targetTy) ← Synth.resolveStmtExpr target
+  -- The target types as `.UserDefined <coroutine>` before elaboration retargets
+  -- it to `<c>State`; look that name up to recover the coroutine's channels. A
+  -- target that resolves to a concrete non-coroutine kind is rejected here, so a
+  -- non-coroutine target is impossible by the time `getResumeType` runs. An
+  -- unresolved ref or a gradual `Unknown` stays quiet (already diagnosed / no
+  -- static type to check against).
+  let coro? : Option Procedure := ← do
+    let s ← get
+    match targetTy.val with
+    | .Unknown => pure none
+    | .UserDefined ref =>
+      match ref.uniqueId.bind s.idToNode.get? <|> (s.scope.get? ref.text).map (·.2) with
+      | some (.coroutineType proc) => pure (some proc)
+      | some (.unresolved _) | none => pure none
+      | some _ =>
+        typeMismatch target.source none "resume target must be a coroutine" targetTy
+        pure none
+    | _ =>
+      typeMismatch target.source none "resume target must be a coroutine" targetTy
+      pure none
+  -- Check the sent value against the target's `resumes` binding (its incoming
+  -- channel). The same signature is enforced post-elaboration on the generated
+  -- `resume` proc; doing it here gives a clean type error at the user's source
+  -- instead of a StrataBug from the post-pass re-resolution.
+  let value' ← value.attach.mapM (fun a => have := a.property; do
+    let (v', vTy) ← Synth.resolveStmtExpr a.val
+    match coro?.bind (·.resumes.head?) with
+    | some binding => coerceTo a.val.source binding.type vTy v'
+    | none =>
+      -- A value sent to a coroutine that declares no `resumes` has nowhere to go.
+      -- Pass `Unknown` as the actual so no misleading "got '…'" suffix is added.
+      if coro?.isSome then
+        typeMismatch a.val.source none "coroutine declares no `resumes` binding to receive a value"
+          { val := .Unknown, source := a.val.source }
+      pure v')
+  -- Result is the target coroutine's first `yields` binding — the value it hands
+  -- back. `TVoid` for a coroutine that yields nothing (so a value use fails);
+  -- `Unknown` when the target is not a resolvable coroutine (suppress cascades).
+  let yieldTy : HighTypeMd :=
+    match coro? with
+    | some proc => proc.yields.head?.map (·.type) |>.getD { val := .TVoid, source := source }
+    | none => { val := .Unknown, source := source }
+  pure (.Resume target' value', { yieldTy with source := source })
+  termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.Resume.sizeOf_spec] at hsz
+      try rw [Option.mem_def.mp ‹_ ∈ value›, Option.some.sizeOf_spec] at hsz
+      omega
+
+/-- (HasNext) `has_next(target)` resolves its target and synthesizes
+    `TBool`. -/
+def Synth.hasNext (exprMd : StmtExprMd)
+    (target : StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .HasNext target) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (target', _) ← Synth.resolveStmtExpr target
+  pure (.HasNext target', { val := .TBool, source := source })
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.HasNext.sizeOf_spec] at hsz
+    omega
 
 /-- (ProveBy)
     ```
@@ -3667,7 +3876,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
       "'contractOf' expected a procedure reference"
     modify fun s => { s with errors := s.errors.push diag }
   let resultTy : HighType := match ty with
-    | .Precondition | .PostCondition => .TBool
+    | .Precondition | .PostCondition | .Relies | .Guarantees => .TBool
     | .Reads | .Modifies => .TSet { val := .Unknown, source := fn.source }
   pure (.ContractOf ty fn', { val := resultTy, source := source })
   termination_by (exprMd, 1)
@@ -3901,21 +4110,41 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
-    -- `f<T>(b: Box<T>)` is NOT pre-rejected — procedure monomorphization handles it, and an
-    -- instantiation it still can't handle fails loud later.
+    -- `f<T>(b: Box<T>)` is not pre-rejected: procedure
+    -- monomorphization handles it, and an unsupported instantiation fails
+    -- during the post-pass resolution.
     let outputs' ← resolveOutputParameters inputNames proc.outputs
-    -- Preconditions are boolean: check the condition against `TBool` so the
-    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- Coroutine channel bindings come into scope before the clauses that
+    -- reference them: `yields (x: T)` is bound inside the body and halt
+    -- `ensures`; `resumes (y: U)` is bound inside per-yield `relies`.
+    let yields' ← proc.yields.mapM resolveParameter
+    let resumes' ← proc.resumes.mapM resolveParameter
+    -- Preconditions/relies/guarantees are boolean: check each against `TBool` so
+    -- the coercion (`Any_to_bool` via the frontend realizer) is inserted when the
     -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
     -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
     -- coerces; the resolver owns it.
-    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
-      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
+    let resolveBoolCond := fun (c : StmtExprMd) =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }
+    let pres' ← proc.preconditions.mapM (·.mapM resolveBoolCond)
+    -- Per-yield rely sees `resumes` bindings; per-yield guarantee sees
+    -- `yields` bindings.
+    let relies' ← proc.relies.mapM (·.mapM resolveBoolCond)
+    let guarantees' ← proc.guarantees.mapM (·.mapM resolveBoolCond)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
-    modify fun s => { s with answerType := some (outputs'.map (·.type)) }
+    let savedResume := (← get).resumeType
+    modify fun s => { s with answerType := some (outputs'.map (·.type))
+                             resumeType := resumes'.head?.map (·.type) }
     let body' ← resolveBody proc.body
-    modify fun s => { s with answerType := savedAnswer }
+    modify fun s => { s with answerType := savedAnswer, resumeType := savedResume }
+    -- Coroutine-only source validations (`relies`/`guarantees` are
+    -- coroutine-only; coroutines carry no `ensures`) live in
+    -- `validateCoroutineClauses`, run only at initial resolution. They
+    -- cannot fire here: heap-parameterization synthesizes postconditions
+    -- into a coroutine's `Opaque` body before `yieldElimPass` clears the
+    -- coroutine kind, so a re-resolution mid-pipeline would otherwise
+    -- misread those synthesized postconditions as illegal `ensures`.
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
     -- LaurelToCore translator rejects the genuinely-unsupported constructs
@@ -3924,8 +4153,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     let axioms' ← proc.axioms.mapM resolveStmtExpr
     let (throwsType', throwsBinding', throwsOn') ← resolveExceptionalContract proc
-    return { name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
-             preconditions := pres', decreases := dec',
+    return { name := procName', typeArgs := typeArgs',
+             inputs := inputs', outputs := outputs',
+             preconditions := pres',
+             contracts := proc.contracts.withClauses relies' guarantees' yields' resumes',
+             decreases := dec',
              invokeOn := invokeOn',
              isInterpretEntry := proc.isInterpretEntry,
              axioms := axioms',
@@ -4149,6 +4381,10 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
+  -- Mainline's generic `foldStmtExpr` auto-recurses into children; the visitor
+  -- only registers name-introducing constructors (`Declare`, `Quantifier`). The
+  -- coroutine constructors (`Yield`/`Resume`/`HasNext`/`OldGuarantee`)
+  -- introduce no bindings, so the fold handles them without an explicit arm.
   foldStmtExpr (fun e map =>
     match e.val with
     | .Var (.Declare param) =>
@@ -4268,7 +4504,11 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
   let map := program.staticFields.foldl (collectField · "$static" ·) map
-  program.staticProcedures.foldl (collectProcedure · · .staticProcedure) map
+  -- A coroutine's name resolves to a `coroutineType` (it names a type in
+  -- `co: c` and a constructor in `c(args)`); regular procedures resolve to
+  -- `staticProcedure`.
+  program.staticProcedures.foldl
+    (collectProcedure · · (fun p => if p.is_coroutine then .coroutineType p else .staticProcedure p)) map
 
 /-! Additional checks-/
 
@@ -4471,7 +4711,7 @@ private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
   (mapStmtExprM (m := StateM (List Message))
     (fun n => do
       match n.val with
-      | .Old _ =>
+      | .Old _ _ =>
         modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .warning])
         pure n
       | _ => pure n)
@@ -4998,7 +5238,7 @@ private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
   (mapStmtExprM (m := StateM (List Message))
     (fun n => do
       match n.val with
-      | .Old _ =>
+      | .Old _ _ =>
         modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .warning])
         pure n
       | _ => pure n)
@@ -5037,7 +5277,7 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
   | .ok inoutNames =>
   let visit (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     match n.val with
-    | .Old inner =>
+    | .Old inner _ =>
       -- Warn on any `old` nested within this one's operand.
       modify (· ++ nestedOldWarnings inner)
       let refsInout := mentionsInout inoutNames inner
@@ -5091,7 +5331,7 @@ private def analyzeInitialEffects (model : SemanticModel)
 private def resolvedNodeName? : ResolvedNode → Option Identifier
   | .var name _ | .quantifierVar name _ | .typeParameter name => some name
   | .parameter parameter | .datatypeDestructor _ parameter => some parameter.name
-  | .staticProcedure proc | .instanceProcedure _ proc => some proc.name
+  | .staticProcedure proc | .instanceProcedure _ proc | .coroutineType proc => some proc.name
   | .field _ field => some field.name
   | .compositeType type => some type.name
   | .constrainedType type => some type.name
@@ -5296,7 +5536,7 @@ private def foldRestrictedStmtExprM [Monad m]
     foldRestrictedStmtExprM f true body
   | .Assigned name => foldRestrictedStmtExprM f restricted name
   | .Fresh name => foldRestrictedStmtExprM f restricted name
-  | .Old value => foldRestrictedStmtExprM f true value
+  | .Old value _ => foldRestrictedStmtExprM f true value
   | .Assert cond _ => foldRestrictedStmtExprM f true cond
   | .Assume cond => foldRestrictedStmtExprM f true cond
   | .Throw value => foldRestrictedStmtExprM f restricted value
@@ -5311,9 +5551,16 @@ private def foldRestrictedStmtExprM [Monad m]
     foldRestrictedStmtExprM f restricted value
     foldRestrictedStmtExprM f true proof
   | .ContractOf _ func => foldRestrictedStmtExprM f restricted func
+  -- Coroutine two-state `old` forms behave like `.Old` (restricted operand).
+  | .OldGuarantee value | .OldRelies value => foldRestrictedStmtExprM f true value
+  | .Resume target value =>
+    foldRestrictedStmtExprM f restricted target
+    value.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .HasNext target => foldRestrictedStmtExprM f restricted target
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _)
-  | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
+  | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Yield | .Snapshot _ => pure ()
 termination_by sizeOf expr
 decreasing_by
   all_goals simp_wf
@@ -5339,7 +5586,7 @@ private def collectResultPathStmtExprList {β : Type} (f : StmtExprMd → List �
       | some elseExpr => thenResults ++ collectResultPathStmtExprList f elseExpr
       | none => thenResults
   | .ProveBy value _ => collectResultPathStmtExprList f value
-  | .Old value => collectResultPathStmtExprList f value
+  | .Old value _ => collectResultPathStmtExprList f value
   | .Fresh value => collectResultPathStmtExprList f value
   | .Assigned value => collectResultPathStmtExprList f value
   | .AsType value _ => collectResultPathStmtExprList f value
@@ -5423,7 +5670,7 @@ private def validateGlobalCall (ctx : GlobalCallValidationContext) (restricted :
 private def blockTupleCall (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Option Identifier :=
   match expr.val with
-  | .Block _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ | .Fresh _
+  | .Block _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ _ | .Fresh _
   | .Assigned _ | .AsType _ _ | .Assign _ _ | .CompoundAssign _ _ _ =>
       (collectResultPathStmtExprList (fun node => match node.val with
         | .StaticCall callee _ | .InstanceCall _ callee _ => [callee]
@@ -5514,7 +5761,7 @@ private def bodyExpressions (proc : Procedure) : List StmtExprMd :=
 private def oldGlobalErrorsInExpr (model : SemanticModel)
     (dependentIds : Std.HashSet Nat) (expr : StmtExprMd) : List Message :=
   let visit (node : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
-    if let .Old operand := node.val then
+    if let .Old operand _ := node.val then
       if let some source := firstGlobalUseSource model dependentIds operand then
         modify (· ++ [diagnosticFromSource source
           "file-scope globals are not yet supported inside `old(...)`"
@@ -5698,6 +5945,57 @@ def validateInvokeOnOutputRefs (program : Program) : List Message :=
         s!"'invokeOn' procedure '{proc.name.text}' may not have output parameters; the auto-invocation axiom is quantified over inputs only."
         MessageKind.userError)
     else none
+
+/-- Coroutine-clause source validations. These constrain the *user's source*
+    program, so `resolve` runs them only at initial resolution: heap
+    parameterization synthesizes postconditions into a coroutine's `Opaque`
+    body before `yieldElimPass` clears its `.Coroutine` kind, so a
+    re-resolution mid-pipeline would otherwise misread those synthesized
+    postconditions as an illegal `ensures`.
+
+    * `relies` / `guarantees` are coroutine-only.
+    * Coroutines carry no `ensures`: whole-coroutine facts go on `guarantees`
+      (per-yield / final guarantee). A coroutine's halt postconditions live in
+      its `Opaque` body, so reject a non-empty postcondition list there.
+    * `oldGuarantee(...)` / `oldRelies(...)` are coroutine-only two-state forms.
+      A use in a regular procedure would otherwise survive every pass
+      (`YieldElim` only rewrites coroutine bodies) and surface as a `strataBug`
+      at Core translation, so reject it here with a clean user error. Reported
+      only for `.Regular` procedures, so legitimate uses inside a coroutine's
+      clauses / body (kind `.Coroutine` at initial resolution) are exempt. -/
+def validateCoroutineClauses (program : Program) : List Message :=
+  -- `oldGuarantee`/`oldRelies` markers anywhere in a regular procedure's
+  -- expressions (body + specs), each pinned to its own source range.
+  let oldMarkerErrors (proc : Procedure) : List Message :=
+    if proc.kind != .Regular then [] else
+    (foldProcedureExprsM (m := StateM (List Message)) (fun e => do
+      match e.val with
+      | .OldGuarantee _ => modify (· ++ [diagnosticFromSource e.source
+          "'oldGuarantee' is only valid inside a coroutine body" MessageKind.userError])
+      | .OldRelies _ => modify (· ++ [diagnosticFromSource e.source
+          "'oldRelies' is only valid inside a coroutine body" MessageKind.userError])
+      | _ => pure ()) proc |>.run []).2
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  (program.staticProcedures ++ instanceProcs).flatMap fun proc =>
+    let reliesGuarError : List Message :=
+      if proc.kind == .Regular && (!proc.relies.isEmpty || !proc.guarantees.isEmpty) then
+        [diagnosticFromSource proc.name.source
+          s!"`relies` / `guarantees` clauses are only allowed on coroutine declarations; \
+             use 'coroutine {proc.name.text}(...)' instead of 'procedure'"
+          MessageKind.userError]
+      else []
+    let ensuresError : List Message :=
+      if proc.kind == .Coroutine then
+        match proc.body with
+        | .Opaque (_ :: _) _ _ =>
+          [diagnosticFromSource proc.name.source
+            "`ensures` is not supported on coroutines; use a `guarantees` clause instead"
+            MessageKind.userError]
+        | _ => []
+      else []
+    reliesGuarError ++ ensuresError ++ oldMarkerErrors proc
 
 /-- Effective output count of a procedure, counting the implicit heap output a
     heap-writing procedure gains during heap parameterization: a writer gains a
@@ -5951,6 +6249,11 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     | some analysis => (validateInvokeOnOutputRefs program' ++
         validateInvokeOnGlobalWrites program' analysis).toArray
     | none => #[]
+  -- Coroutine-clause validations are source-program checks (see
+  -- `validateCoroutineClauses`): only on initial resolution, since later
+  -- passes synthesize postconditions onto still-`.Coroutine` procedures.
+  let coroutineErrors :=
+    if existingModel.isNone then validateCoroutineClauses program' else []
   -- Multi-output procedures cannot (yet) be called from a transparent body or a
   -- contract (see `validateMultiOutputCallContexts`). This is a property of the
   -- user's *source* program, phrased against the pre-lowering shape (transparent
@@ -6006,7 +6309,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
       globalNameErrors ++ globalTypeErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ entryGlobalErrors ++ invokeOnErrors ++
-      multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
+      coroutineErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
   }
 
 -- `resolve` establishes the invariant that every `Declare` in its output is
