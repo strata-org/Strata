@@ -152,6 +152,15 @@ def loopElimPipelinePhase : PipelinePhase where
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
+  -- Iterating to a fixed point dissolves nested loops as well, so a successful
+  -- run leaves none; what replaces them havocs, which is why
+  -- `staticSingleAssignment` is not claimed.
+  requires := factSet![.noCFGBodies, .noLoopInvariants, .noLoopMeasures]
+  establishes := factSet![.noLoops]
+  preserves := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
+                      .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions]
 
 end -- public section
 

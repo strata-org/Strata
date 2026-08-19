@@ -263,15 +263,10 @@ def collectFromProcedure (polyfunDecls : PolymorphicFuncDecls)
         (match b.transfer with | .condGoto pp _ _ _ => [pp] | .finish _ => [])
   (specExprs ++ bodyExprs).flatMap (collectFuncSpecializations polyfunDecls factory)
 
-/-- The user-facing expressions of a function: body, axioms, precondition
-    expressions, and measure. -/
-def expressionsFromFunction (f : Function) : List Expression.Expr :=
-  f.body.toList ++ f.axioms ++ f.preconditions.map (·.expr) ++ f.measure.toList
-
 /-- All references to polymorphic functions in a function's expressions. -/
 def collectFromFunction (pfunDecls : PolymorphicFuncDecls)
     (factory : Lambda.Factory CoreLParams) (f : Function) : List FuncSpecialization :=
-  (expressionsFromFunction f).flatMap (collectFuncSpecializations pfunDecls factory)
+  f.exprs.flatMap (collectFuncSpecializations pfunDecls factory)
 
 
 /-! ### Rewriting expressions in all top-level declarations modulo functions themselves -/
@@ -548,8 +543,20 @@ def monomorphizeFunctions (p : Program) : CoreTransformM (Bool × Program) := do
     the same values at that instantiation; references are rewritten to preserve
     meaning. -/
 def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "monomorphizeFunctions" fun prog =>
-    monomorphizeFunctions prog
+  -- Specializing renames operator references rather than restructuring
+  -- anything, so every fact carries across; it needs the lifted form because it
+  -- only specializes top-level function declarations.
+  modelPreservingPipelinePhase "monomorphizeFunctions"
+    -- A call inside a polymorphic procedure can instantiate a function at that
+    -- procedure's type parameter, which is not a concrete type to specialize at,
+    -- so the procedures must be monomorphic first.
+    (requires := factSet![.noInternalFuncDecl, .noPolymorphicProcedures])
+    (establishes := factSet![.noPolymorphicFunctions])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures])
+    fun prog => monomorphizeFunctions prog
 
 end Core
 

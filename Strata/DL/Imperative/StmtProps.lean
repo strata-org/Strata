@@ -26,13 +26,13 @@ Equational theory for the boolean shape walkers defined in
 - Disjointness of `funcDeclNames` from `definedVars`/`declared`
   (`Stmt`/`Block.funcDeclNames_disjoint_of_defined`/`_of_declared`,
   `funcDeclNames_eq_nil_of_noFuncDecl`).
-- Per-constructor decomposition lemmas for `simpleShape`, `loopBodyNoInits`,
+- Per-constructor decomposition lemmas for `noNondetGuards`, `loopBodyNoInits`,
   `loopHasNoInvariants`, `noMeasureLoops`, `initVars`, `exitsCoveredByBlocks`,
   and `getBlockLabels` (the `_cons_iff` / `_branch_*` / `_loop_*` / `_block_*`
   families), plus the two non-structural results `exitsCoveredByBlocks_weaken`
   (label-list monotonicity) and `all_cmd_exitsCoveredByBlocks`.
 - Distribution of the block-level walkers over `++`
-  (`initVars`/`simpleShape`/`loopHasNoInvariants`/`modifiedVars`/
+  (`initVars`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
 - `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
   the expressions in a statement or block never introduces or removes a
@@ -213,59 +213,62 @@ end
 
 /-! ### Decomposition lemmas for the structural shape predicates
 
-Per-constructor unfolding lemmas for `simpleShape`, `loopBodyNoInits`,
+Per-constructor unfolding lemmas for `noNondetGuards`, `loopBodyNoInits`,
 `loopHasNoInvariants`, `noMeasureLoops`, `initVars`, `exitsCoveredByBlocks`,
 and `getBlockLabels`.  They accompany the `_append` distribution lemmas
 below; the transform correctness proofs consume both.  The predicates
 themselves are defined in `Strata.DL.Imperative.Stmt`. -/
 
-/-- `Block.simpleShape` on `s :: rest` decomposes to the conjunction. -/
-theorem Block.simpleShape_cons_iff
+/-- `Block.noNondetGuards` on `s :: rest` decomposes to the conjunction. -/
+theorem Block.noNondetGuards_cons_iff
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
-    Block.simpleShape (s :: rest) = true ↔
-      Stmt.simpleShape s = true ∧ Block.simpleShape rest = true := by
-  simp only [Block.simpleShape, Bool.and_eq_true]
+    Block.noNondetGuards (s :: rest) = true ↔
+      Stmt.noNondetGuards s = true ∧ Block.noNondetGuards rest = true := by
+  simp only [Block.noNondetGuards, Bool.and_eq_true]
 
-/-- The then-branch of an `.ite (.det _)` is simple when the whole ite is. -/
-theorem Stmt.simpleShape_branch_then
+/-- When a deterministically guarded `.ite` has no nondeterministic guard
+    anywhere, neither does its then-branch. -/
+theorem Stmt.noNondetGuards_branch_then
     {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
-    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
-    Block.simpleShape tss = true := by
-  simp only [Stmt.simpleShape, Bool.and_eq_true]
+    Stmt.noNondetGuards (.ite (.det g) tss ess md) = true →
+    Block.noNondetGuards tss = true := by
+  simp only [Stmt.noNondetGuards, Bool.and_eq_true]
   intro h
   exact h.1
 
-/-- The else-branch of an `.ite (.det _)` is simple when the whole ite is. -/
-theorem Stmt.simpleShape_branch_else
+/-- When a deterministically guarded `.ite` has no nondeterministic guard
+    anywhere, neither does its else-branch. -/
+theorem Stmt.noNondetGuards_branch_else
     {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
-    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
-    Block.simpleShape ess = true := by
-  simp only [Stmt.simpleShape, Bool.and_eq_true]
+    Stmt.noNondetGuards (.ite (.det g) tss ess md) = true →
+    Block.noNondetGuards ess = true := by
+  simp only [Stmt.noNondetGuards, Bool.and_eq_true]
   intro h
   exact h.2
 
-/-- The body of a `.loop` is simple when the whole loop-statement is. -/
-theorem Stmt.simpleShape_loop_body
+/-- When a `.loop` statement has no nondeterministic guard anywhere, neither
+    does its body. -/
+theorem Stmt.noNondetGuards_loop_body
     {g : ExprOrNondet P} {m : Option P.Expr}
     {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
     {md : MetaData P} :
-    Stmt.simpleShape (.loop g m is body md) = true →
-    Block.simpleShape body = true := by
+    Stmt.noNondetGuards (.loop g m is body md) = true →
+    Block.noNondetGuards body = true := by
   intro h
-  unfold Stmt.simpleShape at h
+  unfold Stmt.noNondetGuards at h
   cases g with
   | det ge => simpa using h
   | nondet => simp at h
 
-/-- The guard of a simple-shape `.loop` is deterministic. -/
-theorem Stmt.simpleShape_loop_guard_det
+/-- The guard of a `.loop` free of nondeterministic guards is deterministic. -/
+theorem Stmt.noNondetGuards_loop_guard_det
     {g : ExprOrNondet P} {m : Option P.Expr}
     {is : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
     {md : MetaData P} :
-    Stmt.simpleShape (.loop g m is body md) = true →
+    Stmt.noNondetGuards (.loop g m is body md) = true →
     ∃ ge, g = .det ge := by
   intro h
-  unfold Stmt.simpleShape at h
+  unfold Stmt.noNondetGuards at h
   cases g with
   | det ge => exact ⟨ge, rfl⟩
   | nondet => simp at h
@@ -625,7 +628,7 @@ theorem Block.getBlockLabels_map_cmd {P : PureExpr} {C : Type}
 /-! ### Distribution of Block-level shape predicates over `++`
 
 These syntactic lemmas distribute the structural walkers (`initVars`,
-`simpleShape`, `loopHasNoInvariants`, `modifiedVars`, `noInitsAnywhere`,
+`noNondetGuards`, `loopHasNoInvariants`, `modifiedVars`, `noInitsAnywhere`,
 `loopBodyNoInits`) over list concatenation. They are consumed by the
 transform correctness proofs, which all import this base module. -/
 
@@ -637,13 +640,13 @@ theorem Block.initVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih =>
     simp [ih, List.append_assoc]
 
-/-- `Block.simpleShape` distributes over `++`. -/
-theorem Block.simpleShape_append (xs ys : List (Stmt P (Cmd P))) :
-    Block.simpleShape (xs ++ ys) =
-      (Block.simpleShape xs && Block.simpleShape ys) := by
+/-- `Block.noNondetGuards` distributes over `++`. -/
+theorem Block.noNondetGuards_append (xs ys : List (Stmt P (Cmd P))) :
+    Block.noNondetGuards (xs ++ ys) =
+      (Block.noNondetGuards xs && Block.noNondetGuards ys) := by
   induction xs with
-  | nil => simp [Block.simpleShape]
-  | cons x rest ih => simp [Block.simpleShape, ih, Bool.and_assoc]
+  | nil => simp [Block.noNondetGuards]
+  | cons x rest ih => simp [Block.noNondetGuards, ih, Bool.and_assoc]
 
 /-- `Block.loopHasNoInvariants` distributes over `++`. -/
 theorem Block.loopHasNoInvariants_append (xs ys : List (Stmt P (Cmd P))) :
@@ -751,44 +754,44 @@ theorem all_not_mem_definedVars_of_block [HasIdent P] [HasFvars P]
     · exact ih (fun hc => h (List.mem_append.mpr (Or.inr hc))) s' h_in
 
 mutual
-/-- A simple-shape statement contains no nondeterministic loop. -/
-theorem Stmt.not_containsNondetLoop_of_simpleShape {P : PureExpr}
-    (s : Stmt P (Cmd P)) (h : Stmt.simpleShape s = true) :
+/-- A statement free of nondeterministic guards contains no nondeterministic loop. -/
+theorem Stmt.not_containsNondetLoop_of_noNondetGuards {P : PureExpr}
+    (s : Stmt P (Cmd P)) (h : Stmt.noNondetGuards s = true) :
     Stmt.containsNondetLoop s = false := by
   match s with
   | .cmd c => rw [Stmt.containsNondetLoop]
   | .block lbl bss md =>
       rw [Stmt.containsNondetLoop]
-      rw [Stmt.simpleShape] at h
-      exact Block.not_containsNondetLoop_of_simpleShape bss h
+      rw [Stmt.noNondetGuards] at h
+      exact Block.not_containsNondetLoop_of_noNondetGuards bss h
   | .ite (.det e) tss ess md =>
       rw [Stmt.containsNondetLoop, Bool.or_eq_false_iff]
-      rw [Stmt.simpleShape, Bool.and_eq_true] at h
-      exact ⟨Block.not_containsNondetLoop_of_simpleShape tss h.1,
-             Block.not_containsNondetLoop_of_simpleShape ess h.2⟩
-  | .ite .nondet tss ess md => rw [Stmt.simpleShape] at h; exact absurd h (by simp)
+      rw [Stmt.noNondetGuards, Bool.and_eq_true] at h
+      exact ⟨Block.not_containsNondetLoop_of_noNondetGuards tss h.1,
+             Block.not_containsNondetLoop_of_noNondetGuards ess h.2⟩
+  | .ite .nondet tss ess md => rw [Stmt.noNondetGuards] at h; exact absurd h (by simp)
   | .loop (.det e) m inv body md =>
       rw [Stmt.containsNondetLoop]
-      rw [Stmt.simpleShape, Bool.and_eq_true] at h
-      exact Block.not_containsNondetLoop_of_simpleShape body h.2
+      rw [Stmt.noNondetGuards, Bool.and_eq_true] at h
+      exact Block.not_containsNondetLoop_of_noNondetGuards body h.2
   | .loop .nondet m inv body md =>
-      rw [Stmt.simpleShape] at h; exact absurd h (by simp)
+      rw [Stmt.noNondetGuards] at h; exact absurd h (by simp)
   | .exit lbl md => rw [Stmt.containsNondetLoop]
   | .funcDecl d md => rw [Stmt.containsNondetLoop]
   | .typeDecl t md => rw [Stmt.containsNondetLoop]
   termination_by sizeOf s
 
-/-- A simple-shape block contains no nondeterministic loop. -/
-theorem Block.not_containsNondetLoop_of_simpleShape {P : PureExpr}
-    (ss : List (Stmt P (Cmd P))) (h : Block.simpleShape ss = true) :
+/-- A block free of nondeterministic guards contains no nondeterministic loop. -/
+theorem Block.not_containsNondetLoop_of_noNondetGuards {P : PureExpr}
+    (ss : List (Stmt P (Cmd P))) (h : Block.noNondetGuards ss = true) :
     Block.containsNondetLoop ss = false := by
   match ss with
   | [] => rw [Block.containsNondetLoop]
   | s :: rest =>
       rw [Block.containsNondetLoop, Bool.or_eq_false_iff]
-      rw [Block.simpleShape, Bool.and_eq_true] at h
-      exact ⟨Stmt.not_containsNondetLoop_of_simpleShape s h.1,
-             Block.not_containsNondetLoop_of_simpleShape rest h.2⟩
+      rw [Block.noNondetGuards, Bool.and_eq_true] at h
+      exact ⟨Stmt.not_containsNondetLoop_of_noNondetGuards s h.1,
+             Block.not_containsNondetLoop_of_noNondetGuards rest h.2⟩
   termination_by sizeOf ss
 end
 
@@ -1713,11 +1716,11 @@ theorem Block.loopBodyNoInits_map_cmd' {P : PureExpr} [HasFvars P] (cs : List (C
       (by simp [Block.loopBodyNoInits])
     (fun _ _ => by simp [Block.loopBodyNoInits]) (fun _ => by simp [Stmt.loopBodyNoInits]) cs
 
-/-- A `.cmd`-only block has `simpleShape`. -/
-theorem Block.simpleShape_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
-    Block.simpleShape (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.simpleShape Stmt.simpleShape (by simp [Block.simpleShape])
-    (fun _ _ => by simp [Block.simpleShape]) (fun _ => by simp [Stmt.simpleShape]) cs
+/-- A `.cmd`-only block has `noNondetGuards`. -/
+theorem Block.noNondetGuards_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :
+    Block.noNondetGuards (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
+  block_pred_map_cmd_true Block.noNondetGuards Stmt.noNondetGuards (by simp [Block.noNondetGuards])
+    (fun _ _ => by simp [Block.noNondetGuards]) (fun _ => by simp [Stmt.noNondetGuards]) cs
 
 /-- A `.cmd`-only block has `loopHasNoInvariants`. -/
 theorem Block.loopHasNoInvariants_map_cmd' {P : PureExpr} (cs : List (Cmd P)) :

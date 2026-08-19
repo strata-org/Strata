@@ -85,10 +85,10 @@ procedure loopWithBodyInit()
 /-! ### Individual passes
 
 Pass 1 — `nondetElim`: the source has a nondeterministic loop, and `nondetElim`
-removes it (the output is `simpleShape`, i.e. has no nondeterministic control). -/
+removes it (the output is `noNondetGuards`, i.e. has no nondeterministic control). -/
 #guard Block.containsNondetLoop s2uSrc == true
 #guard Block.containsNondetLoop (Block.nondetElim s2uSrc) == false
-#guard Block.simpleShape (Block.nondetElim s2uSrc) == true
+#guard Block.noNondetGuards (Block.nondetElim s2uSrc) == true
 
 /-! Pass 2 — `hoistLoopPrefixInits`: the loop body still `init`s `x`; hoisting
 lifts that prefix init out of the loop body, establishing `loopBodyNoInits`. -/
@@ -155,7 +155,7 @@ open Std (format) in
 
 A program with a nondeterministic-guard `if`: `nondetElim` rewrites the nondet
 branch into a deterministic guard on a fresh havoc'd variable, so the output is
-`simpleShape` and free of nondet control.  There are no loop-body inits, so
+`noNondetGuards` and free of nondet control.  There are no loop-body inits, so
 `hoistLoopPrefixInits` is the identity here. -/
 def iteSrc : List (Stmt Expression (Cmd Expression)) :=
   unwrapBody <|
@@ -171,8 +171,8 @@ procedure nondetIte(out x : bool, out y : bool)
 };
 #end
 
-#guard Block.simpleShape iteSrc == false
-#guard Block.simpleShape (Block.nondetElim iteSrc) == true
+#guard Block.noNondetGuards iteSrc == false
+#guard Block.noNondetGuards (Block.nondetElim iteSrc) == true
 -- hoisting is a no-op on a loop-free program.
 #guard Block.hoistLoopPrefixInits (Block.nondetElim iteSrc)
          == Block.nondetElim iteSrc
@@ -212,7 +212,7 @@ end$_0:
 open Std (format) in
 #eval format (s2uPipeline iteSrc)
 
-/-! ### Example 3 — already simple (deterministic guard, no body inits)
+/-! ### Example 3 — no nondeterministic guard to start with (deterministic guard, no body inits)
 
 A deterministic `while` with no body-local `init`: `nondetElim` leaves it
 unchanged (already nondet-free) and `hoistLoopPrefixInits` has nothing to lift,
@@ -271,8 +271,8 @@ procedure blockExit(out x : int)
 };
 #end
 
-#guard Block.simpleShape exitSrc == false
-#guard Block.simpleShape (Block.nondetElim exitSrc) == true
+#guard Block.noNondetGuards exitSrc == false
+#guard Block.noNondetGuards (Block.nondetElim exitSrc) == true
 -- no loops, so hoisting is a no-op.
 #guard Block.hoistLoopPrefixInits (Block.nondetElim exitSrc) == Block.nondetElim exitSrc
 
@@ -357,7 +357,7 @@ procedure nestedLoops(out i : int)
 
 #guard Block.containsNondetLoop nestedSrc == true
 #guard Block.containsNondetLoop (Block.nondetElim nestedSrc) == false
-#guard Block.simpleShape (Block.nondetElim nestedSrc) == true
+#guard Block.noNondetGuards (Block.nondetElim nestedSrc) == true
 #guard Block.loopBodyNoInits (Block.hoistLoopPrefixInits (Block.nondetElim nestedSrc)) == true
 #guard stmtsToCFG (Block.hoistLoopPrefixInits (Block.nondetElim nestedSrc))
          == s2uPipeline nestedSrc

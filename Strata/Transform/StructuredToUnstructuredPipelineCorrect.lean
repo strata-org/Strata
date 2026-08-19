@@ -134,7 +134,7 @@ private theorem hpre_src_ndelim [HasSubstFvar P] :
         ∧ Block.noMeasureLoops ss = true
         ∧ Block.uniqueInits ss
         ∧ Block.exitsCoveredByBlocks [] ss
-        ∧ Block.simpleShape ss = true
+        ∧ Block.noNondetGuards ss = true
         ∧ Block.userLabelsShapeNodup ss
         ∧ (∀ s : String, StructuredToUnstructuredCorrect.s2uKind s →
             HasIdent.ident (P := P) s ∉ Block.initVars ss)) ss' := by
@@ -152,8 +152,8 @@ private theorem hpre_src_ndelim [HasSubstFvar P] :
       hpre.h_unique (fun str hk => hpre.h_disj_initVars str (Or.inl hk))).2
   · -- exit coverage is preserved by `nondetElim`.
     exact Block.nondetElim_exitsCoveredByBlocks ss hpre.h_covered
-  · -- `simpleShape (nondetElim ss) = true` (`nondetElim` always emits simple shape).
-    exact nondetElim_simpleShape ss
+  · -- `noNondetGuards (nondetElim ss) = true` (`nondetElim` removes every nondet guard).
+    exact nondetElim_noNondetGuards ss
   · -- `userLabelsShapeNodup (nondetElim ss)`: `nondetElim` preserves `getBlockLabels`.
     unfold Block.userLabelsShapeNodup
     rw [Block.nondetElim_getBlockLabels]
@@ -178,13 +178,13 @@ private theorem hpre_ndelim_hoist :
         ∧ Block.noMeasureLoops ss = true
         ∧ Block.uniqueInits ss
         ∧ Block.exitsCoveredByBlocks [] ss
-        ∧ Block.simpleShape ss = true
+        ∧ Block.noNondetGuards ss = true
         ∧ Block.userLabelsShapeNodup ss
         ∧ (∀ s : String, StructuredToUnstructuredCorrect.s2uKind s →
             HasIdent.ident (P := P) s ∉ Block.initVars ss)) ss →
       (fun ss =>
         Block.noFuncDecl ss = true
-        ∧ Block.simpleShape ss = true
+        ∧ Block.noNondetGuards ss = true
         ∧ Block.uniqueInits ss
         ∧ Block.loopBodyNoInits ss = true
         ∧ Block.loopHasNoInvariants ss = true
@@ -200,7 +200,7 @@ private theorem hpre_ndelim_hoist :
     h_simple, h_userlabels, h_s2u_iv⟩ := hpre
   have h_nofd : Block.noFuncDecl ss = true := h_no_fd
   refine ⟨LoopInitHoistProducerProps.Block.hoistP_noFuncDecl ss h_nofd,
-    LoopInitHoistProducerProps.Block.hoistP_simpleShape ss h_simple,
+    LoopInitHoistProducerProps.Block.hoistP_noNondetGuards ss h_simple,
     (LoopInitHoistProducerProps.Block.hoistP_initVars_perm ss).nodup_iff.mpr h_unique,
     LoopInitHoistProducerProps.Block.hoistP_loopBodyNoInits ss,
     LoopInitHoistProducerProps.Block.hoistP_loopHasNoInvariants ss h_no_inv, ?_, ?_, ?_, ?_⟩

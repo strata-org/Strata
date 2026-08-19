@@ -79,9 +79,17 @@ end FilterProcedures
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String)
     (respectNoFilter : Bool := true) : PipelinePhase :=
-  modelPreservingPipelinePhase "filterProcedures" fun prog => do
-    let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
-    return (changed, filtered)
+  -- Every fact is a property of *all* declarations, so dropping some cannot
+  -- break one.
+  modelPreservingPipelinePhase "filterProcedures"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog => do
+      let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
+      return (changed, filtered)
 
 end Core
 

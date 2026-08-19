@@ -132,6 +132,14 @@ def nondetElim (p : Program) : Transform.CoreTransformM (Bool × Program) := do
     boolean and branching on it realizes exactly the nondeterministic choice it
     replaces, introducing no over-approximation. -/
 def nondetElimPipelinePhase : PipelinePhase :=
+  -- `staticSingleAssignment` is not claimed because the loop case `havoc`s the
+  -- fresh boolean at the end of the body.
   modelPreservingPipelinePhase "nondetElim" nondetElim
+    (requires := factSet![.noCFGBodies])
+    (establishes := factSet![.noNondetGuards])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
 
 end Core

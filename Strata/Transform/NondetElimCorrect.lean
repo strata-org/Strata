@@ -23,71 +23,74 @@ namespace Imperative
 
 /-! ## Structural postcondition: the pass output has no nondeterministic control
 
-`Block.simpleShape` holds of every output of `Block.nondetElim` (spec guarantee
+`Block.noNondetGuards` holds of every output of `Block.nondetElim` (spec guarantee
 2): the rewrite replaces each nondeterministic `.ite`/`.loop` guard with a
 deterministic read, so no `.ite .nondet`/`.loop .nondet` survives. -/
 
 mutual
-/-- The output of `Stmt.nondetElimM s σ` satisfies `simpleShape` (no
+/-- The output of `Stmt.nondetElimM s σ` satisfies `noNondetGuards` (no
 nondeterministic control). -/
-theorem Stmt.nondetElimM_simpleShape {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
+theorem Stmt.nondetElimM_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
-    Block.simpleShape (Stmt.nondetElimM s σ).1 = true := by
+    Block.noNondetGuards (Stmt.nondetElimM s σ).1 = true := by
   match s with
-  | .cmd c => simp [Stmt.nondetElimM, Block.simpleShape, Stmt.simpleShape]
+  | .cmd c => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
   | .block lbl bss md =>
       rw [Stmt.nondetElimM_block_out]
-      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
-      exact Block.nondetElimM_simpleShape bss σ
+      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
+      exact Block.nondetElimM_noNondetGuards bss σ
   | .ite (.det e) tss ess md =>
       rw [Stmt.nondetElimM_ite_det_out]
-      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true,
-                 Block.nondetElimM_simpleShape tss σ,
-                 Block.nondetElimM_simpleShape ess _]
+      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true,
+                 Block.nondetElimM_noNondetGuards tss σ,
+                 Block.nondetElimM_noNondetGuards ess _]
   | .ite .nondet tss ess md =>
       rw [Stmt.nondetElimM_ite_nondet_out]
-      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true,
-                 Block.nondetElimM_simpleShape tss _,
-                 Block.nondetElimM_simpleShape ess _]
+      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true,
+                 Block.nondetElimM_noNondetGuards tss _,
+                 Block.nondetElimM_noNondetGuards ess _]
   | .loop (.det e) m inv body md =>
       rw [Stmt.nondetElimM_loop_det_out]
-      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
-      exact Block.nondetElimM_simpleShape body σ
+      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
+      exact Block.nondetElimM_noNondetGuards body σ
   | .loop .nondet m inv body md =>
       rw [Stmt.nondetElimM_loop_nondet_out]
-      simp only [Block.simpleShape, Stmt.simpleShape, Block.simpleShape_append,
+      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Block.noNondetGuards_append,
                  Bool.and_true,
-                 Block.nondetElimM_simpleShape body _]
-  | .exit lbl md => simp [Stmt.nondetElimM, Block.simpleShape, Stmt.simpleShape]
-  | .funcDecl d md => simp [Stmt.nondetElimM, Block.simpleShape, Stmt.simpleShape]
-  | .typeDecl t md => simp [Stmt.nondetElimM, Block.simpleShape, Stmt.simpleShape]
+                 Block.nondetElimM_noNondetGuards body _]
+  | .exit lbl md => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .funcDecl d md => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .typeDecl t md => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
   termination_by sizeOf s
 
-theorem Block.nondetElimM_simpleShape {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
+/-- Block-level counterpart of the statement case: the output of
+    `Block.nondetElimM ss σ` has no nondeterministic guard, in any of its
+    statements. -/
+theorem Block.nondetElimM_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
-    Block.simpleShape (Block.nondetElimM ss σ).1 = true := by
+    Block.noNondetGuards (Block.nondetElimM ss σ).1 = true := by
   match ss with
-  | [] => simp [Block.nondetElimM, Block.simpleShape]
+  | [] => simp [Block.nondetElimM, Block.noNondetGuards]
   | s :: rest =>
-      rw [Block.nondetElimM_cons_out, Block.simpleShape_append]
-      simp only [Stmt.nondetElimM_simpleShape s σ,
-                 Block.nondetElimM_simpleShape rest _, Bool.and_true]
+      rw [Block.nondetElimM_cons_out, Block.noNondetGuards_append]
+      simp only [Stmt.nondetElimM_noNondetGuards s σ,
+                 Block.nondetElimM_noNondetGuards rest _, Bool.and_true]
   termination_by sizeOf ss
 end
 
 /-- Top-level structural postcondition: `Block.nondetElim` output has no
 nondeterministic control (spec guarantee 2). -/
-theorem nondetElim_simpleShape {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
+theorem nondetElim_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) :
-    Block.simpleShape (Block.nondetElim ss) = true :=
-  Block.nondetElimM_simpleShape ss StringGenState.emp
+    Block.noNondetGuards (Block.nondetElim ss) = true :=
+  Block.nondetElimM_noNondetGuards ss StringGenState.emp
 
 /-- `nondetElim` removes nondeterministic loops, so its output satisfies
-`containsNondetLoop = false` (via the `simpleShape` postcondition). -/
+`containsNondetLoop = false` (via the `noNondetGuards` postcondition). -/
 theorem nondetElim_containsNondetLoop {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) :
     Block.containsNondetLoop (Block.nondetElim ss) = false :=
-  Block.not_containsNondetLoop_of_simpleShape _ (nondetElim_simpleShape ss)
+  Block.not_containsNondetLoop_of_noNondetGuards _ (nondetElim_noNondetGuards ss)
 
 /-! ## Foundation lemmas for the simulation proof
 

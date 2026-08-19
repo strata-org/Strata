@@ -219,6 +219,16 @@ def callElimPipelinePhase : PipelinePhase where
       else
         some s!"precondition '{originalLabel}'"
     else none
+  -- Two facts are unclaimed. `staticSingleAssignment`, because the replacement
+  -- havocs the call's outputs. `noBetaRedexes`, because instantiating the
+  -- callee's contract can leave an application of an abstraction behind when a
+  -- function-typed formal is given one.
+  requires := factSet![.noCFGBodies]
+  establishes := factSet![.noCalls]
+  preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
+                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions]
 
 end Core
 

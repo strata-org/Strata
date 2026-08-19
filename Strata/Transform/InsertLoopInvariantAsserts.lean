@@ -47,10 +47,13 @@ loop (G) {                      -- invariants/measure stripped: now a "bare" loo
 assume(I /\ !G);                -- after the loop (exit invariant and negated guard)
 ```
 
-Only deterministic loops (`while (G)`) may carry a `decreases` measure — a
-nondeterministic loop (`while *`) iterates an arbitrary number of times and
-cannot be shown to terminate by a measure, so this pass rejects a
-nondeterministic loop that carries a measure with a diagnostic (`throw`).
+A nondeterministic loop (`while *`) may carry a `decreases` measure. A measure
+that decreases across the body and stays non-negative bounds the number of
+iterations however the guard decides to continue, and a nondeterministic guard
+can only stop the loop sooner; a `while *` whose body breaks out is how a
+bounded loop with a non-guard exit condition gets written. The mechanics agree:
+none of the four VCs below mentions the guard, and the one statement that does,
+the exit `assume(!G)`, is already omitted for a nondeterministic guard.
 
 ### Role of the invariant
 
@@ -76,6 +79,11 @@ inside the body:
 - **VC3** (`measure_lb`): `assert(!(m_old < 0))` — the measure is non-negative.
 - **VC4** (`measure_decrease`): `assert(D < m_old)` — the measure strictly
   decreases across the body.
+
+Neither mentions the guard, so a measure says as much about a `while *` loop as
+about a `while G` one: a measure that decreases across the body and stays
+non-negative bounds the number of iterations, and a nondeterministic guard can
+only stop the loop sooner than that bound.
 -/
 
 namespace InsertLoopInvariantAsserts
@@ -94,8 +102,10 @@ end InsertLoopInvariantAsserts
 
     Returns `some` (a list: entry asserts/assumes, the bare loop, exit assumes)
     for a loop that still carries invariants or a measure, and `none` otherwise.
-    Throws if a nondeterministic loop (`while *`) carries a `decreases` measure,
-    since such a loop cannot be shown to terminate by a measure. -/
+    A `decreases` measure works for a nondeterministic guard as well as a
+    deterministic one: the measure VCs never mention the guard, and a measure
+    that decreases across the body and stays non-negative bounds the number of
+    iterations however the guard decides to continue. -/
 def insertInvariantAsserts (s : Statement)
     : Transform.CoreTransformM (Option (List Statement)) := do
   match s with
@@ -108,14 +118,6 @@ def insertInvariantAsserts (s : Statement)
     let guardExpr? : Option Expression.Expr := match guard with
       | .det g => some g
       | .nondet => none
-    -- A `decreases` measure only makes sense for a deterministic guard: a
-    -- nondeterministic loop iterates an arbitrary number of times, so it cannot
-    -- be shown to terminate by a measure. Reject such an ill-formed loop with a
-    -- diagnostic rather than silently dropping its invariants downstream.
-    if measure.isSome && guardExpr?.isNone then
-      throw (Strata.Message.fromFormat
-        f!"nondeterministic loop (`while *`) cannot carry a `decreases` measure: \
-it iterates an arbitrary number of times and so cannot be shown to terminate")
     let loop_num ← genLoopNum
     -- The per-invariant source label is carried through as part of the suffix
     -- (alongside the index `i`, which guarantees uniqueness when source labels
@@ -199,6 +201,15 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
     if obligationHasLabelPrefix obligation insertLoopInvAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
+  -- The measure snapshot is an `init`, which declares rather than reassigns, so
+  -- `staticSingleAssignment` survives; the invariants, measure and guard are
+  -- relocated unchanged, so no redex appears.
+  requires := factSet![.noCFGBodies]
+  establishes := factSet![.noLoopInvariants, .noLoopMeasures]
+  preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
+                      .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions]
 
 end -- public section
 

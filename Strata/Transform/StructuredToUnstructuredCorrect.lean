@@ -4060,7 +4060,7 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
     (gen gen' : StringGenState)
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_accum_ne : accum ≠ []) :
     ∃ (suf : List (Cmd P)) (tr : DetTransferCmd String P),
       (entry, ({ cmds := accum.reverse ++ suf, transfer := tr } : DetBlock String (Cmd P) P))
@@ -4074,17 +4074,17 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
     unfold stmtsToBlocks at h_gen
     have ⟨suf, tr, h_mem⟩ :=
       stmtsToBlocks_entry_has_accum_prefix k rest exitConts (c :: accum) gen gen'
-        entry blocks h_gen (Block.simpleShape_cons_iff.mp h_simple).2 (by simp)
+        entry blocks h_gen (Block.noNondetGuards_cons_iff.mp h_simple).2 (by simp)
     refine ⟨c :: suf, tr, ?_⟩
     rwa [List.reverse_cons, List.append_assoc, List.singleton_append] at h_mem
   | .funcDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
     exact stmtsToBlocks_entry_has_accum_prefix k rest exitConts accum gen gen'
-      entry blocks h_gen (Block.simpleShape_cons_iff.mp h_simple).2 h_accum_ne
+      entry blocks h_gen (Block.noNondetGuards_cons_iff.mp h_simple).2 h_accum_ne
   | .typeDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
     exact stmtsToBlocks_entry_has_accum_prefix k rest exitConts accum gen gen'
-      entry blocks h_gen (Block.simpleShape_cons_iff.mp h_simple).2 h_accum_ne
+      entry blocks h_gen (Block.noNondetGuards_cons_iff.mp h_simple).2 h_accum_ne
   | .exit l? md :: _ =>
     unfold stmtsToBlocks at h_gen
     simp only at h_gen
@@ -4156,8 +4156,8 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
       rw [h_ab, List.append_nil, List.cons_append, List.nil_append]
       exact List.mem_cons_self
     | nondet =>
-      exact absurd ((Block.simpleShape_cons_iff.mp h_simple).1)
-        (by rw [h_c]; simp [Stmt.simpleShape])
+      exact absurd ((Block.noNondetGuards_cons_iff.mp h_simple).1)
+        (by rw [h_c]; simp [Stmt.noNondetGuards])
   | .loop c m is bss md :: rest =>
     simp only [stmtsToBlocks, bind, StateT.bind] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
@@ -4201,8 +4201,8 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
         simp only [List.append_nil, List.cons_append, List.nil_append]
         exact List.mem_cons_self
       | nondet =>
-        exact absurd ((Block.simpleShape_cons_iff.mp h_simple).1)
-          (by rw [h_c]; simp [Stmt.simpleShape])
+        exact absurd ((Block.noNondetGuards_cons_iff.mp h_simple).1)
+          (by rw [h_c]; simp [Stmt.noNondetGuards])
     | some mExpr =>
       rw [h_m] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
@@ -4243,8 +4243,8 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
         simp only [List.append_nil, List.cons_append, List.nil_append]
         exact List.mem_cons_self
       | nondet =>
-        exact absurd ((Block.simpleShape_cons_iff.mp h_simple).1)
-          (by rw [h_c]; simp [Stmt.simpleShape])
+        exact absurd ((Block.noNondetGuards_cons_iff.mp h_simple).1)
+          (by rw [h_c]; simp [Stmt.noNondetGuards])
 termination_by sizeOf ss
 decreasing_by
   all_goals (simp_wf; omega)
@@ -4268,7 +4268,7 @@ private theorem accum_failed_reaches_failing
     (gen gen' : StringGenState)
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_accum_ne : accum ≠ [])
     (σ_struct_base σ_base : SemanticStore P)
     (hf_base hf_accum : Bool)
@@ -4358,20 +4358,20 @@ theorem loop_genStep_chain {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P] [
 
 end InlineLoopHelpers
 
-/-- Project the four shape predicates (`simpleShape`, `loopBodyNoInits`,
+/-- Project the four shape predicates (`noNondetGuards`, `loopBodyNoInits`,
 `loopHasNoInvariants`, `noMeasureLoops`) of an `.ite (.det e)` statement down to
 its `then`/`else` branches, given each predicate's head fact. -/
 private theorem ite_branch_shape {P : PureExpr} [HasFvars P]
     {e : P.Expr} {thenBranch elseBranch : List (Stmt P (Cmd P))} {md : MetaData P}
-    (h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true)
+    (h_simple_head : Stmt.noNondetGuards (.ite (.det e) thenBranch elseBranch md) = true)
     (h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true)
     (h_lhni_head : Stmt.loopHasNoInvariants (.ite (.det e) thenBranch elseBranch md) = true)
     (h_nml_head : Stmt.noMeasureLoops (.ite (.det e) thenBranch elseBranch md) = true) :
-    Block.simpleShape thenBranch = true ∧ Block.simpleShape elseBranch = true ∧
+    Block.noNondetGuards thenBranch = true ∧ Block.noNondetGuards elseBranch = true ∧
     Block.loopBodyNoInits thenBranch = true ∧ Block.loopBodyNoInits elseBranch = true ∧
     Block.loopHasNoInvariants thenBranch = true ∧ Block.loopHasNoInvariants elseBranch = true ∧
     Block.noMeasureLoops thenBranch = true ∧ Block.noMeasureLoops elseBranch = true :=
-  ⟨Stmt.simpleShape_branch_then h_simple_head, Stmt.simpleShape_branch_else h_simple_head,
+  ⟨Stmt.noNondetGuards_branch_then h_simple_head, Stmt.noNondetGuards_branch_else h_simple_head,
    Stmt.loopBodyNoInits_branch_then h_lbni_head, Stmt.loopBodyNoInits_branch_else h_lbni_head,
    Stmt.loopHasNoInvariants_branch_then h_lhni_head, Stmt.loopHasNoInvariants_branch_else h_lhni_head,
    Stmt.noMeasureLoops_branch_then h_nml_head, Stmt.noMeasureLoops_branch_else h_nml_head⟩
@@ -4427,7 +4427,7 @@ abbrev StmtsToBlocksSimSpec {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (_ : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (_ : Block.noFuncDecl ss = true)
-    (_ : Block.simpleShape ss = true)
+    (_ : Block.noNondetGuards ss = true)
     (_ : Block.uniqueInits ss)
     (_ : Block.loopBodyNoInits ss = true)
     (_ : Block.loopHasNoInvariants ss = true)
@@ -4486,7 +4486,7 @@ abbrev StmtsToBlocksSimSpecToCont {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (_ : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (_ : Block.noFuncDecl ss = true)
-    (_ : Block.simpleShape ss = true)
+    (_ : Block.noNondetGuards ss = true)
     (_ : Block.uniqueInits ss)
     (_ : Block.loopBodyNoInits ss = true)
     (_ : Block.loopHasNoInvariants ss = true)
@@ -4549,7 +4549,7 @@ abbrev StmtsToBlocksSimSpecToExit {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     (_ : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (_ : Block.exitsCoveredByBlocks (coveringLabels exitConts) ss)
     (_ : Block.noFuncDecl ss = true)
-    (_ : Block.simpleShape ss = true)
+    (_ : Block.noNondetGuards ss = true)
     (_ : Block.uniqueInits ss)
     (_ : Block.loopBodyNoInits ss = true)
     (_ : Block.loopHasNoInvariants ss = true)
@@ -4610,7 +4610,7 @@ abbrev StmtsToBlocksSimSpecToFail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (_ : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (_ : Block.noFuncDecl ss = true)
-    (_ : Block.simpleShape ss = true)
+    (_ : Block.noNondetGuards ss = true)
     (_ : Block.uniqueInits ss)
     (_ : Block.loopBodyNoInits ss = true)
     (_ : Block.loopHasNoInvariants ss = true)
@@ -4669,7 +4669,7 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.block label body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.block label body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.block label body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.block label body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.block label body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.block label body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.block label body md :: rest) = true)
@@ -4784,13 +4784,13 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- simpleShape projections.
-    have h_simple_head : Stmt.simpleShape (.block label body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_body : Block.simpleShape body = true := by
-      simp only [Stmt.simpleShape] at h_simple_head; exact h_simple_head
+    -- noNondetGuards projections.
+    have h_simple_head : Stmt.noNondetGuards (.block label body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true := by
+      simp only [Stmt.noNondetGuards] at h_simple_head; exact h_simple_head
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections for body and rest.
     have h_lbni_head : Stmt.loopBodyNoInits (.block label body md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -5366,7 +5366,7 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFv
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.block label' body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.block label' body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.block label' body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.block label' body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.block label' body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.block label' body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.block label' body md :: rest) = true)
@@ -5487,13 +5487,13 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFv
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- simpleShape projections.
-    have h_simple_head : Stmt.simpleShape (.block label' body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_body : Block.simpleShape body = true := by
-      simp only [Stmt.simpleShape] at h_simple_head; exact h_simple_head
+    -- noNondetGuards projections.
+    have h_simple_head : Stmt.noNondetGuards (.block label' body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true := by
+      simp only [Stmt.noNondetGuards] at h_simple_head; exact h_simple_head
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections for body and rest.
     have h_lbni_head : Stmt.loopBodyNoInits (.block label' body md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -6101,7 +6101,7 @@ private theorem stmtsToBlocks_simulation_to_exit_block_arm {P : PureExpr} [HasFv
     (h_gen : (stmtsToBlocks k (Stmt.block label' body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) (Stmt.block label' body md :: rest))
     (h_nofd : Block.noFuncDecl (Stmt.block label' body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.block label' body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.block label' body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.block label' body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.block label' body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.block label' body md :: rest) = true)
@@ -6225,13 +6225,13 @@ private theorem stmtsToBlocks_simulation_to_exit_block_arm {P : PureExpr} [HasFv
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- simpleShape projections.
-    have h_simple_head : Stmt.simpleShape (.block label' body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_body : Block.simpleShape body = true := by
-      simp only [Stmt.simpleShape] at h_simple_head; exact h_simple_head
+    -- noNondetGuards projections.
+    have h_simple_head : Stmt.noNondetGuards (.block label' body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true := by
+      simp only [Stmt.noNondetGuards] at h_simple_head; exact h_simple_head
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections for body and rest.
     have h_lbni_head : Stmt.loopBodyNoInits (.block label' body md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -6846,7 +6846,7 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFv
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.block label body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.block label body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.block label body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.block label body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.block label body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.block label body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.block label body md :: rest) = true)
@@ -6961,12 +6961,12 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFv
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_head : Stmt.simpleShape (.block label body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
-    have h_simple_body : Block.simpleShape body = true := by
-      simp only [Stmt.simpleShape] at h_simple_head; exact h_simple_head
+    have h_simple_head : Stmt.noNondetGuards (.block label body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true := by
+      simp only [Stmt.noNondetGuards] at h_simple_head; exact h_simple_head
     have h_lbni_head : Stmt.loopBodyNoInits (.block label body md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
@@ -7426,7 +7426,7 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.ite (.det e) thenBranch elseBranch md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
@@ -7548,11 +7548,11 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1.2
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- Extract simpleShape for sub-blocks from h_simple
-    have h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    -- Extract noNondetGuards for sub-blocks from h_simple
+    have h_simple_head : Stmt.noNondetGuards (.ite (.det e) thenBranch elseBranch md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     -- Extract loopBodyNoInits / loopHasNoInvariants / noMeasureLoops for sub-blocks.
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -7955,7 +7955,7 @@ private theorem stmtsToBlocks_simulation_to_cont_ite_arm {P : PureExpr} [HasFvar
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.ite (.det e) thenBranch elseBranch md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
@@ -8109,11 +8109,11 @@ private theorem stmtsToBlocks_simulation_to_cont_ite_arm {P : PureExpr} [HasFvar
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1.2
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- simpleShape projections.
-    have h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    -- noNondetGuards projections.
+    have h_simple_head : Stmt.noNondetGuards (.ite (.det e) thenBranch elseBranch md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections.
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -8582,7 +8582,7 @@ private theorem stmtsToBlocks_simulation_to_exit_ite_arm {P : PureExpr} [HasFvar
     (h_gen : (stmtsToBlocks k (Stmt.ite (.det e) thenBranch elseBranch md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) (Stmt.ite (.det e) thenBranch elseBranch md :: rest))
     (h_nofd : Block.noFuncDecl (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
@@ -8735,11 +8735,11 @@ private theorem stmtsToBlocks_simulation_to_exit_ite_arm {P : PureExpr} [HasFvar
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1.2
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    -- simpleShape projections.
-    have h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    -- noNondetGuards projections.
+    have h_simple_head : Stmt.noNondetGuards (.ite (.det e) thenBranch elseBranch md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     -- loopBodyNoInits/loopHasNoInvariants/noMeasureLoops projections.
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
@@ -9217,7 +9217,7 @@ private theorem stmtsToBlocks_simulation_to_fail_ite_arm {P : PureExpr} [HasFvar
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.ite (.det e) thenBranch elseBranch md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.ite (.det e) thenBranch elseBranch md :: rest) = true)
@@ -9350,10 +9350,10 @@ private theorem stmtsToBlocks_simulation_to_fail_ite_arm {P : PureExpr} [HasFvar
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1.2
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_head : Stmt.simpleShape (.ite (.det e) thenBranch elseBranch md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_head : Stmt.noNondetGuards (.ite (.det e) thenBranch elseBranch md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_lbni_head : Stmt.loopBodyNoInits (.ite (.det e) thenBranch elseBranch md) = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).1
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
@@ -9708,7 +9708,7 @@ private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [Ha
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.loop guard measure invariants body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.loop guard measure invariants body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.loop guard measure invariants body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.loop guard measure invariants body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.loop guard measure invariants body md :: rest) = true)
@@ -9757,12 +9757,12 @@ private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [Ha
               s ∈ StringGenState.stringGens gen ∨
               s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
-    -- Subdispatch on guard: .nondet is excluded by strengthened simpleShape.
+    -- Subdispatch on guard: .nondet is excluded by strengthened noNondetGuards.
     -- Only `.det _` reaches the main proof.
-    have h_simple_head : Stmt.simpleShape (.loop guard measure invariants body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
+    have h_simple_head : Stmt.noNondetGuards (.loop guard measure invariants body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
     have ⟨guardExpr, hg_eq⟩ : ∃ ge, guard = .det ge :=
-      Stmt.simpleShape_loop_guard_det h_simple_head
+      Stmt.noNondetGuards_loop_guard_det h_simple_head
     subst hg_eq
     -- Subdispatch on measure: only `.none` is admitted by noMeasureLoops.
     have h_nml_head : Stmt.noMeasureLoops (.loop (.det guardExpr) measure invariants body md) = true :=
@@ -9792,10 +9792,10 @@ private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [Ha
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_body : Block.simpleShape body = true :=
-      Stmt.simpleShape_loop_body h_simple_head
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true :=
+      Stmt.noNondetGuards_loop_body h_simple_head
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
       simp only [Stmt.initVars_loop] at h; exact h
@@ -10077,7 +10077,7 @@ private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFva
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.loop guard measure invariants body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.loop guard measure invariants body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.loop guard measure invariants body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.loop guard measure invariants body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.loop guard measure invariants body md :: rest) = true)
@@ -10133,11 +10133,11 @@ private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFva
               s ∈ StringGenState.stringGens gen ∨
               s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
-    -- Subdispatch on guard: .nondet is excluded by strengthened simpleShape.
-    have h_simple_head : Stmt.simpleShape (.loop guard measure invariants body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
+    -- Subdispatch on guard: .nondet is excluded by strengthened noNondetGuards.
+    have h_simple_head : Stmt.noNondetGuards (.loop guard measure invariants body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
     have ⟨guardExpr, hg_eq⟩ : ∃ ge, guard = .det ge :=
-      Stmt.simpleShape_loop_guard_det h_simple_head
+      Stmt.noNondetGuards_loop_guard_det h_simple_head
     subst hg_eq
     -- Subdispatch on measure: only `.none` is admitted by noMeasureLoops.
     have h_nml_head : Stmt.noMeasureLoops (.loop (.det guardExpr) measure invariants body md) = true :=
@@ -10166,10 +10166,10 @@ private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFva
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_body : Block.simpleShape body = true :=
-      Stmt.simpleShape_loop_body h_simple_head
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true :=
+      Stmt.noNondetGuards_loop_body h_simple_head
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
       simp only [Stmt.initVars_loop] at h; exact h
@@ -10495,7 +10495,7 @@ private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFva
     (h_gen : (stmtsToBlocks k (Stmt.loop guard measure invariants body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) (Stmt.loop guard measure invariants body md :: rest))
     (h_nofd : Block.noFuncDecl (Stmt.loop guard measure invariants body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.loop guard measure invariants body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.loop guard measure invariants body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.loop guard measure invariants body md :: rest) = true)
@@ -10550,11 +10550,11 @@ private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFva
               s ∈ StringGenState.stringGens gen ∨
               s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
-    -- Subdispatch on guard: .nondet is excluded by strengthened simpleShape.
-    have h_simple_head : Stmt.simpleShape (.loop guard measure invariants body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
+    -- Subdispatch on guard: .nondet is excluded by strengthened noNondetGuards.
+    have h_simple_head : Stmt.noNondetGuards (.loop guard measure invariants body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
     have ⟨guardExpr, hg_eq⟩ : ∃ ge, guard = .det ge :=
-      Stmt.simpleShape_loop_guard_det h_simple_head
+      Stmt.noNondetGuards_loop_guard_det h_simple_head
     subst hg_eq
     -- Subdispatch on measure: only `.none` is admitted by noMeasureLoops.
     have h_nml_head : Stmt.noMeasureLoops (.loop (.det guardExpr) measure invariants body md) = true :=
@@ -10583,10 +10583,10 @@ private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFva
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_body : Block.simpleShape body = true :=
-      Stmt.simpleShape_loop_body h_simple_head
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true :=
+      Stmt.noNondetGuards_loop_body h_simple_head
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
       simp only [Stmt.initVars_loop] at h; exact h
@@ -10917,7 +10917,7 @@ private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFva
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.loop guard measure invariants body md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.loop guard measure invariants body md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.loop guard measure invariants body md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.loop guard measure invariants body md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.loop guard measure invariants body md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.loop guard measure invariants body md :: rest) = true)
@@ -10966,10 +10966,10 @@ private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFva
       StepDetCFGStar extendFactory ρ₀.factory cfg
         (.atBlock entry σ_base hf_base) d
       ∧ d.getFailure = true := by
-    have h_simple_head : Stmt.simpleShape (.loop guard measure invariants body md) = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).1
+    have h_simple_head : Stmt.noNondetGuards (.loop guard measure invariants body md) = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).1
     have ⟨guardExpr, hg_eq⟩ : ∃ ge, guard = .det ge :=
-      Stmt.simpleShape_loop_guard_det h_simple_head
+      Stmt.noNondetGuards_loop_guard_det h_simple_head
     subst hg_eq
     have h_nml_head : Stmt.noMeasureLoops (.loop (.det guardExpr) measure invariants body md) = true :=
       (Block.noMeasureLoops_cons_iff.mp h_nml).1
@@ -10996,10 +10996,10 @@ private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFva
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.1
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_body : Block.simpleShape body = true :=
-      Stmt.simpleShape_loop_body h_simple_head
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_body : Block.noNondetGuards body = true :=
+      Stmt.noNondetGuards_loop_body h_simple_head
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_body : Block.uniqueInits body := by
       have h := Block.uniqueInits.head_stmt h_unique
       simp only [Stmt.initVars_loop] at h; exact h
@@ -11293,7 +11293,7 @@ private theorem stmtsToBlocks_simulation_cmd_arm {P : PureExpr} [HasFvar P] [Has
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.cmd c :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.cmd c :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.cmd c :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.cmd c :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.cmd c :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.cmd c :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.cmd c :: rest) = true)
@@ -11363,8 +11363,8 @@ private theorem stmtsToBlocks_simulation_cmd_arm {P : PureExpr} [HasFvar P] [Has
     have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.factory := heval_eq_c ▸ hwf_congr
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -11435,7 +11435,7 @@ private theorem stmtsToBlocks_simulation_to_cont_cmd_arm {P : PureExpr} [HasFvar
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.cmd c :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.cmd c :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.cmd c :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.cmd c :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.cmd c :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.cmd c :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.cmd c :: rest) = true)
@@ -11534,8 +11534,8 @@ private theorem stmtsToBlocks_simulation_to_cont_cmd_arm {P : PureExpr} [HasFvar
     have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.factory := heval_eq_c ▸ hwf_congr
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -11601,7 +11601,7 @@ private theorem stmtsToBlocks_simulation_to_exit_cmd_arm {P : PureExpr} [HasFvar
     (h_gen : (stmtsToBlocks k (Stmt.cmd c :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) (Stmt.cmd c :: rest))
     (h_nofd : Block.noFuncDecl (Stmt.cmd c :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.cmd c :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.cmd c :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.cmd c :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.cmd c :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.cmd c :: rest) = true)
@@ -11699,8 +11699,8 @@ private theorem stmtsToBlocks_simulation_to_exit_cmd_arm {P : PureExpr} [HasFvar
     have hwf_congr' : WellFormedSemanticEvalExprCongr ρ₁.factory := heval_eq_c ▸ hwf_congr
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -11767,7 +11767,7 @@ private theorem stmtsToBlocks_simulation_to_fail_cmd_arm {P : PureExpr} [HasFvar
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.cmd c0 :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.cmd c0 :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.cmd c0 :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.cmd c0 :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.cmd c0 :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.cmd c0 :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.cmd c0 :: rest) = true)
@@ -11871,8 +11871,8 @@ private theorem stmtsToBlocks_simulation_to_fail_cmd_arm {P : PureExpr} [HasFvar
       rw [h_hf] at h_ρ₀_nofail; exact (Bool.or_eq_false_iff.mp h_ρ₀_nofail).2
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl] at h_nofd; exact h_nofd.2
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -11898,7 +11898,7 @@ private theorem stmtsToBlocks_simulation_to_fail_cmd_arm {P : PureExpr} [HasFvar
       have h_fail' : (hf_base || (hf_accum || true)) = true := by simp
       exact heval_eq_c ▸ accum_failed_reaches_failing extendFactory k rest exitConts
         (c0 :: accum) gen gen' entry blocks h_gen
-        (Block.simpleShape_cons_iff.mp h_simple).2 (by simp)
+        (Block.noNondetGuards_cons_iff.mp h_simple).2 (by simp)
         σ_struct_base σ_base hf_base (hf_accum || true) ρ₁
         (heval_eq_c ▸ hwf_def) h_accum'
         h_agree_entry h_fresh_accum' h_unique_accum' h_fail'
@@ -11948,7 +11948,7 @@ private theorem stmtsToBlocks_simulation_typeDecl_arm {P : PureExpr} [HasFvar P]
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.typeDecl tc md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.typeDecl tc md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.typeDecl tc md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.typeDecl tc md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.typeDecl tc md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.typeDecl tc md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.typeDecl tc md :: rest) = true)
@@ -12020,8 +12020,8 @@ private theorem stmtsToBlocks_simulation_typeDecl_arm {P : PureExpr} [HasFvar P]
     rw [h_ρ₁] at h_rest_star
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -12071,7 +12071,7 @@ private theorem stmtsToBlocks_simulation_to_cont_typeDecl_arm {P : PureExpr} [Ha
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.typeDecl tc md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.typeDecl tc md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.typeDecl tc md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.typeDecl tc md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.typeDecl tc md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.typeDecl tc md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.typeDecl tc md :: rest) = true)
@@ -12153,8 +12153,8 @@ private theorem stmtsToBlocks_simulation_to_cont_typeDecl_arm {P : PureExpr} [Ha
                 | step _ _ _ h _ => exact absurd h (by intro h; cases h)
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -12205,7 +12205,7 @@ private theorem stmtsToBlocks_simulation_to_exit_typeDecl_arm {P : PureExpr} [Ha
     (h_gen : (stmtsToBlocks k (Stmt.typeDecl tc md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) (Stmt.typeDecl tc md :: rest))
     (h_nofd : Block.noFuncDecl (Stmt.typeDecl tc md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.typeDecl tc md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.typeDecl tc md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.typeDecl tc md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.typeDecl tc md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.typeDecl tc md :: rest) = true)
@@ -12286,8 +12286,8 @@ private theorem stmtsToBlocks_simulation_to_exit_typeDecl_arm {P : PureExpr} [Ha
                 | step _ _ _ h _ => exact absurd h (by intro h; cases h)
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -12339,7 +12339,7 @@ private theorem stmtsToBlocks_simulation_to_fail_typeDecl_arm {P : PureExpr} [Ha
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k (Stmt.typeDecl tc md :: rest) exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl (Stmt.typeDecl tc md :: rest) = true)
-    (h_simple : Block.simpleShape (Stmt.typeDecl tc md :: rest) = true)
+    (h_simple : Block.noNondetGuards (Stmt.typeDecl tc md :: rest) = true)
     (h_unique : Block.uniqueInits (Stmt.typeDecl tc md :: rest))
     (h_lbni : Block.loopBodyNoInits (Stmt.typeDecl tc md :: rest) = true)
     (h_lhni : Block.loopHasNoInvariants (Stmt.typeDecl tc md :: rest) = true)
@@ -12416,8 +12416,8 @@ private theorem stmtsToBlocks_simulation_to_fail_typeDecl_arm {P : PureExpr} [Ha
         exact ⟨d, h_ρ₁_eq ▸ h_rest_run, hd_fail⟩
     have h_nofd_rest : Block.noFuncDecl rest = true := by
       simp [Block.noFuncDecl, Stmt.noFuncDecl] at h_nofd; exact h_nofd
-    have h_simple_rest : Block.simpleShape rest = true :=
-      (Block.simpleShape_cons_iff.mp h_simple).2
+    have h_simple_rest : Block.noNondetGuards rest = true :=
+      (Block.noNondetGuards_cons_iff.mp h_simple).2
     have h_unique_rest : Block.uniqueInits rest := Block.uniqueInits.tail h_unique
     have h_lbni_rest : Block.loopBodyNoInits rest = true :=
       (Block.loopBodyNoInits_cons_iff.mp h_lbni).2
@@ -12476,7 +12476,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -12560,7 +12560,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
       h_store_no_gens_upper h_foreign cfg h_cfg_blocks h_cfg_nodup
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation extendFactory k ss_sub)
   | .ite .nondet _ _ _ :: _ =>
-    exact absurd (Block.simpleShape_cons_iff.mp h_simple).1 (by simp [Stmt.simpleShape])
+    exact absurd (Block.noNondetGuards_cons_iff.mp h_simple).1 (by simp [Stmt.noNondetGuards])
   | .loop guard measure invariants body md :: rest =>
     exact stmtsToBlocks_simulation_loop_arm guard measure invariants body md rest
       extendFactory k exitConts accum gen gen' entry blocks h_gen h_nofd h_simple h_unique h_lbni
@@ -12633,7 +12633,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -12778,7 +12778,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation extendFactory k ss_sub)
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation_to_cont extendFactory k ss_sub)
   | .ite .nondet _ _ _ :: _ =>
-    exact absurd (Block.simpleShape_cons_iff.mp h_simple).1 (by simp [Stmt.simpleShape])
+    exact absurd (Block.noNondetGuards_cons_iff.mp h_simple).1 (by simp [Stmt.noNondetGuards])
   | .loop guard measure invariants body md :: rest =>
     exact stmtsToBlocks_simulation_to_cont_loop_arm guard measure invariants body md rest
       extendFactory k exitConts accum gen gen' entry blocks h_gen h_nofd h_simple h_unique h_lbni
@@ -12817,7 +12817,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (h_covered : Block.exitsCoveredByBlocks (coveringLabels exitConts) ss)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -12946,7 +12946,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation extendFactory k ss_sub)
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation_to_exit extendFactory k ss_sub)
   | .ite .nondet _ _ _ :: _ =>
-    exact absurd (Block.simpleShape_cons_iff.mp h_simple).1 (by simp [Stmt.simpleShape])
+    exact absurd (Block.noNondetGuards_cons_iff.mp h_simple).1 (by simp [Stmt.noNondetGuards])
   | .loop guard measure invariants body md :: rest =>
     exact stmtsToBlocks_simulation_to_exit_loop_arm guard measure invariants body md rest
       extendFactory k exitConts accum gen gen' entry blocks h_gen h_covered h_nofd h_simple h_unique
@@ -12990,7 +12990,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : (stmtsToBlocks k ss exitConts accum gen) = ((entry, blocks), gen'))
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13121,7 +13121,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation extendFactory k ss_sub)
       (fun extendFactory k ss_sub hlt => stmtsToBlocks_simulation_to_fail extendFactory k ss_sub)
   | .ite .nondet _ _ _ :: _ =>
-    exact absurd (Block.simpleShape_cons_iff.mp h_simple).1 (by simp [Stmt.simpleShape])
+    exact absurd (Block.noNondetGuards_cons_iff.mp h_simple).1 (by simp [Stmt.noNondetGuards])
   | .block label body md :: rest =>
     exact stmtsToBlocks_simulation_to_fail_block_arm label body md rest
       extendFactory k exitConts accum gen gen' entry blocks h_gen h_nofd h_simple h_unique h_lbni
@@ -13288,7 +13288,7 @@ theorem stmtsToCFG_terminal_compositional {P : PureExpr} [HasFvar P] [HasFvars P
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13385,7 +13385,7 @@ theorem stmtsToCFG_terminal_compositional_shape {P : PureExpr} [HasFvar P] [HasF
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13482,7 +13482,7 @@ theorem stmtsToCFG_exiting_compositional {P : PureExpr} [HasFvar P] [HasFvars P]
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13576,7 +13576,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13666,7 +13666,7 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13773,7 +13773,7 @@ theorem stmtsToCFG_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -13951,7 +13951,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasFvars
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -14004,7 +14004,7 @@ theorem structuredToUnstructured_sound_kind_exit {P : PureExpr} [HasFvar P] [Has
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -14051,7 +14051,7 @@ theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [Has
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
+    (h_simple : Block.noNondetGuards ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_lbni : Block.loopBodyNoInits ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -14090,7 +14090,7 @@ open Specification.Transform
 variable {P : PureExpr}
 
 /-- `stmtsToCFG` per-pass overapproximation up to `EnvStoreAgree`.  The final pass:
-the structured `Lang.imperativeBlock` (post-hoist, simple-shape) → `Lang.cfg`. -/
+the structured `Lang.imperativeBlock` (post-hoist, no nondeterministic guard) → `Lang.cfg`. -/
 theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
     [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasFvar P]
     [LawfulHasIdent P] [HasSubstFvar P] (extendFactory : ExtendFactory P) :
@@ -14102,7 +14102,7 @@ theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P]
       (fun ss => some (stmtsToCFG ss))
       (fun ss =>
         Block.noFuncDecl ss = true
-        ∧ Block.simpleShape ss = true
+        ∧ Block.noNondetGuards ss = true
         ∧ Block.uniqueInits ss
         ∧ Block.loopBodyNoInits ss = true
         ∧ Block.loopHasNoInvariants ss = true
