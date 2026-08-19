@@ -156,6 +156,32 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
       | _ => []
     [node] ++ asserts ++ suffix
+  | .Var (.Field ..) =>
+    -- Constrained field read → `{ assume T$constraint(read); read }`.
+    -- `elimCompositeType` lowers the declared type to its base without restating the
+    -- predicate on READ, while the range OBLIGATION still lands at the destination
+    -- (`ensures` on a constrained output, `assert` on a constrained local) --
+    -- unprovable rather than imprecise: without this assume, `return self#x` on an
+    -- `int32` field cannot discharge its own `int32` postcondition.
+    --
+    -- ASSUMED, not asserted, resting on the DECLARED type as a standing fact about
+    -- every value read out of the field (as `.Declare` above does for an
+    -- uninitialized local), NOT on write coverage: a fresh composite's fields are
+    -- never assigned, yet a read is assumed in range (measured). Writes are covered
+    -- anyway -- `.Assign` checks each, and `IncrDecr` / `CompoundAssign` lower to
+    -- `.Assign` first (LaurelCompilationPipeline runs
+    -- eliminateIncrDecrAndCompoundAssign before constrainedTypeElim).
+    --
+    -- On the READ: hoisting to the enclosing statement could reference a local that
+    -- statement declares. The duplicated read is pure (`readField(heap, obj, field)`);
+    -- `.Assign` needs a read-back because its RHS may not be. Bottom-up traversal
+    -- leaves the copy inside the assume unvisited, as `.Quantifier` relies on too.
+    --
+    -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
+    -- write, so the `Datatype` branch over-approximates.
+    match constraintCallForExpr ptMap (computeExprType model node).val node (src := source) with
+    | some c => [⟨.Assume c, source⟩, node]
+    | none => [node]
   | _ => [node]
 
 /-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
