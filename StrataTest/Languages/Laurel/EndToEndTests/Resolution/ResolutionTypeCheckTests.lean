@@ -201,6 +201,177 @@ procedure readTag(p: Pair<bool>): bool {
 };
 #end
 
+/-! ### A type variable shared across parameters accepts a subtype argument
+
+`update<K,V>(map: Map K V, key: K, value: V)` binds `V` from both the map and the value.
+`callSiteTypeSubst` reconciles the two bindings by keeping the more general one when they are
+related by `isSubtype`, so storing a `Dog` in a `Map int Animal` binds `V` to `Animal` and
+resolves. `isConsistent` alone would relate the two only if they were the same type. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure storeSubtypeValue() opaque {
+  var m: Map int Animal := mapConst(new Animal);
+  var d: Dog := new Dog;
+  m := update(m, 1, d);
+  assert 1 == 1
+};
+#end
+
+/-! The same holds for a subtype KEY, where `K` is shared between the map and the key. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure readSubtypeKey() opaque {
+  var m: Map Animal int := mapConst(1);
+  var d: Dog := new Dog;
+  var x: int := select(m, d);
+  assert x == x
+};
+#end
+
+/-! Not specific to the map primitives: any signature repeating a type variable across
+parameters accepts a subtype pairing the same way. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure both<T>(a: T, b: T) opaque;
+procedure passSubtypePair() opaque {
+  var an: Animal := new Animal;
+  var d: Dog := new Dog;
+  both(an, d);
+  assert 1 == 1
+};
+#end
+
+/-! The reconciliation is DIRECTIONAL: two SIBLING types are not joined to their common
+ancestor, so this remains a conflict. Passing a `Dog` where a `Cat` is also expected is far
+more often a mistake than an intent, and `isSubtype` holds in neither direction. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+composite Cat extends Animal { }
+procedure both<T>(a: T, b: T) opaque;
+procedure passSiblingPair() opaque {
+  var d: Dog := new Dog;
+  var c: Cat := new Cat;
+  both(d, c)
+//^^^^^^^^^^ error: cannot infer type argument 'T' of 'both': 'Dog' and 'Cat' disagree
+};
+#end
+
+/-! Reconciliation is ORDER-INDEPENDENT: binding the subtype first and meeting the supertype
+second keeps the supertype just as the reverse order does. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure both<T>(a: T, b: T) opaque;
+procedure passSubtypeFirst() opaque {
+  var an: Animal := new Animal;
+  var d: Dog := new Dog;
+  both(d, an);
+  assert 1 == 1
+};
+#end
+
+/-! Which side wins is observable through the return type: `T` comes back as the SUPERTYPE, so a
+`Dog`-typed binding is rejected. Pinned in both argument orders, since accepting the call says
+only that the two were reconciled, not which binding survived. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure resultIsSupertypeSubtypeFirst() opaque {
+  var an: Animal := new Animal;
+  var d: Dog := new Dog;
+  var bad: Dog := pick(d, an)
+//                ^^^^^^^^^^^ error: expected 'Dog', got 'Animal'
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure resultIsSupertypeSupertypeFirst() opaque {
+  var an: Animal := new Animal;
+  var d: Dog := new Dog;
+  var bad: Dog := pick(an, d)
+//                ^^^^^^^^^^^ error: expected 'Dog', got 'Animal'
+};
+#end
+
+/-! A consequence for `==`, whose operands share one `T` via `$eq<T>(x: T, y: T)`: comparing
+values of related composite types resolves. Reference equality between a subtype and its
+supertype is meaningful, so this is the intended reading; unrelated types (`1 == true`,
+`int` vs `string` above) still conflict because neither is a subtype of the other. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+procedure compareRelated() opaque {
+  var an: Animal := new Animal;
+  var d: Dog := new Dog;
+  assert an == d
+};
+#end
+
+/-! ### Holes are not typed from a generic signature
+
+A `<?>` in an argument slot of a generic callee cannot take its type from the declared
+parameter, whose type variables are not instantiated at that point: doing so carries free
+variables into the `$hole_N$asFunction` procedure `EliminateDeterministicHoles` emits, which
+Core rejects. `calleeParamTypes` leaves such slots to sibling-based inference instead. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure holeInMapKey() opaque {
+  var m: Map int bool := mapConst(false);
+  var b: bool := select(m, <?>);
+  assert b == b
+};
+#end
+
+/-! ### Over-arity is reported for a generic callee too
+
+The generic-callee branch pairs arguments with parameters by `zip`, which ignores a surplus
+argument, so the arity check runs explicitly — with the same wording and at the same call
+source as the non-generic path. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (y: T) opaque;
+procedure callOverArity() opaque {
+  var a: int := idp(1, 2);
+//              ^^^^^^^^^ error: call to 'idp' expects 1 argument(s) but 2 were provided
+  assert a == a
+};
+#end
+
 /-! ## Multi-output procedures -/
 
 #eval testLaurelResolution <|

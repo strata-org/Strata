@@ -1841,23 +1841,45 @@ def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     `.UserDefined IM` against `.TMap` and fail. -/
 def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
     : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
-  (params.zip actuals).foldl (init := ({}, [])) fun acc (p, a) =>
-    match matchTypeArg p.val (ctx.unfold a).val {} with
-    | none => acc
-    | some bindings =>
-      bindings.toList.foldl (init := acc) fun (subst, conflicts) (name, ty) =>
-        if mentionsTVar ty then (subst, conflicts)
-        else
-          let tyMd : HighTypeMd := { val := ty, source := a.source }
-          match subst.get? name with
-          | none => (subst.insert name tyMd, conflicts)
-          | some prev =>
-            if isConsistent ctx prev tyMd then
-              -- The more concrete side wins: a gradual `Unknown` binding learns nothing, so
-              -- `<?> == 1` still infers `T ↦ int` rather than stalling at `Unknown`.
-              if prev.val matches .Unknown then (subst.insert name tyMd, conflicts)
-              else (subst, conflicts)
-            else (subst, (name, prev, tyMd) :: conflicts)
+  let candidates : List (String × HighTypeMd) :=
+    (params.zip actuals).flatMap fun (p, a) =>
+      match matchTypeArg p.val (ctx.unfold a).val {} with
+      | none => []
+      | some bindings =>
+        bindings.toList.filterMap fun (name, ty) =>
+          if mentionsTVar ty then none
+          else some (name, ({ val := ty, source := a.source } : HighTypeMd))
+  let names := (candidates.map (·.1)).eraseDups
+  names.foldl (init := ({}, [])) fun (subst, conflicts) name =>
+    let forName := (candidates.filter (·.1 == name)).map (·.2)
+    -- A gradual `Unknown` candidate teaches nothing, so it is set aside unless it is all there
+    -- is: `<?> == 1` binds `T ↦ int` rather than stalling at `Unknown`.
+    let concrete := forName.filter (fun t => !(t.val matches .Unknown))
+    let pool := if concrete.isEmpty then forName else concrete
+    -- The binding is the candidate every other candidate satisfies, by consistency or by
+    -- subtyping. `isConsistent` alone relates two distinct composites only when they are the
+    -- same type, so a subtype argument would otherwise conflict with its own supertype: this is
+    -- what lets `update<K,V>(map: Map K V, key: K, value: V)` take a `Map int Animal` and a
+    -- `Dog`, binding `V ↦ Animal`.
+    --
+    -- Decided over the WHOLE candidate set rather than by folding pairwise, which would make the
+    -- verdict depend on argument order once a variable occurs three or more times: widening the
+    -- accumulated binding to a supertype would then absorb a later sibling that the original
+    -- binding would have rejected. `both3<T>` at a `Dog`, an `Animal` and a `Cat` resolves in
+    -- every order — `Animal` dominates both siblings — and a `Dog` with a `Cat` alone conflicts
+    -- in every order, since neither is a supertype of the other and their common ancestor is not
+    -- among the candidates. Reconciling to a common ancestor is deliberately NOT done: passing a
+    -- `Dog` where a `Cat` is also expected is far more often a mistake than an intent.
+    match pool.find? (fun cand => pool.all (fun o => isConsistent ctx o cand || isSubtype ctx o cand)) with
+    | some winner => (subst.insert name winner, conflicts)
+    | none =>
+      -- No candidate dominates: report the first mutually unrelated pair, which is the one a
+      -- reader can act on.
+      match pool.findSome? (fun a =>
+              (pool.find? (fun b => !isConsistent ctx a b && !isSubtype ctx a b && !isSubtype ctx b a)).map
+                (fun b => (a, b))) with
+      | some (a, b) => (subst, (name, a, b) :: conflicts)
+      | none => (subst, conflicts)
 
 def HighType.isBool : HighType → Bool
   | TBool => true

@@ -3004,6 +3004,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
           let diag := diagnosticFromSource aTy.source
             s!"cannot pass '{formatType aTy}' as the '{formatType pTy'}' parameter of '{callee.text}'"
           modify fun s => { s with errors := s.errors.push diag }
+    -- `zip` above pairs only as far as the shorter list, so a surplus argument would otherwise
+    -- reach Core and fail there as an arity mismatch with no source range and no callee name.
+    -- Under-arity is deliberately not flagged.
+    if args.length > paramTys.length then
+      let diag := diagnosticFromSource source
+        s!"call to '{callee}' expects {paramTys.length} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
     return (.StaticCall callee' args', substTypeVars subst (procReturnType callee gproc))
 
   -- GENERIC DATATYPE DESTRUCTOR: `Option..value(o)` is declared to return `T`, and unlike a
