@@ -31,11 +31,11 @@ private def syntheticSource : FileRange :=
 /--
 Generate Laurel constant definitions for the type hierarchy:
 - A `ancestorsFor<Type>` constant per composite type.
-It enables checking for `<Type>` whether it is assignable to another type using a Map lookup.
+It enables checking for `<Type>` whether it is assignable to another type using a TotalMap lookup.
 - A `ancestorsPerType` constant combining the per-type constants.
-It enables checking for any type whether it is assignable to any other type using two Map lookups.
+It enables checking for any type whether it is assignable to any other type using two TotalMap lookups.
 We use this to translate `<value> is <Type>`.
-The runtime type of `<value>` is used for the outer Map lookup while `<Type>` for the inner one.
+The runtime type of `<value>` is used for the outer TotalMap lookup while `<Type>` for the inner one.
 
 -/
 def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : Except String (List Constant) := do
@@ -47,7 +47,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : Exce
   let boolTy : HighTypeMd := ⟨.TBool, syntheticSource⟩
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, syntheticSource⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, syntheticSource⟩
-  -- Helper: build an inner map (Map TypeTag bool) for a given composite type
+  -- Helper: build an inner map (TotalMap TypeTag bool) for a given composite type
   -- Start with mapConst(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : Except String StmtExprMd := do
     let ancestors ← computeAncestors model ct.name

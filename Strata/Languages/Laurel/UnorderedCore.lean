@@ -25,6 +25,12 @@ public structure UnorderedCoreWithLaurelTypes where
       lower to a different Core declaration (`TypeDecl.con`, not `.data`) and, having no
       constructor arguments, cannot participate in a dependency cycle. -/
   opaqueTypes : List OpaqueTypeDefinition := []
+  /-- Type aliases, carried only so that re-resolution can still bind their names. They emit no
+      Core declaration, and `TypeAliasElim` removes them from `program.types`, so this is empty
+      once that pass has run. Before it, a signature mentioning an alias needs the name in
+      scope: `resolveUnorderedCore` registers these, without which it reports
+      `'<name>' is not defined`. -/
+  aliases : List TypeAlias := []
   constants : List Constant
 
 public def formatUnorderedCoreWithLaurelTypes (p : UnorderedCoreWithLaurelTypes) : Format :=

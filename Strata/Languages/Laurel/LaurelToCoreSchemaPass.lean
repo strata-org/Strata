@@ -120,6 +120,37 @@ private def freshId : TranslateM Nat := do
 private def freshTVar : TranslateM LMonoTy := do
   return .ftvar s!"_t{← freshId}"
 
+/-- `$MapEntry`'s absent constructor, as declared in `CoreDefinitionsForLaurel`. Needed here
+    because `mapEmpty` is lowered rather than given a Laurel body. -/
+private def mapEntryAbsentCtor : String := "$MapAbsent"
+
+/-- Whether a map expression's value type is still unbound: a bare `mapEmpty()`, or a
+    `mapRemove` chain bottoming out in one. Neither mentions `V` in its result, so if the use
+    site does not supply it, nothing does, and `V` reaches the SMT encoder free — reported as
+    `strata-bug: … should be fully monomorphic`, blaming the compiler for an ambiguous program.
+
+    Syntactic on purpose. Asking for the argument's type instead rejects too much:
+    `computeExprType` reports a call's *declared* return type without the call-site
+    substitution, so `mapSet(m, k, v)` also comes back with `V` unbound (see `mapConstValTy`).
+
+    TODO: this exists only because Laurel lets an unbound type argument escape resolution and
+    leans on Core's HM inference downstream. The fix is to make Laurel responsible for every
+    type argument: give the generic-call path in `Resolution` a check direction as well as a
+    synth one, resolve arguments in stages (synthesize what can be, run `callSiteTypeSubst`,
+    then re-resolve the rest in check mode against the instantiated parameter types), and pair
+    the declared return type with the expected type so a return position binds type variables.
+    A still-unbound type argument is then a resolution error at the call, and this check plus
+    `mapEmpty`'s unannotated branch, `mapConst`'s `TypeTag` default and `Core.setEmptyOp`'s
+    unannotated path all become dead. -/
+private partial def mapValueTypeUnbound (mapArg : StmtExprMd) : Bool :=
+  match mapArg.val with
+  | .StaticCall callee args =>
+    match callee.text, args with
+    | "mapEmpty", [] => true
+    | "mapRemove", inner :: _ => mapValueTypeUnbound inner
+    | _, _ => false
+  | _ => false
+
 /-- Shared message for a generic application that reaches Core translation un-monomorphized
     (a generic composite the monomorphizer should have rewritten, or an unsupported generic). -/
 private def genericReachedCoreMsg : String :=
@@ -206,7 +237,8 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
         -- `Set<int>` → `.tcons "Set" [int]`, matching the `declare-sort` arity. Like a
         -- datatype, an opaque type is NOT monomorphized: its parameters survive as real
         -- Core sort arguments.
-        | some (.opaqueType ot) => return .tcons ot.name.text (← args.mapM translateType)
+        | some (.opaqueType ot) =>
+          return .tcons ot.name.text (← args.mapM translateType)
         | _ => invalidCoreType ty.source genericReachedCoreMsg
     | _ => invalidCoreType ty.source genericReachedCoreMsg
   | .TFloat64 =>
@@ -238,8 +270,8 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
 
 /-- Compute the Core value type `V` of a `mapConst` argument, i.e. the type of
     `arg`. Nested `mapConst` calls carry an inert `int` placeholder declared
-    return type, so `computeExprType` cannot recover their structural `Map` type;
-    we reconstruct it here (`mapConst(x) : Map TypeTag (typeof x)`). -/
+    return type, so `computeExprType` cannot recover their structural `TotalMap` type;
+    we reconstruct it here (`mapConst(x) : TotalMap TypeTag (typeof x)`). -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
   match arg.val with
   | .StaticCall callee [inner] =>
@@ -432,7 +464,7 @@ instead of `fvar`.
 is in scope (e.g. the target type of a `var m: T := <expr>` declaration). It is used
 ONLY to recover the key type of a `mapConst` call — a constant-map builtin whose key type
 is not inferable from its single value argument. When the caller knows the binding is a
-`Map K V`, `K` is threaded here so the emitted op is annotated `V → Map K V` and the
+`TotalMap K V`, `K` is threaded here so the emitted op is annotated `V → TotalMap K V` and the
 program round-trips as `mapConst<K>(v)`. When absent (internal calls, e.g. the
 `TypeHierarchy` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
 propagated into subexpressions (every recursive call uses the `none` default).
@@ -562,49 +594,83 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        -- The `mapConst` constant-map builtin has no inferable key type, so we
-        -- annotate its op with the concrete function type `V → Map K V`. This
-        -- lets the pretty-printer emit the explicit `mapConst<K>(v)` syntax so
-        -- the program round-trips. The key `K` is CONTEXT-derived:
-        --   * If the call is the initializer of a `var m: T := mapConst(v)` and
-        --     the declared target `T` resolves to a `Map K V` (aliases already
-        --     unfolded by `TypeAliasElim`), we use that `K` — so the user case
-        --     `var m: Map int bool := mapConst(false)` annotates `<int>` and
-        --     unifies with the binding.
-        --   * Otherwise (internal calls with no binding key available, e.g. the
-        --     `TypeHierarchy` ancestor tables), we default to `TypeTag`, the
-        --     type-tag domain of those tables, so their round-trip stays
-        --     `mapConst<TypeTag>`.
-        let fnOp : Core.Expression.Expr ←
-          if callee.text == "mapConst" then
-            match args with
-            | [valArg] =>
-                let vTy ← mapConstValTy model valArg
-                let kTy : LMonoTy ← match expectedType with
-                  | some ⟨.TMap keyTy _, _⟩ => translateType keyTy
-                  | _ => pure (.tcons "TypeTag" [])
-                pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
-            | _ => pure (.op () ⟨callee.text, ()⟩ none)
-          else match coreSetOpName? callee.text with
-          -- A set primitive: emit Core's `Set.*` factory op under its own name.
-          | some coreName =>
-            -- `setEmpty()` takes no arguments, so — exactly like `mapConst`'s key — its
-            -- element type cannot come from an actual and must be read off the context.
-            -- Without the annotation the element type variable reaches the SMT encoder
-            -- unresolved and verification aborts.
-            if coreName == "Set.empty" then
-              let elemTy : Option LMonoTy ← match expectedType with
-                | some ⟨.Applied base [et], _⟩ =>
-                  match base.val with
-                  | .UserDefined n => if n.text == "Set" then pure (some (← translateType et)) else pure none
-                  | _ => pure none
+      -- `mapContains` is the one map operation whose result mentions neither `K` nor `V`, so a
+      -- map argument with an unbound value type can never be pinned down from here. Reject it
+      -- as a user error rather than letting the free type variable reach the SMT encoder and be
+      -- reported as a compiler bug. Only `mapContains` is checked: every other operation either
+      -- returns the map (so an annotated target supplies `V`) or is itself the thing that binds
+      -- it, and flagging them would reject `mapSet(mapRemove(mapEmpty(), k), k2, v)`, whose `V`
+      -- comes from `v`.
+      if callee.text == "mapContains" && (args.any mapValueTypeUnbound) then
+        emitExprDiagnostic $ diagnosticFromSource expr.source
+          s!"cannot infer the value type of the map passed to 'mapContains': 'mapContains' \
+             does not mention it and nothing at this use site supplies it. Bind the map to an \
+             annotated variable first, e.g. `var m: Map<int, bool> := mapEmpty()`." .userError
+      else
+      -- `mapEmpty()` ⇒ `mapConst($MapAbsent())`.
+      --
+      -- The other four partial-map operations are ordinary Laurel bodies in
+      -- `CoreDefinitionsForLaurel`: each takes a map, so its own parameter type binds `V`.
+      -- `mapEmpty` takes nothing, and Laurel has no way to name a type argument at a call, so
+      -- a body `return mapConst($MapAbsent())` leaves `K` to `mapConst`'s `TypeTag` default
+      -- and fails against the declared signature. It stays `external` and is lowered here,
+      -- where the use site's declared type is available.
+      if callee.text == "mapEmpty" then
+        match expectedType with
+        | some ⟨.TMap k v, _⟩ =>
+          let kTy ← translateType k
+          let vTy ← translateType v
+          return .app () (.op () ⟨"mapConst", ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+                         (.op () ⟨mapEntryAbsentCtor, ()⟩ (some vTy))
+        -- Unannotated rather than guessed: an unannotated `mapConst` still unifies with
+        -- whatever constrains it in the enclosing term (`mapSet(mapEmpty(), 1, true)` fixes
+        -- both parameters through `update`), whereas a wrong guess would make that fail.
+        | _ =>
+          return .app () (.op () ⟨"mapConst", ()⟩ none) (.op () ⟨mapEntryAbsentCtor, ()⟩ none)
+      else
+      -- The `mapConst` constant-map builtin has no inferable key type, so we
+      -- annotate its op with the concrete function type `V → TotalMap K V`. This
+      -- lets the pretty-printer emit the explicit `mapConst<K>(v)` syntax so
+      -- the program round-trips. The key `K` is CONTEXT-derived:
+      --   * If the call is the initializer of a `var m: T := mapConst(v)` and
+      --     the declared target `T` resolves to a `TotalMap K V` (aliases already
+      --     unfolded by `TypeAliasElim`), we use that `K` — so the user case
+      --     `var m: TotalMap int bool := mapConst(false)` annotates `<int>` and
+      --     unifies with the binding.
+      --   * Otherwise (internal calls with no binding key available, e.g. the
+      --     `TypeHierarchy` ancestor tables), we default to `TypeTag`, the
+      --     type-tag domain of those tables, so their round-trip stays
+      --     `mapConst<TypeTag>`.
+      let fnOp : Core.Expression.Expr ←
+        if callee.text == "mapConst" then
+          match args with
+          | [valArg] =>
+              let vTy ← mapConstValTy model valArg
+              let kTy : LMonoTy ← match expectedType with
+                | some ⟨.TMap keyTy _, _⟩ => translateType keyTy
+                | _ => pure (.tcons "TypeTag" [])
+              pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+          | _ => pure (.op () ⟨callee.text, ()⟩ none)
+        else match coreSetOpName? callee.text with
+        -- A set primitive: emit Core's `Set.*` factory op under its own name.
+        | some coreName =>
+          -- `setEmpty()` takes no arguments, so — exactly like `mapConst`'s key — its
+          -- element type cannot come from an actual and must be read off the context.
+          -- Without the annotation the element type variable reaches the SMT encoder
+          -- unresolved and verification aborts.
+          if coreName == "Set.empty" then
+            let elemTy : Option LMonoTy ← match expectedType with
+              | some ⟨.Applied base [et], _⟩ =>
+                match base.val with
+                | .UserDefined n => if n.text == "Set" then pure (some (← translateType et)) else pure none
                 | _ => pure none
-              pure (Core.setEmptyOp elemTy)
-            else pure (.op () ⟨coreName, ()⟩ none)
-          | none => pure (.op () ⟨callee.text, ()⟩ none)
-        args.attach.foldlM (fun acc ⟨arg, _⟩ => do
-          let re ← translateExpr arg boundVars isPureContext
-          return .app () acc re) fnOp
+              | _ => pure none
+            pure (Core.setEmptyOp elemTy)
+          else pure (.op () ⟨coreName, ()⟩ none)
+        | none => pure (.op () ⟨callee.text, ()⟩ none)
+      args.attach.foldlM (fun acc ⟨arg, _⟩ => do
+        let re ← translateExpr arg boundVars isPureContext
+        return .app () acc re) fnOp
   | .Block [single] _ => translateExpr single boundVars isPureContext
   | .Quantifier mode ⟨ name, ty ⟩ trigger body =>
       let coreTy ← translateType ty
@@ -925,8 +991,8 @@ def translateStmt (stmt : StmtExprMd)
           -- Function call: translate as a normal expression assignment.
           -- Thread the single target's declared type as the expected type so a
           -- `mapConst` initializer can recover its key type from the binding
-          -- (`var m: Map K V := mapConst(v)` ⇒ `mapConst<K>`); aliases are already
-          -- unfolded by `TypeAliasElim`, so `Map K V` is structural here.
+          -- (`var m: TotalMap K V := mapConst(v)` ⇒ `mapConst<K>`); aliases are already
+          -- unfolded by `TypeAliasElim`, so `TotalMap K V` is structural here.
           let model := (← get).model
           let expectedType : Option HighTypeMd ← match targets with
             | [target] =>

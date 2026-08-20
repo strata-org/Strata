@@ -49,7 +49,7 @@ private def e : Std.HashMap String HighType := {}
 -- (7) DIFFERENT base names, same arity (Box<T> vs Pair<int>) → none: monomorphization
 --     self-guards on the base name, so mismatched heads don't bind T=int on arity alone.
 #guard (matchTypeArg (app (ud "Box") [tv "T"]) (app (ud "Pair") [.TInt]) e).isNone
--- (8) Map<T,U> vs Map<int,bool> → T = int, U = bool  (live arm — Map has surface syntax)
+-- (8) Map<T,U> vs Map<int,bool> → T = int, U = bool  (live arm — TotalMap has surface syntax)
 #guard look (matchTypeArg (.TMap (hi (tv "T")) (hi (tv "U"))) (.TMap (hi .TInt) (hi .TBool)) e) "T" == some .TInt
 #guard look (matchTypeArg (.TMap (hi (tv "T")) (hi (tv "U"))) (.TMap (hi .TInt) (hi .TBool)) e) "U" == some .TBool
 -- (9) Map<T,T> vs Map<int,bool> → none: T bound int on key, then bool≠int on value

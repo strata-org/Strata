@@ -19,15 +19,17 @@ public section
 Core built-in definitions expressed in Laurel syntax.
 
 Includes:
-- Map primitives (`select`, `update`, `mapConst`) — polymorphic map operations.
+- Total-map primitives (`select`, `update`, `mapConst`) — polymorphic operations on
+  `TotalMap`, Core's total map (an SMT array).
+- The partial `Map<K, V>` and its operations, built on top of `TotalMap`.
 - Type-specific external operators (`intAdd`, `realAdd`, etc.) — the Core primitives.
 - Overloaded transparent wrappers (`add`, `sub`, etc.) — dispatching to the
   type-specific externals. The parser emits `StaticCall "add"` and resolution
   picks the right overload based on argument types.
 
 The map primitives and the equality wrappers carry generic signatures
-(`select<K,V>(map: Map K V, key: K) : V`). Resolution instantiates them per call site
-from the actual argument types (`callSiteTypeSubst`), so `select` on a `Map int bool`
+(`select<K,V>(map: TotalMap K V, key: K) : V`). Resolution instantiates them per call site
+from the actual argument types (`callSiteTypeSubst`), so `select` on a `TotalMap int bool`
 reports `bool`. A bare `.TVar` there would be a gradual wildcard under `isConsistent`,
 leaving every use of the result unchecked.
 
@@ -44,27 +46,27 @@ datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 datatype LaurelUnit { MkLaurelUnit() }
 
-// These are internal stand-ins for Core's native, already-polymorphic map primitives
+// These are internal stand-ins for Core's native, already-polymorphic TOTAL-map primitives
 // (the real signatures live in Core.Factory). Declared `external`, they are filtered out
 // before Core translation and never reach Core; calls resolve to the Core primitives by
 // name. Nothing observes these signatures at translation time, but resolution does: the generic
 // form lets a call site infer `K`/`V` from its actual arguments (`callSiteTypeSubst`) and report
 // a concrete result type. The polymorphism callers ultimately rely on is the Core primitives' own.
-procedure select<K, V>(map: Map K V, key: K) : V
+procedure select<K, V>(map: TotalMap K V, key: K) : V
   external;
 
-procedure update<K, V>(map: Map K V, key: K, value: V) : Map K V
+procedure update<K, V>(map: TotalMap K V, key: K, value: V) : TotalMap K V
   external;
 
 // `K` is not determined by the single value argument; `LaurelToCoreSchemaPass` recovers it
 // from the binding's declared type (`expectedType`), defaulting to `TypeTag`.
-procedure mapConst<K, V>(value: V) : Map K V
+procedure mapConst<K, V>(value: V) : TotalMap K V
   external;
 
 // --- Immutable sets ---
 //
 // `Set` is an `opaque` type naming Core's native `Set` sort (see `setTy` in `Core.Factory`
-// for what that sort is and why it is not a `Map T bool` alias).
+// for what that sort is and why it is not a `TotalMap T bool` alias).
 //
 // Declared `external`, so these never reach Core as functions; each call is lowered to the
 // corresponding Core `Set.*` op by `coreSetOpName?`. The spellings differ (`setInsert` vs
@@ -81,6 +83,55 @@ procedure setRemove<T>(s: Set<T>, x: T) : Set<T> external;
 procedure setUnion<T>(s: Set<T>, t: Set<T>) : Set<T> external;
 procedure setIntersect<T>(s: Set<T>, t: Set<T>) : Set<T> external;
 procedure setDifference<T>(s: Set<T>, t: Set<T>) : Set<T> external;
+
+// --- Partial maps ---
+//
+// `Map<K, V>` is a PARTIAL map: a key may be absent. It is an alias, not a sort of its own —
+// one total map to a datatype recording presence. `$MapEntry` is `$`-prefixed because it is
+// an implementation detail, not something to be written in source.
+//
+// `TypeAliasElim` expands the alias before the heap and ordering passes, so every pass that
+// walks a `HighType` sees `$MapEntry` structurally and none of them needs to know about the
+// representation.
+//
+// Absence is canonical: `mapRemove` stores `$MapAbsent()`, which is what an untouched key
+// already holds, so `==` on two `Map<K, V>` values is extensional map equality.
+//
+// `mapGet` is TOTAL but unconstrained on an absent key, mirroring `select` on a `TotalMap`.
+// It reads through the unsafe `$MapEntry..value!`; the safe destructor carries an
+// `is$MapPresent` precondition, which would make every read a proof obligation.
+datatype $MapEntry<V> {
+  $MapAbsent(),
+  $MapPresent(value: V)
+}
+
+type Map<K, V> = TotalMap K ($MapEntry<V>)
+
+// The only operation with no map argument, so nothing here binds `K` or `V`. A body would need
+// to name `mapConst`'s key type, which Laurel cannot do at a call, so this one is lowered in
+// `LaurelToCoreSchemaPass` from the declared type at the use site
+// (`var m: Map<int, bool> := mapEmpty()`), as for `setEmpty`.
+procedure mapEmpty<K, V>() : Map<K, V> external;
+
+procedure mapContains<K, V>(m: Map<K, V>, k: K) : bool
+{
+  return $MapEntry..is$MapPresent(select(m, k))
+};
+
+procedure mapGet<K, V>(m: Map<K, V>, k: K) : V
+{
+  return $MapEntry..value!(select(m, k))
+};
+
+procedure mapSet<K, V>(m: Map<K, V>, k: K, v: V) : Map<K, V>
+{
+  return update(m, k, $MapPresent(v))
+};
+
+procedure mapRemove<K, V>(m: Map<K, V>, k: K) : Map<K, V>
+{
+  return update(m, k, $MapAbsent())
+};
 
 // --- Type-specific external operators (Core primitives) ---
 

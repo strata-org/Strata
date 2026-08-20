@@ -136,7 +136,7 @@ procedure cmp(x: int, y: string): bool {
 
 /-! ### The operand types come from call-site type-argument inference
 
-`select<K,V>(map: Map K V, key: K) : V` only reports `bool` here because the call's type
+`select<K,V>(map: TotalMap K V, key: K) : V` only reports `bool` here because the call's type
 arguments are inferred from the actual argument types (`callSiteTypeSubst`). Without that the
 declared `V` reaches the comparison as a bare `.TVar`, which `isConsistent` treats as a gradual
 wildcard, and NO resolution diagnostic is emitted — the program is then rejected much later by
@@ -146,7 +146,7 @@ This annotated form can: it pins the diagnostic AND its source range at resoluti
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-procedure mapRead(m: Map int bool): bool {
+procedure mapRead(m: TotalMap int bool): bool {
   select(m, 1) == 9
 //^^^^^^^^^^^^^^^^^ error: cannot compare 'bool' with 'int' using '=='
 };
@@ -203,9 +203,9 @@ procedure readTag(p: Pair<bool>): bool {
 
 /-! ### A type variable shared across parameters accepts a subtype argument
 
-`update<K,V>(map: Map K V, key: K, value: V)` binds `V` from both the map and the value.
+`update<K,V>(map: TotalMap K V, key: K, value: V)` binds `V` from both the map and the value.
 `callSiteTypeSubst` reconciles the two bindings by keeping the more general one when they are
-related by `isSubtype`, so storing a `Dog` in a `Map int Animal` binds `V` to `Animal` and
+related by `isSubtype`, so storing a `Dog` in a `TotalMap int Animal` binds `V` to `Animal` and
 resolves. `isConsistent` alone would relate the two only if they were the same type. -/
 
 #eval testLaurelResolution <|
@@ -214,7 +214,7 @@ program Laurel;
 composite Animal { }
 composite Dog extends Animal { }
 procedure storeSubtypeValue() opaque {
-  var m: Map int Animal := mapConst(new Animal);
+  var m: TotalMap int Animal := mapConst(new Animal);
   var d: Dog := new Dog;
   m := update(m, 1, d);
   assert 1 == 1
@@ -229,7 +229,7 @@ program Laurel;
 composite Animal { }
 composite Dog extends Animal { }
 procedure readSubtypeKey() opaque {
-  var m: Map Animal int := mapConst(1);
+  var m: TotalMap Animal int := mapConst(1);
   var d: Dog := new Dog;
   var x: int := select(m, d);
   assert x == x
@@ -349,7 +349,7 @@ Core rejects. `calleeParamTypes` leaves such slots to sibling-based inference in
 #strata
 program Laurel;
 procedure holeInMapKey() opaque {
-  var m: Map int bool := mapConst(false);
+  var m: TotalMap int bool := mapConst(false);
   var b: bool := select(m, <?>);
   assert b == b
 };

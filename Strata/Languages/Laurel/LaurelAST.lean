@@ -205,7 +205,13 @@ inductive HighType : Type where
   | TString
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : AstNode HighType)
-  /-- Map type. -/
+  /-- The TOTAL map type, `TotalMap K V` — Core's `Map` sort, i.e. an SMT array. Every key
+  has a value and `select` is defined everywhere, so this cannot express key absence.
+
+  This is the low-level map the heap, the type-hierarchy tables and the
+  `select`/`update`/`mapConst` primitives are stated over. The user-facing PARTIAL map is
+  `Map<K, V>`, an `opaque` prelude type represented as `TotalMap K ($MapEntry V)`; it is an
+  `.Applied` head, not this node. -/
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
@@ -956,7 +962,7 @@ partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → H
   go ty
 
 /-- Does a `HighType` mention a type variable (`.TVar`) anywhere — bare, or nested
-    inside a generic application / collection / intersection (`Box<T>`, `Map T int`,
+    inside a generic application / collection / intersection (`Box<T>`, `TotalMap T int`,
     `A & T`)? The recursive counterpart of the top-level `.TVar` test, used where a
     type must be treated as "not yet concrete" if a parameter appears at any depth:
     the poly-`throws` escape deferral in `Resolution.exceptionEscapes`, and
@@ -1471,7 +1477,8 @@ def TypeLattice.commonAncestor (ctx : TypeLattice) (names : List String) : Optio
     `appliedBoxTag` adds none), supplied via `leaf` (see below). Returning `none` (not a
     catch-all) on an untaggable arg is important: such an arg has no stable name, so a
     `Box<T>` (unbound `T`) argument makes the whole tag `none` (fail loud). E.g.
-    `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`, `Box<Map int int>` → `Box$a1$Map$a2$int$int`.
+    `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`,
+    `Box<TotalMap int int>` → `Box$a1$TotalMap$a2$int$int`.
 
     INJECTIVITY CAVEAT: this encoding is NOT injective in general. The `$`-delimited join is
     only injective under the assumption that no rendered leaf name itself contains `$` — but
@@ -1501,21 +1508,22 @@ def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option S
       let argTags ← as.attach.mapM (fun ⟨a, _⟩ => instTagCommon leaf a.val)
       some s!"{n.text}$a{argTags.length}${String.intercalate "$" argTags}"
     | _ => none
-  -- Built-in collection formers `Map`/`Set` tag like a 2-/1-ary applied type, so a
-  -- `Map`-/`Set`-typed composite FIELD can be heap-boxed (the box-name fns route through
-  -- this tagger). These are their own HighType nodes (`.TMap`/`.TSet`), NOT `.Applied`
-  -- heads: `Map<K,V>` has a dedicated surface production (`mapType`) that parses to `.TMap`,
-  -- and `.TSet` has no surface production today (so only the `.TMap` arm is exercised — see
-  -- lines 1162/1316). (A user composite literally named `Map$a2$int$int` still collides —
-  -- see the injectivity caveat above.) The `do`-block
+  -- Built-in collection formers tag like a 2-/1-ary applied type, so a `TotalMap`-/`Set`-typed
+  -- composite FIELD can be heap-boxed (the box-name fns route through this tagger). These are
+  -- their own HighType nodes (`.TMap`/`.TSet`), NOT `.Applied` heads: `TotalMap K V` has a
+  -- dedicated surface production (`totalMapType`) that parses to `.TMap`, and `.TSet` has no
+  -- surface production today (so only the `.TMap` arm is exercised — see lines 1162/1316).
+  --
+  -- Tagged `TotalMap$a2$…`, matching the surface spelling. (A user composite literally named
+  -- `TotalMap$a2$int$int` still collides — see the injectivity caveat above.) The `do`-block
   -- short-circuits to `none` on an untaggable element (e.g. a nested `.TVar`), fail-loud
-  -- exactly like the `.Applied` arm above.
+  -- exactly like the `.Applied` arm.
   | .TMap k v => do
     let kt ← instTagCommon leaf k.val
     let vt ← instTagCommon leaf v.val
-    some s!"Map$a2${kt}${vt}"
-  -- `.TSet` is unreachable today (no Set surface production — LaurelGrammar.st has only `mapType`);
-  -- kept for symmetry with `.TMap` / the `.TSet` arm in `isConsistent`.
+    some s!"TotalMap$a2${kt}${vt}"
+  -- `.TSet` is unreachable today (no Set surface production — LaurelGrammar.st has only
+  -- `totalMapType`); kept for symmetry with `.TMap` / the `.TSet` arm in `isConsistent`.
   | .TSet e => do
     let et ← instTagCommon leaf e.val
     some s!"Set$a1${et}"
@@ -1664,9 +1672,9 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
     args1.length == args2.length && isConsistent ctx base1 base2 &&
       (args1.attach.zip args2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
   -- Collection types recurse element-wise *before* unfolding, for the same reason as
-  -- `.Applied`: so the `.TVar` wildcard reaches a nested type var (a `Map K V` parameter
-  -- satisfied by a concrete `Map int bool` argument). Recursion only — concrete-vs-concrete
-  -- stays strict (`Map int bool` vs `Map int int` fails on the value leaf). `.TSet` mirrors
+  -- `.Applied`: so the `.TVar` wildcard reaches a nested type var (a `TotalMap K V` parameter
+  -- satisfied by a concrete `TotalMap int bool` argument). Recursion only — concrete-vs-concrete
+  -- stays strict (`TotalMap int bool` vs `TotalMap int int` fails on the value leaf). `.TSet` mirrors
   -- `.TMap` for symmetry with the other type traversals (`highEq`, `substTypeVars`), though
   -- `Set` has no surface-Laurel production today, so only the `.TMap` arm is exercised.
   | .TMap k1 v1, .TMap k2 v2 => isConsistent ctx k1 k2 && isConsistent ctx v1 v2
@@ -1821,7 +1829,7 @@ def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
 
 /-- Call-site type-argument inference: the substitution a call makes for its callee's type
     parameters, derived by matching each DECLARED parameter type against the ACTUAL argument
-    type. `select<K,V>(map: Map K V, key: K)` applied to a `Map int bool` and an `int` yields
+    type. `select<K,V>(map: TotalMap K V, key: K)` applied to a `TotalMap int bool` and an `int` yields
     `{K ↦ int, V ↦ bool}`, so the declared return `V` can be reported as `bool` rather than as
     a bare `.TVar` — which `isConsistent` treats as a gradual wildcard, i.e. unchecked.
 
@@ -1845,8 +1853,8 @@ def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     is the abstract-internal-call case (`outer<T>`'s body calling `inner(b)` at `b : Box<T>`),
     where binding `T ↦ T` teaches nothing and would read as if inference had succeeded.
 
-    Actuals are `unfold`ed first so an alias-typed argument (`type IM = Map int bool`) matches
-    a `Map K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
+    Actuals are `unfold`ed first so an alias-typed argument (`type IM = TotalMap int bool`) matches
+    a `TotalMap K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
     `.UserDefined IM` against `.TMap` and fail. -/
 def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
     : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
@@ -1868,7 +1876,7 @@ def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
     -- The binding is the candidate every other candidate satisfies, by consistency or by
     -- subtyping. `isConsistent` alone relates two distinct composites only when they are the
     -- same type, so a subtype argument would otherwise conflict with its own supertype: this is
-    -- what lets `update<K,V>(map: Map K V, key: K, value: V)` take a `Map int Animal` and a
+    -- what lets `update<K,V>(map: TotalMap K V, key: K, value: V)` take a `TotalMap int Animal` and a
     -- `Dog`, binding `V ↦ Animal`.
     --
     -- Decided over the WHOLE candidate set rather than by folding pairwise, which would make the

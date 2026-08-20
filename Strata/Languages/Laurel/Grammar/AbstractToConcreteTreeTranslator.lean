@@ -48,7 +48,7 @@ def highTypeValToArg : HighType → Arg
   | .TReal => laurelOp "realType"
   | .TString => laurelOp "stringType"
   | .TBv n => laurelOp "bvType" #[.num sr n]
-  | .TMap k v => laurelOp "mapType" #[highTypeToArg k, highTypeToArg v]
+  | .TMap k v => laurelOp "totalMapType" #[highTypeToArg k, highTypeToArg v]
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   -- A type variable renders as a bare identifier in type position; resolution
   -- reclassifies it back to `.TVar` when it matches an in-scope type parameter.

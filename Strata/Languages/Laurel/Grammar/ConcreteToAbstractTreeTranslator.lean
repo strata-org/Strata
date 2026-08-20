@@ -118,7 +118,7 @@ def translateHighType (arg : Arg) : TransM HighTypeMd := do
       match op.args.toList with
       | [.ident _ name] => return mkHighTypeMd (.UserDefined name) src
       | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
-    else if op.name == q`Laurel.mapType then
+    else if op.name == q`Laurel.totalMapType then
       match _hargs : op.args.toList with
       | [keyArg, valArg] =>
         let keyType ← translateHighType keyArg
@@ -155,7 +155,7 @@ def translateHighType (arg : Arg) : TransM HighTypeMd := do
   | _ => TransM.error s!"translateHighType expects operation"
   termination_by sizeOf arg
   decreasing_by
-    -- `mapType`: two direct args of `op`.
+    -- `totalMapType`: two direct args of `op`.
     all_goals (try (
       have hmk : keyArg ∈ op.args := by
         have h1 : keyArg ∈ op.args.toList := by simp [_hargs]

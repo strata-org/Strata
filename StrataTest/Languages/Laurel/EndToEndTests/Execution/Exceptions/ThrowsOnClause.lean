@@ -387,7 +387,7 @@ An array read `value(a, i)`, translated as a Java front-end would emit it: the
 array bounds check is made explicit (Core has no implicit exceptions), and the
 case's guard records the pre-state that causes the exception. The array is a
 composite `IntArray` carrying its `length`; the element store is a separate
-`Map int int` (composite fields cannot be map-typed).
+`TotalMap int int` (composite fields cannot be map-typed).
 
 The *body* dereferences the composite — `i >= a#length` — while the case's
 guard tests the same bound through an `alen` parameter tied to the field by a
@@ -418,7 +418,7 @@ composite IndexError extends Exception {}
 composite IntArray {
   length: int
 }
-procedure value(a: IntArray, elems: Map int int, i: int, alen: int)
+procedure value(a: IntArray, elems: TotalMap int int, i: int, alen: int)
   returns (r: int)
   throws (e: Exception)
   requires alen == a#length
@@ -447,7 +447,7 @@ composite IndexError extends Exception {}
 composite IntArray {
   length: int
 }
-procedure valueBad(a: IntArray, elems: Map int int, i: int, alen: int)
+procedure valueBad(a: IntArray, elems: TotalMap int int, i: int, alen: int)
   returns (r: int)
   throws (e: Exception)
   requires alen == a#length
@@ -474,7 +474,7 @@ property of the thrown value holds".
 
 Here the offending index is recorded on the exception (`IndexError#badIndex`) and
 the case states the *condition* that it is out of bounds — not a specific
-value. The array is a `Map int int` with a separate `alen` length. -/
+value. The array is a `TotalMap int int` with a separate `alen` length. -/
 
 -- Positive: `value(a, i)` throws `IndexError` recording the offending index when
 -- `i` is out of bounds, and the case states that the recorded index is out
@@ -487,7 +487,7 @@ composite Exception {}
 composite IndexError extends Exception {
   badIndex: int
 }
-procedure value(a: Map int int, alen: int, i: int)
+procedure value(a: TotalMap int int, alen: int, i: int)
   returns (r: int)
   throws (e: Exception)
   opaque
@@ -514,7 +514,7 @@ composite Exception {}
 composite IndexError extends Exception {
   badIndex: int
 }
-procedure valueBadContract(a: Map int int, alen: int, i: int)
+procedure valueBadContract(a: TotalMap int int, alen: int, i: int)
   returns (r: int)
   throws (e: Exception)
   opaque
