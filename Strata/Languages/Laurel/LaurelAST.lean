@@ -861,6 +861,16 @@ def ModifiesGroup.nothingChanges : List ModifiesGroup := [{ targets := [] }]
 def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
   [{ targets := [{ val := .All, source }] }]
 
+/-- Namespace the Python frontend uses for the Laurel it *generates* — its
+    parameter copies, condition temporaries and quantifier binders.
+
+    Outside the namespace `validateNoDollarNames` reserves, so it needs no exemption
+    there, while still marking these names as generated rather than authored.
+
+    Lives here rather than in the frontend because `bodyLabel` below is built
+    from it and is shared with the resolver. -/
+def pythonGeneratedPrefix : String := "py$"
+
 /-- The label of the implicit block that wraps every procedure body.
 
     `LaurelToCoreTranslator` lowers each procedure body to a single
@@ -872,9 +882,10 @@ def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
     though the label has no syntactic declaration site.
 
     Shared here so the translator, the resolver, and frontends agree on the
-    exact string rather than each hard-coding it. The leading `$` keeps it
-    out of the user-name space (no source identifier can contain `$`). -/
-def bodyLabel : String := "$body"
+    exact string rather than each hard-coding it. Only the Python frontend
+    actually emits it, so it sits in that frontend's generated namespace rather
+    than starting with a bare `$`, which `validateNoDollarNames` reserves. -/
+def bodyLabel : String := pythonGeneratedPrefix ++ "body"
 
 /-! ### Names of the injected exception-result datatype
 
@@ -2295,10 +2306,16 @@ structure Program where
   deriving Inhabited
 
 /-- Reserved internal name of a function's anonymous (short `: T`) return
-    output. The leading `$` follows Strata's reserved-name convention and
-    cannot be written as a surface identifier, so user parameters/locals named
-    `result` never collide with the return value. To refer to the return value
-    explicitly, use the named-return form `returns (r: T)`. -/
+    output. The leading `$` follows Strata's reserved-name convention, so user
+    parameters/locals named `result` never collide with the return value. To
+    refer to the return value explicitly, use the named-return form
+    `returns (r: T)`.
+
+    This is the one `$`-prefixed spelling a source program may still write, and
+    only in the position the desugaring itself produces: a procedure's sole
+    output. Used anywhere else — a local, a global, a bound variable, a second
+    output — it is rejected by `validateNoDollarNames` like any other name
+    starting with `$`. -/
 def resultOutputName : String := "$result"
 
 /-- Reserved prefix stamped onto a call site whose overload resolution failed

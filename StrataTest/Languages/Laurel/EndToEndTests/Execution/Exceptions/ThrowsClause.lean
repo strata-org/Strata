@@ -328,8 +328,14 @@ in a case postcondition may bind `$result` itself, and that postcondition is
 exactly where the pass splices references to the carrier. If the freshener
 missed the binder it would pick `$result` and the spliced reference would be
 captured by the authored `forall` — silently, since nothing downstream could
-tell. The third case pins that program; the arm-by-arm collision coverage is
-`CarrierFreshnessTest.lean`. -/
+tell.
+
+A source name may not start with `$`, and `validateNoDollarNames` allows `$result`
+only as a procedure's sole output, so the quantifier spelling is rejected before
+any pass runs (the third case pins that). The freshener
+still has to handle it, because *generated* Laurel and the passes themselves can
+still produce such a binder — the arm-by-arm coverage is `CarrierFreshnessTest.lean`,
+which builds the AST directly and so does not go through that check. -/
 
 -- Short form, with a `throwsOn` case and an `ensures` so the contract rewriting has
 -- to reach the postconditions and not just the body.
@@ -371,9 +377,10 @@ procedure explicitDollarResult(x: int)
 };
 #end
 
--- A quantifier binder named `$result` inside a case postcondition: the carrier
--- freshens to `$result_1`, so the `e` substituted into the case's `ensures`
--- refers to the carrier, not the authored quantified variable.
+-- A quantifier binder named `$result` inside a case postcondition. `$result` is
+-- legal only as a procedure's sole output, so this is rejected outright rather
+-- than reaching the carrier freshening.
+#guard_msgs in
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;
@@ -383,6 +390,7 @@ procedure quantifierBindsResult(x: int)
   opaque
   throwsOn x < 0 {
     ensures forall($result: int) => e is Err
+//                 ^^^^^^^ error: bound variable name '$result' may not start with '$': that namespace is reserved for compiler-generated names
   }
 {
   if x < 0 then {

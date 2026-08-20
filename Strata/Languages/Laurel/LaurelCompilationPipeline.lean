@@ -191,6 +191,13 @@ private def runLaurelPasses
     (options: LaurelTranslateOptions)
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List Message × Statistics) := do
+  -- Must run HERE, before the prelude is prepended below and before the first resolve:
+  -- see `validateNoDollarNames`. Bails out rather than resolving, so the diagnostic
+  -- lands on the declaration rather than on a later collision.
+  let dollarDiags := validateNoDollarNames program
+  if dollarDiags.any (·.kind != .warning) then
+    return (program, { nextId := 1, compositeCount := 0, refToDef := {} }, dollarDiags, {})
+
   -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
   -- `Result` datatype that the exceptional-channel lowering targets is *not*
   -- part of it: `EliminateExceptions` injects `resultDefinitions` itself, and

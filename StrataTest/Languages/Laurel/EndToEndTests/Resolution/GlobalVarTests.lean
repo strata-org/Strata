@@ -858,7 +858,7 @@ procedure caller() opaque {
 #strata
 program Laurel;
 var $result: int := 0
-//  ^^^^^^^ error: file-scope global name '$result' is reserved for compiler-generated variables
+//  ^^^^^^^ error: file-scope global name '$result' may not start with '$': that namespace is reserved for compiler-generated names
 composite InitialErrorInstance {
   procedure untouched(self: InitialErrorInstance) opaque {
   };
@@ -1065,13 +1065,17 @@ procedure constrainGlobal() returns (r: int)
 ;
 #end
 
+/-! A file-scope global may carry a `$` that is not first, like every other
+declaration: only the leading position is reserved. -/
+
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
-constrained Nat = x: int where x >= 0 witness 0
-var Nat$constraint: int := 0
-//  ^^^^^^^^^^^^^^ error: file-scope global name 'Nat$constraint' is reserved for compiler-generated variables
+var my$global: int := 0
+procedure reader() returns (r: int) opaque {
+  return my$global + 1
+};
 #end
 
 

@@ -5542,11 +5542,12 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
   | .constant constant => some constant.name
   | .unresolved _ => none
 
-/-- Names in compiler-generated namespaces cannot be user binders: generated
-    qualified global references are re-resolved after constrained-type lowering. -/
+/-- A file-scope global may not take a name in the compiler's namespace — one starting
+    with `$` — because generated qualified global references (`$static.g`) are
+    re-resolved after constrained-type lowering. -/
 private def validateGlobalNames (program : Program) : List Message :=
   let globalErrors := program.staticFields.filterMap fun field =>
-    if field.name.text.contains '$' then
+    if field.name.text.startsWith "$" then
       some (diagnosticFromSource field.name.source
         s!"file-scope global name '{field.name.text}' is reserved for compiler-generated variables"
         MessageKind.userError)
@@ -5598,6 +5599,112 @@ private def validateGlobalNames (program : Program) : List Message :=
       else none
   globalErrors ++ staticOwnerErrors ++ binderErrors ++ constrainedBinderErrors
     ++ heapParamErrors
+
+/-- Every declared name in a program, as `(what it is, spelling, where)` triples.
+    Covers the positions `buildRefToDef` cannot: that map is keyed by `uniqueId`,
+    so it is empty before resolution has stamped any, and it structurally misses
+    type parameters, a constrained type's `valueName`, block labels, and binders
+    inside a field initializer. -/
+private def declaredNames (program : Program) : List (String × String × FileRange) :=
+  let ofId (kind : String) (name : Identifier) := (kind, name.text, name.source)
+  -- Binders introduced *inside* an expression. Labels are the one name here that
+  -- is a bare `String` rather than an `Identifier` (see `StmtExpr.Block`), so they
+  -- borrow the block's own range.
+  let inExpr (e : StmtExprMd) : List (String × String × FileRange) :=
+    match e.val with
+    | .Var (.Declare p) => [ofId "variable" p.name]
+    | .Assign targets _ => targets.filterMap fun
+      | ⟨.Declare p, _⟩ => some (ofId "variable" p.name)
+      | _ => none
+    | .IncrDecr _ _ ⟨.Declare p, _⟩ => [ofId "variable" p.name]
+    | .CompoundAssign _ ⟨.Declare p, _⟩ _ => [ofId "variable" p.name]
+    | .Quantifier _ param _ _ => [ofId "bound variable" param.name]
+    | .Try _ catches _ => catches.map (ofId "catch binding" ·.binding)
+    | .Block _ (some label) => [("block label", label, e.source)]
+    | _ => []
+  let inExprs (e : StmtExprMd) := collectStmtExprList inExpr e
+  -- The `WithCoroutine` variant matters here: plain `mapProcedureM` skips a
+  -- coroutine's `relies`/`guarantees`, leaving a binder there unchecked.
+  let procExprNames (proc : Procedure) : List (String × String × FileRange) :=
+    let collect : StmtExprMd → StateM (List (String × String × FileRange)) StmtExprMd :=
+      fun e => do modify (· ++ inExprs e); pure e
+    let walk : StateM (List (String × String × FileRange)) Procedure := do
+      mapProcedureSpecificationsWithCoroutineM' collect (← mapProcedureBodiesM collect proc)
+    (walk.run []).2
+  let ofProc (proc : Procedure) : List (String × String × FileRange) :=
+    -- See `resultOutputName` for why a sole output may be spelled `$result`.
+    let soleResult := proc.outputs.length == 1
+    ofId "procedure" proc.name
+      :: proc.typeArgs.map (ofId "type parameter")
+      ++ proc.inputs.map (ofId "parameter" ·.name)
+      ++ (proc.outputs.filter (fun p => !(soleResult && p.name.text == resultOutputName))
+            |>.map (ofId "output parameter" ·.name))
+      ++ proc.throwsBinding.toList.map (ofId "throws binding")
+      -- A coroutine's channel bindings are declarations too: `yields (x: T)` and
+      -- `resumes (y: U)` are in scope in the body and in the guarantees/relies
+      -- clauses, so they can shadow a generated name exactly as a parameter can.
+      -- They hang off `contracts`, not `inputs`/`outputs`, so nothing above reaches them.
+      ++ (match proc.contracts with
+          | .Coroutine _ _ yields resumes =>
+            yields.map (ofId "yields binding" ·.name)
+              ++ resumes.map (ofId "resumes binding" ·.name)
+          | .Regular => [])
+      ++ procExprNames proc
+  let ofField (kind : String) (f : Field) : List (String × String × FileRange) :=
+    ofId kind f.name :: f.initializer.toList.flatMap inExprs
+  program.types.flatMap (fun
+    | .Composite ct =>
+      ofId "type" ct.name
+        :: ct.typeArgs.map (ofId "type parameter")
+        ++ ct.fields.flatMap (ofField "field")
+        ++ ct.instanceProcedures.flatMap ofProc
+    | .Constrained ct =>
+      [ofId "type" ct.name, ofId "value binding" ct.valueName]
+        ++ inExprs ct.constraint ++ inExprs ct.witness
+    | .Datatype dt =>
+      ofId "type" dt.name
+        :: dt.typeArgs.map (ofId "type parameter")
+        ++ dt.constructors.flatMap (fun c =>
+             ofId "constructor" c.name :: c.args.map (ofId "constructor argument" ·.name))
+    | .Opaque ot =>
+      ofId "type" ot.name :: ot.typeArgs.map (ofId "type parameter")
+    | .Alias ta =>
+      ofId "type" ta.name :: ta.typeArgs.map (ofId "type parameter"))
+    ++ program.staticProcedures.flatMap ofProc
+    ++ program.staticFields.flatMap (ofField "file-scope global")
+    ++ program.constants.flatMap (fun c =>
+         ofId "constant" c.name :: c.initializer.toList.flatMap inExprs)
+
+/-- A leading `$` marks the compiler's own namespace, so a *source* program may not
+    declare a name that starts with one. Everything in that namespace is generated
+    deliberately: the prelude's operator delegates (`$add`, `$intAdd`), the parser's
+    anonymous return output (`$result`), and what the lowering passes synthesize
+    (`$heap`, `$thrown`, `$return`, `$static.g`). A source declaration starting with `$`
+    would shadow one of those or be shadowed by it.
+
+    Only the *first* character is reserved. A `$` further along (`Box$a1$int`,
+    `Nat$constraint`, `tmp$3`) is legal in source, which also leaves the frontends free
+    to namespace their generated Laurel as `py$…` / `java?…` without an exemption here.
+    Whether such a name later collides with a generated one is a separate concern, and
+    not what this check is for.
+
+    Must run on the *raw* program — before the prelude is prepended and before the
+    initial resolution — the only point at which a leading `$` can only have come from
+    source. Nothing therefore needs exempting beyond the single case below, and a
+    prelude declaration need not be told apart from a user one: the prelude is not
+    present yet.
+
+    The check reads the AST, after the lexer has unescaped the identifier, so the
+    namespace cannot be entered by spelling a name `|$x|` or `«$x»`.
+
+    The one exception is `$result` as a procedure's *sole* output; see
+    `resultOutputName`. -/
+def validateNoDollarNames (program : Program) : List Message :=
+  (declaredNames program).filterMap fun (kind, name, source) =>
+    if !name.startsWith "$" then none
+    else some (diagnosticFromSource source
+      s!"{kind} name '{name}' may not start with '$': that namespace is reserved for compiler-generated names"
+      MessageKind.userError)
 
 /-- Reject a file-scope global with a generic (`.Applied`) type. A generic composite/datatype
     FIELD is supported by #1394 (monomorphization for composites, HeapParam `.Applied` boxing for

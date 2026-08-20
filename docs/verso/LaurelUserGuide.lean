@@ -1021,7 +1021,16 @@ alongside heap state.
 - Writes in restricted expressions, ambiguous bodiless postconditions, and
   unsupported multi-output call shapes.
 
-Names containing `$` are reserved for compiler-generated variables.
+Names *starting* with `$` are reserved for compiler-generated variables, and this
+is enforced for a whole program rather than just for globals: a declaration whose
+name begins with `$` — a type, procedure, parameter, field, local, bound variable,
+constructor or block label — is rejected with a diagnostic on the declaration
+itself. A `$` elsewhere in a name is fine, so `total$1` is a legal identifier.
+
+The sole exception is `$result`, the name the short `procedure f(…): T` return
+form gives a procedure's single output; you may spell it out in an explicit
+`returns ($result: T)` clause and refer to it in contracts, but you may not use
+it for anything else.
 
 ### Primitive types
 
