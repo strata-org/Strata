@@ -23,7 +23,7 @@ that `denoteTerm` *also* interprets, the two denotations agree up to the per-`Te
 bridge `b = true ↔ P`) and extended structurally to the option and array sorts. Because `denoteTerm`
 returns `none` for `distinct` nodes, the statement is conditioned on `denoteTerm ctx tm = some res`, so that
 construct is covered vacuously. Its companion `Term.denoteTypedArgs_denoteTerms_agree` (proved mutually)
-extends the same agreement to argument lists via the pointwise relation `ArgsRel`.
+extends the same agreement to argument lists via the pointwise relation `ArgsEquiv`.
 
 Div/mod agree only when `Term.denoteTyped`'s parameters are pinned to Lean's total behavior, so the
 theorem fixes `divByZero := fun _ => 0` and `modByZero := id`. Array theory treatments agree only when
@@ -77,7 +77,7 @@ private theorem dsget_bv (sctx) {n : Nat} (h) (sdi) :
    ═══════════════════════════════════════════════════════════════════════════ -/
 
 /-- The Lean type a `denoteTerm` value inhabits at each denotable base sort. -/
-def SMTDenoteTValType : TermType → Type
+def DenoteTValType : TermType → Type
   | .prim .bool        => Prop
   | .prim .int         => Int
   | .prim .string      => String
@@ -86,7 +86,7 @@ def SMTDenoteTValType : TermType → Type
 
 /-- Logical relation between a `Term.denoteTyped` value and a `denoteTerm` value at each base sort.
     Bool is a bridge (`b = true ↔ P`); the other denotable base sorts are equality. -/
-def PrimValEquiv : (τ : TermType) → TermType.denoteTyped σ SmtArrayTheory τ → SMTDenoteTValType τ → Prop
+def PrimValEquiv : (τ : TermType) → TermType.denoteTyped σ SmtArrayTheory τ → DenoteTValType τ → Prop
   | .prim .bool,       b, P => (b = true ↔ P)
   | .prim .int,        i, j => i = j
   | .prim .string,     s, t => s = t
@@ -98,11 +98,11 @@ def PrimValEquiv : (τ : TermType) → TermType.denoteTyped σ SmtArrayTheory τ
   | .constr _ _,       _, _ => False
 
 /-- Transport a primitive `denoteTerm` value (living in `(denoteSort sctx τ).get h sdi`) into the concrete
-    `SMTDenoteTValType τ`, so it can be fed to `PrimValEquiv`. Base sorts use the `dsget_*` reductions;
+    `DenoteTValType τ`, so it can be fed to `PrimValEquiv`. Base sorts use the `dsget_*` reductions;
     all other sorts are unreachable (`.real`/`.regex`/`.trigger` are not denotable; `.option`/`.constr`
     are handled by `ValEquiv` directly), so their values are irrelevant. -/
 def toTVal : (sctx : SortContext) → (τ : TermType) → (h : (denoteSort sctx τ).isSome) →
-    (sdi : SortDenoteInput sctx) → (denoteSort sctx τ).get h sdi → SMTDenoteTValType τ
+    (sdi : SortDenoteInput sctx) → (denoteSort sctx τ).get h sdi → DenoteTValType τ
   | sctx, .prim .bool,       h, sdi, x => cast (dsget_bool sctx h sdi) x
   | sctx, .prim .int,        h, sdi, x => cast (dsget_int sctx h sdi) x
   | sctx, .prim .string,     h, sdi, x => cast (dsget_str sctx h sdi) x
@@ -149,12 +149,12 @@ def ValEquiv (sctx : SortContext) : (τ : TermType) → (smt : TermType.denoteTy
 
 /-- Pointwise `ValEquiv` between an `HList` of SMT argument values and a list of `denoteTerm` argument
     results (each evaluated at `tdi`). Used to feed related arguments to a UF interpretation. -/
-def ArgsRel {ctx : Context} (tdi : TermDenoteInput ctx) :
+def ArgsEquiv {ctx : Context} (tdi : TermDenoteInput ctx) :
     (argTys : List TermType) → HList (TermType.denoteTyped σ SmtArrayTheory) argTys → List (TermDenoteResult ctx) → Prop
   | [],         .nil,       []      => True
   | ty :: tys,  .cons x xs, r :: rs =>
       (∃ (heq : ty = r.ty), ValEquiv ctx.sctx r.ty (heq ▸ x) r.h ⟨tdi.sΓ, tdi.hsΓ⟩ (r.res tdi))
-        ∧ ArgsRel tdi tys xs rs
+        ∧ ArgsEquiv tdi tys xs rs
   | _,          _,          _       => False
 
 /-- A denoted argument VALUE: a `denoteTerm` result already evaluated at a fixed sort-denotation input.
@@ -226,7 +226,7 @@ noncomputable def applyUFVal {sctx : SortContext} {sdi : SortDenoteInput sctx}
     (denoteSort sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) sdi :=
   applyUFValAux args out h uf vs (valTypesAlign_length_eq hAlign).symm (valTypesAlign_arg_types hAlign)
 
-/-- Value-level `ArgsRel`: pointwise `ValEquiv` between an `HList` of SMT values and a list of denoted
+/-- Value-level `ArgsEquiv`: pointwise `ValEquiv` between an `HList` of SMT values and a list of denoted
     argument VALUES. -/
 def ArgsValEquiv {sctx : SortContext} (sdi : SortDenoteInput sctx) :
     (argTys : List TermType) → HList (TermType.denoteTyped σ SmtArrayTheory) argTys → List (TermValDenote sdi) → Prop
@@ -572,10 +572,10 @@ private theorem argTypesAlign_to_valTypesAlign {ctx : Context} (tdi : TermDenote
       simp only [List.map_cons, valTypesAlign, Bool.and_eq_true]
       exact ⟨hAlign.1, ih tys hAlign.2⟩
 
-/-- `ArgsRel` transfers to `ArgsValEquiv` on the evaluated value list. -/
+/-- `ArgsEquiv` transfers to `ArgsValEquiv` on the evaluated value list. -/
 private theorem argsRel_to_argsValEquiv {ctx : Context} (tdi : TermDenoteInput ctx)
     (argTys : List TermType) (hargs : HList (TermType.denoteTyped σ SmtArrayTheory) argTys)
-    (gargs : List (TermDenoteResult ctx)) (hr : ArgsRel tdi argTys hargs gargs) :
+    (gargs : List (TermDenoteResult ctx)) (hr : ArgsEquiv tdi argTys hargs gargs) :
     ArgsValEquiv ⟨tdi.sΓ, tdi.hsΓ⟩ argTys hargs (gargs.map (fun a => ⟨a.ty, a.h, a.res tdi⟩)) := by
   induction argTys generalizing gargs with
   | nil => cases hargs; cases gargs with
@@ -588,8 +588,10 @@ private theorem argsRel_to_argsValEquiv {ctx : Context} (tdi : TermDenoteInput c
       exact ⟨⟨heq, hrel⟩, ih xs rs hrest⟩
     | .cons _ _, [] => exact hr.elim
 
-/-- Transport `ValEquiv` for a UF application from the environment entry's UF (`uf'`, an `HList`/proof
-    keyed on the indexed `tdi.tΓ.ufs[i]`) to the syntactic UF `uf` in the term, given they are equal. -/
+/-- When the uninterpreted function recorded in the environment (`uf'`) is provably equal to the one
+    written in the term (`uf`), the typed denotation computed for `uf'` can be transferred to `uf`
+    while preserving its value-relation (`ValEquiv`) with the partial semantics — i.e. applying either
+    UF to related arguments yields related results. -/
 private theorem uf_ValEquiv_transport {σ : SortInterp} {ctx : Context} {tdi : TermDenoteInput ctx}
     (ufInterp : UFInterp σ SmtArrayTheory) (uf uf' : UF) (hufeq : uf' = uf)
     (sargs : HList (TermType.denoteTyped σ SmtArrayTheory) uf.args) (as : List (TermDenoteResult ctx))
@@ -1062,6 +1064,8 @@ theorem Term.denoteTyped_denoteTerm_agree
     (res : TermDenoteResult ctx) (hden : denoteTerm ctx tm = some res) :
     ∃ (hty : τ = res.ty),
       ValEquiv ctx.sctx res.ty
+        -- `(fun _ => 0)` and `id` pin `divByZero`/`modByZero` to the values `denoteTerm` uses
+        -- (Lean's total `/`,`%`: `x / 0 = 0`, `x % 0 = x`), so the zero-divisor cases coincide.
         (hty ▸ Term.denoteTyped ufInterp env (fun _ => 0) id tm τ htc)
         res.h ⟨tdi.sΓ, tdi.hsΓ⟩ (res.res tdi) := by
   cases tm with
@@ -1110,7 +1114,7 @@ theorem Term.denoteTyped_denoteTerm_agree
       exact (eq_of_heq (cast_heq _ _)).symm
     | real r => simp only [denoteTerm, reduceCtorEq] at hden
   | var v =>
-    obtain ⟨hfind, hvτ⟩ := Term.typeCheck_var_inv htc
+    obtain ⟨_, hvτ⟩ := Term.typeCheck_var_inv htc
     subst hvτ
     unfold denoteTerm at hden
     split at hden
@@ -1194,7 +1198,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                 have hidx : ctx.tctx.ufs[i] = f := eq_of_beq (List.getElem_of_findIdx?_eq_some hfi)
                 have hufeq : (tdi.tΓ.ufs[i]'hi_ufs).uf = f :=
                   (tdi.htΓ.huf.ha i hi_ctx).symm.trans hidx
-                have argsrel : ArgsRel tdi f.args
+                have argsrel : ArgsEquiv tdi f.args
                     (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args f.args hargs) as :=
                   Term.denoteTypedArgs_denoteTerms_agree hEnv args f.args hargs as hda
                 rw [Term.denoteTyped_uf ufInterp env (fun _ => 0) id f args rty f.out htc hargs rfl]
@@ -1974,7 +1978,7 @@ theorem Term.denoteTyped_denoteTerm_agree
 
 /-- Argument-list agreement: when a term-argument list type-checks against `argTys` (`typeCheckArgs`)
     and `denoteTerms` interprets it (`= some ress`), the typed semantics' argument `HList` and the partial
-    semantics' argument list `ress` are pointwise related by `ValEquiv` (packaged as `ArgsRel`). -/
+    semantics' argument list `ress` are pointwise related by `ValEquiv` (packaged as `ArgsEquiv`). -/
 theorem Term.denoteTypedArgs_denoteTerms_agree
     {ctx : Context} {ufInterp : UFInterp σ SmtArrayTheory} {env : VarEnv σ SmtArrayTheory} {tdi : TermDenoteInput ctx}
     (hEnv : EnvCorr ufInterp env tdi)
@@ -1983,7 +1987,7 @@ theorem Term.denoteTypedArgs_denoteTerms_agree
     (htc : Term.typeCheckArgs tyctx args argTys = true)
     (ress : List (TermDenoteResult ctx))
     (hden : denoteTerms ctx args = some ress) :
-    ArgsRel tdi argTys
+    ArgsEquiv tdi argTys
       (Term.denoteTypedArgs ufInterp env (fun _ => 0) id args argTys htc) ress := by
   cases args with
   | nil =>

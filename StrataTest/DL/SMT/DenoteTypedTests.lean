@@ -204,6 +204,8 @@ private def ctxSort : TypedContext := { uss := [{ name := "Foo", arity := 0 }], 
 #guard (Term.typeCheck ctxA (.app .select [.var aArr, .prim (.bool true)] .bool)).toOption == none
 -- First argument is not an array.
 #guard (Term.typeCheck emptyCtx (.app .select [.prim (.int 0), .prim (.int 0)] .int)).toOption == none
+-- Result type does not match the array's value sort (exercises the `rty == v` guard).
+#guard (Term.typeCheck ctxA (.app .select [.var aArr, .prim (.int 0)] .int)).toOption == none
 
 /-! ### Array `store` -/
 
@@ -213,6 +215,21 @@ private def ctxSort : TypedContext := { uss := [{ name := "Foo", arity := 0 }], 
 -- Stored element type does not match the array's value sort.
 #guard (Term.typeCheck ctxA
   (.app .store [.var aArr, .prim (.int 0), .prim (.int 9)] (.constr "Array" [.int, .bool]))).toOption == none
+-- Result type does not match the array type (exercises the `rty == .constr "Array" [k, v]` guard).
+#guard (Term.typeCheck ctxA
+  (.app .store [.var aArr, .prim (.int 0), .prim (.bool true)] .int)).toOption == none
+
+/-! ### Nested sorts (recursive `WFSort` / `select` inversion) -/
+
+-- Nested option sort accepted by `WFSort`.
+#guard (Term.typeCheck emptyCtx (.none (.option .int))).toOption == some (.option (.option .int))
+
+/-- A variable of nested array sort `Array (Array Int Bool) Int`. -/
+private def nestedArr : TermVar := { id := "na", ty := .constr "Array" [.constr "Array" [.int, .bool], .int] }
+/-- Context declaring the nested array `na` and the inner-array variable `a` (used as the index). -/
+private def ctxNA : TypedContext := { uss := [], ufs := [], Γ := [nestedArr, aArr] }
+-- Nested array: `select` from `Array (Array Int Bool) Int` at an `Array Int Bool` index → `Int`.
+#guard (Term.typeCheck ctxNA (.app .select [.var nestedArr, .var aArr] .int)).toOption == some .int
 
 /-! ### Nested / recursive terms -/
 
