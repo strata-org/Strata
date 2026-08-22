@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.LExprTraversal
 import all Strata.DL.Lambda.LExprTraversal
+import Strata.Util.PtrCacheProps
 
 /-! # Correctness of the memoized `LExpr.Traversal` traversals
 

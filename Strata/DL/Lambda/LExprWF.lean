@@ -254,6 +254,52 @@ def bvarUsed {T : LExprParamsT} (k : Nat) (e : LExpr T) : Bool :=
   | .eq _ a b => bvarUsed k a || bvarUsed k b
   | _ => false
 
+/-- Worker for `betaReduceRedexesFuel`: reduces `e`, answering `none` when
+nothing was reduced. -/
+def betaReduceRedexesFuel? {T : LExprParamsT}
+    (keepConstantRedexes : Bool) (fuel : Nat) (e : LExpr T) : Option (LExpr T) :=
+  match fuel with
+  | 0 => none
+  | fuel + 1 =>
+    match e with
+    | .app m fn arg =>
+      let ra := betaReduceRedexesFuel? keepConstantRedexes fuel arg
+      let rf := betaReduceRedexesFuel? keepConstantRedexes fuel fn
+      match rf.getD fn with
+      | .abs _ _ _ body =>
+        if keepConstantRedexes && !bvarUsed 0 body then
+          -- Constant lambda: reducing would erase `arg`. Keep the redex so `arg`
+          -- (and any recursive call inside it) remains syntactically present.
+          -- Reuses rather than rebuilding the `.abs`, so an
+          -- unchanged `fn` stays pointer-identical in the result.
+          if ra.isNone && rf.isNone then none
+          else some (.app m (rf.getD fn) (ra.getD arg))
+        else
+          -- A redex is contracted here, so this subterm does change.
+          let contracted := betaReduce (ra.getD arg) body
+          some ((betaReduceRedexesFuel? keepConstantRedexes fuel contracted).getD contracted)
+      | fn' =>
+        if ra.isNone && rf.isNone then none else some (.app m fn' (ra.getD arg))
+    | .abs m n t body =>
+      (betaReduceRedexesFuel? keepConstantRedexes fuel body).map (.abs m n t ·)
+    | .ite m c t f =>
+      let rc := betaReduceRedexesFuel? keepConstantRedexes fuel c
+      let rt := betaReduceRedexesFuel? keepConstantRedexes fuel t
+      let rf := betaReduceRedexesFuel? keepConstantRedexes fuel f
+      if rc.isNone && rt.isNone && rf.isNone then none
+      else some (.ite m (rc.getD c) (rt.getD t) (rf.getD f))
+    | .eq m a b =>
+      let ra := betaReduceRedexesFuel? keepConstantRedexes fuel a
+      let rb := betaReduceRedexesFuel? keepConstantRedexes fuel b
+      if ra.isNone && rb.isNone then none
+      else some (.eq m (ra.getD a) (rb.getD b))
+    | .quant m qk n t tr body =>
+      let rtr := betaReduceRedexesFuel? keepConstantRedexes fuel tr
+      let rb := betaReduceRedexesFuel? keepConstantRedexes fuel body
+      if rtr.isNone && rb.isNone then none
+      else some (.quant m qk n t (rtr.getD tr) (rb.getD body))
+    | _ => none
+
 /-- Shared worker for `betaReduceRedexes` (erasing) and
 `betaReduceRedexesPreservingArgs` (non-erasing), fuel-bounded so it is a *total*
 definition we can reason about (see `getOps_subset_betaReduceRedexesFuel`).
@@ -275,26 +321,7 @@ otherwise the redex is β-reduced and `arg` is erased (`betaReduce` drops the
 argument of a constant lambda). -/
 def betaReduceRedexesFuel {T : LExprParamsT}
     (keepConstantRedexes : Bool) (fuel : Nat) (e : LExpr T) : LExpr T :=
-  match fuel with
-  | 0 => e
-  | fuel + 1 =>
-    match e with
-    | .app m fn arg =>
-      let arg := betaReduceRedexesFuel keepConstantRedexes fuel arg
-      match betaReduceRedexesFuel keepConstantRedexes fuel fn with
-      | .abs mAbs n t body =>
-        if keepConstantRedexes && !bvarUsed 0 body then
-          -- Constant lambda: reducing would erase `arg`. Keep the redex so `arg`
-          -- (and any recursive call inside it) remains syntactically present.
-          .app m (.abs mAbs n t body) arg
-        else
-          betaReduceRedexesFuel keepConstantRedexes fuel (betaReduce arg body)
-      | fn' => .app m fn' arg
-    | .abs m n t body => .abs m n t (betaReduceRedexesFuel keepConstantRedexes fuel body)
-    | .ite m c t f => .ite m (betaReduceRedexesFuel keepConstantRedexes fuel c) (betaReduceRedexesFuel keepConstantRedexes fuel t) (betaReduceRedexesFuel keepConstantRedexes fuel f)
-    | .eq m a b => .eq m (betaReduceRedexesFuel keepConstantRedexes fuel a) (betaReduceRedexesFuel keepConstantRedexes fuel b)
-    | .quant m qk n t tr body => .quant m qk n t (betaReduceRedexesFuel keepConstantRedexes fuel tr) (betaReduceRedexesFuel keepConstantRedexes fuel body)
-    | _ => e
+  (betaReduceRedexesFuel? keepConstantRedexes fuel e).getD e
 
 /-- Count occurrences of the bound variable introduced `d` binders out (i.e. the
 `.bvar` leaves with index `d` at this depth). Helper for `maxBvarMultiplicity`. -/

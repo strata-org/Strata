@@ -169,6 +169,21 @@ def withFileWriter (filename : String) (act : SolverM α)
 def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO SMTLibSolver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
+/-- Run `act` with a write-only recorder that saves all issued commands to an
+    in-memory buffer, returning `act`'s result, the recorded SMT-LIB text, and
+    the updated solver state. No solver runs behind it — nothing is checked or
+    solved; see `withFileWriter` for the on-disk equivalent. -/
+def recordToString {α : Type} (act : SolverM α)
+    (state : SolverState := SolverState.init) : IO (α × String × SolverState) := do
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← bufferWriter b
+  let (a, state) ← SolverM.run solver act state
+  let contents ← b.get
+  if h : contents.data.IsValidUTF8 then
+    return (a, String.fromUTF8 contents.data h, state)
+  else
+    throw (IO.userError "recordToString: emitted SMT-LIB text is not valid UTF-8")
+
 /-! ## Internal helpers -/
 
 /-- Write one SMT-LIB line to the input stream. -/

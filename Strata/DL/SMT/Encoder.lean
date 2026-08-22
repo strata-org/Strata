@@ -177,6 +177,15 @@ def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   return .app (.datatype_op .constructor ty.mkName) tEncs ty
 
+/-- Register a managed name (a program variable's `declare-fun`/`define-fun`)
+    in the encoder state, so later `encodeUF` calls reuse the raw name
+    instead of declaring and uniquifying their own. -/
+def seedManagedName (estate : EncoderState) (uf : UF) : EncoderState :=
+  { estate with
+    functions := estate.functions.insert uf uf.id
+    isFunUninterp := estate.isFunUninterp.insert uf false
+    usedNames := estate.usedNames.insert uf.id }
+
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).functions.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
@@ -321,13 +330,8 @@ def encodeFunctionDef (f : IF) : EncoderM String := do
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
-  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
-  let solver ← Solver.bufferWriter b
-  let _ ← ((Encoder.encodeTerm e).run EncoderState.init).run solver
-  let contents ← b.get
-  if h: contents.data.IsValidUTF8
-  then pure (String.fromUTF8 contents.data h)
-  else pure "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
+  let (_, text, _) ← Solver.recordToString ((Encoder.encodeTerm e).run EncoderState.init)
+  pure text
 
 /--
 Once you've generated `Asserts` with one of the functions in Verifier.lean, you
@@ -349,6 +353,12 @@ def encode (ts : List Term) : SolverM Unit := do
   let (termEncs, _) ← ts.mapM encodeTerm |>.run initState
   for t in termEncs do
     Solver.assert t
+
+/-- Encode each axiom and assert it. -/
+def encodeAxioms (axms : Array Term) : EncoderM Unit := do
+  let ids ← axms.mapM fun ax => encodeTerm ax
+  for id in ids do
+    Solver.assert id
 
 end Encoder
 

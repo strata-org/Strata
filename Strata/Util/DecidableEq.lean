@@ -7,6 +7,10 @@ module
 
 public section
 
+/-- Decides `x = y` by trying pointer identity before the structural comparison. -/
+@[inline] def ptrFastEq {α : Type u} [DecidableEq α] (x y : α) : Bool :=
+  @decide (x = y) (withPtrEqDecEq x y fun _ => inferInstance)
+
 def beq_eq_DecidableEq
   {T : Type}
   (beq : T → T → Bool)
