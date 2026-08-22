@@ -1105,6 +1105,18 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
         | .unsat => "pass"
         | .sat _ => "fail"
         | .unknown _ | .err _ => "unknown"
+      else if checkMode == .bugFinding then
+        -- `bugFinding` runs the satisfiability check only (see the check
+        -- selection at `verifySingleEnv`), so matching on
+        -- `satisfiabilityProperty` had no case that could report a
+        -- non-bug: every goal came out `satisfiable` or `unknown` and was
+        -- then counted as failed. Classify with the mode-aware predicates
+        -- instead. `bugFindingAssumingCompleteSpec` runs both checks and
+        -- keeps its existing labels, because `bugFindingSuccess` encodes
+        -- only the `bugFinding` column of docs/VerificationModes.md.
+        if o.bugFindingFailure then "fail"
+        else if o.bugFindingSuccess then "no definite bug"
+        else "unknown"
       else
         match o.satisfiabilityProperty with
         | .sat _ => "satisfiable"
@@ -1141,6 +1153,11 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
         | .unsat => "✅"
         | .sat _ => "❌"
         | .unknown _ | .err _ => "❓"
+      else if checkMode == .bugFinding then
+        -- See the matching comment in `label` above.
+        if o.bugFindingFailure then "❌"
+        else if o.bugFindingSuccess then "✅"
+        else "❓"
       else
         match o.satisfiabilityProperty with
         | .sat _ => "❓"
