@@ -1081,6 +1081,11 @@ def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono)
     then return String.fromUTF8 contents.data h
     else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
 
+/-- Whether a term is a real literal (top-level only). -/
+def smtTermIsReal : Strata.SMT.Term → Bool
+  | .prim (.real _) => true
+  | _               => false
+
 /--
 Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
 
@@ -1115,12 +1120,19 @@ def smtTermToLExpr (t : Strata.SMT.Term)
       .fvar () v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
-    -- from plain variables (e.g., `Nil` constructor must not be .fvar)
+    -- from plain variables (e.g., `Nil` constructor must not be .fvar).
+    --
+    -- The model parser represents unary `-` as a UF application, but Core has
+    -- no `-` production.  Map it to `int.neg`/`real.neg` so models print
+    -- re-parseable syntax.
     let fnExpr : LExpr CoreLParams.mono :=
-      if constructorNames.contains uf.id then
-        .op () uf.id none
-      else
-        .fvar () uf.id none
+      match uf.id, args with
+      | "-", [arg] => .op () (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
+      | _, _ =>
+        if constructorNames.contains uf.id then
+          .op () uf.id none
+        else
+          .fvar () uf.id none
     args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
     let fnExpr : LExpr CoreLParams.mono := .op () name none

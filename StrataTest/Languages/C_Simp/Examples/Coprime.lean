@@ -128,7 +128,7 @@ spec {
         return := false;
       }
       i := int.sub(i, 1);
-      assert [measure_decreases]: int.lt(i, special-name-for-old-measure-value);
+      assert [measure_decreases]: int.lt(i, |special-name-for-old-measure-value|);
       assert [measure_imp_not_guard]: if int.le(i, 0) then !(int.gt(i, 1)) else true;
       assert [arbitrary_iter_maintain_invariant_0]: true;
     }

@@ -51,7 +51,7 @@ info: ok: verify_Test: {
     g := int.add(g, 1);
   }
   assert [Test_ensures_1]: int.gt(y, 0);
-  assert [Test_ensures_2]: g == int.add(old g, 1);
+  assert [Test_ensures_2]: g == int.add(|old g|, 1);
 }
 -/
 #guard_msgs in
@@ -150,7 +150,7 @@ info: ok: verify_MultipleModifies: {
     g2 := true;
   }
   assert [MultipleModifies_ensures_1]: y == x;
-  assert [MultipleModifies_ensures_2]: g1 == int.add(old g1, 1);
+  assert [MultipleModifies_ensures_2]: g1 == int.add(|old g1|, 1);
   assert [MultipleModifies_ensures_3]: g2;
 }
 -/

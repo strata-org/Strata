@@ -120,6 +120,11 @@ structure Scope where
   boundVars : Array String := #[]
   /-- Track free variables in this scope -/
   freeVars : Array String := #[]
+  /-- Names of `inout` parameters in scope. An `old x` free variable is
+      reconstructed as the CST `old x` construct only when its base `x` is an
+      in-scope inout variable; otherwise `old x` is a plain free variable
+      (printed `|old x|`). -/
+  inoutVars : Array String := #[]
   deriving Inhabited, Repr
 
 structure ToCSTContext (M : Type) where
@@ -191,6 +196,18 @@ def addGlobalFreeVars {M} (ctx : ToCSTContext M) (names : Array String)
   let newGlobalScope := { globalScope with freeVars :=
                             globalScope.freeVars ++ names }
   { ctx with scopes := ctx.scopes.set! 0 newGlobalScope }
+
+/-- Record `inout` parameter names in the current scope. -/
+def addInoutVars {M} (ctx : ToCSTContext M) (names : Array String)
+    : ToCSTContext M :=
+  let idx := ctx.scopes.size - 1
+  let scope := ctx.scopes[idx]!
+  let newScope := { scope with inoutVars := scope.inoutVars ++ names }
+  { ctx with scopes := ctx.scopes.set! idx newScope }
+
+/-- Whether `name` is an in-scope `inout` variable. -/
+def isInoutVar {M} (ctx : ToCSTContext M) (name : String) : Bool :=
+  ctx.scopes.any (·.inoutVars.contains name)
 
 /-- Push bound variables to the current scope.
   Unlike `addScopedBoundVars`, the variable is added to the end of the bound
@@ -872,12 +889,42 @@ partial def lexprToExpr {M} [Inhabited M]
     else
       ToCSTM.logError "lexprToExpr" "bvar index out of bounds" (toString idx)
       pure (.bvar default idx)
-  | .fvar _ id _ =>
+  | .fvar _ id oty =>
     -- We first look for Lambda .fvars in the boundVars context, before checking
     -- the freeVars context. Lambda .fvars can come from formals of a function
-    -- or procedure (which are .bvars in DDM), but also from global variable
-    -- declaration (which are DDM .fvars). Note that Strata Core does not allow
-    -- variable shadowing.
+    -- or procedure (which are .bvars in DDM), but also from top-level
+    -- declarations — functions, constants, datatypes, and types — (which are
+    -- DDM .fvars). Note that Strata Core does not allow variable shadowing.
+    --
+    -- A free variable named `old x` is reconstructed as the CST `old x`
+    -- construct only when its base `x` is an in-scope inout variable AND `x` is
+    -- the most-recently-declared binding among `{x, old x}` (no nearer local
+    -- `old x` shadows it). That is the only case where `old x` denotes a
+    -- pre-state binding. Otherwise `old x` is the nearer local (or a plain free
+    -- variable) and is emitted flat, printed as `|old x|`.
+    let oldStr := Core.CoreIdent.oldStr
+    let baseName := (id.name.drop oldStr.length).toString
+    -- A higher `findBoundVarIndex?` means declared later (more recent).
+    let xIsLastInout : Bool :=
+      id.name.startsWith oldStr && ctx.isInoutVar baseName &&
+        (match ctx.findBoundVarIndex? baseName, ctx.findBoundVarIndex? id.name with
+         | some ix, some io => ix > io
+         | some _, none => true
+         | none, _ => false)
+    if xIsLastInout then
+      let tyCST ← match oty with
+        | some t => lmonoTyToCoreType t
+        | none => pure (CoreType.tvar default unknownTypeVar)
+      let baseExpr ← match ctx.findBoundVarIndex? baseName with
+        | some idx => pure (CoreDDM.Expr.bvar default (ctx.allBoundVars.size - (idx + 1)))
+        | none =>
+          match ctx.freeVarIndex? baseName with
+          | some idx => pure (CoreDDM.Expr.fvar default idx)
+          | none => do
+            modify (·.addGlobalFreeVars #[baseName])
+            pure (CoreDDM.Expr.fvar default ctx.allFreeVars.size)
+      pure (.old default tyCST baseExpr)
+    else
     match ctx.findBoundVarIndex? id.name with
     | some idx => pure (.bvar default (ctx.allBoundVars.size - (idx + 1)))
     | none =>
@@ -1349,15 +1396,22 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure)
       | .inParam => Binding.mkBinding default paramName (TypeP.expr paramType)
     pure (binding, id.toPretty)
   let mut allBindings : Array (Binding M × String) := #[]
+  -- Inout parameters (inputs that are also outputs); recorded so `lexprToExpr`
+  -- can reconstruct `old x` on an inout `x` as the CST `old` construct.
+  let mut inoutNames : Array String := #[]
   for (id, ty) in proc.header.inputs.toArray do
-    let kind := if outputSet.contains id then FormatParamKind.inoutParam else .inParam
-    allBindings := allBindings.push (← mkBinding' id ty kind)
+    let isInout := outputSet.contains id
+    let kind := if isInout then FormatParamKind.inoutParam else .inParam
+    let b ← mkBinding' id ty kind
+    allBindings := allBindings.push b
+    if isInout then inoutNames := inoutNames.push b.2
   let inoutSet := proc.header.inputs.toArray.map (·.1)
   for (id, ty) in proc.header.outputs.toArray do
     if !inoutSet.contains id then
       allBindings := allBindings.push (← mkBinding' id ty .outParam)
   let allNames := allBindings.map (·.2)
   modify (ToCSTContext.addScopedBoundVars (reverse? := false) · allNames)
+  modify (ToCSTContext.addInoutVars · inoutNames)
   let arguments : Bindings M := .mkBindings default ⟨default, allBindings.map (·.1)⟩
   -- Build spec elements
   let mut specElts : Array (SpecElt M) := #[]
