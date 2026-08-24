@@ -62,7 +62,7 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
       structural equality is too strong. This holds for every constructor below. -/
   | init_det : ∀ Γ x (xty : LTy) e mty tys md Δ,
       Γ.types.find? x = none →
-      x ∉ HasVarsPure.getVars (P := Expression) e →
+      x ∉ HasFvars.getFvars (P := Expression) e →
       tys.length = xty.boundVars.length →
       RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       C.WellKindedTy mty →

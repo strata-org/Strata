@@ -27,6 +27,7 @@ inductive ResolvedNodeKind where
   | datatypeConstructor
   | datatypeDestructor
   | typeAlias
+  | opaqueType
   | constant
   | quantifierVar
   | coroutineType
@@ -46,6 +47,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .datatypeConstructor => "datatype constructor"
   | .datatypeDestructor => "datatype destructor"
   | .typeAlias         => "type alias"
+  | .opaqueType        => "opaque type"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
   | .coroutineType     => "coroutine type"
@@ -78,6 +80,8 @@ inductive ResolvedNode where
   | datatypeDestructor (typeName : Identifier) (field : Parameter)
   /-- A type alias. -/
   | typeAlias (ty : TypeAlias)
+  /-- An opaque type definition (`opaque Set<T>;`) — nominal, no constructors. -/
+  | opaqueType (ty : OpaqueTypeDefinition)
   /-- A constant. -/
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
@@ -111,6 +115,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .datatypeConstructor .. => .datatypeConstructor
   | .datatypeDestructor .. => .datatypeDestructor
   | .typeAlias ..         => .typeAlias
+  | .opaqueType ..        => .opaqueType
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
   | .coroutineType ..     => .coroutineType
@@ -137,6 +142,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
  | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
  | .coroutineType proc => ⟨ .Unknown, proc.name.source ⟩
+ | .opaqueType ty => ⟨ .Unknown, ty.name.source ⟩
 
 /-! ## Resolution result -/
 

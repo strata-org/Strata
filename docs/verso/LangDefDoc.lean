@@ -311,7 +311,7 @@ pieces:
    statements need to inspect and manipulate expressions in generic ways —
    extracting free variables, constructing Boolean/integer literals, negating
    conditions, and so on. These operations are provided via typeclasses whose
-   names start with `Has` (e.g., {name Imperative.HasVarsPure}`HasVarsPure`),
+   names start with `Has` (e.g., {name Imperative.HasVarsImp}`HasVarsImp`),
    defined in `Strata/DL/Imperative/PureExpr.lean` and
    `Strata/DL/Imperative/HasVars.lean`. See
    `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
@@ -590,7 +590,6 @@ on its `_terminates_` obligations.
 
 #### Current Limitations
 
-- Polymorphic recursive functions are not yet supported.
 - Recursive functions must be declared at the top level (not as local
   declarations inside procedures).
 - Only single-expression termination measures are supported; lexicographic

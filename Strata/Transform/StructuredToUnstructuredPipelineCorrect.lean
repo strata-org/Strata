@@ -70,7 +70,7 @@ open Imperative.Specification
 open Imperative.Specification.Transform
 
 variable [HasFvar P] [HasFvars P] [HasBoolOps P]
-  [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+  [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
   [LawfulHasFvar P] [LawfulHasIdent P]
 
 /-- Under `PipelinePre`, `nondetElim` overapproximates the source imperative-block
@@ -165,8 +165,8 @@ private theorem hpre_src_ndelim [HasSubstFvar P] :
     · exact hpre.h_disj_initVars str (Or.inr hk) h_src
     · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
 
-omit [LawfulHasFvar P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
-omit [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasIdent P] in
+omit [LawfulHasFvar P] [HasFvar P] [HasBoolOps P] in
+omit [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasIdent P] in
 /-- `pre_ndelim → pre_hoist ∘ hoistLoopPrefixInits`: the `stmtsToCFG` instance's
 `pre` holds on the `hoist` output. -/
 private theorem hpre_ndelim_hoist :
@@ -263,7 +263,7 @@ private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P]
     (nondetElim_overapproximates_upto extendFactory)
     h_inner
 
-omit [HasVarsPure P P.Expr] [LawfulHasFvar P]
+omit [LawfulHasFvar P]
   [LawfulHasIdent P] [DecidableEq P.Ident]
  in
 /-- The composed per-pass transform `nondetElim >=> hoist >=> stmtsToCFG`
@@ -301,7 +301,7 @@ theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P]
 `PipelinePre`, ruling out global vacuity of the `fun ss => PipelinePre ss`
 precondition. -/
 theorem pipelinePre_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] [HasIdent P] [HasInt P] [HasIntOps P]
+    [HasIdent P] [HasInt P] [HasIntOps P]
     [HasSubstFvar P] [DecidableEq P.Ident] :
     PipelinePre ([] : List (Stmt P (Cmd P))) where
   h_nofd := by simp [Block.noFuncDecl]

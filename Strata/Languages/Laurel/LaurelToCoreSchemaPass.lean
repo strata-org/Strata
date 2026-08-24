@@ -167,6 +167,11 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
           | some (.datatypeDefinition dt) => dt.typeArgs.mapM (fun _ => freshTVar)
           | _ => pure []
         return .tcons typeName.text args
+      -- A bare OPAQUE type reference, same treatment as a bare datatype: emit one fresh
+      -- type variable per declared parameter and let Core unification bind them.
+      | some (.opaqueType ot) =>
+        let args ← ot.typeArgs.mapM (fun _ => freshTVar)
+        return .tcons ot.name.text args
       | _ => do
         -- A name registered gradual (e.g. a type imported from an unmodeled module like
         -- `botocore.model.OperationModel`) is dynamic-top: map it to Core `Any`, exactly as the
@@ -198,6 +203,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
         invalidCoreType ty.source s!"type parameter '{name.text}' cannot be applied to type arguments"
       else match model.get? name with
         | some (.datatypeDefinition dt) => return .tcons dt.name.text (← args.mapM translateType)
+        -- `Set<int>` → `.tcons "Set" [int]`, matching the `declare-sort` arity. Like a
+        -- datatype, an opaque type is NOT monomorphized: its parameters survive as real
+        -- Core sort arguments.
+        | some (.opaqueType ot) => return .tcons ot.name.text (← args.mapM translateType)
         | _ => invalidCoreType ty.source genericReachedCoreMsg
     | _ => invalidCoreType ty.source genericReachedCoreMsg
   | .TFloat64 =>
@@ -239,6 +248,24 @@ private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : T
       else translateType (computeExprType model arg)
   | _ => translateType (computeExprType model arg)
 
+/-- Laurel prelude name → Core `Set.*` factory function name.
+
+    A Laurel identifier cannot contain a `.`, so the prelude spells these `setInsert`/… while
+    Core names them `Set.insert`/… (namespaced like `Sequence.*`).
+
+    The names are deliberately NOT `$`-prefixed: these are user-callable set operations, like
+    `select`/`update`/`mapConst`, not internal operator wrappers. -/
+private def coreSetOpName? (name : String) : Option String :=
+  match name with
+  | "setEmpty"      => some "Set.empty"
+  | "setContains"   => some "Set.contains"
+  | "setInsert"     => some "Set.insert"
+  | "setRemove"     => some "Set.remove"
+  | "setUnion"      => some "Set.union"
+  | "setIntersect"  => some "Set.intersect"
+  | "setDifference" => some "Set.difference"
+  | _ => none
+
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
@@ -264,6 +291,12 @@ def emitExprDiagnostic (d : Message): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return default
+
+/-- Whether `name` is a type Core already provides natively (`Set`, `Map`, `Sequence`,
+    `int`, …). Read from `Core.KnownTypes` rather than spelled out here, so a type added to
+    Core's factory is recognized without a matching edit in this pass. -/
+private def isCoreNativeTypeName (name : String) : Bool :=
+  Core.KnownTypes.keywords.contains name
 
 /-- The bitvector widths for which Core defines its bitvector operators
     (`Factory.lean`'s `DefBVOpFuncExprs [1, 8, 16, 32, 64]`). The comparison
@@ -552,7 +585,23 @@ def translateExpr (expr : StmtExprMd)
                   | _ => pure (.tcons "TypeTag" [])
                 pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
             | _ => pure (.op () ⟨callee.text, ()⟩ none)
-          else pure (.op () ⟨callee.text, ()⟩ none)
+          else match coreSetOpName? callee.text with
+          -- A set primitive: emit Core's `Set.*` factory op under its own name.
+          | some coreName =>
+            -- `setEmpty()` takes no arguments, so — exactly like `mapConst`'s key — its
+            -- element type cannot come from an actual and must be read off the context.
+            -- Without the annotation the element type variable reaches the SMT encoder
+            -- unresolved and verification aborts.
+            if coreName == "Set.empty" then
+              let elemTy : Option LMonoTy ← match expectedType with
+                | some ⟨.Applied base [et], _⟩ =>
+                  match base.val with
+                  | .UserDefined n => if n.text == "Set" then pure (some (← translateType et)) else pure none
+                  | _ => pure none
+                | _ => pure none
+              pure (Core.setEmptyOp elemTy)
+            else pure (.op () ⟨coreName, ()⟩ none)
+          | none => pure (.op () ⟨callee.text, ()⟩ none)
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -806,9 +855,13 @@ def translateStmt (stmt : StmtExprMd)
       return [Core.Statement.assume label coreExpr md]
   | .Block stmts label =>
       let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
-      match label with
-      | some l => return [Imperative.Stmt.block l innerStmts md]
-      | none   => return innerStmts
+      -- A Laurel block is a lexical scope. Core only pushes/pops a variable
+      -- scope for a `Stmt.block`, so every block must lower to one -- returning
+      -- statements inline would leak declarations into the enclosing scope.
+      let blockLabel ← match label with
+        | some l => pure l
+        | none   => freshStmtLabel "$block" s!"_{← freshId}"
+      return [Imperative.Stmt.block blockLabel innerStmts md]
   | .Var (.Declare param) =>
       -- Post-resolution every declaration is annotated; default to `Unknown`.
       let coreMonoType ← translateType (param.type.getD ⟨.Unknown, stmt.source⟩)
@@ -1224,6 +1277,16 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition
       return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]
+    -- Emit a `.con` (`declare-sort`) rather than `.data`, so the type's values stay
+    -- distinct. A name Core already provides needs no declaration at all: the `opaque`
+    -- declaration names that native sort, and declaring it again is a reserved-name error.
+    | .opaqueType ot =>
+      if isCoreNativeTypeName ot.name.text then
+        return []
+      else
+        return [Core.Decl.type
+          (.con { name := ot.name.text, params := ot.typeArgs.map (·.text) })
+          mdWithUnknownLoc]
     | .constant c => do
       let coreTy ← translateType c.type
       let body ← c.initializer.mapM (translateExpr ·)

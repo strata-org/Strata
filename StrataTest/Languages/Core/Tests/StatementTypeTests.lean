@@ -207,6 +207,101 @@ info: ok: {
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclTypeCheck
          return format ans.fst
 
+private def identityFunc : PureFunc Expression :=
+  { name := ⟨"identity", ()⟩, typeArgs := [], isConstr := false,
+    inputs := [(⟨"x", ()⟩, .forAll [] .int)], output := .forAll [] .int,
+    body := some eb[x], attr := #[], axioms := [] }
+
+/-- A local `funcDecl` may be called within the block that declares it. -/
+def testFuncDeclInBlockCalledInside : List Statement :=
+  [ .block "B"
+      [ .funcDecl identityFunc .empty,
+        Statement.init "y" t[int] (.det eb[(~identity #5)]) .empty ]
+      .empty ]
+
+/--
+info: ok: {
+  B :
+  {
+    funcDecl <function>
+    var y : int := identity(5);
+    ⏎
+    -- Errors encountered during conversion:
+    Unsupported construct in handleUnaryOps: unknown operation, rendering as generic call: identity
+    Context: Global scope:
+  }
+}
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclInBlockCalledInside
+         return format ans.fst
+
+/-- Regression: calling a block-local `funcDecl` after its block must fail —
+    the function is out of scope there, like a block-local variable. -/
+def testFuncDeclInBlockCalledOutside : List Statement :=
+  [ .block "B" [ .funcDecl identityFunc .empty ] .empty,
+    .init "y" t[int] (.det eb[(~identity #5)]) .empty ]
+
+/--
+info: error: Function names: #[] Cannot infer the type of this operation: `identity`
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclInBlockCalledOutside
+         return format ans.fst
+
+/-- A local `type` declaration may be used within the block that declares it. -/
+def testTypeDeclInBlockUsedInside : List Statement :=
+  [ .block "B"
+      [ Statement.typeDecl { name := "T", params := [] } .empty,
+        Statement.init "x" (.forAll [] (.tcons "T" [])) .nondet .empty ]
+      .empty ]
+
+/--
+info: ok: {
+  B :
+  {
+    type T (arity 0)
+    var x : ($__unknown_type);
+    ⏎
+    -- Errors encountered during conversion:
+    Unsupported construct in lmonoTyToCoreType: unknown type: Lambda.LMonoTy.tcons "T" []
+    Context: Global scope:
+  }
+}
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testTypeDeclInBlockUsedInside
+         return format ans.fst
+
+/-- Regression: a local `type` declaration is scoped to its block too — using it
+    after the block must fail. -/
+def testTypeDeclInBlockUsedOutside : List Statement :=
+  [ .block "B" [ Statement.typeDecl { name := "T", params := [] } .empty ] .empty,
+    .init "x" (.forAll [] (.tcons "T" [])) .nondet .empty ]
+
+/--
+info: error: Type T is not an instance of a previously registered type!
+Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testTypeDeclInBlockUsedOutside
+         return format ans.fst
+
+/-- Regression: an inner-block `funcDecl` does not leak into the enclosing block —
+    calling it in the outer block after the inner block closes must fail. -/
+def testFuncDeclInNestedBlockCalledOuter : List Statement :=
+  [ .block "Outer"
+      [ .block "Inner" [ .funcDecl identityFunc .empty ] .empty,
+        Statement.init "y" t[int] (.det eb[(~identity #5)]) .empty ]
+      .empty ]
+
+/--
+info: error: Function names: #[] Cannot infer the type of this operation: `identity`
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none testFuncDeclInNestedBlockCalledOuter
+         return format ans.fst
+
 -- Regression test for #1289: outer type variable captured in local function body.
 def testOuterTyVarCapture : List Statement :=
   let localFunc : PureFunc Expression := {

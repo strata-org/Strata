@@ -80,6 +80,51 @@ procedure keepsValue() opaque {
 };
 #end
 
+/-! ## `old(global)` in a postcondition names the pre-call value. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var count: int := 0
+procedure bump()
+  opaque
+  ensures count == old(count) + 1
+{
+  count := count + 1
+};
+procedure caller() opaque {
+  count := 5;
+  bump();
+  assert count == 6
+};
+#end
+
+/-! ## Conditional preservation without the explicit input `maybe` needs. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure maybeOld(c: bool)
+  opaque
+  ensures c ==> g == 99
+  ensures !c ==> g == old(g)
+{
+  if c then {
+    g := 99
+  } else {
+    assert true
+  }
+};
+procedure keepsValueOld() opaque {
+  g := 5;
+  maybeOld(false);
+  assert g == 5
+};
+#end
+
 /-! ## Two independent globals are framed separately: writing `a` does not
     disturb `b`. `bumpA` touches only `a`, so `b` is not even a parameter of it,
     and the caller's `b` is unchanged across the call. -/
@@ -630,5 +675,181 @@ procedure catchGlobalWrite() opaque {
     assert exceptionalGlobal == 5
   };
   assert exceptionalGlobal == 5
+};
+#end
+
+/-! ## `old(global)` in a `throwsOn` case postcondition. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite BumpError {}
+var thrownCount: int := 0
+procedure bumpThenThrow()
+  throws (thrown: BumpError)
+  opaque
+  throwsOn true {
+    ensures thrownCount == old(thrownCount) + 1
+  }
+{
+  thrownCount := thrownCount + 1;
+  var err: BumpError := new BumpError;
+  throw err
+};
+procedure catchBumpedGlobal() opaque {
+  thrownCount := 7;
+  try {
+    bumpThenThrow()
+  } catch err when err is BumpError {
+    assert thrownCount == 8
+  };
+  assert thrownCount == 8
+};
+#end
+
+/-! ## `old(g)` in a `throwsOn` guard; exhaustiveness fails if `old` is dropped. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite GuardError {}
+var g: int := 0
+procedure throwsWhenStartedAtZero()
+  throws (e: GuardError)
+  requires g == 0
+  opaque
+  throwsOn old(g) == 0 {
+    ensures g == 1
+  }
+{
+  g := 1;
+  var err: GuardError := new GuardError;
+  throw err
+};
+#end
+
+/-! ## `old(g)` in a `modifies when` guard; the assert is unprovable if `old`
+    is dropped (the wildcard erases the unguarded frame). -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Cell {
+  var value: int
+}
+var g: int := 0
+procedure touchGuarded(c: Cell)
+  opaque
+  modifies *
+  modifies c when old(g) == 0
+{
+  g := 1;
+  c#value := 5
+};
+procedure observeGuardedFrame() opaque {
+  var c: Cell := new Cell;
+  var d: Cell := new Cell;
+  g := 0;
+  d#value := 7;
+  touchGuarded(c);
+  assert d#value == 7
+};
+#end
+
+/-! ## The pre-state guard binds: writing outside its targets fails the frame. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Cell {
+  var value: int
+}
+var g: int := 0
+procedure breaksGuardedFrame(c: Cell, d: Cell)
+//        ^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+  requires g == 0
+  opaque
+  modifies *
+  modifies c when old(g) == 0
+{
+  g := 1;
+  d#value := 5
+};
+#end
+
+/-! ## `old` over a composite global's field (heap-`old` path). -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Counter {
+  var value: int
+}
+var counter: Counter := new Counter
+procedure bumpField()
+  opaque
+  ensures counter#value == old(counter#value) + 1
+  modifies counter
+{
+  counter#value := counter#value + 1
+};
+procedure callerField()
+  opaque
+  modifies counter
+{
+  counter#value := 5;
+  bumpField();
+  assert counter#value == 6
+};
+#end
+
+/-! ## `old(g)` where `g` is written only through a callee. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure inc()
+  opaque
+  ensures g == old(g) + 1
+{
+  g := g + 1
+};
+procedure incViaCall()
+  opaque
+  ensures g == old(g) + 1
+{
+  inc()
+};
+procedure callerVia() opaque {
+  g := 10;
+  incViaCall();
+  assert g == 11
+};
+#end
+
+/-! ## Known gap: unwritten global makes `old(g)` a silent no-op (`g == g`),
+    with no warning when the procedure writes the heap for other reasons. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Cell {
+  var value: int
+}
+var g: int := 0
+procedure readsOnly(c: Cell)
+  opaque
+  ensures g == old(g)
+  modifies c
+{
+  c#value := 1
 };
 #end

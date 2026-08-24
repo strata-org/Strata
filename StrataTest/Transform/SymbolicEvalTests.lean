@@ -8,6 +8,7 @@ module
 meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.SimpleAPI
+meta import Strata.Transform.NondetElim
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -21,14 +22,23 @@ open Strata
 private def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
+/-- Symbolic evaluation rejects surviving nondeterministic guards, so eliminate
+    them first. -/
+private def elimNondet (p : Core.Program) : Core.Program :=
+  let (res, _) := StateT.run (ExceptT.run (Core.nondetElim p)) Transform.CoreTransformState.emp
+  match res with | .ok (_, p') => p' | .error _ => p
+
 private def evalAndPrint (p : StrataDDM.Program) : IO Unit := do
-  match typeCheckAndBuildObligationProgram .quiet (translateCore p) with
-  | .ok (oblProg, _) =>
-    let s := (Core.formatProgram oblProg).pretty
-    -- Strip trailing newlines from program output
-    let s := s.toList.reverse.dropWhile (· == '\n') |>.reverse |> String.ofList
-    IO.print s
+  match Core.typeCheck .quiet (translateCore p) with
   | .error e => IO.println s!"Error: {e}"
+  | .ok tp =>
+    match Core.toCoreProofObligationProgram .quiet (elimNondet tp) with
+    | .ok (oblProg, _) =>
+      let s := (Core.formatProgram oblProg).pretty
+      -- Strip trailing newlines from program output
+      let s := s.toList.reverse.dropWhile (· == '\n') |>.reverse |> String.ofList
+      IO.print s
+    | .error e => IO.println s!"Error: {e}"
 
 /-! Simple test: procedure name preserved, preconditions become assumes -/
 
@@ -114,9 +124,9 @@ info: program Core;
 procedure nondetIfTest ()
 {
   assume [pre]: int.ge(x@1, 0);
-  assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__nondet_cond_2 then $__nondet_cond_2 else true;
-  assume [|<label_ite_cond_false: !($__nondet_cond_2)>|]: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true;
-  assert [post]: int.ge(if $__nondet_cond_2 then x@1 else int.add(x@1, 1), 0);
+  assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
+  assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
+  assert [post]: int.ge(if $__ndelim_ite$_0 then x@1 else int.add(x@1, 1), 0);
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -220,25 +230,25 @@ procedure blockTest ()
         assume [pre_x]: int.ge(x@1, 0);
         assume [pre_y]: int.ge(y@1, 0);
         assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-        assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-        assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-        assert [after_inner]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
+        assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
+        assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
+        assert [after_inner]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
       }
     } else {
       assume [pre_x]: int.ge(x@1, 0);
       assume [pre_y]: int.ge(y@1, 0);
       assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-      assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-      assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-      assert [final]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
+      assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
+      assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
+      assert [final]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
     }
   } else {
     assume [pre_x]: int.ge(x@1, 0);
     assume [pre_y]: int.ge(y@1, 0);
     assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-    assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
-    assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-    assert [post]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
+    assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
+    assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
+    assert [post]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
   }
 };
 -/

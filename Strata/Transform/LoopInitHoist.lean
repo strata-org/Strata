@@ -139,7 +139,7 @@ itself and are consumed by the downstream proof files. -/
 
 /-- A list of non-init `.cmd`s contributes trivially to
 `Block.loopBodyNoInits`. -/
-private theorem Block.loopBodyNoInits_map_cmd {P : PureExpr}
+private theorem Block.loopBodyNoInits_map_cmd {P : PureExpr} [HasFvars P]
     (cs : List (Cmd P)) :
     Block.loopBodyNoInits (cs.map Stmt.cmd) = true := by
   induction cs with
@@ -147,15 +147,6 @@ private theorem Block.loopBodyNoInits_map_cmd {P : PureExpr}
   | cons c rest ih =>
     simp [List.map_cons, Block.loopBodyNoInits,
           Stmt.loopBodyNoInits, ih]
-
-/-- A list of `.cmd`s trivially has `simpleShape = true`. -/
-private theorem Block.simpleShape_map_cmd {P : PureExpr}
-    (cs : List (Cmd P)) :
-    Block.simpleShape (cs.map Stmt.cmd) = true := by
-  induction cs with
-  | nil => simp [Block.simpleShape]
-  | cons c rest ih =>
-    simp [List.map_cons, Block.simpleShape, Stmt.simpleShape, ih]
 
 /-- A list of `.cmd`s trivially has `loopHasNoInvariants = true`. -/
 private theorem Block.loopHasNoInvariants_map_cmd {P : PureExpr}
@@ -168,7 +159,7 @@ private theorem Block.loopHasNoInvariants_map_cmd {P : PureExpr}
 
 mutual
 /-- No inits anywhere ⇒ the deep `initVars` list is empty (`= []`). -/
-private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere
+private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
     (s : Stmt P (Cmd P)) (h : Stmt.noInitsAnywhere s = true) :
     Stmt.initVars s = [] := by
   match s with
@@ -192,7 +183,7 @@ private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere
   | .typeDecl t md => simp [Stmt.initVars]
   termination_by sizeOf s
 
-private theorem Block.initVars_eq_nil_of_noInitsAnywhere
+private theorem Block.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
     (ss : List (Stmt P (Cmd P))) (h : Block.noInitsAnywhere ss = true) :
     Block.initVars ss = [] := by
   match ss with
@@ -208,7 +199,7 @@ end
 mutual
 /-- Empty deep `initVars` list ⇒ no inits anywhere (converse of
 `initVars_eq_nil_of_noInitsAnywhere`). -/
-theorem Stmt.noInitsAnywhere_of_initVars_nil
+theorem Stmt.noInitsAnywhere_of_initVars_nil [HasFvars P]
     (s : Stmt P (Cmd P)) (h : Stmt.initVars s = []) :
     Stmt.noInitsAnywhere s = true := by
   match s with
@@ -229,7 +220,7 @@ theorem Stmt.noInitsAnywhere_of_initVars_nil
   | .typeDecl t md => simp [Stmt.noInitsAnywhere]
   termination_by sizeOf s
 
-theorem Block.noInitsAnywhere_of_initVars_nil
+theorem Block.noInitsAnywhere_of_initVars_nil [HasFvars P]
     (ss : List (Stmt P (Cmd P))) (h : Block.initVars ss = []) :
     Block.noInitsAnywhere ss = true := by
   match ss with
@@ -245,7 +236,7 @@ end
 /-- On any block, `(Block.initVars ss).isEmpty = Block.noInitsAnywhere ss`:
 both walk the same tree and `.init` is the sole producer of an `initVars`
 entry. -/
-theorem Block.isEmpty_initVars_eq_noInitsAnywhere
+theorem Block.isEmpty_initVars_eq_noInitsAnywhere [HasFvars P]
     (ss : List (Stmt P (Cmd P))) :
     (Block.initVars ss).isEmpty = Block.noInitsAnywhere ss := by
   rcases he : (Block.initVars ss).isEmpty with _ | _

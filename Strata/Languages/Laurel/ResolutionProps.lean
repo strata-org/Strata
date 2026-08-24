@@ -984,6 +984,9 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
   · -- Alias
     refine postM_bind_any fun target' => ?_
     exact postM_bind_any fun taName' => postM_pure trivial
+  · -- Opaque: the discarded type-param scope, then the name; nothing to be clean about.
+    refine postM_bind_any fun _ => ?_
+    exact postM_bind_any fun otName' => postM_pure trivial
 
 include masterCheck in
 omit masterSynth in
@@ -1038,6 +1041,7 @@ theorem validate_nil_of_cleanProgram (program : Program)
       | Constrained ct => intro h _; cases h
       | Datatype dt => intro h _; cases h
       | Alias ta => intro h _; cases h
+      | Opaque ot => intro h _; cases h
   · -- constrained types
     rw [List.flatMap_eq_nil_iff]
     intro td htd
@@ -1050,6 +1054,7 @@ theorem validate_nil_of_cleanProgram (program : Program)
     | Composite ct => simp
     | Datatype dt => simp
     | Alias ta => simp
+    | Opaque ot => simp
   · -- constants
     rw [List.flatMap_eq_nil_iff]
     intro c hc

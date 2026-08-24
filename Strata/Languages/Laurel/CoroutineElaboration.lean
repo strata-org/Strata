@@ -904,6 +904,7 @@ private def rewriteCallerTypeDef (coros : CoroutineSet) (td : TypeDefinition) : 
         { ctor with args := ctor.args.map (rewriteCallerParameter coros) } }
   | .Alias ta =>
     .Alias { ta with target := rewriteCallerType coros ta.target }
+  | .Opaque ot => .Opaque ot
 
 private abbrev SpawnArgs := Std.HashMap String (List StmtExprMd)
 

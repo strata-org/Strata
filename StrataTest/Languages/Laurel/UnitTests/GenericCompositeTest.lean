@@ -568,6 +568,25 @@ procedure u() opaque { var b: Field := new Field; b#val := 7; assert b#val == 7 
 composite Field { var val: int }
 composite TypeTag { var val: int }
 procedure u() opaque { var f: Field := new Field; var t: TypeTag := new TypeTag; assert f#val == t#val };"},
+  -- Hole typing against a GENERIC callee. These sit in the corpus rather than the annotated
+  -- resolution tests because the diagnostic comes from a later pass, which a resolution-only
+  -- harness never reaches.
+  { name := "hole_in_concrete_slot_of_generic_proc", outcome := .verifies,
+    why := "a hole in the `int` slot of `f<T>(x: int, y: T)` still infers `int` — blanking every slot of a partly-generic signature would turn this into 'could not infer type'"
+    src := r"
+procedure f<T>(x: int, y: T) opaque;
+procedure u() opaque { var b: bool := true; f(<?>, b); assert 1 == 1 };"},
+
+  { name := "hole_in_generic_slot_reports_cleanly", outcome := .rejected (some .userError),
+    why := "a hole in the `T` slot has no type to take: reported as a user error rather than reaching Core, which would name the internal `$hole_N$asFunction`"
+    src := r"
+procedure f<T>(x: int, y: T) opaque;
+procedure u() opaque { f(1, <?>); assert 1 == 1 };"},
+
+  { name := "hole_in_map_primitive_key_reports_cleanly", outcome := .rejected (some .userError),
+    why := "same for `select`'s key slot, whose `K` is uninstantiated at hole-typing time"
+    src := r"
+procedure u() opaque { var m: Map int bool := mapConst(false); var b: bool := select(m, <?>); assert b == b };"},
 ]
 
 private def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus
@@ -602,5 +621,27 @@ procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; assert bi#
 /-- info: collision diagnostic located at: collision(3, (10-20)) -/
 #guard_msgs in
 #eval monomorphCollisionIsLocated
+
+/-- The corpus pins a diagnostic's KIND but not its text, so pin the WORDING of the
+    hole-in-a-generic-slot error here. It is what a user sees, and a later pass could change it to
+    something misleading — or back to Core naming the internal `$hole_N$asFunction` — without any
+    corpus case failing. -/
+private def holeInGenericSlotMessage : IO Unit := do
+  let src := "
+procedure f<T>(x: int, y: T) opaque;
+procedure u() opaque { f(1, <?>); assert 1 == 1 };"
+  let input := StrataDDM.Parser.stringInputContext "holeGenericSlot" src
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let sp ← parseStrataProgramFromDialect dialects Laurel.name input
+  match Laurel.TransM.run (Strata.Uri.file "holeGenericSlot") (Laurel.parseProgram sp) with
+  | .error e => IO.println s!"parse error: {e}"
+  | .ok prog =>
+    let (_, diags) ← Laurel.verifyToMergedResults prog default
+    for d in diags.filter (fun d => d.kind != .warning) do
+      IO.println d.message
+
+/-- info: could not infer type -/
+#guard_msgs in
+#eval holeInGenericSlotMessage
 
 end Strata.Laurel

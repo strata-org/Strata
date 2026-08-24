@@ -386,10 +386,23 @@ op globalVarCommand (name: Ident, varType: LaurelType, init: Option Initializer)
 category TypeAliasDecl;
 op typeAlias (name: Ident, typeParams: Option TypeParams, target: LaurelType): TypeAliasDecl => "type " name typeParams " = " target:0;
 
+// Opaque type `opaque Name<T…>`: a named, possibly generic type with NO constructors whose
+// implementation is native (it lowers to a Core `declare-sort`, not a datatype). Values can
+// be passed, stored and compared, but not taken apart; the operations come from procedures
+// declared over the type. Like the other type decls it carries no trailing `;` — the next
+// leading keyword delimits it.
+//
+// The `opaque` keyword is shared with a procedure's `opaqueSpec` (`"\n  opaque"`), but the
+// two never compete: this production is a `Command` at top level, that one is an
+// `OpaqueSpec` inside a `Procedure`.
+category OpaqueTypeDecl;
+op opaqueType (name: Ident, typeParams: Option TypeParams): OpaqueTypeDecl => "opaque " name typeParams;
+
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op coroutineCommand(coroutine: Coroutine): Command => coroutine;
 op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
 op typeAliasCommand(alias: TypeAliasDecl): Command => alias;
+op opaqueTypeCommand(ty: OpaqueTypeDecl): Command => ty;
 

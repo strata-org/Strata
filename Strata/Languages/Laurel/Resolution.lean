@@ -535,6 +535,15 @@ private def datatypeTypeArgArity (name : String) : ResolveM (Option Nat) := do
   | some (_, .datatypeDefinition dt) => pure (some dt.typeArgs.length)
   | _ => pure none
 
+/-- The declared type-parameter count of `name` when it resolves to an opaque type
+    definition; `none` otherwise. Opaque types are generic in exactly the same way
+    datatypes are (nominal, arity-fixed, no monomorphization), so they get the same
+    bare-reference and arity checks — see `datatypeTypeArgArity`. -/
+private def opaqueTypeArgArity (name : String) : ResolveM (Option Nat) := do
+  match (← get).scope.get? name with
+  | some (_, .opaqueType ot) => pure (some ot.typeArgs.length)
+  | _ => pure none
+
 /-- The declared type-parameter *names* of `name` when it resolves to a datatype
     definition; `[]` otherwise. Used to tell an erased (polymorphic) slot from a
     concrete one. -/
@@ -557,7 +566,15 @@ private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : 
     if n > 0 then
       modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
         s!"generic datatype '{name.text}' must be applied to {n} type argument(s)") }
-  | none => pure ()
+  | none =>
+    -- Same rule for a generic opaque type (`opaque Set<T>;` written bare as `Set`):
+    -- leaving the argument implicit would let first use elsewhere fix it.
+    match ← opaqueTypeArgArity name.text with
+    | some n =>
+      if n > 0 then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          s!"generic opaque type '{name.text}' must be applied to {n} type argument(s)") }
+    | none => pure ()
 
 /-- Validate the base of a generic type application `base<args>`, keyed off what
     `base` resolves to:
@@ -583,6 +600,16 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : F
         else
           s!"generic datatype '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
       modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+  | some (_, .opaqueType ot) =>
+    -- An opaque type is arity-fixed like a datatype, so check it the same way rather
+    -- than letting a wrong-arity `declare-sort` reach Core.
+    let n := ot.typeArgs.length
+    if n != numArgs then
+      let msg := if n == 0 then
+          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
+        else
+          s!"generic opaque type '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
   | some (_, .constrainedType _) =>
     -- A constrained type is never generic: applying it to type arguments is
     -- rejected here so the user gets a clean diagnostic rather than a downstream
@@ -606,11 +633,13 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : F
     rejection is applied only by the former (an `.Applied` base is not bare). -/
 private def resolveTypeRef (ref : Identifier) (source : FileRange) : ResolveM HighType := do
   let ref' ← resolveRef ref source
-    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType])
+    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .opaqueType,
+      .typeParameter, .coroutineType])
   let s ← get
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
-        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType].contains node.kind)
+        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
+          .opaqueType, .typeParameter, .coroutineType].contains node.kind)
     | none => false  -- name not defined: resolveRef already reported it
   if kindOk then pure (HighType.UserDefined ref') else pure HighType.Unknown
 
@@ -638,12 +667,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     else
       let ref' ← resolveRef ref ty.source
         (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
-          .coroutineType])
+          .opaqueType, .coroutineType])
       checkBareGenericDatatype ref ty.source
       let kindOk : Bool := match nodeKind? with
         | some k => k == .unresolved ||
             (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition,
-              .typeAlias, .coroutineType].contains k)
+              .typeAlias, .opaqueType, .coroutineType].contains k)
         | none => false  -- name not defined: resolveRef already reported it
       if kindOk then pure (HighType.UserDefined ref')
       else pure HighType.Unknown
@@ -954,12 +983,17 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
       pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .datatypeDestructor dtName p) =>
     -- A destructor's result is its field's declared type — except on a *generic*
-    -- datatype, where that type may mention the datatype's erased type
-    -- parameters: `Option..value(o)` is declared `T`, and the instantiation is not
-    -- known here (the type argument is carried, not substituted). Reporting `T`
-    -- would make every use of the result fail against a concrete type, e.g.
-    -- `Option..value(o) == 42` -> "cannot compare 'T' with 'int'". Such a slot is
-    -- gradual (`Unknown`); a field type with no parameter in it is precise as-is.
+    -- datatype, where that type may mention the datatype's type parameters:
+    -- `Option..value(o)` is declared `T`. Reporting `T` from HERE would make every use of
+    -- the result fail against a concrete type (`Option..value(o) == 42` → "cannot compare
+    -- 'T' with 'int'"), because this function is given only the callee — the instantiation
+    -- lives in the RECEIVER's type, which it cannot see. So the slot degrades to the
+    -- gradual `Unknown`; a field type mentioning no parameter is precise as-is.
+    --
+    -- This arm serves `Synth.instanceCall` and any future caller. `Synth.staticCall` handles the
+    -- generic case itself, pairing the datatype's parameters against the receiver's type
+    -- arguments, and falls back to this same gradual `Unknown` when there is no instantiation to
+    -- pair against.
     let params ← datatypeTypeParamNames dtName.text
     let ctx := (← get).typeLattice
     if mentionsTypeParam ctx params p.type then
@@ -2836,89 +2870,6 @@ def Synth.staticCall (exprMd : StmtExprMd)
     return (.StaticCall { callee with uniqueId := none } args',
             { val := .Unknown, source := callee.source })
 
-  -- Equality must work at EVERY type, which user-level polymorphism does not provide (a
-  -- generic composite is monomorphized per instantiation, a poly procedure's type variables are
-  -- freshened per call site), so the `$eq` /
-  -- `$neq` wrappers are declared over placeholder `int` parameters. Checking
-  -- arguments against that signature would reject every comparison of anything
-  -- but an int — including the `Box` / `Composite` / `Field` / `Map` comparisons
-  -- that `ModifiesClauses` builds. So instead of the usual argument check,
-  -- require only that the two operand types are *consistent* (`~`, the symmetric
-  -- gradual relation, under which `Unknown` matches anything), and give the call
-  -- type `TBool`. Equality therefore has no privileged operand direction.
-  if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
-    -- Report as the operator the user wrote (`==` / `!=`), not the wrapper name.
-    let opName := if callee.text == Operation.Eq.procName then "==" else "!="
-    let callee' ← resolveRef callee source
-    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
-      have := hMem
-      Synth.resolveStmtExpr a)
-    let args' := resolved.map (·.1)
-    let argTys := resolved.map (·.2)
-    let boolTy : HighTypeMd := { val := .TBool, source := source }
-    -- A `MultiValuedExpr` operand is a multi-output call used in value position.
-    -- It is an internal pseudo-type with no Core lowering, so it must never
-    -- reach an operand slot — letting it through crashes a later pass as a
-    -- `StrataBug`. Report it per operand and skip the consistency check, whose
-    -- diagnostic would only cascade.
-    let mut hasMulti := false
-    for (a, aTy) in args'.zip argTys do
-      if aTy.val matches .MultiValuedExpr _ then
-        let diag := diagnosticFromSource a.source
-          "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
-        modify fun s => { s with errors := s.errors.push diag }
-        hasMulti := true
-    if hasMulti then
-      return (.StaticCall callee' args', boolTy)
-    match argTys with
-    | [lhsTy, rhsTy] =>
-      let ctx := (← get).typeLattice
-      -- `TVoid ~ TVoid` holds in `isConsistent` (it is `highEq` on equal
-      -- constructors), but a void expression carries no value to compare,
-      -- so a void operand is rejected even when both sides agree.
-      let voidOperand :=
-        lhsTy.val matches .TVoid || rhsTy.val matches .TVoid
-      if voidOperand || !isConsistent ctx lhsTy rhsTy then
-        let diag := diagnosticFromSource source
-          s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{opName}'"
-        modify fun s => { s with errors := s.errors.push diag }
-    | _ => pure ()
-    return (.StaticCall callee' args', boolTy)
-
-  -- The map primitives `select`/`update`/`const` carry concrete `int` placeholder
-  -- signatures (see `CoreDefinitionsForLaurel`), not type parameters, so they can't be
-  -- checked against those signatures. Instead, infer the result type structurally from
-  -- the resolved arguments, keeping a concrete `HighType` flowing into Core:
-  --   * `select(map, key)`     ⇒ the map's value type
-  --   * `update(map, key, val)` ⇒ the map type itself
-  --   * `mapConst(val)`        ⇒ `Map _ (typeof val)` (key type is not recoverable)
-  if callee.text == "select" || callee.text == "update" || callee.text == "mapConst" then
-    let callee' ← resolveRef callee source
-    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
-      have := hMem
-      Synth.resolveStmtExpr a)
-    let args' := resolved.map (·.1)
-    let argTys := resolved.map (·.2)
-    let resultTy : HighTypeMd ←
-      match callee.text, argTys with
-      | "select", mapTy :: _ =>
-        match mapTy.val with
-        | .TMap _ valueTy => pure valueTy
-        | _ => pure ⟨ .Unknown, source ⟩
-      | "update", mapTy :: _ => pure mapTy
-      -- `mapConst(val) : Map _ val` — the key type is genuinely not recoverable from
-      -- the single value argument, so the key is the gradual `Unknown` (the dynamic
-      -- type, consistent with any concrete key). The result flows into a declared
-      -- `Map K V` binding (`Unknown ~ K`) while value strictness is preserved
-      -- (`Map _ bool` vs `Map int int` still fails on the value leaf). A fabricated
-      -- concrete key (e.g. `TypeTag`) would be rejected against the declared key —
-      -- `.UserDefined` is a strict participant in the consistency relation. The
-      -- Core-side key annotation is recovered separately from the binding's declared
-      -- type in `LaurelToCoreSchemaPass` (`expectedType`), defaulting to `TypeTag`.
-      | "mapConst", valTy :: _ => pure ⟨ .TMap ⟨.Unknown, source⟩ valTy, source ⟩
-      | _, _ => pure ⟨ .Unknown, source ⟩
-    return (.StaticCall callee' args', resultTy)
-
   -- Overloaded static procedure: more than one procedure is registered under
   -- this name. The flat `scope` only remembers the last one, so the normal
   -- single-definition path below can't pick the right one. Instead synthesize
@@ -2997,6 +2948,145 @@ def Synth.staticCall (exprMd : StmtExprMd)
         modify fun s => { s with errors := s.errors.push diag }
       return (.StaticCall { callee with uniqueId := none } args',
               { val := .Unknown, source := callee.source })
+
+  -- GENERIC callee: infer the call's type arguments from the actual argument types
+  -- (`callSiteTypeSubst`, whose docstring covers the inference itself) and report the declared
+  -- return type at that instantiation.
+  --
+  -- Runs AFTER overload selection: `scope` keeps only the last definition of an overloaded
+  -- name, so an overloaded generic must go through `selectOverloads` above, not this lookup.
+  --
+  -- Arguments are SYNTHESIZED rather than checked against their declared types, because
+  -- inference needs the actual types before the expected ones are known. That gives up the
+  -- bidirectional push for generic calls (an impure-expression argument bottoms out at the
+  -- synth wildcard instead of its own check rule), the same trade the overload path makes.
+  -- Coercions lose nothing: a `.TVar` parameter coerces as `refl`.
+  let genericProc? : Option Procedure := match (← get).scope.get? callee.text with
+    | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
+      if proc.typeArgs.isEmpty then none else some proc
+    | _ => none
+  if let some gproc := genericProc? then
+    let callee' ← resolveRef callee source
+      (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
+    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Synth.resolveStmtExpr a)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
+    let ctx := (← get).typeLattice
+    let paramTys := gproc.inputs.map (·.type)
+    -- OPERAND SHAPE guards for the equality wrappers. These are not typing rules — no signature
+    -- can express them — so they live here rather than in the inference: a `MultiValuedExpr`
+    -- operand is a multi-output call used in value position, an internal pseudo-type with no
+    -- Core lowering that crashes a later pass as a `StrataBug`; and a `TVoid` operand satisfies
+    -- inference against another `TVoid` while carrying no value to compare. Reported per
+    -- operand, then we stop — an inference diagnostic stacked on top would only cascade.
+    let eqOpName? : Option String :=
+      if callee.text == Operation.Eq.procName then some "=="
+      else if callee.text == Operation.Neq.procName then some "!=" else none
+    if let some eqOp := eqOpName? then
+      let mut hasMulti := false
+      for (a, aTy) in args'.zip argTys do
+        if aTy.val matches .MultiValuedExpr _ then
+          let diag := diagnosticFromSource a.source
+            "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
+          modify fun s => { s with errors := s.errors.push diag }
+          hasMulti := true
+      if hasMulti then
+        return (.StaticCall callee' args', { val := .TBool, source := source })
+      -- A void operand is reported with the SAME pairwise wording as a type disagreement, so the
+      -- two read alike at a call site. Emitted once for the pair, not once per operand.
+      match argTys with
+      | [lhsTy, rhsTy] =>
+        if lhsTy.val matches .TVoid || rhsTy.val matches .TVoid then
+          let diag := diagnosticFromSource source
+            s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{eqOp}'"
+          modify fun s => { s with errors := s.errors.push diag }
+          return (.StaticCall callee' args', { val := .TBool, source := source })
+      | _ => pure ()
+    let (subst, conflicts) := callSiteTypeSubst ctx paramTys argTys
+    -- A type variable pinned to two inconsistent types by different arguments. This is what
+    -- makes `1 == true` an error: `$eq<T>(x: T, y: T)` feeds both operands into the same `T`.
+    -- Reported as the operator for `$eq`/`$neq`, whose reserved names the user never wrote.
+    for (name, t1, t2) in conflicts.reverse do
+      let opName? : Option String :=
+        if callee.text == Operation.Eq.procName then some "=="
+        else if callee.text == Operation.Neq.procName then some "!=" else none
+      let msg := match opName? with
+        | some op => s!"cannot compare '{formatType t1}' with '{formatType t2}' using '{op}'"
+        | none =>
+          s!"cannot infer type argument '{name}' of '{callee.text}': "
+            ++ s!"'{formatType t1}' and '{formatType t2}' disagree"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+    -- Check each argument against its INSTANTIATED parameter type. Once `T` is bound this is a
+    -- real check rather than a wildcard: a concrete slot rejects a mismatched argument, while
+    -- an unbound parameter stays a `.TVar` and so still accepts anything, as it must.
+    --
+    -- Only when inference agreed. A conflict already means one argument disagrees with
+    -- another, and the substitution then carries whichever binding won — so checking the
+    -- losing argument against it restates the same problem in weaker words ("cannot pass
+    -- 'real' as the 'int' parameter of '$eq'" next to "cannot compare 'int' with 'real'").
+    if conflicts.isEmpty then
+      for (aTy, pTy) in argTys.zip paramTys do
+        let pTy' := substTypeVars subst pTy
+        unless isConsistentSubtype ctx aTy pTy' do
+          let diag := diagnosticFromSource aTy.source
+            s!"cannot pass '{formatType aTy}' as the '{formatType pTy'}' parameter of '{callee.text}'"
+          modify fun s => { s with errors := s.errors.push diag }
+    -- `zip` above pairs only as far as the shorter list, so a surplus argument would otherwise
+    -- reach Core and fail there as an arity mismatch with no source range and no callee name.
+    -- Under-arity is deliberately not flagged.
+    if args.length > paramTys.length then
+      let diag := diagnosticFromSource source
+        s!"call to '{callee}' expects {paramTys.length} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
+    return (.StaticCall callee' args', substTypeVars subst (procReturnType callee gproc))
+
+  -- GENERIC DATATYPE DESTRUCTOR: `Option..value(o)` is declared to return `T`, and unlike a
+  -- procedure the instantiation is not in a parameter — a destructor's only argument IS the
+  -- datatype value, so `Option<int>` is carried by the RECEIVER's type. Recover it here by
+  -- pairing the datatype's declared type parameters with the receiver's type arguments;
+  -- `getCallInfo` cannot, since it is given only the callee and so reports the gradual
+  -- `Unknown`, under which every use of the result goes unchecked.
+  --
+  -- Only for a field type that actually mentions a parameter: a concrete field (`Pair..fst` at
+  -- `first: int`) is already precise from `getCallInfo`, so it takes the ordinary path below and
+  -- keeps its bidirectional argument check. Same for a non-generic datatype (`IntList..tail!`).
+  let destructor? : Option (Identifier × Parameter) := match (← get).scope.get? callee.text with
+    | some (_, .datatypeDestructor dtName fld) => some (dtName, fld)
+    | _ => none
+  if let some (dtName, fld) := destructor? then
+    let dtParams ← datatypeTypeParamNames dtName.text
+    let ctx := (← get).typeLattice
+    if !dtParams.isEmpty && mentionsTypeParam ctx dtParams fld.type then
+      let callee' ← resolveRef callee source
+        (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
+      let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+        have := hMem
+        Synth.resolveStmtExpr a)
+      let args' := resolved.map (·.1)
+      -- The receiver's type arguments, when it is a concrete instantiation. `unfold` first so a
+      -- receiver typed through an alias (`type OI = Opt<int>`) still exposes them.
+      let recvArgs : List HighTypeMd := match resolved.head? with
+        | some (_, recvTy) =>
+          match (ctx.unfold recvTy).val with
+          | .Applied _ tyArgs => tyArgs
+          | _ => []
+        | none => []
+      -- With no instantiation to pair against the result is gradual, so a receiver shape this
+      -- cannot resolve yields no rejection. Two shapes land here. A CONSTRUCTOR CALL used
+      -- directly as the receiver carries no type arguments, because `getCallInfo`'s constructor
+      -- arm reports the bare `.UserDefined Opt`; so `Opt..value!(Som(5)) == true` is accepted
+      -- while `var o: Opt<int> := Som(5); Opt..value!(o) == true` is reported.
+      -- `ResolutionTypeCheckTests` pins both. Recovering the first needs the constructor call to
+      -- report its own instantiation, which is a separate change. An `Unknown` receiver (a hole,
+      -- an undefined name) also lands here and must stay gradual.
+      let retTy : HighTypeMd :=
+        if !recvArgs.isEmpty && recvArgs.length == dtParams.length then
+          let subst := (dtParams.zip recvArgs).foldl (fun m (n, t) => m.insert n t) (∅ : Std.HashMap String HighTypeMd)
+          substTypeVars subst fld.type
+        else { val := .Unknown, source := callee.source }
+      return (.StaticCall callee' args', retTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
@@ -4363,6 +4453,15 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       resolveHighType ta.target
     let taName' ← resolveRef ta.name
     return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
+  | .Opaque ot =>
+    -- An opaque type has no constructors and no target, so there is nothing inside it to
+    -- resolve — only the name to bind. The params are still scoped, in a scope discarded
+    -- immediately, purely so `defineNameCheckDup` reports `opaque Foo<T, T>` the same way
+    -- it does for a datatype/composite/alias; leaving it out would silently accept a
+    -- repeated type variable and hand Core a `declare-sort` with a duplicated parameter.
+    let _ ← withScope do scopeTypeParams ot.typeArgs
+    let otName' ← resolveRef ot.name
+    return .Opaque { name := otName', typeArgs := ot.typeArgs }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
@@ -4528,6 +4627,7 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
   | .Alias ta =>
     let map := register map ta.name (.typeAlias ta)
     collectHighType map ta.target
+  | .Opaque ot => register map ot.name (.opaqueType ot)
 
 private def collectConstant (map : Std.HashMap Nat ResolvedNode) (c : Constant)
     : Std.HashMap Nat ResolvedNode :=
@@ -4720,6 +4820,8 @@ private def preRegisterDefinitions (types : List TypeDefinition)
           let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
     | .Alias ta =>
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
+    | .Opaque ot =>
+      let _ ← defineNameCheckDup ot.name (.opaqueType ot)
   for c in constants do
     let _ ← defineNameCheckDup c.name (.constant c)
   -- Register both lookup forms for each file-scope global with one definition ID.
@@ -5377,6 +5479,7 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
   | .datatypeDefinition type => some type.name
   | .datatypeConstructor _ constructor => some constructor.name
   | .typeAlias alias => some alias.name
+  | .opaqueType type => some type.name
   | .constant constant => some constant.name
   | .unresolved _ => none
 
@@ -5784,27 +5887,58 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
     | _ => pure ()
     return node) false expr |>.run []).2
 
+/-- Expressions with a pre/post reading; only these may contain
+    `old(<global>)`. Guards belong here: they lower into postconditions. -/
+private def postconditionExpressions (proc : Procedure) : List StmtExprMd :=
+  (match proc.body with
+    | .Opaque postconditions _ modifies =>
+      postconditions.map (·.condition) ++ modifies.flatMap (·.guard.toList)
+    | .Abstract postconditions => postconditions.map (·.condition)
+    | .Transparent _ | .External => []) ++
+  proc.throwsOn.flatMap fun blk =>
+    blk.guard :: blk.postconditions.map (·.condition)
+
+/-- Contract expressions with no pre/post reading. -/
 private def contractExpressions (proc : Procedure) : List StmtExprMd :=
   proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
-    proc.invokeOn.toList ++ proc.axioms ++ match proc.body with
-    | .Opaque postconditions _ modifies =>
-      postconditions.map (·.condition) ++
-        modifies.flatMap (fun g => g.targets ++ g.guard.toList)
-    | .Abstract postconditions => postconditions.map (·.condition)
-    | .Transparent _ | .External => []
+    proc.invokeOn.toList ++ proc.axioms ++
+    proc.throwsOn.flatMap (·.modifies) ++
+    match proc.body with
+    | .Opaque _ _ modifies => modifies.flatMap (·.targets)
+    | .Abstract _ | .Transparent _ | .External => []
 
 private def bodyExpressions (proc : Procedure) : List StmtExprMd :=
   proc.body.implementation.toList
 
-/-- Reject `old(...)` operands that directly or transitively depend on globals. -/
+/-- Reject globals under `old(...)`; `allowDirectReads` permits plain variable
+    reads, while calls and writes are always blocked. -/
 private def oldGlobalErrorsInExpr (model : SemanticModel)
-    (dependentIds : Std.HashSet Nat) (expr : StmtExprMd) : List Message :=
+    (dependentIds : Std.HashSet Nat) (allowDirectReads : Bool)
+    (expr : StmtExprMd) : List Message :=
+  let effectMessage :=
+    "calls to global-dependent procedures and global writes are not yet supported inside `old(...)`"
+  let blockedMessage (node : StmtExprMd) : Option String :=
+    match node.val with
+    | .Var _ =>
+      if !allowDirectReads && isGlobalRef model node then
+        some "file-scope globals inside `old(...)` are only supported in postconditions and guards"
+      else none
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+      if containsProcId dependentIds callee then some effectMessage else none
+    | .Assign targets _ =>
+      if targets.any (isGlobalTarget model) then some effectMessage else none
+    | .IncrDecr _ _ target | .CompoundAssign _ target _ =>
+      if isGlobalTarget model target then some effectMessage else none
+    | _ => none
+  let firstBlocked (operand : StmtExprMd) : Option (FileRange × String) :=
+    (foldStmtExprM (m := StateM (Option (FileRange × String))) (fun node => do
+      if (← get).isNone then
+        if let some message := blockedMessage node then
+          set (some (node.source, message))) operand |>.run none).2
   let visit (node : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     if let .Old operand _ := node.val then
-      if let some source := firstGlobalUseSource model dependentIds operand then
-        modify (· ++ [diagnosticFromSource source
-          "file-scope globals are not yet supported inside `old(...)`"
-          MessageKind.userError])
+      if let some (source, message) := firstBlocked operand then
+        modify (· ++ [diagnosticFromSource source message MessageKind.userError])
       return some node
     return none
   (mapStmtExprPrePostM (m := StateM (List Message)) visit pure expr |>.run []).2
@@ -5816,14 +5950,22 @@ private def validateUnsupportedGlobalCalls (model : SemanticModel)
   let writerIds := globalWriterIds program analysis
   let dependentIds := writerIds.union (globalReaderIds program analysis)
   let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
-  let errorsIn (restricted checkUsedResults : Bool) (expr : StmtExprMd) :=
-    let oldErrors := oldGlobalErrorsInExpr model dependentIds expr
+  let errorsIn (restricted checkUsedResults allowOldDirectReads : Bool)
+      (expr : StmtExprMd) :=
+    let oldErrors := oldGlobalErrorsInExpr model dependentIds allowOldDirectReads expr
     if !oldErrors.isEmpty then oldErrors
     else globalCallErrors ctx restricted expr ++
       if checkUsedResults then resultUseGlobalCallErrors ctx expr else []
   analysis.allProcs.flatMap fun proc =>
-    (contractExpressions proc).flatMap (errorsIn true false) ++
-      (bodyExpressions proc).flatMap (errorsIn false true)
+    (postconditionExpressions proc).flatMap
+        (errorsIn (restricted := true) (checkUsedResults := false)
+          (allowOldDirectReads := true)) ++
+      (contractExpressions proc).flatMap
+        (errorsIn (restricted := true) (checkUsedResults := false)
+          (allowOldDirectReads := false)) ++
+      (bodyExpressions proc).flatMap
+        (errorsIn (restricted := false) (checkUsedResults := true)
+          (allowOldDirectReads := false))
 
 
 /-- Without an implementation there is no source statement from which to infer
@@ -5909,9 +6051,10 @@ private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalys
     containsProcId (globalEffectIdsFor analysis.globals.readers field) proc.name ||
     containsProcId (globalEffectIdsFor analysis.globals.writers field) proc.name
 
+/-- All contract expressions; `postconditionExpressions` and
+    `contractExpressions` must partition the full contract surface. -/
 private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
-  contractExpressions proc ++ proc.throwsOn.flatMap fun blk =>
-    blk.guard :: (blk.postconditions.map (·.condition) ++ blk.modifies)
+  postconditionExpressions proc ++ contractExpressions proc
 
 private def validateEntryContractGlobalUse (model : SemanticModel)
     (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
@@ -6377,7 +6520,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions
-      (additionalTypes ++ uc.datatypes.map .Datatype)
+      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque)
       uc.constants
       []
       (uc.functions ++ uc.coreProcedures)
@@ -6411,6 +6554,13 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
       | .Datatype dt' => pure dt'
       | _ => pure dt -- unreachable
 
+    -- Opaque types carry nothing resolvable but their own name, which
+    -- `preRegisterDefinitions` above has already bound; re-resolve for the uniqueId.
+    let opaqueTypes' ← uc.opaqueTypes.mapM fun ot => do
+      match ← resolveTypeDefinition (.Opaque ot) with
+      | .Opaque ot' => pure ot'
+      | _ => pure ot -- unreachable
+
     -- Resolve constants
     let constants' ← uc.constants.mapM resolveConstant
 
@@ -6419,7 +6569,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
 
     return { functions := functions', coreProcedures := coreProcedures',
-             datatypes := datatypes', constants := constants' }
+             datatypes := datatypes', opaqueTypes := opaqueTypes', constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
@@ -6427,7 +6577,8 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
   -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
   -- differ between passes, producing spurious "resolution introduced this diagnostic".
-  let typeLattice := { TypeLattice.ofTypes (uc.datatypes.map .Datatype ++ additionalTypes) with
+  let typeLattice := { TypeLattice.ofTypes
+      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ additionalTypes) with
     gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
     reservedNames := reservedNames }
   let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
@@ -6436,7 +6587,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   let program' : Program := {
     staticProcedures := uc'.functions ++ uc'.coreProcedures,
     staticFields := [],
-    types := uc'.datatypes.map .Datatype ++ additionalTypes,
+    types := uc'.datatypes.map .Datatype ++ uc'.opaqueTypes.map .Opaque ++ additionalTypes,
     constants := uc'.constants
   }
   let refToDef := buildRefToDef program'

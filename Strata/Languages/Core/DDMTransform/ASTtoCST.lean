@@ -262,6 +262,15 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
 def programToCST {M} [Inhabited M] (prog : Core.Program)
     (initCtx : ToCSTContext M := ToCSTContext.empty) :
     ToCSTContext M × List (Command M) :=
+  -- Populate progFnNames so monomorphized program-function callsites keep their
+  -- mangled name (Factory functions, absent here, render demangled).
+  let progFnNames : Array String :=
+    prog.decls.foldl (init := #[]) fun acc d =>
+      match d with
+      | .func f _ => acc.push f.name.name
+      | .recFuncBlock fs _ => fs.foldl (init := acc) fun acc f => acc.push f.name.name
+      | _ => acc
+  let initCtx := { initCtx with progFnNames := initCtx.progFnNames ++ progFnNames }
   let rec go (decls : List Core.Decl) (acc : List (Command M))
       (ctx : ToCSTContext M) : List (Command M) × ToCSTContext M :=
     match decls with

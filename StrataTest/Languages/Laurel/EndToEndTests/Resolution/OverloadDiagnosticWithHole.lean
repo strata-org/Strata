@@ -24,12 +24,15 @@ whether one is present. A concrete argument that no candidate accepts rules out
 every overload on its own, whether or not a hole sits beside it — so `culpritArg`
 checks for exactly that, and only a blameless hole silences the report.
 
-`$eq`/`$neq` need matching care in `InferHoleTypes`: they are `external` with a
-placeholder `int → int → bool` signature (polymorphic equality has no monomorphic
-Laurel type), so typing a hole from those `int`s made `<?> == "hello"` infer `int`
-and fail only when a later pass re-resolved the program — surfacing a plain user
-type error as a `StrataBug`. `calleeParamTypes` now declines for those two names so
-the hole takes its type from the first non-hole sibling instead.
+`$eq`/`$neq` need matching care in `InferHoleTypes`. `CoreDefinitionsForLaurel`
+declares them `procedure $eq<T>(x: T, y: T) : bool external`, so both slots are the
+same uninstantiated `T` and neither can type a hole. Their operands must agree,
+though, which makes the first non-hole sibling a sound guess — so `calleeParamTypes`
+declines for these two names and `unresolvedOperatorArgType` supplies it, letting
+`<?> == "hello"` infer `string`. Typing the hole from `T` would leave it with
+nothing and report "could not infer type"; the general rule for a generic callee
+blanks only the slots whose declared type mentions a type variable (`mentionsTVar`),
+which is right where the slots differ, as in `select<K,V>(map: Map K V, key: K)`.
 -/
 
 -- Baseline, no hole: the operator reports.

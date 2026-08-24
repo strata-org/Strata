@@ -12,6 +12,9 @@ module
 --     `new C<τ>`; `is`/`as` operands widened to LaurelType; `extends` parents as
 --     LaurelType (generic parents); the `type Name = Target` alias command; and a
 --     `FieldPath` category for chained-field writes.
+--   * Opaque types: the `opaque Name<T…>` command, declaring a natively-implemented
+--     type with type parameters but no constructors (lowered to a Core
+--     `TypeDecl.con` / SMT `declare-sort`, unlike a datatype).
 --   * The exceptional channel: `throw`, `try`/`catch`/`finally`, a `throws (e: T)`
 --     signature clause that always binds the thrown value (there is no unbound
 --     form), and repeatable `throwsOn <guard> { ensures … modifies … }` behavior-case

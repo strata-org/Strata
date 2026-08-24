@@ -86,7 +86,7 @@ of `StepCFG.step_cmd` steps inside `.inBlock t (pre ++ suf) ...`, consuming exac
 `pre` and leaving the suffix `suf` residual.  The step rule consumes the head
 command regardless of what follows, so the same chain that runs a standalone
 `pre` runs it as the leading commands of `pre ++ suf`. -/
-theorem EvalCmds_prefix_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem EvalCmds_prefix_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
     {δ : P.Factory} {σ σ' : SemanticStore P}
@@ -118,7 +118,7 @@ theorem EvalCmds_prefix_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P]
 /-- Bridge: lift an `EvalCmds` derivation for the command list `cs` into a
 chain of `StepCFG.step_cmd` steps inside `.inBlock`, threading the residual
 list and accumulating failure on the right via `||`. -/
-theorem EvalCmds_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem EvalCmds_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
     {δ : P.Factory} {σ σ' : SemanticStore P}
@@ -133,7 +133,7 @@ theorem EvalCmds_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     EvalCmds_prefix_to_StepCFG_chain (extendFactory := extendFactory) (cfg := cfg)
       (suf := []) h_cmds t tr f_base
 
-theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     (δ : P.Factory) (σ σ' σ'' : SemanticStore P)
     (cs : List (Cmd P)) (c : Cmd P) (f₁ f₂ : Bool)
     (h₁ : EvalCmds P (EvalCmd P) δ σ cs σ' f₁)
@@ -153,7 +153,7 @@ theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [Ha
       rw [Bool.or_assoc]
       exact EvalCmds.eval_cmds_some hcmd (ih _ _ hrest)
 
-theorem EvalCmds_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem EvalCmds_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     (δ : P.Factory) (σ σ' : SemanticStore P) (f : Bool)
     (h : EvalCmds P (EvalCmd P) δ σ [] σ' f) :
     σ = σ' ∧ f = false := by
@@ -162,7 +162,7 @@ theorem EvalCmds_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [Has
 
 /-- Single-command agreement-preservation. -/
 theorem EvalCmd_under_agreement {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     (δ : P.Factory) (σ_struct₀ σ_cfg₀ : SemanticStore P)
     (c : Cmd P) (σ_struct₁ : SemanticStore P) (failed : Bool)
     (h_agree : StoreAgreement σ_struct₀ σ_cfg₀)
@@ -363,7 +363,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
 `c` either doesn't touch x, or modifies x via `set` (which requires `σ x = some _`,
 contradicting `σ x = none`). -/
 theorem agreement_helper_unchanged_at_x {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     {δ : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
     {x : P.Ident}
     (h_eval : EvalCmd P δ σ c σ' failed)
@@ -428,7 +428,7 @@ theorem agreement_helper_unchanged_at_x {P : PureExpr}
 takes σ to σ' over a list `cmds`, and `x` is not in `cmds.definedVars`, and
 `σ x = none`, then `σ' x = none`. By induction on `EvalCmds`. -/
 theorem agreement_helper_unchanged_at_x_multi {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     {δ : P.Factory} {σ σ' : SemanticStore P} {cmds : List (Cmd P)} {failed : Bool}
     {x : P.Ident}
     (h_eval : EvalCmds P (EvalCmd P) δ σ cmds σ' failed)
@@ -458,7 +458,7 @@ theorem agreement_helper_unchanged_at_x_multi {P : PureExpr}
 
 /-- Multi-command agreement-preservation, by induction on `cs`. -/
 theorem EvalCmds_under_agreement {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
     (δ : P.Factory)
     (cs : List (Cmd P))
     (h_wf_def : WellFormedSemanticEvalMono δ) :
@@ -517,7 +517,7 @@ theorem EvalCmds_under_agreement {P : PureExpr}
           h_unique_tail
       exact ⟨σ_cfg_end, EvalCmds.eval_cmds_some h_cmd_cfg h_rest_cfg, h_agree_end⟩
 
-theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     (extendFactory : ExtendFactory P)
     (c : Cmd P) (ρ₀ ρ₁ : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory
@@ -541,7 +541,7 @@ theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [
           | step _ _ _ hstep3 _ => exact absurd hstep3 (by intro h; cases h)
 
 /-- Transitivity of the deterministic-CFG multi-step run. -/
-theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {fac : P.Factory}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
@@ -555,7 +555,7 @@ theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
 `condGoto`: fetch + chain + goto.  The `Bool` `b` selects the branch — the true
 branch (target `tlbl`) when `b = true`, the false branch (target `elbl`) when
 `b = false` — mirroring how the condition evaluates to `if b then tt else ff`. -/
-theorem run_block_goto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem run_block_goto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
     {δ : P.Factory} {σ σ' : SemanticStore P}
@@ -587,7 +587,7 @@ theorem run_block_goto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [H
 
 /-- Run a deterministic block from `.atBlock t` to `.terminal`: fetch + chain
 + finish. -/
-theorem run_block_finish {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr]
+theorem run_block_finish {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {extendFactory : ExtendFactory P}
     {cfg : CFG String (DetBlock String (Cmd P) P)}
     {δ : P.Factory} {σ σ' : SemanticStore P}

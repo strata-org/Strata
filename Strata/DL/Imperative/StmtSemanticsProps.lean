@@ -989,7 +989,7 @@ omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
     when the block's `defUseWellFormed` holds against `defined`, every expression `e`
     whose ops are all in `declared` is `Option.some`-monotone-preserved. -/
 theorem block_preserves_eval_via_defUseOk
-    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasFvars P]
     [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
     (hwf_ext : WFFactoryExtension P extendFactory)
     (ss : List (Stmt P CmdT)) (ρ ρ' : Env P)
@@ -1008,7 +1008,7 @@ theorem block_preserves_eval_via_defUseOk
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem block_preserves_eval_via_defUseOk_exiting
-    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasFvars P]
     [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
     (hwf_ext : WFFactoryExtension P extendFactory)
     (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
@@ -1029,7 +1029,7 @@ theorem block_preserves_eval_via_defUseOk_exiting
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Statement-level analog of `block_preserves_eval_via_defUseOk` (terminal). -/
 theorem stmt_preserves_eval_via_defUseOk
-    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasFvars P]
     [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
     (hwf_ext : WFFactoryExtension P extendFactory)
     (s : Stmt P CmdT) (ρ ρ' : Env P)
@@ -1054,7 +1054,7 @@ theorem stmt_preserves_eval_via_defUseOk
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Statement-level analog of `block_preserves_eval_via_defUseOk_exiting`. -/
 theorem stmt_preserves_eval_via_defUseOk_exiting
-    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasFvars P]
     [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
     (hwf_ext : WFFactoryExtension P extendFactory)
     (s : Stmt P CmdT) (ρ ρ' : Env P) (lbl : String)
@@ -2121,7 +2121,7 @@ proofs.  They live here so the several downstream transform proofs share one cop
 
 /-- A `ReflTransT` run from a stuck `.terminal ρ` config stays there. -/
 theorem reflTransT_from_terminal (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P) {ρ : Env P} {c : Config P (Cmd P)}
+    (extendFactory : ExtendFactory P) {ρ : Env P} {c : Config P (Cmd P)}
     (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.terminal ρ) c) : c = .terminal ρ := by
   match h with
   | .refl _ => rfl
@@ -2129,7 +2129,7 @@ theorem reflTransT_from_terminal (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoo
 
 /-- A `ReflTransT` run from a stuck `.exiting l ρ` config stays there. -/
 theorem reflTransT_from_exiting (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P) {l : String} {ρ : Env P} {c : Config P (Cmd P)}
+    (extendFactory : ExtendFactory P) {l : String} {ρ : Env P} {c : Config P (Cmd P)}
     (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.exiting l ρ) c) : c = .exiting l ρ := by
   match h with
   | .refl _ => rfl
@@ -2137,7 +2137,7 @@ theorem reflTransT_from_exiting (P : PureExpr) [HasFvar P] [HasFvars P] [HasBool
 
 /-- Failing-config inversion for a `.seq inner ss` frame. -/
 theorem seqT_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {c : Config P (Cmd P)}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.seq inner ss) c)
     (hc : c.getEnv.hasFailure = true) :
@@ -2188,7 +2188,7 @@ theorem seqT_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOp
 
 /-- Failing-config inversion for a `.block .none σp fp inner` frame. -/
 theorem blockT_none_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {f_parent : P.Factory} {c : Config P (Cmd P)}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.block .none σ_parent f_parent inner) c)
     (hc : c.getEnv.hasFailure = true) :
@@ -2227,7 +2227,7 @@ theorem blockT_none_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [Ha
 
 /-- Failing-config inversion for a general `.block l σp fp inner` frame (Prop-level). -/
 theorem block_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     {l : Option String} {inner : Config P (Cmd P)} {σ_parent : SemanticStore P}
     {f_parent : P.Factory} {c : Config P (Cmd P)}
     (hstar : StepStmtStar P (EvalCmd P) extendFactory (.block l σ_parent f_parent inner) c)
@@ -2263,7 +2263,7 @@ theorem block_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolO
 
 /-- Singleton-list peel for the failing case. -/
 theorem stmts_singleton_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     {s : Stmt P (Cmd P)} {ρ₀ : Env P} {c : Config P (Cmd P)}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.stmts [s] ρ₀) c)
     (hc : c.getEnv.hasFailure = true) :
@@ -2290,7 +2290,7 @@ theorem stmts_singleton_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P]
 
 /-- Cons-list peel for the failing case. -/
 theorem stmts_cons_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ : Env P} {c : Config P (Cmd P)}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.stmts (s :: rest) ρ₀) c)
     (hc : c.getEnv.hasFailure = true) :
@@ -2380,11 +2380,11 @@ pins the two stores to equal values on those vars.  No freshness side-condition
 is needed — a source-defined var is exactly where `StoreAgreement` constrains the
 target. -/
 theorem storeAgreement_pointwise_on_expr_vars {P : PureExpr}
-    [HasVarsPure P P.Expr]
+    [HasFvars P]
     (σ_src σ_tgt : SemanticStore P) (e : P.Expr)
     (h_agree : StoreAgreement σ_src σ_tgt)
-    (h_def : isDefined σ_src (HasVarsPure.getVars e)) :
-    ∀ x ∈ HasVarsPure.getVars e, σ_src x = σ_tgt x :=
+    (h_def : isDefined σ_src (HasFvars.getFvars e)) :
+    ∀ x ∈ HasFvars.getFvars e, σ_src x = σ_tgt x :=
   fun x hx => h_agree x (fun z hz => by
     simpa [List.mem_singleton.mp hz] using h_def x hx)
 
@@ -2393,7 +2393,7 @@ theorem storeAgreement_pointwise_on_expr_vars {P : PureExpr}
 Generic `StepStmtStar`/`ReflTrans` decomposition and lifting lemmas over the statement small-step semantics, consumed by multiple pass-correctness proofs. -/
 
 /-- A terminating empty statement list leaves the environment unchanged. -/
-theorem stmts_nil_terminal_eq {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmts_nil_terminal_eq {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (ρ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmts [] ρ) (.terminal ρ')) :
     ρ = ρ' := by
@@ -2409,7 +2409,7 @@ theorem stmts_nil_terminal_eq {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
 as a singleton statement list.  This is the bridge from the `.stmt s` shape of
 the source-side step rules to the `.stmts [s]` shape that the pass emits for the
 pass-through `.cmd` arm. -/
-theorem stmt_to_singleton_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmt_to_singleton_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) (.terminal ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.stmts [s] ρ) (.terminal ρ') :=
@@ -2419,7 +2419,7 @@ theorem stmt_to_singleton_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
 
 /-- Exiting variant of `stmt_to_singleton_stmts`: a single statement exiting
 yields the singleton list exiting. -/
-theorem stmt_to_singleton_stmts_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmt_to_singleton_stmts_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (ρ ρ' : Env P) (lbl : String)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) (.exiting lbl ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.stmts [s] ρ) (.exiting lbl ρ') := by
@@ -2430,7 +2430,7 @@ theorem stmt_to_singleton_stmts_exiting {P : PureExpr} [HasFvar P] [HasFvars P] 
 /-- Outcome-generic variant of `stmt_to_singleton_stmts`: a single statement
 reaching `Env.outcomeConfig oc ρ'` yields the singleton list reaching the same
 outcome. -/
-theorem stmt_to_singleton_stmts_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmt_to_singleton_stmts_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (ρ ρ' : Env P) (oc : Option String)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) (Env.outcomeConfig oc ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.stmts [s] ρ) (Env.outcomeConfig oc ρ') := by
@@ -2442,7 +2442,7 @@ theorem stmt_to_singleton_stmts_outcome {P : PureExpr} [HasFvar P] [HasFvars P] 
 `Env.outcomeConfig oc ρ'` either (a) had the head `s` exit (so `oc = some lbl` and
 the whole list exits with that label, skipping `rest`), or (b) had `s` terminate
 to some `ρ_mid` after which `rest` reached the same outcome. -/
-theorem stmts_cons_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmts_cons_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (ρ ρ' : Env P) (oc : Option String)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmts (s :: rest) ρ) (Env.outcomeConfig oc ρ')) :
     (∃ lbl, oc = some lbl ∧
@@ -2474,7 +2474,7 @@ theorem stmts_cons_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
 /-- Forward: if a prefix list `pfx` exits with `lbl`, then `pfx ++ sfx` exits
 with `lbl` (the suffix is skipped).  Mirrors `stmts_prefix_terminal_append` for
 the exiting outcome. -/
-theorem stmts_cons_head_exiting_append {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmts_cons_head_exiting_append {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (pfx sfx : List (Stmt P (Cmd P))) (ρ ρ' : Env P) (lbl : String)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmts pfx ρ) (.exiting lbl ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.stmts (pfx ++ sfx) ρ) (.exiting lbl ρ') := by
@@ -2506,7 +2506,7 @@ theorem stmts_cons_head_exiting_append {P : PureExpr} [HasFvar P] [HasFvars P] [
 /-- `init $g := *` (havoc-init) with the chosen value `b` steps `.stmt (init …)`
 to terminal with the slot defined to `b`, provided the slot was undefined.
 The havoc value is existentially chosen by `eval_init_unconstrained`. -/
-theorem step_init_havoc_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+theorem step_init_havoc_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (ident : P.Ident) (ty : P.Ty) (b : P.Expr) (md : MetaData P) (ρ : Env P)
     (h_none : ρ.store ident = none)
     (hval : HasVal.value ρ.factory b)
@@ -2532,7 +2532,7 @@ theorem step_init_havoc_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
 provided the slot was *already* defined (UpdateState's precondition).  The
 havoc value is existentially chosen by `eval_set_nondet`.  This is the
 per-iteration re-havoc emitted at the body tail of the rewritten nondet loop. -/
-theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (ident : P.Ident) (b : P.Expr) (md : MetaData P) (ρ : Env P)
     (v' : P.Expr) (h_def : ρ.store ident = some v')
     (hval : HasVal.value ρ.factory b)
@@ -2595,7 +2595,7 @@ store yields exactly `b`.  A corollary of `eval_mkFvar_of_value` at the
 premise by `simp [SemanticStore.update]`.  Kept as a named cross-module convenience
 (used from the transform-correctness proofs) so those call sites need not repeat that
 discharge; cannot be `private` as it is consumed outside this module. -/
-theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -2616,7 +2616,7 @@ machinery in `structuredToUnstructured_sound_kind`. -/
 
 /-- Invert a single `.cmd` execution: `.stmt (.cmd c) ρ →* .terminal ρ'` is
 exactly one `step_cmd`, exposing the `EvalCmd` witness and the post-state. -/
-theorem cmd_step_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P} (c : Cmd P) (ρ ρ' : Env P)
+theorem cmd_step_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P} (c : Cmd P) (ρ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt (.cmd c) ρ) (.terminal ρ')) :
     ∃ σ' haf, EvalCmd P ρ.factory ρ.store c σ' haf ∧
       ρ' = { ρ with store := σ', hasFailure := ρ.hasFailure || haf } := by
@@ -2630,7 +2630,7 @@ theorem cmd_step_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [Has
 
 /-- Invert a single `.stmt s` execution to terminal: the first step is
 `step_stmts_cons`-free; `s` itself steps to some `c`, then `c →* terminal`. -/
-theorem stmt_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
+theorem stmt_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) (.terminal ρ')) :
     ∃ c, StepStmt P (EvalCmd P) extendFactory (.stmt s ρ) c ∧
       StepStmtStar P (EvalCmd P) extendFactory c (.terminal ρ') := by
@@ -2641,7 +2641,7 @@ theorem stmt_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
 non-`.stmt`-shaped `tgt` must take at least one step (a `.stmt` is never itself a
 terminal/exiting/etc. config), exposing the first step `c` and the residual run.
 Used by the unified (terminal-or-exiting) simulation arms. -/
-theorem stmt_step_first_inv_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P)) (ρ : Env P) (tgt : Config P (Cmd P))
+theorem stmt_step_first_inv_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P)) (ρ : Env P) (tgt : Config P (Cmd P))
     (h_ne : ∀ ρ', tgt ≠ .stmt s ρ')
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) tgt) :
     ∃ c, StepStmt P (EvalCmd P) extendFactory (.stmt s ρ) c ∧
@@ -2653,7 +2653,7 @@ theorem stmt_step_first_inv_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 /-- A `.seq` whose inner config runs to terminal and whose continuation list is
 empty itself runs to that same terminal.  (The trailing `step_seq_done` lands on
 `.stmts [] ρ'`, which is one `step_stmts_nil` from `.terminal ρ'`.) -/
-theorem seq_nil_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem seq_nil_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (inner : Config P (Cmd P)) (ρ' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory inner (.terminal ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.seq inner []) (.terminal ρ') := by
@@ -2666,7 +2666,7 @@ theorem seq_nil_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] 
 /-- Outcome-generic `.seq inner []`: if `inner` reaches `Env.outcomeConfig oc ρ'`,
 the seq with empty continuation reaches the same outcome (terminal flows through
 `step_seq_done`; exiting flows through `step_seq_exit`). -/
-theorem seq_nil_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem seq_nil_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (inner : Config P (Cmd P)) (ρ' : Env P) (oc : Option String)
     (h : StepStmtStar P (EvalCmd P) extendFactory inner (Env.outcomeConfig oc ρ')) :
     StepStmtStar P (EvalCmd P) extendFactory (.seq inner []) (Env.outcomeConfig oc ρ') := by
@@ -2682,7 +2682,7 @@ theorem seq_nil_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [
 `Env.outcomeConfig oc ρt'` drives the enclosing `.block .none σp fp (.stmts ss ·)` to
 the same outcome at the *projected* env (store projected through `σp`, factory
 restored to `fp`). -/
-theorem blockT_none_build_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem blockT_none_build_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (inner : Config P (Cmd P)) (σp : SemanticStore P) (fp : P.Factory) (oc : Option String) (ρt' : Env P)
     (h : StepStmtStar P (EvalCmd P) extendFactory inner (Env.outcomeConfig oc ρt')) :
     StepStmtStar P (EvalCmd P) extendFactory (.block .none σp fp inner)
@@ -2709,7 +2709,7 @@ and the block's result store is the inner store projected through the parent
 store.  Unlike `blockT_reaches_terminal_noExit`, no `h_no_exit` premise is
 needed — a `.none` block can never match an exiting label, so the only way to
 reach `.terminal` is for the inner config to terminate. -/
-theorem blockT_none_reaches_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem blockT_none_reaches_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {f_parent : P.Factory} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.block .none σ_parent f_parent inner) (.terminal ρ')) :
     ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) inner (.terminal ρ_inner)),
@@ -2733,7 +2733,7 @@ theorem blockT_none_reaches_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 /-- Type-valued inversion of a `.seq inner ss` run reaching `.exiting lbl`:
 either the inner config exits (skipping `ss`), or the inner config terminates
 and `ss` reaches the exiting outcome.  Both pieces carry a strict len-decrease. -/
-theorem seqT_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem seqT_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {lbl : String} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.seq inner ss) (.exiting lbl ρ')) :
     (∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) inner (.exiting lbl ρ')),
@@ -2755,7 +2755,7 @@ theorem seqT_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
 /-- Type-valued inversion of `.stmts (s :: rest)` reaching `.exiting lbl`: either
 the head `s` exits (skipping `rest`), or `s` terminates and `rest` reaches the
 exiting outcome.  Both carry a strict len-decrease. -/
-theorem stmtsT_cons_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmtsT_cons_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))}
     {ρ₀ : Env P} {lbl : String} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
@@ -2781,7 +2781,7 @@ theorem stmtsT_cons_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
 `.exiting lbl`: the inner config exits with the *same* label `lbl` (the `.none`
 block never matches, so the exit propagates unchanged), with a strict
 len-decrease.  The result store is projected through the parent store. -/
-theorem blockT_none_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem blockT_none_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {f_parent : P.Factory} {lbl : String} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.block .none σ_parent f_parent inner) (.exiting lbl ρ')) :
     ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) inner (.exiting lbl ρ_inner)),
@@ -2805,7 +2805,7 @@ theorem blockT_none_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 either outcome (terminal or exiting): the inner config reaches the *same* outcome
 at some inner env, and the block's result env is that inner env with its store
 projected through the parent store and factory restored to the parent. -/
-theorem blockT_none_reaches_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem blockT_none_reaches_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {f_parent : P.Factory}
     {oc : Option String} {ρ' : Env P}
     (hstar : StepStmtStar P (EvalCmd P) extendFactory (.block .none σ_parent f_parent inner) (Env.outcomeConfig oc ρ')) :
@@ -2825,7 +2825,7 @@ theorem blockT_none_reaches_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 /-- Outcome-generic source nondeterministic-`ite` inversion: the chosen branch,
 run inside its `.block .none` scope, reaches the same outcome at an inner env, and
 the observed env `ρ'` is that inner env projected through `ρ`'s store. -/
-theorem ite_nondet_step_inv_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem ite_nondet_step_inv_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     (tss ess : List (Stmt P (Cmd P))) (md : MetaData P) (ρ ρ' : Env P) (oc : Option String)
     (h : StepStmtStar P (EvalCmd P) extendFactory
       (.stmt (.ite .nondet tss ess md) ρ) (Env.outcomeConfig oc ρ')) :
@@ -2881,7 +2881,7 @@ theorem block_reaches_exiting_strong (P : PureExpr) {CmdT : Type} [HasBoolOps P]
 /-- Type-valued inversion of a singleton statement-list `[s]` reaching
 `.exiting lbl`: the head statement reaches the exiting outcome, with a strict
 len-decrease (the `step_stmts_cons` administrative step). -/
-theorem stmtsT_singleton_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] {extendFactory : ExtendFactory P}
+theorem stmtsT_singleton_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] {extendFactory : ExtendFactory P}
     {s : Stmt P (Cmd P)} {lbl : String} {ρ₀ ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.stmts [s] ρ₀) (.exiting lbl ρ')) :
     ∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendFactory) (.stmt s ρ₀) (.exiting lbl ρ')),
@@ -2901,7 +2901,7 @@ reaches `.exiting label`, decompose into a `Sum`: either this iteration's body
 exits (caseA), or this iteration terminates and the next loop iteration exits
 (caseB, with strictly smaller derivation length). -/
 theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr]
+   
     (extendFactory : ExtendFactory P)
     (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
@@ -2952,7 +2952,7 @@ The `Config.varsDefined` / `Config.varDefined` predicates are defined in
 `StmtSemantics`; here we prove they are preserved across steps and runs. -/
 
 /-- A single step preserves `Config.varsDefined`. -/
-theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
     (hstep : StepStmt P (EvalCmd P) extendFactory c c')
     (h : Config.varsDefined Q c) :
@@ -2990,7 +2990,7 @@ theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     simp only [projectStore]; rw [if_pos (h.1 y hQ)]; exact h.2 y hQ
 
 /-- Multi-step preservation of `Config.varsDefined`. -/
-theorem Config.varsDefined_star {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+theorem Config.varsDefined_star {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
     (hstar : StepStmtStar P (EvalCmd P) extendFactory c c')
     (h : Config.varsDefined Q c) :
@@ -3004,7 +3004,7 @@ statement list to terminal.  A corollary of `Config.varsDefined_star` (at the
 singleton `Config.varDefined y`) that packages the `(.stmts ss ρ)` coercion; kept
 as a named cross-module convenience (used from the transform-correctness proofs)
 so those call sites need not spell out the coercion, and hence cannot be `private`. -/
-theorem stmts_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+theorem stmts_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     {y : P.Ident} {ss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
     (hstar : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ) (.terminal ρ'))
     (h_some : (ρ.store y).isSome = true) :
@@ -3018,7 +3018,7 @@ theorem stmts_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 /-- Single-step preservation of `Config.varsUndefinedThroughout`. -/
 theorem Config.varsUndefinedThroughout_step {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
     (h_step : StepStmt P (EvalCmd P) extendFactory cfg cfg')
@@ -3130,7 +3130,7 @@ theorem Config.varsUndefinedThroughout_step {P : PureExpr}
 /-- Trace lift: `Config.varsUndefinedThroughout` is preserved along a multi-step run. -/
 theorem Config.varsUndefinedThroughout_star {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
     (h_run : StepStmtStar P (EvalCmd P) extendFactory cfg cfg')
@@ -3145,7 +3145,7 @@ theorem Config.varsUndefinedThroughout_star {P : PureExpr}
 `Config.varsUndefinedThroughout_star` engine (specialize `Q` to the singleton `· = y`). -/
 theorem block_run_terminal_preserves_none_of_not_definedVars {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {y : P.Ident} {bss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
     (h_y_not_def : y ∉ Block.definedVars (P := P) (C := Cmd P) bss false)
@@ -3161,7 +3161,7 @@ Lives here (rather than beside its transform-pass consumers) so that both the
 nondetElim and loop-init-hoist correctness proofs can share it without one
 importing the other. -/
 theorem smallStep_noFuncDecl_preserves_eval (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (EvalCmd : EvalCmdParam P (Cmd P)) (extendFactory : ExtendFactory P)
+    (EvalCmd : EvalCmdParam P (Cmd P)) (extendFactory : ExtendFactory P)
     (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
     (hnofd : Stmt.noFuncDecl s = true)
     (hstar : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.terminal ρ')) :
@@ -3187,7 +3187,7 @@ theorem smallStep_noFuncDecl_preserves_eval (P : PureExpr) [HasFvar P] [HasFvars
 
 /-- If a prefix run fails, so does the run of prefix ++ suffix. -/
 theorem stmts_prefix_failing_append (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasVarsPure P P.Expr] (extendFactory : ExtendFactory P)
+    (extendFactory : ExtendFactory P)
     (pfx sfx : List (Stmt P (Cmd P))) (ρ : Env P) (c : Config P (Cmd P))
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmts pfx ρ) c)
     (hc : c.getEnv.hasFailure = true) :

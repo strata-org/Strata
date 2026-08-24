@@ -17,6 +17,8 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
 import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.MonomorphizeFunctions
+import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
@@ -659,10 +661,11 @@ open Strata
 public section
 
 def typeCheck (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    (factory : Lambda.Factory CoreLParams := Core.Factory) :
     Except Message Program := do
   let T := Lambda.TEnv.default
-  let factory ← Core.Factory.addFactory moreFns
+  -- Callers past `MonomorphizeFunctions` pass the transformed factory (poly
+  -- Factory originals dropped, specialized copies added) rather than the default.
   let C := { Lambda.LContext.default with
                 functions := factory,
                 knownTypes := Core.KnownTypes }
@@ -781,6 +784,20 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
+  -- Precondition: nondeterministic `if *` / `while *` guards must have been
+  -- eliminated (by `nondetElim`) first. `Core.Statement.eval` rejects such a
+  -- guard per-path, but `Program.eval` isolates per-procedure `Env.error`, so
+  -- that rejection would not surface here and its path's obligations would be
+  -- dropped silently. Check the input structurally and fail loudly instead.
+  match program.decls.findSome? (fun d => match d with
+    | .proc proc _ => (match proc.body with
+        | .structured ss => if Imperative.Block.simpleShape ss then none else some proc.header.name.1
+        | .cfg _ => none)
+    | _ => none) with
+  | some name => throw (Message.fromString
+      s!"toCoreProofObligationProgram: procedure '{name}' contains a \
+         nondeterministic if/loop guard; run nondetElim before symbolic evaluation.")
+  | none => pure ()
   let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
@@ -855,7 +872,8 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
 def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
-  let program ← typeCheck options program moreFns
+  let factory ← Core.Factory.addFactory moreFns
+  let program ← typeCheck options program factory
   toCoreProofObligationProgram options program moreFns
 
 /-- Convenience: type check then symbolic eval. Returns the list of
@@ -863,8 +881,8 @@ def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Prog
 def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message ((List Env) × Statistics) := do
-  let program ← typeCheck options program moreFns
   let factory ← Core.Factory.addFactory moreFns
+  let program ← typeCheck options program factory
   let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   let stats := declStats.merge evalStats
@@ -1457,7 +1475,16 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     | mode, .some cache, _ => -- All property types except `.cover`.
       if peSatResult.isSome && peValResult.isSome then pure (obligation, [])
       else do
-        let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
+        -- The obligation is post-`MonomorphizeFunctions`, so its function
+        -- references carry mangled names (`$__mono#f#int`), whereas the axiom
+        -- program / cache / call-graph the relevance query runs against is the
+        -- pre-pipeline program naming the base `f`.  Demangle the seed names so
+        -- both sides agree; otherwise a specialized function's axiom is wrongly
+        -- deemed irrelevant and pruned, turning a valid goal into a false alarm.
+        -- (Unmangled names are returned unchanged, so non-monomorphized programs
+        -- are unaffected.)
+        let opName := fun (op : CoreIdent) => Core.NameMangling.demangledBaseName op.toPretty
+        let consequentFns := obligation.obligation.getOps.map opName
         let relevantFns :=
           match mode with
           | .Aggressive => consequentFns
@@ -1472,10 +1499,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                   match entry with
                   | .assumption label e =>
                     if axiomNames.contains label then []
-                    else (Lambda.LExpr.getOps e).map CoreIdent.toPretty
-                  | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map CoreIdent.toPretty
+                    else (Lambda.LExpr.getOps e).map opName
+                  | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
                   | .varDecl _ _ .nondet => []
-                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map CoreIdent.toPretty))
+                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
@@ -1521,18 +1548,23 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
-/-- Type-checking pipeline phase: runs `Core.typeCheck` on the program. -/
+/-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against
+    `factory` (the full function set to type-check against; defaults to the
+    pristine `Core.Factory`). -/
 def typeCheckPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+    (factory : @Lambda.Factory CoreLParams := Core.Factory) : PipelinePhase :=
   modelPreservingPipelinePhase "typeCheck"
     fun prog => do
-      match Core.typeCheck options prog moreFns with
+      match Core.typeCheck options prog factory with
       | .ok prog' => return (true, prog')
       | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
 
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
-    the passive proof-obligation form consumed by obligation extraction. -/
+    the passive proof-obligation form consumed by obligation extraction.
+
+    Assumes `nondetElimPipelinePhase` has already run: `Core.Statement.eval`
+    rejects any surviving nondeterministic `if *` / `while *` guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
@@ -1554,9 +1586,15 @@ def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
+  -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
+  -- fallback here is only a totality safety net.
+  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
   transformPipelinePhases procs
     ++ [monomorphizeProceduresPipelinePhase,
-        typeCheckPipelinePhase options moreFns, symbolicEvalPipelinePhase options moreFns]
+        typeCheckPipelinePhase options typeCheckFactory,
+        monomorphizeFunctionsPipelinePhase,
+        nondetElimPipelinePhase,
+        symbolicEvalPipelinePhase options moreFns]
     ++ [betaReducePipelinePhase] ++ csePhases
 
 /-- The abstracted phases derived from the Core pipeline phases.
@@ -2089,7 +2127,7 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
   Except Message Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
-    Core.typeCheck options program moreFns
+    Core.Factory.addFactory moreFns >>= (Core.typeCheck options program ·)
   else
     .error <| Message.fromFormat s!"DDM Transform Error: {repr errors}"
 

@@ -347,15 +347,18 @@ where
         let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
         let throwErr (msg : String) : CoreTransformM Unit :=
           throw (Message.withRange fileRange msg)
-        -- Step 1: Validate measures and determine DecreasesKind for each function.
-        -- Skip polymorphic functions: adtRank axioms are monomorphic.
+        -- Step 1: Validate measures and determine DecreasesKind for every
+        -- function in the block, polymorphic ones included; downstream passes
+        -- specialize and check them at their ground instantiations.  Including
+        -- poly members here also keeps `funcKindMap` complete, so a monomorphic
+        -- member's recursive call to a polymorphic sibling still gets its
+        -- decrease obligation.
         let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []
         for func in funcs do
-          if func.typeArgs.isEmpty then
-            match getDecreasesKind func tf with
-            | .error msg => throwErr msg
-            | .ok kind =>
-              funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
+          match getDecreasesKind func tf with
+          | .error msg => throwErr msg
+          | .ok kind =>
+            funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
         let funcKindMap := funcKindList.reverse
         -- Reject mutual blocks that mix structural and int-valued measures.
         let hasStructural := funcKindMap.any fun (_, k, _, _) => match k with

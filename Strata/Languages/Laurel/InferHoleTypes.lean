@@ -67,17 +67,29 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
     construct the input `HighType` directly without falling back to textual
     decoding of the override name. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
-  -- `$eq`/`$neq` are declared `external` with a placeholder `int → int → bool`
-  -- signature, because polymorphic equality has no monomorphic Laurel type. Those
-  -- `int`s describe nothing about the operands, so typing a hole from them would
-  -- make `<?> == "hello"` infer `int` and only fail once a later pass re-resolves
-  -- the program — surfacing a plain type error as a `StrataBug`. Fall through to
-  -- `unresolvedOperatorArgType`, which reads the first non-hole sibling instead.
+  -- `$eq<T>(x: T, y: T)` types both operands by the SAME variable, so neither slot can type a
+  -- hole on its own — but the operands must agree, which makes the first non-hole sibling a sound
+  -- guess. Decline here so `unresolvedOperatorArgType` supplies it and `<?> == s` takes `string`.
+  -- Blanking the slots instead would leave the hole with nothing and report "could not infer
+  -- type". No such reasoning is available in general: `select<K,V>(map: Map K V, key: K)` has
+  -- differently-typed slots, and its map argument says nothing about the key.
   if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
     none
   else
   match model.get callee with
-  | .staticProcedure proc => some (proc.inputs.map (·.type))
+  | .staticProcedure proc =>
+    let paramTys := proc.inputs.map (·.type)
+    -- A parameter type that mentions a type variable this call has not instantiated cannot type
+    -- a hole: it would propagate as a free variable into an emitted procedure and be rejected by
+    -- Core. Such slots become `.Unknown`; the concrete slots keep their types, so a hole in the
+    -- `int` of `f<T>(x: int, y: T)` still infers `int`. Blanking the whole list instead would
+    -- turn that hole into a "could not infer type" error.
+    --
+    -- The variable need not be at the top of the type — `Map K V` nests them — hence
+    -- `mentionsTVar` rather than a `.TVar` test. A hole in one of these `.Unknown` slots is
+    -- reported as "could not infer type": the instantiation is knowable from the call's other
+    -- arguments, but this pass does not compute it.
+    some (paramTys.map fun t => if mentionsTVar t.val then ⟨.Unknown, t.source⟩ else t)
   | .datatypeConstructor typeName _
   | .datatypeDestructor typeName _ =>
       some [⟨.UserDefined typeName, callee.source⟩]

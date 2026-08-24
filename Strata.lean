@@ -20,6 +20,7 @@ import Strata.DL.Imperative
 import Strata.Util.NameProofs
 import Strata.Util.OrderedSetProps
 import Strata.Util.Sarif
+import Strata.Util.Worklist
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
@@ -31,7 +32,7 @@ import Strata.Languages.Core.WFProps
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.MonomorphizeCompositesProps
+import Strata.Languages.Laurel.LaurelASTProps
 import Strata.Languages.Laurel.ResolutionProps
 
 /- Code Transforms -/
@@ -107,6 +108,8 @@ import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
+import Strata.DL.Lambda.LExprTraversal
+import Strata.DL.Lambda.LExprTraversalProps
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF

@@ -292,7 +292,7 @@ threaded through a run to track store contents across the execution stack:
     Config P (Cmd P) → Prop :=
   Config.varsDefined (· = y)
 
-@[expose] def Config.varsUndefinedThroughout {P : PureExpr} (Q : P.Ident → Prop) :
+@[expose] def Config.varsUndefinedThroughout {P : PureExpr} [HasFvars P] (Q : P.Ident → Prop) :
     Config P (Cmd P) → Prop
   | .stmt s ρ => ∀ y, Q y → ρ.store y = none ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
   | .stmts ss ρ => ∀ y, Q y → ρ.store y = none ∧ ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false

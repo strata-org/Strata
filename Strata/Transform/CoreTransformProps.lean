@@ -36,7 +36,7 @@ theorem projectStore_undef_at {P : PureExpr}
 
 /-- Split `.stmts (s :: rest) ρ ⟶* .terminal ρ'` into head and tail runs. -/
 theorem stmts_cons_terminal_inv
-    [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] [HasVarsPure P P.Expr]
+    [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
     {extendFactory : ExtendFactory P}
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
     (h : StepStmtStar P (EvalCmd P) extendFactory (.stmts (s :: rest) ρ) (.terminal ρ')) :

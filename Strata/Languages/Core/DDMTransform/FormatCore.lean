@@ -11,6 +11,7 @@ public import Strata.Languages.Core.Procedure
 public import StrataDDM.Util.DecimalRat
 public import StrataDDM.Format
 import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.NameMangling
 open StrataDDM
 
 public section
@@ -128,6 +129,10 @@ structure ToCSTContext (M : Type) where
   errors : Array (ASTToCSTError M) := #[]
   /-- Filter controlling which metadata keys are emitted as annotations -/
   annFilter : MetadataAnnFilter := .none
+  /-- Names of top-level program function declarations. A monomorphized
+      reference in this set renders under its mangled name; others are
+      demangled. -/
+  progFnNames : Array String := #[]
   deriving Inhabited
 
 namespace ToCSTContext
@@ -243,7 +248,9 @@ private def isInternalOpName (name : String) : Bool :=
 
 /-- Render a placeholder call expression `name(args...)`, registering `name` as a
     free variable if needed. Shared primitive that does not log; callers log why
-    the placeholder was needed (see `mkGenericCall` and `lconstToExpr`). -/
+    the placeholder was needed (see `mkGenericCall` and `lconstToExpr`).  Also
+    used by monomorphization-aware handlers to emit a silent call under a
+    demangled base name. -/
 def renderAsGenericCall {M} [Inhabited M] (name : String)
     (args : List (CoreDDM.Expr M)) : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
@@ -379,14 +386,17 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
 /-- Handle 0-ary operations -/
 def handleZeroaryOps {M} [Inhabited M] (name : String)
     : ToCSTM M (CoreDDM.Expr M) :=
+  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+                       | some (base, _) => (true, base)
+                       | none => (false, name)
   open Core in
   match CoreOp.ofString name with
   | .re .All => pure (.re_all default)
   | .re .AllChar => pure (.re_allchar default)
   | .re .None => pure (.re_none default)
-  | _ => do
-    ToCSTM.logError "lopToExpr" "0-ary op not found" name
-    pure (.re_none default)
+  | _ =>
+    if silent then renderAsGenericCall name []
+    else mkGenericCall "handleZeroaryOps" name []
 
 /-- Grouped type-specific unary operators to CST. Returns `none` for ops that are
     not part of a grouped family (handled structurally by the caller). The op
@@ -698,9 +708,14 @@ private def groupedBinaryCST? {M} [Inhabited M] (name : String) (arg1 arg2 : Cor
   | "Bv128.UMulOverflow" => some (.binaryOverflowBv default (.W128 default) (CoreDDM.BinaryOverflowBv.bv128_uMulOverflow default) arg1 arg2)
   | _ => none
 
+/-! ### Monomorphized-name demangling for display -/
+
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
     : ToCSTM M (CoreDDM.Expr M) :=
+  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+                       | some (base, _) => (true, base)
+                       | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
   open Core in
   -- Type-specific unary operators (neg, not, safeNeg, overflow, casts) are
@@ -730,11 +745,15 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bvExtract 64 7 0 => pure (.bvextract_7_0_64 default arg)
   | .bvExtract 64 15 0 => pure (.bvextract_15_0_64 default arg)
   | .bvExtract 64 31 0 => pure (.bvextract_31_0_64 default arg)
-  | _ => mkGenericCall "handleUnaryOps" name [arg]
+  | _ => if silent then renderAsGenericCall name [arg]
+         else mkGenericCall "handleUnaryOps" name [arg]
 
 /-- Handle binary operations -/
 def handleBinaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
+  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+                       | some (base, _) => (true, base)
+                       | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
   open Core in
   -- Type-specific binary operators (arith, bitwise, comparison, safe, overflow)
@@ -775,11 +794,15 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | .re .Concat => pure (.re_concat default arg1 arg2)
   | .re .Union => pure (.re_union default arg1 arg2)
   | .re .Inter => pure (.re_inter default arg1 arg2)
-  | _ => mkGenericCall "handleBinaryOps" name [arg1, arg2]
+  | _ => if silent then renderAsGenericCall name [arg1, arg2]
+         else mkGenericCall "handleBinaryOps" name [arg1, arg2]
 
 /-- Handle ternary operations -/
 def handleTernaryOps {M} [Inhabited M] (name : String)
     (arg1 arg2 arg3 : CoreDDM.Expr M) : ToCSTM M (CoreDDM.Expr M) :=
+  let (silent, name) := match Core.NameMangling.demangleFuncName name with
+                       | some (base, _) => (true, base)
+                       | none => (false, name)
   let ty := CoreType.tvar default unknownTypeVar
   open Core in
   match CoreOp.ofString name with
@@ -792,31 +815,45 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   | .str .IndexOf => pure (.str_indexof default arg1 arg2 arg3)
   | .str .Replace => pure (.str_replace default arg1 arg2 arg3)
   | .re .Loop => pure (.re_loop default arg1 arg2 arg3)
-  | _ => mkGenericCall "handleTernaryOps" name [arg1, arg2, arg3]
+  | _ => if silent then renderAsGenericCall name [arg1, arg2, arg3]
+         else mkGenericCall "handleTernaryOps" name [arg1, arg2, arg3]
 
 def lopToExpr {M} [Inhabited M]
     (name : String) (args : List (CoreDDM.Expr M))
     : ToCSTM M (CoreDDM.Expr M) := do
+  -- Demangle Factory-op references; program-function references keep their
+  -- mangled name (they appear in `progFnNames`).
+  let (silent, displayName) := match Core.NameMangling.demangleFuncName name with
+                              | some (base, _) => (true, base)
+                              | none => (false, name)
   let ctx ← get
-  -- User-defined functions: check bound vars first (local funcDecl via
-  -- @[declareFn]), then free vars (global declarations).
   match ctx.findBoundVarIndex? name with
   | some idx =>
     let fnExpr := CoreDDM.Expr.bvar default (ctx.allBoundVars.size - (idx + 1))
     pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
   | none =>
-  match ctx.freeVarIndex? name with
+  if ctx.progFnNames.contains name then
+    match ctx.freeVarIndex? name with
+    | some idx =>
+      let fnExpr := CoreDDM.Expr.fvar default idx
+      pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
+    | none => renderAsGenericCall name args
+  else
+  match ctx.freeVarIndex? displayName with
   | some idx =>
     let fnExpr := CoreDDM.Expr.fvar default idx
     pure <| args.foldl (fun acc arg => .app default acc arg) fnExpr
   | none =>
-    -- Either a built-in or an invalid operation.
+    -- Neither bound nor found under the display name.  Fall through to arity
+    -- handlers so built-in operators get their surface sugar, and everything
+    -- else emits a silent generic call under the display name.
     match args with
     | [] => handleZeroaryOps name
     | [arg] => handleUnaryOps name arg
     | [arg1, arg2] => handleBinaryOps name arg1 arg2
     | [arg1, arg2, arg3] => handleTernaryOps name arg1 arg2 arg3
-    | args => mkGenericCall "lopToExpr" name args
+    | args => if silent then renderAsGenericCall displayName args
+              else mkGenericCall "lopToExpr" displayName args
 
 mutual
 /-- Convert `Lambda.LExpr` to Core `Expr` -/
@@ -852,7 +889,7 @@ partial def lexprToExpr {M} [Inhabited M]
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name ty => do
     -- seq_empty needs the type annotation to render the explicit type parameter
-    if name.name == "Sequence.empty" then
+    if Core.NameMangling.demangledBaseName name.name == "Sequence.empty" then
       let tyCST ← match ty with
         | some (.tcons "Sequence" [ety]) => lmonoTyToCoreType ety
         | _ => pure (CoreType.tvar default unknownTypeVar)
@@ -977,8 +1014,10 @@ partial def lappToExpr {M} [Inhabited M]
   | .op _ fn ty =>
     -- `mapConst` (the constant-map builtin) has no inferable key type, so it is
     -- emitted with an explicit key-type annotation `mapConst<K>(v)`. Recover `K`
-    -- from the op's function type `V → Map K V`.
-    if fn.name == "mapConst" then
+    -- from the op's function type `V → Map K V`.  Demangle first so a
+    -- monomorphized reference (`$__mono#mapConst#K#V`) renders with its
+    -- mandatory `<K>` annotation.
+    if Core.NameMangling.demangledBaseName fn.name == "mapConst" then
       match args with
       | [valArg] =>
         let valCST ← lexprToExpr valArg qLevel
@@ -1121,7 +1160,7 @@ private def decomposeMapUpdate (varName : String)
   let (head, args) := Lambda.getLFuncCall e
   match head, args with
   | .op _ opName _, [base, idx, val] =>
-    if opName.name == "update" then
+    if Core.NameMangling.demangledBaseName opName.name == "update" then
       match base with
       | .fvar _ ident _ =>
         if ident.name == varName then some ([idx], val)
