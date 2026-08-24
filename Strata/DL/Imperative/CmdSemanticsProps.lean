@@ -468,7 +468,6 @@ theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
 /-- A single `EvalCmd` whose command neither defines nor modifies `y` preserves
 a `none` slot at `y`. -/
 theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-   
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
     (h : EvalCmd P f σ c σ' haf)
     {y : P.Ident}

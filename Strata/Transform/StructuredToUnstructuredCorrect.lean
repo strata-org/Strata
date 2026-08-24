@@ -2852,7 +2852,6 @@ trace is on the CFG side (lifted via `EvalCmds_under_agreement`) and reaches
 `σ_cfg_after`, which agrees with `ρ₀.store`. The boolean `b` selects the taken
 branch (`tl` when `tt`, `fl` when `ff`). -/
 private theorem flushCmds_condGoto_agree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-   
     (extendFactory : ExtendFactory P)
     (b : Bool)
     (accum : List (Cmd P))
@@ -3388,7 +3387,6 @@ from `.atBlock lentry σ hf` to `.atBlock bl σ hf` (when `b = true`) or
 `ρ.factory ρ.store g = (if b then tt else ff)` to the CFG store via
 `StoreAgreement` + congruence. -/
 private theorem lentry_condGoto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-   
     (extendFactory : ExtendFactory P)
     (b : Bool)
     (cfg : CFG String (DetBlock String (Cmd P) P))
@@ -3419,7 +3417,6 @@ the next loop iteration's `.stmt loop ρ_block` derivation reaches the same
 terminal with strictly smaller length.  Specialized to `inv = []`, `m = none`,
 and `ρ_body_init = ρ_pre` (the `|| false` collapse). -/
 private theorem peel_off_one_iteration_det {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-   
     (extendFactory : ExtendFactory P)
     (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (ρ_pre ρ_post_loop : Env P)
