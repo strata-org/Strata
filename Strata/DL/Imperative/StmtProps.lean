@@ -40,6 +40,11 @@ Equational theory for the boolean shape walkers defined in
 - `Stmt`/`Block.mapExpr_eq_mapExprM` — the monadic `mapExprM` at the identity
   monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
   (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
+- The def-use bridge: `Stmt`/`Block.defined_of_mem_touchedVars` derive the flat
+  `readWritesDefined` condition from the flow-sensitive `defUseWellFormed`, and
+  `Stmt`/`Block.not_defined_of_mem_definedVars` give the dual for names a statement
+  list defines.  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
+  well-formedness condition around a derivation.
 -/
 
 /-! ### Disjointness of funcDeclNames from definedVars
@@ -698,6 +703,40 @@ theorem Block.noFuncDecl_append (xs ys : List (Stmt P C)) :
   | nil => simp [Block.noFuncDecl]
   | cons x rest ih => simp [Block.noFuncDecl, ih, Bool.and_assoc]
 
+/-- `Block.definedVars` distributes over `++`. -/
+theorem Block.definedVars_append [HasVarsImp P C] (xs ys : List (Stmt P C))
+    (excludeScoped : Bool) :
+    Block.definedVars (xs ++ ys) excludeScoped =
+      Block.definedVars xs excludeScoped ++ Block.definedVars ys excludeScoped := by
+  induction xs with
+  | nil => simp [Block.definedVars]
+  | cons x rest ih =>
+    simp only [List.cons_append, Block.definedVars, ih, List.append_assoc]
+
+/-- `Block.funcDeclNames` distributes over `++`. -/
+theorem Block.funcDeclNames_append (xs ys : List (Stmt P C)) (excludeScoped : Bool) :
+    Block.funcDeclNames (xs ++ ys) excludeScoped =
+      Block.funcDeclNames xs excludeScoped ++ Block.funcDeclNames ys excludeScoped := by
+  induction xs with
+  | nil => simp [Block.funcDeclNames]
+  | cons x rest ih =>
+    simp only [List.cons_append, Block.funcDeclNames, ih, List.append_assoc]
+
+/-- `Block.defUseWellFormed` holds of a prefix whenever it holds of the whole
+    concatenation.  Only the prefix direction: the suffix was checked against the
+    *extended* defined/declared predicates, not the ones given here, so it does not
+    follow at the same predicates. -/
+theorem Block.defUseWellFormed_of_append_left [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident]
+    {definedVars declaredFuncs : P.Ident → Bool} {xs ys : List (Stmt P C)}
+    (h : Block.defUseWellFormed definedVars declaredFuncs (xs ++ ys) = true) :
+    Block.defUseWellFormed definedVars declaredFuncs xs = true := by
+  induction xs generalizing definedVars declaredFuncs with
+  | nil => rfl
+  | cons x rest ih =>
+    simp only [List.cons_append, Block.defUseWellFormed, Bool.and_eq_true] at h ⊢
+    exact ⟨h.1, ih h.2⟩
+
 mutual
 /-- `Stmt.mapExpr` preserves `noFuncDecl`: it recurses structurally and passes
 `funcDecl` through unchanged, so it never changes whether a statement contains a
@@ -739,11 +778,14 @@ theorem Block.noFuncDecl_mapExpr
   termination_by sizeOf ss
 end
 
-/-- If `y ∉ Block.definedVars ss`, then `y ∉ Stmt.definedVars s` for `s ∈ ss`. -/
+/-- A name a statement list does not define is defined by none of its members, for any
+    command type and at either setting of `excludeScoped` — the two sides are read at the
+    same setting, so whichever notion of "defines" is meant, it transfers. -/
 theorem all_not_mem_definedVars_of_block [HasIdent P] [HasFvars P]
-    {y : P.Ident} {ss : List (Stmt P (Cmd P))}
-    (h : y ∉ Block.definedVars (P := P) (C := Cmd P) ss false) :
-    ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false := by
+    {C : Type} [HasVarsImp P C]
+    {y : P.Ident} {ss : List (Stmt P C)} {excludeScoped : Bool}
+    (h : y ∉ Block.definedVars (P := P) (C := C) ss excludeScoped) :
+    ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := C) s excludeScoped := by
   induction ss with
   | nil => intro s hs; exact absurd hs (List.not_mem_nil)
   | cons s rest ih =>
@@ -752,6 +794,281 @@ theorem all_not_mem_definedVars_of_block [HasIdent P] [HasFvars P]
     rcases List.mem_cons.mp hs' with h_eq | h_in
     · exact h_eq ▸ (fun hc => h (List.mem_append.mpr (Or.inl hc)))
     · exact ih (fun hc => h (List.mem_append.mpr (Or.inr hc))) s' h_in
+
+/-! ## `defUseWellFormed` implies flat read/write definedness
+
+`Stmt.defUseWellFormed` is *flow-sensitive*: it walks a statement threading an
+accumulating set of defined names, so a name read at one point need only be
+defined by then.  `Stmt.touchedVars` / `Stmt.definedVars` are *flat*: they
+collect the whole statement's reads, writes and definitions with no regard for
+order.
+
+`Stmt.defined_of_mem_touchedVars` below relates the two: every name a statement touches
+but never itself defines must already be defined at entry.  That is what lets a flat
+well-formedness condition be *lowered* from a statement list to one of its members, since
+the condition on the list exempts names the member's *siblings* define and the condition
+on the member alone does not.
+
+The `h_flag` hypothesis says commands have no nested scopes, so their `definedVars` is the
+same at either setting of `excludeScoped`. -/
+
+section DefUse
+
+variable [HasFvars P] [HasVarsImp P C] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident]
+
+/-- Shape of the `h_flag` side condition of the lemmas below: a command's
+    scope-excluding definitions are among all of its definitions. -/
+@[expose] def CmdDefinedVarsFlagIrrelevant (P : PureExpr) (C : Type) [HasVarsImp P C] : Prop :=
+  ∀ (c : C) (m : P.Ident),
+    m ∈ HasVarsImp.definedVars (P := P) c true → m ∈ HasVarsImp.definedVars (P := P) c false
+
+omit [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident] in
+/-- A statement's scope-excluding definitions are among all its definitions.
+    Non-recursive: every compound statement has `definedVars _ true = []`, so
+    only the command case has content, and that case is `h_flag`. -/
+theorem Stmt.definedVars_true_subset_false
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C) {s : Stmt P C} {n : P.Ident}
+    (hn : n ∈ Stmt.definedVars (P := P) (C := C) s true) :
+    n ∈ Stmt.definedVars (P := P) (C := C) s false := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.definedVars] at hn ⊢
+    exact h_flag c n hn
+  | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl .. | .typeDecl .. =>
+    simp [Stmt.definedVars] at hn
+
+omit [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident] in
+/-- A statement list's top-level definitions (`definedVars _ true`) are among all of
+    its definitions (`definedVars _ false`). -/
+theorem Block.definedVars_true_subset_false
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C) {ss : Block P C} {n : P.Ident}
+    (hn : n ∈ Block.definedVars (P := P) (C := C) ss true) :
+    n ∈ Block.definedVars (P := P) (C := C) ss false := by
+  induction ss with
+  | nil => simp [Block.definedVars] at hn
+  | cons s rest ih =>
+    rw [Block.definedVars] at hn ⊢
+    rcases List.mem_append.mp hn with h | h
+    · exact List.mem_append.mpr (Or.inl (Stmt.definedVars_true_subset_false h_flag h))
+    · exact List.mem_append.mpr (Or.inr (ih h))
+
+mutual
+
+/-- A name a statement reads or writes, but never defines, is defined at entry.
+    The `modifiedVars ++ getVars` core of `Stmt.defined_of_mem_touchedVars`. -/
+private theorem Stmt.defined_of_mem_modifiedVars_getVars
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C)
+    {defined declared : P.Ident → Bool} {s : Stmt P C} {n : P.Ident}
+    (h : Stmt.defUseWellFormed defined declared s = true)
+    (hn : n ∈ Stmt.modifiedVars (P := P) (C := C) s ++ Stmt.getVars (P := P) (C := C) s)
+    (hnd : n ∉ Stmt.definedVars (P := P) (C := C) s false) :
+    defined n = true := by
+  match s with
+  | .cmd c =>
+    -- Both `readVars` and `modifiedVars` are checked against `defined`.
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
+    simp only [Stmt.modifiedVars, Stmt.getVars] at hn
+    rcases List.mem_append.mp hn with hm | hr
+    · exact h.1.1.2 _ hm
+    · exact h.1.1.1 _ hr
+  | .block l bss md =>
+    simp only [Stmt.defUseWellFormed] at h
+    simp only [Stmt.modifiedVars, Stmt.getVars] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    exact Block.defined_of_mem_modifiedVars_getVars h_flag h hn hnd
+  | .ite cond tbss ebss md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
+    simp only [Stmt.modifiedVars, Stmt.getVars] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    have hnd_t : n ∉ Block.definedVars (P := P) (C := C) tbss false :=
+      fun hc => hnd (List.mem_append.mpr (Or.inl hc))
+    have hnd_e : n ∉ Block.definedVars (P := P) (C := C) ebss false :=
+      fun hc => hnd (List.mem_append.mpr (Or.inr hc))
+    have ht : ∀ (_ : n ∈ Block.modifiedVars (P := P) (C := C) tbss ++
+        Block.getVars (P := P) (C := C) tbss), defined n = true :=
+      fun hx => Block.defined_of_mem_modifiedVars_getVars h_flag h.1.2 hx hnd_t
+    have he : ∀ (_ : n ∈ Block.modifiedVars (P := P) (C := C) ebss ++
+        Block.getVars (P := P) (C := C) ebss), defined n = true :=
+      fun hx => Block.defined_of_mem_modifiedVars_getVars h_flag h.2 hx hnd_e
+    rcases List.mem_append.mp hn with hmod | hread
+    · rcases List.mem_append.mp hmod with hm | hm
+      · exact ht (List.mem_append.mpr (Or.inl hm))
+      · exact he (List.mem_append.mpr (Or.inl hm))
+    · rcases List.mem_append.mp hread with hgt | he_read
+      · rcases List.mem_append.mp hgt with hg | ht_read
+        · exact h.1.1.1 _ hg
+        · exact ht (List.mem_append.mpr (Or.inr ht_read))
+      · exact he (List.mem_append.mpr (Or.inr he_read))
+  | .loop guard measure invariants bss md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
+    simp only [Stmt.modifiedVars, Stmt.getVars] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    have hb : ∀ (_ : n ∈ Block.modifiedVars (P := P) (C := C) bss ++
+        Block.getVars (P := P) (C := C) bss), defined n = true :=
+      fun hx => Block.defined_of_mem_modifiedVars_getVars h_flag h.2 hx hnd
+    rcases List.mem_append.mp hn with hmod | hread
+    · exact hb (List.mem_append.mpr (Or.inl hmod))
+    · rcases List.mem_append.mp hread with hpre | hbody
+      · rcases List.mem_append.mp hpre with hgm | hinv
+        · rcases List.mem_append.mp hgm with hg | hm
+          · exact h.1.1.1.1.1.1 _ hg
+          · exact h.1.1.1.1.2 _ hm
+        · exact h.1.1.2 _ hinv
+      · exact hb (List.mem_append.mpr (Or.inr hbody))
+  | .exit l md =>
+    simp only [Stmt.modifiedVars, Stmt.getVars, List.append_nil, List.not_mem_nil] at hn
+  | .funcDecl decl md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
+    simp only [Stmt.modifiedVars, List.nil_append] at hn
+    exact h.1.1.1 _ (by simpa [Stmt.getVars] using hn)
+  | .typeDecl tc md =>
+    simp only [Stmt.modifiedVars, Stmt.getVars, List.append_nil, List.not_mem_nil] at hn
+
+/-- A name a statement *list* reads or writes, but never defines, is defined at
+    entry.  Block-level counterpart of
+    `Stmt.defined_of_mem_modifiedVars_getVars`; the extra work is that a member may
+    be exempted by a *sibling*'s definitions, so the walk has to carry the
+    definitions accumulated so far. -/
+private theorem Block.defined_of_mem_modifiedVars_getVars
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C)
+    {defined declared : P.Ident → Bool} {ss : Block P C} {n : P.Ident}
+    (h : Block.defUseWellFormed defined declared ss = true)
+    (hn : n ∈ Block.modifiedVars (P := P) (C := C) ss ++ Block.getVars (P := P) (C := C) ss)
+    (hnd : n ∉ Block.definedVars (P := P) (C := C) ss false) :
+    defined n = true := by
+  match ss with
+  | [] => simp only [Block.modifiedVars, Block.getVars, List.append_nil, List.not_mem_nil] at hn
+  | s :: rest =>
+    simp only [Block.defUseWellFormed, Bool.and_eq_true] at h
+    simp only [Block.modifiedVars, Block.getVars] at hn
+    rw [Block.definedVars] at hnd
+    have hnd_s : n ∉ Stmt.definedVars (P := P) (C := C) s false :=
+      fun hc => hnd (List.mem_append.mpr (Or.inl hc))
+    have hnd_r : n ∉ Block.definedVars (P := P) (C := C) rest false :=
+      fun hc => hnd (List.mem_append.mpr (Or.inr hc))
+    -- The tail is checked against `defined` extended by the head's *top-level*
+    -- definitions.  `n` is not one of those, so the extension is inert on `n`.
+    have h_tail : ∀ (_ : n ∈ Block.modifiedVars (P := P) (C := C) rest ++
+        Block.getVars (P := P) (C := C) rest), defined n = true := by
+      intro hrest
+      have h_ext := Block.defined_of_mem_modifiedVars_getVars h_flag h.2 hrest hnd_r
+      have h_dec : decide (n ∈ Stmt.definedVars (P := P) (C := C) s true) = false := by
+        simp only [decide_eq_false_iff_not]
+        exact fun hc => hnd_s (Stmt.definedVars_true_subset_false h_flag hc)
+      simp only [h_dec, Bool.or_false] at h_ext
+      exact h_ext
+    have h_head : ∀ (_ : n ∈ Stmt.modifiedVars (P := P) (C := C) s ++
+        Stmt.getVars (P := P) (C := C) s), defined n = true :=
+      fun hx => Stmt.defined_of_mem_modifiedVars_getVars h_flag h.1 hx hnd_s
+    rcases List.mem_append.mp hn with hmod | hread
+    · rcases List.mem_append.mp hmod with hm | hm
+      · exact h_head (List.mem_append.mpr (Or.inl hm))
+      · exact h_tail (List.mem_append.mpr (Or.inl hm))
+    · rcases List.mem_append.mp hread with hr | hr
+      · exact h_head (List.mem_append.mpr (Or.inr hr))
+      · exact h_tail (List.mem_append.mpr (Or.inr hr))
+
+end
+
+mutual
+
+/-- **`defUseWellFormed` implies freshness of everything it defines.**  A name a
+    statement defines anywhere inside it must be *undefined* at entry: each `init`
+    is checked for freshness against the definedness predicate accumulated so far,
+    which always includes the entry predicate.
+
+    Applied to a *tail* `ss` of a statement list, whose accumulated predicate is
+    `defined ∪ Stmt.definedVars s true` for the preceding head `s`, this yields
+    both `defined n = false` and `n ∉ Stmt.definedVars s true` at once — which is
+    exactly what re-establishing a block-level gate on `ss` after running `s`
+    needs (see `Core.Logic.blockInitEnvWF_cons_tail`). -/
+theorem Stmt.not_defined_of_mem_definedVars
+    {defined declared : P.Ident → Bool} {s : Stmt P C} {n : P.Ident}
+    (h : Stmt.defUseWellFormed defined declared s = true)
+    (hn : n ∈ Stmt.definedVars (P := P) (C := C) s false) :
+    defined n = false := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true,
+      decide_eq_true_eq, Bool.not_eq_true] at h
+    simp only [Stmt.definedVars] at hn
+    exact h.1.2 _ hn
+  | .block l bss md =>
+    simp only [Stmt.defUseWellFormed] at h
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    exact Block.not_defined_of_mem_definedVars h hn
+  | .ite cond tbss ebss md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at h
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    rcases List.mem_append.mp hn with ht | he
+    · exact Block.not_defined_of_mem_definedVars h.1.2 ht
+    · exact Block.not_defined_of_mem_definedVars h.2 he
+  | .loop guard measure invariants bss md =>
+    simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at h
+    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    exact Block.not_defined_of_mem_definedVars h.2 hn
+  | .exit l md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
+  | .funcDecl decl md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
+  | .typeDecl tc md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
+
+/-- A name a statement *list* defines is undefined at entry: `defUseWellFormed`
+    requires each `init` to introduce a fresh name.  Block-level counterpart of
+    `Stmt.not_defined_of_mem_definedVars`. -/
+theorem Block.not_defined_of_mem_definedVars
+    {defined declared : P.Ident → Bool} {ss : Block P C} {n : P.Ident}
+    (h : Block.defUseWellFormed defined declared ss = true)
+    (hn : n ∈ Block.definedVars (P := P) (C := C) ss false) :
+    defined n = false := by
+  match ss with
+  | [] => simp only [Block.definedVars, List.not_mem_nil] at hn
+  | s :: rest =>
+    simp only [Block.defUseWellFormed, Bool.and_eq_true] at h
+    rw [Block.definedVars] at hn
+    rcases List.mem_append.mp hn with hs | hr
+    · exact Stmt.not_defined_of_mem_definedVars h.1 hs
+    · have h_ext := Block.not_defined_of_mem_definedVars h.2 hr
+      simpa using (Bool.or_eq_false_iff.mp h_ext).1
+
+end
+
+/-- **`defUseWellFormed` implies `readWritesDefined`.**  Every name a statement
+    touches but does not itself define is already defined at entry. -/
+theorem Stmt.defined_of_mem_touchedVars
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C)
+    {defined declared : P.Ident → Bool} {s : Stmt P C} {n : P.Ident}
+    (h : Stmt.defUseWellFormed defined declared s = true)
+    (hn : n ∈ Stmt.touchedVars (P := P) (C := C) s)
+    (hnd : n ∉ Stmt.definedVars (P := P) (C := C) s false) :
+    defined n = true := by
+  simp only [Stmt.touchedVars, Stmt.modifiedOrDefinedVars] at hn
+  rcases List.mem_append.mp hn with hmod | hread
+  · rcases List.mem_append.mp hmod with hm | hd
+    · exact Stmt.defined_of_mem_modifiedVars_getVars h_flag h
+        (List.mem_append.mpr (Or.inl hm)) hnd
+    · exact absurd (Stmt.definedVars_true_subset_false h_flag hd) hnd
+  · exact Stmt.defined_of_mem_modifiedVars_getVars h_flag h
+      (List.mem_append.mpr (Or.inr hread)) hnd
+
+/-- Every name a statement list touches but does not itself define is already
+    defined at entry — the block-level consequence of the flow-sensitive
+    `defUseWellFormed`. -/
+theorem Block.defined_of_mem_touchedVars
+    (h_flag : CmdDefinedVarsFlagIrrelevant P C)
+    {defined declared : P.Ident → Bool} {ss : Block P C} {n : P.Ident}
+    (h : Block.defUseWellFormed defined declared ss = true)
+    (hn : n ∈ Block.touchedVars (P := P) (C := C) ss)
+    (hnd : n ∉ Block.definedVars (P := P) (C := C) ss false) :
+    defined n = true := by
+  simp only [Block.touchedVars, Block.modifiedOrDefinedVars] at hn
+  rcases List.mem_append.mp hn with hmod | hread
+  · rcases List.mem_append.mp hmod with hm | hd
+    · exact Block.defined_of_mem_modifiedVars_getVars h_flag h
+        (List.mem_append.mpr (Or.inl hm)) hnd
+    · exact absurd (Block.definedVars_true_subset_false h_flag hd) hnd
+  · exact Block.defined_of_mem_modifiedVars_getVars h_flag h
+      (List.mem_append.mpr (Or.inr hread)) hnd
+
+end DefUse
 
 mutual
 /-- A statement free of nondeterministic guards contains no nondeterministic loop. -/

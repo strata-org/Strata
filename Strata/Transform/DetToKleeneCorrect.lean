@@ -29,7 +29,7 @@ The top-level theorem is detToKleene_overapproximates.
 
 public section
 
-open Imperative Specification
+open Imperative Specification Strata.Logic Imperative.Logic
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
   [HasInt P] [HasIntOps P] [HasSubstFvar P]

@@ -5869,7 +5869,7 @@ store-freshness come from the source language's `initEnvWF (s2uKind) ss ρ₀` a
 shared initial env `ρ₀`.  Forwarded shape conjuncts re-establish the downstream
 `stmtsToCFG` instance's `pre`. -/
 section HoistOverapprox
-open Imperative.Specification Imperative.Specification.Transform
+open Imperative.Specification Imperative.Specification.Transform Imperative.Logic
 open StructuredToUnstructuredCorrect (s2uKind)
 
 /-- `Block.hoistLoopPrefixInits` overapproximates its source up to `EnvStoreAgree`: for a

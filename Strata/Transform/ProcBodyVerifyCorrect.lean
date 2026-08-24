@@ -691,7 +691,7 @@ theorem procBodyVerify_procedureCorrect
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
     (h_correct : Specification.AllAssertsValid
-      (Core.Specification.Lang.core p.findProcByString? φ) verifyStmt)
+      (Core.Logic.Lang.core p.findProcByString? φ) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Imperative.WFFactoryExtension Expression (Core.EvalPureFunc φ))
     -- `h_wf_proc`: the procedure is well-formed
@@ -801,7 +801,7 @@ theorem procBodyVerify_procedureCorrect
     unfold Specification.AssertValidInProcedure Specification.AssertSpecInProcedure
     refine ⟨proc, ss, h_lookup, h_body_eq, ?_⟩
     unfold Specification.AssertValidWhen
-    simp only [Specification.Lang.core, Specification.Lang.imperative]
+    simp only [Core.Logic.Lang.core, Imperative.Logic.Lang.imperative]
     intro ρ₀ cfg ⟨(h_wf : Specification.ProcEnvWF proc ρ₀), _h_axioms⟩
       (h_body : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
         (.stmt (Stmt.block "" ss #[]) ρ₀) cfg)

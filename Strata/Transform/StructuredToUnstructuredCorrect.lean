@@ -14077,13 +14077,13 @@ theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [Has
 The final structured→CFG pass stated as its own `OverapproximatesUptoWhen` instance,
 over CR-local neutral languages/relation so the pipeline capstone can reuse it by
 definitional equality. The source language is
-`Specification.Transform.Lang.imperativeBlock` with its `initEnvWF` set to
+`Imperative.Logic.Lang.imperativeBlock` with its `initEnvWF` set to
 `BlockInitEnvWF s2uKind` (the shared intermediate-stage store conditions — the same
 `BlockInitEnvWF` pack `nondetElim` uses, at kind `s2uKind`), the target is the CFG
 language `Lang.cfg`. -/
 
 section StmtsToCFGOverapprox
-open Specification.Transform
+open Specification.Transform Imperative.Logic
 variable {P : PureExpr}
 
 /-- `stmtsToCFG` per-pass overapproximation up to `EnvStoreAgree`.  The final pass:

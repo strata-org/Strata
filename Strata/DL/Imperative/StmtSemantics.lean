@@ -249,6 +249,11 @@ def Config.noFuncDecl : Config P CmdT → Prop
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
 
+/-- Drop a set of names from a store, sending each to `none`. -/
+@[expose] def dropVars [DecidableEq P.Ident] (D : List P.Ident) (σ : SemanticStore P) :
+    SemanticStore P :=
+  fun x => if x ∈ D then none else σ x
+
 /-- The projected inner store agrees with the unprojected inner store on
 `σ_parent`'s domain. Variables present in the parent are unchanged by
 projection; variables absent from the parent become `none` in the projection,
@@ -272,14 +277,21 @@ threaded through a run to track store contents across the execution stack:
 * `Config.varsDefined Q c` — every `Q`-var is defined in `c`'s operative store
   and in every enclosing block-parent store.  Monotone (no step undefines a
   slot), so it makes no claim about the pending statements.
-* `Config.varsUndefinedThroughout Q c` — every `Q`-var is undefined in `c`'s
+* `Config.varsUndefined excludeScoped Q c` — every `Q`-var is undefined in `c`'s
   operative store and in every enclosing block-parent store, AND no pending
   statement defines a `Q`-var.  The pending-statement clause is what makes
   undefinedness stable across a step (an `init`/`set` of a `Q`-var would break
-  it), the dual of the monotone `varsDefined` which needs no such clause. -/
+  it), the dual of the monotone `varsDefined` which needs no such clause.
 
-@[expose] def Config.varsDefined {P : PureExpr} (Q : P.Ident → Prop) :
-    Config P (Cmd P) → Prop
+  `excludeScoped` selects which `Stmt.definedVars` flag that clause uses, and with
+  it how a block is treated.  At `false` a `Q`-var must stay undefined
+  *everywhere*, so the invariant is required of a block's body too.  At `true`
+  only top-level definitions count, so a block-local `init` of a `Q`-var is
+  allowed: leaving the block projects the inner store through the saved parent
+  store, which still has the var undefined. -/
+
+@[expose] def Config.varsDefined {P : PureExpr} {CmdT : Type} (Q : P.Ident → Prop) :
+    Config P CmdT → Prop
   | .stmt _ ρ => ρ.store.varsDefined Q
   | .stmts _ ρ => ρ.store.varsDefined Q
   | .terminal ρ => ρ.store.varsDefined Q
@@ -288,18 +300,38 @@ threaded through a run to track store contents across the execution stack:
   | .seq inner _ => Config.varsDefined Q inner
 
 /-- Single-identifier specialisation of `Config.varsDefined`. -/
-@[expose] abbrev Config.varDefined {P : PureExpr} (y : P.Ident) :
-    Config P (Cmd P) → Prop :=
+@[expose] abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
+    Config P CmdT → Prop :=
   Config.varsDefined (· = y)
 
-@[expose] def Config.varsUndefinedThroughout {P : PureExpr} [HasFvars P] (Q : P.Ident → Prop) :
-    Config P (Cmd P) → Prop
-  | .stmt s ρ => ∀ y, Q y → ρ.store y = none ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
-  | .stmts ss ρ => ∀ y, Q y → ρ.store y = none ∧ ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+@[expose] def Config.varsUndefined {P : PureExpr} [HasFvars P]
+    {CmdT : Type} [HasVarsImp P CmdT] (excludeScoped : Bool) (Q : P.Ident → Prop) :
+    Config P CmdT → Prop
+  | .stmt s ρ => ∀ y, Q y → ρ.store y = none ∧
+      y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
+  | .stmts ss ρ => ∀ y, Q y → ρ.store y = none ∧
+      ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
   | .terminal ρ => ρ.store.varsUndefined Q
   | .exiting _ ρ => ρ.store.varsUndefined Q
-  | .block _ σ_parent _ inner => σ_parent.varsUndefined Q ∧ Config.varsUndefinedThroughout Q inner
-  | .seq inner ss => Config.varsUndefinedThroughout Q inner ∧ ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+  | .block _ σ_parent _ inner =>
+      match excludeScoped with
+      | true => σ_parent.varsUndefined Q
+      | false => σ_parent.varsUndefined Q ∧ Config.varsUndefined false Q inner
+  | .seq inner ss => Config.varsUndefined excludeScoped Q inner ∧
+      ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
+
+/-- Every store reachable from `c` — its operative store and the saved parent store
+    of every enclosing block — holds only values, each measured against the factory
+    that will be in force when that store becomes operative again. -/
+@[expose] def Config.storeWellDefined {P : PureExpr} [HasVal P] {CmdT : Type} :
+    Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedStore ρ.store ρ.factory
+  | .stmts _ ρ => WellFormedStore ρ.store ρ.factory
+  | .terminal ρ => WellFormedStore ρ.store ρ.factory
+  | .exiting _ ρ => WellFormedStore ρ.store ρ.factory
+  | .block _ σ_parent f_parent inner =>
+      WellFormedStore σ_parent f_parent ∧ Config.storeWellDefined inner
+  | .seq inner _ => Config.storeWellDefined inner
 
 /-! ## Single-step relation -/
 

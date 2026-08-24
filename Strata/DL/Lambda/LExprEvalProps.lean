@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExprEval
@@ -37,6 +38,9 @@ Key results (organized roughly in the order they appear below):
   then `evalFully = some v`.  This is the closure that discharges the
   reverse direction of `coreEvaluator_WellFormedSemanticEvalBool` without
   needing an external assumption.
+- `evalFully_const` / `evalFully_fvar_of_value` / `evalFully_eq_of_evalFully` —
+  point-wise laws for individual expression forms (Part V), including the `==`
+  law that `Imperative.WellFormedSemanticEval` does not supply.
 -/
 
 namespace Lambda
@@ -3487,5 +3491,106 @@ theorem rename_commute
       rw [h1] at hcontra; exact absurd hcontra (by simp)
 
 end rename_commute
+
+/-! ## Part V: Point-wise evaluation laws for individual expression forms
+
+Parts I–IV are about `eval`/`evalFully` as a whole.  This part records what the
+evaluator does to a few specific forms, which is what a caller reasoning about a
+*concrete* program needs:
+
+- `evalFully_const` — a literal evaluates to itself;
+- `evalFully_fvar_of_value` — a variable bound to a canonical value evaluates to
+  that value.  Weaker premise than `evalFully_fvar_store`, which asks that *every*
+  binding be a value: reading one variable only needs the binding actually read to
+  be one;
+- `evalFully_eq_of_evalFully` / `evalFully_eq_self` — `e₁ == e₂` reduces whenever
+  both sides reduce and `eql` decides the resulting values; in particular to `true`
+  when both reduce to the *same* value (`eql_self`). -/
+
+public section
+
+section evalFully_forms
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- Literals are canonical values in every factory. -/
+theorem isCanonicalValue_const_true
+    (F : @Factory Tbase) (m : Tbase.Metadata) (κ : LConst) :
+    LExpr.isCanonicalValue F (.const m κ : LExpr Tbase.mono) = true := by
+  rw [LExpr.isCanonicalValue.eq_def]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- Free variables are never canonical values (their head is not an `.op`). -/
+private theorem isCanonicalValue_fvar_false
+    (F : @Factory Tbase) (m : Tbase.Metadata) (x : Tbase.Identifier)
+    (ty : Option Tbase.mono.TypeType) :
+    LExpr.isCanonicalValue F (.fvar m x ty : LExpr Tbase.mono) = false := by
+  rw [LExpr.isCanonicalValue.eq_def]
+  simp only [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+
+omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `eqModuloMeta` is reflexive. -/
+private theorem eqModuloMeta_self (v : LExpr Tbase.mono) :
+    LExpr.eqModuloMeta v v = true := by
+  simp only [LExpr.eqModuloMeta]
+  exact (LExpr.beq_eq (LExpr.eraseMetadata v) (LExpr.eraseMetadata v)).mpr rfl
+
+omit [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `eql` decides any expression against itself, by its syntactic-equality case.
+    No canonicity or factory condition is involved.  (`Inhabited Tbase.IDMeta` is
+    needed only to elaborate `eql`'s extensional case for `.abs`, which the
+    reflexive case never reaches.) -/
+theorem eql_self (F : @Factory Tbase) (v : LExpr Tbase.mono) :
+    LExpr.eql F v v = some true := by
+  unfold LExpr.eql
+  rw [if_pos (eqModuloMeta_self v)]
+
+/-- A literal evaluates to itself. -/
+theorem evalFully_const (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (κ : LConst) :
+    LExpr.evalFully F env (.const m κ) = some (.const m κ) :=
+  evalFully_value_identity F env _ (isCanonicalValue_const_true F m κ)
+
+/-- A variable bound to a canonical value evaluates to that value.  Contrast
+    `evalFully_fvar_store`, which needs every binding of `env` to be a value; here
+    only the binding being read does. -/
+theorem evalFully_fvar_of_value (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (x : Tbase.Identifier) (ty : Option Tbase.mono.TypeType)
+    (v : LExpr Tbase.mono) (hx : env x = some v)
+    (hv : LExpr.isCanonicalValue F v = true) :
+    LExpr.evalFully F env (.fvar m x ty) = some v := by
+  refine evalFully_of_value_true F env _ 1 v ?_
+  rw [LExpr.eval]
+  rw [if_neg (by rw [isCanonicalValue_fvar_false]; simp)]
+  rw [callOfLFunc_fvar_none]
+  simp only [LExpr.evalCore, hx, hv, if_true]
+
+/-- **The `==` law.**  If both sides of an equality reduce and `eql` decides the
+    resulting values, the equality reduces to that Boolean literal. -/
+theorem evalFully_eq_of_evalFully (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (e1 e2 v1 v2 : LExpr Tbase.mono) (b : Bool)
+    (h1 : LExpr.evalFully F env e1 = some v1)
+    (h2 : LExpr.evalFully F env e2 = some v2)
+    (heql : LExpr.eql F v1 v2 = some b) :
+    LExpr.evalFully F env (.eq m e1 e2) = some (.const m (.boolConst b)) := by
+  obtain ⟨n1, hn1, _⟩ := evalFully_some_exists F env e1 v1 h1
+  obtain ⟨n2, hn2, _⟩ := evalFully_some_exists F env e2 v2 h2
+  have h1n := eval_value_true_mono_le F env n1 (max n1 n2) (Nat.le_max_left _ _) e1 v1 hn1
+  have h2n := eval_value_true_mono_le F env n2 (max n1 n2) (Nat.le_max_right _ _) e2 v2 hn2
+  refine evalFully_of_value_true F env _ (max n1 n2 + 1) _ ?_
+  rw [eval_succ_eq]
+  simp only [LExpr.evalEq, h1n, h2n, heql, LExpr.EvalResult.isValueTrue, Bool.and_self]
+
+/-- Both sides reduce to the *same* value, so the equality holds.  This is the form
+    a postcondition `x == e` takes once `x`'s binding is known. -/
+theorem evalFully_eq_self (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (e1 e2 v : LExpr Tbase.mono)
+    (h1 : LExpr.evalFully F env e1 = some v)
+    (h2 : LExpr.evalFully F env e2 = some v) :
+    LExpr.evalFully F env (.eq m e1 e2) = some (.const m (.boolConst true)) :=
+  evalFully_eq_of_evalFully F env m e1 e2 v v true h1 h2 (eql_self F v)
+
+end evalFully_forms
+
+end -- public section
 
 end Lambda

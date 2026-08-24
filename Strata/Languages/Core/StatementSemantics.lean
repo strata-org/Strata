@@ -283,6 +283,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : Expression.Factor
       isDefinedOver (HasFvars.getFvars) σAO post ∧
       Expression.eval fac_final σ_final post = .some HasBool.tt) →
     ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
+    (∀ v ∈ modvals, HasVal.value fac v) →
     -- positional: modvals[i] written back to lhs[i]
     UpdateStates σ lhs modvals σ' →
     ----

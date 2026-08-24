@@ -54,10 +54,18 @@ import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.SpecHoareConnection
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredCorrect
 import Strata.Transform.StructuredToUnstructuredPipeline
 import Strata.Transform.StructuredToUnstructuredPipelineCorrect
+
+/- Program Logics -/
+import Strata.DL.Imperative.Logic.HoareTemplate
+import Strata.Languages.Core.Logic.LangDefProps
+import Strata.Languages.Core.Logic.Hoare
+import Strata.Languages.Core.Logic.ContractToHoareTriple
+import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3

@@ -25,6 +25,13 @@ Structural and semantic results for `StepStmt`/`StepStmtStar` runs. Key results:
 - Store projection/agreement plumbing (`projectStore_id`, the `StoreAgreement`
   projection helpers) and `mkFvar` evaluation (`eval_mkFvar_of_value`,
   `eval_mkFvar_storeWith` — the `SemanticStore.update` specialization).
+- `projectStore_eq_dropVars` — leaving a block drops exactly the names its body scopes.
+  This is what lets `Imperative.Logic.Hoare.PostWF` be a syntactic condition on the body
+  rather than a statement about the parent store.
+- Config-level invariants preserved by a run: `Config.varsDefined_star_of`,
+  `Config.varsUndefinedThroughout_star_of`, `Config.varsUndefinedScoped_star_of`
+  (scope-aware: a block-local `init` is projected away at exit), and
+  `Config.storeWellDefined_star_of` (every reachable store holds only values).
 - `noFuncDecl`-run factory preservation: `noFuncDecl_preserves_factory` (the
   general config-to-config statement) with its terminal/statement/exiting
   corollaries (`block`/`stmt`/`block_…_exiting`), and
@@ -390,6 +397,31 @@ theorem block_reaches_exiting
     | step_block_done | step_block_exit_match =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Invert a block execution that ends **terminal or exiting**: in either case the
+    inner ran to a terminal-or-exiting configuration and the block projected its
+    env.  Combines `block_reaches_terminal` and `block_reaches_exiting`, which
+    differ only in how the inner finished. -/
+theorem block_reaches_done
+    {inner : Config P CmdT} {l : Option String}
+    {σ_parent : SemanticStore P} {f_parent : P.Factory} {ρ' : Env P}
+    (hdone :
+      StepStmtStar P EvalCmd extendFactory (.block l σ_parent f_parent inner) (.terminal ρ') ∨
+      ∃ lbl, StepStmtStar P EvalCmd extendFactory
+        (.block l σ_parent f_parent inner) (.exiting lbl ρ')) :
+    ∃ ρ_inner,
+      (StepStmtStar P EvalCmd extendFactory inner (.terminal ρ_inner) ∨
+       ∃ lbl, StepStmtStar P EvalCmd extendFactory inner (.exiting lbl ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, factory := f_parent } := by
+  match hdone with
+  | .inl hterm =>
+    match block_reaches_terminal P EvalCmd extendFactory hterm with
+    | .inl ⟨ρ_inner, h, heq⟩ => exact ⟨ρ_inner, .inl h, heq⟩
+    | .inr ⟨lbl, ρ_inner, h, heq⟩ => exact ⟨ρ_inner, .inr ⟨lbl, h⟩, heq⟩
+  | .inr ⟨_, hexit⟩ =>
+    have ⟨lbl_inner, ρ_inner, h, heq⟩ := block_reaches_exiting P EvalCmd extendFactory hexit
+    exact ⟨ρ_inner, .inr ⟨lbl_inner, h⟩, heq⟩
+
 /-! ## Trace construction helpers -/
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
@@ -444,6 +476,65 @@ theorem stmts_append_terminates
         exact ⟨ρ₁, ReflTrans_Transitive _ _ _ _
           (stmts_cons_step P EvalCmd extendFactory
             s rest ρ ρ_mid h_s) h_rest, h_ss₂⟩
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- An exiting head statement makes the whole list exit with the same label: the
+    tail never runs. -/
+private theorem stmts_cons_exiting
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (h : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.exiting lbl ρ')) :
+    StepStmtStar P EvalCmd extendFactory (.stmts (s :: ss) ρ) (.exiting lbl ρ') := by
+  refine .step _ _ _ .step_stmts_cons ?_
+  exact ReflTrans_Transitive _ _ _ _
+    (seq_inner_star P EvalCmd extendFactory _ _ ss h)
+    (.step _ _ _ .step_seq_exit (.refl _))
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Decompose a *finished* execution of `ss₁ ++ ss₂` — terminal or exiting — by what
+    `ss₁` did: either `ss₁` exited on its own, and `ss₂` never ran, or `ss₁`
+    terminated at some `ρ₁` from which `ss₂` finished the same way.
+    `stmts_append_terminates` is the terminal-only special case. -/
+theorem stmts_append_done
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (h : StepStmtStar P EvalCmd extendFactory (.stmts (ss₁ ++ ss₂) ρ) (.terminal ρ') ∨
+      ∃ lbl, StepStmtStar P EvalCmd extendFactory (.stmts (ss₁ ++ ss₂) ρ) (.exiting lbl ρ')) :
+    (∃ lbl, StepStmtStar P EvalCmd extendFactory (.stmts ss₁ ρ) (.exiting lbl ρ')) ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd extendFactory (.stmts ss₁ ρ) (.terminal ρ₁) ∧
+      (StepStmtStar P EvalCmd extendFactory (.stmts ss₂ ρ₁) (.terminal ρ') ∨
+       ∃ lbl, StepStmtStar P EvalCmd extendFactory (.stmts ss₂ ρ₁) (.exiting lbl ρ'))) := by
+  induction ss₁ generalizing ρ with
+  | nil => exact .inr ⟨ρ, .step _ _ _ .step_stmts_nil (.refl _), h⟩
+  | cons s rest ih =>
+    -- Peel the head off, then recurse on `rest ++ ss₂`.
+    have hhead : (∃ lbl, StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.exiting lbl ρ')) ∨
+        ∃ ρ_mid, StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.terminal ρ_mid) ∧
+          (StepStmtStar P EvalCmd extendFactory (.stmts (rest ++ ss₂) ρ_mid) (.terminal ρ') ∨
+           ∃ lbl, StepStmtStar P EvalCmd extendFactory
+             (.stmts (rest ++ ss₂) ρ_mid) (.exiting lbl ρ')) := by
+      match h with
+      | .inl hterm =>
+        cases hterm with
+        | step _ _ _ hstep hrest => cases hstep with
+          | step_stmts_cons =>
+            have ⟨ρ_mid, h_s, h_tail⟩ := seq_reaches_terminal P EvalCmd extendFactory hrest
+            exact .inr ⟨ρ_mid, h_s, .inl h_tail⟩
+      | .inr ⟨lbl, hexit⟩ =>
+        cases hexit with
+        | step _ _ _ hstep hrest => cases hstep with
+          | step_stmts_cons =>
+            match seq_reaches_exiting P EvalCmd extendFactory hrest with
+            | .inl h_s => exact .inl ⟨lbl, h_s⟩
+            | .inr ⟨ρ_mid, h_s, h_tail⟩ => exact .inr ⟨ρ_mid, h_s, .inr ⟨lbl, h_tail⟩⟩
+    match hhead with
+    | .inl ⟨lbl, h_s⟩ =>
+      exact .inl ⟨lbl, stmts_cons_exiting P EvalCmd extendFactory s rest ρ ρ' lbl h_s⟩
+    | .inr ⟨ρ_mid, h_s, h_tail⟩ =>
+      have hcons := stmts_cons_step P EvalCmd extendFactory s rest ρ ρ_mid h_s
+      match ih ρ_mid h_tail with
+      | .inl ⟨lbl, hexit_rest⟩ =>
+        exact .inl ⟨lbl, ReflTrans_Transitive _ _ _ _ hcons hexit_rest⟩
+      | .inr ⟨ρ₁, hterm_rest, hfin⟩ =>
+        exact .inr ⟨ρ₁, ReflTrans_Transitive _ _ _ _ hcons hterm_rest, hfin⟩
 
 /-- Try every non-recursive `StepStmt` constructor, using `‹_›` (term-level
     assumption) to fill arguments so that no hypothesis names are needed. -/
@@ -2950,15 +3041,21 @@ theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasFvars 
 The `Config.varsDefined` / `Config.varDefined` predicates are defined in
 `StmtSemantics`; here we prove they are preserved across steps and runs. -/
 
-/-- A single step preserves `Config.varsDefined`. -/
-theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
-    (hstep : StepStmt P (EvalCmd P) extendFactory c c')
+/-- A single step preserves `Config.varsDefined`: every tracked variable stays
+    defined, given a command evaluator that never undefines a store slot
+    (`h_cmd`). -/
+theorem Config.varsDefined_step_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {c c' : Config P CmdT}
+    (hstep : StepStmt P evalCmd extendFactory c c')
     (h : Config.varsDefined Q c) :
     Config.varsDefined Q c' := by
   induction hstep with
   | step_cmd hcmd =>
-    exact fun y hQ => EvalCmd_preserves_isSome hcmd (h y hQ)
+    exact fun y hQ => h_cmd hcmd (h y hQ)
   | step_block => exact ⟨h, h⟩
   | step_ite_true _ _ => exact ⟨h, h⟩
   | step_ite_false _ _ => exact ⟨h, h⟩
@@ -2988,15 +3085,94 @@ theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     intro y hQ
     simp only [projectStore]; rw [if_pos (h.1 y hQ)]; exact h.2 y hQ
 
-/-- Multi-step preservation of `Config.varsDefined`. -/
-theorem Config.varsDefined_star {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
-    (hstar : StepStmtStar P (EvalCmd P) extendFactory c c')
+/-! ### `Config.storeWellDefined` preservation
+
+Store value-hood is factory-relative, so a run preserves it given that the factory stays
+constant (`Config.noFuncDecl`) and that the command evaluator preserves it. -/
+
+/-- A single step preserves `Config.storeWellDefined`, given that the command
+    evaluator does (`h_cmd`) and that the configuration declares no function. -/
+private theorem Config.storeWellDefined_step_of {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT} {extendFactory : ExtendFactory P}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {fl : Bool},
+      evalCmd f σ c σ' fl → WellFormedStore σ f → WellFormedStore σ' f)
+    {c c' : Config P CmdT}
+    (hstep : StepStmt P evalCmd extendFactory c c')
+    (hnofd : Config.noFuncDecl c)
+    (h : Config.storeWellDefined c) :
+    Config.storeWellDefined c' := by
+  induction hstep with
+  | step_cmd hcmd => exact h_cmd hcmd h
+  | step_funcDecl => exact absurd hnofd (by simp [Config.noFuncDecl, Stmt.noFuncDecl])
+  | step_seq_inner _ ih =>
+    simp only [Config.noFuncDecl] at hnofd
+    exact ih hnofd.1 h
+  | step_block_body _ ih =>
+    simp only [Config.noFuncDecl] at hnofd
+    exact ⟨h.1, ih hnofd.1 h.2⟩
+  -- The three exit rules project the store and restore `f_parent`; `noFuncDecl`
+  -- says `f_parent` is already the inner factory, so `h.2` applies directly.
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    simp only [Config.noFuncDecl, Config.getEnv] at hnofd
+    intro x w hx
+    simp only [projectStore] at hx
+    split at hx
+    · rw [hnofd.2]; exact h.2 x w hx
+    · exact absurd hx (by simp)
+  -- Everything else either leaves the operative store alone or pushes it into a
+  -- block frame, which repeats it as the saved parent store.
+  | _ => first | exact h | exact ⟨h, h⟩
+
+/-- Multi-step form of `Config.storeWellDefined_step_of`.  `Config.noFuncDecl` is
+carried along the chain by `step_preserves_factory_noFuncDecl`. -/
+theorem Config.storeWellDefined_star_of {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT} {extendFactory : ExtendFactory P}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {fl : Bool},
+      evalCmd f σ c σ' fl → WellFormedStore σ f → WellFormedStore σ' f)
+    {c c' : Config P CmdT}
+    (hstar : StepStmtStar P evalCmd extendFactory c c')
+    (hnofd : Config.noFuncDecl c)
+    (h : Config.storeWellDefined c) :
+    Config.storeWellDefined c' := by
+  induction hstar with
+  | refl => exact h
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_factory_noFuncDecl P evalCmd extendFactory _ _ hstep hnofd).2
+      (Config.storeWellDefined_step_of h_cmd hstep hnofd h)
+
+/-- Multi-step preservation of `Config.varsDefined`, over any command evaluator
+that never undefines a store slot. -/
+theorem Config.varsDefined_star_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {c c' : Config P CmdT}
+    (hstar : StepStmtStar P evalCmd extendFactory c c')
     (h : Config.varsDefined Q c) :
     Config.varsDefined Q c' := by
   induction hstar with
   | refl => exact h
-  | step _ _ _ hstep _ ih => exact ih (Config.varsDefined_step (extendFactory := extendFactory) hstep h)
+  | step _ _ _ hstep _ ih =>
+    exact ih (Config.varsDefined_step_of (extendFactory := extendFactory) h_cmd hstep h)
+
+/-- Single-step preservation of `Config.varsDefined` at `EvalCmd`. -/
+theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
+    (hstep : StepStmt P (EvalCmd P) extendFactory c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' :=
+  Config.varsDefined_step_of (extendFactory := extendFactory)
+    (fun hc hs => EvalCmd_preserves_isSome hc hs) hstep h
+
+/-- Multi-step preservation of `Config.varsDefined` at `EvalCmd`. -/
+theorem Config.varsDefined_star {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
+    (hstar : StepStmtStar P (EvalCmd P) extendFactory c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' :=
+  Config.varsDefined_star_of (extendFactory := extendFactory)
+    (fun hc hs => EvalCmd_preserves_isSome hc hs) hstar h
 
 /-- The gen guard `y`, defined in the start store, stays defined after running a
 statement list to terminal.  A corollary of `Config.varsDefined_star` (at the
@@ -3012,52 +3188,143 @@ theorem stmts_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
 
 
-/-! ## Per-variable undefinedness through a run (dual of `Config.varsDefined`) -/
+/-! ## Per-variable undefinedness through a run, scope-aware
 
-/-- Single-step preservation of `Config.varsUndefinedThroughout`. -/
-theorem Config.varsUndefinedThroughout_step {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
+The `excludeScoped := true` variant, which allows a block-local `init` of a tracked
+variable because leaving the block projects that binding away again. -/
+
+/-- Single-step preservation of `Config.varsUndefined true`, over any command
+    evaluator that only defines the slots the command itself declares.
+
+    Every case is immediate: entering a scope saves the parent store (which
+    carries the invariant), leaving one projects through it, and no case needs
+    to know anything about what happened inside. -/
+private theorem Config.varsUndefinedScoped_step_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
-    {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
-    (h_step : StepStmt P (EvalCmd P) extendFactory cfg cfg')
-    (h_inv : Config.varsUndefinedThroughout (P := P) Q cfg) :
-    Config.varsUndefinedThroughout (P := P) Q cfg' := by
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_step : StepStmt P evalCmd extendFactory cfg cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
   induction h_step with
   | step_cmd h_eval =>
     intro y hQ
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
-    refine evalCmd_preserves_none_of_not_def h_eval h_none ?_
+    exact h_cmd h_eval h_none (by simpa [Stmt.definedVars] using h_ndef)
+  | step_loop_enter _ _ | step_loop_nondet_enter =>
+    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ s hs => ?_⟩
+    rcases List.mem_cons.mp hs with h_eq | h_in
+    · subst h_eq; simp [Stmt.definedVars]
+    · exact absurd h_in (List.not_mem_nil)
+  | step_stmts_cons =>
+    refine ⟨fun y hQ => ⟨(h_inv y hQ).1, (h_inv y hQ).2 _ List.mem_cons_self⟩,
+            fun y hQ s' hs' => (h_inv y hQ).2 s' (List.mem_cons_of_mem _ hs')⟩
+  | step_seq_inner _ ih => exact ⟨ih h_inv.1, h_inv.2⟩
+  | step_seq_done => exact fun y hQ => ⟨h_inv.1 y hQ, h_inv.2 y hQ⟩
+  | step_seq_exit => exact h_inv.1
+  | step_block_body _ _ => exact h_inv
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    intro y hQ
+    show projectStore _ _ y = none
+    unfold projectStore; rw [if_neg]; rw [h_inv y hQ]; simp
+  | _ => exact fun y hQ => (h_inv y hQ).1
+
+/-- Trace lift of `Config.varsUndefinedScoped_step_of` (the `excludeScoped = true`
+    form of `Config.varsUndefined`). -/
+theorem Config.varsUndefinedScoped_star_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_run : StepStmtStar P evalCmd extendFactory cfg cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih => exact ih (Config.varsUndefinedScoped_step_of h_cmd h_step h_inv)
+
+/-- **Leaving a block drops exactly the names its body scopes**, so the store handed back
+    is determined by the body alone. -/
+theorem projectStore_eq_dropVars {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {ss : List (Stmt P CmdT)} {ρ₀ ρ : Env P}
+    (hdefs : ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ₀.store x = none)
+    (hrun : StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ) ∨
+      ∃ lbl, StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.exiting lbl ρ)) :
+    projectStore ρ₀.store ρ.store
+      = dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ.store := by
+  funext n
+  by_cases hmem : n ∈ Block.definedVars (P := P) (C := CmdT) ss true
+  · simp [projectStore, dropVars, hmem, hdefs n hmem]
+  · cases hq : ρ₀.store n with
+    | some v => simp [projectStore, dropVars, hmem, hq]
+    | none =>
+      -- Undefined in the parent and not scoped by the body, so still undefined at `ρ`.
+      have hstart : Config.varsUndefined true (P := P) (· = n) (.stmts ss ρ₀) := by
+        rintro y rfl
+        exact ⟨hq, all_not_mem_definedVars_of_block hmem⟩
+      have hnone : ρ.store n = none := by
+        match hrun with
+        | .inl hterm => exact Config.varsUndefinedScoped_star_of h_cmd hterm hstart n rfl
+        | .inr ⟨_, hexit⟩ => exact Config.varsUndefinedScoped_star_of h_cmd hexit hstart n rfl
+      simp [projectStore, dropVars, hmem, hq, hnone]
+
+/-! ## Per-variable undefinedness through a run (dual of `Config.varsDefined`) -/
+
+/-- Single-step preservation of `Config.varsUndefined false`, over any command
+    evaluator that only ever defines the slots the command itself declares.
+
+    Every case but `step_cmd` is structural — a matter of how `Stmt.definedVars`
+    and `projectStore` decompose — so the evaluator enters only through `h_cmd`.
+    `Config.varsUndefinedThroughout_step` instantiates this at `EvalCmd`;
+    `Core.core_varsUndefinedThroughout_star` does so at `EvalCommand`. -/
+theorem Config.varsUndefinedThroughout_step_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c false → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_step : StepStmt P evalCmd extendFactory cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    intro y hQ
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    refine h_cmd h_eval h_none ?_
     simpa [Stmt.definedVars] using h_ndef
   | step_block =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     exact ⟨h_none, all_not_mem_definedVars_of_block (by simpa [Stmt.definedVars] using h_ndef)⟩
-  | step_ite_true _ _ =>
+  | step_ite_true _ _ | step_ite_nondet_true =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
     simp only [Bool.false_eq_true, if_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inl hc)))⟩
-  | step_ite_false _ _ =>
+  | step_ite_false _ _ | step_ite_nondet_false =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
     simp only [Bool.false_eq_true, if_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inr hc)))⟩
-  | step_ite_nondet_true =>
-    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
-    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
-    rw [Stmt.definedVars] at h_ndef
-    simp only [Bool.false_eq_true, if_false] at h_ndef
-    exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inl hc)))⟩
-  | step_ite_nondet_false =>
-    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
-    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
-    rw [Stmt.definedVars] at h_ndef
-    simp only [Bool.false_eq_true, if_false] at h_ndef
-    exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inr hc)))⟩
-  | step_loop_enter _ _ =>
+  | step_loop_enter _ _ | step_loop_nondet_enter =>
     refine ⟨⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩, fun y hQ s hs => ?_⟩
     · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
       rw [Stmt.definedVars] at h_ndef
@@ -3069,30 +3336,6 @@ theorem Config.varsUndefinedThroughout_step {P : PureExpr}
       rcases List.mem_cons.mp hs with h_eq | h_in
       · subst h_eq; rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]; exact h_ndef
       · exact absurd h_in (List.not_mem_nil)
-  | step_loop_exit _ _ =>
-    intro y hQ; exact (h_inv y hQ).1
-  | step_loop_nondet_enter =>
-    refine ⟨⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩, fun y hQ s hs => ?_⟩
-    · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
-      rw [Stmt.definedVars] at h_ndef
-      simp only [Bool.false_eq_true, if_false] at h_ndef
-      exact ⟨h_none, all_not_mem_definedVars_of_block h_ndef⟩
-    · obtain ⟨_, h_ndef⟩ := h_inv y hQ
-      rw [Stmt.definedVars] at h_ndef
-      simp only [Bool.false_eq_true, if_false] at h_ndef
-      rcases List.mem_cons.mp hs with h_eq | h_in
-      · subst h_eq; rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]; exact h_ndef
-      · exact absurd h_in (List.not_mem_nil)
-  | step_loop_nondet_exit =>
-    intro y hQ; exact (h_inv y hQ).1
-  | step_exit =>
-    intro y hQ; exact (h_inv y hQ).1
-  | step_funcDecl =>
-    intro y hQ; exact (h_inv y hQ).1
-  | step_typeDecl =>
-    intro y hQ; exact (h_inv y hQ).1
-  | step_stmts_nil =>
-    intro y hQ; exact (h_inv y hQ).1
   | step_stmts_cons =>
     refine ⟨fun y hQ => ?_, fun y hQ s' hs' => ?_⟩
     · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
@@ -3110,34 +3353,55 @@ theorem Config.varsUndefinedThroughout_step {P : PureExpr}
   | step_block_body _ ih =>
     obtain ⟨h_parent, h_inner_inv⟩ := h_inv
     exact ⟨h_parent, ih h_inner_inv⟩
-  | step_block_done =>
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
     obtain ⟨h_parent, _⟩ := h_inv
     intro y hQ
     show projectStore _ _ y = none
     unfold projectStore; rw [if_neg]; rw [h_parent y hQ]; simp
-  | step_block_exit_match _ =>
-    obtain ⟨h_parent, _⟩ := h_inv
-    intro y hQ
-    show projectStore _ _ y = none
-    unfold projectStore; rw [if_neg]; rw [h_parent y hQ]; simp
-  | step_block_exit_mismatch _ =>
-    obtain ⟨h_parent, _⟩ := h_inv
-    intro y hQ
-    show projectStore _ _ y = none
-    unfold projectStore; rw [if_neg]; rw [h_parent y hQ]; simp
+  | _ => intro y hQ; exact (h_inv y hQ).1
 
-/-- Trace lift: `Config.varsUndefinedThroughout` is preserved along a multi-step run. -/
+/-- Trace lift of `Config.varsUndefinedThroughout_step_of` (the
+    `excludeScoped = false` form of `Config.varsUndefined`). -/
+theorem Config.varsUndefinedThroughout_star_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c false → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_run : StepStmtStar P evalCmd extendFactory cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih =>
+    exact ih (Config.varsUndefinedThroughout_step_of h_cmd h_step h_inv)
+
+/-- Single-step preservation of `Config.varsUndefined false` at `EvalCmd`. -/
+theorem Config.varsUndefinedThroughout_step {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
+    (h_step : StepStmt P (EvalCmd P) extendFactory cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' :=
+  Config.varsUndefinedThroughout_step_of
+    (fun he hn hnd => evalCmd_preserves_none_of_not_def he hn hnd) h_step h_inv
+
+/-- Trace lift: `Config.varsUndefined false` is preserved along a multi-step run. -/
 theorem Config.varsUndefinedThroughout_star {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
     (h_run : StepStmtStar P (EvalCmd P) extendFactory cfg cfg')
-    (h_inv : Config.varsUndefinedThroughout (P := P) Q cfg) :
-    Config.varsUndefinedThroughout (P := P) Q cfg' := by
-  induction h_run with
-  | refl => exact h_inv
-  | step _ _ _ h_step _ ih => exact ih (Config.varsUndefinedThroughout_step h_step h_inv)
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' :=
+  Config.varsUndefinedThroughout_star_of
+    (fun he hn hnd => evalCmd_preserves_none_of_not_def he hn hnd) h_run h_inv
 
 /-- A terminating `.stmts bss` run preserves `store y = none` for any
 `y ∉ Block.definedVars bss`.  Thin single-key corollary of the `Q`-keyed
