@@ -416,8 +416,18 @@ def liftInternalFuncDecls (p : Program) : CoreTransformM (Bool × Program) := do
     only how functions are represented (local → closed top-level), not the
     program's meaning. -/
 def liftInternalFuncDeclsPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "liftInternalFuncDecls" fun prog =>
-    liftInternalFuncDecls prog
+  -- A CFG body cannot contain a `funcDecl`, so nothing has to be required of
+  -- procedure bodies. Captured variables are snapshotted with `init`s, which
+  -- declare rather than reassign, and the substitution puts a variable or an
+  -- operator application in place, never an abstraction.
+  modelPreservingPipelinePhase "liftInternalFuncDecls"
+    (establishes := factSet![.noInternalFuncDecl])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPolymorphicProcedures])
+    fun prog =>
+      liftInternalFuncDecls prog
 
 end Core
 

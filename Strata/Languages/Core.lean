@@ -179,31 +179,37 @@ def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :
 /-! ### Standard Core verification pipeline phases
 
 The verification pipeline performs a sequence of program-to-program transforms
-(`transformPipelinePhases`). `coreAbstractedPhases` exposes only the
+(`transformPipelinePhases`), the first of which decides what the rest assume
+about the program they are handed. `coreAbstractedPhases` exposes only the
 abstracted (model-validation) view used downstream.
 -/
 
 /-- The program-to-program transform phases applied before type checking.
-    Inlining/loop-elim/call-elim/filtering, in the order required by the
-    verification pipeline. See the underlying definition for ordering rationale. -/
+    Shape assertion, inlining/loop-elim/call-elim/filtering, in the order
+    required by the verification pipeline. `prefixPhases` are inserted after
+    the shape assertion. See the underlying definition for ordering
+    rationale. -/
 def Core.transformPipelinePhases (procs : Option (List String) := none)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.PipelinePhase :=
-  _root_.Core.transformPipelinePhases procs
+  _root_.Core.transformPipelinePhases procs prefixPhases
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim. -/
 def Core.corePipelinePhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.PipelinePhase :=
-  _root_.Core.corePipelinePhases procs options moreFns
+  _root_.Core.corePipelinePhases procs options moreFns prefixPhases
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def Core.coreAbstractedPhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.AbstractedPhase :=
-  _root_.Core.coreAbstractedPhases procs options moreFns
+  _root_.Core.coreAbstractedPhases procs options moreFns prefixPhases
 
 /-- Front-end phase: any translation from a source language to Core may
     introduce over-approximations. Until front-ends can validate models or

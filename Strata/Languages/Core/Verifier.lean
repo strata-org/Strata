@@ -791,7 +791,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- dropped silently. Check the input structurally and fail loudly instead.
   match program.decls.findSome? (fun d => match d with
     | .proc proc _ => (match proc.body with
-        | .structured ss => if Imperative.Block.simpleShape ss then none else some proc.header.name.1
+        | .structured ss => if Imperative.Block.noNondetGuards ss then none else some proc.header.name.1
         | .cfg _ => none)
     | _ => none) with
   | some name => throw (Message.fromString
@@ -1531,8 +1531,14 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
-    closest phase to SMT. -/
-def transformPipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
+    closest phase to SMT.
+
+    The procedure filter comes first, then `assertNoCFGBodiesPhase` — which
+    turns a throw from inside `runProgram` into a rejection naming the fact —
+    and caller-supplied `prefixPhases` follow it, so a phase inserted there may
+    rely on `noCFGBodies` like the statement-level transforms do. -/
+def transformPipelinePhases (procs : Option (List String) := none)
+    (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
@@ -1544,7 +1550,13 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  filterPhases ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
+  -- The filter runs before the entry assertion, because `noCFGBodies` is a
+  -- property of every declaration: a caller naming structured procedures to
+  -- verify would otherwise be refused for a CFG body it asked to drop.
+  -- Caller-supplied phases follow the assertion, so that one requiring
+  -- structured bodies -- procedure inlining, for instance -- composes.
+  filterPhases ++ assertNoCFGBodiesPhase :: prefixPhases
+    ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
       termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -1554,7 +1566,15 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
 def typeCheckPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (factory : @Lambda.Factory CoreLParams := Core.Factory) : PipelinePhase :=
+  -- Type checking annotates expressions and leaves every statement where it
+  -- is, so it carries all facts across. Annotation does not change which
+  -- constructor an expression is, so a redex-free program stays redex-free.
   modelPreservingPipelinePhase "typeCheck"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
     fun prog => do
       match Core.typeCheck options prog factory with
       | .ok prog' => return (true, prog')
@@ -1563,12 +1583,20 @@ def typeCheckPipelinePhase
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
 
-    Assumes `nondetElimPipelinePhase` has already run: `Core.Statement.eval`
-    rejects any surviving nondeterministic `if *` / `while *` guard. -/
+    Requires `noNondetGuards`, which `nondetElimPipelinePhase` establishes:
+    `Core.Statement.eval` rejects a surviving nondeterministic guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  -- `noBetaRedexes` is the one fact this phase cannot claim: partial-evaluation
+  -- inlining introduces redexes.
   modelPreservingPipelinePhase "symbolicEval"
+    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
+    (establishes := factSet![.noCalls, .noLoopInvariants, .noLoopMeasures,
+                           .staticSingleAssignment])
+    (preserves := factSet![.noCFGBodies, .noLoops, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
@@ -1584,18 +1612,46 @@ def symbolicEvalPipelinePhase
     though solver outcomes may differ on individual obligations). -/
 def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
   -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
   -- fallback here is only a totality safety net.
   let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
-  transformPipelinePhases procs
+  transformPipelinePhases procs prefixPhases
     ++ [monomorphizeProceduresPipelinePhase,
         typeCheckPipelinePhase options typeCheckFactory,
         monomorphizeFunctionsPipelinePhase,
         nondetElimPipelinePhase,
         symbolicEvalPipelinePhase options moreFns]
     ++ [betaReducePipelinePhase] ++ csePhases
+
+/-- What the back end needs of the program the pipeline hands it, as opposed to
+    what one phase asks of another. A phase list that does not deliver these is
+    rejected the same way as one whose phases do not fit.
+
+    A CFG body is worse than an unsupported statement: obligation extraction
+    returns *no obligations at all* for one, so every assertion in it would go
+    unchecked and unreported.
+
+    `noLoopInvariants` and `noLoopMeasures` are absent because `noLoops` covers
+    them; they are required by `LoopElim`, which is where they matter. -/
+def backEndRequiredFacts : ProgramFactSet :=
+  factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
+           .noBetaRedexes, .noPrecondsFromFuncs, .noInternalFuncDecl,
+           .noPolymorphicProcedures, .noPolymorphicFunctions]
+
+/-- The Core pipeline, checked as it is assembled: any caller-supplied
+    `prefixPhases` and the phase list built from `options` and `procs`,
+    validated against the phases' contracts. A phase list that does not
+    compose never becomes a pipeline, so callers cannot run one. -/
+def coreValidatedPipeline (prefixPhases : List PipelinePhase := [])
+    (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except String (ValidatedPipeline ProgramFactSet.empty) :=
+  ValidatedPipeline.ofListDelivering "the verification back end" backEndRequiredFacts
+    (corePipelinePhases procs options moreFns prefixPhases)
 
 /-- The abstracted phases derived from the Core pipeline phases.
 
@@ -1605,8 +1661,9 @@ def corePipelinePhases (procs : Option (List String) := none)
     options describes phases that did not actually run. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
-  (corePipelinePhases procs options moreFns).map (·.phase)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List PipelinePhase := []) : List AbstractedPhase :=
+  (corePipelinePhases procs options moreFns prefixPhases).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -2080,10 +2137,15 @@ def verify (program : Program)
   let profile := pctx.outputMode.showsProfiling
 
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
-  let phases := pipelinePhases.map (·.phase)
+  -- The transforms that run and the phases that adjust solver results both come
+  -- from the validated pipeline, so the two cannot drift apart.
+  let pipeline ← match coreValidatedPipeline prefixPhases proceduresToVerify options moreFns with
+    | .ok vp => pure vp.phases
+    | .error err =>
+      throw (Message.fromFormat f!"❌ Cannot assemble a verification pipeline.\n{err}")
+  let phases := pipeline.map (·.phase)
   let (oblProgram, factory, pipelineStats) ← pctx.withPhase "programTransformations" do
-    let (prog, state) ← runTransforms program pipelinePhases
+    let (prog, state) ← runTransforms program pipeline
       (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)

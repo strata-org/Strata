@@ -172,8 +172,11 @@ procedure bare()
       toString (translate noInvPgm)
 
 /-- A nondeterministic loop (`while *`) that carries a `decreases` measure is
-    ill-formed — it iterates an arbitrary number of times and so cannot be shown
-    to terminate by a measure — so the pass rejects it with a diagnostic. -/
+    decorated like any other: the measure VCs never mention the guard, and a
+    measure that decreases across the body and stays non-negative bounds the
+    number of iterations however the guard decides to continue. The only
+    guard-dependent statement, the negated-guard assume after the loop, is
+    absent because there is no guard to negate. -/
 def nondetWithMeasurePgm :=
 #strata
 program Core;
@@ -190,11 +193,70 @@ procedure nondetMeasure(n : int)
 };
 #end
 
-/-- info: rejected: nondeterministic loop (`while *`) cannot carry a `decreases` measure: it iterates an arbitrary number of times and so cannot be shown to terminate -/
+/--
+info: program Core;
+
+procedure nondetMeasure (n : int)
+{
+  var i : int;
+  i := 0;
+  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  while *
+  {
+    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    var $__loop_measure_loop_0 : int;
+    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
+    assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
+  }
+  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+};
+-/
 #guard_msgs in
-#eval match run (translate nondetWithMeasurePgm) insertLoopInvariantAsserts with
-  | .ok _ => IO.println "unexpected: the transform did not reject the loop"
-  | .error e => IO.println s!"rejected: {e}"
+#eval IO.println (toString (runInsert (translate nondetWithMeasurePgm)).2.eraseTypes)
+
+/-- The same loop with no invariant clause: the measure is the only thing to
+    materialize, so the entry assert/assume pair, the mid-body assume and the
+    maintain assert are all absent. Nothing follows the loop either — the exit
+    assume of a measure-only loop is the negated guard, and a `while *` has no
+    guard to negate. -/
+def nondetMeasureOnlyPgm :=
+#strata
+program Core;
+procedure nondetMeasureOnly(n : int)
+{
+  var i : int;
+  i := 0;
+  while *
+    decreases int.sub(n, i)
+  {
+    i := int.add(i, 1);
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure nondetMeasureOnly (n : int)
+{
+  var i : int;
+  i := 0;
+  while *
+  {
+    var $__loop_measure_loop_0 : int;
+    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInsert (translate nondetMeasureOnlyPgm)).2.eraseTypes)
 
 /-- A nondeterministic loop with an invariant but no measure is decorated
     normally. Because there is no guard, the exit assumption is just the

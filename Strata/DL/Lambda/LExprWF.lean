@@ -324,6 +324,19 @@ def maxBvarMultiplicity {T : LExprParamsT} : LExpr T → Nat
   | .eq _ a b => Nat.max (maxBvarMultiplicity a) (maxBvarMultiplicity b)
   | _ => 0
 
+/-- Is no subterm of `e` an `.app` of an `.abs`? The shape the SMT encoder
+    rejects, and what `betaReduceRedexes` contracts. Checked syntactically
+    rather than by running the reduction, whose fuel bound would let a
+    residual redex pass. -/
+@[expose] def noBetaRedex {T : LExprParamsT} : LExpr T → Bool
+  | .app _ (.abs ..) _ => false
+  | .app _ fn arg => noBetaRedex fn && noBetaRedex arg
+  | .abs _ _ _ body => noBetaRedex body
+  | .quant _ _ _ _ trigger body => noBetaRedex trigger && noBetaRedex body
+  | .ite _ c t e => noBetaRedex c && noBetaRedex t && noBetaRedex e
+  | .eq _ e₁ e₂ => noBetaRedex e₁ && noBetaRedex e₂
+  | .const .. | .op .. | .bvar .. | .fvar .. => true
+
 /--
 β-reduce directly-applied lambda redexes `(.app (.abs body) arg)` everywhere in
 `e`, substituting the argument for the bound variable (via `betaReduce`, which

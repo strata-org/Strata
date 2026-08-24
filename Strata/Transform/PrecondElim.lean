@@ -400,8 +400,14 @@ where
             | .structured ss =>
               let (c, body') ← transformStmts ss
               pure (c, { proc with body := .structured body' })
-            -- CFG bodies pass through untouched.
-            | .cfg _ => pure (false, proc)
+            -- A CFG body cannot be walked here, and passing it through would
+            -- lose the well-formedness and precondition asserts it owes: the
+            -- obligations would go missing rather than fail. `noCFGBodies` is
+            -- declared as a requirement; this is where it is enforced.
+            | .cfg _ =>
+              throw (Strata.Message.fromFormat
+                f!"❌ PrecondElim: procedure {proc.header.name.name} has a CFG body; \
+                   preconditions can only be eliminated from structured bodies.")
           setFactory F -- reset factory
           let procDecl := Decl.proc proc' md
           match mkContractWFProc F proc md with
@@ -484,8 +490,23 @@ end PrecondElim
     partial-function preconditions. Model-preserving because it only adds
     new assertions and procedures without abstracting existing ones. -/
 def precondElimPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "precondElim" fun prog => do
-    PrecondElim.precondElim prog
+  -- A CFG-bodied procedure is passed through untouched, so its
+  -- well-formedness checks would go missing rather than fail; declaring the
+  -- requirement turns that into a rejected pipeline.
+  -- A `funcDecl` statement becomes a block declaring the function's
+  -- parameters, which declares rather than reassigns, so
+  -- `staticSingleAssignment` survives. `noBetaRedexes` is not claimed: a
+  -- precondition is instantiated by substituting the call's arguments into it,
+  -- and a function-typed parameter applied to an abstraction argument would
+  -- leave a redex behind.
+  modelPreservingPipelinePhase "precondElim"
+    (requires := factSet![.noCFGBodies])
+    (establishes := factSet![.noPrecondsFromFuncs])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicFunctions])
+    fun prog => do
+      PrecondElim.precondElim prog
 
 end Core
 

@@ -349,8 +349,18 @@ def procedureInliningPipelinePhase
     (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
-  modelPreservingPipelinePhase "inlineProcedures" fun prog =>
-    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+  -- `runProgramUntil` throws on a CFG body, and a callee with a CFG body
+  -- cannot be inlined into structured code. Which calls are inlined is up to
+  -- `doInline`, so the phase cannot claim `noCalls`, and the callee's `init`s
+  -- are why it cannot claim `staticSingleAssignment` either.
+  modelPreservingPipelinePhase "inlineProcedures"
+    (requires := factSet![.noCFGBodies])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog =>
+      runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
 
 end Core
 

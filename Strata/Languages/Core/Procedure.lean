@@ -340,6 +340,18 @@ def Procedure.Body.isStructured : Procedure.Body → Bool
   | .structured _ => true
   | .cfg _ => false
 
+/-- The statements of a body. A CFG block's commands come back `.cmd`-wrapped,
+    which is what lets a property of statements — `noCalls`, say — see a CFG
+    body too, while a property of a statement form that cannot occur in a
+    block, such as a `loop`, holds there vacuously. -/
+@[expose] def Procedure.Body.statements : Procedure.Body → Statements
+  | .structured ss => ss
+  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
+
+@[expose] def Procedure.Body.allStatements (f : Statements → Bool)
+    (body : Procedure.Body) : Bool :=
+  f body.statements
+
 /-- Does this body have a CFG implementation? -/
 @[simp]
 def Procedure.Body.isCfg : Procedure.Body → Bool

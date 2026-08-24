@@ -76,9 +76,16 @@ end IrrelevantAxioms
     If the user of this pass removes further axioms because e.g., it is in the
     'aggressive' mode, it will have to validate the model by itself. -/
 def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
-  modelPreservingPipelinePhase "removeIrrelevantAxioms" fun prog => do
-    let pruned ← IrrelevantAxioms.run prog functions
-    return (true, pruned)
+  -- No statement is read or written, so every fact survives.
+  modelPreservingPipelinePhase "removeIrrelevantAxioms"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog => do
+      let pruned ← IrrelevantAxioms.run prog functions
+      return (true, pruned)
 
 end -- public section
 end Core

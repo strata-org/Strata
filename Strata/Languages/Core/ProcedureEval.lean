@@ -118,7 +118,8 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
   | .cfg _ =>
     -- CFG bodies are not supported here.
-    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported yet") }
+    -- The caller names the procedure, so this says only what went wrong.
+    let errEnv := { E with error := some (.Misc "CFG bodies not supported yet") }
     (errEnv, {})
 
 ---------------------------------------------------------------------
