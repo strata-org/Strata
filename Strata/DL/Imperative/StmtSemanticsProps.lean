@@ -2901,7 +2901,6 @@ reaches `.exiting label`, decompose into a `Sum`: either this iteration's body
 exits (caseA), or this iteration terminates and the next loop iteration exits
 (caseB, with strictly smaller derivation length). -/
 theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-   
     (extendFactory : ExtendFactory P)
     (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
