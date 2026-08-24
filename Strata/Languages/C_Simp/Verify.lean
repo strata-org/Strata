@@ -190,11 +190,12 @@ def C_Simp.typeCheck (p : StrataDDM.Program) (options : VerifyOptions := .defaul
 
 def C_Simp.verify (p : StrataDDM.Program)
     (options : VerifyOptions := .default)
-    (tempDir : Option String := .none):
+    (tempDir : Option String := .none)
+    (mkDischarge : _root_.Core.MkDischargeFn := _root_.Core.mkDischargeFn):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (_root_.Core.verify (to_core program) tempDir .none options)
+    (_root_.Core.verify (to_core program) tempDir .none options (mkDischarge := mkDischarge))
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

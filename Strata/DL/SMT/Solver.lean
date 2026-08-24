@@ -33,6 +33,7 @@ inductive Decision where
   | sat
   | unsat
   | unknown
+  | timeout
 deriving DecidableEq, Repr
 
 /--
