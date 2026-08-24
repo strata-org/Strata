@@ -1141,7 +1141,11 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}
-  verifyOptions : Core.VerifyOptions := .default
+  /-- Laurel turns array theory ON by default, unlike `Core.VerifyOptions.default`.
+      Laurel's collections are the reason: `Set τ` encodes as `Array τ Bool` and `Map` as
+      `Array`, which makes membership and update native array operations instead of
+      quantified axioms, and makes set equality extensional. -/
+  verifyOptions : Core.VerifyOptions := { Core.VerifyOptions.default with useArrayTheory := true }
 
 instance : Inhabited LaurelVerifyOptions where
   default := {}

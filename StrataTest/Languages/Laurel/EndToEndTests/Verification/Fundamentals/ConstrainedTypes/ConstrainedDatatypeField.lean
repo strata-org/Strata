@@ -70,15 +70,12 @@ procedure wrappedFieldValueIsModelled(m: Map int32 string)
 };
 
 // And a false assertion about the map entry fails (not vacuously passed),
-// mirroring `falseAssertionIsCaught` above. (With an SMT string-theory map
-// value the solver's counterexample is inconclusive, so this reports "could
-// not be proved" rather than "does not hold" — as in the sibling
-// `ConstrainedField.lean` negative tests.)
+// mirroring `falseAssertionIsCaught` above.
 procedure falseWrappedAssertionIsCaught(m: Map int32 string)
   opaque
 {
   var b: Boxed := MkBoxed(update(m, 5, "hi"));
   assert select(Boxed..m(b), 5) == "bye"
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

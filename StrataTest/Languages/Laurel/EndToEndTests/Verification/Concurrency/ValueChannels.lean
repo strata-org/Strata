@@ -129,10 +129,10 @@ the body must be correct for every `y`. -/
 program Laurel;
 coroutine echoNonneg() yields (x: int) resumes (y: int)
   guarantees x >= 0
-//           ^^^^^^ error: coroutine exit: guarantee could not be proved
+//           ^^^^^^ error: coroutine exit: guarantee does not hold
   modifies *
 {
   x := y; yield
-//        ^^^^^ error: coroutine yield: guarantee could not be proved
+//        ^^^^^ error: coroutine yield: guarantee does not hold
 };
 #end

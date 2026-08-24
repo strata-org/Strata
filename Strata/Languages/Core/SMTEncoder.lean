@@ -204,6 +204,12 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
+  | .tcons "Set" [elem] =>
+    -- A set is its characteristic function: `Set τ` is the SMT array `Array τ Bool`.
+    if useArrayTheory then
+      .constr "Array" [lMonoTyToTermType useArrayTheory elem, .bool]
+    else
+      .constr "Set" [lMonoTyToTermType useArrayTheory elem]
   | .tcons name args =>
     if name == "Map" && useArrayTheory then
       .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
@@ -322,6 +328,17 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
                else SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
+  | .tcons "Set" [elem] =>
+    -- Under array theory the sort is native, so it needs no `declare-sort` (and gains
+    -- extensionality: two sets with equal membership are the same term). Without array
+    -- theory it stays an uninterpreted sort constrained by the `Set.*` axioms.
+    if ctx.useArrayTheory then
+      let (elem', ctx) ← LMonoTy.toSMTType elem ctx
+      .ok (.constr "Array" [elem', .bool], ctx)
+    else
+      let ctx := SMT.Context.addType "Set" [elem] ctx
+      let (elem', ctx) ← LMonoTy.toSMTType elem ctx
+      .ok (.constr "Set" [elem'], ctx)
   | .tcons id args =>
     let ctx := SMT.Context.addType id args ctx
     let (args', ctx) ← LMonoTys.toSMTType args ctx
@@ -591,6 +608,18 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
       | none => do
       if (baseName == "select" || baseName == "update") && ctx.useArrayTheory then
         .ok (.app (if baseName == "select" then Op.select else Op.store), smt_outty, ctx, pending)
+      -- The three membership-level set operations are exactly array operations on the
+      -- characteristic function, so they go straight to the theory instead of being declared
+      -- and axiomatized. `insert`/`remove` take two arguments where `store` takes three, so
+      -- the stored boolean is appended here.
+      --
+      -- The axioms for `Set.empty` and the binary operations reference `Set.contains`, which
+      -- also routes here, so they remain consistent with the native encoding.
+      else if baseName == "Set.contains" && ctx.useArrayTheory then
+        .ok (.app Op.select, smt_outty, ctx, pending)
+      else if (baseName == "Set.insert" || baseName == "Set.remove") && ctx.useArrayTheory then
+        let stored := Term.bool (baseName == "Set.insert")
+        .ok ((fun args ty => .app Op.store (args ++ [stored]) ty), smt_outty, ctx, pending)
       else
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)

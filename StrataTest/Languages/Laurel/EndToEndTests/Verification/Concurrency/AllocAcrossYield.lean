@@ -60,6 +60,6 @@ coroutine privateAllocLost()
   a#x := 5;
   yield;
   assert a#x == 5
-//^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

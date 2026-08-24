@@ -770,7 +770,7 @@ composite Cell {
 }
 var g: int := 0
 procedure breaksGuardedFrame(c: Cell, d: Cell)
-//        ^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+//        ^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
   requires g == 0
   opaque
   modifies *

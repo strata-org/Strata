@@ -38,7 +38,7 @@ composite Cell { var x: int }
 coroutine breaker(s: Cell)
   requires s#x == 0
   guarantees old(s#x) <= s#x
-//           ^^^^^^^^^^^^^^^ error: coroutine exit: guarantee could not be proved
+//           ^^^^^^^^^^^^^^^ error: coroutine exit: guarantee does not hold
   modifies *
 {
   s#x := s#x + 1;
@@ -58,7 +58,7 @@ composite Cell { var x: int }
 coroutine breaker2(s: Cell)
   requires s#x == 0
   guarantees old(s#x) <= s#x
-//           ^^^^^^^^^^^^^^^ error: coroutine exit: guarantee could not be proved
+//           ^^^^^^^^^^^^^^^ error: coroutine exit: guarantee does not hold
   modifies *
 {
   s#x := s#x + 1;

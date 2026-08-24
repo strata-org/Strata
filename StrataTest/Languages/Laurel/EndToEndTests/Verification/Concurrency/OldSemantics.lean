@@ -86,7 +86,7 @@ coroutine guaranteeOldLocalizedTwoYields(s: Cell)
 {
   s#x := 7;
   yield;
-//^^^^^ error: coroutine yield: guarantee could not be proved
+//^^^^^ error: coroutine yield: guarantee does not hold
   yield
 };
 #end
@@ -119,7 +119,7 @@ coroutine guaranteeOldLocalizedThirdYield(s: Cell)
   yield;
   s#x := 7;
   yield;
-//^^^^^ error: coroutine yield: guarantee could not be proved
+//^^^^^ error: coroutine yield: guarantee does not hold
   yield
 };
 #end

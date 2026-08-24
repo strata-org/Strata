@@ -71,6 +71,6 @@ coroutine dekkerReliesBad(s: Shared, me: int)
 {
   yield;
   assert (me == 0) ==> !s#flag1
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

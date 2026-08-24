@@ -72,7 +72,7 @@ procedure p() returns (r: int)
   d#legs := 4;
   var a: Animal := d;
   assert a#legs == 5
-//^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

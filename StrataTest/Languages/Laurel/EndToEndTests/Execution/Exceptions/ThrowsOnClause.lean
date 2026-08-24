@@ -220,7 +220,7 @@ composite Cell {
 }
 composite Err {}
 procedure missedCase(c: Cell, logCell: Cell, fail: bool)
-//        ^^^^^^^^^^ error: throwsOn cases cover every throwing path could not be proved
+//        ^^^^^^^^^^ error: throwsOn cases cover every throwing path does not hold
   returns (r: int)
   throws (e: Err)
   opaque
@@ -686,7 +686,7 @@ composite Cell {
 }
 composite Err {}
 procedure doWorkBad(c: Cell, logCell: Cell)
-//        ^^^^^^^^^ error: throwsOn modifies clause could not be proved
+//        ^^^^^^^^^ error: throwsOn modifies clause does not hold
   returns (r: int)
   throws (e: Err)
   opaque
@@ -744,7 +744,7 @@ composite Cell {
 }
 composite Err {}
 procedure fieldGranularThrowFrameBad(logCell: Cell)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: throwsOn modifies clause could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: throwsOn modifies clause does not hold
   returns (r: int)
   throws (e: Err)
   opaque
@@ -1071,7 +1071,7 @@ composite Cell {
   value: int
 }
 procedure loadCrossed(c: Cell, parseLog: Cell, ioLog: Cell, mode: int)
-//        ^^^^^^^^^^^ error: throwsOn modifies clause could not be proved
+//        ^^^^^^^^^^^ error: throwsOn modifies clause does not hold
   returns (r: int)
   throws (e: Exception)
   opaque

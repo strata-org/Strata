@@ -43,7 +43,7 @@ procedure setCountInvalid(c: Counter)
   modifies c
 {
   c#count := -1
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // SOUNDNESS REGRESSION (Fabio Madge, PR #1364):
@@ -107,7 +107,7 @@ procedure readAndReturn(c: Counter) returns (r: nat)
 // check as an `ensures` whose source is the constrained output's type, so that is where
 // the failure is reported (measured: 58-61 on the signature line).
 procedure readAndReturnOutOfRange(c: Counter) returns (r: nat)
-//                                                        ^^^ error: postcondition could not be proved
+//                                                        ^^^ error: postcondition does not hold
   opaque
 {
   return c#count - 1

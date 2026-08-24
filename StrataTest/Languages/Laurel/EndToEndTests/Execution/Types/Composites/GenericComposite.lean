@@ -31,12 +31,8 @@ What monomorphization has to get right, and what each case pins:
 * a false twin per shape — so a clone's field read is not left unconstrained, which would
   let a false assertion pass vacuously.
 
-The false twins fail via a solver `unknown` ("could not be proved") rather than a
-countermodel. That is PRE-EXISTING behavior of heap field reads and not specific to
-generics: the same program over a non-generic `composite Cell { var v: int }` reports the
-same outcome on mainline. The quantified `readField` obligations are what the solver cannot
-close. Deductive mode still treats it as a failure, which is what these twins pin — a
-vacuous pass would show up as no diagnostic at all.
+The false twins pin that a clone's field read is constrained: a false assertion fails rather
+than passing vacuously (a vacuous pass would show up as no diagnostic at all).
 -/
 
 -- Single instantiation: write then read a `T`-typed field at `int`.
@@ -67,7 +63,7 @@ procedure oneInstantiationFalse()
   var b: Box<int> := new Box<int>;
   b#val := 42;
   assert b#val == 43
-//^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -107,7 +103,7 @@ procedure twoInstantiationsFalse()
   bb#val := true;
   assert bi#val == 7;
   assert bb#val == false
-//^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

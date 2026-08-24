@@ -157,11 +157,10 @@ procedure builtFromEmpty(a: int, b: int, c: int)
 /-! Must-fail twin: an element never inserted is absent from the nested construction, so the
     chaining above is not simply making every membership question provable.
 
-    Note the verdict is "could not be proved", not "does not hold": the solver declines to
-    prove membership rather than producing a counterexample. Refuting it would mean chaining
-    the empty-set axiom together with both insert axioms in the right order, which the
-    triggers do not drive. Positive membership chains (above); negative membership through a
-    nested construction does not. -/
+    The solver returns unknown rather than a counterexample. The set is a `store` chain over
+    `Set.empty`, and `Set.empty` is not routed to an array primitive — it keeps its axiom — so
+    refuting membership of an untouched index needs that axiom instantiated, which does not
+    happen here. -/
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -205,7 +204,7 @@ procedure insertDoesNotAddOthers(s: Set<int>, a: int, b: int)
   opaque
 {
   assert setContains(setInsert(s, a), b)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Union is not intersection: membership in the union does not imply membership in
@@ -216,5 +215,83 @@ procedure unionIsNotIntersect(s: Set<int>, t: Set<int>, a: int)
 {
   assert setContains(s, a)
 //^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! ## Extensionality
+
+`Set τ` encodes as the SMT array `Array τ Bool` — the set's characteristic function — so
+set equality *is* array equality, which the array theory makes extensional. Two sets with
+the same members are therefore the same value, and none of these needs an axiom of its own:
+they follow from `store`/`select` plus extensionality.
+
+Without the array encoding, `==` on two separately-built sets is unconstrained and every
+assertion below would be unprovable. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+// Insertion order does not matter.
+procedure insertOrderIrrelevant(s: Set<int>, a: int, b: int)
+  opaque
+{
+  assert setInsert(setInsert(s, a), b) == setInsert(setInsert(s, b), a)
+};
+
+// Inserting twice is inserting once.
+procedure insertIdempotent(s: Set<int>, a: int)
+  opaque
+{
+  assert setInsert(setInsert(s, a), a) == setInsert(s, a)
+};
+
+// Extensionality separates as well as identifies: inserting an absent element yields a
+// different set, so the equalities above cannot hold vacuously.
+procedure insertChangesSet(s: Set<int>, a: int)
+  requires !setContains(s, a)
+  opaque
+{
+  assert setInsert(s, a) != s
+};
+
+// Removing what was just inserted leaves the set without it, however it got there.
+procedure removeAfterInsert(s: Set<int>, a: int)
+  opaque
+{
+  assert setRemove(setInsert(s, a), a) == setRemove(s, a)
+};
+
+// Removing twice is removing once.
+procedure removeIdempotent(s: Set<int>, a: int)
+  opaque
+{
+  assert setRemove(setRemove(s, a), a) == setRemove(s, a)
+};
+
+// Removing an element that is already absent changes nothing.
+procedure removeNoOp(s: Set<int>, a: int)
+  requires !setContains(s, a)
+  opaque
+{
+  assert setRemove(s, a) == s
+};
+
+// Union is idempotent, commutative, and absorbs a subset — all equalities between
+// separately-constructed sets.
+procedure unionLaws(s: Set<int>, t: Set<int>)
+  opaque
+{
+  assert setUnion(s, s) == s;
+  assert setUnion(s, t) == setUnion(t, s);
+  assert setUnion(s, setIntersect(s, t)) == s
+};
+
+// The element type is encoded recursively, so `Set<Set<int>>` is
+// `Array (Array int Bool) Bool`: membership in the outer set compares inner sets by
+// array equality.
+procedure nestedSetInsert(s: Set<Set<int>>, inner: Set<int>, a: int)
+  opaque
+{
+  var withA: Set<int> := setInsert(inner, a);
+  assert setContains(setInsert(s, withA), withA)
 };
 #end

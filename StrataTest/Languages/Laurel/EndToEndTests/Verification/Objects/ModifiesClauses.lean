@@ -74,7 +74,7 @@ procedure modifyContainerWithoutPermission1(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission2(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
   opaque
   modifies d
 {
@@ -216,7 +216,7 @@ composite Account2 {
 }
 
 procedure overreachingDeposit(self: Account2, amount: int) returns (r: bool)
-//        ^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
+//        ^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
   opaque
   modifies self#balance
 {
@@ -445,7 +445,7 @@ composite Pair {
 }
 
 procedure overreachX(self: Pair)
-//        ^^^^^^^^^^ error: modifies clause could not be proved
+//        ^^^^^^^^^^ error: modifies clause does not hold
   opaque
   modifies self#x
 {

@@ -98,7 +98,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
     quiet verifier, default solver. Override by passing
     `(options := …)` to `testLaurelExecution`. -/
 def defaultLaurelTestOptions : LaurelVerifyOptions :=
-  { verifyOptions := .quiet }
+  { verifyOptions := { Core.VerifyOptions.quiet with useArrayTheory := true } }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
     Returns diagnostics as `Message`s so the caller can choose how to

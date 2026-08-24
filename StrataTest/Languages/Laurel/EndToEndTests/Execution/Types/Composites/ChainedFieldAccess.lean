@@ -147,7 +147,7 @@ procedure chainedReadUnconstrainedFails()
   var i: Inner := new Inner;
   o#inner := i;
   assert o#inner#count == 7
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Negative (frame soundness): two distinct outers whose inner fields MAY alias.
@@ -163,7 +163,7 @@ procedure chainedMayAliasFails()
   b#inner := i;
   a#inner#count := 5;
   assert b#inner#count == 0
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Negative (write isolation): a write through one chain must not be observable on
@@ -177,6 +177,6 @@ procedure chainedWriteIsolationFails()
   o#inner := i;
   o#inner#count := 7;
   assert d#count == 7
-//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

@@ -39,7 +39,7 @@ coroutine ticketLockGuaranteeBad(s: TLState, myTicket: int)
 {
   s#nowServing := s#nowServing + 1;
   yield
-//^^^^^ error: coroutine yield: guarantee could not be proved
+//^^^^^ error: coroutine yield: guarantee does not hold
 };
 #end
 

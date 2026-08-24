@@ -44,7 +44,7 @@ coroutine petersonGuaranteeBad(s: Shared, me: int)
 {
   if me == 0 then { s#flag1 := true } else { s#flag0 := true };
   yield
-//^^^^^ error: coroutine yield: guarantee could not be proved
+//^^^^^ error: coroutine yield: guarantee does not hold
 };
 #end
 
@@ -71,6 +71,6 @@ coroutine petersonReliesBad(s: Shared, me: int)
   if me == 0 then { s#turn := 1 } else { s#turn := 0 };
   yield;
   assert (me == 0) ==> s#turn == 1
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
