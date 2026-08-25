@@ -84,6 +84,9 @@ import Strata.Backends.CBMC
 import Strata.DL.SMT.Denote
 import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
+import Strata.DL.SMT.DenoteTyped
+import Strata.DL.SMT.DenoteTypedProps
+import Strata.DL.SMT.DenoteSemanticsEquiv
 
 /- Other -/
 import Strata.MetaVerifier
