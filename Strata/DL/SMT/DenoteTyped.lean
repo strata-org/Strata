@@ -45,6 +45,7 @@ module
 public import Strata.DL.SMT.Term
 import all Strata.DL.SMT.Term
 public import Strata.DL.SMT.SmtArray
+public import Strata.Util.HList
 import all Strata.Util.HList
 
 namespace Strata.SMT.DenoteTyped
