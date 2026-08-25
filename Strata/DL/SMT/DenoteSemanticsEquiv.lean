@@ -87,7 +87,11 @@ def DenoteTValType : TermType → Type
 /-- Logical relation between a `Term.denoteTyped` value and a `denoteTerm` value at each base sort.
     Bool is a bridge (`b = true ↔ P`); the other denotable base sorts are equality. -/
 def PrimValEquiv : (τ : TermType) → TermType.denoteTyped σ SmtArrayTheory τ → DenoteTValType τ → Prop
-  | .prim .bool,       b, P => (b = true ↔ P)
+  | .prim .bool,       b, P =>
+    -- This `Bool`↔`Prop` bridge is the semantic justification for the correctness of Strata-Boole's
+    -- verification-condition generation, where the verification conditions are denoted to `Prop`.
+    -- (See the Strata-Boole repository: https://github.com/strata-org/Strata-Boole)
+    (b = true ↔ P)
   | .prim .int,        i, j => i = j
   | .prim .string,     s, t => s = t
   | .prim (.bitvec _), x, y => x = y
