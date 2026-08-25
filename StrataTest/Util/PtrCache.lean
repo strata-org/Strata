@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Util.PtrCache
+meta import Strata.Util.PtrCacheProps
 
 /-! # `PtrCache` smoke test
 

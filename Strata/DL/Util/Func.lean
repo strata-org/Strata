@@ -60,6 +60,10 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   measure  : Option ExprT := .none -- Termination measure expression (from `decreases` clause)
   deriving DecidableEq
 
+/-- All expressions `f` carries: body, axioms, preconditions, and measure. -/
+@[expose] def Func.exprs (f : Func IdentT ExprT TyT MetadataT) : List ExprT :=
+  f.body.toList ++ f.axioms ++ f.preconditions.map (·.expr) ++ f.measure.toList
+
 def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] (f : Func IdentT ExprT TyT MetadataT) : Format :=
   let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
   let typeArgs : Format := if f.typeArgs.isEmpty

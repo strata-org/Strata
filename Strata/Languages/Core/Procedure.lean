@@ -187,8 +187,12 @@ structure Procedure.Header where
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
     These are the parameters for which `old x` snapshots are meaningful. -/
+@[expose] def getInoutParams (inputs outputs : @LMonoTySignature Unit) : @LMonoTySignature Unit :=
+  inputs.filter fun (id, _) => (ListMap.keys outputs).contains id
+
+/-- Parameters that appear in both `inputs` and `outputs` (in-out parameters). -/
 @[expose] def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
-  h.inputs.filter fun (id, _) => (ListMap.keys h.outputs).contains id
+  Core.getInoutParams h.inputs h.outputs
 
 /-- Output parameters that do NOT appear in `inputs` (output-only parameters). -/
 @[expose] def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
@@ -335,6 +339,18 @@ def Procedure.Body.isAbstract : Procedure.Body → Bool
 def Procedure.Body.isStructured : Procedure.Body → Bool
   | .structured _ => true
   | .cfg _ => false
+
+/-- The statements of a body. A CFG block's commands come back `.cmd`-wrapped,
+    which is what lets a property of statements — `noCalls`, say — see a CFG
+    body too, while a property of a statement form that cannot occur in a
+    block, such as a `loop`, holds there vacuously. -/
+@[expose] def Procedure.Body.statements : Procedure.Body → Statements
+  | .structured ss => ss
+  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
+
+@[expose] def Procedure.Body.allStatements (f : Statements → Bool)
+    (body : Procedure.Body) : Bool :=
+  f body.statements
 
 /-- Does this body have a CFG implementation? -/
 @[simp]

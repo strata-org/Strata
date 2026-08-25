@@ -467,6 +467,14 @@ private def typeDefinitionToOp : TypeDefinition → StrataDDM.Operation
     { ann := sr
       name := { dialect := "Laurel", name := "typeAliasCommand" }
       args := #[.op aliasOp] }
+  | .Opaque ot =>
+    let opaqueOp : StrataDDM.Operation :=
+      { ann := sr
+        name := { dialect := "Laurel", name := "opaqueType" }
+        args := #[ident ot.name.text, typeParamsToArg ot.typeArgs] }
+    { ann := sr
+      name := { dialect := "Laurel", name := "opaqueTypeCommand" }
+      args := #[.op opaqueOp] }
 
 private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
   { ann := sr
@@ -527,6 +535,8 @@ def formatProcedure (proc : Procedure) : Format := formatOp (procedureToOp proc)
 def formatCompositeType (ct : CompositeType) : Format := formatOp (compositeToOp ct)
 def formatConstrainedType (ct : ConstrainedType) : Format := formatOp (constrainedTypeToOp ct)
 def formatDatatypeDefinition (dt : DatatypeDefinition) : Format := formatOp (datatypeToOp dt)
+def formatOpaqueTypeDefinition (ot : OpaqueTypeDefinition) : Format :=
+  formatOp (typeDefinitionToOp (.Opaque ot))
 
 def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
@@ -535,6 +545,7 @@ def formatTypeDefinition : TypeDefinition → Format
   -- Emit via the op path (like the other type defs) so the target type uses the grammar's
   -- `typeAlias` arg slot — re-parseable — rather than `formatHighType`'s parenthesized form.
   | .Alias ta => formatOp (typeDefinitionToOp (.Alias ta))
+  | .Opaque ot => formatOpaqueTypeDefinition ot
 
 def formatVariable (v : Variable) : Format :=
   formatArg (stmtExprValToArg (.Var v))
@@ -559,6 +570,7 @@ instance : Std.ToFormat CompositeType where format := formatCompositeType
 instance : Std.ToFormat ConstrainedType where format := formatConstrainedType
 instance : Std.ToFormat DatatypeConstructor where format := formatDatatypeConstructor
 instance : Std.ToFormat DatatypeDefinition where format := formatDatatypeDefinition
+instance : Std.ToFormat OpaqueTypeDefinition where format := formatOpaqueTypeDefinition
 instance : Std.ToFormat Variable where format := formatVariable
 instance : Std.ToFormat VariableMd where format := formatVariableMd
 instance : Std.ToFormat Constant where format := formatConstant
@@ -587,6 +599,7 @@ deriving instance Repr for Strata.Laurel.CompositeType
 deriving instance Repr for Strata.Laurel.ConstrainedType
 deriving instance Repr for Strata.Laurel.DatatypeConstructor
 deriving instance Repr for Strata.Laurel.DatatypeDefinition
+deriving instance Repr for Strata.Laurel.OpaqueTypeDefinition
 deriving instance Repr for Strata.Laurel.Constant
 
 end

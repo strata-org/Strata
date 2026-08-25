@@ -4,16 +4,16 @@ procedure TestProc (x : int, out output : int)
 spec {
   ensures [testProc_result]: output == int.mul(x, 4);
   } {
-  Double$inlined: {
-    var Double_n_0 : int := x;
-    var Double_result_1 : int;
-    Double_result_1 := int.add(Double_n_0, Double_n_0);
-    output := Double_result_1;
+  $__inline1_Double$inlined: {
+    var $__inline1_n : int := x;
+    var $__inline1_result : int;
+    $__inline1_result := int.add($__inline1_n, $__inline1_n);
+    output := $__inline1_result;
   }
-  Double$inlined: {
-    var Double_n_3 : int := output;
-    var Double_result_4 : int;
-    Double_result_4 := int.add(Double_n_3, Double_n_3);
-    output := Double_result_4;
+  $__inline2_Double$inlined: {
+    var $__inline2_n : int := output;
+    var $__inline2_result : int;
+    $__inline2_result := int.add($__inline2_n, $__inline2_n);
+    output := $__inline2_result;
   }
 };

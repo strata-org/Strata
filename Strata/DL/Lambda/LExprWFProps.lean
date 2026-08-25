@@ -909,52 +909,78 @@ constant-lambda redex erases its argument's calls
 theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT} (fuel : Nat) :
     ∀ e : LExpr T, getOps e ⊆ getOps (betaReduceRedexesFuel true fuel e) := by
   induction fuel with
-  | zero => intro e; simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+  | zero =>
+    intro e
+    simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?, Option.getD_none]
+    exact List.Subset.refl _
   | succ fuel ih =>
+    simp only [betaReduceRedexesFuel] at ih
     intro e
     cases e with
-    | const m c => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
-    | op m o ty => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
-    | bvar m i => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
-    | fvar m x ty => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+    | const m c
+    | op m o ty
+    | bvar m i
+    | fvar m x ty =>
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?, Option.getD_none]
+      exact List.Subset.refl _
     | abs m n t body =>
-      simp only [betaReduceRedexesFuel, getOps]
-      exact ih body
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
+      cases hbv : betaReduceRedexesFuel? true fuel body
+      · simp only [Option.map_none, Option.getD_none]
+        exact List.Subset.refl _
+      · have hb := ih body
+        rw [hbv] at hb
+        simpa only [Option.map_some, Option.getD_some, getOps] using hb
     | quant m qk n t tr body =>
-      simp only [betaReduceRedexesFuel, getOps]
-      exact List.append_subset_append (ih tr) (ih body)
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
+      split
+      · exact List.Subset.refl _
+      · simp only [Option.getD_some, getOps]
+        exact List.append_subset_append (ih tr) (ih body)
     | ite m c t f =>
-      simp only [betaReduceRedexesFuel, getOps]
-      exact List.append_subset_append
-        (List.append_subset_append (ih c) (ih t)) (ih f)
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
+      split
+      · exact List.Subset.refl _
+      · simp only [Option.getD_some, getOps]
+        exact List.append_subset_append
+          (List.append_subset_append (ih c) (ih t)) (ih f)
     | eq m a b =>
-      simp only [betaReduceRedexesFuel, getOps]
-      exact List.append_subset_append (ih a) (ih b)
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
+      split
+      · exact List.Subset.refl _
+      · simp only [Option.getD_some, getOps]
+        exact List.append_subset_append (ih a) (ih b)
     | app m fn arg =>
-      simp only [betaReduceRedexesFuel]
+      simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
       split
       · rename_i mAbs n t body hfn
         have hfnbody : getOps fn ⊆ getOps body := by
           have hf := ih fn; rw [hfn] at hf; simpa only [getOps] using hf
         split
-        · simp only [getOps]
-          exact List.append_subset_append hfnbody (ih arg)
+        · split
+          · exact List.Subset.refl _
+          · simp only [Option.getD_some, hfn, getOps]
+            exact List.append_subset_append hfnbody (ih arg)
         · rename_i hcond
           have hbv : bvarUsed 0 body = true := by
             cases hb : bvarUsed 0 body with
             | true => rfl
             | false => rw [hb] at hcond; simp at hcond
-          simp only [getOps]
+          simp only [Option.getD_some, getOps]
           refine List.Subset.trans ?_
-            (ih (betaReduce (betaReduceRedexesFuel true fuel arg) body))
+            (ih (betaReduce ((betaReduceRedexesFuel? true fuel arg).getD arg) body))
           intro x hx
           rcases List.mem_append.mp hx with h | h
           · exact List.Subset.trans hfnbody
-              (getOps_body_subset_betaReduce (betaReduceRedexesFuel true fuel arg) body) h
+              (getOps_body_subset_betaReduce
+                ((betaReduceRedexesFuel? true fuel arg).getD arg) body) h
           · exact List.Subset.trans (ih arg)
-              (getOps_arg_subset_betaReduce (betaReduceRedexesFuel true fuel arg) body hbv) h
-      · simp only [getOps]
-        exact List.append_subset_append (ih fn) (ih arg)
+              (getOps_arg_subset_betaReduce
+                ((betaReduceRedexesFuel? true fuel arg).getD arg) body hbv) h
+      · split
+        · exact List.Subset.refl _
+        · simp only [Option.getD_some, getOps]
+          exact List.append_subset_append (ih fn) (ih arg)
 
 /-- Whole-function call-preservation for `betaReduceRedexesPreservingArgs`: it
 never drops an operator occurrence (call head) of its input, so every call in

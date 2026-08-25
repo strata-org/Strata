@@ -578,8 +578,12 @@ def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → 
     (ss : Statements) : M Statements :=
   ss.mapM (Statement.mapExprsM f)
 
-/-- Collect all user-facing expressions from a statement. -/
-def Statement.collectExprs :
+/-- Collect all user-facing expressions from a statement. With
+    `visitFuncDecl`, the expressions of the functions it declares are collected
+    too; without it, a `funcDecl` contributes nothing, which is what a caller
+    rewriting expressions in place needs, since a local function's body mentions
+    its formals. -/
+def Statement.collectExprs (visitFuncDecl : Bool) :
     Statement → List Expression.Expr
   | .cmd (.cmd (.assert _ e _)) => [e]
   | .cmd (.cmd (.assume _ e _)) => [e]
@@ -589,29 +593,106 @@ def Statement.collectExprs :
   | .cmd (.call _ args _) => args.filterMap fun
       | .inArg e => some e
       | _ => none
-  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .block _ ss _ => ss.flatMap (Statement.collectExprs visitFuncDecl)
   | .ite (.det c) tss ess _ =>
-    [c] ++ tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
+    [c] ++ tss.flatMap (Statement.collectExprs visitFuncDecl) ++
+    ess.flatMap (Statement.collectExprs visitFuncDecl)
   | .ite .nondet tss ess _ =>
-    tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
+    tss.flatMap (Statement.collectExprs visitFuncDecl) ++
+    ess.flatMap (Statement.collectExprs visitFuncDecl)
   | .loop (.det g) measure inv body _ =>
     [g] ++ measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
   | .loop .nondet measure inv body _ =>
     measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
+  | .funcDecl d _ => if visitFuncDecl then d.exprs else []
   | .typeDecl _ _ => []
 
 /-- Collect all user-facing expressions from a list of statements. -/
-def Statements.collectExprs
-    (ss : Statements) : List Expression.Expr :=
-  ss.flatMap Statement.collectExprs
+def Statements.collectExprs (ss : Statements)
+    (visitFuncDecl : Bool := false) : List Expression.Expr :=
+  ss.flatMap (Statement.collectExprs visitFuncDecl)
+
+---------------------------------------------------------------------
+
+/-! ## Statement shapes
+
+Predicates on a single statement's own form. Nesting is
+`Imperative.Block.allSubstmts`' business, so each of these is a match with no
+recursion of its own. The predicates that inspect only guards, invariants and
+measures are command-independent and live in `Imperative.Stmt`, which Core uses
+directly; what is left here is what genuinely mentions a Core command. -/
+
+/-- Not a procedure call. -/
+@[expose] def Statement.isNotCall (s : Statement) : Bool :=
+  match s with
+  | .cmd (.call ..) => false
+  | _ => true
+
+/-- Does `ss` make no procedure call, at any nesting depth? -/
+@[expose] def Statements.noCalls (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotCall ss
+
+/-- Not an overwrite: `init` introduces a variable, `set` re-assigns one.
+    `havoc` is a `set` to a nondeterministic value, so it is an overwrite
+    too; an `init` to a nondeterministic value is not. -/
+@[expose] def Statement.isNotReassignment (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.set ..)) => false
+  | _ => true
+
+/-- Does every variable in `ss` get its value once, at `init`? -/
+@[expose] def Statements.staticSingleAssignment (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotReassignment ss
+
+/-- Is this statement anything other than a function declaration? -/
+@[expose] def Statement.isNotFuncDecl (s : Statement) : Bool :=
+  match s with
+  | .funcDecl _ _ => false
+  | _ => true
+
+/-- Does `ss` declare no function inside a procedure body? -/
+@[expose] def Statements.noFuncDecls (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotFuncDecl ss
+
+/-- Is the function this statement declares, if any, monomorphic? -/
+@[expose] def Statement.funcDeclMonomorphic (s : Statement) : Bool :=
+  match s with
+  | .funcDecl d _ => d.typeArgs.isEmpty
+  | _ => true
+
+/-- Is every function declared anywhere in `ss` monomorphic? -/
+@[expose] def Statements.funcDeclsMonomorphic (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.funcDeclMonomorphic ss
+
+/-- Does the function this statement declares, if any, carry no precondition?
+    A precondition on a partial function is a proof obligation, and nothing
+    downstream of `PrecondElim` generates one. -/
+@[expose] def Statement.funcDeclNoPreconditions (s : Statement) : Bool :=
+  match s with
+  | .funcDecl d _ => d.preconditions.isEmpty
+  | _ => true
+
+/-- Does no function declared anywhere in `ss` carry a precondition? -/
+@[expose] def Statements.funcDeclsNoPreconditions (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.funcDeclNoPreconditions ss
+
+---------------------------------------------------------------------
+
+/-! ## Expressions of local functions
+
+`Statement.collectExprs` visits a `funcDecl`'s expressions only when asked, so a
+property of *every* expression in a program passes `visitFuncDecl := true`, while
+a caller rewriting expressions in place leaves them alone — a local function's
+body mentions its formals. -/
+
+/-- Every expression in `ss`, including those of the functions it declares. -/
+@[expose] def Statements.allExprs (ss : Statements) : List Expression.Expr :=
+  Statements.collectExprs ss (visitFuncDecl := true)
 
 ---------------------------------------------------------------------
 

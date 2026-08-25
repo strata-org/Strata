@@ -2141,9 +2141,31 @@ structure TypeAlias where
   target : HighTypeMd
   deriving Repr
 
+/-- An opaque type: a named type, optionally generic, whose *implementation is native*
+    rather than given in Laurel. Unlike a datatype it has no constructors, so a Laurel
+    program can pass values of it around, compare them, and store them, but cannot take
+    them apart — the only operations are the procedures declared over it (typically
+    `external` ones backed by Core primitives).
+
+    Lowered to a Core opaque type constructor (`Core.TypeDecl.con`), i.e. an SMT
+    `declare-sort`. Contrast a zero-constructor `DatatypeDefinition`, which cannot stay
+    opaque: Core's `LDatatype` requires a non-empty constructor list, so the schema pass
+    injects a synthetic unit constructor and the type collapses to a singleton. An opaque
+    type is the right spelling whenever every value must stay distinct.
+
+    Example: `opaque Set<T>;` — the element type is a real type parameter, but `Set` has
+    no Laurel-visible structure. -/
+structure OpaqueTypeDefinition where
+  name : Identifier
+  /-- Type parameters (`opaque Set<T>;`); empty for a monomorphic opaque type. Scoped over
+      nothing — an opaque type has no constructor arguments for them to appear in — but they
+      fix the type's *arity*, which Core's `declare-sort` and every use site must agree on. -/
+  typeArgs : List Identifier := []
+  deriving Repr
+
 /--
 A user-defined type, either a composite type, a constrained type, an algebraic datatype,
-or a type alias.
+an opaque (natively implemented) type, or a type alias.
 
 Algebriac datatypes can also be encoded uses composite and constrained types. Here are two examples:
 
@@ -2162,6 +2184,8 @@ inductive TypeDefinition where
   | Constrained (ty : ConstrainedType)
   /-- An algebriac datatype. -/
   | Datatype (ty : DatatypeDefinition)
+  /-- An opaque type with a native implementation (e.g. `opaque Set<T>;`). -/
+  | Opaque (ty : OpaqueTypeDefinition)
   /-- A type alias (e.g. `MyInt = int`). Eliminated before Core translation. -/
   | Alias (ty : TypeAlias)
   deriving Inhabited
@@ -2170,12 +2194,14 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Composite ty => ty.name
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
+  | .Opaque ty => ty.name
   | .Alias ty => ty.name
 
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `parentExprMap` with their direct
-    parent expressions. Datatypes contribute nothing — they're nominal and irreducible. -/
+    parent expressions. Datatypes and opaque types contribute nothing — they're nominal
+    and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
@@ -2184,7 +2210,7 @@ def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
     | .Composite c =>
       { ctx with
         parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
-    | .Datatype _ => ctx
+    | .Datatype _ | .Opaque _ => ctx
 
 structure Constant where
   name : Identifier

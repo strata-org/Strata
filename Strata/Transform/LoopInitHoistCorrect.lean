@@ -1857,7 +1857,7 @@ and a measure-free, invariant-free, `.det`-guard nested `.loop`.  It excludes a
 measured / invariant-bearing / `.nondet`-guard `.loop` and a `.funcDecl`.
 
 `Stmt.transportShape`/`Block.transportShape` (defined in `Strata.DL.Imperative.Stmt`,
-alongside `simpleShape`) are the Bool walkers that assert a body lies in this
+alongside `noNondetGuards`) are the Bool walkers that assert a body lies in this
 fragment.  Via `Stmt/Block.transportShape_of_arm_preconds` (proved upstream in
 `StmtProps`), `transportShape` FOLLOWS FROM the genuine `.loop` arm Bool
 preconditions ALONE (`containsNondetLoop = false`, `noFuncDecl = true`,
@@ -4043,77 +4043,88 @@ theorem Block.liftP_havocs_modVars_nil {P : PureExpr} [HasFvars P] (ss : List (S
   termination_by sizeOf ss
 end
 
-/-! ### `simpleShape` is preserved (same-name). -/
+/-! ### `noNondetGuards` is preserved (same-name). -/
 mutual
-theorem Stmt.liftP_res_simpleShape {P : PureExpr} (s : Stmt P (Cmd P)) :
-    Block.simpleShape (Stmt.liftInitsInLoopBody s).2 = Stmt.simpleShape s := by
+/-- Lifting a loop body's inits out of it neither introduces nor removes a
+    nondeterministic guard: the residual statement has one exactly when the
+    original did. Guards are copied verbatim, and the harvested inits become
+    commands, which carry no guard. -/
+theorem Stmt.liftP_res_noNondetGuards {P : PureExpr} (s : Stmt P (Cmd P)) :
+    Block.noNondetGuards (Stmt.liftInitsInLoopBody s).2 = Stmt.noNondetGuards s := by
   match s with
-  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape]
+  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards]
   | .block lbl bss md =>
-      simp only [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape, Bool.and_true]
-      exact Block.liftP_res_simpleShape bss
+      simp only [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
+      exact Block.liftP_res_noNondetGuards bss
   | .ite g tss ess md =>
       cases g <;>
-        simp [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape,
-          Block.liftP_res_simpleShape tss, Block.liftP_res_simpleShape ess]
-  | .loop g m inv body md => simp [Stmt.liftInitsInLoopBody, Block.simpleShape]
-  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape]
-  | .funcDecl d md => simp [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape]
-  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.simpleShape, Stmt.simpleShape]
+        simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards,
+          Block.liftP_res_noNondetGuards tss, Block.liftP_res_noNondetGuards ess]
+  | .loop g m inv body md => simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards]
+  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .funcDecl d md => simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.noNondetGuards, Stmt.noNondetGuards]
   termination_by sizeOf s
 
-theorem Block.liftP_res_simpleShape {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
-    Block.simpleShape (Block.liftInitsInLoopBody ss).2 = Block.simpleShape ss := by
+/-- Block-level counterpart: the residual block has a nondeterministic guard
+    exactly when the original block did. -/
+theorem Block.liftP_res_noNondetGuards {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+    Block.noNondetGuards (Block.liftInitsInLoopBody ss).2 = Block.noNondetGuards ss := by
   match ss with
-  | [] => simp [Block.liftInitsInLoopBody, Block.simpleShape]
+  | [] => simp [Block.liftInitsInLoopBody, Block.noNondetGuards]
   | s :: rest =>
-      rw [Block.liftInitsInLoopBody, Block.simpleShape_append,
-          Stmt.liftP_res_simpleShape s, Block.liftP_res_simpleShape rest, Block.simpleShape]
+      rw [Block.liftInitsInLoopBody, Block.noNondetGuards_append,
+          Stmt.liftP_res_noNondetGuards s, Block.liftP_res_noNondetGuards rest, Block.noNondetGuards]
   termination_by sizeOf ss
 end
 
 mutual
-theorem Stmt.hoistP_simpleShape {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.simpleShape s = true)
+/-- Hoisting the prefix inits of every loop in a statement free of
+    nondeterministic guards leaves it free of them: the prelude it emits is a
+    list of havoc commands, and every guard is carried over unchanged. -/
+theorem Stmt.hoistP_noNondetGuards {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noNondetGuards s = true)
     :
-    Block.simpleShape (Stmt.hoistLoopPrefixInits s) = true := by
+    Block.noNondetGuards (Stmt.hoistLoopPrefixInits s) = true := by
   match s with
-  | .cmd c => simp [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape]
+  | .cmd c => simp [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards]
   | .block lbl bss md =>
-      simp only [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape, Bool.and_true]
-      exact Block.hoistP_simpleShape bss (by simpa [Stmt.simpleShape] using h)
+      simp only [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
+      exact Block.hoistP_noNondetGuards bss (by simpa [Stmt.noNondetGuards] using h)
   | .ite g tss ess md =>
       cases g with
       | det e =>
-          simp only [Stmt.simpleShape, Bool.and_eq_true] at h
-          simp only [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape, Bool.and_true]
-          rw [Block.hoistP_simpleShape tss h.1, Block.hoistP_simpleShape ess h.2]; rfl
-      | nondet => exact absurd h (by simp [Stmt.simpleShape])
+          simp only [Stmt.noNondetGuards, Bool.and_eq_true] at h
+          simp only [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
+          rw [Block.hoistP_noNondetGuards tss h.1, Block.hoistP_noNondetGuards ess h.2]; rfl
+      | nondet => exact absurd h (by simp [Stmt.noNondetGuards])
   | .loop g m inv body md =>
       cases g with
-      | nondet => exact absurd h (by simp [Stmt.simpleShape])
+      | nondet => exact absurd h (by simp [Stmt.noNondetGuards])
       | det g' =>
-        have h_body : Block.simpleShape body = true := by
-          simpa [Stmt.simpleShape] using h
-        have h_hb : Block.simpleShape (Block.hoistLoopPrefixInits body) = true :=
-          Block.hoistP_simpleShape body h_body
-        simp only [Stmt.hoistLoopPrefixInits, Block.simpleShape_append]
-        rw [Block.simpleShape_map_cmd']
-        simp only [Block.simpleShape, Stmt.simpleShape, Bool.true_and, Bool.and_true]
-        rw [Block.liftP_res_simpleShape (Block.hoistLoopPrefixInits body)]; exact h_hb
-  | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape]
-  | .funcDecl d md => simp [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape]
-  | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.simpleShape, Stmt.simpleShape]
+        have h_body : Block.noNondetGuards body = true := by
+          simpa [Stmt.noNondetGuards] using h
+        have h_hb : Block.noNondetGuards (Block.hoistLoopPrefixInits body) = true :=
+          Block.hoistP_noNondetGuards body h_body
+        simp only [Stmt.hoistLoopPrefixInits, Block.noNondetGuards_append]
+        rw [Block.noNondetGuards_map_cmd']
+        simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.true_and, Bool.and_true]
+        rw [Block.liftP_res_noNondetGuards (Block.hoistLoopPrefixInits body)]; exact h_hb
+  | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .funcDecl d md => simp [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards]
+  | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.noNondetGuards, Stmt.noNondetGuards]
   termination_by sizeOf s
 
-theorem Block.hoistP_simpleShape {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h : Block.simpleShape
+/-- Block-level counterpart, and the form the pipeline uses: hoisting preserves
+    freedom from nondeterministic guards for a whole block. -/
+theorem Block.hoistP_noNondetGuards {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h : Block.noNondetGuards
     ss = true) :
-    Block.simpleShape (Block.hoistLoopPrefixInits ss) = true := by
+    Block.noNondetGuards (Block.hoistLoopPrefixInits ss) = true := by
   match ss with
-  | [] => simp [Block.hoistLoopPrefixInits, Block.simpleShape]
+  | [] => simp [Block.hoistLoopPrefixInits, Block.noNondetGuards]
   | s :: rest =>
-      simp only [Block.simpleShape, Bool.and_eq_true] at h
-      rw [Block.hoistLoopPrefixInits, Block.simpleShape_append,
-          Stmt.hoistP_simpleShape s h.1, Block.hoistP_simpleShape rest h.2]; rfl
+      simp only [Block.noNondetGuards, Bool.and_eq_true] at h
+      rw [Block.hoistLoopPrefixInits, Block.noNondetGuards_append,
+          Stmt.hoistP_noNondetGuards s h.1, Block.hoistP_noNondetGuards rest h.2]; rfl
   termination_by sizeOf ss
 end
 
@@ -5863,7 +5874,7 @@ open StructuredToUnstructuredCorrect (s2uKind)
 
 /-- `Block.hoistLoopPrefixInits` overapproximates its source up to `EnvStoreAgree`: for a
 block that is nondet-loop-free, func-decl-free, invariant/measure-free, has unique
-inits and covered exits, is simple-shaped, and whose `s2uKind` names are absent from
+inits and covered exits, has no nondeterministic guard, and whose `s2uKind` names are absent from
 its init/modified variables, every source run is matched by a run of the hoisted block
 ending in a store-agreeing, failure-matching, factory-preserving target state.  This is
 the middle per-pass instance the pipeline capstone composes. -/
@@ -5884,7 +5895,7 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
         ∧ Block.noMeasureLoops ss = true
         ∧ Block.uniqueInits ss
         ∧ Block.exitsCoveredByBlocks [] ss
-        ∧ Block.simpleShape ss = true
+        ∧ Block.noNondetGuards ss = true
         ∧ Block.userLabelsShapeNodup ss
         ∧ (∀ s : String, s2uKind s → HasIdent.ident (P := P) s ∉ Block.initVars ss))
       s2uKind s2uKind := by

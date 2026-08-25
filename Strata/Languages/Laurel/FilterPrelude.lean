@@ -171,6 +171,8 @@ private def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
       c.args.forM fun arg => collectHighTypeNames arg.type
   | .Alias ta =>
     collectHighTypeNames ta.target
+  -- Its own name is what a user program seeds the reachability search with.
+  | .Opaque _ => pure ()
 
 /-- Run a CollectM action and return the collected state. -/
 private def runCollect (action : CollectM Unit) : CollectState :=

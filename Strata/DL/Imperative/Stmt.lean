@@ -769,50 +769,51 @@ pattern the CFG cannot replicate. -/
 
 ---------------------------------------------------------------------
 
-/-! ### SimpleShape
+/-! ### NoNondetGuards
 
-Predicate stating that a statement or block has a "simple" shape suitable
-for the structured-to-CFG soundness proof under axiom-free assumptions:
-- no nondeterministic `.ite`
-- no nondeterministic `.loop` guards (only `.det _` loops are admitted)
-- `.loop` is permitted **provided its body is itself simple-shape**.
-  Auxiliary predicates `loopBodyNoInits`, `loopHasNoInvariants`, and
-  `noMeasureLoops` further restrict which loops are admissible for the
-  current proof scope (no body-local var inits, no labeled invariants,
-  no termination measure). Those predicates are defined below.
+Predicate stating that no `.ite` or `.loop` guard in a statement or block is
+`.nondet`, at any nesting depth. Two consumers need it: the
+structured-to-CFG soundness proof under axiom-free assumptions, and symbolic
+evaluation, which rejects a nondeterministic guard outright. Nondet
+elimination is what replaces such a guard with a fresh boolean and a
+deterministic branch.
 
-`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
-and `.typeDecl` are all allowed.
+Only guards are read, so the predicate is stated for any command type, and
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl` and
+`.typeDecl` are all admitted. The auxiliary predicates `loopBodyNoInits`,
+`loopHasNoInvariants` and `noMeasureLoops` defined below restrict loops
+further for the proof's scope: no body-local variable inits, no labeled
+invariants, no termination measure.
 -/
 
 mutual
-/-- Returns true if the statement satisfies the simple-shape restriction. -/
-@[expose] def Stmt.simpleShape (s : Stmt P C) : Bool :=
+/-- Returns true if no guard in `s` is nondeterministic, at any nesting depth. -/
+@[expose] def Stmt.noNondetGuards (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
-  | .block _ bss _ => Block.simpleShape bss
-  | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
+  | .block _ bss _ => Block.noNondetGuards bss
+  | .ite (.det _) tss ess _ => Block.noNondetGuards tss && Block.noNondetGuards ess
   | .ite .nondet _ _ _ => false
   | .loop guard _ _ bss _ =>
-    (match guard with | .det _ => true | .nondet => false) && Block.simpleShape bss
+    (match guard with | .det _ => true | .nondet => false) && Block.noNondetGuards bss
   | .exit _ _ => true
   | .funcDecl _ _ => true
   | .typeDecl _ _ => true
   termination_by (Stmt.sizeOf s)
 
-/-- Returns true if the block satisfies the simple-shape restriction. -/
-@[expose] def Block.simpleShape (ss : List (Stmt P C)) : Bool :=
+/-- Is every guard in `ss` deterministic, at any nesting depth? -/
+@[expose] def Block.noNondetGuards (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
-  | s :: srest => Stmt.simpleShape s && Block.simpleShape srest
+  | s :: srest => Stmt.noNondetGuards s && Block.noNondetGuards srest
   termination_by (Block.sizeOf ss)
 end
 
 /-!
-`transportShape` is a second shape walker, finer than `simpleShape`: it carves out
+`transportShape` is a second walker, finer than `noNondetGuards`: it carves out
 the fragment the loop-init hoist pass's body simulation can express (the same-name
 `StoreAgreement` body simulation in `Strata.Transform.LoopInitHoistCorrect`).
-Unlike `simpleShape`, which treats every `.cmd _` alike, `transportShape` inspects
+Unlike `noNondetGuards`, which treats every `.cmd _` alike, `transportShape` inspects
 the command — `init`/`set` are admitted with either a `.det` or `.nondet` rhs, and
 `.funcDecl` is rejected — and it admits a nested `.loop` only when it is
 measure-free, invariant-free, and `.det`-guarded (`.loop (.det _) none [] _`).
@@ -881,6 +882,56 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### AllSubstmts
+
+Lifts a predicate on a single statement to "holds of this statement and of
+every statement nested inside it", so a shape property that only inspects one
+statement's own form needs no traversal of its own.
+-/
+
+mutual
+/-- Does `f` hold of `s` and of every statement nested inside it? -/
+@[expose] def Stmt.allSubstmts (f : Stmt P C → Bool) (s : Stmt P C) : Bool :=
+  f s &&
+  match s with
+  | .cmd _ | .funcDecl _ _ | .typeDecl _ _ | .exit _ _ => true
+  | .block _ bss _ => Block.allSubstmts f bss
+  | .ite _ tss ess _ => Block.allSubstmts f tss && Block.allSubstmts f ess
+  | .loop _ _ _ bss _ => Block.allSubstmts f bss
+  termination_by (Stmt.sizeOf s)
+
+/-- Does `f` hold of every statement in `ss`, including nested ones? -/
+@[expose] def Block.allSubstmts (f : Stmt P C → Bool) (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.allSubstmts f s && Block.allSubstmts f srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
+/-! ### NoLoops
+
+Predicate stating that no `.loop` occurs anywhere in a statement (or block).
+Symbolic evaluation needs this: it rejects a `loop`, which is what loop
+elimination removes.
+-/
+
+@[expose] def Stmt.isNotLoop (s : Stmt P C) : Bool :=
+  match s with
+  | .loop _ _ _ _ _ => false
+  | _ => true
+
+/-- Does `s` contain no loop, at any nesting depth? -/
+@[expose] def Stmt.noLoops (s : Stmt P C) : Bool :=
+  Stmt.allSubstmts Stmt.isNotLoop s
+
+/-- Does `ss` contain no loop, at any nesting depth? -/
+@[expose] def Block.noLoops (ss : List (Stmt P C)) : Bool :=
+  Block.allSubstmts Stmt.isNotLoop ss
+
+---------------------------------------------------------------------
+
 /-! ### LoopHasNoInvariants
 
 Predicate stating that every `.loop _ _ is _ _` reachable inside a
@@ -891,7 +942,7 @@ at the loop entry block to empty.
 
 mutual
 /-- Returns true if every reachable loop has no invariants. -/
-@[expose] def Stmt.loopHasNoInvariants (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.loopHasNoInvariants (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.loopHasNoInvariants bss
@@ -904,7 +955,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Block-level lifting of `Stmt.loopHasNoInvariants`. -/
-@[expose] def Block.loopHasNoInvariants (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.loopHasNoInvariants (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.loopHasNoInvariants s && Block.loopHasNoInvariants srest
@@ -925,7 +976,7 @@ CFG layout.
 
 mutual
 /-- Returns true if every reachable loop has no termination measure. -/
-@[expose] def Stmt.noMeasureLoops (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.noMeasureLoops (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.noMeasureLoops bss
@@ -938,7 +989,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Block-level lifting of `Stmt.noMeasureLoops`. -/
-@[expose] def Block.noMeasureLoops (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.noMeasureLoops (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.noMeasureLoops s && Block.noMeasureLoops srest

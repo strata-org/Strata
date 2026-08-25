@@ -185,6 +185,12 @@ def LFuncDefined.eraseTypes (f : LFuncDefined T) : LFuncDefined T :=
     axioms := f.axioms.map LExpr.eraseTypes,
     preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
 
+/-- Every expression `f` carries: its body, its axioms, its preconditions and
+    its measure. The `LFunc` fields it reads are `Func`'s, so this is that
+    function's list. -/
+@[expose] def LFunc.exprs (f : LFunc T) : List (LExpr T.mono) :=
+  f.toFunc.exprs
+
 @[expose] def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy :=
   LFuncDefined.type f.toFunc
 

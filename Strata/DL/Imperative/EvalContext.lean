@@ -60,19 +60,20 @@ instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] :
   eq_of_beq h := (PathConditionEntry.beq_eq _ _).mp h
   rfl := (PathConditionEntry.beq_eq _ _).mpr rfl
 
-/-- Pointer-accelerated structural decidable equality on path-condition
-    entries: pointer identity short-circuits to `isTrue`; otherwise falls back
-    to the structural `DecidableEq` instance. -/
-def PathConditionEntry.fastDecEq {P : PureExpr}
-    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
-    (a b : PathConditionEntry P) : Decidable (a = b) :=
-  withPtrEqDecEq a b fun _ => inferInstance
-
-/-- Boolean form of `PathConditionEntry.fastDecEq`. -/
+/-- Structural equality on path-condition entries, using `ptrFastEq` per field
+    so shared fields settle by pointer identity. Per field rather than on the
+    entry, since entries are usually fresh wrappers around shared fields. -/
 def PathConditionEntry.fastEq {P : PureExpr}
     [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
     (a b : PathConditionEntry P) : Bool :=
-  @decide (a = b) (PathConditionEntry.fastDecEq a b)
+  match a, b with
+  | .assumption l1 e1, .assumption l2 e2 =>
+    ptrFastEq l1 l2 && ptrFastEq e1 e2
+  | .varDecl n1 t1 v1, .varDecl n2 t2 v2 =>
+    ptrFastEq n1 n2 && ptrFastEq t1 t2 && ptrFastEq v1 v2
+  | .distinct l1 es1, .distinct l2 es2 =>
+    ptrFastEq l1 l2 && ptrFastEq es1 es2
+  | _, _ => false
 
 @[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
 @[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)

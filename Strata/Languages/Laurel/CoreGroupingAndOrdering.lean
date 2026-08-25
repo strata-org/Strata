@@ -137,6 +137,10 @@ public inductive OrderedDecl where
   | procedure (procedure : Procedure)
   /-- A group of (possibly mutually recursive) datatypes. -/
   | datatypes (dts : List DatatypeDefinition)
+  /-- An opaque (natively implemented) type. Always emitted before everything else: it has
+      no constructor arguments, so it can neither depend on another declaration nor take
+      part in a cycle, while a datatype's field types may well refer to it. -/
+  | opaqueType (ot : OpaqueTypeDefinition)
   /-- A named constant. -/
   | constant (c : Constant)
 
@@ -162,6 +166,7 @@ def formatOrderedDecl : OrderedDecl → Format
   | .funcs funcs _ => Format.joinSep (funcs.map formatAsFunction) "\n\n"
   | .procedure proc => ToFormat.format proc
   | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
+  | .opaqueType ot => ToFormat.format ot
   | .constant c => ToFormat.format c
 
 instance : ToFormat OrderedDecl where
@@ -185,6 +190,7 @@ as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
 def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
+  let opaqueDecls := program.opaqueTypes.map OrderedDecl.opaqueType
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
@@ -195,7 +201,7 @@ def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreW
     let funcDecl := if funcs.isEmpty then [] else [OrderedDecl.funcs funcs isRecursive]
     let proofDecls := proofs.map OrderedDecl.procedure
     funcDecl ++ proofDecls
-  { decls := datatypeDecls ++ constantDecls ++ orderedDecls }
+  { decls := opaqueDecls ++ datatypeDecls ++ constantDecls ++ orderedDecls }
 where
   /-- Group datatypes from a UnorderedCoreWithLaurelTypes by SCC. -/
   groupDatatypesByScc' (program : UnorderedCoreWithLaurelTypes) : List (List DatatypeDefinition) :=

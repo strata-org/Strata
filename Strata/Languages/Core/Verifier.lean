@@ -22,6 +22,7 @@ import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
+public import Strata.Languages.Core.SMTEmitter
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
 public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
@@ -353,10 +354,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     else
       let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with base := { estate.base with
-          functions := estate.base.functions.insert uf uf.id
-          isFunUninterp := estate.base.isFunUninterp.insert uf false
-          usedNames := estate.base.usedNames.insert uf.id } }
+        { estate with base := seedManagedName estate.base uf }
   let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
   let (_axms, estate) ← ctx.axms.toArray.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
@@ -400,37 +398,18 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     prelude
 
   phase "writeSorts" do
-    let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
-    ctx.emitDatatypes
+    Core.SMT.writeSortsAndDatatypes ctx
   let managedNames := managedNameSet varDefinitions varDeclarations
 
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
   let preDeclaredNames := ctx.preDeclaredNames
 
-  let estate ← phase "writeUFs" do
-    let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
-      else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
-    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
-    pure estate
+  let (_, estate) ← phase "writeDeclarations" do
+    (Core.SMT.writeContextDeclarations ctx managedNames).run
+      (EncoderState.initWithNames preDeclaredNames)
 
-  let estate ← phase "writeFunctions" do
-    let estate := if managedNames.isEmpty then estate
-      else
-        let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
-        managedUfs.foldl (init := estate) fun estate uf =>
-          { estate with
-            functions := estate.functions.insert uf uf.id
-            isFunUninterp := estate.isFunUninterp.insert uf false
-            usedNames := estate.usedNames.insert uf.id }
-    let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => encodeFunctionDef fn) |>.run estate
-    pure estate
-
-  let (_axms, estate) ← phase "buildAxioms" do
-    ctx.axms.toArray.mapM (fun ax => encodeTerm ax) |>.run estate
-
-  phase "writeAxioms" do
-    for id in _axms do
-      Solver.assert id
+  let (_, estate) ← phase "writeAxioms" do
+    (Strata.SMT.Encoder.encodeAxioms ctx.axms.toArray).run estate
   -- Emit variable declarations as declare-fun
   phase "writeVarDecls" do
     for decl in varDeclarations do
@@ -454,40 +433,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (encodeTerm obligationTerm) |>.run estate
 
   let ids ← phase "writeObligation" do
-    let ids := estate.functions.toList.filterMap fun (uf, id) =>
-      if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
-
-    let bothChecks := satisfiabilityCheck && validityCheck
-
-    if bothChecks then
-      Solver.comment "Satisfiability"
-      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("sat-message", "Property can be satisfied"))
-      let obligationStr ← Solver.termToSMTString obligationId
-      let _ ← Solver.checkSatAssuming [obligationStr] ids
-
-      Solver.comment "Validity"
-      Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-        (message := ("unsat-message", "Property is always true"))
-      let negObligationStr := s!"(not {obligationStr})"
-      let _ ← Solver.checkSatAssuming [negObligationStr] ids
-    else
-      if satisfiabilityCheck then
-        Solver.comment "Satisfiability"
-        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-          (message := ("sat-message", "Property can be satisfied"))
-        Solver.assert obligationId
-        let _ ← Solver.checkSat ids
-      else if validityCheck then
-        Solver.comment "Validity"
-        Imperative.SMT.addLocationInfo (P := Core.Expression) (md := md)
-          (message := ("unsat-message", "Property is always true"))
-        Solver.assert (← encodeTerm (Factory.not obligationTerm) |>.run estate).1
-        let _ ← Solver.checkSat ids
-
-    let rawMsg := md.getPropertySummary.getD label
-    Solver.setInfoString "final-message" rawMsg
-    pure ids
+    Core.SMT.writeCheckSatBlock obligationId obligationTerm md satisfiabilityCheck validityCheck
+      label managedNames |>.run' estate
 
   return (ids, estate)
 
@@ -576,6 +523,7 @@ def dischargeObligation
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
   (termCache : Option (IO.Ref (Std.HashMap Term String)) := none)
+  (captured : Option Core.SMT.Emitter.CapturedFile := none)
   (pctx : PipelineContext)
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
@@ -586,12 +534,21 @@ def dischargeObligation
       baseFlags ++ #["--incremental"]
     else
       baseFlags
+  -- With a pre-assembled file (env-scoped capture), writing it is the
+  -- encoding; its `ids`/`estate` keep result parsing unchanged.
+  let encodeAct : SolverM (List String × EncoderState) :=
+    match captured with
+    | some cf => do
+      Core.SMT.Emitter.emitPrerendered cf.pieces
+      pure (cf.ids, cf.estate)
+    | none =>
+      Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
+        assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
+        (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
+        (pctx := pctx)
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
-    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
-      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
-      (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
-      (pctx := pctx))
+    encodeAct
     (typedVarToSMTFn ctx)
     vars
     options.solver
@@ -791,7 +748,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- dropped silently. Check the input structurally and fail loudly instead.
   match program.decls.findSome? (fun d => match d with
     | .proc proc _ => (match proc.body with
-        | .structured ss => if Imperative.Block.simpleShape ss then none else some proc.header.name.1
+        | .structured ss => if Imperative.Block.noNondetGuards ss then none else some proc.header.name.1
         | .cfg _ => none)
     | _ => none) with
   | some name => throw (Message.fromString
@@ -1531,8 +1488,14 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 
     `loopElimPipelinePhase` is placed last because loop elimination happens
     during evaluation (not as a program-to-program pass), making it the
-    closest phase to SMT. -/
-def transformPipelinePhases (procs : Option (List String) := none) : List PipelinePhase :=
+    closest phase to SMT.
+
+    The procedure filter comes first, then `assertNoCFGBodiesPhase` — which
+    turns a throw from inside `runProgram` into a rejection naming the fact —
+    and caller-supplied `prefixPhases` follow it, so a phase inserted there may
+    rely on `noCFGBodies` like the statement-level transforms do. -/
+def transformPipelinePhases (procs : Option (List String) := none)
+    (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let filterPhases := match procs with
     | some ps => [filterProceduresPipelinePhase ps]
     | none => []
@@ -1544,7 +1507,13 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  filterPhases ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
+  -- The filter runs before the entry assertion, because `noCFGBodies` is a
+  -- property of every declaration: a caller naming structured procedures to
+  -- verify would otherwise be refused for a CFG body it asked to drop.
+  -- Caller-supplied phases follow the assertion, so that one requiring
+  -- structured bodies -- procedure inlining, for instance -- composes.
+  filterPhases ++ assertNoCFGBodiesPhase :: prefixPhases
+    ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
       termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -1554,7 +1523,15 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
 def typeCheckPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (factory : @Lambda.Factory CoreLParams := Core.Factory) : PipelinePhase :=
+  -- Type checking annotates expressions and leaves every statement where it
+  -- is, so it carries all facts across. Annotation does not change which
+  -- constructor an expression is, so a redex-free program stays redex-free.
   modelPreservingPipelinePhase "typeCheck"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
     fun prog => do
       match Core.typeCheck options prog factory with
       | .ok prog' => return (true, prog')
@@ -1563,12 +1540,20 @@ def typeCheckPipelinePhase
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
 
-    Assumes `nondetElimPipelinePhase` has already run: `Core.Statement.eval`
-    rejects any surviving nondeterministic `if *` / `while *` guard. -/
+    Requires `noNondetGuards`, which `nondetElimPipelinePhase` establishes:
+    `Core.Statement.eval` rejects a surviving nondeterministic guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  -- `noBetaRedexes` is the one fact this phase cannot claim: partial-evaluation
+  -- inlining introduces redexes.
   modelPreservingPipelinePhase "symbolicEval"
+    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
+    (establishes := factSet![.noCalls, .noLoopInvariants, .noLoopMeasures,
+                           .staticSingleAssignment])
+    (preserves := factSet![.noCFGBodies, .noLoops, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
@@ -1584,18 +1569,46 @@ def symbolicEvalPipelinePhase
     though solver outcomes may differ on individual obligations). -/
 def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
   -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
   -- fallback here is only a totality safety net.
   let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
-  transformPipelinePhases procs
+  transformPipelinePhases procs prefixPhases
     ++ [monomorphizeProceduresPipelinePhase,
         typeCheckPipelinePhase options typeCheckFactory,
         monomorphizeFunctionsPipelinePhase,
         nondetElimPipelinePhase,
         symbolicEvalPipelinePhase options moreFns]
     ++ [betaReducePipelinePhase] ++ csePhases
+
+/-- What the back end needs of the program the pipeline hands it, as opposed to
+    what one phase asks of another. A phase list that does not deliver these is
+    rejected the same way as one whose phases do not fit.
+
+    A CFG body is worse than an unsupported statement: obligation extraction
+    returns *no obligations at all* for one, so every assertion in it would go
+    unchecked and unreported.
+
+    `noLoopInvariants` and `noLoopMeasures` are absent because `noLoops` covers
+    them; they are required by `LoopElim`, which is where they matter. -/
+def backEndRequiredFacts : ProgramFactSet :=
+  factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
+           .noBetaRedexes, .noPrecondsFromFuncs, .noInternalFuncDecl,
+           .noPolymorphicProcedures, .noPolymorphicFunctions]
+
+/-- The Core pipeline, checked as it is assembled: any caller-supplied
+    `prefixPhases` and the phase list built from `options` and `procs`,
+    validated against the phases' contracts. A phase list that does not
+    compose never becomes a pipeline, so callers cannot run one. -/
+def coreValidatedPipeline (prefixPhases : List PipelinePhase := [])
+    (procs : Option (List String) := none)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except String (ValidatedPipeline ProgramFactSet.empty) :=
+  ValidatedPipeline.ofListDelivering "the verification back end" backEndRequiredFacts
+    (corePipelinePhases procs options moreFns prefixPhases)
 
 /-- The abstracted phases derived from the Core pipeline phases.
 
@@ -1605,8 +1618,9 @@ def corePipelinePhases (procs : Option (List String) := none)
     options describes phases that did not actually run. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List AbstractedPhase :=
-  (corePipelinePhases procs options moreFns).map (·.phase)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List PipelinePhase := []) : List AbstractedPhase :=
+  (corePipelinePhases procs options moreFns prefixPhases).map (·.phase)
 
 /-- Build the solver log from raw results and phase validation logs. -/
 private def buildSolverLog (satResult valResult : SMT.Result)
@@ -1663,6 +1677,9 @@ abbrev MkDischargeFn :=
   List Expression.TypedIdent → Imperative.MetaData Expression → String →
   -- Term→SMT-LIB string cache; `none` on the parallel path.
   Option (IO.Ref (Std.HashMap Term String)) →
+  -- Pre-assembled file from env-scoped capture; `none` selects
+  -- per-obligation encoding. Ignored by the incremental backend.
+  Option Core.SMT.Emitter.CapturedFile →
   PipelineContext → DischargeFn
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
@@ -1674,10 +1691,12 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (md : Imperative.MetaData Expression)
     (label : String)
     (termCache : Option (IO.Ref (Std.HashMap Term String)))
+    (captured : Option Core.SMT.Emitter.CapturedFile)
     (pctx : PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
     if options.incremental && !options.alwaysGenerateSMT then
+      -- `captured` does not apply: the incremental backend writes no files.
       SMT.dischargeObligationIncremental options vars md
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
@@ -1689,6 +1708,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
         (termCache := termCache)
+        (captured := captured)
         (pctx := pctx)
 
 /--
@@ -1783,9 +1803,10 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext)
     : IO (Except Message VCResult) := do
-  -- Parallel path: no shared term cache (workers must not share a mutable ref).
+  -- Parallel path: no shared term cache (workers must not share a mutable
+  -- ref) and no captured file (see `useCapture` in `verifySingleEnv`).
   let discharge := mkDischarge options counter tempDir
-    job.typedVarsInObligation job.obligation.metadata job.obligation.label none pctx
+    job.typedVarsInObligation job.obligation.metadata job.obligation.label none none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
@@ -1870,6 +1891,8 @@ def verifySingleEnv (oblProgram : Program)
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
     | .ok obs => pure obs
     | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
+  -- Note: the encoder below reuses shared path-condition prefixes only between
+  -- consecutive obligations.
   let mut stats : Statistics := ({} : Statistics)
     |>.increment s!"{Evaluator.Stats.verify_numObligations}" obligations.size
   let mut results := (#[] : VCResults)
@@ -1894,6 +1917,20 @@ def verifySingleEnv (oblProgram : Program)
     datatypes,
     useArrayTheory := options.useArrayTheory }
   let mut encState : SMTEncodeState := .init { ctx := smtCtx }
+  -- Pointer-memoized snapshot assembly, threaded like `encState`
+  -- (see `Strata.PtrCache`).
+  let mut snapCache : Strata.PtrCache.PtrCache1 Core.EncodeResult.Assembly.ofFrames := .empty
+  -- Env-scoped emission (`Core.SMT.Emitter`), for the sequential batch path
+  -- only: the parallel path defers file writing to its dispatch phase, and
+  -- the incremental backend does not write files.
+  let useCapture := !useParallel && !(options.incremental && !options.alwaysGenerateSMT)
+  let emStateInit : Option Core.SMT.Emitter.EmitterState ←
+    if useCapture then
+      IO.toEIO (fun e => Message.fromFormat f!"{e}")
+        (some <$> Core.SMT.Emitter.EmitterState.init smtCtx
+          (SMT.getSolverPrelude options.solver options.solverOptions))
+    else pure none
+  let mut emState := emStateInit
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1944,13 +1981,16 @@ def verifySingleEnv (oblProgram : Program)
     -- Snapshot the state for the phase closures (`mut` variables cannot be
     -- captured); the phase returns the advanced state to thread forward.
     let encState0 := encState
-    let (disposition, encStats, encStateNext) ← pctx.withRepeatedPhase "smtDischarge" do
+    let snapCache0 := snapCache
+    let emState0 := emState
+    let (disposition, encStats, encStateNext, snapCacheNext, emStateNext) ←
+        pctx.withRepeatedPhase "smtDischarge" do
       -- `encodeObligationToSMT` is pure, so it must go through the `*Pure` helper
       -- otherwise the compiler will evaluate it before the phase is entered.
       -- It advances over the obligation's history (encoding only the delta
       -- detection reports) and forks this obligation's result.
       let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
-        encodeObligationToSMT E.factory encState0 origObligation prunedAxiomLabels
+        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels snapCache0
       match maybeTerms with
       | .error err =>
         let result := { obligation,
@@ -1961,9 +2001,10 @@ def verifySingleEnv (oblProgram : Program)
                         lexprModel := [] }
         -- Encoding failed mid-advance; the surviving snapshot keeps the state
         -- at its last good position (the next obligation re-detects from there).
-        pure (ObligationDisposition.resolved result, (default : Statistics), encState0)
+        pure (ObligationDisposition.resolved result, (default : Statistics), encState0,
+              snapCache0, emState0)
       | .ok ({ assumptions := assumptionTerms, varDefs, varDecls,
-               goal := obligationTerm, ctx, stats := encStats }, encState') =>
+               goal := obligationTerm, ctx, stats := encStats }, encState', snapCache') =>
         -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
         let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
           let vars := ProofObligation.getVars obligation
@@ -1980,10 +2021,21 @@ def verifySingleEnv (oblProgram : Program)
             obligation, assumptionTerms, obligationTerm, ctx,
             needSatCheck, needValCheck, peSatResult?, peValResult?,
             typedVarsInObligation, varDefs, varDecls }
-          pure (ObligationDisposition.deferred job, encStats, encState')
+          -- Capture is sequential-path only; `emState0` is left untouched.
+          pure (ObligationDisposition.deferred job, encStats, encState', snapCache', emState0)
         else
+          let (emState1, captured) ← pctx.withRepeatedPhase "renderSMTText" do
+            match emState0 with
+            | none => pure (none, none)
+            | some es => IO.toEIO (fun e => Message.fromFormat f!"{e}") do
+              let (es, cf) ← es.syncAndEmit E.factory encState'.frames
+                encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
+                ctx obligationTerm obligation.metadata obligation.label
+                (managedNameSet varDefs varDecls) needSatCheck needValCheck
+              pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
-            typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
+            typedVarsInObligation obligation.metadata obligation.label (some termCache)
+            captured pctx
           let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                         discharge needSatCheck needValCheck (externalPhases ++ corePhases)
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
@@ -1996,8 +2048,10 @@ def verifySingleEnv (oblProgram : Program)
                   satisfiabilityProperty := satResult,
                   validityProperty := valResult } }
             | .error _ => result
-          pure (ObligationDisposition.resolved result, encStats, encState')
+          pure (ObligationDisposition.resolved result, encStats, encState', snapCache', emState1)
     encState := encStateNext
+    snapCache := snapCacheNext
+    emState := emStateNext
     stats := stats.merge encStats
     match disposition with
     | .resolved result =>
@@ -2080,10 +2134,15 @@ def verify (program : Program)
   let profile := pctx.outputMode.showsProfiling
 
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
-  let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
-  let phases := pipelinePhases.map (·.phase)
+  -- The transforms that run and the phases that adjust solver results both come
+  -- from the validated pipeline, so the two cannot drift apart.
+  let pipeline ← match coreValidatedPipeline prefixPhases proceduresToVerify options moreFns with
+    | .ok vp => pure vp.phases
+    | .error err =>
+      throw (Message.fromFormat f!"❌ Cannot assemble a verification pipeline.\n{err}")
+  let phases := pipeline.map (·.phase)
   let (oblProgram, factory, pipelineStats) ← pctx.withPhase "programTransformations" do
-    let (prog, state) ← runTransforms program pipelinePhases
+    let (prog, state) ← runTransforms program pipeline
       (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)

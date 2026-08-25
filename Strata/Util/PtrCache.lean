@@ -170,15 +170,37 @@ def evalPtrCache {α β : Type} {f : α → β} (x : α) (k : PtrCacheM f x) :
       evalImpreciseBucket x k update (m.getD u []))
     (fun _ _ => Subsingleton.elim _ _)
 
-/-- **The pointer cache is a transparent optimization.** Running any
-    `PtrCacheM f x` computation from any starting cache yields a value equal to
-    `f x`, on the nose. The cache's (unobservable, squashed) contents cannot
-    affect the result — this is guaranteed for free by the `Result.h` proof that
-    every entry carries, so no separate correctness test is ever needed for a
-    cache built on this interface. -/
-theorem run'_output_eq {α β : Type} {f : α → β} {x : α}
-    (m : PtrCacheM f x) (c : PtrCache f) : (m.run' c).output = f x :=
-  (m.run' c).h
+/-! ## Single-slot variant
+
+`PtrCache` never evicts: every input it has ever seen stays reachable, so a
+caller whose results are large retains memory proportional to the number of
+distinct inputs. `PtrCache1` bounds retention at one entry — the most recently
+computed (input, result) pair — for callers whose reuse pattern is
+consecutive. -/
+
+/-- A single-slot pointer cache for `f`: at most the most recently computed
+    entry is retained. -/
+def PtrCache1 {α β : Type} (f : α → β) : Type :=
+  Squash (Option (Entry f))
+
+/-- The empty single-slot cache. -/
+def PtrCache1.empty {α β : Type} {f : α → β} : PtrCache1 f := Squash.mk none
+
+instance {α β : Type} {f : α → β} : Subsingleton (PtrCache1 f) :=
+  inferInstanceAs (Subsingleton (Squash _))
+
+/-- The state monad threading a `PtrCache1 f`, producing a `Result f x`. -/
+abbrev PtrCache1M {α β : Type} (f : α → β) (x : α) : Type :=
+  StateM (PtrCache1 f) (Result f x)
+
+/-- Query the slot for `x`. A pointer hit on the stored input returns the
+    stored result; otherwise `k` computes the result, which *replaces* the
+    slot. -/
+def evalPtrCache1 {α β : Type} {f : α → β} (x : α) (k : PtrCache1M f x) :
+    PtrCache1M f x := do
+  let s ← get
+  Squash.lift s fun slot =>
+    evalImpreciseBucket x k (fun e => modify fun _ => Squash.mk (some e)) slot.toList
 
 end
 

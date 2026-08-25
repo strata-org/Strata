@@ -53,13 +53,13 @@ def VerificationResult.fromDecisionForProve (d : Decision) : VerificationResult 
   match d with
   | .unsat => .success .verified
   | .sat => .error .counterexample
-  | .unknown => .error .unknown
+  | .unknown | .timeout => .error .unknown
 
 def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult :=
   match d with
   | .unsat => .error .refuted
   | .sat => .success .reachable
-  | .unknown => .success .reachabilityUnknown
+  | .unknown | .timeout => .success .reachabilityUnknown
 
 ---------------------------------------------------------------------
 -- Verification Context and Results

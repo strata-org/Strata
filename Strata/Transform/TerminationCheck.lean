@@ -415,7 +415,17 @@ where
       | .type (.data block) _md => do
         tf := tf.push block
         acc := acc.push d
-      | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
+      | .proc proc _ => do
+        -- A CFG body is not walked here, and the recursive calls inside one
+        -- would go unchecked. `noCFGBodies` is declared as a requirement; this
+        -- is where it is enforced.
+        match proc.body with
+        | .cfg _ =>
+          throw (Strata.Message.fromFormat
+            f!"❌ TerminationCheck: procedure {proc.header.name.name} has a CFG body; \
+               termination is only checked on structured bodies.")
+        | .structured _ => acc := acc.push d
+      | .func _ _ | .ax _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
         acc := acc.push d
       remaining := rest
@@ -427,8 +437,19 @@ end TermCheck
     recursive functions. Model-preserving because it only adds new
     assertions and procedures. -/
 def termCheckPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "termCheck" fun prog => do
-    TermCheck.termCheck prog
+  -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
+  -- substituting the call's arguments, and a function-typed parameter applied to
+  -- an abstraction argument leaves a redex behind. `noPolymorphicProcedures` is
+  -- not claimed either: the procedures this adds inherit the checked function's
+  -- type arguments.
+  modelPreservingPipelinePhase "termCheck"
+    (requires := factSet![.noCFGBodies])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicFunctions])
+    fun prog => do
+      TermCheck.termCheck prog
 
 end Core
 

@@ -535,6 +535,15 @@ private def datatypeTypeArgArity (name : String) : ResolveM (Option Nat) := do
   | some (_, .datatypeDefinition dt) => pure (some dt.typeArgs.length)
   | _ => pure none
 
+/-- The declared type-parameter count of `name` when it resolves to an opaque type
+    definition; `none` otherwise. Opaque types are generic in exactly the same way
+    datatypes are (nominal, arity-fixed, no monomorphization), so they get the same
+    bare-reference and arity checks — see `datatypeTypeArgArity`. -/
+private def opaqueTypeArgArity (name : String) : ResolveM (Option Nat) := do
+  match (← get).scope.get? name with
+  | some (_, .opaqueType ot) => pure (some ot.typeArgs.length)
+  | _ => pure none
+
 /-- The declared type-parameter *names* of `name` when it resolves to a datatype
     definition; `[]` otherwise. Used to tell an erased (polymorphic) slot from a
     concrete one. -/
@@ -557,7 +566,15 @@ private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : 
     if n > 0 then
       modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
         s!"generic datatype '{name.text}' must be applied to {n} type argument(s)") }
-  | none => pure ()
+  | none =>
+    -- Same rule for a generic opaque type (`opaque Set<T>;` written bare as `Set`):
+    -- leaving the argument implicit would let first use elsewhere fix it.
+    match ← opaqueTypeArgArity name.text with
+    | some n =>
+      if n > 0 then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          s!"generic opaque type '{name.text}' must be applied to {n} type argument(s)") }
+    | none => pure ()
 
 /-- Validate the base of a generic type application `base<args>`, keyed off what
     `base` resolves to:
@@ -583,6 +600,16 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : F
         else
           s!"generic datatype '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
       modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+  | some (_, .opaqueType ot) =>
+    -- An opaque type is arity-fixed like a datatype, so check it the same way rather
+    -- than letting a wrong-arity `declare-sort` reach Core.
+    let n := ot.typeArgs.length
+    if n != numArgs then
+      let msg := if n == 0 then
+          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
+        else
+          s!"generic opaque type '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
   | some (_, .constrainedType _) =>
     -- A constrained type is never generic: applying it to type arguments is
     -- rejected here so the user gets a clean diagnostic rather than a downstream
@@ -606,11 +633,13 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : F
     rejection is applied only by the former (an `.Applied` base is not bare). -/
 private def resolveTypeRef (ref : Identifier) (source : FileRange) : ResolveM HighType := do
   let ref' ← resolveRef ref source
-    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType])
+    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .opaqueType,
+      .typeParameter, .coroutineType])
   let s ← get
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
-        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter, .coroutineType].contains node.kind)
+        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
+          .opaqueType, .typeParameter, .coroutineType].contains node.kind)
     | none => false  -- name not defined: resolveRef already reported it
   if kindOk then pure (HighType.UserDefined ref') else pure HighType.Unknown
 
@@ -638,12 +667,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     else
       let ref' ← resolveRef ref ty.source
         (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
-          .coroutineType])
+          .opaqueType, .coroutineType])
       checkBareGenericDatatype ref ty.source
       let kindOk : Bool := match nodeKind? with
         | some k => k == .unresolved ||
             (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition,
-              .typeAlias, .coroutineType].contains k)
+              .typeAlias, .opaqueType, .coroutineType].contains k)
         | none => false  -- name not defined: resolveRef already reported it
       if kindOk then pure (HighType.UserDefined ref')
       else pure HighType.Unknown
@@ -4424,6 +4453,15 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       resolveHighType ta.target
     let taName' ← resolveRef ta.name
     return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
+  | .Opaque ot =>
+    -- An opaque type has no constructors and no target, so there is nothing inside it to
+    -- resolve — only the name to bind. The params are still scoped, in a scope discarded
+    -- immediately, purely so `defineNameCheckDup` reports `opaque Foo<T, T>` the same way
+    -- it does for a datatype/composite/alias; leaving it out would silently accept a
+    -- repeated type variable and hand Core a `declare-sort` with a duplicated parameter.
+    let _ ← withScope do scopeTypeParams ot.typeArgs
+    let otName' ← resolveRef ot.name
+    return .Opaque { name := otName', typeArgs := ot.typeArgs }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
@@ -4589,6 +4627,7 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
   | .Alias ta =>
     let map := register map ta.name (.typeAlias ta)
     collectHighType map ta.target
+  | .Opaque ot => register map ot.name (.opaqueType ot)
 
 private def collectConstant (map : Std.HashMap Nat ResolvedNode) (c : Constant)
     : Std.HashMap Nat ResolvedNode :=
@@ -4781,6 +4820,8 @@ private def preRegisterDefinitions (types : List TypeDefinition)
           let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
     | .Alias ta =>
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
+    | .Opaque ot =>
+      let _ ← defineNameCheckDup ot.name (.opaqueType ot)
   for c in constants do
     let _ ← defineNameCheckDup c.name (.constant c)
   -- Register both lookup forms for each file-scope global with one definition ID.
@@ -5438,6 +5479,7 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
   | .datatypeDefinition type => some type.name
   | .datatypeConstructor _ constructor => some constructor.name
   | .typeAlias alias => some alias.name
+  | .opaqueType type => some type.name
   | .constant constant => some constant.name
   | .unresolved _ => none
 
@@ -6478,7 +6520,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions
-      (additionalTypes ++ uc.datatypes.map .Datatype)
+      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque)
       uc.constants
       []
       (uc.functions ++ uc.coreProcedures)
@@ -6512,6 +6554,13 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
       | .Datatype dt' => pure dt'
       | _ => pure dt -- unreachable
 
+    -- Opaque types carry nothing resolvable but their own name, which
+    -- `preRegisterDefinitions` above has already bound; re-resolve for the uniqueId.
+    let opaqueTypes' ← uc.opaqueTypes.mapM fun ot => do
+      match ← resolveTypeDefinition (.Opaque ot) with
+      | .Opaque ot' => pure ot'
+      | _ => pure ot -- unreachable
+
     -- Resolve constants
     let constants' ← uc.constants.mapM resolveConstant
 
@@ -6520,7 +6569,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
 
     return { functions := functions', coreProcedures := coreProcedures',
-             datatypes := datatypes', constants := constants' }
+             datatypes := datatypes', opaqueTypes := opaqueTypes', constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
@@ -6528,7 +6577,8 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
   -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
   -- differ between passes, producing spurious "resolution introduced this diagnostic".
-  let typeLattice := { TypeLattice.ofTypes (uc.datatypes.map .Datatype ++ additionalTypes) with
+  let typeLattice := { TypeLattice.ofTypes
+      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ additionalTypes) with
     gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
     reservedNames := reservedNames }
   let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
@@ -6537,7 +6587,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   let program' : Program := {
     staticProcedures := uc'.functions ++ uc'.coreProcedures,
     staticFields := [],
-    types := uc'.datatypes.map .Datatype ++ additionalTypes,
+    types := uc'.datatypes.map .Datatype ++ uc'.opaqueTypes.map .Opaque ++ additionalTypes,
     constants := uc'.constants
   }
   let refToDef := buildRefToDef program'

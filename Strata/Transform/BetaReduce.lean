@@ -135,7 +135,17 @@ end Core.BetaReduce
     of an abstraction. Model-preserving: beta reduction does not change the
     value of any expression. -/
 def Core.betaReducePipelinePhase : Core.PipelinePhase :=
-  Core.modelPreservingPipelinePhase "betaReduce" fun prog => do
-    return (true, Core.BetaReduce.betaReduceProgram prog)
+  -- Contracting every redex is the phase's whole purpose, hence
+  -- `noBetaRedexes`. `betaReduceRedexes` is fuel-bounded, so a term no budget
+  -- normalizes, such as an ill-typed self-application, comes back with a
+  -- redex intact: that is the one way the claim can fail.
+  Core.modelPreservingPipelinePhase "betaReduce"
+    (establishes := factSet![.noBetaRedexes])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog => do
+      return (true, Core.BetaReduce.betaReduceProgram prog)
 
 end -- public section

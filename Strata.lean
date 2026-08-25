@@ -26,6 +26,7 @@ import Strata.Util.Worklist
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
+import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.WFProps
@@ -61,6 +62,11 @@ import Strata.Languages.B3
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.ProgramFact
+import Strata.Languages.Core.ProgramFactProps
+import Strata.Languages.Core.ProgramFactSet
+import Strata.Languages.Core.ProgramFactSetProps
+import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
@@ -87,6 +93,10 @@ import Strata.MetaVerifier
 
 /- Pipeline -/
 import Strata.Pipeline.Diagnostic
+import Strata.Pipeline.FactSet
+import Strata.Pipeline.FactSetProps
+import Strata.Pipeline.PhaseContract
+import Strata.Pipeline.PhaseContractProps
 
 /- Simple API -/
 import Strata.SimpleAPI

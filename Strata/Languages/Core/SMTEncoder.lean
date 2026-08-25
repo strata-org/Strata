@@ -15,6 +15,7 @@ public import Strata.Util.OrderedSet
 public import Strata.Util.Statistics
 public import Strata.Languages.Core.NameMangling
 public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
+public import Strata.Util.PtrCache
 import Strata.Languages.Core.Statistics
 import Strata.Util.Tactics
 
@@ -251,6 +252,12 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
     | _ =>
       let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d ctx.useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
+
+/-- Emit a context's sort declarations, then its datatype declarations (whose
+    constructors may mention the sorts). -/
+def SMT.writeSortsAndDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  let _ ← ctx.sorts.toArray.mapM fun s => Strata.SMT.Solver.declareSort s.name s.arity
+  ctx.emitDatatypes
 
 @[expose] abbrev BoundVars := List (String × TermType)
 
@@ -1070,8 +1077,9 @@ section instantiates it (`smtEncodingFold`): the checkpoint `σ` is an
 factory-function definitions that term depends on), and the step is
 `encodePathConditionEntry`. Per obligation, `encodeObligationToSMT` encodes
 whichever of the obligation's `assumptions` the state has not already encoded,
-then encodes the goal separately (`snapshotObligation`). That way the goal never
-enters the shared state.
+then *snapshots* the obligation: it reads the obligation's complete
+`EncodeResult` out of the shared state without writing anything back, so the
+goal never enters the shared state.
 
 The state holds the full, unpruned `assumptions`, so entries stay shared
 across obligations that prune different irrelevant axioms. An entry's term,
@@ -1172,10 +1180,20 @@ def smtEncodingFold (factory : @Lambda.Factory CoreLParams) :
     checkpoint and output types. -/
 abbrev SMTEncodeState := FoldState SMTCheckpoint SMTEncodedPathCondition Expression
 
-/-- The result one obligation's encoding produces. -/
+/-! ## Per-obligation snapshots
+
+The fold state holds entry encodings shared by many obligations. A *snapshot*
+builds one obligation's SMT query from it. The state is left untouched for
+the next obligation.
+
+Snapshots are built in two stages. `EncodeResult.Assembly` is the
+goal-independent part: the kept entries' terms and drain seed. It depends
+only on the fold state's `frames`, so it is memoizable. `Assembly.finish`
+then folds in the obligation's goal and drains its definition dependencies. -/
+
+/-- One obligation's encoded SMT query. -/
 structure EncodeResult where
-  /-- Terms to assert as assumptions: the obligation's kept distinctness
-      constraints followed by its kept path-condition assumptions. -/
+  /-- Terms to assert: kept distincts, then kept assumptions. -/
   assumptions : List Term
   /-- Variable definitions (emitted as `define-fun`). -/
   varDefs : List VarDefinition
@@ -1183,19 +1201,65 @@ structure EncodeResult where
   varDecls : List VarDeclaration
   /-- The encoded goal term. -/
   goal : Term
-  /-- The SMT context after draining the function definitions the kept
-      terms and the goal depend on. -/
+  /-- The context after draining the definitions the terms depend on. -/
   ctx : SMT.Context
   /-- Encoding statistics for this obligation. -/
   stats : Statistics
 
-/-- Assemble one obligation's `EncodeResult` from the state `st` *without
-    writing anything back to `st`*: encode the goal against `st.current`, select
-    the entries this obligation keeps (forcing their deferred results, so a kept
-    entry's encoding error surfaces here while a pruned entry's is dropped), and
-    drain only the definitions those kept entries and the goal depend on.
+/-- The goal-independent stage of an `EncodeResult`: the kept entries' terms
+    and drain seed, assembled from the frame list. -/
+structure EncodeResult.Assembly where
+  distincts : List Term
+  assumptions : List Term
+  varDefs : List VarDefinition
+  varDecls : List VarDeclaration
+  /-- Seed queue from the kept entries and varDefs (goal's queue not yet folded in). -/
+  keptSeed : SMT.PendingFnQueue
 
-    Emission order is newest frame first, in-frame program order. -/
+/-- Assemble the entries `keep` selects, forcing their deferred results (a
+    kept entry's encoding error surfaces here; a dropped entry's never does).
+    Emission order: newest frame first, in-frame program order. -/
+def EncodeResult.Assembly.ofFramesKept (keep : String → Bool)
+    (frames : List (Imperative.PathConditions.PathConditionFrame
+      SMTCheckpoint SMTEncodedPathCondition Expression)) :
+    Except Format EncodeResult.Assembly := do
+  let keptDistincts ← (frames.flatMap fun f =>
+    f.output.distinctsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let keptAssumptions ← (frames.flatMap fun f =>
+    f.output.assumptionsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let varDefsWithPending := frames.flatMap fun f => f.output.varDefsRev.reverse
+  -- Seed the drain from only the definitions the kept terms depend on;
+  -- `processPendingFnDefs` rediscovers the transitive closure.
+  let seedQueues : List SMT.PendingFnQueue :=
+    keptAssumptions.map (·.2) ++ keptDistincts.map (·.2)
+      ++ varDefsWithPending.map (·.2)
+  let keptSeed : SMT.PendingFnQueue :=
+    seedQueues.foldl (fun acc q => q.toList.foldl (·.insert ·) acc) ({} : SMT.PendingFnQueue)
+  .ok { distincts := keptDistincts.map (·.1),
+        assumptions := keptAssumptions.map (·.1),
+        varDefs := varDefsWithPending.map (·.1),
+        varDecls := frames.flatMap fun f => f.output.varDeclsRev.reverse,
+        keptSeed }
+
+/-- Complete an assembly into an `EncodeResult`: fold the goal's definition
+    dependencies onto the seed, drain, and package. `ctx` is the context the
+    goal was encoded against. -/
+def EncodeResult.Assembly.finish (factory : @Lambda.Factory CoreLParams)
+    (asm : EncodeResult.Assembly) (goalTerm : Term) (goalPending : SMT.PendingFnQueue)
+    (ctx : SMT.Context) : Except Format EncodeResult := do
+  let seed := goalPending.toList.foldl (·.insert ·) asm.keptSeed
+  let ctx ← processPendingFnDefs factory ctx seed
+  let stats : Statistics := ({} : Statistics)
+    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
+        (asm.distincts.length + asm.assumptions.length)
+  .ok { assumptions := asm.distincts ++ asm.assumptions,
+        varDefs := asm.varDefs, varDecls := asm.varDecls,
+        goal := goalTerm, ctx, stats }
+
+/-- Build one obligation's `EncodeResult` from `st` without writing back:
+    encode the goal against `st.current`, assemble the kept entries, finish. -/
 def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
     (goal : Expression.Expr) (prunedLabels : List String) :
     Except Format EncodeResult := do
@@ -1206,38 +1270,12 @@ def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeSt
   -- Emission-time pruning: O(1) membership.
   let pruned : Std.HashSet String :=
     prunedLabels.foldl (fun acc l => acc.insert l) ∅
-  let keep (l : String) : Bool := !pruned.contains l
-  -- Select kept entries and force their deferred results; a kept label whose
-  -- encoding failed surfaces its error here.
-  let keptDistincts ← (st.frames.flatMap fun f =>
-    f.output.distinctsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
-  let keptAssumptions ← (st.frames.flatMap fun f =>
-    f.output.assumptionsRev.reverse.filterMap fun e =>
-      if keep e.label then some e.result else none).mapM id
-  let distincts := keptDistincts.map (·.1)
-  let assumptions := keptAssumptions.map (·.1)
-  let varDefsWithPending := st.frames.flatMap fun f => f.output.varDefsRev.reverse
-  let varDefs := varDefsWithPending.map (·.1)
-  let varDecls := st.frames.flatMap fun f => f.output.varDeclsRev.reverse
-  -- Seed the drain from only the definitions the kept terms (and the goal)
-  -- depend on; `processPendingFnDefs` rediscovers the transitive closure.
-  let seedQueues : List SMT.PendingFnQueue :=
-    keptAssumptions.map (·.2) ++ keptDistincts.map (·.2)
-      ++ varDefsWithPending.map (·.2) ++ [goalPending]
-  let seed : SMT.PendingFnQueue :=
-    seedQueues.foldl (fun acc q => q.toList.foldl (·.insert ·) acc) ({} : SMT.PendingFnQueue)
-  let ctx ← processPendingFnDefs factory ctx seed
-  let stats : Statistics := ({} : Statistics)
-    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
-        (distincts.length + assumptions.length)
-  .ok { assumptions := distincts ++ assumptions, varDefs, varDecls,
-        goal := goalTerm, ctx, stats }
+  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l) st.frames
+  asm.finish factory goalTerm goalPending ctx
 
-/-- Encode one obligation: encode whichever of its `assumptions` the state has
-    not already encoded, then `snapshotObligation` for the goal. Returns the
-    obligation's result and the advanced state to thread to the next
-    obligation. -/
+/-- Advance the fold over the obligation's `assumptions` (encoding only what
+    the state has not already encoded), then `snapshotObligation` for its goal.
+    Returns the result and the advanced state. -/
 def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
     (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := []) :
     Except Format (EncodeResult × SMTEncodeState) := do
@@ -1245,6 +1283,47 @@ def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncod
   let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
   let r ← snapshotObligation factory st ob.obligation prunedLabels
   .ok (r, st)
+
+/-! ## Pointer-memoized snapshot assembly
+
+Unpruned, the assembly depends only on the frame list, and adjacent
+obligations usually share the identical list — so a single-slot
+`Strata.PtrCache.PtrCache1` captures the reuse and a miss merely recomputes.
+Pruning keeps a different entry subset per obligation, so pruned obligations
+reassemble each time. -/
+
+/-- Flatten the frames' per-kind outputs into one obligation's `Assembly`,
+    keeping every entry. A named def so `PtrCache1` can memoize it. -/
+def EncodeResult.Assembly.ofFrames
+    (frames : List (Imperative.PathConditions.PathConditionFrame
+      SMTCheckpoint SMTEncodedPathCondition Expression)) :
+    Except Format EncodeResult.Assembly :=
+  EncodeResult.Assembly.ofFramesKept (fun _ => true) frames
+
+/-- `encodeObligationToSMT` with the assembly memoized by the frame list's
+    pointer address. Pruned obligations delegate to `encodeObligationToSMT`,
+    which is also available for callers without a cache to thread. -/
+def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (cache : Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) :
+    Except Format (EncodeResult × SMTEncodeState ×
+      Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) := do
+  if prunedLabels.isEmpty then
+    let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
+    -- Encode the goal before assembling the entries: if both fail, the
+    -- goal's error is reported.
+    let (goalTerm, ctx, goalPending) ← Core.toSMTTerm factory [] ob.obligation st.current.ctx {}
+    -- Miss continuation as an explicit lambda so the assembly runs only on a
+    -- miss.
+    let k : Strata.PtrCache.PtrCache1M EncodeResult.Assembly.ofFrames st.frames :=
+      fun c => (⟨EncodeResult.Assembly.ofFrames st.frames, rfl⟩, c)
+    let (res, cache) := (Strata.PtrCache.evalPtrCache1 st.frames k).run cache
+    let asm ← res.output
+    let r ← asm.finish factory goalTerm goalPending ctx
+    .ok (r, st, cache)
+  else
+    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels
+    .ok (r, st, cache)
 
 end -- public section
 

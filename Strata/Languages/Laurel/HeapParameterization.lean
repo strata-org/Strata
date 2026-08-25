@@ -95,6 +95,14 @@ private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
   | .compositeType _ => true
   | _ => false
 
+/-- Check whether a UserDefined type name refers to an opaque type. Like a datatype value
+    and unlike a composite, an opaque value is not a heap reference: it needs its own box
+    variant carrying its own sort, and it must not attract `Composite..ref!` clauses. -/
+private def isOpaque (model : SemanticModel) (name : Identifier) : Bool :=
+  match model.get name with
+  | .opaqueType _ => true
+  | _ => false
+
 /-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation,
     so `Bx<int>` and `Bx<bool>` get distinct box constructors/destructors (`Bx$a1$int` vs
     `Bx$a1$bool`) — preserving the instantiation-distinctness the native parametric datatype
@@ -123,7 +131,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "$Box..realVal!"
   | .TString => "$Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name then s!"$Box..{name.text}Val!"
+      if isDatatype model name || isOpaque model name then s!"$Box..{name.text}Val!"
       else "$Box..compositeVal!"
   | .TBv n => s!"$Box..bv{n}Val!"
   -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
@@ -146,7 +154,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "BoxReal"
   | .TString => "BoxString"
   | .UserDefined name =>
-      if isDatatype model name then s!"Box..{name.text}"
+      if isDatatype model name || isOpaque model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`.
@@ -169,7 +177,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, syntheticSource⟩ }] }
   | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, syntheticSource⟩ }] }
   | .UserDefined name =>
-      if isDatatype model name then
+      if isDatatype model name || isOpaque model name then
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, syntheticSource⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", syntheticSource⟩ }] }
@@ -536,7 +544,7 @@ where
     `Composite..ref!` well-formedness precondition over a `Heap` value. -/
 private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
   match p.type.val with
-  | .UserDefined name => name.text != heapTypeName.text && !isDatatype model name
+  | .UserDefined name => name.text != heapTypeName.text && isComposite model name
   | _ => false
 
 /-! Heap well-formedness conditions below are emitted `free`:

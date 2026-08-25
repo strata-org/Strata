@@ -11,6 +11,7 @@ import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryProps
 public import Strata.DL.Lambda.FactoryWF
+import Strata.Util.PtrCacheProps
 
 /-!
 ## Basic `LExpr.getVars` properties

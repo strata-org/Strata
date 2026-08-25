@@ -56,11 +56,18 @@ def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
 
     | .proc proc _md =>
       let (E, procStats) := Procedure.eval declsE proc
+      if E.error.isSome && declsE.error.isNone then
+        -- Resetting the error and carrying on would no-op the remaining
+        -- procedures and drop their obligations, reporting success on a program
+        -- that was never evaluated.
+        .error (Strata.Message.fromFormat
+          f!"procedure '{proc.header.name}': \
+             {match E.error with | some e => Std.format e | none => ""}")
+      else
       -- Reset path conditions to the pre-procedure state so a procedure's
       -- assumptions don't leak into later ones. Likewise reset `Env.error`: it
-      -- is a within-procedure short-circuit flag, and leaking it would make the
-      -- next procedure no-op its body and silently drop its obligations (an
-      -- unsound vacuous pass). Deferred obligations and fresh names carry forward.
+      -- is a within-procedure short-circuit flag when it was already set on
+      -- entry. Deferred obligations and fresh names carry forward.
       let E := { E with pathConditions := declsE.pathConditions,
                         error := declsE.error }
       go rest E (stats.merge procStats)

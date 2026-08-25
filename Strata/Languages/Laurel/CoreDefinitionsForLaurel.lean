@@ -61,6 +61,27 @@ procedure update<K, V>(map: Map K V, key: K, value: V) : Map K V
 procedure mapConst<K, V>(value: V) : Map K V
   external;
 
+// --- Immutable sets ---
+//
+// `Set` is an `opaque` type naming Core's native `Set` sort (see `setTy` in `Core.Factory`
+// for what that sort is and why it is not a `Map T bool` alias).
+//
+// Declared `external`, so these never reach Core as functions; each call is lowered to the
+// corresponding Core `Set.*` op by `coreSetOpName?`. The spellings differ (`setInsert` vs
+// `Set.insert`) only because a Laurel identifier cannot contain a `.`.
+//
+// `setEmpty`'s element type is not determined by any argument, so — like `mapConst`'s key —
+// it is recovered from the declared type at the use site (`var s: Set<int> := setEmpty()`).
+opaque Set<T>
+
+procedure setEmpty<T>() : Set<T> external;
+procedure setContains<T>(s: Set<T>, x: T) : bool external;
+procedure setInsert<T>(s: Set<T>, x: T) : Set<T> external;
+procedure setRemove<T>(s: Set<T>, x: T) : Set<T> external;
+procedure setUnion<T>(s: Set<T>, t: Set<T>) : Set<T> external;
+procedure setIntersect<T>(s: Set<T>, t: Set<T>) : Set<T> external;
+procedure setDifference<T>(s: Set<T>, t: Set<T>) : Set<T> external;
+
 // --- Type-specific external operators (Core primitives) ---
 
 // Integer arithmetic

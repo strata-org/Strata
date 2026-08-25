@@ -63,7 +63,7 @@ private def printLiftPassDiagnosticsUnresolved (program : StrataDDM.Program) : I
   let model := (resolve laurelProgram).model
   let uc : UnorderedCoreWithLaurelTypes :=
     { functions := [], coreProcedures := laurelProgram.staticProcedures
-      datatypes := [], constants := [] }
+      datatypes := [], opaqueTypes := [], constants := [] }
   let (result, diags, _) := liftImperativeExpressionsPass.run {} uc model
   IO.println s!"procedures unchanged: {result.coreProcedures.length == uc.coreProcedures.length}"
   for d in diags do

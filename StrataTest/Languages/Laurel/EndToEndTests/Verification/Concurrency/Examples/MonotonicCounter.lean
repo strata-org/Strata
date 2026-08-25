@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataTest.Languages.Laurel.EndToEndTests.Verification.Concurrency.CoroutineTest
 
 open StrataTest.Util.Concurrency
