@@ -95,7 +95,7 @@ private theorem denoteBoolTermAux_not_inv {t' : Term} {ty : TermType} {p : Prop}
   | some ⟨.prim .bool, rfl, g⟩ => simp_all; grind
   | some ⟨.prim .int, _, _⟩ | some ⟨.prim .string, _, _⟩
   | some ⟨.prim (.bitvec _), _, _⟩ | some ⟨.prim .real, _, _⟩
-  | some ⟨.prim .regex, _, _⟩ | some ⟨.prim .trigger, _, _⟩
+  | some ⟨.prim .regex, _, _⟩
   | some ⟨.option _, _, _⟩ | some ⟨.constr _ _, _, _⟩
   | none => grind
 
@@ -1283,7 +1283,7 @@ private theorem buildQuant_some_branch_eq (bindVar : QuantVarBinder) (ctx : Cont
     Stated generically over `qk`: `cases qk` reduces `denoteTerm` to its `buildForall` / `buildExists`
     arm. -/
 private theorem denoteTerm_quant_coalesce (qk : QuantifierKind) (ctx : Context) (x : String) (ty : TermType)
-    (tr trM tr2 : Term) (args2 : List TermVar) (e2 : Term) :
+    (tr trM tr2 : List (List Term)) (args2 : List TermVar) (e2 : Term) :
     denoteTerm ctx (.quant qk ([⟨x, ty⟩] ++ args2) trM e2)
       = denoteTerm ctx (.quant qk [⟨x, ty⟩] tr (.quant qk args2 tr2 e2)) := by
   cases qk <;>
@@ -1352,7 +1352,7 @@ private theorem denoteTerm_quant_coalesce (qk : QuantifierKind) (ctx : Context) 
     (`.quant qk (⟨x,ty⟩ :: args2) …`). This theorem states that the coalesced term denotes
     exactly like the naive, un-coalesced single-binder wrapping `.quant qk [⟨x,ty⟩] tr e`. -/
 theorem Factory.quant_correct (ctx : Context) (qk : QuantifierKind)
-    (x : String) (ty : TermType) (tr : Term) (e : Term) :
+    (x : String) (ty : TermType) (tr : List (List Term)) (e : Term) :
     denoteTerm ctx (Factory.quant qk x ty tr e)
       = denoteTerm ctx (.quant qk [⟨x, ty⟩] tr e) := by
   -- Only `e = .quant qk2 args2 tr2 e2` can differ from the naive wrapper; every other shape of

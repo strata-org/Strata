@@ -97,13 +97,12 @@ def PrimValEquiv : (τ : TermType) → TermType.denoteTyped σ SmtArrayTheory τ
   | .prim (.bitvec _), x, y => x = y
   | .prim .real,       _, _ => False
   | .prim .regex,      _, _ => False
-  | .prim .trigger,    _, _ => False
   | .option _,         _, _ => False
   | .constr _ _,       _, _ => False
 
 /-- Transport a primitive `denoteTerm` value (living in `(denoteSort sctx τ).get h sdi`) into the concrete
     `DenoteTValType τ`, so it can be fed to `PrimValEquiv`. Base sorts use the `dsget_*` reductions;
-    all other sorts are unreachable (`.real`/`.regex`/`.trigger` are not denotable; `.option`/`.constr`
+    all other sorts are unreachable (`.real`/`.regex` are not denotable; `.option`/`.constr`
     are handled by `ValEquiv` directly), so their values are irrelevant. -/
 def toTVal : (sctx : SortContext) → (τ : TermType) → (h : (denoteSort sctx τ).isSome) →
     (sdi : SortDenoteInput sctx) → (denoteSort sctx τ).get h sdi → DenoteTValType τ
@@ -113,7 +112,6 @@ def toTVal : (sctx : SortContext) → (τ : TermType) → (h : (denoteSort sctx 
   | sctx, .prim (.bitvec _), h, sdi, x => cast (dsget_bv sctx h sdi) x
   | _,    .prim .real,       _, _,   _ => ⟨⟩
   | _,    .prim .regex,      _, _,   _ => ⟨⟩
-  | _,    .prim .trigger,    _, _,   _ => ⟨⟩
   | _,    .option _,         _, _,   _ => ⟨⟩
   | _,    .constr _ _,       _, _,   _ => ⟨⟩
 
@@ -388,7 +386,6 @@ private theorem ValEquiv_eq_iff {sctx : SortContext} {τ : TermType}
       exact ⟨fun hab => by rw [← hax, ← hby]; exact hab, fun hxy => by rw [hax, hby]; exact hxy⟩
     | real => simp [denoteSort, denotePrimSort] at h
     | regex => simp [denoteSort, denotePrimSort] at h
-    | trigger => simp [denoteSort, denotePrimSort] at h
 
 /-- **`ValEquiv` is total from both sides** at every denotable sort: every SMT value has a `ValEquiv`-related
     realization and vice versa. -/
@@ -441,8 +438,6 @@ private theorem ValEquiv_cover {sctx : SortContext} (ty : TermType)
     | real =>
       simp only [denoteSort, denotePrimSort, Option.isSome] at h; exact absurd h Bool.false_ne_true
     | regex =>
-      simp only [denoteSort, denotePrimSort, Option.isSome] at h; exact absurd h Bool.false_ne_true
-    | trigger =>
       simp only [denoteSort, denotePrimSort, Option.isSome] at h; exact absurd h Bool.false_ne_true
   | option ty' =>
     -- Both sides are `Option`s now; recurse on the inner sort for the `some` case.
@@ -1905,7 +1900,6 @@ theorem Term.denoteTyped_denoteTerm_agree
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_, _], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
-    | triggers => simp only [Term.typeCheck, reduceCtorEq] at htc
     | option_get => simp only [Term.typeCheck, reduceCtorEq] at htc
     | datatype_op d s => simp only [Term.typeCheck, reduceCtorEq] at htc
   | quant k vs tr body =>
@@ -1943,7 +1937,6 @@ theorem Term.denoteTyped_denoteTerm_agree
             | bitvec n => simp [hdb] at hden
             | real => simp [hdb] at hden
             | regex => simp [hdb] at hden
-            | trigger => simp [hdb] at hden
           | option _ => simp [hdb] at hden
           | constr _ _ => simp [hdb] at hden
       · simp at hden
@@ -1975,7 +1968,6 @@ theorem Term.denoteTyped_denoteTerm_agree
             | bitvec n => simp [hdb] at hden
             | real => simp [hdb] at hden
             | regex => simp [hdb] at hden
-            | trigger => simp [hdb] at hden
           | option _ => simp [hdb] at hden
           | constr _ _ => simp [hdb] at hden
       · simp at hden

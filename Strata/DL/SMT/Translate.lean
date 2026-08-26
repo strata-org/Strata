@@ -291,8 +291,6 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     return mkString
   | .prim .regex =>
     throw m!"Error: regexes are not supported"
-  | .prim .trigger =>
-    throw m!"Error: triggers are not supported"
   | .option ty => do
     let ty ← translateSort ty
     return .app (.const ``Option [0]) ty

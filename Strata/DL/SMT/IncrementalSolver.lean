@@ -103,12 +103,7 @@ private def mkQuantHelper (qk : QuantifierKind)
   let vars := bindings.map fun (name, ty) => TermVar.mk name ty
   let varTerms := vars.map Term.var
   let (body, triggers) ← callback varTerms
-  let tr := match triggers with
-    | [] => Term.app .triggers [] .trigger
-    | groups =>
-      let triggerTerms := groups.map fun group => Term.app .triggers group .trigger
-      Term.app .triggers triggerTerms .trigger
-  return (Term.quant qk vars tr body)
+  return (Term.quant qk vars triggers body)
 
 /-- Shared helper for binary comparison operations. -/
 private def mkBinCmp (op : Op) (opName : String) (ts : List Term)

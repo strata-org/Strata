@@ -155,32 +155,40 @@ private def ctxSort : TypedContext := { uss := [{ name := "Foo", arity := 0 }], 
 
 -- `∀ x : Int, x < 5`, with the bound variable used in the body (confirms the binder is in scope).
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt] (.var xInt) (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
+  (.quant .all [xInt] [] (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
 -- `∃`, same shape.
 #guard (Term.typeCheck emptyCtx
-  (.quant .exist [xInt] (.var xInt) (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
--- A proper `triggers` group as the trigger (exercises `wfTriggers` / `typeCheckAll`).
+  (.quant .exist [xInt] [] (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
+-- A proper trigger group as the trigger (exercises `wfTriggers` / `typeCheckAll`).
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt] (.app .triggers [.var xInt] .bool)
+  (.quant .all [xInt] [[.var xInt]]
     (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
 -- Non-boolean body.
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt] (.var xInt) (.prim (.int 1)))).toOption == none
+  (.quant .all [xInt] [] (.prim (.int 1)))).toOption == none
 -- Bound variable with an undeclared sort → rejected by the `WFSort` guard.
 #guard (Term.typeCheck emptyCtx
   (.quant .all [{ id := "z", ty := .constr "Bogus" [] }]
-    (.var { id := "z", ty := .constr "Bogus" [] }) (.prim (.bool true)))).toOption == none
+    [] (.prim (.bool true)))).toOption == none
 -- Ill-typed trigger pattern → rejected by `wfTriggers`.
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt] (.app .triggers [.prim (.real ⟨1, 0⟩)] .bool)
+  (.quant .all [xInt] [[.prim (.real ⟨1, 0⟩)]]
+    (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == none
+-- Multi-group trigger, both groups well-formed (exercises `wfTriggers`'s recursive tail).
+#guard (Term.typeCheck emptyCtx
+  (.quant .all [xInt] [[.var xInt], [.app .add [.var xInt, .prim (.int 1)] .int]]
+    (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == some .bool
+-- Multi-group trigger with an ill-typed second group → rejected (recursive tail must inspect it).
+#guard (Term.typeCheck emptyCtx
+  (.quant .all [xInt] [[.var xInt], [.prim (.real ⟨1, 0⟩)]]
     (.app .lt [.var xInt, .prim (.int 5)] .bool))).toOption == none
 -- Multi-binder group (`vs.length > 1`, so `vs.reverse` is non-trivial): both variables are in scope.
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt, yInt] (.var xInt) (.app .lt [.var xInt, .var yInt] .bool))).toOption == some .bool
+  (.quant .all [xInt, yInt] [] (.app .lt [.var xInt, .var yInt] .bool))).toOption == some .bool
 -- Same-name binders in one group: after `reverse` the last-listed binder (`xInt`) wins, so a
 -- reference at the shadowed earlier binder's sort (`xBool`) no longer resolves.
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xBool, xInt] (.var xInt) (.app .eq [.var xBool, .var xBool] .bool))).toOption == none
+  (.quant .all [xBool, xInt] [] (.app .eq [.var xBool, .var xBool] .bool))).toOption == none
 
 /-! ### Option literals -/
 
@@ -238,8 +246,8 @@ private def ctxNA : TypedContext := { uss := [], ufs := [], Γ := [nestedArr, aA
   (.app .add [.app .mul [.prim (.int 2), .prim (.int 3)] .int, .prim (.int 1)] .int)).toOption == some .int
 -- Nested quantifier: `∀ x : Int, ∃ y : Int, x < y`, exercising the recursive binder-pushing path.
 #guard (Term.typeCheck emptyCtx
-  (.quant .all [xInt] (.var xInt)
-    (.quant .exist [yInt] (.var yInt) (.app .lt [.var xInt, .var yInt] .bool)))).toOption == some .bool
+  (.quant .all [xInt] []
+    (.quant .exist [yInt] [] (.app .lt [.var xInt, .var yInt] .bool)))).toOption == some .bool
 
 /-! ### Unsupported operators (catch-all) -/
 

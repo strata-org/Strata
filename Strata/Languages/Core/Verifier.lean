@@ -88,7 +88,6 @@ def termTypeToSort (solver : AbstractSolver τ σ m) (ty : TermType) : m σ := d
   | .prim .string => solver.stringSort
   | .prim .regex => solver.regexSort
   | .prim (.bitvec n) => solver.bitvecSort n
-  | .prim .trigger => solver.boolSort
   | .option inner => do
     let s ← termTypeToSort solver inner
     solver.constrSort "Option" [s]
@@ -236,20 +235,17 @@ def encodeTerm (solver : AbstractSolver τ σ m) (t : Term) : AbstractEncoderM �
     let retSort ← liftM (termTypeToSort solver t.typeOf)
     defineApp solver retSort op (← mapM₁ ts (fun ⟨tᵢ, _⟩ => encodeTerm solver tᵢ))
   | .quant qk qargs tr body =>
-    let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
     defineQuantifierHelper solver qk qargs
       (encodeTerm solver body)
-      (mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver ti)))
+      (mapM₁ tr (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm solver ti)))
 termination_by sizeOf t
 decreasing_by
   all_goals first
     | term_by_mem
     | add_mem_size_lemmas
-      have hmem : _ ∈ (if Factory.isSimpleTrigger tr then ([] : List (List Term)) else extractTriggers tr) := ‹_ ∈ trExprs›
-      split at hmem
-      · simp at hmem
-      · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
-        simp_all; omega
+      have h1 := List.sizeOf_lt_of_mem ‹_ ∈ tr›
+      have h2 := List.sizeOf_lt_of_mem ‹_ ∈ _›
+      simp_all; omega
 
 def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncoderM τ m String := do
   let uf := f.toUF

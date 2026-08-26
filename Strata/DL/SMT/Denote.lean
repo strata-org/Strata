@@ -128,13 +128,18 @@ def substituteTermIS (isctx : ISContext) (t : Term) : Term :=
     .app (.uf (substituteUFIS isctx f)) (substituteTermISs isctx as) (substituteIS isctx ty)
   | .app op as ty =>
     .app op (substituteTermISs isctx as) (substituteIS isctx ty)
-  | .quant q vs t b =>
-    .quant q (vs.map (substituteTermVarIS isctx)) (substituteTermIS isctx t) (substituteTermIS isctx b)
+  | .quant q vs tr b =>
+    .quant q (vs.map (substituteTermVarIS isctx)) (substituteTermISss isctx tr) (substituteTermIS isctx b)
 
 def substituteTermISs (isctx : ISContext) (ts : List Term) : List Term :=
   match ts with
   | [] => []
   | t :: ts => substituteTermIS isctx t :: substituteTermISs isctx ts
+
+def substituteTermISss (isctx : ISContext) (tss : List (List Term)) : List (List Term) :=
+  match tss with
+  | [] => []
+  | ts :: rest => substituteTermISs isctx ts :: substituteTermISss isctx rest
 
 end
 
@@ -153,7 +158,6 @@ mutual
   | .real => none -- fin _ => Real
   | .string => return fun _ => String
   | .regex => none
-  | .trigger => none
 
 /--
 Interpret an SMT `TermType` as a Lean `Type`, when supported.

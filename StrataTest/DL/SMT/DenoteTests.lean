@@ -87,13 +87,13 @@ macro "denoteQuery_sorts_rfl" : tactic =>
 
 example :
   let a := { id := "a", ty := .prim .int }
-  (denoteBoolTermAux (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int)))) =
+  (denoteBoolTermAux (.quant .all [a] [] (.app .gt [.prim (.int 42), a] (.prim .int)))) =
   .some (∀ (x : Int), 42 > x) := by
   rfl
 
 example :
   let a := { id := "a", ty := .prim (.bitvec 32) }
-  (denoteQuery {} [] (.quant .all [a] a (.app .bvugt [.prim (.bitvec (42 : BitVec 32)), a] (.prim (.bitvec 32))))) =
+  (denoteQuery {} [] (.quant .all [a] [] (.app .bvugt [.prim (.bitvec (42 : BitVec 32)), a] (.prim (.bitvec 32))))) =
   .some (∀ (x : BitVec 32), 42 > x) := by
   denoteQuery_rfl
 

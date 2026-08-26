@@ -489,10 +489,8 @@ def corePredefinedOpToSMTOp (op : CoreOp) (ctx : SMT.Context) :
   | .re .Comp      => some (.app Op.re_comp,       .regex,  ctx)
   | .re .None      => some (.app Op.re_none,       .regex,  ctx)
 
-  | .trigger .EmptyTriggers | .trigger .EmptyGroup =>
-    some (.app Op.triggers, .trigger, ctx)
-  | .trigger .AddTrigger | .trigger .AddGroup =>
-    some (Factory.addTriggerList, .trigger, ctx)
+  -- Note: Core `Triggers`/`TriggerGroup` operators are not lowered here; they are
+  -- handled structurally by `encodeTriggerGroups` in the `.quant` case.
 
   -- Safe BV operations: same encoding as unsafe (preconditions already checked)
   | .bv ⟨n, .SafeAdd⟩ => some (.app Op.bvadd, .bitvec n, ctx)
@@ -660,6 +658,22 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
             else pending.insert { fn := fn, uf := uf, fnty := fnty }
           .ok (.app (Op.uf uf), smt_outty, ctx, pending)
 
+/-- Does `tr` denote a *structured* Core trigger list (a `Triggers.empty` /
+    `Triggers.addGroup` spine, or `LExpr.noTrigger`)? If not, the trigger is a bare
+    pattern term supplied directly and forms a single `:pattern` group. -/
+def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
+  match tr with
+  | .bvar _ _ => true  -- LExpr.noTrigger
+  | .op _ opId _ =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .EmptyTriggers | .trigger .EmptyGroup => true
+    | _ => false
+  | .app _ (.app _ (.op _ opId _) _) _ =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddGroup => true
+    | _ => false
+  | _ => false
+
 mutual
 
 @[expose]
@@ -729,16 +743,18 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
       ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)
     let x := Strata.Name.findUnique baseName startSuffix usedNames
     let (ety, ctx) ← LMonoTy.toSMTType ty ctx
-    -- The trigger is usually an application (the pattern to match on), but for
-    -- quantifiers without an explicit trigger it is `LExpr.noTrigger` (a bare
-    -- `.bvar`), which `Factory.quant` treats as "no meaningful trigger". Encode
-    -- applications via `appToSMTTerm` and anything else (e.g. the no-trigger
-    -- bvar) via `toSMTTerm`.
-    let (trt, ctx, pending) ← match tr with
-      | .app _ fn arg => appToSMTTerm factory ((x, ety) :: bvs) fn arg [] ctx pending
-      | tr' => toSMTTerm factory ((x, ety) :: bvs) tr' ctx pending
-    let (et, ctx, pending) ← toSMTTerm factory ((x, ety) :: bvs) e ctx pending
-    .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx, pending)
+    -- Lower the Core trigger expression into `List (List Term)` pattern groups; leaf
+    -- pattern terms are encoded with the binder `x` in scope.
+    let trBvs := (x, ety) :: bvs
+    let (trGroups, ctx, pending) ←
+      if isCoreTriggerListExpr tr then
+        encodeTriggerGroups factory trBvs tr [] ctx pending
+      else
+        -- A single pattern term forms one `:pattern` group.
+        let (tt, ctx, pending) ← toSMTTerm factory trBvs tr ctx pending
+        .ok ([[tt]], ctx, pending)
+    let (et, ctx, pending) ← toSMTTerm factory trBvs e ctx pending
+    .ok (Factory.quant (convertQuantifierKind qk) x ety trGroups et, ctx, pending)
   | .eq _ e1 e2 =>
     let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
     let (e2t, ctx, pending) ← toSMTTerm factory bvs e2 ctx pending
@@ -819,6 +835,57 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
   | _, _ =>
     .error f!"Cannot encode .app expression {LExpr.app () fn arg}"
 termination_by (sizeOf fn + sizeOf arg, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
+
+/-- Decompose one Core trigger *group* — a `TriggerGroup.addTrigger` spine ending
+    in `TriggerGroup.empty` (as produced by `Core.Factory.mkTriggerGroup`) — into
+    the list of encoded SMT pattern terms it holds, in source order. -/
+def encodeTriggerGroup (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
+  (g : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (List Term × SMT.Context × SMT.PendingFnQueue) := do
+  match g with
+  | .op _ _ _ =>
+    -- `TriggerGroup.empty`: end of the group spine.
+    .ok (acc, ctx, pending)
+  | .app _ (.app _ (.op _ opId _) t) rest =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddTrigger =>
+      let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
+      encodeTriggerGroup factory bvs rest (tt :: acc) ctx pending
+    | _ => .error f!"Unexpected operator in trigger group: {opId.name}"
+  | _ => .error f!"Unexpected trigger group expression: {g}"
+termination_by (sizeOf g, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
+
+/-- Decompose a structured Core trigger LExpr — a `Triggers.addGroup` spine ending
+    in `Triggers.empty` (as produced by `Core.Factory.mkTriggerExpr`), or
+    `LExpr.noTrigger` (a bare `.bvar`) when absent — into SMT `:pattern` groups, in
+    source order. Direct (unstructured) pattern-term triggers are handled by the
+    caller, not here. -/
+def encodeTriggerGroups (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
+  (tr : LExpr CoreLParams.mono) (acc : List (List Term)) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (List (List Term) × SMT.Context × SMT.PendingFnQueue) := do
+  match tr with
+  | .bvar _ _ =>
+    -- `LExpr.noTrigger`: no meaningful trigger.
+    .ok (acc, ctx, pending)
+  | .op _ _ _ =>
+    -- `Triggers.empty`: end of the group-list spine.
+    .ok (acc, ctx, pending)
+  | .app _ (.app _ (.op _ opId _) g) rest =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddGroup =>
+      let (group, ctx, pending) ← encodeTriggerGroup factory bvs g [] ctx pending
+      encodeTriggerGroups factory bvs rest (group :: acc) ctx pending
+    | _ => .error f!"Unexpected operator in trigger list: {opId.name}"
+  | _ => .error f!"Unexpected trigger expression: {tr}"
+termination_by (sizeOf tr, 0)
 decreasing_by
   all_goals simp_wf
   all_goals (first | omega | term_by_mem)

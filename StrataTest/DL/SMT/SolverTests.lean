@@ -42,18 +42,6 @@ info: termToSMTString Term.some: (some true)
   let s ← runSolverM (termToSMTString (Term.some (Term.prim (.bool true))))
   IO.println s!"termToSMTString Term.some: {s}"
 
--- typeToSMTString throws on TermType.trigger instead of panicking.
-/--
-info: typeToSMTString correctly threw: Solver.typeToSMTString failed: don't know how to translate a trigger type
--/
-#guard_msgs in
-#eval do
-  try
-    let _ ← runSolverM (typeToSMTString (.prim .trigger))
-    IO.println "ERROR: typeToSMTString did not throw"
-  catch e =>
-    IO.println s!"typeToSMTString correctly threw: {e}"
-
 /-! ## Tests for `Solver.withFileWriter` flush-on-completion
 
 Commands are buffered; `withFileWriter` guarantees the complete script
