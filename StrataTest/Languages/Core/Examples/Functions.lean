@@ -162,5 +162,34 @@ theorem quantBodyFuncPgm_correct : smtVCsCorrect quantBodyFuncPgm := by
   gen_smt_vcs
   all_goals (try grind)
 
+---------------------------------------------------------------------
+
+/-! ## Regression: `gen_smt_vcs` with a polymorphic uninterpreted function
+
+`genVCs` previously skipped monomorphization, so `gen_smt_vcs` would fail
+for programs whose obligations contain a reference to a polymorphic function
+— either a user-defined uninterpreted function or a built-in such as
+`Sequence.select`. Without monomorphization the SMT encoder encounters an
+unresolved type variable and returns `none`.
+
+This example uses an uninterpreted `mirror<T>` (no body, so it is not
+inlined by symbolic evaluation) and asserts `mirror(a) == mirror(a)`, which
+is trivially true by reflexivity and requires no axioms. The obligation still
+contains a reference to `mirror<int>`, exercising the monomorphization path.
+-/
+
+private def polyUninterpPgm : Program :=
+#strata
+program Core;
+function mirror<T>(x : T) : T;
+procedure testMirror(a : int) {
+  assert [mirrorRefl]: mirror(a) == mirror(a);
+};
+#end
+
+theorem polyUninterpPgm_correct : smtVCsCorrect polyUninterpPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
 end Strata
 ---------------------------------------------------------------------

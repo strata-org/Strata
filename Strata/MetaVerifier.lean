@@ -7,6 +7,8 @@ module
 
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.MonomorphizeFunctions
+import Strata.Transform.MonomorphizeProcedures
 import Strata.Transform.NondetElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.C_Simp
@@ -77,11 +79,17 @@ abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
   let transform : Transform.CoreTransformM (Bool × Program) := do
-    let (_, program') ← insertLoopInvariantAsserts program
-    let (_, program'') ← loopElim program'
+    -- Monomorphize before loop elimination so the SMT encoder sees only
+    -- concrete types. The full verification pipeline runs these passes via
+    -- corePipelinePhases; genVCs must match to avoid encoder failures on
+    -- programs with polymorphic function definitions.
+    let (_, program₀) ← monomorphizeProcedures program
+    let (_, program₁) ← monomorphizeFunctions program₀
+    let (_, program₂) ← insertLoopInvariantAsserts program₁
+    let (_, program₃) ← loopElim program₂
     -- nondetElim must run before symbolic evaluation, which rejects surviving
     -- nondeterministic guards.
-    nondetElim program''
+    nondetElim program₃
   let (res, _) := StateT.run (ExceptT.run transform) Transform.CoreTransformState.emp
   let (_, program) ← res.toOption
   match Core.typeCheck options program with
