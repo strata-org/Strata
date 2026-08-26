@@ -153,11 +153,11 @@ program Laurel;
 procedure divByZero(d: int) opaque {
   var x: int := 10;
   x /= d
-//^^^^^^ error: precondition does not hold
+//^^^^^^ error: divisor is non-zero does not hold
 };
 procedure modByZero(d: int) opaque {
   var x: int := 10;
   x %= d
-//^^^^^^ error: precondition does not hold
+//^^^^^^ error: modulus is non-zero does not hold
 };
 #end

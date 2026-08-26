@@ -29,6 +29,8 @@ For each call to a contracted procedure:
 - Assign all input arguments to temporary variables before the call.
 - Insert `assert foo$pre0(temps); assert foo$pre1(temps); ...` before the call.
 - After the call, insert `assume foo$post0(temps, outputs); assume foo$post1(temps, outputs); ...`.
+
+This applies to calls inside a contract as well as calls in a body.
 -/
 
 namespace Strata.Laurel
@@ -58,9 +60,13 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
     POLYMORPHIC procedure (`idp<T>`) mentions `T` in its parameter types, so the
     generated helper function must bind `T` too — otherwise `T` is a free type
     variable at Core and the program fails to type-check. Empty for a monomorphic
-    procedure ⇒ byte-identical to before. -/
+    procedure, where it has no effect.
+
+    `assumptions` are emitted as `assume` statements ahead of the condition. The
+    `i`-th precondition helper is given `requires` clauses `0 … i-1`, because a
+    precondition may rely on the preceding ones to be well-formed. -/
 private def mkConditionProc (name : String) (typeArgs : List Identifier)
-    (params : List Parameter) (condition : Condition) : Procedure :=
+    (params : List Parameter) (assumptions : List Condition) (condition : Condition) : Procedure :=
   let src := condition.condition.source
   -- Give the pre/post helper procedure a shape the current lowering can turn
   -- into a Core function: assign the condition to the `$result` output and exit
@@ -70,9 +76,11 @@ private def mkConditionProc (name : String) (typeArgs : List Identifier)
   -- the pure expression `$result`, so this shape reaches Core as a function.
   -- Helpers could be emitted as expression bodies directly, which would make
   -- this block wrapping unnecessary; that simplification is not attempted here.
+  let assumes : List StmtExprMd :=
+    assumptions.map fun c => ⟨.Assume c.condition, c.condition.source⟩
   let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condition.condition, src⟩
   let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
-  let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
+  let body : StmtExprMd := ⟨.Block (assumes ++ [assign, exit]) (some returnLabel), src⟩
   { name := mkId name
     typeArgs := typeArgs
     inputs := params
@@ -451,6 +459,30 @@ private def rewriteCallSitesInProc (model : SemanticModel) (contractInfoMap : St
     return { proc with body := Body.Opaque posts' impl' mods' }
   | _ => return proc
 
+/-- Build the pre/postcondition helper procedures for one procedure, rewriting call
+    sites inside the contract expressions so they carry the callee's precondition
+    obligations.
+
+    Runs inside `ContractM` so `$cp_N` temporaries share a counter with body
+    rewriting; a separate counter would hand the same name to both, which Core rejects
+    ("already in context").
+
+    Only the condition expressions are rewritten; the assumes `mkPostConditionProc`
+    prepends are left alone, for the reason given in its docstring. -/
+private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
+    (proc : Procedure) : ContractM (List Procedure) := do
+  let rw := rewriteCallSites model contractInfoMap
+  let preProcs ← proc.preconditions.zipIdx.mapM fun (c, i) => do
+    let condition' ← rw c.condition
+    -- See `mkConditionProc` for why the preceding preconditions are assumed.
+    pure (mkConditionProc (preCondProcName proc.name.text i) proc.typeArgs proc.inputs
+      (proc.preconditions.take i) { c with condition := condition' })
+  let postProcs ← proc.body.postconditions.zipIdx.mapM fun (c, i) => do
+    let condition' ← rw c.condition
+    pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.typeArgs proc.inputs
+      proc.outputs proc.preconditions { c with condition := condition' })
+  return preProcs ++ postProcs
+
 /-- Conjoin a list of conditions into a single expression with `&&`. -/
 private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=
   match conds.map (·.condition) with
@@ -477,37 +509,33 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
     All procedures with contracts are transformed. -/
 def lowerContracts (model : SemanticModel) (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
+  -- `contractInfoMap` is built from the *original* procedures, before the helpers
+  -- exist. That is what keeps a helper from being treated as a contracted
+  -- procedure itself when call sites inside it are rewritten.
 
-  -- Generate helper procedures for all procedures with contracts
-  let helperProcs := program.staticProcedures.flatMap fun proc =>
-    let postconds := proc.body.postconditions
-    let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
-      mkConditionProc (preCondProcName proc.name.text i) proc.typeArgs proc.inputs c
-    let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i) proc.typeArgs proc.inputs proc.outputs
-        proc.preconditions c
-    preProcs ++ postProcs
+  -- Bodies are processed before helpers, so helper temporaries are numbered after
+  -- body temporaries.
+  let (allProcs, _) := (do
+    let transformedProcs ← program.staticProcedures.mapM fun (proc : Procedure) => do
+      let proc : Procedure := match proc.invokeOn with
+        | some trigger =>
+          let postconds := proc.body.postconditions
+          if postconds.isEmpty then { proc with invokeOn := none }
+          else { proc with
+            axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
+            invokeOn := none }
+        | none => proc
+      let proc : Procedure ← match contractInfoMap.get? proc.name.text with
+        | some info =>
+          let body ← transformProcBody model proc info
+          pure { proc with preconditions := [], body }
+        | none => pure proc
+      -- Rewrite call sites in the procedure body
+      rewriteCallSitesInProc model contractInfoMap proc
+    let helperProcs ← program.staticProcedures.flatMapM (mkHelperProcs model contractInfoMap)
+    return helperProcs ++ transformedProcs).run 0
 
-  -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
-  -- Run all call-site rewriting in a single ContractM to share the global counter.
-  let (transformedProcs, _) := (program.staticProcedures.mapM fun (proc : Procedure) => do
-    let proc : Procedure := match proc.invokeOn with
-      | some trigger =>
-        let postconds := proc.body.postconditions
-        if postconds.isEmpty then { proc with invokeOn := none }
-        else { proc with
-          axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
-          invokeOn := none }
-      | none => proc
-    let proc : Procedure ← match contractInfoMap.get? proc.name.text with
-      | some info =>
-        let body ← transformProcBody model proc info
-        pure { proc with preconditions := [], body }
-      | none => pure proc
-    -- Rewrite call sites in the procedure body
-    rewriteCallSitesInProc model contractInfoMap proc).run 0
-
-  { program with staticProcedures := helperProcs ++ transformedProcs }
+  { program with staticProcedures := allProcs }
 
 public def contractPass : LoweringPass where
   name := "Contracts"

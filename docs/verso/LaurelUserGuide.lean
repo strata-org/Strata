@@ -1201,6 +1201,38 @@ procedure addBoth(x: int, y: int) returns (r: int)
 };
 ```
 
+The order of the clauses matters. A precondition is itself checked for
+well-formedness — a partial operation used inside one carries its usual obligation,
+just as it would in a body — and each clause may rely on the clauses written before
+it to discharge that obligation. Division requires a nonzero divisor, so the second
+clause below is well-formed only because the first has already ruled out `x == 0`:
+
+```laurel
+procedure scaleDown(x: int) returns (r: int)
+  requires x != 0
+  requires 10 / x > 1
+  opaque
+{
+  r := x
+};
+```
+
+Written the other way round, the division comes before anything constrains `x`, so
+the divisor may be zero and Laurel reports `precondition does not hold` on `10 / x`:
+
+```laurel
+procedure scaleDownBadOrder(x: int) returns (r: int)
+  requires 10 / x > 1
+  requires x != 0
+  opaque
+{
+  r := x
+};
+```
+
+The same applies to `ensures`, where a postcondition may rely on the procedure's
+preconditions. Place a guard before the clause that needs it.
+
 ## Postconditions
 
 A postcondition for a procedure is a condition that is guaranteed to hold after the procedure
