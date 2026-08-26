@@ -258,7 +258,7 @@ composite Cell {
   var value: int
 }
 var g: int := 0
-var cell: Cell := new Cell
+var cell: Cell := <??>
 procedure P(x: int): bool;
 procedure trigger()
   invokeOn P(g)
@@ -308,7 +308,7 @@ program Laurel;
 composite Cell {
   var value: int
 }
-var cell: Cell := new Cell
+var cell: Cell := <??>
 procedure mutateField() opaque {
   cell#value := 9
 };

@@ -187,7 +187,21 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
   match expr with
   | AstNode.mk val source =>
   match val with
-  | .Hole det _ =>
+  | .Hole det ty? =>
+      -- A hole already carrying a concrete type keeps it: only the `Unknown` placeholder
+      -- (set by resolution on a surface `<?>`/`<??>`) is replaced by context-based
+      -- inference. A synthesized hole arrives with a real type precisely because the
+      -- context cannot supply one.
+      if let some ty := ty? then
+        if ty.val != .Unknown then
+          -- Counted like any other annotated hole: the statistic tracks holes that carry
+          -- a type once this pass has run, and a preserved one does. Skipping the
+          -- increment would make the number depend on whether resolution happened to
+          -- infer the type first (`x + <?>` resolves to `int` already, whereas
+          -- `IntList..head(<?>)` does not).
+          modify fun s => { s with
+            statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
+          return ⟨.Hole det (some ty), source⟩
       -- A hole with no inferable context (expectedType `.Unknown`, e.g. a bare `<?>` proc body) is a
       -- genuine "could not infer type" error, so the diagnostic fires here. The sound gradual escape
       -- for an unmodeled field-write RHS hole is handled in the `.Assign` arm (which knows the target

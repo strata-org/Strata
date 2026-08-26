@@ -331,24 +331,32 @@ private def checkHeapSpecifications : IO Unit := do
   let lowered ← IO.ofExcept (heapParameterization resolved.model resolved.program)
   let readerAfter := (findProcedure lowered "reader").get!
   let writerAfter := (findProcedure lowered "writer").get!
-  let hasHeapInput (proc : Procedure) := proc.inputs.any (·.name.text == "$heap")
-  let hasHeapOutput (proc : Procedure) := proc.outputs.any (·.name.text == "$heap")
+  -- The heap is a file-scope global, threaded into signatures by
+  -- `GlobalParameterization`. This pass declares the global and rewrites field
+  -- accesses -- including those in specifications, which is what this test is
+  -- about -- but adds no parameters, so a `$heap` param here would be a bug.
+  -- Threading itself is covered by GlobalParameterizationTest and end to end.
+  let hasHeapParam (proc : Procedure) :=
+    proc.inputs.any (·.name.text == "$heap") || proc.outputs.any (·.name.text == "$heap")
+  let heapGlobalDeclared := lowered.staticFields.any (·.name.text == "$heap")
   IO.println s!"resolution errors: {resolved.errors.size}"
   IO.println s!"reader classified: {
     readerAnalysis.readsHeapDirectly && !readerAnalysis.writesHeapDirectly &&
       everySpecificationsFieldRead}"
   IO.println s!"writer classified: {writerAnalysis.readsHeapDirectly && writerAnalysis.writesHeapDirectly}"
-  IO.println s!"reader specifications lowered: {hasHeapInput readerAfter &&
-    !hasHeapOutput readerAfter && !specificationsHasFieldRead readerAfter &&
+  IO.println s!"heap global declared: {heapGlobalDeclared}"
+  IO.println s!"reader specifications lowered: {!hasHeapParam readerAfter &&
+    !specificationsHasFieldRead readerAfter &&
     heapSpecificationsHasExpectedValues readerAfter}"
-  IO.println s!"writer specifications lowered: {hasHeapInput writerAfter &&
-    hasHeapOutput writerAfter && !specificationsHasFieldRead writerAfter &&
+  IO.println s!"writer specifications lowered: {!hasHeapParam writerAfter &&
+    !specificationsHasFieldRead writerAfter &&
     heapSpecificationsHasExpectedValues writerAfter}"
 
 /--
 info: resolution errors: 0
 reader classified: true
 writer classified: true
+heap global declared: true
 reader specifications lowered: true
 writer specifications lowered: true
 -/
@@ -387,13 +395,14 @@ private def specificationCallProgram : Program :=
       fields := [{ name := mkId "value", isMutable := true, type := ty .TInt }]
       instanceProcedures := [] }] }
 
+/-- A call in a specification is left as an ordinary call over its source arguments.
+    The `$heap` argument is appended later, by `GlobalParameterization`; what matters
+    here is that traversing a specification neither drops the call nor rewrites it
+    into something impure. -/
 private def isHeapAwareCall (calleeName : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall callee [cell, heap] =>
+  | .StaticCall callee [cell] =>
       callee.text == calleeName &&
-        (match heap.val with
-        | .Var (.Local name) => name.text == "$heap"
-        | _ => false) &&
         (match cell.val with
         | .Var (.Local name) => name.text == "cell"
         | _ => false)
@@ -600,10 +609,11 @@ private def checkEmptySpecifications : IO Unit := do
     (findAnyProcedure heapLowered "staticEmptySpecifications").get!
   let instanceAfterHeap :=
     (findAnyProcedure heapLowered "Cell$instanceEmptySpecifications").get!
-  let hasHeapInput (proc : Procedure) :=
-    proc.inputs.any (·.name.text == "$heap")
-  let hasHeapOutput (proc : Procedure) :=
-    proc.outputs.any (·.name.text == "$heap")
+  -- See the note in `checkHeapSpecifications`: this pass declares the `$heap`
+  -- global and rewrites field accesses; `GlobalParameterization` turns it into
+  -- parameters afterwards, so neither procedure should carry one yet.
+  let hasHeapParam (proc : Procedure) :=
+    proc.inputs.any (·.name.text == "$heap") || proc.outputs.any (·.name.text == "$heap")
 
   IO.println s!"resolution errors: {resolved.errors.size}"
   IO.println s!"constrained-type elimination preserves empty specifications: {
@@ -621,8 +631,7 @@ private def checkEmptySpecifications : IO Unit := do
     liftedResolved.errors.isEmpty &&
     addsOnlyHeapWfPreconds staticAfterHeap 1 &&
     addsOnlyHeapWfPreconds instanceAfterHeap 1 &&
-      hasHeapInput staticAfterHeap && hasHeapOutput staticAfterHeap &&
-      hasHeapInput instanceAfterHeap && !hasHeapOutput instanceAfterHeap}"
+      !hasHeapParam staticAfterHeap && !hasHeapParam instanceAfterHeap}"
   IO.println s!"instance lifting preserves empty specifications: {
     hasEmptySpecifications staticAfterLift && hasEmptySpecifications instanceAfterLift}"
 

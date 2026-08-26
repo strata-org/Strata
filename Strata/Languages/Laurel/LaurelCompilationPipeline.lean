@@ -134,15 +134,27 @@ def laurelPipeline : Array LoweringPass := #[
   -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateValueInReturnsPass,
   eliminateExceptionsPass,
-  -- `globalParameterizationPass` (mainline) threads file-scope globals as hidden proc params.
-  -- It runs AFTER monomorphization (which needs the original `staticFields` + un-polluted
-  -- `proc.inputs` for per-call-site instantiation inference) and before `heapParameterizationPass`
-  -- (globals layered on already-monomorphized concrete procs; heap stays the final hidden input).
-  globalParameterizationPass,
+  -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
+  -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
+  -- writes the heap); `ModifiesClauses` builds the frames. They share one
+  -- re-resolve, which binds those `$heap` references as `$static` fields.
+  --
+  -- `globalParameterizationPass` runs after the trio: the heap global does not exist
+  -- until `HeapParameterization` declares it. Monomorphization precedes the trio (see
+  -- `monomorphizeCompositesPass` above), so globals are layered onto already-
+  -- monomorphized concrete procedures.
   yieldElimPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
+  -- Threads `$heap` like any other global. Must follow the trio: the global does
+  -- not exist until `HeapParameterization` declares it, and `TypeHierarchy`
+  -- introduces further heap writes.
+  globalParameterizationPass,
+  -- After global threading, so `old(g)` normalizes for an arbitrary global: a
+  -- written global is by now an inout in the ordinary signature sense, which is
+  -- what `procInoutNames` recognizes. Before `Contracts`, so that pass sees `$heap`
+  -- as a plain inout and its existing `$out` machinery handles it unchanged.
   uniqueOverloadNamesPass,
   pushOldInwardPass,
   inferHoleTypesPass,

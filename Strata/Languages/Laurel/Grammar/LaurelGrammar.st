@@ -271,6 +271,17 @@ op modifiesWildcard: ModifiesClause => "\n  modifies *";
 // plain `modifies`, which is a single unguarded frame.
 op modifiesWhenClause(refs: CommaSepBy StmtExpr, guard: StmtExpr): ModifiesClause => "\n  modifies " refs:0 " when " guard:0;
 
+// Declared file-scope global effects, for a procedure with no implementation.
+// With a body the effects are inferred from its statements; without one there is
+// no statement to infer from, so the declaration is the only evidence — the role
+// `modifies` plays for the heap. `writes` implies read access (a written global is
+// threaded as an inout); `reads` is for read-only access.
+category ReadsGlobalsClause;
+op readsGlobalsClause(globals: CommaSepBy Ident): ReadsGlobalsClause => "\n  reads " globals;
+
+category WritesGlobalsClause;
+op writesGlobalsClause(globals: CommaSepBy Ident): WritesGlobalsClause => "\n  writes " globals;
+
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";
 
@@ -307,8 +318,10 @@ op throwsOnClause(guard: StmtExpr, clauses: Seq ThrowsOnSpecClause): ThrowsOnCla
 category OpaqueSpec;
 op opaqueSpec(ensures: Seq EnsuresClause,
   modifies: Seq ModifiesClause,
-  throwsOn: Seq ThrowsOnClause): OpaqueSpec =>
-  "\n  opaque" ensures modifies throwsOn;
+  throwsOn: Seq ThrowsOnClause,
+  readsGlobals: Seq ReadsGlobalsClause,
+  writesGlobals: Seq WritesGlobalsClause): OpaqueSpec =>
+  "\n  opaque" ensures modifies throwsOn readsGlobals writesGlobals;
 
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;

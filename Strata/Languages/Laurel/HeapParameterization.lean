@@ -219,31 +219,6 @@ private def freshVarName : TransformM Identifier := do
 private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
 private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val := v, source }
 
-
-/-- Whether an output is the output side of an existing inout parameter. Core
-    emits inout receivers in input order, before output-only receivers. -/
-private def isInoutOutput (proc : Procedure) (output : Parameter) : Bool :=
-  proc.inputs.any (·.name.text == output.name.text)
-
-/-- Insert the heap output after all existing inout outputs and before ordinary
-    outputs. This mirrors Core call-argument order when globals or explicit
-    inouts coexist with the hidden heap. -/
-private def outputsWithHeap (proc : Procedure) (heapParam : Parameter) : List Parameter :=
-  let (inouts, ordinary) := proc.outputs.partition (isInoutOutput proc)
-  inouts ++ [heapParam] ++ ordinary
-
-/-- Apply `outputsWithHeap`'s ordering to an assignment's pre-heap targets. -/
-private def targetsWithHeap (model : SemanticModel) (callee : Identifier)
-    (heapTarget : VariableMd) (targets : List VariableMd) : List VariableMd :=
-  let proc? := match model.get callee with
-    | .staticProcedure proc | .instanceProcedure _ proc => some proc
-    | _ => none
-  match proc? with
-  | some proc =>
-      let paired := proc.outputs.zip targets
-      let (inouts, ordinary) := paired.partition fun (output, _) => isInoutOutput proc output
-      inouts.map (·.2) ++ [heapTarget] ++ ordinary.map (·.2)
-  | none => heapTarget :: targets
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
 Returns the qualified field name "DeclaringType.fieldName".
@@ -351,36 +326,8 @@ where
             | _ => return [⟨ .StaticCall callee args', source ⟩]
           | _, _ => return [⟨ .StaticCall callee args', source ⟩]
         else
-        let calleeReadsHeap ← readsHeap callee
-        let calleeWritesHeap ← writesHeap callee
-        if calleeWritesHeap then
-          match context with
-          | .specification =>
-              -- Specifications are pure. Keep the source-level call shape so the
-              -- pure-context validator reports the call itself, rather than a
-              -- synthetic heap-threading assignment introduced by this pass.
-              return [⟨.StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source⟩]
-          | .executable =>
-            if valueUsed then
-              let freshVar ← freshVarName
-              let callWithHeap := ⟨ .Assign
-                [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, some (computeExprType model exprMd)⟩) source]
-                (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩
-              return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
-            else
-              -- Generate throwaway Declare targets for any non-heap outputs
-              let procOutputs := match model.get callee with
-                | .staticProcedure proc => proc.outputs
-                | .instanceProcedure _ proc => proc.outputs
-                | _ => []
-              let extraTargets ← procOutputs.mapM fun out => do
-                pure (mkVarMd (.Declare ⟨← freshVarName, some out.type⟩) source)
-              let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
-              return [⟨ .Assign allTargets (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩]
-        else if calleeReadsHeap then
-          return [⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩]
-        else
-          return [⟨ .StaticCall callee args', source ⟩]
+        -- No heap threading: handled by `GlobalParameterization` (see `heapGlobalField`).
+        return [⟨ .StaticCall callee args', source ⟩]
     | .InstanceCall callTarget callee args =>
         let t ← recurseOne callTarget
         let args' ← args.mapM (recurseOne ·)
@@ -431,33 +378,19 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, some valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      -- Process an RHS call to a heap-mutating/reading procedure: thread the heap argument.
+      -- No heap threading here either (see the `StaticCall` arm above).
       let (newAssign, suffixes) ← do
-        let (v', addedHeap) <- match _hv : v.val with
+        let v' ← match _hv : v.val with
           | .StaticCall callee args => do
             let args' <- args.mapM recurseOne
-            let calleeWritesHeap ← writesHeap callee
-            let calleeReadsHeap ← readsHeap callee
-            if calleeWritesHeap then
-              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, true)
-            else if calleeReadsHeap then
-              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, false)
-            else
-              pure (⟨ .StaticCall callee args', v.source ⟩, false)
+            pure ⟨ .StaticCall callee args', v.source ⟩
           | .InstanceCall callTarget _callee args => do
             let _callTarget' ← recurseOne callTarget
             let _args' <- args.mapM recurseOne
-            pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
+            pure ⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩
           | _ =>
-            pure (<- recurseOne v, false)
-        let allTargets := if addedHeap
-          then
-            let heapTarget := mkVarMd (.Local heapVar) v.source
-            match v.val with
-            | .StaticCall callee _ => targetsWithHeap model callee heapTarget processedTargets
-            | _ => heapTarget :: processedTargets
-          else processedTargets
-        let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign allTargets v', source ⟩
+            recurseOne v
+        let newAssign: AstNode StmtExpr := ⟨ StmtExpr.Assign processedTargets v', source ⟩
 
         -- Convert a Declare variable to a Local reference (stripping the type).
         -- Non-Declare variables pass through unchanged.
@@ -704,30 +637,39 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     else lowerAsTypeNodesOnly .specification
   let proc ← mapProcedureSpecificationsM specTransform proc
 
+  -- Declare the heap write on every heap writer. `GlobalParameterization` infers a
+  -- global's effects from the expressions that mention it, which is enough for a
+  -- procedure with a body but not for a bodiless one: its frame is the only evidence
+  -- that it touches the heap, and the frame only *reads* `old($heap)` and `$heap` to
+  -- relate them. Declaring it here keeps `writesGlobals` in agreement with
+  -- `heapWriters` by construction -- both come from the same `HeapAnalysis` closure --
+  -- so the heap is threaded as an inout for exactly the procedures that write it.
+  let proc :=
+    if writesHeap && !proc.writesGlobals.any (·.text == heapVarName.text)
+    then { proc with writesGlobals := proc.writesGlobals ++ [heapVarName] }
+    else proc
+
   if writesHeap then
-    -- This procedure writes the heap — $heap appears in both inputs and outputs
-    -- (true inout). Core's two-state semantics provide `old $heap` automatically.
-    -- The heap goes LAST in the inputs so explicit arguments evaluate before the
-    -- heap is sampled at call sites (see the module docs). In the outputs it
-    -- follows all pre-existing inouts (globals and explicit inout parameters)
-    -- and precedes output-only values, matching Core's receiver order.
-    let heapParam : Parameter := { name := heapName, type := heapType proc.name.source }
-
-    let inputs' := proc.inputs ++ [heapParam]
-    let outputs' := outputsWithHeap proc heapParam
-
-    -- `proc` already had its specification expressions (preconditions,
-    -- relies/guarantees) heap-transformed at the top of this function. Prepend
-    -- the free heap-well-formedness preconditions (subjects are the original,
-    -- untransformed composite inputs).
-    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
+    -- `$heap` is not added to `inputs`/`outputs` here; `GlobalParameterization` threads
+    -- it, and owns argument evaluation order. The well-formedness contracts below do
+    -- still mention it, keyed off the heap-effect analysis: they are heap-specific, and
+    -- the reference is bound to the global by the re-resolve that ends the heap trio.
+    -- Subjects are the original, untransformed composite inputs.
+    --
+    -- An entry procedure gets none of them. Its globals are body locals, which a
+    -- contract cannot see, and all three are `.Assume` (free) — they inform callers,
+    -- and an entry procedure has none.
+    let preconditions' :=
+      if proc.isInterpretEntry then proc.preconditions
+      else heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     -- Synthesized postconditions: allocation counter is monotone, and every
     -- composite output is allocated in the output heap.
     let wfPostconditions :=
-      heapMonotonicityPostcond proc.name.source heapName
-        :: heapOutputAllocationPostconds model proc.outputs heapName
+      if proc.isInterpretEntry then []
+      else heapMonotonicityPostcond proc.name.source heapName
+             :: heapOutputAllocationPostconds model proc.outputs heapName
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
@@ -777,22 +719,21 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       pure { blk with guard := guard', modifies := modifies' }
 
     return { proc with
-      inputs := inputs',
-      outputs := outputs',
       preconditions := preconditions',
       throwsOn := throwsOn',
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add $heap as input only.
-    -- Use the prelude `Heap` datatype for the parameter type (see the
-    -- writes-heap branch above for rationale).
-    let heapParam : Parameter := { name := heapName, type := heapType proc.name.source }
-    let inputs' := proc.inputs ++ [heapParam]
+    -- Read-only: `$heap` is likewise not added as an input here.
+    -- `GlobalParameterization` gives a reader the plain input (see above).
 
     -- Specifications were heap-transformed at the top of this function; prepend
-    -- the free heap-well-formedness preconditions over the original inputs.
-    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
+    -- the free heap-well-formedness preconditions over the original inputs. Skipped
+    -- for an entry procedure, whose `$heap` is a body local a contract cannot see
+    -- (see the heap-writer branch above).
+    let preconditions' :=
+      if proc.isInterpretEntry then proc.preconditions
+      else heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -817,7 +758,6 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- heap), and `EliminateExceptions` (before this pass) already cleared
     -- a `throwsOn` case's guard and postconditions, so there is no exceptional contract to transform here.
     return { proc with
-      inputs := inputs',
       preconditions := preconditions',
       body := body' }
 
@@ -830,6 +770,55 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- frames are pure and double-embed.
     let body' ← mapBodyWithM (lowerAsTypeNodesOnly .executable) (lowerAsTypeNodesOnly .specification) proc.body
     return { proc with body := body' }
+
+/-- The initial heap: nothing allocated, every field slot an arbitrary `$Box`.
+
+    `MkHeap(mapConst(mapConst(<$Box hole>)), 0)`.
+
+    The `$Box` default is a *nondeterministic* typed hole rather than a concrete
+    constructor. `$Box`'s constructor list is generated by this pass from the field
+    types the program actually uses, so there is no variant that is guaranteed to
+    exist (a program with no fields yields none) — and none is needed: with
+    `nextReference = 0` no object is allocated, so no slot of this map is reachable
+    and which `$Box` it holds is unobservable. The hole says exactly that, and
+    `$Box` is a declared type regardless of how many constructors it has.
+
+    See `heapGlobalField` for where this is read. -/
+private def emptyHeapInitializer : StmtExprMd :=
+  let src := syntheticSource
+  let boxHole : StmtExprMd :=
+    ⟨.Hole (deterministic := false) (type := some ⟨.UserDefined "$Box", src⟩), src⟩
+  let boxTy : HighTypeMd := ⟨.UserDefined "$Box", src⟩
+  let innerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined "Field", src⟩ boxTy, src⟩
+  let outerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined "Composite", src⟩ innerTy, src⟩
+  -- Each `mapConst` is bound to an explicitly typed local, because `mapConst` cannot
+  -- express its own key type: `LaurelToCoreSchemaPass` recovers it from the *binding's*
+  -- declared type and otherwise defaults to `TypeTag`. Naming each level is what supplies
+  -- `Composite` and `Field`.
+  --
+  -- A block is an expression here, as in `TypeHierarchy.lowerNew`. Its declarations make
+  -- this initializer effectful, which is fine: it is synthesized after
+  -- `validateGlobalInitializers` runs on user source, and it is only ever spliced into an
+  -- entry procedure's body prologue -- a statement context.
+  let innerName : Identifier := { text := "$heap$inner", uniqueId := none, source := src }
+  let outerName : Identifier := { text := "$heap$outer", uniqueId := none, source := src }
+  let bindInner : StmtExprMd :=
+    ⟨.Assign [mkVarMd (.Declare ⟨innerName, some innerTy⟩) src]
+      (mkMd (.StaticCall "mapConst" [boxHole]) src), src⟩
+  let bindOuter : StmtExprMd :=
+    ⟨.Assign [mkVarMd (.Declare ⟨outerName, some outerTy⟩) src]
+      (mkMd (.StaticCall "mapConst" [mkMd (.Var (.Local innerName)) src]) src), src⟩
+  let mkHeap :=
+    mkMd (.StaticCall "MkHeap" [mkMd (.Var (.Local outerName)) src, mkMd (.LiteralInt 0) src]) src
+  ⟨.Block [bindInner, bindOuter, mkHeap] none, src⟩
+
+/-- `$heap` as a file-scope global, threaded through signatures and call sites by
+    `GlobalParameterization` like any other global. -/
+private def heapGlobalField : Field :=
+  { name := heapVarName
+    isMutable := true
+    type := ⟨.UserDefined "Heap", syntheticSource⟩
+    initializer := some emptyHeapInitializer }
 
 def heapParameterization (model: SemanticModel) (program : Program) : Except String Program := do
   -- Instance procedures are already lifted to `staticProcedures` by an earlier
@@ -886,6 +875,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
   let types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types'
   pure { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
+    staticFields := heapGlobalField :: program.staticFields,
     types }
 
 /-- Pipeline pass: heap parameterization. -/

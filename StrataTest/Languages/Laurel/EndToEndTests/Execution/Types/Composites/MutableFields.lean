@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelKeepIntermediates
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container {

@@ -169,11 +169,15 @@ def onlyIndividualRefs (entries : List ModifiesEntry) : Bool :=
   !entries.isEmpty && entries.all fun e => match e with | .single _ => true | _ => false
 
 /--
-Check whether a procedure has a `$heap` output parameter,
-indicating it mutates the heap.
+Check whether a procedure mutates the heap, and so has heap state to frame over.
+
+Consults the heap-effect analysis on the `SemanticModel` rather than inspecting
+`proc.outputs`, which have not been threaded yet at this stage: `GlobalParameterization`
+adds `$heap` after this pass runs. A false answer is silent -- the frames are simply
+never built.
 -/
-def hasHeapOut (proc : Procedure) : Bool :=
-  proc.outputs.any (fun p => p.name.text == heapVarName.text)
+def hasHeapOut (model : SemanticModel) (proc : Procedure) : Bool :=
+  proc.name.uniqueId.any model.heapWriters.contains
 
 /-- Build and attach `proc`'s frame conditions, then clear the clauses.
 
@@ -207,7 +211,7 @@ def transformModifiesClauses (model: SemanticModel)
         match guard? with
         | some g => mkMd (.StaticCall (mkId Operation.Implies.procName) [g, c]) src
         | none => c
-      if !(hasHeapOut proc) then
+      if !(hasHeapOut model proc) then
         -- No heap to frame over; the groups are moot.
         .ok { proc with body := .Opaque postconds impl [] }
       else
