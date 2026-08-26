@@ -87,7 +87,13 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
     -- nondetElim must run before symbolic evaluation, which rejects surviving
     -- nondeterministic guards.
     let (_, p₃) ← nondetElim p₂
-    monomorphizeProcedures p₃
+    -- monomorphizeProcedures requires that call elimination has run (no calls
+    -- in procedure bodies). Skip it for programs with no polymorphic procedures,
+    -- since it would be a no-op and the noCalls precondition may not hold here.
+    if p₃.noPolymorphicProcedures then
+      pure (false, p₃)
+    else
+      monomorphizeProcedures p₃
   let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
   let (preRes, preState) := StateT.run (ExceptT.run preTransform) initState
   let (_, preProgram) ← preRes.toOption
