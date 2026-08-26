@@ -29,7 +29,7 @@ procedure hasMutatingAssignment(): int
 procedure functionWithMutatingAssignment(x: int): int
 {
   x := x + 1;
-//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'x'
   return 3
 };
 

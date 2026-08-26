@@ -1034,7 +1034,7 @@ procedure assignsInput(a: int)
     exit $return
   }
 }$return;
-diagnostic[userError]: destructive assignments are not supported in transparent bodies or contracts
+diagnostic[userError]: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
 -/
 #guard_msgs in
 #eval printRewritten <|
