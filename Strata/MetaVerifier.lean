@@ -78,30 +78,35 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let transform : Transform.CoreTransformM (Bool × Program) := do
-    -- Monomorphize before loop elimination so the SMT encoder sees only
-    -- concrete types. The full verification pipeline runs these passes via
-    -- corePipelinePhases; genVCs must match to avoid encoder failures on
-    -- programs with polymorphic function definitions.
-    let (_, program₀) ← monomorphizeProcedures program
-    let (_, program₁) ← monomorphizeFunctions program₀
-    let (_, program₂) ← insertLoopInvariantAsserts program₁
-    let (_, program₃) ← loopElim program₂
+  -- Pre-typecheck transforms. `monomorphizeProcedures` matches `corePipelinePhases`
+  -- which runs it before `typeCheck`. The factory must be seeded with `Core.Factory`
+  -- so that `monomorphizeFunctions` (below) can look up built-in polymorphic functions.
+  let preTransform : Transform.CoreTransformM (Bool × Program) := do
+    let (_, p₁) ← insertLoopInvariantAsserts program
+    let (_, p₂) ← loopElim p₁
     -- nondetElim must run before symbolic evaluation, which rejects surviving
     -- nondeterministic guards.
-    nondetElim program₃
-  let (res, _) := StateT.run (ExceptT.run transform) Transform.CoreTransformState.emp
-  let (_, program) ← res.toOption
-  match Core.typeCheck options program with
+    let (_, p₃) ← nondetElim p₂
+    monomorphizeProcedures p₃
+  let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
+  let (preRes, preState) := StateT.run (ExceptT.run preTransform) initState
+  let (_, preProgram) ← preRes.toOption
+  match Core.typeCheck options preProgram with
   | .error _ => none
   | .ok tcProgram =>
-    match Core.toCoreProofObligationProgram options tcProgram with
+    -- `monomorphizeFunctions` must run after `typeCheck`: it needs the type
+    -- annotations on call sites to determine what concrete instantiations to
+    -- generate. Running it before typeCheck would make it a no-op.
+    let (monoRes, monoState) :=
+      StateT.run (ExceptT.run (monomorphizeFunctions tcProgram)) preState
+    let (_, monoProgram) ← monoRes.toOption
+    match Core.toCoreProofObligationProgram options monoProgram with
     | .error _ => none
     | .ok (oblProgram, _stats) =>
       match Core.ObligationExtraction.extractObligations oblProgram with
       | .error _ => none
       | .ok obligations =>
-        let E := match Core.buildEnv options tcProgram Core.Factory with
+        let E := match Core.buildEnv options monoProgram monoState.factory with
           | .ok (initE, _) =>
             match Program.eval initE with
             | .ok (pEs, _) => pEs.head?.getD initE
