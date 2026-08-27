@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.Verifier
@@ -183,17 +184,18 @@ def C_Simp.get_program (p : StrataDDM.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : StrataDDM.Program) (options : VerifyOptions := .default):
-  Except DiagnosticModel Core.Program := do
+  Except Message Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
 def C_Simp.verify (p : StrataDDM.Program)
     (options : VerifyOptions := .default)
-    (tempDir : Option String := .none):
+    (tempDir : Option String := .none)
+    (mkDischarge : _root_.Core.MkDischargeFn := _root_.Core.mkDischargeFn):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (_root_.Core.verify (to_core program) tempDir .none options)
+    (_root_.Core.verify (to_core program) tempDir .none options (mkDischarge := mkDischarge))
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

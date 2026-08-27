@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Base {
@@ -95,4 +95,64 @@ procedure diamondInheritance()
 //  assert b is Top;
 //  assert b is Bottom;
 //}
+#end
+
+-- A front-end-defined hierarchy with two tiers under one root, which is the shape a
+-- front end needs for its exception classes: the root carries shared fields, a user
+-- type inherits them from two levels up, and a sibling tier is provably outside the
+-- catchable one. Only `extends` and `is` are exercised — no `throw`/`try` — so this
+-- belongs with inheritance rather than with the exception tests, which rely on it.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+
+// Front-end-defined root and its two tiers: a catchable tier and a "fatal" tier
+// as separate children of the root.
+composite Exception {
+  var message: string
+}
+composite AppException extends Exception {}
+composite FatalError extends Exception {}
+
+// A user-defined exception under the catchable tier.
+composite MyError extends AppException {
+  var code: int
+}
+
+procedure rootIsUsable()
+  opaque
+{
+  // The front-end root carries `message` and is usable directly.
+  var b: Exception := new Exception;
+  b#message := "root";
+  assert b#message == "root";
+  assert b is Exception
+};
+
+procedure userExceptionIsRooted()
+  opaque
+{
+  var e: MyError := new MyError;
+  // `message` is inherited from `Exception` two levels up the chain.
+  e#message := "boom";
+  e#code := 42;
+  assert e#message == "boom";
+  assert e#code == 42;
+  // A user exception is a subtype of its parent tier and of the root.
+  assert e is MyError;
+  assert e is AppException;
+  assert e is Exception
+};
+
+procedure fatalTierEscapesCatchAll()
+  opaque
+{
+  // A fatal-tier value, bound at the root `Exception` (as a catch-all
+  // binding would be), is provably not in the catchable tier — so a catch-all
+  // predicated on `AppException` would not catch it. The escape falls out of
+  // the subtype check, needing nothing beyond how the front-end wires `extends`.
+  var f: Exception := new FatalError;
+  assert f is Exception;
+  assert !(f is AppException)
+};
 #end

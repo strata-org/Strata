@@ -53,13 +53,13 @@ def VerificationResult.fromDecisionForProve (d : Decision) : VerificationResult 
   match d with
   | .unsat => .success .verified
   | .sat => .error .counterexample
-  | .unknown => .error .unknown
+  | .unknown | .timeout => .error .unknown
 
 def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult :=
   match d with
   | .unsat => .error .refuted
   | .sat => .success .reachable
-  | .unknown => .success .reachabilityUnknown
+  | .unknown | .timeout => .success .reachabilityUnknown
 
 ---------------------------------------------------------------------
 -- Verification Context and Results
@@ -124,15 +124,11 @@ def addPathCondition (state : B3VerificationState) (expr : B3AST.Expression Sour
   }
 
 def push (state : B3VerificationState) : IO B3VerificationState := do
-  let solver := state.smtState.solver
-  solver.smtLibInput.putStr "(push 1)\n"
-  solver.smtLibInput.flush
+  let _ ← (Solver.push).run state.smtState.solver
   return state
 
 def pop (state : B3VerificationState) : IO B3VerificationState := do
-  let solver := state.smtState.solver
-  solver.smtLibInput.putStr "(pop 1)\n"
-  solver.smtLibInput.flush
+  let _ ← (Solver.pop).run state.smtState.solver
   return state
 
 /-- Prove a property holds (check/assert statement) -/

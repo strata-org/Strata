@@ -24,7 +24,7 @@ def elabQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term
 #guard_msgs in
 #eval
   let a := { id := "a", ty := .prim .int }
-  (elabQuery {} [] (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int))))
+  (elabQuery {} [] (.quant .all [a] [] (.app .gt [.prim (.int 42), a] (.prim .int))))
 
 /--
 info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty (α α_1 α_2)] (β : Type) [inst : Nonempty β]
@@ -170,7 +170,7 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #eval
   let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
   elabQuery {} []
-    (.quant .all [a] a
+    (.quant .all [a] []
       (.app .eq
         [(.app .bvadd [(.var a)] (.prim (.bitvec 8))), (.var a)]
         (.prim .bool)))
@@ -180,7 +180,7 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #eval
   let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
   elabQuery {} []
-    (.quant .all [a] a
+    (.quant .all [a] []
       (.app .eq
         [(.app .bvand [(.var a)] (.prim (.bitvec 8))), (.var a)]
         (.prim .bool)))

@@ -136,7 +136,7 @@ def typeSynToCST {M} [Inhabited M] (syn : Core.TypeSynonym)
 
 /-- Convert a recursive function to a RecFnDecl CST node -/
 def recFnDeclToCST {M} [Inhabited M]
-    (func : Lambda.LFunc Core.CoreLParams)
+    (func : Core.Function)
     : ToCSTM M (RecFnDecl M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
@@ -174,7 +174,7 @@ def recFnDeclToCST {M} [Inhabited M]
 
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]
-    (func : Lambda.LFunc Core.CoreLParams)
+    (func : Core.Function)
     (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
@@ -262,6 +262,15 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
 def programToCST {M} [Inhabited M] (prog : Core.Program)
     (initCtx : ToCSTContext M := ToCSTContext.empty) :
     ToCSTContext M × List (Command M) :=
+  -- Populate progFnNames so monomorphized program-function callsites keep their
+  -- mangled name (Factory functions, absent here, render demangled).
+  let progFnNames : Array String :=
+    prog.decls.foldl (init := #[]) fun acc d =>
+      match d with
+      | .func f _ => acc.push f.name.name
+      | .recFuncBlock fs _ => fs.foldl (init := acc) fun acc f => acc.push f.name.name
+      | _ => acc
+  let initCtx := { initCtx with progFnNames := initCtx.progFnNames ++ progFnNames }
   let rec go (decls : List Core.Decl) (acc : List (Command M))
       (ctx : ToCSTContext M) : List (Command M) × ToCSTContext M :=
     match decls with

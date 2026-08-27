@@ -27,8 +27,11 @@ inductive ResolvedNodeKind where
   | datatypeConstructor
   | datatypeDestructor
   | typeAlias
+  | opaqueType
   | constant
   | quantifierVar
+  | coroutineType
+  | typeParameter
   | unresolved
   deriving Repr, BEq
 
@@ -44,8 +47,11 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .datatypeConstructor => "datatype constructor"
   | .datatypeDestructor => "datatype destructor"
   | .typeAlias         => "type alias"
+  | .opaqueType        => "opaque type"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
+  | .coroutineType     => "coroutine type"
+  | .typeParameter     => "type parameter"
   | .unresolved        => "unresolved"
 
 /-- A definition-site AST node that a reference can resolve to. -/
@@ -74,15 +80,27 @@ inductive ResolvedNode where
   | datatypeDestructor (typeName : Identifier) (field : Parameter)
   /-- A type alias. -/
   | typeAlias (ty : TypeAlias)
+  /-- An opaque type definition (`opaque Set<T>;`) — nominal, no constructors. -/
+  | opaqueType (ty : OpaqueTypeDefinition)
   /-- A constant. -/
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
-  | unresolved (referenceSource: Option FileRange)
+  /-- A coroutine type definition. The coroutine name is dual: it names a
+      type (`co: c`) whose values are coroutine instances, and a constructor
+      (`c(args)` spawns one). Later lowered to a state composite `<c>State`
+      plus a spawn procedure. -/
+  | coroutineType (proc : Procedure)
+  /-- A datatype's type parameter (a type variable), in scope only while resolving
+      that datatype's constructor argument types. Registering it lets a reference
+      to a type parameter resolve through the normal scope lookup — like any other
+      type name — instead of being special-cased by name via a threaded list. -/
+  | typeParameter (name : Identifier)
+  | unresolved (referenceSource: FileRange)
   deriving Repr
 
 instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved none
+  default := ResolvedNode.unresolved default
 
 /-- Return the constructor tag of a `ResolvedNode`. -/
 def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
@@ -97,21 +115,34 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .datatypeConstructor .. => .datatypeConstructor
   | .datatypeDestructor .. => .datatypeDestructor
   | .typeAlias ..         => .typeAlias
+  | .opaqueType ..        => .opaqueType
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
+  | .coroutineType ..     => .coroutineType
+  | .typeParameter ..     => .typeParameter
   | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, type.source ⟩
  | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
+ -- A type parameter (`T` in `procedure f<T>` / `datatype D<T>`) carries the
+ -- polymorphism substrate: it resolves to `HighType.TVar`, not erased to
+ -- `Unknown`.
+ | .typeParameter name => ⟨ .TVar name, name.source ⟩
  | .unresolved source => ⟨ .Unknown, source ⟩
- | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
- | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
+ | .staticProcedure proc => ⟨ .Unknown, proc.name.source ⟩
+ | .instanceProcedure _ proc => ⟨ .Unknown, proc.name.source ⟩
+ | .compositeType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .constrainedType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
+ | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
+ | .coroutineType proc => ⟨ .Unknown, proc.name.source ⟩
+ | .opaqueType ty => ⟨ .Unknown, ty.name.source ⟩
 
 /-! ## Resolution result -/
 
@@ -119,12 +150,16 @@ structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
   refToDef: Std.HashMap Nat ResolvedNode
-  /-- Procedures that (transitively) read the heap, by name. Computed once by
-      `HeapAnalysis` during resolution so downstream checks can decide whether a
-      call reads the heap without re-running the call-graph analysis. -/
-  heapReaders: Std.HashSet Identifier := {}
-  /-- Procedures that (transitively) write the heap, by name. See `heapReaders`. -/
-  heapWriters: Std.HashSet Identifier := {}
+  /-- Procedures that (transitively) read the heap, keyed by `uniqueId`. Computed
+      once by `HeapAnalysis` during resolution so downstream checks can decide
+      whether a call reads the heap without re-running the call-graph analysis. -/
+  heapReaders: Std.HashSet Nat := {}
+  /-- Procedures that (transitively) write the heap, keyed by `uniqueId`. See `heapReaders`. -/
+  heapWriters: Std.HashSet Nat := {}
+  /-- UniqueIds of static procedures whose registration was rejected as a
+      duplicate (conflicting signature with an existing overload). These must
+      not be renamed by `UniqueOverloadNames`. -/
+  conflictingOverloads: Std.HashSet Nat := {}
   deriving Repr
 
 /-- Look up the resolved node for an identifier, returning `none` if the identifier
@@ -139,7 +174,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
 Compute the flattened set of ancestors for a composite type, including itself.
 Traverses the `extending` list transitively.
 -/
-def computeAncestors (model: SemanticModel) (name : Identifier) : List CompositeType :=
+def computeAncestors (model: SemanticModel) (name : Identifier) : Except String (List CompositeType) := do
   let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
     match fuel with
     | 0 =>
@@ -149,9 +184,16 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
     | fuel' + 1 =>
       match model.get current with
         | .compositeType (ty : CompositeType) =>
-          [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
+          -- `extending` is `List HighTypeMd`; ancestry keys on the parent NAME (an
+          -- instantiation `Base<T>` shares `Base`'s ancestor chain), so peel the base.
+          [ty] ++ ty.extending.flatMap (fun parent =>
+            match highBaseName? parent.val with | some n => go fuel' n | none => [])
         | _ => []
-  let seen : List Identifier := []
-  (go model.compositeCount name).foldl (fun (acc, seen) ct =>
-    if seen.contains ct.name then (acc, seen)
-    else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
+  let mut seen : Std.HashSet Nat := {}
+  let mut acc : List CompositeType := []
+  for ct in go model.compositeCount name do
+    let uid ← Identifier.getUniqueId ct.name
+    if !seen.contains uid then
+      acc := acc ++ [ct]
+      seen := seen.insert uid
+  pure acc

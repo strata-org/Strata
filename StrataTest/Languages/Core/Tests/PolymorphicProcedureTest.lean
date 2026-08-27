@@ -45,7 +45,7 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: callElimAssert_Extract_requires_0_2
+Label: callElimAssert_Extract_requires_0_3
 Property: assert
 Obligation:
 List..isCons(xs@3)
@@ -57,7 +57,7 @@ true
 
 ---
 info:
-Obligation: callElimAssert_Extract_requires_0_2
+Obligation: callElimAssert_Extract_requires_0_3
 Property: assert
 Result: ❌ fail
 Model:
@@ -100,14 +100,14 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+callElimAssume_MkCons_ensures_0_3: List..isCons(r@3)
 Obligation:
 List..isCons(r@3)
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_MkCons_ensures_0_2: List..isCons(r@3)
+callElimAssume_MkCons_ensures_0_3: List..isCons(r@3)
 Obligation:
 true
 
@@ -125,5 +125,35 @@ Result: ✅ pass
 #eval Core.verify polyPostPgm
 
 end Strata.PolymorphicPostconditionTest
+
+---------------------------------------------------------------------
+
+namespace Strata.PolymorphicInoutPrecondTest
+
+-- An in-out parameter's precondition constrains its type variable to a concrete
+-- type, which is incompatible with the procedure being polymorphic.  Because
+-- `MonomorphizeProcedures` runs before type checking, `a` is first replaced by a
+-- fresh opaque type; the precondition `x == 5` then fails to unify that opaque
+-- type with `int`, so the procedure is rejected.
+def polyInoutPgm : Program :=
+#strata
+program Core;
+procedure P<a>(inout x : a)
+spec {
+  requires (x == 5);
+}
+{
+  x := true;
+};
+#end
+
+/--
+error: ❌ Type checking error.
+[P:P_requires_0]: Impossible to unify $__opaque_P_a_0 with int.
+-/
+#guard_msgs in
+#eval Core.verify polyInoutPgm
+
+end Strata.PolymorphicInoutPrecondTest
 
 end

@@ -71,7 +71,7 @@ private def testTypesRoundtrip : Program :=
 program Core;
 
 type T0;
-type Byte := bv8;
+type Byte := bv W8;
 type IntMap := Map int int;
 type T1 (x : Type);
 type MyMap (a : Type, b : Type);
@@ -131,7 +131,7 @@ private def testFunctionsRoundtrip : Program :=
 program Core;
 
 function f1(x : int) : int;
-axiom [f1_ax]: (forall x : int :: f1(x) > x);
+axiom [f1_ax]: (forall x : int :: int.gt(f1(x), x));
 
 function f2(x : int, y : bool) : bool;
 axiom [f2_ax]: (forall x : int, y : bool ::
@@ -175,13 +175,115 @@ private def testInlineFunctionRoundtrip : Program :=
 program Core;
 
 inline function double(x : int) : int {
-  x + x
+  int.add(x, x)
 }
 #end
 
 /-- info: OK -/
 #guard_msgs in
 #eval roundtrip testInlineFunctionRoundtrip
+
+-------------------------------------------------------------------------------
+-- Test: Constants
+--
+-- Either form of `const` is sugar for a nullary function, and is formatted back
+-- as one, so a constant reads as a parenthesized call at its use sites.
+-------------------------------------------------------------------------------
+
+-- The valueless form, which takes no type arguments.
+private def testConstRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int;
+const b : bool;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstRoundtrip
+
+/--
+info: program Core;
+
+function x () : int;
+function b () : bool;
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testConstRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+private def testConstWithValueRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int := 5;
+const b : bool := true;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstWithValueRoundtrip
+
+private def testInlineConstWithValueRoundtrip : Program :=
+#strata
+program Core;
+
+const x : int := 5;
+inline const y : int := int.add(x, 2);
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testInlineConstWithValueRoundtrip
+
+/--
+info: program Core;
+
+function x () : int {
+  5
+}
+inline function y () : int {
+  int.add(x, 2)
+}
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testInlineConstWithValueRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+-- An operator-heavy right-hand side: nested arithmetic and a comparison under a
+-- conditional are where the pretty-printer would add spurious parentheses.
+private def testConstValueOperatorsRoundtrip : Program :=
+#strata
+program Core;
+
+const base : int := int.mul(int.add(2, 3), int.sub(10, 4));
+const flag : bool := if int.lt(base, 100) then true else false;
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testConstValueOperatorsRoundtrip
+
+/--
+info: program Core;
+
+function base () : int {
+  int.mul(int.add(2, 3), int.sub(10, 4))
+}
+function flag () : bool {
+  if int.lt(base, 100) then true else false
+}
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default
+    (translateProgram testConstValueOperatorsRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
 
 -------------------------------------------------------------------------------
 -- Test: Parameterized type arguments (the reversed-args bug)
@@ -273,6 +375,125 @@ function j () : Map (Sequence (int -> int)) int;
 /-- info: OK -/
 #guard_msgs in
 #eval roundtrip testArrowTypeArgRoundtrip
+
+
+-------------------------------------------------------------------------------
+-- Test: every named operator roundtrips
+-------------------------------------------------------------------------------
+
+/-!
+Translate and FormatCore each maintain a hand-written table mapping the
+grammar's named operators to internal Core ops and back. A transposed or
+missing arm in either table is invisible to the type checker, so this test
+generates one use of every named operator and roundtrips the whole program:
+parse → translate → format → re-parse → re-translate → compare.
+-/
+
+private def bvWidths : List Nat := [1, 8, 16, 32, 64, 128]
+
+/-- One statement per operator, at every width. Results land in typed local
+    variables so the program is well-formed for Core's own type checker too. -/
+private def allOpsProgramText : String := Id.run do
+  let mut ls : List String := []
+  -- int
+  let intBin := ["add", "sub", "mul", "div", "mod", "safeDiv", "safeMod",
+                 "divT", "modT", "safeDivT", "safeModT"]
+  let intCmp := ["le", "lt", "ge", "gt"]
+  for o in intBin do
+    ls := ls ++ [s!"  var i_{o} : int := int.{o}(xi, yi);"]
+  for o in intCmp do
+    ls := ls ++ [s!"  var i_{o} : bool := int.{o}(xi, yi);"]
+  ls := ls ++ ["  var i_neg : int := int.neg(xi);"]
+  -- real
+  for o in ["add", "sub", "mul", "div"] do
+    ls := ls ++ [s!"  var r_{o} : real := real.{o}(xr, yr);"]
+  for o in intCmp do
+    ls := ls ++ [s!"  var r_{o} : bool := real.{o}(xr, yr);"]
+  ls := ls ++ ["  var r_neg : real := real.neg(xr);"]
+  -- bv families at every width
+  for w in bvWidths do
+    let bv := s!"bv{w}"
+    let a := s!"a{w}"
+    let b := s!"b{w}"
+    let ty := s!"bv W{w}"
+    for o in ["neg", "not", "safeNeg", "safeUNeg"] do
+      ls := ls ++ [s!"  var {bv}_{o} : {ty} := {bv}.{o}({a});"]
+    for o in ["sNegOverflow", "uNegOverflow"] do
+      ls := ls ++ [s!"  var {bv}_{o} : bool := {bv}.{o}({a});"]
+    for o in ["add", "sub", "mul", "and", "or", "xor", "shl", "uShr", "sShr",
+              "uDiv", "uMod", "sDiv", "sMod",
+              "safeAdd", "safeSub", "safeMul", "safeUAdd", "safeUSub",
+              "safeUMul", "safeSDiv", "safeSMod"] do
+      ls := ls ++ [s!"  var {bv}_{o} : {ty} := {bv}.{o}({a}, {b});"]
+    for o in ["uLe", "uLt", "uGe", "uGt", "sLe", "sLt", "sGe", "sGt",
+              "sAddOverflow", "sSubOverflow", "sMulOverflow", "sDivOverflow",
+              "uAddOverflow", "uSubOverflow", "uMulOverflow"] do
+      ls := ls ++ [s!"  var {bv}_{o} : bool := {bv}.{o}({a}, {b});"]
+    for o in ["toUInt", "toInt"] do
+      ls := ls ++ [s!"  var {bv}_{o} : int := {bv}.{o}({a});"]
+    ls := ls ++ [s!"  var {bv}_from_int : {ty} := as_bv{w}(xi);"]
+  let header := String.intercalate "\n" <|
+    ["procedure allOps(xi : int, yi : int, xr : real, yr : real"]
+    ++ (bvWidths.map fun w => s!"  , a{w} : bv W{w}, b{w} : bv W{w}")
+    ++ [")", "{"]
+  return header ++ "\n" ++ String.intercalate "\n" ls ++ "\n};\n"
+
+/-- Parse program text, translate, format, re-parse, re-translate, compare. -/
+private def roundtripText (text : String) : IO Unit := do
+  let ast1 ← parseAndTranslate text
+  let formatted := (Core.formatProgram ast1).pretty
+  let ast2 ← parseAndTranslate formatted
+  let formatted2 := (Core.formatProgram ast2).pretty
+  if formatted == formatted2 then
+    IO.println "OK"
+  else
+    -- Report the first differing line so a broken arm is identifiable.
+    let l1 := formatted.splitOn "\n"
+    let l2 := formatted2.splitOn "\n"
+    for (a, b) in l1.zip l2 do
+      if a ≠ b then
+        IO.println s!"FAIL first diff:\n  first : {a}\n  second: {b}"
+        return
+    IO.println s!"FAIL: length mismatch {l1.length} vs {l2.length}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtripText allOpsProgramText
+
+-------------------------------------------------------------------------------
+-- Test: a negative real literal prints as `real.neg(<positive>)`, so a leading
+-- minus is always a parenthesized `real.neg` that re-parses. Surface syntax has
+-- no negative-real-literal token, so these ASTs are built directly.
+-------------------------------------------------------------------------------
+
+/-- `Real.Neg` applied to expression `e`. -/
+private def rNeg (e : Core.Expression.Expr) : Core.Expression.Expr :=
+  .app () (.op () ⟨"Real.Neg", ()⟩ (some (.arrow .real .real))) e
+
+/-- A bare negative real literal, and `Real.Neg` applied to one. -/
+private def negRealLitPgm : Core.Program := { decls := [
+  .func { name := "negLit", typeArgs := [], inputs := [], output := .real,
+          body := some (.realConst () (-3 : Rat)) } .empty,
+  .func { name := "negNegLit", typeArgs := [], inputs := [], output := .real,
+          body := some (rNeg (.realConst () (-3 : Rat))) } .empty
+]}
+
+/--
+info: program Core;
+
+function negLit () : real {
+  real.neg(3.0)
+}
+function negNegLit () : real {
+  real.neg(real.neg(3.0))
+}
+-/
+#guard_msgs in
+#eval do IO.println f!"{Core.formatProgram negRealLitPgm}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtripText (Core.formatProgram negRealLitPgm).pretty
 
 end Strata.Test.Roundtrip
 

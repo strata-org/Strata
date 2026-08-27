@@ -373,7 +373,6 @@ def testFuncDecl : List Statement :=
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) x)],
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [
@@ -395,7 +394,7 @@ Evaluation Config:
 Eval Depth: 200
 Factory Functions:
 func double :  ((x : int)) → int :=
-  (x + x)
+  (int.add(x, x))
 
 
 Datatypes:
@@ -428,7 +427,6 @@ def testFuncDeclSymbolic : List Statement :=
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [
@@ -453,7 +451,7 @@ Evaluation Config:
 Eval Depth: 200
 Factory Functions:
 func addN :  ((x : int)) → int :=
-  (x + 10)
+  (int.add(x, 10))
 
 
 Datatypes:
@@ -494,7 +492,6 @@ def testPolymorphicFuncDecl : List Statement :=
     output := .forAll [] (.ftvar "a"),
     body := some eb[(if cond then x else y)],
     attr := #[.inline],  -- Enable inlining so body is expanded during evaluation
-    concreteEval := none,
     axioms := []
   }
   [
@@ -548,16 +545,17 @@ true
 #guard_msgs in
 #eval (evalOne ∅ ∅ testPolymorphicFuncDecl) |> format
 
--- Test nondet if: evaluator introduces a fresh boolean and splits paths
+-- Nondet if is rejected by the evaluator: it must be eliminated (via the
+-- nondetElim transform) before symbolic evaluation, so the env is left in an
+-- error state.
 /--
 info: Error:
-none
+some [ERROR] nondeterministic `if *` reached symbolic evaluation; run the nondetElim transform to eliminate nondeterministic control first
 Subst Map:
 
 Expression Env:
 State:
-[(x : int) → if $__nondet_cond_0 then 1 else 2
-($__nondet_cond_0 : bool) → $__nondet_cond_0]
+[(x : int) → 0]
 
 Evaluation Config:
 Eval Depth: 200
@@ -568,20 +566,11 @@ Factory Functions:
 Datatypes:
 
 Path Conditions:
-(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
-(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 
 
 Warnings:
 []
 Deferred Proof Obligations:
-Label: x_pos
-Property: assert
-Assumptions:
-(<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
-(<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
-Proof Obligation:
-(if $__nondet_cond_0 then 1 else 2) == 1
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

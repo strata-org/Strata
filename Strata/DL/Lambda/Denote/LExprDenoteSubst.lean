@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.Util.Tactics

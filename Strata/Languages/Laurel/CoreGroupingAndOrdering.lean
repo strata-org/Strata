@@ -39,7 +39,6 @@ def collectTypeRefs : HighTypeMd → List String
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.Applied base args, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
   | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
   | _ => []
 
@@ -86,9 +85,13 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
   let procCallees (proc : Procedure) : List String :=
     let bodyExprs : List StmtExprMd := match proc.body with
       | .Transparent b => [b]
-      | .Opaque postconds (some impl) _ => postconds.map (·.condition) ++ [impl]
-      | .Opaque postconds none _ => postconds.map (·.condition)
-      | _ => []
+      | .Opaque postconds impl modifies =>
+        -- A modifies group contributes both its targets and its guard as expressions
+        -- that may hold `StaticCall`s.
+        let modifiesExprs := modifies.flatMap (fun g => g.targets ++ g.guard.toList)
+        postconds.map (·.condition) ++ impl.toList ++ modifiesExprs
+      | .Abstract postconds => postconds.map (·.condition)
+      | .External => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions.map (·.condition) ++
       proc.invokeOn.toList ++
@@ -134,6 +137,10 @@ public inductive OrderedDecl where
   | procedure (procedure : Procedure)
   /-- A group of (possibly mutually recursive) datatypes. -/
   | datatypes (dts : List DatatypeDefinition)
+  /-- An opaque (natively implemented) type. Always emitted before everything else: it has
+      no constructor arguments, so it can neither depend on another declaration nor take
+      part in a cycle, while a datatype's field types may well refer to it. -/
+  | opaqueType (ot : OpaqueTypeDefinition)
   /-- A named constant. -/
   | constant (c : Constant)
 
@@ -159,6 +166,7 @@ def formatOrderedDecl : OrderedDecl → Format
   | .funcs funcs _ => Format.joinSep (funcs.map formatAsFunction) "\n\n"
   | .procedure proc => ToFormat.format proc
   | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
+  | .opaqueType ot => ToFormat.format ot
   | .constant c => ToFormat.format c
 
 instance : ToFormat OrderedDecl where
@@ -182,6 +190,7 @@ as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
 def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
+  let opaqueDecls := program.opaqueTypes.map OrderedDecl.opaqueType
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
@@ -192,7 +201,7 @@ def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreW
     let funcDecl := if funcs.isEmpty then [] else [OrderedDecl.funcs funcs isRecursive]
     let proofDecls := proofs.map OrderedDecl.procedure
     funcDecl ++ proofDecls
-  { decls := datatypeDecls ++ constantDecls ++ orderedDecls }
+  { decls := opaqueDecls ++ datatypeDecls ++ constantDecls ++ orderedDecls }
 where
   /-- Group datatypes from a UnorderedCoreWithLaurelTypes by SCC. -/
   groupDatatypesByScc' (program : UnorderedCoreWithLaurelTypes) : List (List DatatypeDefinition) :=
@@ -211,7 +220,7 @@ where
       if members.isEmpty then none else some members
 
 public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
-  name := "OrderingPass"
+  name := "Ordering"
   comesBefore := []
   documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
 computing a combined ordering of functions and proofs using the call graph,

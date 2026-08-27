@@ -9,7 +9,7 @@ public import Strata.Languages.GOTO.LambdaToCProverGOTO
 public import Strata.Languages.GOTO.ToCProverGOTO
 public import Strata.Languages.GOTO.Program
 public import Strata.Languages.Core.Program
-public import Strata.DL.Util.Map
+public import Strata.Util.ListMapProps
 public import Lean.Data.Json
 import Strata.Languages.Core.ProgramType
 import Strata.Languages.Core.Factory
@@ -37,7 +37,7 @@ abbrev Core.ExprStr : Imperative.PureExpr :=
      Expr := Lambda.LExpr CoreParams.mono,
      Ty := Lambda.LTy,
      ExprMetadata := CoreParams.Metadata,
-     TyEnv := @Lambda.TEnv CoreParams.IDMeta,
+     TyEnv := @Lambda.TEnv CoreParams.IDMeta inferInstance inferInstance,
      TyContext := @Lambda.LContext CoreParams,
      EqIdent := inferInstanceAs (DecidableEq CoreParams.Identifier),
      Factory := Lambda.Factory CoreParams,
@@ -57,7 +57,7 @@ def lookupType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident) :
 
 def updateType (T : Core.Expression.TyEnv) (i : Core.Expression.Ident)
     (ty : Core.Expression.Ty) : Core.Expression.TyEnv :=
-  @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Unit⟩ T [(i, ty)]
+  @Lambda.TEnv.addInNewestContext ⟨Core.ExpressionMetadata, Unit⟩ _ _ T (Strata.Util.HMap.ofList [(i, ty)])
 
 instance : Imperative.ToGoto Core.Expression where
   lookupType := lookupType
@@ -78,7 +78,7 @@ def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
 
 def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
     (ty : Core.ExprStr.Ty) : Core.ExprStr.TyEnv :=
-  T.addInNewestContext [(i, ty)]
+  T.addInNewestContext (Strata.Util.HMap.ofList [(i, ty)])
 
 instance : Imperative.ToGoto Core.ExprStr where
   lookupType := lookupTypeStr

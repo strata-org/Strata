@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 
@@ -28,53 +29,95 @@ def callElimAssertPrefix : String := "callElimAssert_"
 /-- Label prefix for call-elimination assume statements. -/
 def callElimAssumePrefix : String := "callElimAssume_"
 
+/-- Prefix for fresh call-site type variables introduced during call elimination.
+    In the `$__`-reserved internal namespace (documented "cannot appear in user
+    identifiers", see `SMTEncoder.lean`), so a freshened call-site type variable
+    is far from any user-written type-variable name. Distinct from the type
+    checker's own fresh prefix `$__ty` (`LExprTypeEnv.lean` `TState.tyPrefix`) —
+    `$__cety` differs at the 5th char, so the two generators never alias — and
+    distinct from the term-temp prefixes (`tmp_`/`old_`).
+    NB: `$` is a legal identifier char (`Parser.strataIsIdFirst`) and the gen
+    counter does NOT ingest existing program names, so collision-resistance here
+    rests on the `$__` reservation convention, not a parser-enforced rejection. -/
+def freshTyVarPrefix : String := "$__cety"
+
 /--
-The main call elimination transformation algorithm on a single command.
-The returned result is a sequence of statements
+The main call elimination transformation algorithm on a single statement.
+Only `call` commands are rewritten; every other statement returns `.none` so
+that `runStmtsRec` traverses into it. The returned result is a sequence of
+statements.
 -/
-def callElimCmd (cmd: Command)
+def callElimCmd (s : Statement)
   : CoreTransformM (Option (List Statement)) := do
-    match cmd with
-      | .call procName callArgs md =>
+    match s with
+      | .cmd (.call procName callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
-        let some p := (← get).currentProgram | throw (Strata.DiagnosticModel.fromMessage "program not available")
+        let some p := (← get).currentProgram | throw (Strata.Message.fromString "program not available")
 
-        let some proc := Program.Procedure.find? p procName | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
+        let some proc := Program.Procedure.find? p procName | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
+
+        -- Per-call-site type-variable instantiation for polymorphic procedures.
+        -- The inlined contract carries the callee's source type vars (`x : T`). Copied
+        -- verbatim, the SAME `T` is shared across call sites, so two calls at different
+        -- concrete types (`idp(5)`, `idp(true)`) force `T` to unify with both `int` and
+        -- `bool` — a whole-program type-check abort masking unrelated obligations.
+        -- Instantiate the contract at each call site with globally-fresh type
+        -- variables. For a monomorphic callee (`typeArgs = []`) the substitution is
+        -- empty and the applications below are no-ops.
+        let tySubst ← freshenTypeArgsSubst freshTyVarPrefix proc.header.typeArgs
+        let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
+        let instantiatedExpr (e : Expression.Expr) : Expression.Expr := Lambda.LExpr.applySubst e tySubst
+
+        -- The callee's signature with type variables instantiated. All later
+        -- reads go through these (keys are unchanged by instantiation), so
+        -- `proc.header.inputs`/`.outputs` appear only here.
+        let instantiatedInputs : @Lambda.LMonoTySignature Unit :=
+          proc.header.inputs.map (fun (id, ty) => (id, instantiatedTy ty))
+        let instantiatedOutputs : @Lambda.LMonoTySignature Unit :=
+          proc.header.outputs.map (fun (id, ty) => (id, instantiatedTy ty))
 
         -- Identify output parameters that also appear as input parameters
-        -- and are referenced via "old" in postconditions.
+        -- and are referenced via "old" in postconditions. (Safe to scan the
+        -- uninstantiated exprs: instantiation rewrites only type annotations —
+        -- `replaceUserProvidedType` — so free term variables are unchanged.)
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
-        let inputNames := proc.header.inputs.keys
-        let outputNames := proc.header.outputs.keys
-        -- Variables needing old handling: input/output params with old refs.
-        let oldVars := lhs.filter fun g =>
-          (inputNames.contains g && outputNames.contains g) && -- Inout params
-          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
+        let inputNames := instantiatedInputs.keys
+        let outputNames := instantiatedOutputs.keys
+        -- Inout params referenced via "old" in a postcondition, paired as
+        -- (caller argument variable, callee parameter name). `lhs` is positionally
+        -- aligned with the callee's outputs, so the pairing recovers the callee
+        -- parameter name even when the caller passes a differently-named variable.
+        -- The caller variable drives the snapshot init; the callee parameter drives
+        -- the type lookup and the "old" substitution key that appears in the spec.
+        let oldPairs := (lhs.zip outputNames).filter fun (_arg, param) =>
+          inputNames.contains param && -- Inout param (an output that is also an input)
+          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld param.name))
+        let oldVars := oldPairs.map (·.1)
 
-        let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
+        let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
         let argTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Expr)
             ← genArgTrips
 
-        let genOutTrips := genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs) lhs
+        let genOutTrips := genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedOutputs) lhs
         let outTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
 
         -- Generate fresh variables for "old g" (one per modified variable in lhs).
         -- For input/output parameters, look up types from the callee's inputs.
+        let oldParams := oldPairs.map (·.2)
         let genOldIdents ← genOldExprIdents oldVars
-        let oldTys ← oldVars.mapM fun id => do
-          match proc.header.inputs.find? id with
+        let oldTys ← oldParams.mapM fun param => do
+          match instantiatedInputs.find? param with
           | some ty => pure (Lambda.LTy.forAll [] ty)
-          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format id}")
+          | none => throw (Strata.Message.fromFormat f!"failed to find type for {Std.format param}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
-        let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
-        let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
-          ((fresh, ty), oldG)
+        let oldGVars := oldParams.map (fun p => CoreIdent.mkOld p.name)
+        let oldTrips := (genOldIdents.zip oldTys).zip oldGVars
 
         -- initialize/declare the newly generated variables
         let argInit := createInits argTrips md
@@ -84,7 +127,7 @@ def callElimCmd (cmd: Command)
         -- Substitute "old g" in postconditions:
         -- For input-only parameters (not in outputs): old g == the argument value.
         let inputOnlyOldSubst : Map Expression.Ident Expression.Expr :=
-          (proc.header.inputs.keys.zip args).filterMap fun (paramId, argExpr) =>
+          (instantiatedInputs.keys.zip args).filterMap fun (paramId, argExpr) =>
             let oldVar := CoreIdent.mkOld paramId.name
             if !outputNames.contains paramId &&
                postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
@@ -93,27 +136,38 @@ def callElimCmd (cmd: Command)
             else none
         let oldSubst := createOldVarsSubst oldTrips ++ inputOnlyOldSubst
 
+        -- Instantiate type variables in the postcondition expressions (binder/op/
+        -- fvar annotations) with the same per-call-site substitution used for the
+        -- temp types above, then substitute the "old" actuals. The order matters:
+        -- instantiation must happen first, because `substFvars` splices in caller-side
+        -- expressions (`inputOnlyOldSubst` maps `old param` to the actual argument)
+        -- whose type annotations — e.g. a caller's own type variable that happens
+        -- to share the callee's spelling — must not be renamed.
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
-          (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
+          (fun c => Lambda.LExpr.substFvars (instantiatedExpr c.expr) oldSubst)
 
         -- generate havoc for output variables
         let havocs := createHavocs lhs md
 
         -- construct substitutions for argument and return
         let arg_subst : List (Expression.Ident × Expression.Expr)
-                      := (ListMap.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
+                      := (ListMap.keys instantiatedInputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
         let ret_subst : List (Expression.Ident × Expression.Expr)
-                      := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
+                      := (ListMap.keys instantiatedOutputs).zip $ createFvars lhs
 
-        -- construct assumes and asserts in place of pre/post conditions
-        let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
+        -- construct assumes and asserts in place of pre/post conditions.
+        -- Instantiate type variables in the precondition expressions with the same
+        -- per-call-site substitution (no-op for monomorphic callees).
+        let instantiatedPreconditions := (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free)).map
+          (fun (l, check) => (l, { check with expr := instantiatedExpr check.expr }))
+        let asserts ← createAsserts instantiatedPreconditions
                         (arg_subst ++ ret_subst)
                         md
                         callElimAssertPrefix
         -- For postconditions, filter out input substitutions for inout params
         -- (already covered by ret_subst with post-call values).
         let arg_subst_filtered := arg_subst.filter fun (id, _) =>
-          !(ListMap.keys proc.header.outputs).contains id
+          !(ListMap.keys instantiatedOutputs).contains id
         let assumes ← createAssumes
                         (Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions)
                         (ret_subst ++ arg_subst_filtered)
@@ -123,7 +177,7 @@ def callElimCmd (cmd: Command)
         let σ ← get
         match σ.cachedAnalyses.callGraph, σ.currentProcedureName with
         | .some cg, .some callerName =>
-          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.DiagnosticModel.fromMessage
+          let cg' ← (cg.decrementEdge callerName procName).mapError Strata.Message.fromString
           set { σ with
               cachedAnalyses := { σ.cachedAnalyses with
                 callGraph := .some cg'}}
@@ -148,7 +202,7 @@ end CallElim
     contract, which is an over-approximation. -/
 def callElimPipelinePhase : PipelinePhase where
   transform := CallElim.callElim'
-  phase.name := "CallElim"
+  phase.name := "callElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
@@ -165,6 +219,16 @@ def callElimPipelinePhase : PipelinePhase where
       else
         some s!"precondition '{originalLabel}'"
     else none
+  -- Two facts are unclaimed. `staticSingleAssignment`, because the replacement
+  -- havocs the call's outputs. `noBetaRedexes`, because instantiating the
+  -- callee's contract can leave an application of an abstraction behind when a
+  -- function-typed formal is given one.
+  requires := factSet![.noCFGBodies]
+  establishes := factSet![.noCalls]
+  preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
+                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions]
 
 end Core
 

@@ -4,8 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
+import all Strata.DL.Lambda.LExprWFProps
 
 public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.FactoryProps
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -168,7 +171,7 @@ instance [ToFormat T.TypeType]: ToFormat (Except Format (LExpr T)) where
               | .ok e => format e
               | .error err => err
 
-instance [ToFormat T.TypeType]: ToFormat (Except Strata.DiagnosticModel (LExpr T)) where
+instance [ToFormat T.TypeType]: ToFormat (Except Strata.Message (LExpr T)) where
   format x := match x with
               | .ok e => format e
               | .error err => f!"{err.message}"
@@ -295,7 +298,15 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             -- arg to be a canonical value (e.g. a constant string)
             canonicalArgAt (FuncAttr.findEvalIfCanonical lfunc.attr) then
             match lfunc.concreteEval with
-            | none => (new_e, .nonvalue)
+            | none =>
+              -- No concrete evaluation available. The rebuilt call can still
+              -- be a value: constructor applications (and partial
+              -- applications) of canonical arguments are canonical (e.g.
+              -- `Cons (1+1) nil` rebuilds to the canonical `Cons 2 nil`).
+              -- Canonicity alone decides value-hood; `argsAllFull` tempers
+              -- the every-step-fully-reduced bit as everywhere else.
+              combineEvalResValueFlag argsAllFull
+                (new_e, if isCanonicalValue F new_e then .value true else .nonvalue)
             | some ceval =>
               match ceval new_e.metadata args with
               | .some e' =>

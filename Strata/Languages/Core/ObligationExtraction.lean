@@ -14,12 +14,12 @@ A Core-to-obligations pass that walks a post-PE program and extracts
 proof obligations with their path conditions reconstructed from the program
 structure.
 
-After partial evaluation and ANF encoding, a procedure body contains only:
+After partial evaluation and common subexpression elim, a procedure body contains only:
 - `assume` statements (path conditions)
 - `assert` statements (proof obligations)
 - `cover` statements (proof obligations)
 - non-deterministic terminal branching (`if *`)
-- `var` declarations (from ANF encoding or global initialization)
+- `var` declarations (from CSE or global initialization)
 
 This pass reconstructs path conditions by tracking `assume` statements
 encountered on the path to each `assert`/`cover`.
@@ -103,14 +103,35 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (.assumption a.name a.e :: globalPc, allObs)
     | .distinct name es _ =>
       .ok (.distinct (toString name) es :: globalPc, allObs)
+    | .func func _ =>
+      -- A surviving function precondition is an obligation nobody generates,
+      -- and the encoder emits total `SafeDiv`, `SafeMod` and safe bitvector
+      -- operations on the strength of those preconditions having been checked.
+      if func.preconditions.isEmpty then .ok (globalPc, allObs)
+      else
+        .error ("ObligationExtraction: function '" ++ toString func.name ++
+          "' still carries a precondition; run precondition elimination before " ++
+          "extracting obligations")
+    | .recFuncBlock funcs _ =>
+      match funcs.find? (fun f => !f.preconditions.isEmpty) with
+      | some f =>
+        .error ("ObligationExtraction: function '" ++ toString f.name ++
+          "' still carries a precondition; run precondition elimination before " ++
+          "extracting obligations")
+      | none => .ok (globalPc, allObs)
     | .proc proc _md => do
       let obs ← match proc.body with
         | .structured ss =>
           -- `globalPC` is accumulated newest-first (via ::) which
           -- is what RevPathConditions expects.
           extractFromStatements ⟨[globalPc]⟩ ss
-        -- CFG bodies are not supported on procedure-body branch.
-        | .cfg _ => .ok #[]
+        -- A CFG body cannot be walked here. Returning no obligations would
+        -- report success on a procedure whose assertions were never checked,
+        -- so it is an error: the back end requires structured bodies.
+        | .cfg _ =>
+          .error ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
+            "' has a CFG body; obligations can only be extracted from " ++
+            "structured bodies")
       .ok (globalPc, allObs ++ obs)
     | _ => .ok (globalPc, allObs)
   return allObs

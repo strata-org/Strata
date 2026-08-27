@@ -36,7 +36,8 @@ private def laurelToText (prog : Program) : String :=
 /-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
-  match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
+  match Laurel.TransM.run (.file "AbstractToConcreteTreeTranslatorTest.lean")
+      (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 
@@ -383,6 +384,36 @@ procedure modify(c: Container)
 { c#value := c#value + 1; true };
 #end)
 
+-- A guarded group — `modifies <refs> when <guard>` — is pass-generated
+-- (`EliminateExceptions` guards frames on the `Result` carrier), but it must
+-- survive print → parse because between-pass output is re-parsed: the printer
+-- renders the guard via `modifiesWhenClause` and the parser reads it back as
+-- a guarded `ModifiesGroup`. The `roundtrip` harness checks convergence, so a
+-- desync between the two translators fails here rather than mid-pipeline.
+/--
+info: composite Container { var value: int }
+
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{
+  c#value := c#value + 1;
+  true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Container { var value: int }
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{ c#value := c#value + 1; true };
+#end)
+
 -- Additional coverage: nondeterministic holes
 
 /--
@@ -470,5 +501,369 @@ procedure loop()
   do { x := x + 1 } while(x < 3) invariant 0 <= x && x <= 2
 };
 #end)
+
+/--
+info: var counter: int := 0
+
+var enabled: bool := false
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 0
+var enabled: bool := false
+#end)
+
+/--
+info: var counter: int := 1 + 2 * 3
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 1 + 2 * 3
+#end)
+
+
+-- Generic datatype: the `<T>` type-parameter list survives Abstract→Concrete→Abstract.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+#end)
+
+-- Multiple type parameters: their ORDER (`<A, B>`, not `<B, A>`) is preserved.
+/--
+info: datatype Either<A, B> { First(a: A), Second(b: B) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Either<A, B> { First(a: A), Second(b: B) }
+#end)
+
+-- Applied type in a type-annotation position (a procedure parameter): the
+-- `Option<int>` annotation uses the new `appliedType` grammar op — distinct from
+-- the `<T>` typeParams on the datatype declaration — so this exercises its
+-- serialize (`.Applied` → `appliedType`) and deserialize (`appliedType` →
+-- `.Applied`) arms, which the datatype-declaration round-trips above do not.
+-- The pretty-printer parenthesizes a non-atomic type in a type-argument slot, so
+-- `Option<int>` prints as `(Option<int>)`; the `parenType` grammar production
+-- makes that re-parse, so the program still converges.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: Option<int> := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<int> := Nothing()
+};
+#end)
+
+-- Nested applied type as a type argument (`Option<Option<int>>`): exercises the
+-- serializer's `args.map highTypeToArg` and deserializer's `mapM translateHighType`
+-- recursion, and the `parenType` wrapping the pretty-printer inserts at each
+-- nesting level.
+-- Only the outer application is parenthesized (the var-type slot); the inner
+-- `Option<int>` sits in the `<…>`-delimited argument slot, which needs no parens.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: Option<Option<int>> := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<Option<int>> := Nothing()
+};
+#end)
+
+-- Additional coverage: multi-target assignment with an annotated declared target.
+-- assignTargetDecl needs @[prec(0)] (like varDecl) or the formatter parenthesizes
+-- the trailing Option TypeAnnotation and prints the unparseable `var x(: int)`.
+
+/--
+info: procedure twoOut()
+  returns (a: int, b: int)
+  opaque
+{
+  a := 1;
+  b := 2
+};
+
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure twoOut() returns (a: int, b: int)
+  opaque
+{ a := 1; b := 2 };
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+#end)
+
+-- Resolution's Decl-Synth rewrites every unannotated declared target to the
+-- annotated form (`some T`), so every resolved program with declared targets
+-- prints with `: T` on each one. Build that post-resolution AST shape directly
+-- (there is no surface syntax that parses to it here) and check that the
+-- printed text parses back and converges.
+
+private def node {t : Type} (v : t) : AstNode t := { val := v, source := default }
+
+private def declTarget (nm : String) (ty : HighType) : AstNode Variable :=
+  node (.Declare { name := mkId nm, type := some (node ty) })
+
+private def resolvedMultiAssign : Program :=
+  { staticProcedures := [
+      { name := mkId "p", inputs := [], outputs := [],
+        preconditions := [], decreases := none,
+        body := .Opaque []
+          (some (node (.Block [
+            node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
+              (node (.StaticCall (mkId "twoOut") [])))
+          ] none)))
+          [] }
+    ],
+    staticFields := [], types := [] }
+
+/--
+info: procedure p()
+  opaque
+{
+  assign var x: int, var y: bool := twoOut()
+};
+-/
+#guard_msgs in
+#eval do
+  let text := laurelToText resolvedMultiAssign
+  -- The printed text must re-parse; unparseable output is the bug this pins.
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" text
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let reparsedStrata ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let reparsed ← parseFromStrata reparsedStrata
+  if laurelToText reparsed != text then
+    throw (IO.userError s!"multiAssign print does not re-parse to the same text:\n{text}")
+  IO.println text
+
+-- Generic composite: `<T>` binder, `Box<int>` applied type in a var decl, and
+-- `new Box<int>` carrying its instantiation. The `newTypeArgs` op carries `prec(80)`
+-- for parse disambiguation (`appliedType` has none — `parenType` wraps it in
+-- type-arg slots instead); the `: varType:0` / `new … typeArgs:0`
+-- annotations keep the formatter from wrapping them (`(Box<int>)`, `new Box(<int>)`),
+-- which would not re-parse — so this case also guards that emission fix.
+/--
+info: composite Box<T> { var val: T }
+
+procedure useBox(): int
+  opaque
+{
+  var b: Box<int> := new Box<int>;
+  b#val := 5;
+  b#val
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+procedure useBox(): int
+  opaque
+{ var b: Box<int> := new Box<int>; b#val := 5; b#val };
+#end)
+
+-- Generic datatype: `<T>` binder on a datatype with a type-param field.
+/--
+info: datatype Bx<T> { MkBx(v: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+#end)
+
+-- Generic `extends`: a generic child extending a generic parent at an instantiation.
+/--
+info: composite Base<T> { var tag: T }
+
+composite Box<T> extends Base<T> { var val: T }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Base<T> { var tag: T }
+composite Box<T> extends Base<T> { var val: T }
+#end)
+
+-- Chained field-path write `o#i#v := …` (the dedicated FieldPath production).
+/--
+info: composite Inner { var v: int }
+
+composite Outer { var i: Inner }
+
+procedure test()
+  opaque
+{
+  var o: Outer := new Outer;
+  var x: Inner := new Inner;
+  o#i := x;
+  o#i#v := 5
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Inner { var v: int }
+composite Outer { var i: Inner }
+procedure test()
+  opaque
+{ var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5 };
+#end)
+
+-- Polymorphic function: a `<T>` binder on a function signature.
+/--
+info: procedure id<T>(x: T): T
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure id<T>(x: T): T
+{ x };
+#end)
+
+-- Polymorphic procedure: a `<T>` binder on a procedure signature.
+/--
+info: procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{ x };
+#end)
+
+-- Generic type aliases round-trip: `<T>` binders + a Map/composite target emit without
+-- parens (grammar `target:0`) and re-parse identically.
+/--
+info: composite Box<T> { var val: T }
+
+type MyPair<A, B> = Map A B
+
+type Foo<T> = Box<T>
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+type MyPair<A, B> = Map A B
+type Foo<T> = Box<T>
+#end)
+
+/-! ## Legacy-arity artifacts fail loud
+
+Pre-typeParams grammar artifacts (serialized DDM trees from before the
+polymorphism grammar change) carry OLD op shapes: 4-arg `composite` (no
+typeParams slot), 2-arg `datatype`, etc. The `composite` translator rejects
+its stale shape loudly; the `datatype` translator keeps an upstream transitional
+shim that coerces the 2-arg shape to the current 3-arg one. Every DDM producer
+regenerates in lockstep with the grammar anyway (this CR regenerates
+StrataJavaFrontEnd's `Laurel.java` bindings via `strata javaGen Laurel`). -/
+
+private def legacySr : StrataDDM.SourceRange := .none
+
+private def legacyIdent (s : String) : StrataDDM.Arg := .ident legacySr s
+
+private def legacyOp (name : String) (args : Array StrataDDM.Arg) : StrataDDM.Operation :=
+  { ann := legacySr, name := { dialect := "Laurel", name := name }, args := args }
+
+/-- A 4-arg legacy `composite Sub extends Base { }` command: no typeParams slot,
+    extends parents as bare idents. -/
+private def legacyCompositeCmd : StrataDDM.Operation :=
+  legacyOp "compositeCommand" #[.op (legacyOp "composite" #[
+    legacyIdent "Sub",
+    .option legacySr (some (.op (legacyOp "extends" #[legacyIdent "Base"]))),
+    .seq legacySr .none #[],
+    .seq legacySr .none #[]])]
+
+/-- A 2-arg legacy `datatype D { MkD() }` command: no typeParams slot. -/
+private def legacyDatatypeCmd : StrataDDM.Operation :=
+  legacyOp "datatypeCommand" #[.op (legacyOp "datatype" #[
+    legacyIdent "D",
+    .op (legacyOp "datatypeConstructorList" #[.op (legacyOp "datatypeConstructorNoArgs" #[legacyIdent "MkD"])])])]
+
+-- The `composite` translator rejects the stale 4-arg shape loudly. The
+-- `datatype` translator, by contrast, carries an upstream transitional shim
+-- (`parseDatatype` rewrites a 2-arg `datatype` to the 3-arg typeParams shape,
+-- treating the missing slot as absent), so a legacy 2-arg datatype is accepted
+-- (deterministically coerced), not rejected. Both are the mainline behavior.
+/--
+info: legacy composite rejected: true
+legacy datatype rejected: false
+-/
+#guard_msgs in
+#eval do
+  let progC : StrataDDM.Program :=
+    StrataDDM.Program.create Laurel_map "Laurel" #[legacyCompositeCmd]
+  let rejectedC := match Laurel.TransM.run (Strata.Uri.file "legacy") (Laurel.parseProgram progC) with
+    | .error _ => true
+    | .ok _ => false
+  IO.println s!"legacy composite rejected: {rejectedC}"
+  let progD : StrataDDM.Program :=
+    StrataDDM.Program.create Laurel_map "Laurel" #[legacyDatatypeCmd]
+  let rejectedD := match Laurel.TransM.run (Strata.Uri.file "legacy") (Laurel.parseProgram progD) with
+    | .error _ => true
+    | .ok _ => false
+  IO.println s!"legacy datatype rejected: {rejectedD}"
 
 end Strata.Laurel

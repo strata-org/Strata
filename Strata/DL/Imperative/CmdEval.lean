@@ -71,7 +71,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
         (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | some false =>
         if assumptions.isEmpty then
-          (c', EC.updateError σ (.AssertFail label e))
+          (c', EC.updateError σ (.AssertFail label e md))
         else
           (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | none =>
@@ -159,27 +159,46 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
           let (expr, σ) := EC.genFreeVar σ x xty
           EC.update σ x xty expr
 
-    | .assert label e _ =>
+    | .assert label e md =>
       let (e, σ) := EC.preprocess σ c e
       let e := EC.eval σ e
       match EC.denoteBool e with
       | some true =>
         σ
       | some false =>
-        EC.updateError σ (.AssertFail label e)
+        -- A failed assertion normally halts execution (via the `error` field,
+        -- which short-circuits the rest of `Cmd.run`). When the context opts
+        -- into `continuePastAssert`, record the failure and keep going so that
+        -- multiple independent assertion failures can be collected in one run.
+        -- An assertion does not mutate the store, so continuing past it is
+        -- sound for the remaining (assertion-independent) statements.
+        --
+        -- `md` travels with the failure so consumers can resolve its source
+        -- location (and property summary) directly, instead of treating `label`
+        -- as a key into a separately-built map.
+        if EC.continuePastAssert σ then
+          EC.recordAssertFailure σ label e md
+        else
+          EC.updateError σ (.AssertFail label e md)
       | none =>
         EC.updateError σ (.Misc f!"assert ({label}) condition did not reduce to bool")
 
     | .assume label e _ =>
-      let (e, σ) := EC.preprocess σ c e
-      let e := EC.eval σ e
-      match EC.denoteBool e with
-      | some true =>
-        σ
-      | some false =>
-        EC.updateError σ (.Misc f!"assume ({label}) condition is false")
-      | none =>
-        EC.updateError σ (.Misc f!"assume ({label}) condition did not reduce to bool")
+      -- When the context opts into `ignoreAssume`, treat the assume as a no-op
+      -- (skip evaluation entirely). Assumes are verification scaffolding; a
+      -- concrete driver checking assertions should not be derailed by a
+      -- contract-inserted `assume false` on an infeasible-but-reached path.
+      if EC.ignoreAssume σ then σ
+      else
+        let (e, σ) := EC.preprocess σ c e
+        let e := EC.eval σ e
+        match EC.denoteBool e with
+        | some true =>
+          σ
+        | some false =>
+          EC.updateError σ (.Misc f!"assume ({label}) condition is false")
+        | none =>
+          EC.updateError σ (.Misc f!"assume ({label}) condition did not reduce to bool")
 
     | .cover _ _ _ =>
       -- In the future we can record when a cover is true

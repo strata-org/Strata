@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
@@ -17,6 +18,7 @@ namespace Core
 namespace Transform
 
 open LabelGen
+open Strata.Util (HMap)
 
 def oldVarPrefix (id : String) : String := s!"old_{id}"
 def tmpVarPrefix (id : String) : String := s!"tmp_{id}"
@@ -77,6 +79,41 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
+/-- Generate one fresh type-variable name (`TyIdentifier = String`) from the
+    shared `CoreGenState` counter — the same monotonic counter that backs the
+    term-temp generators — so names are deterministic, resume-safe, and unique
+    across call sites without adding any new state. Mirrors `genIdent`.
+
+    NOTE: `CoreGenState.gen` records every generated name in `γ.generated`,
+    including freshened type variables, which — unlike term temps — never get a
+    store binding. Any proof relying on
+    `∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ CoreIdent.isTemp v)`
+    (e.g. `callElimStatementCorrect`) needs `generated` split by kind
+    (term-temp vs. type-var) so that invariant ranges only over term temps. -/
+def genTyVarName (prefixStr : String) : CoreGenM Lambda.TyIdentifier := do
+  let id ← CoreGenState.gen prefixStr
+  return id.name
+
+def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdentifier) :=
+  List.mapM (fun _ => genTyVarName prefixStr) (List.replicate n ())
+
+/-- Build a one-scope type substitution mapping each declared type variable of a
+    polymorphic callee to a globally-fresh type variable drawn at `prefixStr`
+    (the caller supplies its reserved prefix, e.g. `freshTyVarPrefix` in
+    `CallElim.lean`), for per-call-site contract instantiation in call
+    elimination. Returns the empty substitution (a verified identity for
+    `LMonoTy.subst`/`LExpr.applySubst`, which short-circuit on
+    `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
+    exact no-op for monomorphic procedures. -/
+def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)
+  : CoreGenM Lambda.Subst := do
+  if typeArgs.isEmpty then
+    return Lambda.Subst.empty
+  else
+    let fresh ← genTyVarNames prefixStr typeArgs.length
+    let scope : Lambda.SubstOne :=
+      Strata.Util.HMap.ofList ((typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f)))
+    return [scope]
 
 /-- Cached results of program analyses that are helpful for program
     transformation.
@@ -99,33 +136,39 @@ def CachedAnalyses.emp : CachedAnalyses := {}
 -/
 structure CoreTransformState where
   genState: CoreGenState
-  -- The program that is being transformed.
+  -- The program that is being transformed. This is handy for statement-level
+  -- transforms which need to get information about the transforming top-level program.
   -- The definition of "current" may vary depending on the transformation.
   -- If the transformation is implemented with runProgram or runProgramUntil,
   -- the currentProgram field will store the latest versions of finished
   -- procedures, but the procedure that is being updated might have stale
   -- statements.
-  -- When a transformation is finished, currentProgram must contain the
+  -- When a program-level transformation is finished, currentProgram must contain the
   -- program that is fully updated (or it has to be .none).
   -- Using runProgram/runProgramUntil enforces that currentProgram of this
   -- CoreTransformState is updated to be the updated program.
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
-  -- Optional factory for transformations that need to track function
-  -- declarations (e.g., PrecondElim). The factory grows as function
-  -- declarations are encountered during traversal.
-  factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Factory for transformations. This should not include any function that is
+  -- directly defined in the input program or derived from the datatype defined in
+  -- the input program.
+  -- This can diverge from Core's built-in Factory after transformations.
+  factory: @Lambda.Factory CoreLParams
   -- Per-transform statistics counters, keyed by string names.
   statistics: Statistics := {}
+  -- Per-transform run counters, keyed by string names. Used to generate unique
+  -- fresh-name prefixes across repeated passes.
+  passCounter : HMap String Nat := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
   { genState := .emp, currentProgram := .none,
-    currentProcedureName := .none, cachedAnalyses := .emp }
+    currentProcedureName := .none, cachedAnalyses := .emp,
+    factory := Lambda.Factory.default }
 
 @[expose]
-abbrev Err := Strata.DiagnosticModel
+abbrev Err := Strata.Message
 
 @[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
@@ -134,36 +177,35 @@ abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α :=
   fun coreTransformState =>
     let res := cgm coreTransformState.genState
-    (res.1, {
-      genState := res.2,
-      currentProgram := coreTransformState.currentProgram,
-      currentProcedureName := coreTransformState.currentProcedureName,
-      cachedAnalyses := coreTransformState.cachedAnalyses,
-      factory := coreTransformState.factory,
-      statistics := coreTransformState.statistics })
+    (res.1, { coreTransformState with genState := res.2 })
 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
 
-/-- Lift an `Except DiagnosticModel` into `CoreTransformM`. -/
-def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
+/-- Lift an `Except Message` into `CoreTransformM`. -/
+def liftDiag {α : Type} (e : Except Strata.Message α) : CoreTransformM α :=
   match e with
   | .ok a => pure a
   | .error dm => throw dm
 
-/-- Get the factory from state, throwing if not set. -/
+/-- Get the factory from state. -/
 def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
-  match (← get).factory with
-  | some F => pure F
-  | none => throw (Strata.DiagnosticModel.fromMessage "factory not set in CoreTransformState")
+  return (← get).factory
 
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
-  modify fun σ => { σ with factory := some F }
+  modify fun σ => { σ with factory := F }
 
 /-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
+
+/-- Fresh counter for `key`, starting at 1. -/
+def bumpCounter (key : String) : CoreTransformM Nat := do
+  let σ ← get
+  let n := (σ.passCounter.find? key).getD 0 + 1
+  set { σ with passCounter := σ.passCounter.insert key n }
+  return n
 
 
 
@@ -177,7 +219,7 @@ def genArgExprIdentsTrip
   (args : List Expression.Expr)
   : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
-  if inputs.length ≠ args.length then throw (Strata.DiagnosticModel.fromMessage "input length and args length mismatch")
+  if inputs.length ≠ args.length then throw (Strata.Message.fromString "input length and args length mismatch")
   else let gen_idents ← genArgExprIdents args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
@@ -190,7 +232,7 @@ def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
-  if outputs.length ≠ lhs.length then throw (Strata.DiagnosticModel.fromMessage "output length and lhs length mismatch")
+  if outputs.length ≠ lhs.length then throw (Strata.Message.fromString "output length and lhs length mismatch")
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
 
@@ -266,50 +308,87 @@ def createOldVarsSubst
 /- Generic runner functions. -/
 
 /--
-Recursively visit all blocks and run f
+Recursively visit all statements and run `f`.
+
+For each statement `s`, `f s` is applied exactly once:
+- if `f s` returns `some s'`, then `s'` replaces `s` and is not traversed
+  any further. Either the top-level transform must invoke `runProgramUntil`,
+  or `f` itself must process the subtree.
+- if `f s` returns `none`, then `s` is left unmodified and `runStmtsRec`
+  traverses into its sub-statements (block/ite/loop bodies), giving `f` a
+  chance to act on nested statements.
+
+Requirements on `f`:
+- `f s` should return `.none` if it confirmed that `s` is not a target of
+  its transformation. This will help `runProgramUntil` converge.
+- `f s` should return `.some [s]` even if it didn't transform `s` at all,
+  if it modified `factory` of `CoreTransformState`. Otherwise, the updated
+  `factory` can be silently skipped by `runProgramUntil`.
+- `f s` can return `.none` if the `s` wasn't transformed and `factory` wasn't
+  modified, even when it modified generator or analysis cache of `CoreTransformState`.
+
+Returned value:
+- The returned boolean value is true if `f` has been applied at least once.
+  It returns true even if `f s` returned an identical statement `.some [s]`,
+  and didn't modify `CoreTransformState.factory`, to avoid expensive comparison.
+- Then returned statement list is a concat map of `f` to the input `ss`.
+
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
 -/
-private def runStmtsRec (f : Command → CoreTransformM (Option (List Statement)))
+def runStmtsRec (f : Statement → CoreTransformM (Option (List Statement)))
     (ss : List Statement)
     : CoreTransformM (Bool × List Statement) := do
   match ss with
   | [] => return (false, [])
   | s :: ss' =>
+    -- Transform the head (and, when `f` declines, its sub-statements) before
+    -- recursing into the tail, so effects of `f` — e.g. freshly generated loop
+    -- numbers — follow source order.
+    let (changed, sres) ← (do
+      match ← f s with
+      | .some s' => return (true, s')
+      | .none =>
+        match s with
+        | .cmd _ => return (false, [s])
+        | .block lbl b md => do
+          let (changed, b') ← runStmtsRec f b
+          return (changed, [.block lbl b' md])
+        | .ite c thenb elseb md => do
+          let (changed, thenb') ← runStmtsRec f thenb
+          let (changed', elseb') ← runStmtsRec f elseb
+          return (changed || changed', [.ite c thenb' elseb' md])
+        | .loop guard measure invariant body md => do
+          let (changed, body') ← runStmtsRec f body
+          return (changed, [.loop guard measure invariant body' md])
+        | .funcDecl _ _ =>
+          return (false, [s])  -- Function declarations pass through unchanged
+        | .typeDecl _ _ =>
+          return (false, [s])  -- Type declarations pass through unchanged
+        | .exit _lbl _md =>
+          return (false, [s]))
     let (changed0, ss'') ← (runStmtsRec f ss')
-    let (changed, sres) ← (match s with
-      | .cmd c => do
-        let res ← f c
-        match res with
-        | .none => return (false, [s])
-        | .some s' => return (true, s')
-      | .block lbl b md => do
-        let (changed, b') ← runStmtsRec f b
-        return (changed, [.block lbl b' md])
-      | .ite c thenb elseb md => do
-        let (changed, thenb') ← runStmtsRec f thenb
-        let (changed', elseb') ← runStmtsRec f elseb
-        return (changed || changed', [.ite c thenb' elseb' md])
-      | .loop guard measure invariant body md => do
-        let (changed, body') ← runStmtsRec f body
-        return (changed, [.loop guard measure invariant body' md])
-      | .funcDecl _ _ =>
-        return (false, [s])  -- Function declarations pass through unchanged
-      | .typeDecl _ _ =>
-        return (false, [s])  -- Type declarations pass through unchanged
-      | .exit _lbl _md =>
-        return (false, [s]))
-    return ⟨changed0 || changed, (sres ++ ss'')⟩
+    return ⟨changed || changed0, (sres ++ ss'')⟩
 
 /--
-Run f on each command of the program.
+Run f on each statement of the program.
 Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
 If targetProcList is .some l, apply f to statements that are in procedures
 listed in l only.
+
+The returned boolean is false if `f` has been never applied to any procedure
+which is in program `p` and a member of `targetProcList` (if it is `.some ..`).
+The requirement on `f` is exactly equivalent to the requirement on `f` of
+`runStmtsRec`.
+If the returned boolean value of `runProgram` is `false`, the returned `Program`
+and `CoreTransformState.factory` is exactly identical to the input `p` and
+that of the input state.
+However, `runProgram` can still conservatively return `true` if `f` was
+conservatively implemented in that way.
 -/
 def runProgram
-    (f : Command → CoreTransformM (Option (List Statement)))
+    (f : Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (targetProcList : Option (List String) := .none)
   : CoreTransformM (Bool × Program) := do
@@ -332,7 +411,7 @@ def runProgram
 
         let bodyStmts ← match proc.body with
           | .structured ss => pure ss
-          | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+          | .cfg _ => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
         let (changed, new_body) ← runStmtsRec f bodyStmts
 
@@ -350,12 +429,16 @@ def runProgram
   })
   return (anyChanged, newProg)
 
-/-- Repeatedly apply a command-level transformation until no more changes occur
+/-- Repeatedly apply a statement-level transformation until no more changes occur
     or the iteration limit is reached.
     - `maxIters = none`: repeat until a fixed point (no changes).
-    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change.
+
+    The requirement on `f` and meaning of returned boolean value is exactly
+    same as `runProgram`.
+-/
 def runProgramUntil
-    (f : Command → CoreTransformM (Option (List Statement)))
+    (f : Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (maxIters : Option Nat := none)
     (targetProcList : Option (List String) := .none)

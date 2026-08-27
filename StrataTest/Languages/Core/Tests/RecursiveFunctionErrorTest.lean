@@ -23,35 +23,7 @@ SMT-based verification; none are type errors.
 namespace Strata.RecursiveFunctionErrorTest
 
 ---------------------------------------------------------------------
--- Test 1: polymorphic recursive function is rejected
----------------------------------------------------------------------
-
-def polyRecPgm : Program :=
-#strata
-program Core;
-
-datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
-
-rec function len<a>(@[cases] xs : MyList a) : int
-{
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
-};
-
-#end
-
-/-- info: true -/
-#guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
-
-/--
-error: ❌ Symbolic evaluation error.
-Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
--/
-#guard_msgs in
-#eval Core.verify polyRecPgm (options := .quiet)
-
----------------------------------------------------------------------
--- Test 2: recursive function without @[cases] parameter is rejected
+-- Test 1: recursive function without @[cases] parameter is rejected
 ---------------------------------------------------------------------
 
 def noCasesPgm : Program :=
@@ -63,7 +35,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function listLen (xs : IntList) : int
 decreases xs
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 #end
@@ -75,7 +47,7 @@ error: recursive function 'listLen': structural recursion requires @[cases]
 #eval Core.verify noCasesPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 3: error — decreases on non-int expression
+-- Test 2: error — decreases on non-int expression
 ---------------------------------------------------------------------
 
 def decreasesNonIntPgm : Program :=
@@ -87,7 +59,7 @@ function f () : bool;
 rec function bad (n : int) : int
   decreases f
 {
-  if n <= 0 then 0 else bad(n - 1)
+  if int.le(n, 0) then 0 else bad(int.sub(n, 1))
 };
 #end
 
@@ -97,7 +69,7 @@ recursive function 'bad': non-variable decreases expression must have type int, 
 #eval Core.verify decreasesNonIntPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 4: error — decreasing argument contains recursive call
+-- Test 3: error — decreasing argument contains recursive call
 ---------------------------------------------------------------------
 
 def decreasesRecCallPgm : Program :=
@@ -107,7 +79,7 @@ program Core;
 rec function bad (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else bad(bad(n - 1))
+  if int.le(n, 0) then 0 else bad(bad(int.sub(n, 1)))
 };
 #end
 
@@ -116,7 +88,7 @@ rec function bad (n : int) : int
 #eval Core.verify decreasesRecCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 5: error — decreases expression calls function in same mutual block
+-- Test 4: error — decreases expression calls function in same mutual block
 ---------------------------------------------------------------------
 
 def decreasesMutualCallPgm : Program :=
@@ -126,12 +98,12 @@ program Core;
 rec function size (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else 1 + size(n - 1)
+  if int.le(n, 0) then 0 else int.add(1, size(int.sub(n, 1)))
 }
 function bad (n : int) : int
   decreases size(n)
 {
-  if n <= 0 then 0 else bad(n - 1)
+  if int.le(n, 0) then 0 else bad(int.sub(n, 1))
 };
 #end
 
@@ -140,7 +112,7 @@ function bad (n : int) : int
 #eval Core.verify decreasesMutualCallPgm (options := .quiet)
 
 ---------------------------------------------------------------------
--- Test 6: error — mutual block mixes structural and int-valued measures
+-- Test 5: error — mutual block mixes structural and int-valued measures
 ---------------------------------------------------------------------
 
 def mixedMutualPgm : Program :=
@@ -151,12 +123,12 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 }
 function countdown (n : int) : int
   decreases n
 {
-  if n <= 0 then 0 else countdown(n - 1)
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
 };
 #end
 

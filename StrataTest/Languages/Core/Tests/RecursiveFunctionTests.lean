@@ -33,7 +33,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 procedure TestListLen()
@@ -67,11 +67,11 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilLen
 Property: assert
@@ -134,7 +134,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 procedure TestNilCase(xs : IntList)
@@ -152,7 +152,7 @@ spec {
   ensures true;
 }
 {
-  assert [consLen]: listLen(xs) == 1 + listLen(IntList..tl(xs));
+  assert [consLen]: listLen(xs) == int.add(1, listLen(IntList..tl(xs)));
 };
 #end
 
@@ -174,11 +174,11 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilCase
 Property: assert
@@ -206,7 +206,7 @@ Property: assert
 Assumptions:
 TestConsCase_requires_0: IntList..isCons(xs@4)
 Obligation:
-listLen(xs@4) == 1 + listLen(IntList..tl(xs@4))
+listLen(xs@4) == int.add(1, listLen(IntList..tl(xs@4)))
 
 Label: TestConsCase_ensures_1
 Property: assert
@@ -325,7 +325,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 procedure listLenImp(xs : IntList, out r : int)
@@ -338,10 +338,10 @@ spec {
   cur := xs;
   acc := 0;
   while (!IntList..isNil(cur))
-    invariant acc + listLen(cur) == listLen(xs)
-    invariant acc >= 0
+    invariant int.add(acc, listLen(cur)) == listLen(xs)
+    invariant int.ge(acc, 0)
   {
-    acc := acc + 1;
+    acc := int.add(acc, 1);
     cur := IntList..tl(cur);
   }
   r := acc;
@@ -366,18 +366,18 @@ Label: listLen_terminates_0
 Property: assert
 Assumptions:
 IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  IntList..adtRank(x) >= 0
+  int.ge(IntList..adtRank(x), 0)
 IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  IntList..adtRank(tl) < IntList..adtRank(Cons(hd, tl))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> IntList..adtRank(IntList..tl(xs@2)) < IntList..adtRank(xs@2)
+!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
-Label: entry_invariant_0_0
+Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Obligation:
-0 + listLen(xs@3) == listLen(xs@3)
+int.add(0, listLen(xs@3)) == listLen(xs@3)
 
-Label: entry_invariant_0_1
+Label: insertLoopInvAssert_entry_invariant_loop_0_1
 Property: assert
 Obligation:
 true
@@ -386,47 +386,48 @@ Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@3))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@3)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@3) == listLen(xs@3)
+loopElimAssume_guard_loop_1: !(IntList..isNil(cur@1))
+insertLoopInvAssume_invariant_loop_0_0: int.add(acc@1, listLen(cur@1)) == listLen(xs@3)
+insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@1, 0)
+insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
 Obligation:
 IntList..isCons(cur@1)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@3))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@3)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@3) == listLen(xs@3)
+loopElimAssume_guard_loop_1: !(IntList..isNil(cur@1))
+insertLoopInvAssume_invariant_loop_0_0: int.add(acc@1, listLen(cur@1)) == listLen(xs@3)
+insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@1, 0)
+insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
 Obligation:
-acc@1 + 1 + listLen(IntList..tl(cur@1)) == listLen(xs@3)
+int.add(int.add(acc@1, 1), listLen(IntList..tl(cur@1))) == listLen(xs@3)
 
-Label: arbitrary_iter_maintain_invariant_0_1
+Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(cur))>: !(IntList..isNil(xs@3))
-assume_guard_0: !(IntList..isNil(cur@1))
-assume_invariant_0_0: acc@1 + listLen(cur@1) == listLen(xs@3)
-assume_invariant_0_1: acc@1 >= 0
-assume_entry_invariant_0_0: 0 + listLen(xs@3) == listLen(xs@3)
+loopElimAssume_guard_loop_1: !(IntList..isNil(cur@1))
+insertLoopInvAssume_invariant_loop_0_0: int.add(acc@1, listLen(cur@1)) == listLen(xs@3)
+insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@1, 0)
+insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
 Obligation:
-acc@1 + 1 >= 0
+int.ge(int.add(acc@1, 1), 0)
 
 Label: equiv
 Property: assert
 Assumptions:
-assume_entry_invariant_0_0: 0 + listLen(xs@3) == listLen(xs@3)
+insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
 <label_ite_cond_true: !(IntList..isNil(cur))>: if !(IntList..isNil(xs@3)) then !(IntList..isNil(xs@3)) else true
-assume_guard_0: if !(IntList..isNil(xs@3)) then !(IntList..isNil(cur@1)) else true
-assume_invariant_0_0: if !(IntList..isNil(xs@3)) then acc@1 + listLen(cur@1) == listLen(xs@3) else true
-assume_invariant_0_1: if !(IntList..isNil(xs@3)) then acc@1 >= 0 else true
-not_guard_0: if !(IntList..isNil(xs@3)) then !(!(IntList..isNil(cur@2))) else true
-invariant_0_0: if !(IntList..isNil(xs@3)) then acc@2 + listLen(cur@2) == listLen(xs@3) else true
-invariant_0_1: if !(IntList..isNil(xs@3)) then acc@2 >= 0 else true
+loopElimAssume_guard_loop_1: if !(IntList..isNil(xs@3)) then !(IntList..isNil(cur@1)) else true
+insertLoopInvAssume_invariant_loop_0_0: if !(IntList..isNil(xs@3)) then int.add(acc@1, listLen(cur@1)) == listLen(xs@3) else true
+insertLoopInvAssume_invariant_loop_0_1: if !(IntList..isNil(xs@3)) then int.ge(acc@1, 0) else true
+loopElimAssume_not_guard_loop_1: if !(IntList..isNil(xs@3)) then !(!(IntList..isNil(cur@2))) else true
 <label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil(xs@3)) then false else true then if !(IntList..isNil(xs@3)) then false else true else true
+insertLoopInvAssume_exit_invariant_loop_0_0: int.add(if !(IntList..isNil(xs@3)) then acc@2 else 0, listLen(if !(IntList..isNil(xs@3)) then cur@2 else xs@3)) == listLen(xs@3)
+insertLoopInvAssume_exit_invariant_loop_0_1: int.ge(if !(IntList..isNil(xs@3)) then acc@2 else 0, 0)
+insertLoopInvAssume_exit_not_guard_loop_0: !(!(IntList..isNil(if !(IntList..isNil(xs@3)) then cur@2 else xs@3)))
 Obligation:
 (if !(IntList..isNil(xs@3)) then acc@2 else 0) == listLen(xs@3)
 
@@ -440,11 +441,11 @@ Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: entry_invariant_0_1
+Obligation: insertLoopInvAssert_entry_invariant_loop_0_1
 Property: assert
 Result: ✅ pass
 
@@ -452,11 +453,11 @@ Obligation: set_cur_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_1
+Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Result: ✅ pass
 
@@ -479,17 +480,17 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 rec function nth (@[cases] xs : IntList, n : int) : int
   requires IntList..isCons(xs);
-  requires n >= 0;
-  requires n < listLen(xs);
+  requires int.ge(n, 0);
+  requires int.lt(n, listLen(xs));
 {
   if IntList..isNil(xs) then 0
   else if n == 0 then IntList..hd(xs)
-  else nth(IntList..tl(xs), n - 1)
+  else nth(IntList..tl(xs), int.sub(n, 1))
 };
 
 procedure TestNth()
@@ -578,6 +579,46 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify recPrecondPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test: an unused polymorphic recursive function is dropped
+--
+-- `len` is polymorphic and recursive but used at no ground type, so
+-- `MonomorphizeFunctions` (which runs after type checking) drops its
+-- *definition* as dead code before it can reach the SMT encoder.  Its body
+-- well-formedness (`$$wf`) and termination (`$$term`) self-checks are
+-- emitted (at a fresh opaque type for the type variable) and pass.
+---------------------------------------------------------------------
+
+def polyRecPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function len<a>(@[cases] xs : MyList a) : int
+{
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
+};
+
+#end
+
+/-- info: true -/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram polyRecPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: len_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: len_terminates_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify polyRecPgm (options := .quiet)
 
 end Strata.RecursiveFunctionTest
 

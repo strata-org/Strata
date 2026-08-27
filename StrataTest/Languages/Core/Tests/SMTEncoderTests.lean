@@ -8,6 +8,8 @@ module
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
+import Strata.Transform.BetaReduce
+import Strata.Languages.Core.ObligationExtraction
 
 meta section
 
@@ -148,7 +150,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
             [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] [])
 
--- Test that all bound variables get globally unique generated names
+-- Nested empty-named binders get distinct generated names by de Bruijn depth: outer at depth 0
+-- (`$__bv0`), inner at depth 1 (`$__bv1`).
 /-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -177,6 +180,19 @@ info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
     (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
      (.eq () (.bvar () 0) (.bvar () 2)))))
 
+-- Test mixed named/unnamed nesting: de Bruijn depth (`bvs.length`) counts user-named binders too, so
+-- the inner unnamed binder gets `$__bv2` (its stack depth), not `$__bv1`. (The two adjacent `forall`s
+-- coalesce into one binder group; the inner `exists` stays separate but still sees depth 2.)
+/--
+info: "(assert (forall (($__bv0 Int) (x Int)) (exists (($__bv2 Int)) (= $__bv0 $__bv2))))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
+   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
+     (.eq () (.bvar () 2) (.bvar () 0)))))
+
 
 /--
 info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
@@ -186,8 +202,10 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
--- Test that bound variable names are globally unique across multiple terms.
--- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
+-- Empty-named quantifier binders are named by de Bruijn depth (`$__bv{depth}`). Each term encoded
+-- via toSMTTerms starts from an empty binder stack, so two independent top-level foralls each get
+-- depth 0 → both `$__bv0`. This is sound because the two binders are never simultaneously in scope
+-- (distinct depths only arise for nested binders within one term).
 #guard
   match toSMTTerms Lambda.Factory.default [
     -- Term 1: ∀ x:Int. x = x
@@ -196,12 +214,12 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
     -- Term 2: ∀ y:Bool. y
     (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
      (.bvar () 0))
-  ] SMT.Context.default [] with
+  ] SMT.Context.default {} with
   | .ok ([t1, t2], _, _) =>
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
     | .ok s1, .ok s2 =>
       s1 == "(forall (($__bv0 Int)) true)" &&
-      s2 == "(forall (($__bv1 Bool)) $__bv1)"
+      s2 == "(forall (($__bv0 Bool)) $__bv0)"
     | _, _ => false
   | _ => false
 
@@ -231,6 +249,30 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
       (.fvar () "x" (.some .real)))
     (.fvar () "y" (.some .real)))
   (factory := Core.Factory)
+
+-- A `realConst` whose value has no terminating decimal expansion (e.g. `1/3`,
+-- the value of the surface literal `frac{1, 3}`) cannot be emitted as a single
+-- SMT-LIB decimal literal, so it is encoded as the exact real division
+-- `(/ num den)` rather than erroring.
+/-- info: "(assert (|/| 1.0 3.0))\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (1 / 3 : Rat))
+
+-- The sign of a negative non-terminating value (e.g. `-2/3`, the value of
+-- `-frac{2, 3}`) rides on the numerator, which the serializer wraps in unary
+-- minus; the denominator stays positive.
+/-- info: "(assert (|/| (- 2.0) 3.0))\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (-2 / 3 : Rat))
+
+-- Conversely, a *terminating* value (e.g. `1/4`) keeps routing through the
+-- `Decimal.fromRat = some` branch and emits a single SMT-LIB decimal literal,
+-- not the `(/ num den)` division. Pins the branch boundary so a change to
+-- `fromRat`'s terminating-detection fails here instead of silently reshaping
+-- emitted SMT.
+/-- info: "(assert 0.25)\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (1 / 4 : Rat))
 
 end ArrayTheory
 
@@ -442,12 +484,12 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
   (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
     (.fvar () "s2" (.some .string)))
 
-/-! ## `ProofObligation.toSMTTerms` preserves the input `typeFactory`
+/-! ## Obligation encoding preserves the input datatype factory
 
-`SMT.Context.typeFactory` is seeded by the caller from the env's datatype
+`SMT.Context.datatypes` is seeded by the caller from the env's datatype
 TypeFactory and is never modified during encoding (encoding a datatype marks it
-`seen` and registers its function maps, but never extends `typeFactory`). These
-checks pin that invariant: the output context's `typeFactory` equals the
+`seen` and registers its function maps, but never extends `datatypes`). These
+checks pin that invariant: the output context's datatype factory equals the
 datatype factory the caller seeded it with. -/
 
 private def intListDatatypeRT : Lambda.LDatatype Unit :=
@@ -465,14 +507,16 @@ private def assertOb (obligation : LExpr CoreLParams.mono) :
     obligation := obligation, metadata := {} }
 
 /-- Build an env from the given datatype blocks, encode `ob` with its
-    `typeFactory` seeded from the env's datatypes, and return whether the output
-    context's `typeFactory` still equals that input datatype factory. -/
+    `datatypes` seeded from the env's datatypes, and return whether the output
+    context's datatype factory still equals that input datatype factory. -/
 private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
     (ob : Imperative.ProofObligation Expression) : Except Std.Format Bool := do
   let env ← (Env.init.addDatatypes blocks).mapError (f!"{·}")
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
-  let (_, _, _, _, ctx', _) ← ProofObligation.toSMTTerms env.factory ob ctx
-  .ok (ctx'.typeFactory == env.datatypes)
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
+  let encState : SMTEncodeState := .init { ctx := ctx }
+  let (res, _) ← encodeObligationToSMT env.factory encState ob
+  let ctx' := res.ctx
+  .ok (ctx'.datatypes.factory == env.datatypes)
 
 -- Obligation referencing the `IntList` datatype (via its `Nil` constructor).
 /-- info: ok: true -/
@@ -492,6 +536,208 @@ private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
 /-- info: ok: true -/
 #guard_msgs in
 #eval typeFactoryPreserved [] (assertOb (.boolConst () true))
+
+/-! ## Regression: a directly-applied lambda redex in an obligation term encodes
+    (rather than hitting `appToSMTTerm`'s "Cannot encode .app expression").
+
+    A front-end argument-value precondition can lower to a constant-lambda
+    redex `(fun _ : string => true)(v)` that is injected into the proof
+    obligation as an ASSUMPTION. Unlike a Core-surface function body it is not
+    partial-evaluated first. The `betaReduce` pipeline phase contracts such
+    redexes in every program expression before obligation extraction, so the
+    SMT encoder (a pure Core-to-SMT mapping) never sees them; these tests pin
+    the phase's coverage of each obligation-feeding position. -/
+
+/-- `(fun _ : string => true)("v1")` — a constant-lambda redex, the shape
+    an argument-value constraint lowers to. -/
+private def constLambdaRedex : LExpr CoreLParams.mono :=
+  .app ()
+    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () true))
+    (.strConst () "v1")
+
+/-- A second constant-lambda redex reducing to `false`, for the distinctness test. -/
+private def constLambdaRedexFalse : LExpr CoreLParams.mono :=
+  .app ()
+    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () false))
+    (.strConst () "x")
+
+/-- A program carrying `constLambdaRedex` in each obligation-feeding position:
+    an `assume` (the argument-precondition shape), a variable definition
+    (`init`), an `assert` goal, and a `distinct` declaration. -/
+private def redexTestPgm : Program :=
+  { decls := [
+      .distinct ⟨"d", ()⟩ [constLambdaRedex, constLambdaRedexFalse] #[],
+      .proc
+        { header := { name := ⟨"p", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured [
+            Statement.assume "arg_precondition" constLambdaRedex #[],
+            Statement.init ⟨"v", ()⟩ (.forAll [] (.tcons "bool" [])) (.det constLambdaRedex) #[],
+            Statement.assert "goal" constLambdaRedex #[]] } #[]] }
+
+-- The `betaReduce` phase contracts the redex in all four positions: the
+-- assumption, the variable definition's RHS, the goal, and both distinctness
+-- operands. Each position's concrete reduced expression is pinned on its own
+-- output line, so a failure names the position that broke.
+/--
+info: distinct operands: [true, false]
+assume: true
+init rhs: true
+assert goal: true
+-/
+#guard_msgs in
+#eval show IO Unit from
+  match (Core.BetaReduce.betaReduceProgram redexTestPgm).decls with
+  | [.distinct _ es _, .proc p _] => do
+    IO.println s!"distinct operands: {es.map (f!"{·}".pretty)}"
+    match p.body with
+    | .structured [
+        Statement.assume _ a _,
+        Statement.init _ _ (.det rhs) _,
+        Statement.assert _ g _] => do
+      IO.println s!"assume: {f!"{a}".pretty}"
+      IO.println s!"init rhs: {f!"{rhs}".pretty}"
+      IO.println s!"assert goal: {f!"{g}".pretty}"
+    | _ => IO.println "UNEXPECTED body shape"
+  | _ => IO.println "UNEXPECTED decl shape"
+
+/-- Render each obligation of `pgm` for `#guard_msgs`: obligation count, then
+    per obligation its label and either the encoded shape (assumption terms
+    rendered through SMTDDM, definition/declaration counts, the goal term) or
+    the encoder's error text. Pins the concrete encoder output, not just
+    `.ok`/`.error`. -/
+private def printRedexObligations (pgm : Program) : IO Unit := do
+  match Core.ObligationExtraction.extractObligations pgm with
+  | .error e => IO.println s!"extract error: {e}"
+  | .ok obs =>
+    IO.println s!"{obs.toList.length} obligation(s)"
+    for ob in obs.toList do
+      match (Env.init.addDatatypes []).mapError (f!"{·}") >>= fun env =>
+            encodeObligationToSMT env.factory (.init { ctx := SMT.Context.default }) ob with
+      | .ok (res, _) =>
+        let render (t : Term) : String :=
+          match Strata.SMTDDM.termToString t with
+          | .ok s => s
+          | .error e => s!"<render error: {e}>"
+        IO.println s!"{ob.label}: assumptions [{", ".intercalate (res.assumptions.map render)}], \
+          {res.varDefs.length} def(s), {res.varDecls.length} decl(s), goal {render res.goal}"
+      | .error e => IO.println s!"{ob.label}: ERROR: {e.pretty}"
+
+-- Composed seam test: obligations extracted from the reduced program encode
+-- cleanly through `encodeObligationToSMT`, and the encoded terms are the
+-- reduced constants — pinning that the phase leaves nothing the encoder
+-- rejects and what the encoder actually produces.
+/--
+info: 1 obligation(s)
+goal: assumptions [(distinct true false), true], 1 def(s), 0 decl(s), goal true
+-/
+#guard_msgs in
+#eval printRedexObligations (Core.BetaReduce.betaReduceProgram redexTestPgm)
+
+-- Un-reduced control: the same program WITHOUT the phase fails to encode —
+-- the redex reaches `appToSMTTerm`'s catch-all, pinned by the concrete
+-- "Cannot encode .app expression" error on the named obligation. This shows
+-- the phase is load-bearing (if the encoder ever learns to reduce, this
+-- expectation should be revisited together with the phase).
+/--
+info: 1 obligation(s)
+goal: ERROR: Cannot encode .app expression (fun ignored : string => true)("v1")
+-/
+#guard_msgs in
+#eval printRedexObligations redexTestPgm
+
+/-! ## emission-time pruning defers entry encoding errors
+
+The fold step (`encodePathConditionEntry`) encodes each `PathConditionEntry`
+into a *deferred* result; `snapshotObligation` forces only the entries whose
+labels survive the `prunedLabels` filter. So an entry pruned at emission time (e.g. an
+irrelevant axiom) must not fail an obligation the base flow would have
+passed — and conversely, keeping the entry must still surface its error. Both
+label-prunable entry kinds are covered: `.assumption` and `.distinct`. -/
+
+/-- An obligation whose single assumption `bad_ax` is an unencodable redex,
+    with a trivially encodable goal. -/
+private def badAxOb : Imperative.ProofObligation Expression :=
+  { label := "q", property := .assert,
+    assumptions := [[.assumption "bad_ax"
+      (.app () (.abs () "x" none (.bvar () 0)) (.intConst () 0))]],
+    obligation := .boolConst () true, metadata := {} }
+
+-- Pruning `bad_ax` at emission time: its deferred encoding error is never
+-- forced, and the obligation encodes to just the goal — no assumption (or
+-- definition/declaration) from `bad_ax` leaks into the output.
+/-- info: Except.ok ([], 0, 0, Strata.SMT.Term.prim (Strata.SMT.TermPrim.bool true)) -/
+#guard_msgs in
+#eval (encodeObligationToSMT Core.Factory (.init { ctx := SMT.Context.default })
+    badAxOb ["bad_ax"]).mapError toString |>.map
+    fun (res, _) =>
+      (res.assumptions, res.varDefs.length, res.varDecls.length, res.goal)
+
+-- Not pruning `bad_ax` surfaces the kept entry's deferred encoding error.
+/-- info: Except.error "Cannot encode .app expression (fun x : ($__unknown_type) => x)(0)" -/
+#guard_msgs in
+#eval (encodeObligationToSMT Core.Factory (.init { ctx := SMT.Context.default })
+    badAxOb []).mapError toString |>.map
+    fun (res, _) =>
+      (res.assumptions, res.varDefs.length, res.varDecls.length, res.goal)
+
+/-- An obligation whose single frame interleaves both label-prunable entry
+    kinds in program order: an encodable distinct, an encodable assumption, an
+    unencodable distinct, an unencodable assumption, and a second encodable
+    assumption. -/
+private def mixedOb : Imperative.ProofObligation Expression :=
+  { label := "q", property := .assert,
+    assumptions := [[
+      .distinct "good_d" [.intConst () 0, .intConst () 1],
+      .assumption "good_ax_1" (.boolConst () true),
+      .distinct "bad_d"
+        [.app () (.abs () "y" none (.bvar () 0)) (.intConst () 7), .intConst () 2],
+      .assumption "bad_ax"
+        (.app () (.abs () "x" none (.bvar () 0)) (.intConst () 0)),
+      .assumption "good_ax_2" (.boolConst () false)]],
+    obligation := .boolConst () true, metadata := {} }
+
+/-- Render encoding `ob` under `pruned`: the kept asserted terms,
+    definition/declaration counts and goal, or the encoder's error. -/
+private def prunedSummary (ob : Imperative.ProofObligation Expression)
+    (pruned : List String) : String :=
+  let render (t : Term) : String :=
+    match Strata.SMTDDM.termToString t with
+    | .ok s => s
+    | .error e => s!"<render error: {e}>"
+  match encodeObligationToSMT Core.Factory (.init { ctx := SMT.Context.default }) ob pruned with
+  | .error e => s!"ERROR: {e.pretty}"
+  | .ok (res, _) =>
+    s!"asserted [{", ".intercalate (res.assumptions.map render)}], \
+      {res.varDefs.length} def(s), {res.varDecls.length} decl(s), goal {render res.goal}"
+
+-- Partial pruning of both kinds at once: the two unencodable entries are
+-- pruned, so neither deferred error is forced, and every kept entry is still
+-- emitted — distincts first, then assumptions, each in program order.
+/-- info: "asserted [(distinct 0 1), true, false], 0 def(s), 0 decl(s), goal true" -/
+#guard_msgs in
+#eval prunedSummary mixedOb ["bad_d", "bad_ax"]
+
+-- Pruning only the bad distinct leaves the bad assumption kept, so the
+-- *assumption* path's deferred error surfaces.
+/-- info: "ERROR: Cannot encode .app expression (fun x : ($__unknown_type) => x)(0)" -/
+#guard_msgs in
+#eval prunedSummary mixedOb ["bad_d"]
+
+-- Mirror image: pruning only the bad assumption leaves the bad distinct kept,
+-- so the *distinct* path's deferred error surfaces (the `y`/`7` redex). Pruning
+-- is by label, not "drop whatever fails".
+/-- info: "ERROR: Cannot encode .app expression (fun y : ($__unknown_type) => y)(7)" -/
+#guard_msgs in
+#eval prunedSummary mixedOb ["bad_ax"]
+
+-- Pruning a kept-encodable entry of each kind alongside the unencodable ones:
+-- only `good_ax_2` survives, pinning that both filters drop exactly the named
+-- labels rather than a prefix or suffix of the frame, and that an emptied
+-- distinct list contributes nothing.
+/-- info: "asserted [false], 0 def(s), 0 decl(s), goal true" -/
+#guard_msgs in
+#eval prunedSummary mixedOb ["good_d", "good_ax_1", "bad_d", "bad_ax"]
 
 end Core
 
@@ -559,6 +805,34 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval! Core.verify quotedStringProgram (options := Core.VerifyOptions.quiet)
+
+-- A `frac{n, d}` literal whose value has no terminating decimal expansion is
+-- encoded to SMT as exact real division, so it verifies precisely rather than
+-- hitting the old `Non-decimal real value` encoding error. `1/3 + 1/3 + 1/3`
+-- is exactly `1.0` (holds), while `-2/3 == 2/3` is false (fails).
+def nonDecimalFracProgram :=
+#strata
+program Core;
+
+procedure P()
+{
+  assert [three_thirds]: real.add(real.add(frac{1, 3}, frac{1, 3}), frac{1, 3}) == 1.0;
+  assert [neg_neq_pos]: real.neg(frac{2, 3}) == frac{2, 3};
+};
+#end
+
+/--
+info:
+Obligation: three_thirds
+Property: assert
+Result: ✅ pass
+
+Obligation: neg_neq_pos
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify nonDecimalFracProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
 

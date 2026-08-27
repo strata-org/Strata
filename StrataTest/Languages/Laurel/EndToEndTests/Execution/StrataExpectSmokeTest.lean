@@ -5,7 +5,7 @@
 -/
 
 /-
-Smoke test for the `#strata` test ergonomics. See `StrataTest.Util.TestLaurel`
+Smoke test for the `#strata` test ergonomics. See `StrataTest.Util.TestLaurelExecution`
 for the helpers.
 -/
 
@@ -16,7 +16,7 @@ open Strata
 
 /-! ## Positive smoke test -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure foo() opaque { assert true };
@@ -37,13 +37,13 @@ procedure foo() opaque {
 
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

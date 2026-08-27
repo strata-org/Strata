@@ -187,8 +187,12 @@ structure Procedure.Header where
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
     These are the parameters for which `old x` snapshots are meaningful. -/
+@[expose] def getInoutParams (inputs outputs : @LMonoTySignature Unit) : @LMonoTySignature Unit :=
+  inputs.filter fun (id, _) => (ListMap.keys outputs).contains id
+
+/-- Parameters that appear in both `inputs` and `outputs` (in-out parameters). -/
 @[expose] def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
-  h.inputs.filter fun (id, _) => (ListMap.keys h.outputs).contains id
+  Core.getInoutParams h.inputs h.outputs
 
 /-- Output parameters that do NOT appear in `inputs` (output-only parameters). -/
 @[expose] def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
@@ -249,7 +253,7 @@ structure Procedure.Spec where
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
   postconditions : ListMap CoreLabel Procedure.Check
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, DecidableEq
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
   s.preconditions.keys
@@ -292,7 +296,7 @@ inductive Procedure.Body where
       Labels are strings; each block contains Core commands and ends with a
       deterministic transfer (conditional goto or finish). -/
   | cfg : DetCFG → Procedure.Body
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 /-- Extract the structured statements, or error if the body is a CFG. -/
 @[simp, expose]
@@ -306,17 +310,22 @@ def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
+/-- Variables read (referenced in expressions) by a CFG body. -/
+@[simp]
+def DetCFG.getVars (cfg : DetCFG) : List Expression.Ident :=
+  cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap Imperative.HasVarsImp.readVars ++
+    (match blk.transfer with
+      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
+      | .finish _ => [])
+
 /-- Get variables referenced in the body. For a CFG body, this includes the
 variables read by the guard of each conditional transfer (`condGoto`), mirroring
 how the structured form collects the condition variables of `if`/`while`. -/
 @[simp]
 def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
-  | .structured ss => ss.flatMap Imperative.HasVarsPure.getVars
-  | .cfg c => c.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Imperative.HasVarsPure.getVars ++
-    (match blk.transfer with
-      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
-      | .finish _ => [])
+  | .structured ss => ss.flatMap Imperative.HasVarsImp.readVars
+  | .cfg c => DetCFG.getVars c
 
 /-- Is this body abstract (no implementation)? Only empty structured bodies
     are abstract. CFG bodies always have an implementation. -/
@@ -330,6 +339,18 @@ def Procedure.Body.isAbstract : Procedure.Body → Bool
 def Procedure.Body.isStructured : Procedure.Body → Bool
   | .structured _ => true
   | .cfg _ => false
+
+/-- The statements of a body. A CFG block's commands come back `.cmd`-wrapped,
+    which is what lets a property of statements — `noCalls`, say — see a CFG
+    body too, while a property of a statement form that cannot occur in a
+    block, such as a `loop`, holds there vacuously. -/
+@[expose] def Procedure.Body.statements : Procedure.Body → Statements
+  | .structured ss => ss
+  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
+
+@[expose] def Procedure.Body.allStatements (f : Statements → Bool)
+    (body : Procedure.Body) : Bool :=
+  f body.statements
 
 /-- Does this body have a CFG implementation? -/
 @[simp]
@@ -352,11 +373,28 @@ via its contract. If the body is present, it is verified against the specificati
 structure Procedure where
   /-- The procedure header: name, type parameters, and parameter signatures. -/
   header : Procedure.Header
-  /-- The procedure's contract: modifies clause, preconditions, and postconditions. -/
+  /-- The procedure's contract: preconditions and postconditions. There is no
+      modifies clause: a body may write only its outputs and locals, enforced by
+      the modification-rights check (`checkModificationRights`) during type
+      checking. -/
   spec   : Procedure.Spec
   /-- The procedure body. -/
   body   : Procedure.Body := .structured []
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
+
+/-- Apply `f` to every expression of a procedure: the specification's
+    pre/postcondition checks and the structured body. CFG bodies are left
+    unchanged. -/
+@[expose] def Procedure.mapExprs (f : Expression.Expr → Expression.Expr)
+    (p : Procedure) : Procedure :=
+  let mapCheck (c : Procedure.Check) : Procedure.Check := { c with expr := f c.expr }
+  { p with
+    spec := { p.spec with
+      preconditions := p.spec.preconditions.map (fun (l, c) => (l, mapCheck c))
+      postconditions := p.spec.postconditions.map (fun (l, c) => (l, mapCheck c)) }
+    body := match p.body with
+      | .structured ss => .structured (Statements.mapExprs f ss)
+      | .cfg c => .cfg c }
 
 ---------------------------------------------------------------------
 
@@ -367,17 +405,12 @@ def Procedure.getVars (p : Procedure) : List Expression.Ident :=
   (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
   p.body.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
 
-instance : HasVarsPure Expression Procedure where
-  getVars := Procedure.getVars
-
-instance : HasVarsPure Expression Procedure.Body where
-  getVars := Procedure.Body.getVars
-
 instance : HasVarsImp Expression DetCFG where
   definedVars cfg _ := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.definedVars
   modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap Command.modifiedVars
+  readVars := DetCFG.getVars
 
 instance : HasVarsImp Expression Procedure.Body where
   definedVars b excludeScoped := match b with
@@ -386,10 +419,12 @@ instance : HasVarsImp Expression Procedure.Body where
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
     | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
+  readVars := Procedure.Body.getVars
 
 instance : HasVarsImp Expression Procedure where
   definedVars _ _ := []
   modifiedVars p := p.header.outputs.keys
+  readVars := Procedure.getVars
 
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
@@ -441,8 +476,8 @@ def Procedure.modifiedVarsTrans
 def Procedure.getVarsTrans
   (_ : String → Option Procedure)
   (p: Procedure) : List Expression.Ident :=
-  HasVarsPure.getVars p ++
-  HasVarsPure.getVars p.body
+  HasVarsImp.readVars p ++
+  HasVarsImp.readVars p.body
 
 instance : HasVarsProcTrans Expression Procedure where
   modifiedVarsTrans := Procedure.modifiedVarsTrans

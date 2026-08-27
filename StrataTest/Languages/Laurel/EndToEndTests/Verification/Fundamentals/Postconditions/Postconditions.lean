@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure opaqueBody(x: int) returns (r: int)
@@ -61,7 +61,7 @@ procedure caller() returns (out: int)
    `safe$asFunction(x) == safe$asFunction(x)`, which holds by reflexivity. This
    verifies clean. The exact lowering is pinned in
    `Idiomaticity/ContractPassConditionModeTest`. -/
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure safe(x: int) returns (s: int)

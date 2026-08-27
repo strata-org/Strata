@@ -10,7 +10,8 @@ import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
-import all Strata.DL.Util.ListMap
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
 
 /-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
 
@@ -146,15 +147,16 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms, preconditions := preconditions }, {
     arg_nodup := h_nodup
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
     body_or_concreteEval := by simp
     constr_no_eval := by simp
     typeArgs_nodup := h_ta_nodup
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
-    precond_freevars := h_precond
     typeArgs_no_gen_prefix := h_ta_no_gen
+  }, {
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := h_precond
   }⟩
 
 /-- Nullary unevaluated function (0 inputs). -/
@@ -245,7 +247,6 @@ def unaryOp (n : T.Identifier)
          | _ => .none
        | _ => none) }, {
     arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by
       intro fn md args res hfn heval
       simp at hfn; subst hfn
@@ -257,9 +258,6 @@ def unaryOp (n : T.Identifier)
     inputs_typevars_in_typeArgs := by
       intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
-    precond_freevars := by
-      intro p hp
-      exact h_precond p hp
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
@@ -293,6 +291,11 @@ def unaryOp (n : T.Identifier)
           simp only [hc2]
           simp only [hc1, Option.some.injEq] at heval; subst heval
           exact ⟨mkConst md2 (op a), rfl, hOut.mkConst_eraseMetadata T md1 md2 (op a)⟩
+  }, {
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := by
+      intro p hp
+      exact h_precond p hp
   }⟩
 
 /-! #### Binary -/
@@ -328,7 +331,6 @@ def binaryOp (n : T.Identifier)
          | _, _ => .none
        | _ => none) }, {
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by
       intro fn md args res hfn heval
       simp at hfn; subst hfn
@@ -341,7 +343,6 @@ def binaryOp (n : T.Identifier)
       intro ity hity; simp [ListMap.values] at hity
       rcases hity with rfl | rfl <;> simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
-    precond_freevars := h_precond
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
@@ -388,6 +389,9 @@ def binaryOp (n : T.Identifier)
               simp only [Option.some.injEq] at heval; subst heval
               exact ⟨mkConst md2 (op a b), by simp [hg], hOut.mkConst_eraseMetadata T md1 md2 (op a b)⟩
             · simp at heval
+  }, {
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := h_precond
   }⟩
 
 /-! ### Integer Arithmetic Operations -/
@@ -468,7 +472,7 @@ private def yNeZeroPrecond :
 private theorem yNeZeroPrecond_freeVars :
     (yNeZeroPrecond (T := T)).expr.freeVars = [(⟨"y", default⟩, some LMonoTy.int)] := by
   simp [yNeZeroPrecond, LExpr.freeVars,
-    LFunc.opExpr, boolNotFunc, unaryOp]
+    LFunc.opExpr, LFuncDefined.opExpr, boolNotFunc, unaryOp]
 
 def intSafeDivFunc : WFLFunc T :=
   binaryOp (InValTy := Int) "Int.SafeDiv" (· / ·) (· != 0)

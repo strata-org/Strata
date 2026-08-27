@@ -4,8 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.StatementType
 
 /-! # Procedure Inlining Transformation -/
 
@@ -15,6 +17,7 @@ namespace Core
 namespace ProcedureInlining
 
 open Transform
+open Strata.Util (HMap)
 
 /-- Statistics keys tracked by the procedure inlining transformation. -/
 inductive Stats where
@@ -45,14 +48,14 @@ def Statement.labelsOfBlocksAndAssertAssumes (s : Core.Statement) : List String 
 end
 
 mutual
-def Block.replaceLabelsOfBlocksAndAssertAssumes (b : Block) (map:Map String String)
+def Block.replaceLabelsOfBlocksAndAssertAssumes (b : Block) (map : HMap String String)
     : Block :=
   b.map (fun s => Statement.replaceLabelsOfBlocksAndAssertAssumes s map)
 
 def Statement.replaceLabelsOfBlocksAndAssertAssumes
-    (s : Core.Statement) (map:Map String String) : Core.Statement :=
+    (s : Core.Statement) (map : HMap String String) : Core.Statement :=
   let app (s:String) :=
-    match Map.find? map s with
+    match map.find? s with
     | .none => s
     | .some s' => s'
   match s with
@@ -71,65 +74,62 @@ def Statement.replaceLabelsOfBlocksAndAssertAssumes
 end
 
 
-private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
-    (prev_map : Map Expression.Ident Expression.Ident) (prefix_ : String)
-    : CoreTransformM (Map Expression.Ident Expression.Ident) := do
-  let prev_map <- old_vars.foldlM
-    (fun var_map id => do
-      let new_name <- genIdent id (fun s => prefix_ ++ "_" ++ s)
-      return var_map.insert id new_name)
-    prev_map
-  return prev_map
+/-- Fresh-name prefix (`$__inline<N>`) for variables and labels introduced by
+    one inlining. The `$__` namespace is reserved for internal use, and each
+    inlining site gets a distinct `N`. -/
+def inlinePrefix (n : Nat) : String := s!"$__inline{n}"
 
-private def renameAllLocalNames (c:Procedure)
-    : CoreTransformM Procedure := do
-  let var_map: Map Expression.Ident Expression.Ident := []
-  let proc_name := c.header.name.name
+def inlineCounterKey : String := "inlineProcedures"
 
-  -- Extract local names from the body. Although ProcedureInlining only supports
-  -- structured bodies for inlining, extracting defined variables is a generic
-  -- facility that supports both structured and CFG bodies.
-  let bodyStmts : List Statement := match c.body with | .structured ss => ss | .cfg _ => []
-  let lhs_vars := List.flatMap (fun (s:Statement) => s.definedVars false) bodyStmts
-  let lhs_vars := lhs_vars ++ c.header.inputs.unzip.fst ++
-                  c.header.outputs.unzip.fst
-  let var_map <- genOldToFreshIdMappings lhs_vars var_map proc_name
+/-- Fresh-name prefix for the type variables introduced when freshening a
+    polymorphic callee's type parameters at an inlining site. -/
+def inlineTyVarPrefix : String := "$__inlinety"
 
-  -- Make a map for renaming label names
-  let labels := List.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s) bodyStmts
-  -- Reuse genOldToFreshIdMappings by introducing dummy data to Identifier
-  let label_ids:List Expression.Ident := labels.map
-      (fun s => { name:=s, metadata := () })
-  let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
-  let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
+/-- Rename every variable and label occurrence in the callee's `inputs`,
+    `outputs`, and `bodyStmts` according to the explicit `var_map` (variables) and
+    `label_map` (block/assert/assume/cover labels). `var_map` also carries the
+    inout `old x` → snapshot rewrites, so all `Statement.substFvar` happens here in
+    one pass. -/
+private def renameAllLocalNames
+    (inputs outputs : @Lambda.LMonoTySignature Unit) (bodyStmts : List Statement)
+    (var_map : HMap Expression.Ident Expression.Ident)
+    (label_map : HMap String String)
+    : @Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit × List Statement :=
+  let new_body := bodyStmts.map (fun (s0 : Statement) =>
+    let s := var_map.toList.foldl (fun (s : Statement) (old_id, new_id) =>
+        let s := Statement.substFvar s old_id (.fvar () new_id .none)
+        Statement.renameLhs s old_id new_id)
+      s0
+    Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
+  let renameId (id : Expression.Ident) : Expression.Ident :=
+    (var_map.find? id).getD id
+  let new_inputs := inputs.map (fun (id, ty) => (renameId id, ty))
+  let new_outputs := outputs.map (fun (id, ty) => (renameId id, ty))
+  (new_inputs, new_outputs, new_body)
 
-  -- Do substitution
-  -- Iterated substitution is safe here: each replacement is a fresh `.fvar` generated
-  -- by genOldToFreshIdMappings (counter-based), so a fresh new_id cannot collide with
-  -- a later old_id. The iteration is intentionally sequential because each step also
-  -- renames LHS variables and labels.
-  let new_body : Procedure.Body ← match c.body with
-    | .structured bodyStmts =>
-      pure <| .structured (List.map (fun (s0:Statement) =>
-        var_map.foldl (fun (s:Statement) (old_id,new_id) =>
-            let s := Statement.substFvar s old_id (.fvar () new_id .none)
-            let s := Statement.renameLhs s old_id new_id
-            Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
-          s0) bodyStmts)
-    | .cfg _ =>
-      throw (Strata.DiagnosticModel.fromMessage
-        "renameAllLocalNames: CFG body renaming not yet implemented")
-  let new_header := { c.header with
-    inputs := c.header.inputs.map (fun (id,ty) =>
-      match var_map.find? id with
-      | .some id' => (id',ty)
-      | .none => panic! "unreachable"),
-    outputs := c.header.outputs.map (fun (id,ty) =>
-      match var_map.find? id with
-      | .some id' => (id',ty)
-      | .none => panic! "unreachable")
-    }
-  return { c with body := new_body, header := new_header }
+/-- Build the pre-state snapshots for a callee's inout parameters. Returns the
+    snapshot `init` statements together with the `old x → snapshot` variable
+    rewrites (this helper performs no `Statement.substFvar` itself).
+
+    In each `inoutParams` entry `(origName, renamedId, ty)`, `origName` is what
+    `old origName` in the body matches against.
+
+    Snapshot names use a `$` separator (`<pfx>$old_<name>`) so they stay disjoint
+    from the `_`-separated renames regardless of the callee's own local names.
+    `CoreIdent.mkOld` is deliberately not reused: the `old ` prefix is reserved
+    for the *enclosing* procedure's own inout pre-state. -/
+def snapshotOldInout (pfx : String)
+    (inoutParams : List (Expression.Ident × Expression.Ident × Expression.Ty))
+    (md : Imperative.MetaData Expression)
+    : List Statement × List (Expression.Ident × Expression.Ident) :=
+  let snapshotIds : List Expression.Ident :=
+    inoutParams.map (fun (orig, _, _) => ⟨s!"{pfx}$old_{orig.name}", ()⟩)
+  let oldInoutInits := createInitVars
+    ((snapshotIds.zip (inoutParams.map (fun (_, _, ty) => ty))).zip
+      (inoutParams.map (fun (_, rid, _) => rid))) md
+  let oldSubst : List (Expression.Ident × Expression.Ident) :=
+    (inoutParams.zip snapshotIds).map (fun ((orig, _, _), s) => (CoreIdent.mkOld orig.name, s))
+  (oldInoutInits, oldSubst)
 
 
 /-- Update the call graph after inlining one f(caller) -> g(callee) invocation. -/
@@ -138,10 +138,10 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   -- For each edge 'g -> x', add f -> x'
   let edges_from_g ← match cg.callees.get? g with
     | .some r => .ok r
-    | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {g} from callees domain")
+    | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {g} from callees domain")
   let edges_from_f ← match cg.callees.get? f with
     | .some r => .ok r
-    | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {f} from callees domain")
+    | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {f} from callees domain")
   let edges_from_f := edges_from_g.fold
     (fun (edges_from_f:Std.HashMap String Nat) fn_x cnt =>
       edges_from_f.alter fn_x (fun v =>
@@ -153,7 +153,7 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let callers_new ← edges_from_g.foldM
     (fun (m:Std.HashMap String (Std.HashMap String Nat)) fn_x cnt => do
       match m.get? fn_x with
-      | .none => throw (Strata.DiagnosticModel.fromFormat f!"Invalid CallGraph: can't find {fn_x} from callers domain")
+      | .none => throw (Strata.Message.fromFormat f!"Invalid CallGraph: can't find {fn_x} from callers domain")
       | .some edges_to_x =>
         .ok (m.insert fn_x (edges_to_x.alter f (fun v =>
           .some (match v with | .none => cnt | .some v' => cnt + v')))))
@@ -162,7 +162,7 @@ def updateCallGraph (cg:CallGraph) (f: String) (g: String):
   let cg_new : CallGraph := { callees := callees_new, callers := callers_new }
 
   -- .. and decrement the 'f -> g' edge by 1.
-  let cg_final ← (cg_new.decrementEdge f g).mapError Strata.DiagnosticModel.fromMessage
+  let cg_final ← (cg_new.decrementEdge f g).mapError Strata.Message.fromString
   return cg_final
 
 /-! ### Update assertion metadata with call site information -/
@@ -206,11 +206,11 @@ the reachability query.
 -/
 def inlineCallCmd
     (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
-    (cmd: Command)
+    (s: Statement)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
-    match cmd with
-      | .call procName callArgs md =>
+    match s with
+      | .cmd (.call procName callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
@@ -220,48 +220,72 @@ def inlineCallCmd
         incrementStat s!"{Stats.inlinedCalls}"
 
         let some p := (← get).currentProgram
-          | throw (Strata.DiagnosticModel.fromMessage "currentProgram not set")
+          | throw (Strata.Message.fromString "currentProgram not set")
         let some currProcName := (← get).currentProcedureName
-          | throw (Strata.DiagnosticModel.fromMessage "currentProcedure not set")
+          | throw (Strata.Message.fromString "currentProcedure not set")
         let some proc := Program.Procedure.find? p procName
-          | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
+          | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
 
-        -- Create a copy of the procedure that has all input/output/local vars
-        -- replaced with fresh ones
-        let proc <- renameAllLocalNames proc
+        let n ← bumpCounter inlineCounterKey
+        let pfx := inlinePrefix n
+        let freshen (name : String) : Expression.Ident := ⟨s!"{pfx}_{name}", ()⟩
 
-        let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
-        let sigInputs := LMonoTySignature.toTrivialLTy proc.header.inputs
+        -- Freshen the callee's type parameters per inlining site. Keep only the
+        -- signature (inputs/outputs), not a full `Procedure.Header`.
+        let tySubst ← freshenTypeArgsSubst inlineTyVarPrefix proc.header.typeArgs
+        let inputs : @Lambda.LMonoTySignature Unit :=
+          proc.header.inputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
+        let outputs : @Lambda.LMonoTySignature Unit :=
+          proc.header.outputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
 
-        -- Stuffs for the call statement:
+        let bodyStmts : List Statement ← match proc.body with
+          | .structured ss => pure (ss.map (Core.Statement.Statement.subst tySubst))
+          | .cfg _ => throw (Strata.Message.fromString
+              "cannot inline procedure with CFG body into structured code")
+
+        let inoutParams : List (Expression.Ident × Expression.Ident × Expression.Ty) :=
+          (LMonoTySignature.toTrivialLTy (getInoutParams inputs outputs)).map
+            (fun (orig, ty) => (orig, freshen orig.name, ty))
+        let (oldInoutInits, oldSubst) := snapshotOldInout pfx inoutParams md
+
+        let renameIds : List Expression.Ident :=
+          bodyStmts.flatMap (fun s => s.definedVars false)
+          ++ inputs.unzip.fst ++ outputs.unzip.fst
+        let var_map : HMap Expression.Ident Expression.Ident :=
+          renameIds.foldl (fun m id => m.insert id (freshen id.name)) {}
+        let var_map := oldSubst.foldl (fun m (oldId, snapId) => m.insert oldId snapId) var_map
+        let label_map : HMap String String :=
+          (bodyStmts.flatMap (fun s => Statement.labelsOfBlocksAndAssertAssumes s)).foldl
+            (fun m l => m.insert l s!"{pfx}_{l}") {}
+
+        let (renamedInputs, renamedOutputs, procBodyStmts) :=
+          renameAllLocalNames inputs outputs bodyStmts var_map label_map
+
+        let sigOutputs := LMonoTySignature.toTrivialLTy renamedOutputs
+        let sigInputs := LMonoTySignature.toTrivialLTy renamedInputs
+
         --   call x1,x2, .. = f(v1,v2,...)
         --   where 'procedure f(in1,in2,..) outputs(out1,out2,..)'
         -- Insert
         --   init in1 : ty := v1     --- inputInit
         --   init in2 : ty := v2
+        --   init s1 : ty := j1  --- oldInoutInit (fresh pre-state snapshot,
+        --   init s2 : ty := j2      one per inout param j1,j2,..)
         --   init out1 : ty := nondet --- outputInit
         --   init out2 : ty := nondet
-        --   ... (f body)
+        --   ... (f body, with `old jK` rewritten to sK)
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
         -- already declared variables (per Core.typeCheck)
 
-        -- Declare each renamed output parameter with a nondet init.
-        -- No havoc is needed since nondet already gives an
-        -- unconstrained value.
-        -- Skip inout parameters (those already in inputs) to avoid double-init.
+        let inputInits := createInits (sigInputs.zip args) md
+        -- Output-only parameters get a nondet init (already unconstrained, so no
+        -- havoc); inout parameters are excluded to avoid a double init.
         let inputNames := sigInputs.unzip.fst.map (·.name)
         let sigOutputOnly := sigOutputs.filter fun (id, _) => !inputNames.contains id.name
-        let outputTrips ← genOutExprIdentsTrip sigOutputOnly sigOutputOnly.unzip.fst
-        let outputInits := outputTrips.map (fun ((_, ty), orgvar) =>
-          Statement.init orgvar ty .nondet md)
-        -- Create a var statement for each procedure input arguments.
-        -- The input parameter expression is assigned to these new vars.
-        --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInits := createInits (sigInputs.zip args) md
-        -- Assign the output variables in the signature to the actual output
-        -- variables used in the callee.
+        let outputInits := sigOutputOnly.map (fun (id, ty) => Statement.init id ty .nondet md)
+
         let outputSetStmts :=
           let out_vars := sigOutputs.unzip.fst
           let outs_lhs_and_sig := List.zip lhs out_vars
@@ -270,16 +294,8 @@ def inlineCallCmd
               Statement.set lhs_var (.fvar () out_var (.none)) md)
             outs_lhs_and_sig
 
-        -- Cannot inline unstructured (CFG) bodies into structured code.
-        -- CFG-level inlining is a separate, more complex pass that operates
-        -- entirely in the CFG domain (graph splicing).
-        let procBodyStmts ← match proc.body with
-        | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
-            "cannot inline procedure with CFG body into structured code")
-        | .structured ss => pure ss
-
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
-          := inputInits ++ outputInits
+          := inputInits ++ oldInoutInits ++ outputInits
              ++ Block.setCallSiteMetadata procBodyStmts md
              ++ outputSetStmts
 
@@ -295,7 +311,10 @@ def inlineCallCmd
             }
           }:CoreTransformState)
 
-        return .some [.block (procName ++ "$inlined") stmts md]
+        -- Prefix the wrapper block label with the same unique `$__inline<N>` so
+        -- that inlining the same callee at several sites yields distinct block
+        -- labels rather than duplicates.
+        return .some [.block s!"{pfx}_{procName}$inlined" stmts md]
 
       | _ => return .none
 
@@ -330,8 +349,18 @@ def procedureInliningPipelinePhase
     (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
-  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
-    runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+  -- `runProgramUntil` throws on a CFG body, and a callee with a CFG body
+  -- cannot be inlined into structured code. Which calls are inlined is up to
+  -- `doInline`, so the phase cannot claim `noCalls`, and the callee's `init`s
+  -- are why it cannot claim `staticSingleAssignment` either.
+  modelPreservingPipelinePhase "inlineProcedures"
+    (requires := factSet![.noCFGBodies])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog =>
+      runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
 
 end Core
 

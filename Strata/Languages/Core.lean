@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import StrataDDM
 public import Strata.Languages.Core.Verifier
@@ -11,6 +12,7 @@ public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.ProcedureInlining
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
+import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 
 /-! ## Strata Core Transform & Verification API
@@ -84,12 +86,13 @@ def Core.defaultFactory : Lambda.Factory Core.CoreLParams := Core.Factory
 
 /--
 Type-check a Core program. Returns the annotated program on success, or a
-`DiagnosticModel` describing the error on failure.
+`Message` describing the error on failure.
 -/
 def Core.typeCheck (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel Core.Program :=
-  _root_.Core.typeCheck options program moreFns
+    Except Message Core.Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  _root_.Core.typeCheck options program factory
 
 /--
 Type-check a Core program, then run symbolic evaluation. Returns the list of
@@ -97,17 +100,17 @@ post-evaluation environments and accumulated statistics.
 -/
 def Core.typeCheckAndEval (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel ((List Core.Env) × Statistics) :=
+    Except Message ((List Core.Env) × Statistics) :=
   _root_.Core.typeCheckAndEval options program moreFns
 
 /--
 Type-check a Core program, then build the proof-obligation program suitable for
-downstream phases (ANF encoding, SMT encoding).
+downstream phases (Common subexpression elimination, SMT encoding).
 -/
 def Core.typeCheckAndBuildObligationProgram
     (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Core.Program × Statistics) :=
+    Except Message (Core.Program × Statistics) :=
   _root_.Core.typeCheckAndBuildObligationProgram options program moreFns
 
 /-! ### Transformation of Core programs
@@ -151,6 +154,11 @@ def Core.passInlineExcept (procs : List String) : Core.PipelinePhase :=
   Core.procedureInliningPipelinePhase
     { doInline := fun _caller callee _ => callee ∉ procs }
 
+/-- Materialize each loop's invariant/measure verification conditions as
+    explicit assert/assume statements (run before `passLoopElim`). -/
+def Core.passInsertLoopInvariantAsserts : Core.PipelinePhase :=
+  Core.insertLoopInvariantAssertsPipelinePhase
+
 /-- Replace each loop with assertions/assumptions about its invariants. -/
 def Core.passLoopElim : Core.PipelinePhase :=
   Core.loopElimPipelinePhase
@@ -171,31 +179,37 @@ def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :
 /-! ### Standard Core verification pipeline phases
 
 The verification pipeline performs a sequence of program-to-program transforms
-(`transformPipelinePhases`). `coreAbstractedPhases` exposes only the
+(`transformPipelinePhases`), the first of which decides what the rest assume
+about the program they are handed. `coreAbstractedPhases` exposes only the
 abstracted (model-validation) view used downstream.
 -/
 
 /-- The program-to-program transform phases applied before type checking.
-    Inlining/loop-elim/call-elim/filtering, in the order required by the
-    verification pipeline. See the underlying definition for ordering rationale. -/
+    Shape assertion, inlining/loop-elim/call-elim/filtering, in the order
+    required by the verification pipeline. `prefixPhases` are inserted after
+    the shape assertion. See the underlying definition for ordering
+    rationale. -/
 def Core.transformPipelinePhases (procs : Option (List String) := none)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.PipelinePhase :=
-  _root_.Core.transformPipelinePhases procs
+  _root_.Core.transformPipelinePhases procs prefixPhases
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding. -/
+    type checking, symbolic evaluation, and common subexpression elim. -/
 def Core.corePipelinePhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.PipelinePhase :=
-  _root_.Core.corePipelinePhases procs options moreFns
+  _root_.Core.corePipelinePhases procs options moreFns prefixPhases
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def Core.coreAbstractedPhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
+    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.AbstractedPhase :=
-  _root_.Core.coreAbstractedPhases procs options moreFns
+  _root_.Core.coreAbstractedPhases procs options moreFns prefixPhases
 
 /-- Front-end phase: any translation from a source language to Core may
     introduce over-approximations. Until front-ends can validate models or
@@ -220,7 +234,6 @@ def Core.verifyProgram
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
-    (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     (fileMap : Option Lean.FileMap := none)
@@ -228,7 +241,6 @@ def Core.verifyProgram
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
-        (keepAllFilesPrefix := keepAllFilesPrefix)
         (mkDischarge := mkDischarge)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
@@ -249,17 +261,22 @@ def Core.verify
     (options : Core.VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
-    (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
-  let program ← match strataProgramToCore env ictx with
+  -- Run the translation within a pure phase so that we can capture the timing
+  -- properly, and unwrap the error outside of it.
+  let translated ← show BaseIO _ from match pipelineCtx with
+    | some pctx => pctx.withPhasePure "ddmToCore" fun _ => strataProgramToCore env ictx
+    | none => pure (strataProgramToCore env ictx)
+  let program ← match translated with
     | .ok p => pure p
     | .error msg => throw (IO.userError msg)
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
-    (keepAllFilesPrefix := keepAllFilesPrefix)
     (mkDischarge := mkDischarge)
+    (pipelineCtx := pipelineCtx)
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 
@@ -268,7 +285,7 @@ diagnostic, looking up the file map for the obligation's source range. Returns
 `none` for results that should not be surfaced (e.g. successful obligations). -/
 def Core.VCResult.toDiagnostic (files : Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr phases
+  let modelOption := toMessage vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end Strata

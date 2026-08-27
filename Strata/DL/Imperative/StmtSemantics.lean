@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Util.Relations
+public import Strata.Util.RelationsProps
 
 ---------------------------------------------------------------------
 
@@ -81,6 +81,17 @@ structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
     P.eval (extendFactory f σ decl) σ' e = some v →
     P.eval f σ' e = some v
 
+/-- `Env.varsUndefined Q ρ` says the environment `ρ` leaves every `Q`-kind slot
+undefined: for each string `s` satisfying the label-kind predicate `Q` (the
+kind of label a pass generates), `ρ`'s store maps `HasIdent.ident s` to `none`.
+
+It captures the "generated names start undefined" precondition shared by the
+pipeline passes, parameterised by the kind each pass generates so a single
+initial store can satisfy several passes' obligations at disjoint kinds. -/
+@[expose] abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
+    (Q : String → Prop) (ρ : Env P) : Prop :=
+  ρ.store.varsUndefined (fun y => ∃ s : String, Q s ∧ y = HasIdent.ident (P := P) s)
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -144,6 +155,15 @@ variable {P : PureExpr} {CmdT : Type}
 /-- Extract the store from a configuration. -/
 @[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
   := cfg.getEnv.store
+
+/-- The terminal-or-exiting configuration selected by an `Option String`:
+`none` denotes the terminal outcome `.terminal ρ`, `some lbl` the exiting outcome
+`.exiting lbl ρ`.  Lets a lemma conclude over *either* outcome uniformly. -/
+@[expose] def Env.outcomeConfig (oc : Option String) (ρ : Env P) :
+    Config P (Cmd P) :=
+  match oc with
+  | none => .terminal ρ
+  | some lbl => .exiting lbl ρ
 
 /-! ## noMatchingAssert
 
@@ -215,19 +235,71 @@ def Config.noFuncDecl : Config P CmdT → Prop
     and unlabeled exits do not exist as user statements. -/
 @[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
   | labels, .stmt s _ => s.exitsCoveredByBlocks labels
-  | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+  | labels, .stmts ss _ => Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting l _ => l ∈ labels
   | labels, .block none _ _ inner => Config.exitsCoveredByBlocks labels inner
   | labels, .block (some l) _ _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
-    Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+    Config.exitsCoveredByBlocks labels inner ∧ Block.exitsCoveredByBlocks labels ss
 
 /-- Project an inner store through a parent store: keep the inner value only
     for variables that were already defined in the parent. Variables that were
     not defined in the parent (i.e., init'd inside the block) become `none`. -/
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
+
+/-- The projected inner store agrees with the unprojected inner store on
+`σ_parent`'s domain. Variables present in the parent are unchanged by
+projection; variables absent from the parent become `none` in the projection,
+but those don't satisfy `isDefined (projectStore _ _) [x]`, so
+`StoreAgreement` doesn't constrain them. -/
+theorem StoreAgreement.of_projectStore {P : PureExpr}
+    (σ_parent σ_inner : SemanticStore P) :
+    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
+  intro x h_def
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  unfold projectStore at h ⊢
+  by_cases hp : (σ_parent x).isSome
+  · simp [hp]
+  · simp [hp] at h
+
+/-! ## Config-level definedness / undefinedness invariants
+
+Two dual `Config`-recursive predicates, keyed on a set `Q` of identifiers,
+threaded through a run to track store contents across the execution stack:
+
+* `Config.varsDefined Q c` — every `Q`-var is defined in `c`'s operative store
+  and in every enclosing block-parent store.  Monotone (no step undefines a
+  slot), so it makes no claim about the pending statements.
+* `Config.varsUndefinedThroughout Q c` — every `Q`-var is undefined in `c`'s
+  operative store and in every enclosing block-parent store, AND no pending
+  statement defines a `Q`-var.  The pending-statement clause is what makes
+  undefinedness stable across a step (an `init`/`set` of a `Q`-var would break
+  it), the dual of the monotone `varsDefined` which needs no such clause. -/
+
+@[expose] def Config.varsDefined {P : PureExpr} (Q : P.Ident → Prop) :
+    Config P (Cmd P) → Prop
+  | .stmt _ ρ => ρ.store.varsDefined Q
+  | .stmts _ ρ => ρ.store.varsDefined Q
+  | .terminal ρ => ρ.store.varsDefined Q
+  | .exiting _ ρ => ρ.store.varsDefined Q
+  | .block _ σ_parent _ inner => σ_parent.varsDefined Q ∧ Config.varsDefined Q inner
+  | .seq inner _ => Config.varsDefined Q inner
+
+/-- Single-identifier specialisation of `Config.varsDefined`. -/
+@[expose] abbrev Config.varDefined {P : PureExpr} (y : P.Ident) :
+    Config P (Cmd P) → Prop :=
+  Config.varsDefined (· = y)
+
+@[expose] def Config.varsUndefinedThroughout {P : PureExpr} [HasFvars P] (Q : P.Ident → Prop) :
+    Config P (Cmd P) → Prop
+  | .stmt s ρ => ∀ y, Q y → ρ.store y = none ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+  | .stmts ss ρ => ∀ y, Q y → ρ.store y = none ∧ ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+  | .terminal ρ => ρ.store.varsUndefined Q
+  | .exiting _ ρ => ρ.store.varsUndefined Q
+  | .block _ σ_parent _ inner => σ_parent.varsUndefined Q ∧ Config.varsUndefinedThroughout Q inner
+  | .seq inner ss => Config.varsUndefinedThroughout Q inner ∧ ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
 
 /-! ## Single-step relation -/
 
@@ -301,69 +373,51 @@ inductive StepStmt
       (.block .none ρ.store ρ.factory (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
-      Each invariant expression must evaluate to a boolean (`tt` or `ff`);
-      otherwise execution is stuck here, just as a non-boolean guard would
-      block `step_ite_true`.  If any invariant evaluates to `ff`, the
-      cumulative `hasFailure` flag is set via `hasInvFailure`, matching the
-      pattern `step_cmd` uses for `assert` failure.  The invariants are
-      labeled pairs `(String × P.Expr)`; only the expression part is
-      evaluated.
+      Loop invariants are not evaluated during execution: they are treated
+      purely as verification-condition annotations elsewhere, not as runtime
+      assertions.  The invariants are labeled pairs `(String × P.Expr)`.
 
       The body alone is wrapped in an unnamed `.block`, sequenced with the
       recursive loop.  This means each iteration runs the body in its own
       block scope: variables `init`'d inside body are projected away at the
       end of each iteration, allowing the next iteration's body to re-`init`
       the same names. -/
-  | step_loop_enter {hasInvFailure : Bool} :
+  | step_loop_enter :
     P.eval ρ.factory ρ.store g = .some HasBool.tt →
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd extendFactory
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body
-          { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
+        (.block .none ρ.store ρ.factory (.stmts body ρ))
         [.loop (.det g) m inv body md])
 
   /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
-      invariants must be boolean-valued and any `ff` result flips `hasFailure`. -/
-  | step_loop_exit {hasInvFailure : Bool} :
+      loop invariants are not evaluated during execution. -/
+  | step_loop_exit :
     P.eval ρ.factory ρ.store g = .some HasBool.ff →
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd extendFactory
       (.stmt (.loop (.det g) m inv body _) ρ)
-      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
+      (.terminal ρ)
 
-  /-- Non-deterministic loop: enter the body.  Same invariant-boolean
-      condition as the deterministic case.  As with the det variant, the
-      body alone is wrapped in an unnamed `.block` and sequenced with the
-      recursive loop, giving each iteration its own block scope. -/
-  | step_loop_nondet_enter {hasInvFailure : Bool} :
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
+  /-- Non-deterministic loop: enter the body.  As with the det variant,
+      loop invariants are not evaluated during execution; the body alone is
+      wrapped in an unnamed `.block` and sequenced with the recursive loop,
+      giving each iteration its own block scope. -/
+  | step_loop_nondet_enter :
     StepStmt EvalCmd extendFactory
       (.stmt (.loop .nondet m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body
-          { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
+        (.block .none ρ.store ρ.factory (.stmts body ρ))
         [.loop .nondet m inv body md])
 
   /-- Non-deterministic loop: exit the loop. -/
-  | step_loop_nondet_exit {hasInvFailure : Bool} :
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
+  | step_loop_nondet_exit :
     StepStmt EvalCmd extendFactory
       (.stmt (.loop .nondet m inv body _) ρ)
-      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
+      (.terminal ρ)
 
   /-- An exit statement produces an exiting configuration. -/
   | step_exit :
@@ -539,18 +593,15 @@ variable (extendFactory : ExtendFactory P)
 
 /-! ## Detecting an assert in a configuration -/
 
-/-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
-    command whose label and expression match `aid`, or a loop statement
-    whose invariant list contains an entry with matching label and
-    expression. Recurses into `block` and `seq` wrappers so that
-    assertions inside compound statements are visible. -/
+/-- `isAtAssert cfg aid` holds when the head of `cfg` is an `assert`
+    command whose label and expression match `aid`. Recurses into `block`
+    and `seq` wrappers so that assertions inside compound statements are
+    visible. -/
 @[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, aid =>
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
   | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Util.Statistics
@@ -45,9 +46,32 @@ structure LaurelTranslateOptions where
       this option has no effect. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
+  /-- Verify coroutines via rely/guarantee.
+
+      NOTE (v1 limitation): on the caller-verification path, `has_next(co)` is
+      elaborated as constant `true` (the opaque `resume` summary carries no
+      completion information). An obligation of the form `!has_next(co) ==> P`
+      therefore discharges *vacuously* — a vacuous pass, not a real proof that
+      `P` holds when the coroutine has finished. Proving completion-dependent
+      properties across the opaque resume is future work. -/
+  verifyCoroutine : Bool := false
   /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify
+  /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
+      Used by language frontends (e.g. Python registers "Any" here). -/
+  gradualTypes : Std.HashSet String := {}
+  /-- Frontend-supplied realizer for the abstract `Coercion` verdict of the
+      proof-relevant subtyping judgment: maps a verdict + the coerced term to a
+      rewritten term carrying the concrete box/unbox call. `none` = identity
+      (native Laurel inserts no coercion). Threaded onto `TypeLattice`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
+  /-- Caller truthiness hook (Python str_to_bool/etc.); threaded to TypeLattice.toBool. -/
+  toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
+  /-- Names reserved by the frontend's coercion machinery (the realizer's box/unbox bridge
+      procedures + datatype constructors/accessors). A value binding may not shadow one; see
+      `TypeLattice.reservedNames`. Threaded onto `TypeLattice`. Empty for native Laurel. -/
+  reservedNames : Std.HashSet String := {}
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
@@ -83,7 +107,7 @@ end
     metadata fields remain directly accessible (e.g. `p.name`). -/
 structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
   /-- The pass action. -/
-  run : LaurelTranslateOptions → Input → SemanticModel → Output × List DiagnosticModel × Statistics
+  run : LaurelTranslateOptions → Input → SemanticModel → Output × List Message × Statistics
 
 abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
 

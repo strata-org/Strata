@@ -32,13 +32,48 @@ def PathConditionEntry.name {P : PureExpr} [ToFormat P.Ident] : PathConditionEnt
   | .varDecl name _ _ => toString (f!"{name}")
   | .distinct label _ => label
 
+@[grind] def PathConditionEntry.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr]
+    (a b : PathConditionEntry P) : Bool :=
+  match a, b with
+  | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
+  | .varDecl n1 t1 v1, .varDecl n2 t2 v2 => n1 == n2 && t1 == t2 && v1 == v2
+  | .distinct l1 es1, .distinct l2 es2 => l1 == l2 && es1 == es2
+  | _, _ => false
+
 instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] : BEq (PathConditionEntry P) where
-  beq
-    | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
-    | .varDecl n1 t1 (.det e1), .varDecl n2 t2 (.det e2) => n1 == n2 && t1 == t2 && e1 == e2
-    | .varDecl n1 t1 .nondet, .varDecl n2 t2 .nondet => n1 == n2 && t1 == t2
-    | .distinct l1 es1, .distinct l2 es2 => l1 == l2 && es1 == es2
-    | _, _ => false
+  beq := PathConditionEntry.beq
+
+theorem PathConditionEntry.beq_eq {P : PureExpr}
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : PathConditionEntry P) : PathConditionEntry.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+/-- Structural decidable equality on path-condition entries. Used by the
+    incremental encoder's pointer-accelerated delta detection as the fallback
+    when pointer identity is inconclusive. -/
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] :
+    DecidableEq (PathConditionEntry P) :=
+  beq_eq_DecidableEq PathConditionEntry.beq PathConditionEntry.beq_eq
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] :
+    LawfulBEq (PathConditionEntry P) where
+  eq_of_beq h := (PathConditionEntry.beq_eq _ _).mp h
+  rfl := (PathConditionEntry.beq_eq _ _).mpr rfl
+
+/-- Structural equality on path-condition entries, using `ptrFastEq` per field
+    so shared fields settle by pointer identity. Per field rather than on the
+    entry, since entries are usually fresh wrappers around shared fields. -/
+def PathConditionEntry.fastEq {P : PureExpr}
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : PathConditionEntry P) : Bool :=
+  match a, b with
+  | .assumption l1 e1, .assumption l2 e2 =>
+    ptrFastEq l1 l2 && ptrFastEq e1 e2
+  | .varDecl n1 t1 v1, .varDecl n2 t2 v2 =>
+    ptrFastEq n1 n2 && ptrFastEq t1 t2 && ptrFastEq v1 v2
+  | .distinct l1 es1, .distinct l2 es2 =>
+    ptrFastEq l1 l2 && ptrFastEq es1 es2
+  | _, _ => false
 
 @[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
 @[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)
@@ -224,6 +259,32 @@ class EvalContext (P : PureExpr) (State : Type) where
   getPathConditions : State → (PathConditions P)
   addPathCondition  : State → (PathCondition P) → State
   deferObligation   : State → (ProofObligation P) → State
+
+  /-- Whether concrete execution (`Cmd.run`) should continue past a failed
+      assertion, recording it rather than halting on the first failure.
+      Defaults to `false`, preserving the halt-on-first-failure behavior. An
+      instance opts into multi-failure collection by overriding this together
+      with `recordAssertFailure`. If you override this to return `true` without
+      also overriding `recordAssertFailure`, failed assertions are silently
+      dropped. -/
+  continuePastAssert : State → Bool := fun _ => false
+  /-- Record a failed assertion (by label, evaluated condition, and the
+      statement's metadata) *without* halting execution. Only consulted by
+      `Cmd.run` when `continuePastAssert` returns `true`; the default is a no-op
+      since the default `continuePastAssert` never triggers it. The metadata lets
+      a consumer resolve the failure's source location without going through the
+      label. -/
+  recordAssertFailure : State → String → P.Expr → MetaData P → State := fun s _ _ _ => s
+
+  /-- Whether concrete execution (`Cmd.run`) should treat `assume` statements as
+      no-ops instead of enforcing them. Defaults to `false` (assumes are
+      enforced: a false or non-boolean assume is a runtime error). When `true`,
+      assumes are skipped entirely — useful for driving a contract-lowered
+      program concretely, where verification-scaffolding assumes (e.g. an
+      `assume false` in the body of a `requires false` procedure) would
+      otherwise derail execution even though the property under test is an
+      assertion, not the assume. -/
+  ignoreAssume : State → Bool := fun _ => false
 
   -- /-- If two states give the same result to all `lookup` calls, they also
   -- give the same result to all `eval` calls. -/

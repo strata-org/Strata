@@ -38,9 +38,10 @@ The encoding pipeline has two layers:
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
 
-Deduplication of common subexpressions is handled by the Core-level ANF
-encoder (`ANFEncoder.lean`), which runs as a pipeline phase before SMT
-encoding. This keeps the SMT encoder simple and close to a 1-1 translation.
+Deduplication of common subexpressions is handled by the Core-level
+common-subexpression-elimination pass (`CommonSubexprElim.lean`), which runs as
+a pipeline phase before SMT encoding. This keeps the SMT encoder simple and
+close to a 1-1 translation.
 
  We will use the following type representations for primitive types:
  * `TermType.bool`:     builtin SMT `Bool` type
@@ -176,6 +177,15 @@ def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   return .app (.datatype_op .constructor ty.mkName) tEncs ty
 
+/-- Register a managed name (a program variable's `declare-fun`/`define-fun`)
+    in the encoder state, so later `encodeUF` calls reuse the raw name
+    instead of declaring and uniquifying their own. -/
+def seedManagedName (estate : EncoderState) (uf : UF) : EncoderState :=
+  { estate with
+    functions := estate.functions.insert uf uf.id
+    isFunUninterp := estate.isFunUninterp.insert uf false
+    usedNames := estate.usedNames.insert uf.id }
+
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).functions.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
@@ -195,46 +205,9 @@ def defineApp (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := d
   | _ =>
     return .app op tEncs ty
 
-def extractTriggerGroup : Term -> List Term
-| .app .triggers ts .trigger => ts
-| e => [e]
-
-def extractTriggers : Term -> List (List Term)
-| .app .triggers ts .trigger => ts.map extractTriggerGroup
-| e => [[e]]
-
-/-- Every term in `extractTriggerGroup t` has `sizeOf ≤ sizeOf t`. -/
-private theorem extractTriggerGroup_sizeOf (t ti : Term) (h : ti ∈ extractTriggerGroup t) :
-    sizeOf ti ≤ sizeOf t := by
-  unfold extractTriggerGroup at h
-  split at h
-  · have := List.sizeOf_lt_of_mem h; simp_all; omega
-  · simp_all
-
-/-- Every term nested in `extractTriggers t` has `sizeOf ≤ sizeOf t`. -/
-theorem extractTriggers_sizeOf (t : Term) (ts : List Term) (ti : Term)
-    (hts : ts ∈ extractTriggers t) (hti : ti ∈ ts) :
-    sizeOf ti ≤ sizeOf t := by
-  unfold extractTriggers at hts
-  split at hts
-  · rw [List.mem_map] at hts
-    obtain ⟨t_elem, h_mem, h_eq⟩ := hts
-    subst h_eq
-    have h1 := extractTriggerGroup_sizeOf t_elem ti hti
-    have h2 := List.sizeOf_lt_of_mem h_mem
-    simp_all; omega
-  · simp_all
-
 -- Helper function for quantifier generation
 def defineQuantifierHelper (qk : QuantifierKind) (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term := do
-  let tr : Term := match trEncs with
-    | [] => .app .triggers [] .trigger  -- empty trigger
-    | groups =>
-      -- Build trigger term from encoded trigger groups
-      let triggerTerms := groups.map fun group =>
-        .app .triggers group .trigger
-      .app .triggers triggerTerms .trigger
-  return .quant qk args tr bodyEnc
+  return .quant qk args trEncs bodyEnc
 
 def defineMultiAll (args : List TermVar) (trEncs: List (List Term)) (bodyEnc : Term) : EncoderM Term :=
   defineQuantifierHelper .all args trEncs bodyEnc
@@ -276,8 +249,7 @@ def encodeTerm (t : Term) : EncoderM Term := do
         return Term.bool false
     | .app op ts _         => defineApp ty op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm tᵢ))
     | .quant qk qargs tr body =>
-      let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
-      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm ti))
+      let trEncs ← mapM₁ tr (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨ti, _⟩ => encodeTerm ti))
       let bodyEnc ← encodeTerm body
       match qk, qargs with
       | .all, [⟨x, xty⟩] => defineAll x xty trEncs bodyEnc
@@ -289,15 +261,11 @@ termination_by sizeOf t
 decreasing_by
   all_goals first
     | term_by_mem
-    | -- Trigger case: ti ∈ ts, ts ∈ trExprs, trExprs from extractTriggers tr
-      -- Grab the membership hypotheses via ‹›, inline the let-binding
-      -- (trExprs is definitionally the if-then-else), split, and apply our lemma.
+    | -- Trigger case: ti ∈ ts, ts ∈ tr (a direct field of `.quant`).
       add_mem_size_lemmas
-      have hmem : _ ∈ (if Factory.isSimpleTrigger tr then ([] : List (List Term)) else extractTriggers tr) := ‹_ ∈ trExprs›
-      split at hmem
-      · simp at hmem
-      · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
-        simp_all; omega
+      have h1 := List.sizeOf_lt_of_mem ‹_ ∈ tr›
+      have h2 := List.sizeOf_lt_of_mem ‹_ ∈ _›
+      simp_all; omega
 
 def encodeFunctionDef (f : IF) : EncoderM String := do
   let uf := f.toUF
@@ -320,13 +288,8 @@ def encodeFunctionDef (f : IF) : EncoderM String := do
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
-  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
-  let solver ← Solver.bufferWriter b
-  let _ ← ((Encoder.encodeTerm e).run EncoderState.init).run solver
-  let contents ← b.get
-  if h: contents.data.IsValidUTF8
-  then pure (String.fromUTF8 contents.data h)
-  else pure "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
+  let (_, text, _) ← Solver.recordToString ((Encoder.encodeTerm e).run EncoderState.init)
+  pure text
 
 /--
 Once you've generated `Asserts` with one of the functions in Verifier.lean, you
@@ -348,6 +311,12 @@ def encode (ts : List Term) : SolverM Unit := do
   let (termEncs, _) ← ts.mapM encodeTerm |>.run initState
   for t in termEncs do
     Solver.assert t
+
+/-- Encode each axiom and assert it. -/
+def encodeAxioms (axms : Array Term) : EncoderM Unit := do
+  let ids ← axms.mapM fun ax => encodeTerm ax
+  for id in ids do
+    Solver.assert id
 
 end Encoder
 

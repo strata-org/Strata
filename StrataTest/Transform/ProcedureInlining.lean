@@ -458,7 +458,7 @@ def TestThreeChain :=
 #strata
 program Core;
 procedure leaf(x : int, out y : int) {
-  y := x + 1;
+  y := int.add(x, 1);
 };
 procedure mid(a : int, out b : int) {
   call leaf(a, out b);
@@ -483,6 +483,58 @@ def testThreeChainCG := do
 #eval ((match testThreeChainCG .emp with
   | ⟨.ok result, _⟩ => f!"{repr result}"
   | ⟨.error m, _⟩ => s!"ERROR: {m}"))
+
+
+/- A polymorphic callee inlined at two different concrete types. Each inlining
+   site freshens the callee's type parameters, so the two inlined blocks use
+   distinct type variables that can independently unify with `int` and `bool`.
+   Without per-site freshening the shared type variable is over-constrained and
+   the inlined program fails to type-check with "Impossible to unify a with
+   bool". -/
+def TestPolyTwoTypes :=
+#strata
+program Core;
+procedure PolyId<a>(inout T : a) {
+  assert [inner]: old T == T;
+};
+procedure Caller() {
+  var I : int := 0;
+  var B : bool := true;
+  call PolyId(inout I);
+  call PolyId(inout B);
+};
+#end
+
+-- Type-checking the inlined program prints `ok: <program>`, confirming both
+-- sites are well-typed: the freshened type variables resolve independently to
+-- `int` and `bool`, which a single shared type variable could not.
+/--
+info: ok: program Core;
+
+procedure PolyId (inout T : $__ty0)
+{
+  assert [inner]: old T == T;
+};
+procedure Caller ()
+{
+  var I : int := 0;
+  var B : bool := true;
+  $__inline1_PolyId$inlined: {
+    var $__inline1_T : int := I;
+    var $__inline1$old_T : int := $__inline1_T;
+    assert [$__inline1_inner]: $__inline1$old_T == $__inline1_T;
+    I := $__inline1_T;
+  }
+  $__inline2_PolyId$inlined: {
+    var $__inline2_T : bool := B;
+    var $__inline2$old_T : bool := $__inline2_T;
+    assert [$__inline2_inner]: $__inline2$old_T == $__inline2_T;
+    B := $__inline2_T;
+  }
+};
+-/
+#guard_msgs in
+#eval Core.typeCheck .quiet (runInlineCall (translate TestPolyTwoTypes))
 
 end ProcedureInliningExamples
 end

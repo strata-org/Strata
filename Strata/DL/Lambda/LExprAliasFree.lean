@@ -29,17 +29,7 @@ open LExpr
 
 section
 
-variable {T : LExprParams} [Std.ToFormat T.IDMeta]
-
-/-- Splits on `h` once and closes the first (error) branch via `simp at h` or `contradiction`.
-    Fails if neither closes the branch. -/
-macro "elim_err" h:ident : tactic =>
-  `(tactic| (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
-
-/-- Repeatedly splits on `h` and closes error branches until a split fails or
-    the error branch can't be closed. -/
-macro "elim_errs" h:ident : tactic =>
-  `(tactic| repeat (split at $h:ident; · (solve | simp at $h:ident | contradiction)))
+variable {T : LExprParams} [DecidableEq T.IDMeta] [Std.ToFormat T.IDMeta] [Hashable T.IDMeta]
 
 /-! ### `resolveAliases` identity lemmas -/
 
@@ -74,37 +64,6 @@ theorem resolveAliases_aliasFree (mty : LMonoTy) (Env : TEnv T.IDMeta)
     rw [h_af.1]
 termination_by sizeOf mty
 end
-
-
-/-- `typeBoundVar` only adds to the type scope — it does not modify the alias list. -/
-theorem typeBoundVar_aliases_eq [DecidableEq T.IDMeta] [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
-    (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
-    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
-    Env'.context.aliases = Env.context.aliases := by
-  simp only [typeBoundVar, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v_gen h_gen; obtain ⟨xv_raw, Env_g⟩ := v_gen
-  dsimp at h; cases bty with
-  | some bty_val =>
-    dsimp at h; elim_err h
-    rename_i v_ic h_ic; obtain ⟨bty_ic, Env_ic⟩ := v_ic
-    cases h
-    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
-    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
-    have h_ctx_ic := LMonoTy_instantiateWithCheck_context' bty_val C Env_g _ ⟨bty_ic, Env_ic⟩ h_ic
-    have h_ctx : (⟨bty_ic, Env_ic⟩ : TEnv T.IDMeta).context = Env.context := by
-      simp [TEnv.context] at h_ctx_ic h_ctx_g ⊢; rw [h_ctx_ic, h_ctx_g]
-    exact congrArg TContext.aliases h_ctx
-  | none =>
-    dsimp at h; elim_err h
-    rename_i v_tg h_tg; obtain ⟨tv, Env_tv⟩ := v_tg
-    cases h
-    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
-    have h_ctx_g := liftGenEnv_context Env xv Env_g h_gen
-    have h_ctx_tg := TEnv.genTyVar_context Env_g tv Env_tv h_tg
-    have h_ctx : Env_tv.context = Env.context := by
-      simp [TEnv.context] at h_ctx_tg h_ctx_g ⊢; rw [h_ctx_tg, h_ctx_g]
-    exact congrArg TContext.aliases h_ctx
 
 
 /-- A member of an alias-free type list is itself alias-free. -/
@@ -261,7 +220,14 @@ theorem resolveAliases_output_aliasFree
     LMonoTy.aliasFree Env.context.aliases result :=
   resolveAliases_output_aliasFree_aux mty Env result Env' h h_resolved
 
+end
 
+section
+
+variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] in
 /-- `instantiateWithCheck` produces alias-free output, since it runs `resolveAliases`
     internally after instantiating bound type variables. -/
 theorem instantiateWithCheck_aliasFree
@@ -281,43 +247,47 @@ theorem instantiateWithCheck_aliasFree
   exact h_af
 
 
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] in
 /-- The type assigned to the bound variable by `typeBoundVar` is alias-free. -/
-theorem typeBoundVar_xty_aliasFree [HasGen T.IDMeta] (C : LContext T) (Env : TEnv T.IDMeta)
+theorem typeBoundVar_xty_aliasFree (C : LContext T) (Env : TEnv T.IDMeta)
     (bty : Option LMonoTy) (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
     (h_resolved : TContext.AliasesResolved Env.context) :
     LMonoTy.aliasFree Env.context.aliases xty := by
-  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i genResult h_gen
-  split at h
-  · -- bty = some bty_val: xty comes from instantiateWithCheck
-    rename_i bty_val
-    elim_err h
-    rename_i result h_inst
-    have heq := Except.ok.inj h
-    simp [Prod.mk.injEq] at heq
-    obtain ⟨_, h_xty, _⟩ := heq
-    subst h_xty
-    have h_gen_ctx : genResult.snd.context = Env.context := by
-      elim_err h_gen
-      rename_i a_id T'_env h_genVar
-      have h_eq := Except.ok.inj h_gen; rw [← h_eq]
-      simp only [TEnv.context]
-      exact HasGen.genVar_context Env.genEnv a_id T'_env h_genVar
-    have h_af := instantiateWithCheck_aliasFree bty_val C genResult.snd _ result h_inst
-      (h_gen_ctx ▸ h_resolved)
-    rw [h_gen_ctx] at h_af
-    exact h_af
-  · -- bty = none: xty = .ftvar xtyid, trivially alias-free
-    rename_i h_none
-    elim_err h
-    rename_i genResult2 h_genTyVar
-    have heq := Except.ok.inj h
-    simp [Prod.mk.injEq] at heq
-    obtain ⟨_, h_xty, _⟩ := heq
-    subst h_xty
-    simp [LMonoTy.aliasFree]
+  simp only [typeBoundVar, Bind.bind, Except.bind] at h
+  cases h_lift : liftGenEnv HasGen.genVar Env with
+  | error _ => rw [h_lift] at h; simp at h
+  | ok res_lift =>
+    obtain ⟨xv_raw, Env_g⟩ := res_lift
+    rw [h_lift] at h; simp only at h
+    have h_gen_ctx : Env_g.context = Env.context :=
+      liftGenEnv_context Env xv_raw Env_g h_lift
+    cases bty with
+    | some bty_val =>
+      -- bty = some bty_val: xty comes from instantiateWithCheck
+      simp only at h
+      cases h_ic : LMonoTy.instantiateWithCheck bty_val C Env_g with
+      | error _ => rw [h_ic] at h; simp at h
+      | ok res_ic =>
+        obtain ⟨bty_ic, Env_ic⟩ := res_ic
+        rw [h_ic] at h; simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨_, h_xty, _⟩ := h
+        subst h_xty
+        have h_af := instantiateWithCheck_aliasFree bty_val C Env_g _ Env_ic h_ic
+          (h_gen_ctx ▸ h_resolved)
+        rw [h_gen_ctx] at h_af
+        exact h_af
+    | none =>
+      -- bty = none: xty = .ftvar xtyid, trivially alias-free
+      simp only at h
+      cases h_tg : TEnv.genTyVar Env_g with
+      | error _ => rw [h_tg] at h; simp at h
+      | ok res_tg =>
+        obtain ⟨tv, Env_tv⟩ := res_tg
+        rw [h_tg] at h; simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨_, h_xty, _⟩ := h
+        subst h_xty
+        simp [LMonoTy.aliasFree]
 
 end
 

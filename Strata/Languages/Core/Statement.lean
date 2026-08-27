@@ -34,12 +34,53 @@ inductive CallArg (P : PureExpr) where
 /--
 Extend Imperative's commands by adding a procedure call.
 -/
+@[grind] def CallArg.beq [BEq P.Expr] [BEq P.Ident] (a b : CallArg P) : Bool :=
+  match a, b with
+  | .inArg e1, .inArg e2 => e1 == e2
+  | .inoutArg id1, .inoutArg id2 => id1 == id2
+  | .outArg id1, .outArg id2 => id1 == id2
+  | _, _ => false
+
+instance [BEq P.Expr] [BEq P.Ident] : BEq (CallArg P) where
+  beq := CallArg.beq
+
+theorem CallArg.beq_eq {P : PureExpr} [DecidableEq P.Expr] [DecidableEq P.Ident]
+    (a b : CallArg P) : CallArg.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : DecidableEq (CallArg P) :=
+  beq_eq_DecidableEq CallArg.beq CallArg.beq_eq
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) where
+  eq_of_beq h := (CallArg.beq_eq _ _).mp h
+  rfl := (CallArg.beq_eq _ _).mpr rfl
+
+/--
+Extend Imperative's commands by adding a procedure call.
+-/
 inductive CmdExt (P : PureExpr) where
   /-- A standard imperative command. -/
   | cmd (c : Imperative.Cmd P)
   /-- A procedure call with the given name and arguments. -/
   | call (procName : String) (args : List (CallArg P))
          (md : MetaData P)
+
+@[grind] def CmdExt.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : CmdExt P) : Bool :=
+  match a, b with
+  | .cmd c1, .cmd c2 => c1 == c2
+  | .call n1 args1 md1, .call n2 args2 md2 => n1 == n2 && args1 == args2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (CmdExt P) where
+  beq := CmdExt.beq
+
+theorem CmdExt.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : CmdExt P) : CmdExt.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (CmdExt P) :=
+  beq_eq_DecidableEq CmdExt.beq CmdExt.beq_eq
 
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
@@ -232,9 +273,6 @@ end
   | .cmd c => c.getVars
   | .call _ args _ => (CallArg.getInputExprs args).flatMap HasFvars.getFvars
 
-instance : HasVarsPure Expression Command where
-  getVars := Command.getVars
-
 @[expose] def Command.getOps (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => Cmd.getOps c
@@ -259,14 +297,17 @@ def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
 instance : HasVarsImp Expression Command where
   definedVars c _ := Command.definedVars c
   modifiedVars := Command.modifiedVars
+  readVars := Command.getVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
+  readVars := Stmt.getVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
+  readVars := Block.getVars
 
 ---------------------------------------------------------------------
 
@@ -516,8 +557,33 @@ def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
     (ss : Statements) : Statements :=
   ss.map (Statement.mapExprs f)
 
-/-- Collect all user-facing expressions from a statement. -/
-def Statement.collectExprs :
+def Command.mapExprM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr) :
+    Command → M Command
+  | .cmd (.assert l e md) => do return .cmd (.assert l (← f e) md)
+  | .cmd (.assume l e md) => do return .cmd (.assume l (← f e) md)
+  | .cmd (.cover l e md) => do return .cmd (.cover l (← f e) md)
+  | .cmd (.init n ty (.det e) md) => do return .cmd (.init n ty (.det (← f e)) md)
+  | .cmd (.set n (.det e) md) => do return .cmd (.set n (.det (← f e)) md)
+  | .call pname args md => do
+    return .call pname (← args.mapM fun
+      | .inArg e => do return .inArg (← f e)
+      | a => pure a) md
+  | c => pure c
+
+def Statement.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr)
+    (s : Statement) : M Statement :=
+  Imperative.Stmt.mapExprM f (Command.mapExprM f) s
+
+def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr)
+    (ss : Statements) : M Statements :=
+  ss.mapM (Statement.mapExprsM f)
+
+/-- Collect all user-facing expressions from a statement. With
+    `visitFuncDecl`, the expressions of the functions it declares are collected
+    too; without it, a `funcDecl` contributes nothing, which is what a caller
+    rewriting expressions in place needs, since a local function's body mentions
+    its formals. -/
+def Statement.collectExprs (visitFuncDecl : Bool) :
     Statement → List Expression.Expr
   | .cmd (.cmd (.assert _ e _)) => [e]
   | .cmd (.cmd (.assume _ e _)) => [e]
@@ -527,29 +593,106 @@ def Statement.collectExprs :
   | .cmd (.call _ args _) => args.filterMap fun
       | .inArg e => some e
       | _ => none
-  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .block _ ss _ => ss.flatMap (Statement.collectExprs visitFuncDecl)
   | .ite (.det c) tss ess _ =>
-    [c] ++ tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
+    [c] ++ tss.flatMap (Statement.collectExprs visitFuncDecl) ++
+    ess.flatMap (Statement.collectExprs visitFuncDecl)
   | .ite .nondet tss ess _ =>
-    tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
+    tss.flatMap (Statement.collectExprs visitFuncDecl) ++
+    ess.flatMap (Statement.collectExprs visitFuncDecl)
   | .loop (.det g) measure inv body _ =>
     [g] ++ measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
   | .loop .nondet measure inv body _ =>
     measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
+  | .funcDecl d _ => if visitFuncDecl then d.exprs else []
   | .typeDecl _ _ => []
 
 /-- Collect all user-facing expressions from a list of statements. -/
-def Statements.collectExprs
-    (ss : Statements) : List Expression.Expr :=
-  ss.flatMap Statement.collectExprs
+def Statements.collectExprs (ss : Statements)
+    (visitFuncDecl : Bool := false) : List Expression.Expr :=
+  ss.flatMap (Statement.collectExprs visitFuncDecl)
+
+---------------------------------------------------------------------
+
+/-! ## Statement shapes
+
+Predicates on a single statement's own form. Nesting is
+`Imperative.Block.allSubstmts`' business, so each of these is a match with no
+recursion of its own. The predicates that inspect only guards, invariants and
+measures are command-independent and live in `Imperative.Stmt`, which Core uses
+directly; what is left here is what genuinely mentions a Core command. -/
+
+/-- Not a procedure call. -/
+@[expose] def Statement.isNotCall (s : Statement) : Bool :=
+  match s with
+  | .cmd (.call ..) => false
+  | _ => true
+
+/-- Does `ss` make no procedure call, at any nesting depth? -/
+@[expose] def Statements.noCalls (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotCall ss
+
+/-- Not an overwrite: `init` introduces a variable, `set` re-assigns one.
+    `havoc` is a `set` to a nondeterministic value, so it is an overwrite
+    too; an `init` to a nondeterministic value is not. -/
+@[expose] def Statement.isNotReassignment (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.set ..)) => false
+  | _ => true
+
+/-- Does every variable in `ss` get its value once, at `init`? -/
+@[expose] def Statements.staticSingleAssignment (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotReassignment ss
+
+/-- Is this statement anything other than a function declaration? -/
+@[expose] def Statement.isNotFuncDecl (s : Statement) : Bool :=
+  match s with
+  | .funcDecl _ _ => false
+  | _ => true
+
+/-- Does `ss` declare no function inside a procedure body? -/
+@[expose] def Statements.noFuncDecls (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotFuncDecl ss
+
+/-- Is the function this statement declares, if any, monomorphic? -/
+@[expose] def Statement.funcDeclMonomorphic (s : Statement) : Bool :=
+  match s with
+  | .funcDecl d _ => d.typeArgs.isEmpty
+  | _ => true
+
+/-- Is every function declared anywhere in `ss` monomorphic? -/
+@[expose] def Statements.funcDeclsMonomorphic (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.funcDeclMonomorphic ss
+
+/-- Does the function this statement declares, if any, carry no precondition?
+    A precondition on a partial function is a proof obligation, and nothing
+    downstream of `PrecondElim` generates one. -/
+@[expose] def Statement.funcDeclNoPreconditions (s : Statement) : Bool :=
+  match s with
+  | .funcDecl d _ => d.preconditions.isEmpty
+  | _ => true
+
+/-- Does no function declared anywhere in `ss` carry a precondition? -/
+@[expose] def Statements.funcDeclsNoPreconditions (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.funcDeclNoPreconditions ss
+
+---------------------------------------------------------------------
+
+/-! ## Expressions of local functions
+
+`Statement.collectExprs` visits a `funcDecl`'s expressions only when asked, so a
+property of *every* expression in a program passes `visitFuncDecl := true`, while
+a caller rewriting expressions in place leaves them alone — a local function's
+body mentions its formals. -/
+
+/-- Every expression in `ss`, including those of the functions it declares. -/
+@[expose] def Statements.allExprs (ss : Statements) : List Expression.Expr :=
+  Statements.collectExprs ss (visitFuncDecl := true)
 
 ---------------------------------------------------------------------
 

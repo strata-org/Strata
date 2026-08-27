@@ -9,11 +9,28 @@ public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
-import all Strata.DL.Util.ListUtils
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 
 ---------------------------------------------------------------------
 
 namespace Imperative
+
+/-! # Metatheory of command evaluation (`EvalCmd`)
+
+Store-agreement, definedness, and none-preservation results for the single-command
+evaluation relation `EvalCmd`. Key results:
+
+- Store-substitution and definedness plumbing (`isDefined`/`isNotDefined` cons/app,
+  `substStores`/`substDefined`/`invStores` symmetry, `InitState`/`UpdateState`
+  definedness and uniqueness).
+- `storeAgreement_storeWith`: a `SemanticStore.update` at a source-undefined slot
+  preserves `StoreAgreement`.
+- `EvalCmd_preserves_isSome`: a command never undefines an already-defined slot.
+- None-preservation: `InitState_preserves_none`, `UpdateState_preserves_none`,
+  `evalCmd_preserves_none`, and `evalCmd_preserves_none_of_not_def` (a command
+  preserves a `none` slot it neither defines nor modifies).
+-/
 
 public section
 
@@ -374,5 +391,142 @@ theorem eval_cmd_set_comm
   have Heval2 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs1 Hnin1 Hs1
   have Heval1 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs2 Hnin2 Hs3
   exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
+
+/-- A `SemanticStore.update` at a slot the source store leaves undefined preserves
+`StoreAgreement` with the source: the only changed slot is `ident`, which the
+source store does not define (one-directionality of `StoreAgreement`). -/
+theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
+    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (h_agree : StoreAgreement σ_src σ_tgt)
+    (h_src_none : σ_src ident = none) :
+    StoreAgreement σ_src (SemanticStore.update σ_tgt ident b) := by
+  intro x h_def
+  have h_x_def : (σ_src x).isSome = true := h_def x (List.mem_singleton.mpr rfl)
+  have h_ne : x ≠ ident := by
+    rintro rfl; rw [h_src_none] at h_x_def; exact absurd h_x_def (by simp)
+  rw [h_agree x h_def]
+  simp [SemanticStore.update, h_ne]
+
+/-- A single `EvalCmd` never undefines a slot: any `y` that was `isSome` stays
+`isSome` (`init`/`set` only assign `some`; `assert`/`assume`/`cover` keep the
+store). -/
+theorem EvalCmd_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    {δ : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
+    (h : EvalCmd P δ σ c σ' haf)
+    {y : P.Ident} (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h with
+  | @eval_init _ _ _ _ _ _ x _ _ hinit _ =>
+    cases hinit with
+    | init _ h_xv h_other =>
+      by_cases hxy : x = y
+      · subst hxy; rw [h_xv]; rfl
+      · rw [h_other y hxy]; exact h_some
+  | @eval_init_unconstrained _ _ _ x _ _ _ hinit _ _ =>
+    cases hinit with
+    | init _ h_xv h_other =>
+      by_cases hxy : x = y
+      · subst hxy; rw [h_xv]; rfl
+      · rw [h_other y hxy]; exact h_some
+  | @eval_set _ _ _ _ _ x _ _ hupd _ =>
+    cases hupd with
+    | update _ h_xv h_other =>
+      by_cases hxy : x = y
+      · subst hxy; rw [h_xv]; rfl
+      · rw [h_other y hxy]; exact h_some
+  | @eval_set_nondet _ _ x _ _ _ hupd _ _ =>
+    cases hupd with
+    | update _ h_xv h_other =>
+      by_cases hxy : x = y
+      · subst hxy; rw [h_xv]; rfl
+      · rw [h_other y hxy]; exact h_some
+  | eval_assert_pass _ _ => exact h_some
+  | eval_assert_fail _ _ => exact h_some
+  | eval_assume _ _ => exact h_some
+  | eval_cover _ => exact h_some
+
+/-- `InitState` leaves every slot other than its target unchanged. -/
+theorem InitState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h_is : InitState P σ x v σ') (h_ne : x ≠ y) :
+    σ' y = σ y := by
+  cases h_is with
+  | init _ _ h_other => exact h_other y h_ne
+
+/-- `UpdateState` cannot newly-define a `none` slot: `set`/`havoc` requires the
+target already defined, so a `none` slot is left `none`. -/
+theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h_us : UpdateState P σ x v σ') (h_none : σ y = none) :
+    σ' y = none := by
+  cases h_us with
+  | update h_was _ h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_none] at h_was; exact absurd h_was (by simp)
+    · rw [h_other y hxy]; exact h_none
+
+/-- A single `EvalCmd` whose command neither defines nor modifies `y` preserves
+a `none` slot at `y`. -/
+theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
+    (h : EvalCmd P f σ c σ' haf)
+    {y : P.Ident}
+    (h_none : σ y = none)
+    (h_not_def : y ∉ Cmd.definedVars c)
+    (h_not_mod : y ∉ Cmd.modifiedVars c) :
+    σ' y = none := by
+  cases h with
+  | @eval_init _ _ _ _ _ _ x _ _ hinit _ =>
+    have h_ne : x ≠ y := by
+      intro h_eq; apply h_not_def
+      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+    cases hinit with
+    | init _ _ h_other => rw [h_other y h_ne]; exact h_none
+  | @eval_init_unconstrained _ _ _ x _ _ _ hinit _ _ =>
+    have h_ne : x ≠ y := by
+      intro h_eq; apply h_not_def
+      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+    cases hinit with
+    | init _ _ h_other => rw [h_other y h_ne]; exact h_none
+  | @eval_set _ _ _ _ _ x _ _ hupd _ =>
+    have h_ne : x ≠ y := by
+      intro h_eq; apply h_not_mod
+      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+    cases hupd with
+    | update _ _ h_other => rw [h_other y h_ne]; exact h_none
+  | @eval_set_nondet _ _ x _ _ _ hupd _ _ =>
+    have h_ne : x ≠ y := by
+      intro h_eq; apply h_not_mod
+      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+    cases hupd with
+    | update _ _ h_other => rw [h_other y h_ne]; exact h_none
+  | eval_assert_pass _ _ => exact h_none
+  | eval_assert_fail _ _ => exact h_none
+  | eval_assume _ _ => exact h_none
+  | eval_cover _ => exact h_none
+
+/-- A single command preserves a `none` slot `y` that the command does not
+`init`/`set` as its target. -/
+theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {hf : Bool} {y : P.Ident}
+    (h_eval : EvalCmd P f σ c σ' hf)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ Cmd.definedVars c) :
+    σ' y = none := by
+  simp only [Cmd.definedVars] at h_not_def
+  cases h_eval with
+  | eval_init _ h_is _ =>
+    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
+    exact h_none
+  | eval_init_unconstrained h_is _ _ =>
+    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
+    exact h_none
+  | eval_set _ h_us _ => exact UpdateState_preserves_none h_us h_none
+  | eval_set_nondet h_us _ _ => exact UpdateState_preserves_none h_us h_none
+  | eval_assert_pass _ _ => exact h_none
+  | eval_assert_fail _ _ => exact h_none
+  | eval_assume _ _ => exact h_none
+  | eval_cover _ => exact h_none
 
 end -- public section

@@ -30,7 +30,7 @@ procedure zeroIter(out s : int)
   var n : int;
   n := 0;
   s := 0;
-  while (n > 0)
+  while (int.gt(n, 0))
     invariant s == 42
   { s := 42; }
 };
@@ -41,26 +41,26 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<dead_branch: n > 0>: false
-assume_entry_invariant_0_0: false
+<dead_branch: int.gt(n, 0)>: false
+insertLoopInvAssume_entry_invariant_loop_0_0: false
 Obligation:
 true
 
-Label: entry_invariant_0_0
+Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Obligation:
 false
 
 ---
 info:
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Result: ✅ pass (❗unreachable in this context)
 
-Obligation: entry_invariant_0_0
+Obligation: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
 -/

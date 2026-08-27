@@ -60,7 +60,8 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
   exact String.ext h1
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
-def CoreIdent.isOldIdent (ident : CoreIdent) : Bool := ident.name.startsWith CoreIdent.oldStr
+def CoreIdent.isOldIdent (ident : CoreIdent) : Bool :=
+  CoreIdent.oldStr.toList.isPrefixOf ident.name.toList
 
 instance : ToFormat CoreIdent where
   format i := CoreIdent.toPretty i

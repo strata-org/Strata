@@ -21,22 +21,38 @@ with appropriate error messages.
 namespace Strata.MutualRecursiveFunctionErrorTest
 
 ---------------------------------------------------------------------
--- Test 1: polymorphic mutual recursive functions are rejected
+-- Test 1: a used, non-terminating polymorphic mutual recursion fails its
+-- termination check
+--
+-- `len`/`lenHelper` are polymorphic and mutually recursive with an int-valued
+-- `decreases n` measure, but each recurses at `n + 1`, so the measure does not
+-- decrease.  Procedure `Q` uses `len` at a ground type, so the block is
+-- monomorphized and the termination procedures (specialized from the
+-- polymorphic originals) reach the solver: the non-negativity checks
+-- (`*_terminates_0`) pass but the decrease checks (`*_terminates_1`) FAIL.
 ---------------------------------------------------------------------
 
 def polyMutualPgm : Program :=
 #strata
 program Core;
 
-datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
-
-rec function len<a>(@[cases] xs : MyList a) : int
+rec function len<a>(x : a, n : int) : int
+  decreases n
 {
-  if MyList..isNil(xs) then 0 else 1 + lenHelper(MyList..tl(xs))
+  if int.le(n, 0) then 0 else int.add(1, lenHelper(x, int.add(n, 1)))
 }
-function lenHelper<a>(@[cases] xs : MyList a) : int
+function lenHelper<a>(x : a, n : int) : int
+  decreases n
 {
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+  if int.le(n, 0) then 0 else int.add(1, len(x, int.add(n, 1)))
+};
+
+procedure Q(out r : int)
+spec {
+  ensures true;
+}
+{
+  r := len(5, 3);
 };
 
 #end
@@ -46,8 +62,26 @@ function lenHelper<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyMutualPgm) |>.snd |>.isEmpty
 
 /--
-error: ❌ Symbolic evaluation error.
-Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
+info:
+Obligation: len_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: len_terminates_1
+Property: assert
+Result: ❌ fail
+
+Obligation: lenHelper_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: lenHelper_terminates_1
+Property: assert
+Result: ❌ fail
+
+Obligation: Q_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify polyMutualPgm (options := .quiet)
@@ -80,6 +114,53 @@ error: recursive function 'isEven': structural recursion requires @[cases]
 -/
 #guard_msgs in
 #eval Core.verify noCasesMutualPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 3: a used, non-terminating polymorphic recursive function fails its
+-- termination check (single-function companion to Test 1)
+--
+-- `loopy<a>` declares `decreases n` but recurses at `n + 1`, so the measure
+-- does not decrease.  Termination checking runs before monomorphization and
+-- emits a polymorphic `$$term` procedure (specialized at a fresh opaque type
+-- for `a`), so the non-decrease is caught: `loopy_terminates_1` FAILS.
+---------------------------------------------------------------------
+
+def nonTermPolyPgm : Program :=
+#strata
+program Core;
+
+rec function loopy<a>(x : a, n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else loopy(x, int.add(n, 1))
+};
+
+procedure P(out r : int)
+spec {
+  ensures true;
+}
+{
+  r := loopy(5, 3);
+};
+
+#end
+
+/--
+info:
+Obligation: loopy_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: loopy_terminates_1
+Property: assert
+Result: ❌ fail
+
+Obligation: P_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify nonTermPolyPgm (options := .quiet)
 
 end Strata.MutualRecursiveFunctionErrorTest
 

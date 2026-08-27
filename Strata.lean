@@ -18,33 +18,61 @@ import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
+import Strata.Util.OrderedSetProps
 import Strata.Util.Sarif
+import Strata.Util.Worklist
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
+import Strata.Languages.Core.SMTEncoderProps
+import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.WFProps
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+import Strata.Languages.Laurel.LaurelASTProps
+import Strata.Languages.Laurel.ResolutionProps
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Languages.Core.ProcedureProps
+import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.FunctionInlining
+import Strata.Transform.FunctionInliningProps
+import Strata.Transform.LiftInternalFuncDecls
+import Strata.Transform.LiftInternalFuncDeclsCorrect
+import Strata.Transform.LoopInitHoist
+import Strata.Transform.LoopInitHoistCorrect
+import Strata.Transform.NondetElim
+import Strata.Transform.NondetElimCorrect
+import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.StructuredToUnstructured
+import Strata.Transform.StructuredToUnstructuredCorrect
+import Strata.Transform.StructuredToUnstructuredPipeline
+import Strata.Transform.StructuredToUnstructuredPipelineCorrect
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.ProgramFact
+import Strata.Languages.Core.ProgramFactProps
+import Strata.Languages.Core.ProgramFactSet
+import Strata.Languages.Core.ProgramFactSetProps
+import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
 import Strata.Languages.GOTO
 import Strata.Languages.Laurel.FilterPrelude
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslatorProps
 
 /- DDM -/
 import StrataDDM
@@ -56,15 +84,19 @@ import Strata.Backends.CBMC
 import Strata.DL.SMT.Denote
 import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
-
-/- Code Transforms — additional -/
-import Strata.Transform.StructuredToUnstructured
+import Strata.DL.SMT.DenoteTyped
+import Strata.DL.SMT.DenoteTypedProps
+import Strata.DL.SMT.DenoteSemanticsEquiv
 
 /- Other -/
 import Strata.MetaVerifier
 
 /- Pipeline -/
 import Strata.Pipeline.Diagnostic
+import Strata.Pipeline.FactSet
+import Strata.Pipeline.FactSetProps
+import Strata.Pipeline.PhaseContract
+import Strata.Pipeline.PhaseContractProps
 
 /- Simple API -/
 import Strata.SimpleAPI
@@ -77,6 +109,7 @@ import Strata.Cli.VerifyOptions
 
 -- noimport:
 import Strata.DL.Imperative.CFGSemantics
+import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
@@ -86,19 +119,27 @@ import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.MetaData
+import Strata.DL.Lambda.LExprTraversal
+import Strata.DL.Lambda.LExprTraversalProps
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
-import Strata.DL.Util.HList
+import Strata.Util.HListProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
+import Strata.DL.Lambda.DatatypeWF
+import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.DatatypeTypeSpec
+import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
+
 
 import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData
 
 -- noimport: Strata.Util.IOTests (used for tests)
+-- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)

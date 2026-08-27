@@ -30,7 +30,7 @@ abbrev Expression : Imperative.PureExpr := {
   Expr := Lambda.LExpr CSimpLParams.mono,
   Ty := Lambda.LTy,
   ExprMetadata := CSimpLParams.Metadata,
-  TyEnv := Lambda.TEnv Unit,
+  TyEnv := @Lambda.TEnv Unit inferInstance inferInstance,
   TyContext := Lambda.LContext ⟨Unit, Unit⟩,
   EqIdent := Lambda.instDecidableEqIdentifier,
   Factory := Lambda.Factory CSimpLParams,
@@ -45,9 +45,13 @@ abbrev Command := Imperative.Cmd Expression
 
 abbrev Statement := Imperative.Stmt Expression Command
 
+instance : Imperative.HasFvars Expression where
+  getFvars := Lambda.LExpr.LExpr.getVars
+
 instance : Imperative.HasVarsImp Expression Command where
   definedVars c _excludeScoped := Imperative.Cmd.definedVars c
   modifiedVars := Imperative.Cmd.modifiedVars
+  readVars := Imperative.Cmd.getVars
 
 -- Our statement language is `DL/Imp` with `DL/Lambda` as the expression language
 

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
@@ -40,7 +41,7 @@ namespace Core
 namespace PrecondElim
 
 open Lambda
-open Strata (DiagnosticModel)
+open Strata (Message)
 open Core.Transform
 
 /-- Statistics keys tracked by the precondition elimination transformation. -/
@@ -318,11 +319,11 @@ def transformStmt (s : Statement)
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
+    let func ← liftDiag ((Function.ofPureFunc decl).mapError Message.fromFormat)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
       | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-    let F' := F.push func notMem
+    let F' := F.push func.toLFunc notMem
     setFactory F'
     let decl' := { decl with preconditions := [] }
     let hasPreconds := !decl.preconditions.isEmpty
@@ -335,7 +336,10 @@ def transformStmt (s : Statement)
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty .nondet md
-      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
+      -- A `$$wf` block is always emitted here, so the program changed even when
+      -- the function itself had no preconditions (its body still calls a
+      -- precondition-carrying function).
+      return (true, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
@@ -363,13 +367,20 @@ Returns (changed, transformed program).
 -/
 def precondElim (p : Program)
     : CoreTransformM (Bool × Program) := do
-  -- If Factory is not set, there is no Factory function to process; finish early.
-  match (← get).factory with
-  | .none =>
-    return (false, p)
-  | .some _ =>
+  -- The factory is accumulated across declarations *within* this pass so that
+  -- WF-obligation collection can resolve calls to earlier declarations. This
+  -- accumulation is an internal detail of the pass: restore the factory
+  -- afterwards so it does not leak into the pipeline's output state (which is
+  -- threaded into `buildEnv`, where the program's functions are registered
+  -- afresh and duplicates must surface as errors).
+  let savedF ← getFactory
+  try
     let (changed, newDecls) ← transformDecls p.decls
+    setFactory savedF
     return (changed, { decls := newDecls })
+  catch e =>
+    setFactory savedF
+    throw e
 where
   transformDecls (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
@@ -389,9 +400,15 @@ where
             | .structured ss =>
               let (c, body') ← transformStmts ss
               pure (c, { proc with body := .structured body' })
-            -- CFG bodies pass through untouched.
-            | .cfg _ => pure (false, proc)
-          setFactory F
+            -- A CFG body cannot be walked here, and passing it through would
+            -- lose the well-formedness and precondition asserts it owes: the
+            -- obligations would go missing rather than fail. `noCFGBodies` is
+            -- declared as a requirement; this is where it is enforced.
+            | .cfg _ =>
+              throw (Strata.Message.fromFormat
+                f!"❌ PrecondElim: procedure {proc.header.name.name} has a CFG body; \
+                   preconditions can only be eliminated from structured bodies.")
+          setFactory F -- reset factory
           let procDecl := Decl.proc proc' md
           match mkContractWFProc F proc md with
           | some wfDecl => do
@@ -409,7 +426,7 @@ where
         let F ← getFactory
         let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
           | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-        let F' := F.push func notMem
+        let F' := F.push func.toLFunc notMem
         setFactory F'
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
@@ -432,7 +449,7 @@ where
         let F' ← funcs.foldlM (init := F) fun F func =>  do
           let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
             | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-          pure <| F.push func notMem
+          pure <| F.push func.toLFunc notMem
         setFactory F'
         let funcs' := funcs.map ({ · with preconditions := [] })
         let funcDecl := Decl.recFuncBlock funcs' md
@@ -473,8 +490,23 @@ end PrecondElim
     partial-function preconditions. Model-preserving because it only adds
     new assertions and procedures without abstracting existing ones. -/
 def precondElimPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "PrecondElim" fun prog => do
-    PrecondElim.precondElim prog
+  -- A CFG-bodied procedure is passed through untouched, so its
+  -- well-formedness checks would go missing rather than fail; declaring the
+  -- requirement turns that into a rejected pipeline.
+  -- A `funcDecl` statement becomes a block declaring the function's
+  -- parameters, which declares rather than reassigns, so
+  -- `staticSingleAssignment` survives. `noBetaRedexes` is not claimed: a
+  -- precondition is instantiated by substituting the call's arguments into it,
+  -- and a function-typed parameter applied to an abstraction argument would
+  -- leave a redex behind.
+  modelPreservingPipelinePhase "precondElim"
+    (requires := factSet![.noCFGBodies])
+    (establishes := factSet![.noPrecondsFromFuncs])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicFunctions])
+    fun prog => do
+      PrecondElim.precondElim prog
 
 end Core
 

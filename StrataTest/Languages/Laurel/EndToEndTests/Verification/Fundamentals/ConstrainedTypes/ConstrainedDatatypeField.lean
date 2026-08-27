@@ -16,7 +16,7 @@ open Strata
 -- one is genuinely caught. (`int32` is exactly what the Java frontend
 -- emits for a Java `int` record field.)
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
@@ -50,7 +50,7 @@ procedure falseAssertionIsCaught()
 -- reference dangles after the constrained-type definition is dropped and the
 -- Laurel-to-Core translator fails. (Laurel surface `Set` carries no element
 -- type, so `Map` is the vehicle for wrapping the constrained type.)
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
@@ -70,15 +70,12 @@ procedure wrappedFieldValueIsModelled(m: Map int32 string)
 };
 
 // And a false assertion about the map entry fails (not vacuously passed),
-// mirroring `falseAssertionIsCaught` above. (With an SMT string-theory map
-// value the solver's counterexample is inconclusive, so this reports "could
-// not be proved" rather than "does not hold" — as in the sibling
-// `ConstrainedField.lean` negative tests.)
+// mirroring `falseAssertionIsCaught` above.
 procedure falseWrappedAssertionIsCaught(m: Map int32 string)
   opaque
 {
   var b: Boxed := MkBoxed(update(m, 5, "hi"));
   assert select(Boxed..m(b), 5) == "bye"
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

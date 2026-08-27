@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import StrataDDM.Parser
 public import Strata.Languages.Core.Verifier
@@ -82,10 +83,10 @@ public def parseDiagnosticExpectations (content : String) : List DiagnosticExpec
 def stringContains (haystack : String) (needle : String) : Bool :=
   needle.isEmpty || (haystack.splitOn needle).length > 1
 
-/-- Map a `DiagnosticType` to the level keyword used in expectation comments. -/
-private def diagnosticLevel (t : DiagnosticType) : String :=
-  match t with
-  | .Warning => "warning"
+/-- Map a `MessageKind` to the level keyword used in expectation comments. -/
+private def diagnosticLevel (k : MessageKind) : String :=
+  match k.impact with
+  | .internalWarning | .userCodeWarning => "warning"
   | _ => "error"
 
 /-- Check if a Diagnostic matches a DiagnosticExpectation -/

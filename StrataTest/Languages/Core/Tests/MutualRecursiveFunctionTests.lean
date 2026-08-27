@@ -72,21 +72,21 @@ Label: isEven_terminates_0
 Property: assert
 Assumptions:
 MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
+  int.ge(MyNat..adtRank(x), 0)
 MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@3)) ==> MyNat..adtRank(MyNat..pred(n@3)) < MyNat..adtRank(n@3)
+!(MyNat..isZero(n@3)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@3)), MyNat..adtRank(n@3))
 
 Label: isOdd_terminates_0
 Property: assert
 Assumptions:
 MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
+  int.ge(MyNat..adtRank(x), 0)
 MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@4)) ==> MyNat..adtRank(MyNat..pred(n@4)) < MyNat..adtRank(n@4)
+!(MyNat..isZero(n@4)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@4)), MyNat..adtRank(n@4))
 
 Label: zeroEven
 Property: assert
@@ -172,7 +172,7 @@ rec function treeSize (@[cases] t : RoseTree) : int
 }
 function listSize (@[cases] xs : RoseList) : int
 {
-  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+  if RoseList..isRNil(xs) then 0 else int.add(treeSize(RoseList..hd(xs)), listSize(RoseList..tl(xs)))
 };
 
 procedure TestRoseTreeGround()
@@ -298,7 +298,7 @@ function isOdd (@[cases] n : MyNat) : bool
 rec function evenHalf (@[cases] n : MyNat) : int
   requires isEven(n);
 {
-  if MyNat..isZero(n) then 0 else 1 + oddHalf(MyNat..pred(n))
+  if MyNat..isZero(n) then 0 else int.add(1, oddHalf(MyNat..pred(n)))
 }
 function oddHalf (@[cases] n : MyNat) : int
   requires isOdd(n);
@@ -430,5 +430,73 @@ Result: ✅ pass
 #eval Core.verify mutualPrecondPgm (options := .quiet)
 
 end Strata.MutualRecursivePrecondTest
+
+---------------------------------------------------------------------
+
+namespace Strata.PolyMutualStructTest
+
+/-!
+Mutually recursive polymorphic functions with a structural (`@[cases]`)
+measure, used at a ground type so the block reaches the verifier.
+-/
+
+def polyMutualStructPgm : Program :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function evenLen<a>(@[cases] xs : MyList a) : bool
+{
+  if MyList..isNil(xs) then true else oddLen(MyList..tl(xs))
+}
+function oddLen<a>(@[cases] xs : MyList a) : bool
+{
+  if MyList..isNil(xs) then false else evenLen(MyList..tl(xs))
+};
+
+procedure TestPolyMutual(out r : bool)
+spec {
+  ensures true;
+}
+{
+  var xs : MyList int;
+  xs := Cons(1, Cons(2, Nil()));
+  r := evenLen(xs);
+};
+#end
+
+/--
+info: true
+-/
+#guard_msgs in
+#eval TransM.run Inhabited.default (translateProgram polyMutualStructPgm) |>.snd |>.isEmpty
+
+/--
+info:
+Obligation: evenLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: evenLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: TestPolyMutual_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify polyMutualStructPgm (options := .quiet)
+
+end Strata.PolyMutualStructTest
 
 end

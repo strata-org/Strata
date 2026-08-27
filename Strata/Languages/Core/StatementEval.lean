@@ -583,11 +583,15 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .ite cond then_ss else_ss _ =>
     match cond with
     | .nondet =>
-      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.scopes.length}", ()⟩
-      let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      evalSub Ewn [initStmt, iteStmt] nextSplitId
+      -- A nondeterministic `if *` must be eliminated (by the `nondetElim`
+      -- transform) before symbolic evaluation. Reject it so the failure
+      -- surfaces rather than producing an incomplete obligation set.
+      ([{ Ewn with
+            env := { Ewn.env with error := some (.Misc
+              f!"nondeterministic `if *` reached symbolic evaluation; run the \
+                 nondetElim transform to eliminate nondeterministic control first") },
+            exitLabel := .none }],
+        noStats, nextSplitId)
     | .det c =>
       let cond' := Ewn.env.exprEval c
       match cond' with
@@ -603,11 +607,14 @@ private def evalOneStmt (old_var_subst : SubstMap)
               deadDeferred ++ first.env.deferred } :: restEwns, liveStats, nextSplitId)
       | _ => processBranches Ewn c cond' then_ss else_ss nextSplitId
   | .loop _ _ _ _ _ =>
-    panic! "Cannot evaluate `loop` statement. \
-            Please transform your program to eliminate loops before \
-            calling Core.Statement.evalAux"
+    -- Symbolic evaluation requires `noLoops`; a loop here is reported as an
+    -- error rather than a panic.
+    ([{ Ewn with env := { Ewn.env with error := some (.Misc
+        f!"cannot evaluate a `loop` statement: eliminate loops before symbolic \
+           evaluation") } }], noStats, nextSplitId)
   | .funcDecl decl _ =>
     let paramNames := decl.inputs.map (·.1)
+    -- Lift the AST funcDecl into an evaluator-facing `LFunc` (concreteEval defaults to none).
     let func : Lambda.LFunc CoreLParams := {
       name := decl.name,
       typeArgs := decl.typeArgs,
@@ -616,7 +623,6 @@ private def evalOneStmt (old_var_subst : SubstMap)
       output := Lambda.LTy.toMonoTypeUnsafe decl.output,
       body := decl.body.map (captureFreevars Ewn.env paramNames),
       attr := decl.attr,
-      concreteEval := decl.concreteEval,
       axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
     }
     match Ewn.env.addFactoryFunc func with
@@ -802,7 +808,6 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   output := Lambda.LTy.toMonoTypeUnsafe decl.output
                   body := decl.body
                   attr := decl.attr
-                  concreteEval := decl.concreteEval
                   axioms := decl.axioms
                 } with
                 | .ok E' => E'
@@ -819,9 +824,10 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 Imperative.runStmt ops fuel' config
               | .cfg _ =>
                 .terminal (CmdEval.updateError callEnv
-                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
+                  (.Misc "CFG bodies not supported yet"))
             match configAfter with
             | .terminal callEnv' =>
+              let E := { E with assertFailures := callEnv'.assertFailures }
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
               | none =>
@@ -832,14 +838,16 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                     (callEnv'.exprEnv.state.findD name (none, Lambda.LExpr.fvar () name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
-            | _ => CmdEval.updateError E (.Misc "failed to terminate")
+            | cfg => CmdEval.updateError
+                { E with assertFailures := cfg.state.assertFailures }
+                (.Misc "failed to terminate")
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
   | .cmd c =>
     Imperative.Cmd.run E c
   | .call pname args _md =>
-    Command.runCall (CallArg.getLhs args) pname (CallArg.getInArgs args) fuel E
+    Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end
 

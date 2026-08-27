@@ -18,7 +18,7 @@ private def getEvalStats (program : StrataDDM.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
   let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)
-  match Core.buildEnv options coreProgram with
+  match Core.buildEnv options coreProgram Core.Factory with
   | .error _ => return ({}, 0)
   | .ok (E, declStats) =>
     match Core.Program.eval E with
@@ -42,10 +42,10 @@ def issue419TestPgm :=
 #strata
 program Core;
 procedure first(x : int, out r : int)
-spec { ensures [post]: (r >= 0); }
+spec { ensures [post]: (int.ge(r, 0)); }
 {
   body: {
-    if (x < 0) { r := 0 - x; exit body; }
+    if (int.lt(x, 0)) { r := int.sub(0, x); exit body; }
     r := x;
     exit body;
   }
@@ -66,16 +66,16 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: x@1 < 0
+<label_ite_cond_true: int.lt(x, 0)>: int.lt(x@1, 0)
 Obligation:
-0 - x@1 >= 0
+int.ge(int.sub(0, x@1), 0)
 
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x < 0)>: if x@1 < 0 then false else true
+<label_ite_cond_false: !(int.lt(x, 0))>: if int.lt(x@1, 0) then false else true
 Obligation:
-x@1 >= 0
+int.ge(x@1, 0)
 
 Label: a
 Property: assert
@@ -112,10 +112,10 @@ VCs:
 Label: post
 Property: assert
 Assumptions:
-<label_ite_cond_true: x < 0>: if x@1 < 0 then x@1 < 0 else true
-<label_ite_cond_false: !(x < 0)>: if if x@1 < 0 then false else true then if x@1 < 0 then false else true else true
+<label_ite_cond_true: int.lt(x, 0)>: if int.lt(x@1, 0) then int.lt(x@1, 0) else true
+<label_ite_cond_false: !(int.lt(x, 0))>: if if int.lt(x@1, 0) then false else true then if int.lt(x@1, 0) then false else true else true
 Obligation:
-(if x@1 < 0 then 0 - x@1 else x@1) >= 0
+int.ge(if int.lt(x@1, 0) then int.sub(0, x@1) else x@1, 0)
 
 Label: a
 Property: assert
@@ -167,7 +167,7 @@ program Core;
 
 
 procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool, out r : int)
-spec { ensures [post]: (r >= 0); }
+spec { ensures [post]: (int.ge(r, 0)); }
 {
   done: {
     if (c1) { r := 1; exit done; }
@@ -225,12 +225,12 @@ def exponentialItePgm :=
 #strata
 program Core;
 procedure p(c1 : bool, c2 : bool, c3 : bool, c4 : bool, out r : int)
-spec { ensures [post]: (r >= 0); }
+spec { ensures [post]: (int.ge(r, 0)); }
 {
   b1: { if (c1) { r := 1; exit b1; } r := 2; }
-  b2: { if (c2) { r := r + 10; exit b2; } r := r + 20; }
-  b3: { if (c3) { r := r + 100; exit b3; } r := r + 200; }
-  b4: { if (c4) { r := r + 1000; exit b4; } r := r + 2000; }
+  b2: { if (c2) { r := int.add(r, 10); exit b2; } r := int.add(r, 20); }
+  b3: { if (c3) { r := int.add(r, 100); exit b3; } r := int.add(r, 200); }
+  b4: { if (c4) { r := int.add(r, 1000); exit b4; } r := int.add(r, 2000); }
 };
 #end
 
@@ -273,7 +273,7 @@ def nestedItePgm :=
 #strata
 program Core;
 procedure p(c1 : bool, c2 : bool, x : bool, y : bool, out r : int)
-spec { ensures [post]: (r >= 0); }
+spec { ensures [post]: (int.ge(r, 0)); }
 {
   b1: {
     if (c1) {
@@ -284,9 +284,9 @@ spec { ensures [post]: (r >= 0); }
   }
   b2: {
     if (c2) {
-      inner3: { if (x) { r := r + 10; exit inner3; } r := r + 20; }
+      inner3: { if (x) { r := int.add(r, 10); exit inner3; } r := int.add(r, 20); }
     } else {
-      inner4: { if (y) { r := r + 30; exit inner4; } r := r + 40; }
+      inner4: { if (y) { r := int.add(r, 30); exit inner4; } r := int.add(r, 40); }
     }
   }
 };
@@ -319,7 +319,7 @@ def sameExitCapPgm :=
 #strata
 program Core;
 procedure p(c1 : bool, out r : int)
-spec { ensures [post]: (r >= 0); }
+spec { ensures [post]: (int.ge(r, 0)); }
 {
   done: {
     if (c1) { r := 1; exit done; } else { r := 2; exit done; }
@@ -364,7 +364,7 @@ def buggyPgm :=
 #strata
 program Core;
 procedure buggy(c1 : bool, out r : int)
-spec { ensures [post]: (r > 0); }
+spec { ensures [post]: (int.gt(r, 0)); }
 {
   done: {
     if (c1) { r := 1; exit done; }

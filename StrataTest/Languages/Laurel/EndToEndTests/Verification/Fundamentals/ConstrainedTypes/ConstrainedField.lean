@@ -9,10 +9,9 @@ Test: constrained types as composite fields. Verifies that heap
 parameterization resolves constrained types to their base type for boxing,
 and that constraint checks are asserted on field writes.
 
-Also documents a known completeness gap: constraints are NOT recovered when
-*reading* a constrained field (see `readCountCompletenessGap`). To be fixed
-in a follow-up PR by assuming the constraint on field reads and maintaining
-it across havoc/modifies.
+Constraints are also recovered when *reading* a constrained field
+(`readCountRecoversConstraint`); the remaining loop-invariant case is pinned by
+`ConstrainedFieldInvariantGap`.
 -/
 
 import StrataTest.Util.TestLaurel
@@ -20,7 +19,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 
@@ -44,7 +43,7 @@ procedure setCountInvalid(c: Counter)
   modifies c
 {
   c#count := -1
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // SOUNDNESS REGRESSION (Fabio Madge, PR #1364):
@@ -67,19 +66,50 @@ procedure fieldWriteEvaluatesRhsOnce(c: Counter)
   assert x == 1
 };
 
-// KNOWN COMPLETENESS GAP (to be fixed in a follow-up PR):
-// Reading a constrained-typed field does NOT recover its constraint. Because
-// HeapParameterization boxes the field as its unconstrained base type (BoxInt),
-// and there is no `assume constraint` inserted on field reads, a legitimately
-// constructed `nat` field cannot be relied upon as `>= 0` after a read through
-// a heap parameter. The assertion below is true in principle but currently
-// unprovable. (Note: the same pattern on a *local* `nat` variable verifies
-// fine, because uninitialized constrained locals get an `assume constraint`.)
-procedure readCountCompletenessGap(c: Counter)
+// Reading a constrained-typed field RECOVERS its constraint. The declared type is
+// lowered to its base (`HeapParameterization` boxes it as `BoxInt`) and
+// `ConstrainedTypeElim` restates the predicate as an assumed fact at each read, so a
+// legitimately constructed `nat` field can be relied upon as `>= 0`.
+//
+// Assumed, not asserted, and resting on the DECLARED type -- the standing assumption
+// an uninitialized constrained local gets -- not on checked writes: `elimNode` asserts
+// only on `.Assign` targets, and a freshly allocated composite's fields are never
+// assigned, yet a read of one still satisfies the constraint. `IncrDecr` and
+// `CompoundAssign` do not bypass that check: both lower to `.Assign` before this pass,
+// so `c#count -= 5` on a `nat` field fails its range assert like a plain write.
+procedure readCountRecoversConstraint(c: Counter)
   opaque
 {
   var x: int := c#count;
   assert x >= 0
-//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+// The same recovery on the OUTPUT path, which is the case the pass exists for: a
+// constrained output's range obligation is an `ensures` (added by `elimProc`), not the
+// local `assert` above, so the read's assume has to be visible to the postcondition
+// check rather than only to a statement in the body. Non-vacuous independently of
+// `readCountRecoversConstraint`: this procedure fails if the read assume is removed from
+// `elimNode`, so the ensures obligation is emitted and is discharged by the assume.
+procedure readAndReturn(c: Counter) returns (r: nat)
+  opaque
+{
+  return c#count
+};
+
+// NEGATIVE CONTROL for the procedure above. `readAndReturn` proves an `ensures` from an
+// assumed fact, so on its own it cannot distinguish "the obligation is discharged" from
+// "no obligation was emitted" -- a change that dropped the constrained-output `ensures`
+// entirely would leave it green. Here the returned value is out of range for `nat` on a
+// path the assume cannot rescue, so the obligation must exist and must fail. Together
+// the two procedures pin both directions of the ensures path.
+//
+// The caret sits on the OUTPUT TYPE, not on the `return`: `elimProc` generates the range
+// check as an `ensures` whose source is the constrained output's type, so that is where
+// the failure is reported (measured: 58-61 on the signature line).
+procedure readAndReturnOutOfRange(c: Counter) returns (r: nat)
+//                                                        ^^^ error: postcondition does not hold
+  opaque
+{
+  return c#count - 1
 };
 #end

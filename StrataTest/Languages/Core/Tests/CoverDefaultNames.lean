@@ -19,7 +19,7 @@ def coverDefaultNames :=
 program Core;
 procedure Test(x : int)
 spec {
-  requires x >= 0;
+  requires int.ge(x, 0);
 }
 {
   cover (true);
@@ -32,7 +32,7 @@ info: program Core;
 
 procedure Test (x : int)
 spec {
-  requires [Test_requires_0]: x >= 0;
+  requires [Test_requires_0]: int.ge(x, 0);
   } {
   cover [cover_0]: true;
   cover [cover_1]: true;
@@ -62,7 +62,7 @@ def assertThenCover :=
 program Core;
 procedure Test(x : int)
 spec {
-  requires x >= 0;
+  requires int.ge(x, 0);
 }
 {
   assert (true);
@@ -75,7 +75,7 @@ info: program Core;
 
 procedure Test (x : int)
 spec {
-  requires [Test_requires_0]: x >= 0;
+  requires [Test_requires_0]: int.ge(x, 0);
   } {
   assert [assert_0]: true;
   cover [cover_0]: true;
@@ -92,7 +92,7 @@ def coverThenAssert :=
 program Core;
 procedure Test(x : int)
 spec {
-  requires x >= 0;
+  requires int.ge(x, 0);
 }
 {
   cover (true);
@@ -105,7 +105,7 @@ info: program Core;
 
 procedure Test (x : int)
 spec {
-  requires [Test_requires_0]: x >= 0;
+  requires [Test_requires_0]: int.ge(x, 0);
   } {
   cover [cover_0]: true;
   assert [assert_0]: true;

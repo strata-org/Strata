@@ -75,7 +75,7 @@ inductive Term : Type where
   | none    : TermType → Term
   | some    : Term → Term
   | app     : Op → (args: List Term) → (retTy: TermType) → Term
-  | quant   : QuantifierKind → (args: List TermVar) → (tr: Term) → (body: Term) → Term
+  | quant   : QuantifierKind → (args: List TermVar) → (tr: List (List Term)) → (body: Term) → Term
 deriving Repr, Inhabited
 
 def Term.isVar (t : Term) : Bool :=
@@ -101,7 +101,7 @@ def Term.hasDecEq (t t' : Term) : Decidable (t = t') := by
     | isFalse h₁, _, _ | _, isFalse h₁, _ | _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
   case quant.quant qk args tr t qk' args' tr' t' =>
-    exact match decEq qk qk', decEq args args', Term.hasDecEq tr tr', Term.hasDecEq t t' with
+    exact match decEq qk qk', decEq args args', Term.hasListListDec tr tr', Term.hasDecEq t t' with
     | isTrue h₁, isTrue h₂, isTrue h₃, isTrue h₄ => isTrue (by rw [h₁, h₂, h₃, h₄])
     | isFalse h₁, _, _, _ | _, isFalse h₁, _, _ | _, _, isFalse h₁, _ | _, _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
@@ -114,6 +114,18 @@ def Term.hasListDec (ts₁ ts₂ : List Term) : Decidable (ts₁ = ts₂) :=
     match Term.hasDecEq t₁ t₂ with
     | isTrue h₁ =>
         match Term.hasListDec tl₁ tl₂ with
+        | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
+        | isFalse _ => isFalse (by simp; intros; assumption)
+    | isFalse _ => isFalse (by simp; intros; contradiction)
+
+def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts₂) :=
+  match ts₁, ts₂ with
+  | [], [] => isTrue rfl
+  | _::_, [] | [], _::_ => isFalse (by intro; contradiction)
+  | t₁ :: tl₁, t₂ :: tl₂ =>
+    match Term.hasListDec t₁ t₂ with
+    | isTrue h₁ =>
+        match Term.hasListListDec tl₁ tl₂ with
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
         | isFalse _ => isFalse (by simp; intros; assumption)
     | isFalse _ => isFalse (by simp; intros; contradiction)
@@ -133,12 +145,17 @@ def hashTerm (t: Term): UInt64 :=
         mixHash (mixHash 11 (mixHash (hash op) (hash retTy))) (hashTermList args)
     | .quant qk args tr body =>
         mixHash (mixHash 13 (mixHash (hash qk) (hash args)))
-                (mixHash (hashTerm tr) (hashTerm body))
+                (mixHash (hashTermListList tr) (hashTerm body))
 
 def hashTermList (ts : List Term) : UInt64 :=
   match ts with
   | [] => 17
   | t :: rest => mixHash (hashTerm t) (hashTermList rest)
+
+def hashTermListList (tss : List (List Term)) : UInt64 :=
+  match tss with
+  | [] => 19
+  | ts :: rest => mixHash (hashTermList ts) (hashTermListList rest)
 end
 
 instance : Hashable Term where

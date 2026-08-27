@@ -36,7 +36,7 @@ explicitly listed targets and their call-graph dependencies should survive.
 -/
 def run (prog : Program) (targetProcs : List String)
     (respectNoFilter : Bool := true) :
-    CoreTransformM Program := do
+    CoreTransformM (Bool × Program) := do
   let cg := match (← get).cachedAnalyses.callGraph with
     | .some cg => cg
     | .none => prog.toProcedureCG
@@ -67,7 +67,9 @@ def run (prog : Program) (targetProcs : List String)
   modify (fun σ => { σ with
     cachedAnalyses := { σ.cachedAnalyses with callGraph := .some cg_new }})
 
-  return { prog with decls := prunedDecls }
+  -- The program changed iff at least one procedure was filtered out.
+  let changed := numProcsAfter < numProcsBefore
+  return (changed, { prog with decls := prunedDecls })
 
 end FilterProcedures
 
@@ -77,9 +79,17 @@ end FilterProcedures
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String)
     (respectNoFilter : Bool := true) : PipelinePhase :=
-  modelPreservingPipelinePhase "FilterProcedures" fun prog => do
-    let filtered ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
-    return (true, filtered)
+  -- Every fact is a property of *all* declarations, so dropping some cannot
+  -- break one.
+  modelPreservingPipelinePhase "filterProcedures"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog => do
+      let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
+      return (changed, filtered)
 
 end Core
 

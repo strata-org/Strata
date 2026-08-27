@@ -11,11 +11,6 @@ namespace Imperative
 
 public section
 
-/-! # Pure Expression Variable Lookup : HasVarsPure -/
-
-class HasVarsPure (P : PureExpr) (α : Type) where
-  getVars : α → List P.Ident
-
 /-! # Imperative Variable Lookup : HasVarsImp -/
 
 class HasVarsImp (P : PureExpr) (α : Type) where
@@ -33,6 +28,9 @@ class HasVarsImp (P : PureExpr) (α : Type) where
       (example: Stmt.definedVars) -/ →
     List P.Ident
   modifiedVars : α → List P.Ident
+  /-- Free variables read by the construct, i.e. the variables referenced in
+    the expressions it contains. -/
+  readVars : α → List P.Ident
 
 /-! # Operator/Function Name Lookup over Commands : HasOpsImp
 

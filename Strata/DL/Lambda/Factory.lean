@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
@@ -11,6 +12,7 @@ import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Util.Func
+import Strata.Util.ListUtilsProps
 import Std.Data.HashMap.Lemmas
 
 /-!
@@ -59,12 +61,49 @@ def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 
 /--
-A Lambda factory function - instantiation of `Func` for Lambda expressions.
+The AST-facing Lambda function structure - instantiation of the base `Func` for
+Lambda expressions. It is used for functions that appear in the Strata AST
+(e.g. `Core.Function`, `funcDecl`), and carries only plain data — the base
+`Func` excludes the function-typed `concreteEval`, so it has decidable equality.
 
 Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
 -/
-@[expose] abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+@[expose] abbrev LFuncDefined (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+
+/--
+A Lambda factory function - the full, evaluator/factory-facing function
+structure. It extends the AST-facing `Func` with the partial-evaluator hook
+`concreteEval`. All other fields live on the base `Func`.
+
+A optional evaluation function can be provided in the `concreteEval` field for
+each factory function to allow the partial evaluator to do constant propagation
+when all the arguments of a function are concrete. Such a function should take
+two inputs: a function call expression and also -- somewhat redundantly, but
+perhaps more conveniently -- the list of arguments in this expression.  Here's
+an example of a `concreteEval` function for `Int.Add`:
+
+```
+(fun e args => match args with
+               | [e1, e2] =>
+                 let e1i := LExpr.denoteInt e1
+                 let e2i := LExpr.denoteInt e2
+                 match e1i, e2i with
+                 | some x, some y => (.const (toString (x + y)) mty[int])
+                 | _, _ => e
+               | _ => e)
+```
+
+Note that if there is an arity mismatch or if the arguments are not
+concrete/constants, this fails and it returns .none.
+If LFunc already has body, it must not have concreteEval, and vice versa.
+-/
+structure LFunc (T : LExprParams) extends
+    Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata where
+  mk' ::
+  -- The Metadata argument is attached to the resulting expression of
+  -- concreteEval if evaluation was successful.
+  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
 
 /--
 Helper constructor for LFunc to maintain backward compatibility.
@@ -78,17 +117,27 @@ Helper constructor for LFunc to maintain backward compatibility.
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (measure : Option (LExpr T.mono) := .none) : LFunc T :=
   { name, typeArgs, isConstr, isRecursive, inputs, output, body, attr,
-    concreteEval, axioms, preconditions, measure }
+    axioms, preconditions, measure, concreteEval }
+
+/-- Lift an AST-facing `LFuncDefined` (base `Func`) into the full `LFunc`,
+    optionally attaching `concreteEval` at the evaluator boundary. All other
+    data carries over unchanged via `toFunc`. -/
+@[expose] def LFuncDefined.toLFunc {T : LExprParams} (f : LFuncDefined T)
+    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none) : LFunc T :=
+  { toFunc := f, concreteEval }
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
--- Provide explicit instance for LFunc to ensure proper resolution
-instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
-  format := Func.format
+-- Take `[ToFormat (LExpr T.mono)]` as an instance argument so a more specific
+-- expression formatter (e.g. the Core CST pretty-printer for `Expression.Expr`)
+-- is chosen at concrete instantiations rather than the generic `LExpr` one.
+instance [ToFormat T.IDMeta] [Inhabited T.Metadata] [ToFormat (LExpr T.mono)] :
+    ToFormat (LFunc T) where
+  format f := Func.format f.toFunc
 
 @[expose]
-def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
+def LFuncDefined.type [DecidableEq T.IDMeta] (f : (LFuncDefined T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
@@ -105,15 +154,15 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+theorem LFuncDefined.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFuncDefined T) (ty : LTy) :
     f.type = .ok ty → f.inputs.keys.Nodup := by
   intro h
-  simp only [LFunc.type, bind, Except.bind] at h
+  simp only [LFuncDefined.type, bind, Except.bind] at h
   -- At this point grind is possible if this proof needs maintenance
   split at h <;> try contradiction
   simp_all
 
-@[expose] def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
+@[expose] def LFuncDefined.opExpr [Inhabited T.Metadata] (f: LFuncDefined T) : LExpr T.mono :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
@@ -121,21 +170,44 @@ theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LF
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
   .op (default : T.Metadata) f.name (some ty)
 
-def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
+def LFuncDefined.inputPolyTypes (f : (LFuncDefined T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
-def LFunc.inputMonoSignature (f : (LFunc T)) : @LTySignature T.IDMeta :=
+def LFuncDefined.inputMonoSignature (f : (LFuncDefined T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll [] mty))
 
-def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
+def LFuncDefined.outputPolyType (f : (LFuncDefined T)) : LTy :=
   .forAll f.typeArgs f.output
 
-def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
+def LFuncDefined.eraseTypes (f : LFuncDefined T) : LFuncDefined T :=
   { f with
     body := f.body.map LExpr.eraseTypes,
     axioms := f.axioms.map LExpr.eraseTypes,
-    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes }
-  }
+    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
+
+/-- Every expression `f` carries: its body, its axioms, its preconditions and
+    its measure. The `LFunc` fields it reads are `Func`'s, so this is that
+    function's list. -/
+@[expose] def LFunc.exprs (f : LFunc T) : List (LExpr T.mono) :=
+  f.toFunc.exprs
+
+@[expose] def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy :=
+  LFuncDefined.type f.toFunc
+
+@[expose] def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
+  LFuncDefined.opExpr f.toFunc
+
+def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
+  LFuncDefined.inputPolyTypes f.toFunc
+
+def LFunc.inputMonoSignature (f : (LFunc T)) : @LTySignature T.IDMeta :=
+  LFuncDefined.inputMonoSignature f.toFunc
+
+def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
+  LFuncDefined.outputPolyType f.toFunc
+
+def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
+  { f with toFunc := LFuncDefined.eraseTypes f.toFunc }
 
 /--
 The type checker and partial evaluator for Lambda is parameterizable by
@@ -159,35 +231,6 @@ structure Factory (T : LExprParams) where
   private nameMapConsistent : ∀ {k : String} (p : k ∈ nameMap), (toArray[nameMap[k]]'(nameMapValid p)).name.name = k
 
 namespace Factory
-
-private theorem List_inj_implies_nodup {α} (l : List α)
-  (p : ∀(i j : Nat) (p : i < l.length) (q : j < l.length), l[i] = l[j] → i = j)  :
-     l.Nodup := by
-  induction l with
-  | nil => exact List.nodup_nil
-  | cons h l ind =>
-    rw [List.nodup_cons]
-    constructor
-    · intro hmem
-      rw [List.mem_iff_getElem] at hmem
-      obtain ⟨k, hk, hval⟩ := hmem
-      have := p 0 (k + 1) (by simp) (by simp [hk]) (by simp [hval])
-      omega
-    · exact ind (fun i j hi hj heq => by
-        have := p (i + 1) (j + 1) (by simp [hi]) (by simp[hj]) (by simpa using heq)
-        omega)
-
-/-- The function names in a factory are unique. -/
-theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
-  match f with
-  | { toArray := ⟨l⟩, nameMap, toArrayDefined, nameMapValid, nameMapConsistent } =>
-    apply List_inj_implies_nodup
-    intro i j hi hj heq
-    simp only [List.length_map] at hi hj
-    -- toArrayDefined gives us injectivity via the nameMap
-    have hdi : nameMap[l[i].name.name]? = some i := toArrayDefined ⟨i, hi⟩
-    have hdj : nameMap[l[j].name.name]? = some j := toArrayDefined ⟨j, hj⟩
-    grind
 
 protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 
@@ -270,128 +313,11 @@ def pushIfNew {T} (f : Factory T) (fn : LFunc T) : Factory T :=
   else
     f.push fn p
 
-private theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
-    (p : g ∈ (f.pushIfNew h).toArray) : g ∈ f.toArray ∨ g = h := by
-  revert p
-  simp [pushIfNew, push]
-  grind
-
 def append {T} (F : Factory T) (a : Array (LFunc T)) : Factory T :=
   a.foldl (init := F) pushIfNew
 
-private theorem ofArray_mem_take {T} {f : Factory T} {as : Array (LFunc T)} {fn : LFunc T}
-    (p : fn ∈ (f.append as).toArray) : fn ∈ f.toArray ∨ fn ∈ (as.take as.size) := by
-  simp only [append] at p
-  revert p
-  intro p2
-  apply Array.foldl_induction (init := f) (f := pushIfNew)
-    (motive := fun i m => fn ∈ m.toArray → fn ∈ f.toArray ∨ fn ∈ as.take i)
-  case h0 =>
-    grind
-  case hf =>
-    intro ⟨i, ilt⟩ f2 p p2
-    simp_all only [Array.mem_extract_iff_getElem]
-    match mem_pushIfNew p2 with
-    | Or.inl q =>
-      grind
-    | Or.inr q =>
-      grind
-  case a =>
-    exact p2
-
 def ofArray {T} (a : Array (LFunc T)) : Factory T :=
   .default |>.append a
-
-theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
-    (p : fn ∈ (Factory.ofArray a).toArray) : fn ∈ a := by
-  have q := ofArray_mem_take p
-  simp [Factory.default] at q
-  exact q
-
-@[simp] theorem toArray_default {T} : (Factory.default (T := T)).toArray = #[] := by
-  unfold Factory.default; rfl
-
-@[simp]
-theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
-  simp +instances[Factory.default, Factory.instMem, Factory.mem]
-
-theorem push_mem_iff {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
-    name ∈ f.push fn h ↔ name = fn.name.name ∨ name ∈ f := by
-  simp +instances only [instMem, Factory.mem, push]
-  simp only [Std.HashMap.mem_insert]
-  constructor <;> intro hm <;> grind
-
-theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
-    s ∈ f ↔ s ∈ f.toArray.map (·.name.name) := by
-  constructor
-  · intro hs
-    have hvalid := f.nameMapValid hs
-    have hcons := f.nameMapConsistent hs
-    rw [Array.mem_iff_getElem]
-    exact ⟨f.nameMap[s], by simp [Array.size_map]; exact hvalid, by simp [Array.getElem_map]; exact hcons⟩
-  · intro hs
-    rw [Array.mem_iff_getElem] at hs
-    obtain ⟨i, hi, hname⟩ := hs
-    simp [Array.size_map] at hi
-    simp [Array.getElem_map] at hname
-    have := f.toArrayDefined ⟨i, hi⟩
-    simp +instances [instMem, Factory.mem]
-    rw [← hname]
-    grind
-
-theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
-  (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
-  simp +instances [push, instGetElem?, Factory.get?]
-  grind
-
-theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
- (eq : f[name]? = some fn) : fn ∈ f.toArray := by
-  change Factory.get? f name = some fn at eq
-  unfold Factory.get? at eq
-  split at eq
-  · contradiction
-  · rename_i idx h_idx
-    injection eq with h_eq
-    subst h_eq
-    have idx_lt : idx < f.toArray.size := by
-      simp only [Std.HashMap.getElem?_eq_some_iff] at h_idx
-      obtain ⟨h_mem, h_val⟩ := h_idx
-      rw [←h_val]
-      exact f.nameMapValid h_mem
-    exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
-
-theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
-    (eq : f[name]? = some fn) : name ∈ f := by
-  simp +instances [instGetElem?, Factory.get?, instMem, Factory.mem] at eq ⊢
-  grind
-
-theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
-    (eq : f[name]? = some fn) : f[name]'(getElem?_some_implies_mem eq) = fn := by
-  simp +instances [instGetElem?, Factory.get?, Factory.get] at eq ⊢
-  split at eq
-  · contradiction
-  · rename_i idx h_idx; simp at eq; grind
-
-/-- If `fn ∈ F.toArray` and `fn.name.name = s`, then `s ∈ F` and `F[s] = fn`. -/
-theorem mem_name_eq_getElem {T} {F : Factory T} {fn : LFunc T} {s : String}
-    (hmem : fn ∈ F.toArray) (hname : fn.name.name = s) :
-    ∃ (hs : s ∈ F), F[s]'hs = fn := by
-  rw [Array.mem_def] at hmem
-  rw [List.mem_iff_getElem] at hmem
-  obtain ⟨i, hi, hval⟩ := hmem
-  have hi' : i < F.toArray.size := by grind
-  have hval' : F.toArray[i]'hi' = fn := by simpa using hval
-  have hdef : F.nameMap[s]? = some i := by
-    have hdef := F.toArrayDefined ⟨i, hi'⟩
-    simp at hdef
-    grind
-  have hs : s ∈ F := by
-    simp +instances only [instMem, Factory.mem]
-    grind
-  refine ⟨hs, ?_⟩
-  simp +instances only [instGetElem?, Factory.get]
-  have hidx : F.nameMap[s] = i := (Std.HashMap.getElem?_eq_some_iff.mp hdef).2
-  grind
 
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
@@ -402,10 +328,10 @@ variable  {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func : LFunc T) : Except DiagnosticModel (Factory T) :=
+def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func : LFunc T) : Except Message (Factory T) :=
   if h : func.name.name ∈ F then
     let func' := F[func.name.name]
-    .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
+    .error <| Message.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
@@ -416,14 +342,14 @@ def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def tryAddAll (F : Factory T) (newF : Array (LFunc T)) : Except DiagnosticModel (Factory T) :=
+def tryAddAll (F : Factory T) (newF : Array (LFunc T)) : Except Message (Factory T) :=
   newF.foldlM (·.tryPush ·) (init := F)
 
 /--
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def addFactory (F newF : Factory T) : Except DiagnosticModel (Factory T) :=
+def addFactory (F newF : Factory T) : Except Message (Factory T) :=
   F.tryAddAll newF.toArray
 
 end
@@ -464,122 +390,7 @@ def Factory.callOfLFunc {GenericTy} (F : Factory T) (e : LExpr ⟨T, GenericTy�
       | true => (op, args, func) | false => none
   | _ => none
 
-theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
-    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : ∃ m name ty, callee = .op m name ty ∧
-      F[name.name]? = some fn ∧ args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
-theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
-    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
-    {aPA : Bool}
-    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
-    : getLFuncCall e = (callee, args) := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
-  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; exact Prod.ext ‹_› rfl)
-
 end Factory
-
-theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
-op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LExpr.sizeOf) := by
-  fun_induction go generalizing op args
-  case case1 acc e' arg1 arg2 IH =>
-    intros Hgo; specialize (IH Hgo); simp_all; omega
-  case case2 acc fn fnty arg1 =>
-    simp_all; intros op_eq args_eq; subst op args; simp; omega
-  case case3 op' args' _ _ => intros Hop; cases Hop; omega
-
-theorem LExpr.sizeOf_pos {T} (e: LExpr T): 0 < sizeOf e := by
-  cases e<;> simp <;> omega
-
-theorem List.sum_size_le (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
-  induction l; simp_all; grind
-
-theorem getLFuncCall_smaller {T} {e: LExpr T} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.go_size Hgo);
-  simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
-  have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
-
-theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op args F'}
-    {allowPartialMatch}
-    : Factory.callOfLFunc F e (allowPartialApp := allowPartialMatch) = some (op, args, F') →
-  (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
-  simp; cases op <;> simp
-  rename_i o ty; cases F[o.name]? <;> simp
-  rename_i F'
-  cases allowPartialMatch
-  · cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq
-    subst op args F'; exact (getLFuncCall_smaller Hfunc)
-  · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
-    intros op_eq args_eq F_eq
-    subst op args F'; exact (getLFuncCall_smaller Hfunc)
-
-/-- If `F[s]?` finds a function, its name matches the query. -/
-theorem Factory.getElem?_name {T} {F : Factory T} {s : String} {fn : LFunc T}
-    (h : F[s]? = some fn) : fn.name.name = s := by
-  simp +instances [instGetElem?, Factory.get?] at h
-  split at h
-  · contradiction
-  · rename_i idx h_idx; simp at h
-    have h_mem : s ∈ F.nameMap := by grind
-    have h_idx_val : F.nameMap[s] = idx :=
-      (Std.HashMap.getElem?_eq_some_iff.mp h_idx).2
-    have h_cons := F.nameMapConsistent h_mem
-    grind
-
-/-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
-theorem Factory.callOfLFunc_arity {T} {F : Factory T} {e callee : LExpr T.mono}
-    {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
-/-- The callee of `callOfLFunc` is an `.op` whose name resolves to `fn` via `F[_]?`. -/
-theorem Factory.callOfLFunc_getElem?
-    {T} {F : Factory T} {e callee : LExpr T.mono}
-    {args : List (LExpr T.mono)} {fn : LFunc T}
-    {aPA : Bool}
-    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
-    : ∃ m name ty, callee = .op m name ty ∧ F[name.name]? = some fn := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
-  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
-
-/-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
-theorem callOfLFunc_func_mem
-    {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
-    (op : LExpr T.mono) (args : List (LExpr T.mono)) (func : LFunc T)
-    (aPA : Bool)
-    (h : F.callOfLFunc e (allowPartialApp := aPA) = some (op, args, func)) :
-    func ∈ F.toArray := by
-  simp only [Factory.callOfLFunc] at h
-  cases h_lfc : getLFuncCall e with | mk op' args' =>
-  simp only [h_lfc] at h
-  cases op' <;> simp at h
-  rename_i m_op name_op ty_op
-  cases h_gf : F[name_op.name]? with
-  | none => simp [h_gf] at h
-  | some func' =>
-    simp only [h_gf] at h
-    cases aPA <;> simp at h <;> split at h <;> simp at h
-    all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
@@ -588,17 +399,6 @@ If e is an LExprT whose metadata contains type information, use applySubstT.
 -/
 def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
-
-theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
-    (e : LExpr T.mono) (S : Subst) :
-    e.applySubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
-  unfold applySubst
-  split
-  case isTrue h_empty =>
-    have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS h_empty)
-    rw [h_id]
-    induction e <;> unfold replaceUserProvidedType <;> grind
-  case isFalse => rfl
 
 /--
 Best-effort type extraction from an `LExpr` without a typing context.
@@ -663,14 +463,6 @@ Returns `none` if the type substitution cannot be derived.
       else match Constraints.unify argConstraints SubstInfo.empty with
         | .ok substInfo => some substInfo.subst
         | .error _ => none
-
-/-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
-theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
-    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
-    (h : fn.opTypeSubst callee = some s)
-    : fn.computeTypeSubst callee args = some s := by
-  unfold LFunc.computeTypeSubst
-  rw [h]
 
 end -- public section
 end Lambda

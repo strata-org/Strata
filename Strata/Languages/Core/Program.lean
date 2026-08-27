@@ -56,7 +56,7 @@ inductive Decl where
   | func (f : Function) (md : MetaData Core.Expression)
   /-- A mutually recursive function block. -/
   | recFuncBlock (fs : List Function) (md : MetaData Core.Expression)
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
   match d with
@@ -128,6 +128,19 @@ def Decl.getRecFuncBlock? (d : Decl) : Option (List Function) :=
   | .recFuncBlock fs _ => some fs
   | _ => none
 
+/--
+Build a constant declaration: `const name : ty;`, or `const name : ty := value;`
+when `value` is given.
+
+A constant is a nullary function, so this produces a `.func` declaration. See
+`Core.Function.const` for the meaning of `value` and `attr`.
+-/
+def Decl.const (name : Expression.Ident) (ty : Lambda.LMonoTy)
+    (value : Option Expression.Expr := none)
+    (attr : Array Strata.DL.Util.FuncAttr := #[])
+    (md : MetaData Expression := .empty) : Decl :=
+  .func (Function.const name ty value attr) md
+
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md
@@ -167,6 +180,7 @@ def Decl.formatWithMetaData (decl : Decl) : Format :=
 structure Program where
   /-- The declarations that make up this program. -/
   { decls : Decls }
+  deriving DecidableEq
 
 @[expose]
 def Program.init : Program :=
@@ -313,6 +327,99 @@ def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
       some ⟨proc, p⟩
     | none => none
   | none => none
+
+---------------------------------------------------------------------
+
+/-! ## Statements and expressions of a whole program
+
+A property of a program is stated as "every declaration's statements satisfy
+`f`" or "every expression satisfies `P`". Only procedures carry statements, so
+every other declaration satisfies a statement property vacuously; expressions,
+on the other hand, are everywhere — in contracts, function bodies, axioms and
+the guards of CFG transfers — and none of those are reachable from a
+statement. -/
+
+/-- The statements of `d`: a procedure's body, and nothing for any other
+    declaration. -/
+@[expose] def Decl.statements (d : Decl) : Statements :=
+  match d with
+  | Core.Decl.proc q _md => q.body.statements
+  | _ => []
+
+/-- Does `f` hold of every declaration's statements? -/
+@[expose] def Decl.allStatements (f : Statements → Bool) (d : Decl) : Bool :=
+  match d with
+  | Core.Decl.proc q _md => q.body.allStatements f
+  | _ => f []
+
+/-- Does `f` hold of the statements of every procedure in `p`? -/
+@[expose] def Program.allStatements (f : Statements → Bool) (p : Program) : Bool :=
+  p.decls.all (Decl.allStatements f)
+
+/-- The expressions `d` carries outside its statements: a procedure's contract
+    and the guards of its CFG transfers, a function's body, axioms,
+    preconditions and measure, an axiom, a `distinct` fact. -/
+@[expose] def Decl.ownExprs (d : Decl) : List Expression.Expr :=
+  match d with
+  | Core.Decl.proc q _md =>
+    q.spec.preconditions.values.map (·.expr) ++
+    q.spec.postconditions.values.map (·.expr) ++
+    (match q.body with
+     | .structured _ => []
+     | .cfg g => g.blocks.flatMap fun (_, blk) =>
+         match blk.transfer with
+         | .condGoto p _ _ _ => [p]
+         | .finish _ => [])
+  | Core.Decl.func f _md => f.exprs
+  | Core.Decl.recFuncBlock fs _md => fs.flatMap (·.exprs)
+  | Core.Decl.ax a _md => [a.e]
+  | Core.Decl.distinct _ es _md => es
+  | Core.Decl.type _ _md => []
+
+/-- Does every expression in `p`, in a statement or not, satisfy `P`? -/
+@[expose] def Program.allExprs (P : Expression.Expr → Bool) (p : Program) : Bool :=
+  p.decls.all fun d =>
+    (Statements.allExprs d.statements).all P && d.ownExprs.all P
+
+/-- Does no function `p` declares carry a precondition, whether declared at
+    top level or inside a procedure body? -/
+@[expose] def Program.noFuncPreconditions (p : Program) : Bool :=
+  p.decls.all fun d =>
+    (match d with
+     | Core.Decl.func f _md => f.preconditions.isEmpty
+     | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
+     | _ => true)
+    && Statements.funcDeclsNoPreconditions d.statements
+
+/-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
+    `header.typeArgs`, which is what `MonomorphizeProcedures` clears; the opaque
+    type declarations it adds in their place are ordinary declared sorts. -/
+@[expose] def Program.noPolymorphicProcedures (p : Program) : Bool :=
+  p.decls.all fun d =>
+    match d with
+    | Core.Decl.proc q _md => q.header.typeArgs.isEmpty
+    | _ => true
+
+/-- Is every function `p` declares monomorphic, wherever it is declared? Local
+    declarations count as well as top-level ones, so lifting a function out of a
+    procedure body does not change whether this holds. -/
+@[expose] def Program.noPolymorphicFunctions (p : Program) : Bool :=
+  p.decls.all fun d =>
+    (match d with
+     | Core.Decl.func f _md => f.typeArgs.isEmpty
+     | Core.Decl.recFuncBlock fs _md => fs.all (·.typeArgs.isEmpty)
+     | _ => true)
+    && Statements.funcDeclsMonomorphic d.statements
+
+/-- Is `d` a procedure with a structured body, or not a procedure at all? -/
+@[expose] def Decl.isStructuredOrNonProc (d : Decl) : Bool :=
+  match d with
+  | Core.Decl.proc p _md => p.body.isStructured
+  | _ => true
+
+/-- Does every procedure in `p` have a structured body? -/
+@[expose] def Program.allStructured (p : Program) : Bool :=
+  p.decls.all Decl.isStructuredOrNonProc
 
 end Core
 

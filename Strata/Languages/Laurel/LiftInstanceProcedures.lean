@@ -63,29 +63,6 @@ private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtEx
     | _ => expr
   | _ => expr
 
-/-- Apply call-site rewriting to every expression in a procedure. -/
-private def rewriteCallsInProc (model : SemanticModel) (proc : Procedure) : Procedure :=
-  let f := mapStmtExpr (rewriteCallNode model)
-  let resolveBody : Body → Body := fun body => match body with
-    | .Transparent b => .Transparent (f b)
-    | .Opaque ps impl modif =>
-      .Opaque (ps.map (·.mapCondition f)) (impl.map f) (modif.map f)
-    | .Abstract ps => .Abstract (ps.map (·.mapCondition f))
-    | .External => .External
-  { proc with
-    body := resolveBody proc.body
-    preconditions := proc.preconditions.map (·.mapCondition f)
-    decreases := proc.decreases.map f
-    invokeOn := proc.invokeOn.map f }
-
-/-- Apply call-site rewriting to a constrained type's constraint and witness. -/
-private def rewriteCallsInType (model : SemanticModel) (td : TypeDefinition) : TypeDefinition :=
-  match td with
-  | .Constrained ct =>
-    let f := mapStmtExpr (rewriteCallNode model)
-    .Constrained { ct with constraint := f ct.constraint, witness := f ct.witness }
-  | _ => td
-
 public section
 
 /--
@@ -94,32 +71,37 @@ named via `liftedProcName`, rewrite call sites that resolved to an instance
 procedure, and clear `instanceProcedures` on every composite.
 -/
 def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program :=
-  -- Step 1: collect lifted clones
+  -- Step 1: collect lifted clones. The lifted proc's type params are the composite's
+  -- followed by the method's own: `get(self: Box<T>)` on `composite Box<T>` becomes
+  -- `Box$get<T>(self: Box<T>)`, and `id2<U>(self: Box<T>)` becomes `Box$id2<T,U>`. The
+  -- result is an ordinary polymorphic procedure with a generic-composite param — the
+  -- shape the procedure monomorphizer (running AFTER this pass) already handles, so no
+  -- new machinery is needed. A non-generic composite contributes `[]`, leaving a
+  -- non-generic method's `typeArgs` unchanged.
   let liftedProcs : List Procedure :=
     program.types.foldl (init := []) fun acc td =>
       match td with
       | .Composite ct =>
         acc ++ ct.instanceProcedures.map fun proc =>
-          { proc with name := liftedProcName ct.name proc.name }
+          { proc with name := liftedProcName ct.name proc.name,
+                      typeArgs := ct.typeArgs ++ proc.typeArgs }
       | _ => acc
 
   if liftedProcs.isEmpty then program else
 
-  -- Step 2: rewrite call sites in procedure bodies and constrained-type
-  let rewrittenStaticProcs := program.staticProcedures.map (rewriteCallsInProc model)
-  let rewrittenLiftedProcs := liftedProcs.map (rewriteCallsInProc model)
-  let rewrittenTypes := program.types.map (rewriteCallsInType model)
+  -- Step 2: move the lifted procs to static scope and clear instanceProcedures
+  -- on every composite, so the whole program is in its final shape.
+  let program := { program with
+    staticProcedures := program.staticProcedures ++ liftedProcs
+    types := program.types.map fun td =>
+      match td with
+      | .Composite ct => .Composite { ct with instanceProcedures := [] }
+      | _ => td }
 
-  -- Step 3: clear instanceProcedures on every composite.
-  let cleanedTypes := rewrittenTypes.map fun td =>
-    match td with
-    | .Composite ct => .Composite { ct with instanceProcedures := [] }
-    | _ => td
-
-  -- Step 4: append lifted procs.
-  { program with
-    staticProcedures := rewrittenStaticProcs ++ rewrittenLiftedProcs
-    types := cleanedTypes }
+  -- Step 3: rewrite call sites everywhere expressions can appear (procedure
+  -- bodies and contracts, constrained-type constraint/witness, constant
+  -- initializers).
+  mapProgramStmtExpr (rewriteCallNode model) program
 
 end -- public section
 

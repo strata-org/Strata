@@ -4,10 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.DL.Imperative.CmdType
 import all StrataTest.DL.Imperative.ArithExpr
-public meta import Strata.DL.Util.Map
+public meta import Strata.Util.ListMap
 
 open Strata
 
@@ -29,10 +30,10 @@ open Imperative
 def isBoolType (ty : Ty) : Bool :=
   match ty with | .Bool => true | _ => false
 
-def preprocess (T : TEnv) (ty : Ty) : Except DiagnosticModel (Ty × TEnv) :=
+def preprocess (T : TEnv) (ty : Ty) : Except Message (Ty × TEnv) :=
   .ok (ty, T)
 
-def postprocess (T : TEnv) (ty : Ty) : Except DiagnosticModel (Ty × TEnv) :=
+def postprocess (T : TEnv) (ty : Ty) : Except Message (Ty × TEnv) :=
   .ok (ty, T)
 
 def update (T : TEnv) (x : String) (ty : Ty) : TEnv :=
@@ -42,7 +43,7 @@ def lookup (T : TEnv) (x : String) : Option Ty :=
   T.find? x
 
 /-- Type inference for `ArithPrograms`' commands. -/
-def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except DiagnosticModel (Expr × Ty × TEnv) := do
+def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Message (Expr × Ty × TEnv) := do
   match e with
   | .Num _ => .ok (e, .Num, T)
   | .Bool _ => .ok (e, .Bool, T)
@@ -56,7 +57,7 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except DiagnosticModel 
         | .det e =>
           let init_e_fvs := Expr.freeVars e
           if init_e_fvs.any (fun (_, ty) => ty.isNone) then
-            .error (DiagnosticModel.fromFormat f!"Cannot infer the types of free variables in the initialization expression!\n\
+            .error (Message.fromFormat f!"Cannot infer the types of free variables in the initialization expression!\n\
                       {e}")
           else
             let init_e_fvs := init_e_fvs.map (fun (x, ty) => (x, ty.get!))
@@ -70,37 +71,37 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except DiagnosticModel 
         if xty == ty then
           .ok (e, ty, T)
         else
-          .error (DiagnosticModel.fromFormat f!"Variable {x} annotated with {xty} but has type {ty} in the context!")
-    | none => .error (DiagnosticModel.fromFormat f!"Variable {x} not found in type context!")
+          .error (Message.fromFormat f!"Variable {x} annotated with {xty} but has type {ty} in the context!")
+    | none => .error (Message.fromFormat f!"Variable {x} not found in type context!")
   | .Plus e1 e2 | .Mul e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
     if e1t == .Num && e2t == .Num then
       .ok (e, .Num, T)
     else
-      .error (DiagnosticModel.fromFormat f!"Type checking failed for {e}")
+      .error (Message.fromFormat f!"Type checking failed for {e}")
   | .Eq e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
     if e1t == .Num && e2t == .Num then
       .ok (e, .Bool, T)
     else
-      .error (DiagnosticModel.fromFormat f!"Type checking failed for {e}")
+      .error (Message.fromFormat f!"Type checking failed for {e}")
 
 /-- Unify `ArithPrograms`' types. -/
-def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except DiagnosticModel TEnv :=
+def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Message TEnv :=
   match constraints with
   | [] => .ok T
   | (t1, t2) :: crest =>
     if t1 == t2 then
       unifyTypes T crest
     else
-      .error (DiagnosticModel.fromFormat f!"Types {t1} and {t2} cannot be unified!")
+      .error (Message.fromFormat f!"Types {t1} and {t2} cannot be unified!")
 
 /--
 Instantiation of `TypeContext` for `ArithPrograms`.
 -/
-instance : TypeContext PureExpr Unit TEnv DiagnosticModel where
+instance : TypeContext PureExpr Unit TEnv Message where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
   preprocess := fun _ => Arith.TypeCheck.preprocess

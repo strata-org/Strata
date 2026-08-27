@@ -4,17 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExprProps
 import all Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LStateProps
 import all Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.Scopes
-public import Strata.DL.Util.Relations
+public import Strata.Util.RelationsProps
 
 /-!
   Small-step semantics for `LExpr` and soundness of `LExpr.eval`.
@@ -453,7 +455,7 @@ More precisely: e.eraseMetadata = mkApp () op.eraseMetadata (args_from_e.map era
 where args = args_from_e ++ acc.
 -/
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem getLFuncCall_go_eraseMetadata
+theorem getLFuncCall_go_eraseMetadata
     (e : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
     (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono))
     (h : getLFuncCall.go e acc = (op, args)) :
@@ -1516,7 +1518,7 @@ private theorem getLFuncCall_go_eraseMetadata_congr
 
 -- getLFuncCall is eraseMetadata-invariant (wrapper around go)
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem getLFuncCall_eraseMetadata_congr
+theorem getLFuncCall_eraseMetadata_congr
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
     (getLFuncCall e₁).fst.eraseMetadata = (getLFuncCall e₂).fst.eraseMetadata ∧
@@ -1526,7 +1528,7 @@ private theorem getLFuncCall_eraseMetadata_congr
 
 -- callOfLFunc is eraseMetadata-invariant
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem callOfLFunc_eraseMetadata_congr
+theorem callOfLFunc_eraseMetadata_congr
     (F : @Factory Tbase) (e₁ e₂ : LExpr Tbase.mono) (aPA : Bool)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
     match F.callOfLFunc e₁ (allowPartialApp := aPA), F.callOfLFunc e₂ (allowPartialApp := aPA) with
@@ -2130,7 +2132,7 @@ theorem isCanonicalValue_eraseMetadata_eq
 
 -- isConstrApp depends only on eraseMetadata.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isConstrApp_eraseMetadata_eq
+theorem isConstrApp_eraseMetadata_eq
     (F : @Factory Tbase)
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
@@ -2430,7 +2432,7 @@ private theorem typeOf_of_eraseMetadata_eq {T : LExprParams}
 -- eraseMetadata, computeTypeSubst produces the same result.
 -- computeTypeSubst depends on callee only through its .op type annotation
 -- (preserved by eraseMetadata) and on args only through typeOf (also preserved).
-private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
+theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
     (fn : LFunc T) (op₁ op₂ : LExpr T.mono)
     (args₁ args₂ : List (LExpr T.mono))
     (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
@@ -2464,39 +2466,6 @@ private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
         rw [typeOf_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
       | hd₂ :: tl₂, [] => simp [List.zip]
       | [], _ => simp at h_eM
-
-  let opTyField (e : LExpr T.mono) : Option LMonoTy :=
-    match e with | .op _ _ ty => ty | _ => none
-
-  have h_opTyField : opTyField op₁ = opTyField op₂ := by
-    simp only [opTyField]
-    cases op₁ <;> cases op₂ <;>
-      simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_op ⊢ <;>
-      exact h_op.2
-
-  have h_opFactor : ∀ (e : LExpr T.mono),
-    (match e with
-      | .op _ _ (some instTy) => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-      | _ => ([] : List (LMonoTy × LMonoTy))) =
-    (match opTyField e with
-      | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-      | none => []) := by
-    intro e; cases e with
-    | op m o ty => cases ty <;> simp [opTyField]
-    | _ => simp [opTyField]
-
-  let computePure (opTy : Option LMonoTy)
-      (argCs : List (LMonoTy × LMonoTy)) : Option Subst :=
-    if fn.typeArgs.isEmpty then some Subst.empty
-    else
-      let opCs := match opTy with
-        | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-        | none => []
-      let allCs := opCs ++ argCs
-      if allCs.isEmpty then none
-      else match Constraints.unify allCs SubstInfo.empty with
-        | .ok s => some s.subst
-        | .error _ => none
   -- opTypeSubst only depends on the type annotation of the callee
   have h_opTS : fn.opTypeSubst op₁ = fn.opTypeSubst op₂ := by
     simp only [LFunc.opTypeSubst]
@@ -2764,7 +2733,8 @@ theorem eval_eraseMetadata_invariant
                 next h_inline₂ =>
                   exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                 next h_ninline₂ =>
-                  simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+                  simp [apply_ite Prod.fst, LExpr.eraseMetadata_mkApp,
+                    h_op_eM, h_eval_args_eM]
               | some ceval =>
                 match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
                     (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata

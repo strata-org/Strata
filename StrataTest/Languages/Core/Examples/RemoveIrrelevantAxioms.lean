@@ -29,7 +29,7 @@ const d : bool;
 function f(x0 : int) : (bool);
 
 // Axioms
-axiom [ax_l11c1]: (forall x: int :: ((x >= 0) ==> f(x)));
+axiom [ax_l11c1]: (forall x : int :: (int.ge(x, 0) ==> f(x)));
 
 // Uninterpreted procedures
 // Implementations
@@ -40,7 +40,7 @@ procedure P()
     assert [a0]: ((a ==> ((b ==> c) ==> d)) <==> (a ==> ((b ==> c) ==> d)));
     assert [a1]: ((a ==> (b ==> c)) <==> ((a ==> b) ==> c));
     assert [a2]: f(23);
-    assert [a3]: f(-(5));
+    assert [a3]: f(int.neg(5));
   }
   _exit : {}
 };
@@ -260,6 +260,81 @@ Model:
   let results ← Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Off})
   IO.println (normalizeModelValues (toString results))
+
+---------------------------------------------------------------------
+/-! ## Monomorphized-function axiom relevance
+
+A polymorphic function `f<a>` with an axiom about it, used at a ground type, is
+specialised to `$__mono#f#int` by `MonomorphizeFunctions`.  The obligation the
+relevance analysis reads its seeds from is post-monomorphization (so it mentions
+`$__mono#f#int`), but the axiom program / call-graph / cache relevance is
+computed against is the pre-pipeline one (which names the base `f`).
+`preprocessObligation` therefore demangles the seed names before the relevance
+query, so both sides agree on `f` and the axiom survives under `.Precise`.
+
+The `monoAxiomControlPgm` monomorphic control is identical in shape but never
+mangled, so its axiom survives regardless. -/
+
+def monoAxiomPolyPgm : StrataDDM.Program :=
+#strata
+program Core;
+function f<a>(x : a) : int;
+axiom [f_neg]: (forall x : int :: { f(x) } int.lt(f(x), 0));
+procedure P(out r : int)
+spec {
+  ensures int.lt(f(5), 0);
+}
+{
+};
+#end
+
+def monoAxiomControlPgm : StrataDDM.Program :=
+#strata
+program Core;
+function g(x : int) : int; // This is not polymorphic in control
+axiom [g_neg]: (forall x : int :: { g(x) } int.lt(g(x), 0));
+procedure P(out r : int)
+spec {
+  ensures int.lt(g(5), 0);
+}
+{
+};
+#end
+
+-- Baseline: with axiom pruning `.Off` the axiom is kept, so the specialized
+-- `f<int>(5) < 0` obligation is discharged.
+/--
+info:
+Obligation: P_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify monoAxiomPolyPgm
+        (options := {Core.VerifyOptions.default with verbose := .quiet, removeIrrelevantAxioms := .Off})
+
+-- Thanks to seed demangling in `preprocessObligation` this goal is discharged.
+/--
+info:
+Obligation: P_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify monoAxiomPolyPgm
+        (options := {Core.VerifyOptions.default with verbose := .quiet, removeIrrelevantAxioms := .Precise})
+
+-- Monomorphic control: `g` is never mangled, so under `.Precise` its axiom is
+-- kept and the same-shaped obligation is discharged.
+/--
+info:
+Obligation: P_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify monoAxiomControlPgm
+        (options := {Core.VerifyOptions.default with verbose := .quiet, removeIrrelevantAxioms := .Precise})
 
 end Strata
 end

@@ -31,12 +31,25 @@ def translate (t : StrataDDM.Program) : Core.Program :=
 
 def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
     | .ok program => program.stripMetaData
+
+/-- Run `precondElim` and report whether the output `CoreTransformState.factory`
+    still matches the input factory.
+
+    Note: `LFunc` carries a function-valued `concreteEval` field, which has no
+    `BEq`/`DecidableEq`, so the whole `LFunc` cannot be compared structurally.
+    We compare the base `Func` projection (`.toFunc`) instead — that is every
+    field of `LFunc` except `concreteEval` — via decidable equality. -/
+def factoryRestored (t : StrataDDM.Program) : Bool :=
+  let program := translate t
+  let initState := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+  let (_result, finalState) := Core.Transform.runWith program PrecondElim.precondElim initState
+  decide (finalState.factory.toArray.map (·.toFunc) = initState.factory.toArray.map (·.toFunc))
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -46,7 +59,7 @@ program Core;
 
 procedure test(a : int)
 {
-  var z : int := 10 / a;
+  var z : int := int.safeDiv(10, a);
 };
 
 #end
@@ -60,7 +73,7 @@ info: program Core;
 procedure test (a : int)
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
-  var z : int := 10 / a;
+  var z : int := int.safeDiv(10, a);
 };
 -/
 #guard_msgs in
@@ -74,11 +87,11 @@ program Core;
 
 function safeMod(x : int, y : int) : int
   requires y != 0;
-{ x % y }
+{ int.safeMod(x, y) }
 
 function foo(x : int, y : int) : int
-  requires safeMod(x, y) > 0;
-{ x + y }
+  requires int.gt(safeMod(x, y), 0);
+{ int.add(x, y) }
 
 #end
 
@@ -94,19 +107,26 @@ procedure safeMod$$wf (x : int, y : int)
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
 };
 function safeMod (x : int, y : int) : int {
-  x % y
+  int.safeMod(x, y)
 }
 procedure foo$$wf (x : int, y : int)
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
-  assume [precond_foo_0]: safeMod(x, y) > 0;
+  assume [precond_foo_0]: int.gt(safeMod(x, y), 0);
 };
 function foo (x : int, y : int) : int {
-  x + y
+  int.add(x, y)
 }
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcWithPrecondPgm))
+
+/- Regression test for the factory save/restore invariant: `precondElim`
+   accumulates `safeMod`/`foo` into the factory while collecting WF obligations,
+   but the output state's factory must be identical to the input (built-in)
+   factory. If a future edit drops the `setFactory savedF` restore in
+   `PrecondElim.precondElim`, this `#guard` fails at elaboration time. -/
+#guard factoryRestored funcWithPrecondPgm
 
 /-! ### Test 3: Procedure with ADT destructor (has implicit precondition) in requires -/
 
@@ -119,7 +139,7 @@ datatype List { Nil(), Cons(head : int, tail : List) };
 procedure test(xs : List)
 spec {
   requires List..isCons(xs);
-  requires List..head(xs) > 0;
+  requires int.gt(List..head(xs), 0);
 }
 {
 };
@@ -140,14 +160,14 @@ procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_requires_1]: List..head(xs) > 0;
+  assume [test_requires_1]: int.gt(List..head(xs), 0);
 };
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
-  requires [test_requires_1]: List..head(xs) > 0;
+  requires [test_requires_1]: int.gt(List..head(xs), 0);
   } {
-  ⏎
+  
 };
 -/
 #guard_msgs in
@@ -164,8 +184,8 @@ datatype List { Nil(), Cons(head : int, tail : List) };
 procedure test(xs : List)
 spec {
   requires List..isCons(xs);
-  ensures List..head(xs) > 0;
-  ensures List..head(List..tail(xs)) > 0;
+  ensures int.gt(List..head(xs), 0);
+  ensures int.gt(List..head(List..tail(xs)), 0);
 }
 {
 };
@@ -186,18 +206,18 @@ procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_ensures_1]: List..head(xs) > 0;
+  assume [test_ensures_1]: int.gt(List..head(xs), 0);
   assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
-  assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
+  assume [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
 };
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
-  ensures [test_ensures_1]: List..head(xs) > 0;
-  ensures [test_ensures_2]: List..head(List..tail(xs)) > 0;
+  ensures [test_ensures_1]: int.gt(List..head(xs), 0);
+  ensures [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
   } {
-  ⏎
+  
 };
 -/
 #guard_msgs in
@@ -213,8 +233,8 @@ procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
-    requires y / x > 0;
-    { y / x }
+    requires int.gt(int.safeDiv(y, x), 0);
+    { int.safeDiv(y, x) }
   var z : int := safeDiv(5);
 };
 
@@ -232,11 +252,11 @@ procedure test ()
   safeDiv$$wf: {
     var y : int;
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
-    assume [precond_safeDiv_0]: y / x > 0;
+    assume [precond_safeDiv_0]: int.gt(int.safeDiv(y, x), 0);
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
   }
-  function safeDiv (y : int) : int { y / x }
-  assert [init_calls_safeDiv_0]: 5 / x > 0;
+  function safeDiv (y : int) : int { int.safeDiv(y, x) }
+  assert [init_calls_safeDiv_0]: int.gt(int.safeDiv(5, x), 0);
   var z : int := safeDiv(5);
 };
 -/
@@ -254,12 +274,12 @@ procedure test(cond : bool, x : int, y : int)
   if (cond) {
     function f(a : int) : int
       requires x != 0;
-      { a / x }
+      { int.safeDiv(a, x) }
     var r1 : int := f(10);
   } else {
     function f(a : int) : int
       requires y != 0;
-      { a / y }
+      { int.safeDiv(a, y) }
     var r2 : int := f(20);
   }
 };
@@ -280,7 +300,7 @@ procedure test (cond : bool, x : int, y : int)
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
     }
-    function f (a : int) : int { a / x }
+    function f (a : int) : int { int.safeDiv(a, x) }
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
   } else {
@@ -289,7 +309,7 @@ procedure test (cond : bool, x : int, y : int)
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
     }
-    function f (a : int) : int { a / y }
+    function f (a : int) : int { int.safeDiv(a, y) }
     assert [init_calls_f_0]: !(y == 0);
     var r2 : int := f(20);
   }
@@ -308,7 +328,7 @@ procedure proc1(x : int)
 {
   function f(a : int) : int
     requires x != 0;
-    { a / x }
+    { int.safeDiv(a, x) }
   var r : int := f(10);
 };
 
@@ -316,7 +336,7 @@ procedure proc2(y : int)
 {
   function f(a : int) : int
     requires y != 0;
-    { a / y }
+    { int.safeDiv(a, y) }
   var r : int := f(20);
 };
 
@@ -335,7 +355,7 @@ procedure proc1 (x : int)
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
   }
-  function f (a : int) : int { a / x }
+  function f (a : int) : int { int.safeDiv(a, x) }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
 };
@@ -346,7 +366,7 @@ procedure proc2 (y : int)
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
   }
-  function f (a : int) : int { a / y }
+  function f (a : int) : int { int.safeDiv(a, y) }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
 };
@@ -362,7 +382,7 @@ program Core;
 
 procedure test(x : int, y : int)
 {
-  if (x / y > 0) {
+  if (int.gt(int.safeDiv(x, y), 0)) {
     var z : int := 1;
   } else {
     var z : int := 2;
@@ -379,7 +399,7 @@ info: program Core;
 procedure test (x : int, y : int)
 {
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
-  if (x / y > 0) {
+  if (int.gt(int.safeDiv(x, y), 0)) {
     var z : int := 1;
   } else {
     var z : int := 2;
@@ -396,7 +416,7 @@ def loopGuardPrecondPgm :=
 program Core;
 procedure test(inout g : int, y : int)
 {
-  while (y / (y / g) > 0) { g := g - 1; }
+  while (int.gt(int.safeDiv(y, int.safeDiv(y, g)), 0)) { g := int.sub(g, 1); }
 };
 #end
 
@@ -409,12 +429,12 @@ info: program Core;
 procedure test (inout g : int, y : int)
 {
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
-  assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
-  while (y / (y / g) > 0)
+  assert [loop_guard_calls_Int.SafeDiv_1]: !(int.safeDiv(y, g) == 0);
+  while (int.gt(int.safeDiv(y, int.safeDiv(y, g)), 0))
   {
-    g := g - 1;
+    g := int.sub(g, 1);
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
-    assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
+    assert [loop_guard_end_calls_Int.SafeDiv_1]: !(int.safeDiv(y, g) == 0);
   }
 };
 -/
@@ -479,19 +499,19 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
   | some (Statement.assert _ e _) => IO.println s!"{Std.format e}"
   | _ => IO.println "<unexpected>"
 
-/-- info: 0 <= i && i < Sequence.length(s) -/
+/-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqSelectOp [fxS, fxI])
 
-/-- info: 0 <= i && i < Sequence.length(s) -/
+/-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV])
 
-/-- info: 0 <= n && n <= Sequence.length(s) -/
+/-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqTakeOp [fxS, fxN])
 
-/-- info: 0 <= n && n <= Sequence.length(s) -/
+/-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
 
@@ -540,6 +560,57 @@ function bug (p : Outer) : bool {
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram nestedExistsWFPgm))
+
+/-! ### Test: `changed` flag for a nested function whose body calls a
+    precondition-carrying function (regression)
+
+A nested `function` declaration with no preconditions of its own, but whose
+body invokes a precondition-carrying function (`int.safeModT`), gets rewritten
+to gain a `$$wf` block with an `assert`. The pass must report `changed := true`
+whenever such a `$$wf` block is emitted, even when the function itself has no
+preconditions. -/
+
+/-- Run `PrecondElim` and return only its `changed` flag (`none` if the pass
+    errors). -/
+private def transformChanged (t : StrataDDM.Program) : Option Bool :=
+  let program := translate t
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error _ => none
+  | .ok (changed, _program) => some changed
+
+private def nestedFuncCallsPartialPgm :=
+#strata
+program Core;
+
+procedure P0()
+{
+  function bB() : int { int.safeModT(0, 2) }
+};
+
+#end
+
+-- The rewrite adds a `bB$$wf` block with an `assert`, so `changed` is `true`.
+/-- info: some true -/
+#guard_msgs in
+#eval transformChanged nestedFuncCallsPartialPgm
+
+-- The rewritten program itself (shows the emitted `$$wf` block).
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+procedure P0 ()
+{
+  bB$$wf: {
+    assert [bB_body_calls_Int.SafeModT_0]: !(2 == 0);
+  }
+  function bB () : int { int.safeModT(0, 2) }
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedFuncCallsPartialPgm))
 
 end PrecondElimTests
 end

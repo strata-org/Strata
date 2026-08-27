@@ -42,16 +42,55 @@ info: termToSMTString Term.some: (some true)
   let s ← runSolverM (termToSMTString (Term.some (Term.prim (.bool true))))
   IO.println s!"termToSMTString Term.some: {s}"
 
--- typeToSMTString throws on TermType.trigger instead of panicking.
+/-! ## Tests for `Solver.withFileWriter` flush-on-completion
+
+Commands are buffered; `withFileWriter` guarantees the complete script
+is on disk when it returns, including on exception.'
+-/
+
+-- The written file is complete (buffered tail included) when the bracket
+-- returns: a reader sequenced after `withFileWriter` sees the whole script.
 /--
-info: typeToSMTString correctly threw: Solver.typeToSMTString failed: don't know how to translate a trigger type
+info: (set-logic QF_LIA)
+; buffering test
+(assert true)
+(check-sat)
 -/
 #guard_msgs in
 #eval do
+  let dir ← IO.FS.createTempDir
+  let path := dir / "withFileWriter.smt2"
+  let _ ← Solver.withFileWriter path.toString do
+    Solver.setLogic "QF_LIA"
+    Solver.comment "buffering test"
+    Solver.assertRendered "true"
+    let _ ← Solver.checkSat []
+  let contents ← IO.FS.readFile path
+  IO.FS.removeDirAll dir
+  IO.print contents
+
+-- On exception inside the bracket, the `finally` flush still runs: the file
+-- preserves everything written before the failure.
+/--
+info: caught: boom
+(set-logic QF_LIA)
+(assert x)
+-/
+#guard_msgs in
+#eval do
+  let dir ← IO.FS.createTempDir
+  let path := dir / "withFileWriterErr.smt2"
+  let act : SolverM Unit := do
+    Solver.setLogic "QF_LIA"
+    Solver.assertRendered "x"
+    throw (IO.userError "boom")
   try
-    let _ ← runSolverM (typeToSMTString (.prim .trigger))
-    IO.println "ERROR: typeToSMTString did not throw"
+    let _ ← Solver.withFileWriter path.toString act
+    IO.println "ERROR: no exception"
   catch e =>
-    IO.println s!"typeToSMTString correctly threw: {e}"
+    IO.println s!"caught: {e}"
+  let contents ← IO.FS.readFile path
+  IO.FS.removeDirAll dir
+  IO.print contents
 
 end

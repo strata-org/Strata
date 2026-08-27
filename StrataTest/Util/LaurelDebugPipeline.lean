@@ -9,7 +9,7 @@ Debug-only helpers for running the Laurel compilation pipeline manually
 (e.g. via `#eval`) when diagnosing pass-internal issues.
 
 Not used by any test in this repo. The regular test framework lives in
-`StrataTest.Util.TestLaurel`; see `docs/Testing.md`.
+`StrataTest.Util.TestLaurelVerification`; see `docs/Testing.md`.
 -/
 
 import StrataTest.Util.TestDiagnostics

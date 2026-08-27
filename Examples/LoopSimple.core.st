@@ -2,7 +2,7 @@ program Core;
 
 procedure loopSimple (n: int, out r: int)
 spec {
-  requires (n >= 0);
+  requires (int.ge(n, 0));
 }
 {
   var sum : int;
@@ -10,15 +10,15 @@ spec {
 
   sum := 0;
   i := 0;
-  while(i < n)
-    decreases n - i
-    invariant i <= n    
-    invariant ((i * (i-1)) div 2 == sum)
+  while(int.lt(i, n))
+    decreases int.sub(n, i)
+    invariant int.le(i, n)    
+    invariant (int.div(int.mul(i, int.sub(i, 1)), 2) == sum)
   {
-    sum := sum + i;
-    i := i + 1;
+    sum := int.add(sum, i);
+    i := int.add(i, 1);
   }
-  assert [sum_assert]: ((n * (n-1)) div 2 == sum);
+  assert [sum_assert]: (int.div(int.mul(n, int.sub(n, 1)), 2) == sum);
   assert [neg_cond]: (i == n);
   r := sum;
 };

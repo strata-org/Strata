@@ -130,6 +130,29 @@ procedure test() {
 }
 #end
 
+-- Multiple `pattern` clauses on a single quantifier: each source clause becomes its own
+-- `:pattern` attribute (disjunctive triggers — any one matching fires E-matching), not a
+-- single conjunctive group. Regression test against collapsing all pattern terms into
+-- one group.
+/--
+info: (declare-fun f (Int) Int)
+(declare-fun g (Int) Int)
+(assert (forall ((x Int)) (! (= (f x) (g x)) :pattern ((f x)) :pattern ((g x)))))
+(push 1)
+(assert (not (= (f 5) (g 5))))
+(check-sat)
+(pop 1)
+-/
+#guard_msgs in
+#eval testSMTGeneration $ #strata program B3CST;
+function f(x : int) : int
+function g(x : int) : int
+axiom forall x : int pattern f(x) pattern g(x) f(x) == g(x)
+procedure test() {
+  check f(5) == g(5)
+}
+#end
+
 /--
 info: (declare-fun f (Int) Bool)
 (declare-fun g (Int Int) Bool)

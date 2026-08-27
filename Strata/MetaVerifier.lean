@@ -6,6 +6,8 @@
 module
 
 import Strata.Transform.LoopElim
+import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.NondetElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
@@ -49,12 +51,17 @@ def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
     axms := ctx.axms.toArray, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
-  { sorts := .ofArray ctx.sorts
-    ufs := .ofArray ctx.ufs
-    ifs := .ofArray ctx.ifs
-    axms := .ofArray ctx.axms
+  -- Build each OrderedKeyedSet with `ofArrayUnchecked`, not `ofArray`.
+  -- The reflection tactic `gen_smt_vcs` evaluates this context in the
+  -- *kernel* and `ofArray` which uses `HashSet` insert-fold does not reduce.
+  -- The fields come from `ofCore` which are already-deduped,
+  -- so their keys are distinct and the invariant holds.
+  { sorts := .ofArrayUnchecked ctx.sorts
+    ufs := .ofArrayUnchecked ctx.ufs
+    ifs := .ofArrayUnchecked ctx.ifs
+    axms := .ofArrayUnchecked ctx.axms
     tySubst := ctx.tySubst
-    typeFactory := #[]
+    datatypes := .empty
     seenDatatypes := {}
     datatypeFuns := {} }
 
@@ -69,7 +76,14 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := (loopElim program).fst
+  let transform : Transform.CoreTransformM (Bool × Program) := do
+    let (_, program') ← insertLoopInvariantAsserts program
+    let (_, program'') ← loopElim program'
+    -- nondetElim must run before symbolic evaluation, which rejects surviving
+    -- nondeterministic guards.
+    nondetElim program''
+  let (res, _) := StateT.run (ExceptT.run transform) Transform.CoreTransformState.emp
+  let (_, program) ← res.toOption
   match Core.typeCheck options program with
   | .error _ => none
   | .ok tcProgram =>
@@ -79,7 +93,7 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
       match Core.ObligationExtraction.extractObligations oblProgram with
       | .error _ => none
       | .ok obligations =>
-        let E := match Core.buildEnv options tcProgram with
+        let E := match Core.buildEnv options tcProgram Core.Factory with
           | .ok (initE, _) =>
             match Program.eval initE with
             | .ok (pEs, _) => pEs.head?.getD initE
@@ -148,7 +162,7 @@ Remove solver-side caches that destabilize definitional equality in metaprograms
 
 At the moment this is semantically harmless for denotation because
 `Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`typeFactory`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx
@@ -158,11 +172,13 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
   Option SMT.SMTVC := do
     -- Seed the encoding context with the env's datatypes and the array-theory flag.
     let smtCtx := { Core.SMT.Context.default with
-      typeFactory := E.datatypes, useArrayTheory := options.useArrayTheory }
-    let maybeTerms := Core.ProofObligation.toSMTTerms E.factory ob smtCtx
+      datatypes := .ofFactory E.datatypes, useArrayTheory := options.useArrayTheory }
+    -- Encode this single obligation from a fresh encoder state.
+    let encState : Core.SMTEncodeState := .init { ctx := smtCtx }
+    let maybeTerms := Core.encodeObligationToSMT E.factory encState ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
+    | .ok ({ assumptions := ts, varDefs, goal := t, ctx, .. }, _) =>
       -- For denotational semantics, variable definitions are equivalent to equalities
       let defAssumptions := varDefs.map fun d =>
         Strata.SMT.Factory.eq (.app (.uf ⟨d.name, [], d.ty⟩) [] d.ty) d.body
@@ -371,7 +387,13 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   trace[debug] m!"Created {mvs.length} SMT VC goals: {mvs}"
   let ps ← mvs.mapM MVarId.getType
   let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
-  mv.assign hP
+  let mvType ← mv.getType
+  let bridgeType := Lean.Expr.forallE `h (andN ps) mvType .default
+  let bridgeName ← Lean.mkAuxDeclName `_genSMTVCs_tcbBridge
+  Lean.addDecl (Declaration.axiomDecl {
+    name := bridgeName, levelParams := [], type := bridgeType, isUnsafe := false
+  })
+  mv.assign (mkApp (.const bridgeName []) hP)
   return mvs
 
 @[implemented_by genSMTVCsUnsafe]

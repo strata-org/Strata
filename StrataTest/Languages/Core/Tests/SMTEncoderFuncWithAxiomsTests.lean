@@ -90,11 +90,11 @@ def encodeFuncsToSMT (es : List (LExpr CoreLParams.mono))
   let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
     (fun msg => f!"Error adding functions: {msg}")
   let factory := env.factory
-  -- Seed the encoding context's `typeFactory` from the env's datatypes.
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  -- Seed the encoding context's `datatypes` from the env's datatypes.
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
 
   -- 2. Encode the terms, then resolve/commit the deferred function definitions.
-  let (terms, ctx, pending) ← toSMTTerms factory es ctx []
+  let (terms, ctx, pending) ← toSMTTerms factory es ctx {}
   let ctx ← processPendingFnDefs factory ctx pending
 
   -- 3/ Render terms and context through SMTDDM, lifting render errors into `Format`.
@@ -198,43 +198,6 @@ Axioms:
   [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))]
   [monoFuncWithAxiom "f" "g", monoFuncWithAxiom "g" "h", monoFuncWithAxiom "h" "f"]
 
-/-! ## Test 3: three polymorphic functions whose axioms call each other -/
-
--- pf, qf, rf : ∀a. a → Int, with axioms pf(x)==qf(x), qf(x)==rf(x), rf(x)==pf(x).
-private def polyTy : LMonoTy := .arrow (.ftvar "a") .int
-
-private def appP (name : String) (arg : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  .app () (.op () ⟨name, ()⟩ (.some polyTy)) arg
-
-private def eqAxiomP (lhs rhs : String) : LExpr CoreLParams.mono :=
-  .quant () .all "x" (.some (.ftvar "a")) (LExpr.noTrigger ())
-    (.eq () (appP lhs (.bvar () 0)) (appP rhs (.bvar () 0)))
-
-private def polyFunc (name callee : String) : Lambda.LFunc CoreLParams :=
-  { name := ⟨name, ()⟩,
-    typeArgs := ["a"],
-    inputs := [(⟨"v", ()⟩, .ftvar "a")],
-    output := .int,
-    axioms := [eqAxiomP name callee] }
-
-/--
-info: Terms:
-  (= (pf 0) 0)
-UFs:
-  rf : (Int) -> Int
-  qf : (Int) -> Int
-  pf : (Int) -> Int
-IFs: (none)
-Axioms:
-  (forall ((x Int)) (= (rf x) (pf x)))
-  (forall ((x Int)) (= (qf x) (rf x)))
-  (forall ((x Int)) (= (pf x) (qf x)))
--/
-#guard_msgs in
-#eval runTest
-  [(.eq () (.app () (.op () ⟨"pf", ()⟩ (.some intToInt)) (.intConst () 0)) (.intConst () 0))]
-  [polyFunc "pf" "qf", polyFunc "qf" "rf", polyFunc "rf" "pf"]
-
 /-! ## Test 4: an interpreted function whose body calls an axiomatized function -/
 
 -- `d` is a `define-fun` with body `g(v)`; `g` is an uninterpreted function with
@@ -288,68 +251,6 @@ Axioms:
    monoDefFuncWithAxiom "db" (appI "dc" vInt) "dc",
    monoDefFuncWithAxiomId "dc"]
 
-/-! ## Test 6: one polymorphic function instantiated at two different types -/
-
--- `idp : ∀a. a → a` with axiom `∀ (x : a). idp(x) == x`, applied at both `Int`
--- and `Real`. The single source function yields two *distinct* UFs that share
--- the source name `idp` but differ in signature (`Int -> Int` vs `Real ->
--- Real`); each carries its axiom at its own instantiation. The shared name is
--- expected: dedup keys on the whole `UF` (name + arg/out types), and the two
--- are given distinct SMT-LIB names (e.g. `idp`, `idp@1`) at emission time.
-
-/-- `idp(arg)` at instantiation where `idp : ty → ty`. -/
-private def appIdp (ty : LMonoTy) (arg : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  .app () (.op () ⟨"idp", ()⟩ (.some (.arrow ty ty))) arg
-
-private def idpFunc : Lambda.LFunc CoreLParams :=
-  { name := ⟨"idp", ()⟩,
-    typeArgs := ["a"],
-    inputs := [(⟨"v", ()⟩, .ftvar "a")],
-    output := .ftvar "a",
-    axioms := [.quant () .all "x" (.some (.ftvar "a")) (LExpr.noTrigger ())
-                 (.eq () (appIdp (.ftvar "a") (.bvar () 0)) (.bvar () 0))] }
-
-/--
-info: Terms:
-  (= (idp 0) 0)
-  (= (idp 0.0) 0.0)
-UFs:
-  idp : (Int) -> Int
-  idp : (Real) -> Real
-IFs: (none)
-Axioms:
-  (forall ((x Int)) (= (idp x) x))
-  (forall ((x Real)) (= (idp x) x))
--/
-#guard_msgs in
-#eval runTest
-  [(.eq () (appIdp .int (.intConst () 0)) (.intConst () 0)),
-   (.eq () (appIdp .real (.realConst () 0)) (.realConst () 0))]
-  [idpFunc]
-
-/-! ## Test 7: one polymorphic function referenced twice at the *same* type -/
-
--- Two references to `idp` both at `Int → Int` (`idp(0)` and `idp(1)`) produce
--- the *same* `UF`, so they dedup to a single declaration and a single axiom.
--- This is the converse of Test 6: distinct instantiations stay separate, but
--- repeated identical instantiations collapse. (Dedup keys on the whole `UF`,
--- i.e. name + monomorphic arg/out types, not on the source identifier.)
-/--
-info: Terms:
-  (= (idp 0) 0)
-  (= (idp 1) 1)
-UFs:
-  idp : (Int) -> Int
-IFs: (none)
-Axioms:
-  (forall ((x Int)) (= (idp x) x))
--/
-#guard_msgs in
-#eval runTest
-  [(.eq () (appIdp .int (.intConst () 0)) (.intConst () 0)),
-   (.eq () (appIdp .int (.intConst () 1)) (.intConst () 1))]
-  [idpFunc]
-
 /-! ## Test 8: encodeUF then encodeFunctionDef on the same UF errors -/
 
 -- Reference `g` first (emits `declare-fun g`), then try to define it:
@@ -382,11 +283,11 @@ private def testAllCommitted : Except Format String := do
   let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
     (fun msg => f!"Error adding functions: {msg}")
   let factory := env.factory
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   let (_, ctx, pending) ← toSMTTerms factory
-    [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))] ctx []
+    [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))] ctx {}
   let ctx' ← processPendingFnDefs factory ctx pending
-  let allCommitted := pending.all (fun p => SMT.Context.committedFn ctx' p.uf)
+  let allCommitted := pending.toList.all (fun p => SMT.Context.committedFn ctx' p.uf)
   return s!"{allCommitted}"
 
 /-- info: true -/
@@ -395,6 +296,31 @@ private def testAllCommitted : Except Format String := do
   match testAllCommitted with
   | .ok s => IO.println s
   | .error e => IO.println s!"ERROR: {e.pretty}"
+
+/-! ## Test 10: scheduling deduplicates repeated references to the same function -/
+
+-- Referencing the same function several times within the obligation terms must
+-- schedule it into the pending queue exactly once. This directly exercises the
+-- dedup branch of `OrderedKeyedSet.insert` (`setIdx.contains`, keyed on `UF`)
+-- reached via `pending.insert` in `toSMTOp`: a regression there would grow the
+-- queue.
+private def testScheduleDedup : Except Format String := do
+  let funcs := [monoFuncWithAxiomId "f", monoFuncWithAxiomId "g", monoFuncWithAxiomId "h"]
+  let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
+    (fun msg => f!"Error adding functions: {msg}")
+  let factory := env.factory
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
+  -- Each of f, g, h is referenced twice; the six references share three `UF`s.
+  let (_, _, pending) ← toSMTTerms factory
+    [(.eq () (appI "f" (.intConst () 0)) (appI "f" (.intConst () 1))),
+     (.eq () (appI "g" (.intConst () 0)) (appI "g" (.intConst () 1))),
+     (.eq () (appI "h" (.intConst () 0)) (appI "h" (.intConst () 1)))] ctx {}
+  -- f, g, h scheduled exactly once each despite the duplicate references.
+  return s!"{pending.size}"
+
+/-- info: ok: 3 -/
+#guard_msgs in
+#eval testScheduleDedup
 
 end FuncWithAxiomsTests
 

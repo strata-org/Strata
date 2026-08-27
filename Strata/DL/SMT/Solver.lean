@@ -33,6 +33,7 @@ inductive Decision where
   | sat
   | unsat
   | unknown
+  | timeout
 deriving DecidableEq, Repr
 
 /--
@@ -47,8 +48,14 @@ deriving DecidableEq, Repr
  by the standard for each command. The solver's stderr is inherited by the parent process (see `spawnSolver`),
  so diagnostic output goes directly to the verifier's stderr rather than
  through a field on this structure.
+
+ Writes to `smtLibInput` are buffered; every read-after-write boundary owns its flush
+ by construction, which is why construction is sealed to `spawn`, `withFileWriter`,
+ and `bufferWriter`: `spawn` wraps `smtLibOutput` so reads flush pending input first,
+ and `withFileWriter` flushes before the written file becomes visible to its caller.
 -/
 structure SMTLibSolver where
+  private mk ::
   smtLibInput : IO.FS.Stream
   smtLibOutput : Option IO.FS.Stream
 
@@ -111,7 +118,15 @@ def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
       cmd    := path
       args   := args
     }
-    return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+    let input := IO.FS.Stream.ofHandle proc.stdin
+    let rawOut := IO.FS.Stream.ofHandle proc.stdout
+    -- Reads flush pending input first as commands are buffered.
+    -- Otherwise we would deadlock as we will wait for a reply while
+    -- the command sits in the write buffer.
+    let output := { rawOut with
+      getLine := do input.flush; rawOut.getLine
+      read := fun n => do input.flush; rawOut.read n }
+    return ⟨input, some output⟩
   catch e =>
     let suggestion := if path == Core.defaultSolver || path.endsWith Core.defaultSolver then s!" Ensure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
     throw (IO.userError s!"could not execute external process '{path}'.{suggestion} Original error: {e}")
@@ -126,14 +141,24 @@ def solver : IO SMTLibSolver := do
   | .none      => throw (IO.userError "SOLVER environment variable not defined.")
 
 /--
-  Returns a solver that writes all issued commands to the given file handle `h`.
-  Commands that produce output, such as `checkSat`, write the command to `h` and
-  return values that are sound according to the SMTLIb spec (but generally not
-  useful). For example, `Solver.checkSat` returns `Decision.unknown`. This
-  function expects `h` to be write-enabled.
+  Run `act` with a write-only recorder that saves all issued commands to
+  `filename` as an SMT-LIB script. No solver runs behind it — nothing is
+  checked or solved. Commands that produce output, such as `checkSat`, are
+  recorded and return values that are sound per the SMT-LIB spec but generally
+  not useful (e.g. `Solver.checkSat` returns `Decision.unknown`). Used to dump
+  VC scripts to disk (e.g. `vcs/*.smt2`); see `bufferWriter` for the in-memory
+  equivalent.
+
+  The file is flushed before this returns — including on exception.
 -/
-def fileWriter (h : IO.FS.Handle) : IO SMTLibSolver :=
-  return ⟨IO.FS.Stream.ofHandle h, .none⟩
+def withFileWriter (filename : String) (act : SolverM α)
+    (state : SolverState := SolverState.init) : IO (α × SolverState) := do
+  let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
+  let solver : SMTLibSolver := ⟨IO.FS.Stream.ofHandle handle, .none⟩
+  try
+    SolverM.run solver act state
+  finally
+    handle.flush
 
 /--
   Returns a solver that writes all issued commands to the given buffer `b`.
@@ -144,12 +169,35 @@ def fileWriter (h : IO.FS.Handle) : IO SMTLibSolver :=
 def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO SMTLibSolver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
+/-- Run `act` with a write-only recorder that saves all issued commands to an
+    in-memory buffer, returning `act`'s result, the recorded SMT-LIB text, and
+    the updated solver state. No solver runs behind it — nothing is checked or
+    solved; see `withFileWriter` for the on-disk equivalent. -/
+def recordToString {α : Type} (act : SolverM α)
+    (state : SolverState := SolverState.init) : IO (α × String × SolverState) := do
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← bufferWriter b
+  let (a, state) ← SolverM.run solver act state
+  let contents ← b.get
+  if h : contents.data.IsValidUTF8 then
+    return (a, String.fromUTF8 contents.data h, state)
+  else
+    throw (IO.userError "recordToString: emitted SMT-LIB text is not valid UTF-8")
+
 /-! ## Internal helpers -/
 
+/-- Write one SMT-LIB line to the input stream. -/
 private def emitln (str : String) : SolverM Unit := do
   let solver ← read
-  solver.smtLibInput.putStr s!"{str}\n"
-  solver.smtLibInput.flush
+  solver.smtLibInput.putStr str
+  solver.smtLibInput.putStr "\n"
+
+/-- Flush the solver input stream. Read-after-write boundaries inside this
+    module own their flushes (see `emitln`); call this only when handing
+    buffered data to a reader this module cannot see (e.g. to make the
+    disk-write cost of a batch file visible as its own pipeline phase). -/
+def flush : SolverM Unit := do
+  (← read).smtLibInput.flush
 
 /-- Convert a `Term` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
 def termToSMTString (t : Term) : SolverM String := do
@@ -234,13 +282,19 @@ def declareDatatypes (dts : List (String × List String × List SMTConstructor))
 
 /-! ## Typed commands -/
 
+/-- Assert an already-rendered term string. -/
+def assertRendered (s : String) : SolverM Unit := do
+  let solver ← read
+  solver.smtLibInput.putStr "(assert "
+  solver.smtLibInput.putStr s
+  solver.smtLibInput.putStr ")\n"
+
 /-- Assert a `Term` (must be Bool-typed). Converts via the cached `termToSMTString`. -/
 def assert (t : Term) : SolverM Unit := do
-  let s ← termToSMTString t
-  emitln s!"(assert {s})"
+  assertRendered (← termToSMTString t)
 
 /-- Assert a raw SMT-LIB identifier string (e.g. an abbreviated name like `"t0"`).
-    Used by the Encoder after ANF decomposition, where the term has already been
+    Used by the Encoder after common subexpression elim, where the term has already been
     broken into `define-fun` definitions and only the short name needs asserting. -/
 def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"
@@ -318,8 +372,20 @@ def checkSatAssuming (assumptions : List String) (vars : List String) : SolverM 
 def reset : SolverM Unit :=
   emitln "(reset)"
 
-def exit : SolverM Unit :=
+/-- Push `n` assertion scopes. Buffered like all commands (see `emitln`);
+    delivery to a live solver happens at the next read. -/
+def push (n : Nat := 1) : SolverM Unit :=
+  emitln s!"(push {n})"
+
+/-- Pop `n` assertion scopes. See `push`. -/
+def pop (n : Nat := 1) : SolverM Unit :=
+  emitln s!"(pop {n})"
+
+def exit : SolverM Unit := do
   emitln "(exit)"
+  -- The reader here is the solver process itself: without a flush it never
+  -- receives the command and lingers until pipe EOF.
+  flush
 
 end Solver
 

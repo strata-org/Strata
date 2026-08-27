@@ -51,9 +51,18 @@ structure PureExpr : Type 1 where
 class HasIdent (P : PureExpr) where
   ident : String → P.Ident
 
+/-- Lawfulness of `HasIdent`: the canonical identifier-injection is injective. -/
+class LawfulHasIdent (P : PureExpr) [HasIdent P] where
+  ident_inj : Function.Injective (HasIdent.ident (P := P))
+
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
   getFvar : P.Expr → Option P.Ident
+
+/-- Lawfulness of `HasFvar`: the round-trip `getFvar (mkFvar x) = some x`. -/
+class LawfulHasFvar (P : PureExpr) [HasFvar P] where
+  getFvar_mkFvar : ∀ x : P.Ident,
+    HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x
 
 /-- Multi-variable version of `HasFvar.getFvar`: returns ALL free variables in
     a (possibly compound) expression.  `HasFvar.getFvar` only returns Some when
@@ -61,6 +70,13 @@ class HasFvar (P : PureExpr) where
     compounds. -/
 class HasFvars (P : PureExpr) where
   getFvars : P.Expr → List P.Ident
+
+/-- Lawfulness of `HasFvars` against `HasFvar`: the free-variable list of an
+    `mkFvar x` expression, as computed by the `HasFvars.getFvars` extractor, is a
+    subset of `[x]`. -/
+class LawfulHasFvars (P : PureExpr) [HasFvar P] [HasFvars P] where
+  mkFvar_getFvars : ∀ x : P.Ident,
+    HasFvars.getFvars (HasFvar.mkFvar (P := P) x) ⊆ [x]
 
 /-- Returns ALL operator/function names referenced in an expression
     (e.g., `.op` constructs in Lambda). -/

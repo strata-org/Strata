@@ -4,11 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryProps
 public import Strata.DL.Lambda.FactoryWF
+import Strata.Util.PtrCacheProps
 
 /-!
 ## Basic `LExpr.getVars` properties
@@ -24,6 +27,10 @@ open Strata
 
 variable {Tbase : LExprParams}
   [DecidableEq Tbase.IDMeta]
+
+/-- Every `LExpr` has strictly positive `sizeOf`. -/
+theorem LExpr.sizeOf_pos {T} (e : LExpr T) : 0 < sizeOf e := by
+  cases e <;> simp <;> omega
 
 omit [DecidableEq Tbase.IDMeta] in
 /-- `liftBVars` does not change the free variables (only shifts de Bruijn indices). -/
@@ -350,13 +357,13 @@ omit [DecidableEq Tbase.IDMeta] in
 /-- The free variables of a well-formed function body are among its inputs. -/
 theorem lfunc_body_getVars_subset_keys
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (lfunc : LFunc Tbase) (hwf : LFuncWF lfunc)
+    (lfunc : LFunc Tbase) (hclosed : LFuncClosed lfunc)
     (body : LExpr Tbase.mono) (hbody : lfunc.body = some body)
     (y : Tbase.Identifier) (hy : y ∈ LExpr.LExpr.getVars body) :
     y ∈ lfunc.inputs.keys := by
   rw [getVars_eq_freeVars_idents, List.mem_map] at hy
   obtain ⟨p, hp_mem, hp_eq⟩ := hy
-  have hbf := hwf.toFuncWF.body_freevars body hbody
+  have hbf := hclosed.toFuncClosed.body_freevars body hbody
   have hname : y.name ∈ lfunc.inputs.map (fun q => q.1.name) := by
     apply hbf
     rw [List.mem_map]
@@ -366,5 +373,25 @@ theorem lfunc_body_getVars_subset_keys
   have hyq : y = q.fst := (hIdent q.1 y hq_eq).symm
   rw [hyq, ListMap.keys_eq_map_fst]
   exact List.mem_map_of_mem hq_mem
+
+namespace LExpr
+open Strata.PtrCache
+
+/-- The pointer-address hash cache is a *transparent* optimization: it computes
+    exactly the pure structural hash `hashExpr`, on the nose, for every
+    expression. A one-line corollary of the generic `run'_output_eq` — the cache
+    is functionally indistinguishable from `hashExpr`. -/
+theorem hashExprCached_eq {T : LExprParamsT} [Hashable T.TypeType] (e : LExpr T) :
+    hashExprCached e = hashExpr e :=
+  run'_output_eq (hashExprPtrCache e) PtrCache.empty
+
+/-- The pointer-address `hasBVar` cache is a *transparent* optimization: it
+    computes exactly `hasBVar`, on the nose, for every expression. A one-line
+    corollary of the generic `run'_output_eq`. -/
+theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
+    hasBVarCached e = hasBVar e :=
+  run'_output_eq (hasBVarPtrCache e) PtrCache.empty
+
+end LExpr
 
 end Lambda

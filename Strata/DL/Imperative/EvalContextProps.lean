@@ -7,12 +7,51 @@ module
 
 public import Strata.DL.Imperative.EvalContext
 import all Strata.DL.Imperative.EvalContext
+import Strata.Util.DecidableEqProps
+
+/-!
+## Properties of path-condition contexts
+
+Key results:
+
+- `PathConditionEntry.fastEq_eq` / `PathConditionEntry.fastEq_rfl` — the
+  pointer-accelerated `fastEq` decides structural equality: a `true` result
+  is a proof of equality, and every entry compares equal to itself.
+- `RevPathConditions.consume_prepend` / `consume_addInNewest` /
+  `consume_push` / `consume_pop` / `consume_newest` — `consume` commutes
+  with each `RevPathConditions` operation, relating the reversed-scope
+  representation to plain `PathConditions`.
+-/
 
 namespace Imperative
 
 public section
 
 variable {P : PureExpr}
+
+/-- When `fastEq` returns `true`, the result is a proof of equality. -/
+theorem PathConditionEntry.fastEq_eq
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    {a b : PathConditionEntry P}
+    (h : a.fastEq b = true) : a = b := by
+  cases a <;> cases b <;>
+    simp only [PathConditionEntry.fastEq, Bool.and_eq_true, Bool.false_eq_true] at h
+  case assumption.assumption =>
+    obtain ⟨h1, h2⟩ := h
+    rw [ptrFastEq_eq h1, ptrFastEq_eq h2]
+  case varDecl.varDecl =>
+    obtain ⟨⟨h1, h2⟩, h3⟩ := h
+    rw [ptrFastEq_eq h1, ptrFastEq_eq h2, ptrFastEq_eq h3]
+  case distinct.distinct =>
+    obtain ⟨h1, h2⟩ := h
+    rw [ptrFastEq_eq h1, ptrFastEq_eq h2]
+
+/-- Every path-condition entry compares equal to itself. -/
+theorem PathConditionEntry.fastEq_rfl
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a : PathConditionEntry P) : a.fastEq a = true := by
+  cases a <;>
+    simp only [PathConditionEntry.fastEq, ptrFastEq_self, Bool.and_self]
 
 /-- Prepending an entry then consuming is the same as adding that entry to the
     consumed path conditions. -/

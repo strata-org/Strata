@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.Languages.Core.Program
 
 public section
@@ -77,7 +78,8 @@ structure WFexitProp  (p : Program) (label : String) : Prop where
     1. `FuncWF` requires function parameters (`getName`, `getVarNames`) that add complexity
     2. `FuncWF.concreteEval_argmatch` is not decidable, making it harder to use in proofs
     3. For statement-level WF, only `arg_nodup` is needed; the additional `FuncWF`
-       properties (`body_freevars`, `concreteEval_argmatch`) are for factory functions
+       properties (`concreteEval_argmatch`, etc.) and the `FuncClosed` closedness
+       properties (`body_freevars`) are for factory functions
 
     Note: `WFfuncDeclProp` checks uniqueness of full `CoreIdent` (including visibility),
     while `FuncWF.arg_nodup` checks uniqueness of just the string names. -/
@@ -111,6 +113,14 @@ structure WFPrePostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedu
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
+  /-- A precondition carries no `old `-prefixed free variable. Unlike a
+      postcondition, a precondition is evaluated in the pre-state, where an
+      `old p` reference has no meaning; type checking rejects it because the
+      `old` bindings for inout parameters are only introduced when checking
+      postconditions and the body, not preconditions. This is the pre-state
+      counterpart of `WFPostProp.oldOnlyInout`. -/
+  noOldFvars : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
+    ¬ CoreIdent.isOldIdent id
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
@@ -151,7 +161,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
   bodyExitsCovered : ∀ ss, d.body = .structured ss →
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss
+    Block.exitsCoveredByBlocks [] ss
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

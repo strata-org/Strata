@@ -64,8 +64,6 @@ def verifyOptionsFlags : List Flag := [
     help := "Generate SMT-Lib files but do not invoke the solver." },
   { name := "stop-on-first-error",
     help := "Exit after the first verification error." },
-  { name := "unique-bound-names",
-    help := "Use globally unique names for quantifier-bound variables." },
   { name := "use-array-theory",
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
   { name := "remove-irrelevant-axioms",
@@ -76,6 +74,8 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "checks" },
   { name := "incremental",
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
+  { name := "no-cse",
+    help := "Skip common subexpression elimination on proof obligations." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
@@ -84,15 +84,57 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "N" },
   { name := "set-option",
     help := "Set an SMT solver option verbatim as NAME=VALUE (repeatable), applied after the built-in prelude so it overrides it. Option names are solver-specific (e.g. for z3, `--set-option smt.mbqi=true`). For local experimentation on the local solver invocation.",
-    takesArg := .repeat "NAME=VALUE" }
+    takesArg := .repeat "NAME=VALUE" },
+  { name := "keep-all-files",
+    help := "Store intermediate programs in <dir>.",
+    takesArg := .arg "dir" }
 ]
+
+/-- Derive the base filename used *inside* the `--keep-all-files` directory
+    from the command's input path, so emitted files read as
+    `<dir>/<baseName>.<n>.<phase>.core.st`.
+            ^^^^^^^^ this function returns this part.
+
+    This follows Strata's `<name>.<dialect>.st[.ion]` convention structurally:
+    only when the terminal component (or the last component before a trailing
+    `ion`) is exactly `st` do we treat the name as `.st`-family and drop both
+    the `st` sentinel and the dialect/kind token immediately before it (e.g.
+    `core`, `csimp`, `python`, `laurel`), keeping at least the first component.
+    Examples: `Foo.core.st → Foo`, `Foo.python.st.ion → Foo`, `Foo.st → Foo`,
+    `a.b.core.st → a.b`.
+
+    Anchoring on the *terminal* `st` (rather than the first `st` found from the
+    end) avoids mis-stripping names where `st` appears mid-name, e.g.
+    `Foo.st.txt → Foo` via the fallback rather than dropping `.txt` as a dialect
+    token. When the name is not `.st`-family (e.g. `Foo.py.ion`, `Foo.st.txt`),
+    fall back to the first dotted component; when there is no input file (e.g.
+    stdin) — or the derived base would be empty, as for dot-prefixed inputs like
+    `.st` / `.st.ion` / `..st` — to `"program"`. -/
+def keepAllFilesBaseName : Option String → String
+  | none => "program"
+  | some file =>
+    let name := System.FilePath.fileName file |>.getD file
+    let comps := name.splitOn "."
+    -- Ignore a trailing `ion` wrapper so `<name>.<dialect>.st.ion` is handled
+    -- like `<name>.<dialect>.st`.
+    let comps := if comps.getLast? == some "ion" then comps.dropLast else comps
+    if comps.getLast? == some "st" && comps.length ≥ 2 then
+      -- `.st`-family: drop `st` and the preceding dialect token; keep ≥ 1.
+      let base := ".".intercalate (comps.take (max 1 (comps.length - 2)))
+      if base.isEmpty then "program" else base
+    else
+      comps.headD name
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
     Fields not present in the flags keep their base values.
     Note: boolean flags can only enable a setting; a `true` in the base
-    cannot be turned off from the CLI (there is no `--no-X` syntax). -/
+    cannot be turned off from the CLI (there is no `--no-X` syntax).
+
+    `inputFile` is the command's input path (if any); it is used to derive the
+    per-run base name inside the `--keep-all-files <dir>` directory. -/
 def parseVerifyOptions (pflags : ParsedFlags)
-    (base : VerifyOptions := VerifyOptions.default) : IO VerifyOptions := do
+    (base : VerifyOptions := VerifyOptions.default)
+    (inputFile : Option String := none) : IO VerifyOptions := do
   let checkMode ← parseCheckMode pflags base.checkMode
   let checkLevel ← parseCheckLevel pflags base.checkLevel
   let solverTimeout ← match pflags.getString "solver-timeout" with
@@ -146,6 +188,16 @@ def parseVerifyOptions (pflags : ParsedFlags)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
     exitFailure "--no-solve requires --vc-directory to specify where SMT files are stored."
+  -- `--keep-all-files <dir>`: derive the internal prefix `<dir>/<baseName>` so
+  -- every intermediate file lands inside the directory. Threaded to the
+  -- verifier via `keepAllFilesPrefix` below (single audit point).
+  let keepAllFilesPrefix ← match pflags.getString "keep-all-files" with
+    | none => pure base.keepAllFilesPrefix
+    | some dir =>
+      if dir.isEmpty then
+        exitFailure "--keep-all-files must be a non-empty directory."
+      else
+        pure (some s!"{dir}/{keepAllFilesBaseName inputFile}")
   pure { base with
     verbose := if pflags.getBool "verbose" then .normal
               else if pflags.getBool "quiet" then .quiet
@@ -154,41 +206,30 @@ def parseVerifyOptions (pflags : ParsedFlags)
     solverTimeout,
     checkMode, checkLevel,
     stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
-    uniqueBoundNames := pflags.getBool "unique-bound-names" || base.uniqueBoundNames,
     useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
     removeIrrelevantAxioms,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
+    disableCSE := pflags.getBool "no-cse" || base.disableCSE,
     solverOptions,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
     vcDirectory,
     pathCap,
-    parallelWorkers
+    parallelWorkers,
+    keepAllFilesPrefix
   }
-
-/-- Additional CLI flags for `LaurelVerifyOptions` fields that are not already
-    covered by `verifyOptionsFlags`. -/
-def laurelTranslateFlags : List Flag := [
-  { name := "keep-all-files",
-    help := "Store intermediate Laurel and Core programs in <dir>.",
-    takesArg := .arg "dir" }
-]
-
-/-- All CLI flags accepted by Laurel verify commands. -/
-def laurelVerifyOptionsFlags : List Flag := verifyOptionsFlags ++ laurelTranslateFlags
 
 /-- Build a `LaurelVerifyOptions` from parsed CLI flags. -/
 def parseLaurelVerifyOptions (pflags : ParsedFlags)
-    (base : LaurelVerifyOptions := default) : IO LaurelVerifyOptions := do
-  let verifyOptions ← parseVerifyOptions pflags base.verifyOptions
-  let keepAllFilesPrefix := (pflags.getString "keep-all-files").orElse
-    (fun _ => base.translateOptions.keepAllFilesPrefix)
+    (base : LaurelVerifyOptions := default)
+    (inputFile : Option String := none) : IO LaurelVerifyOptions := do
+  let verifyOptions ← parseVerifyOptions pflags base.verifyOptions (inputFile := inputFile)
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with
-      keepAllFilesPrefix
+      keepAllFilesPrefix := verifyOptions.keepAllFilesPrefix
       overflowChecks := verifyOptions.overflowChecks
       enumeratedModifiesClauses := verifyOptions.useArrayTheory }
   return { translateOptions, verifyOptions }

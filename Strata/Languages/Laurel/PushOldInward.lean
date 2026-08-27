@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelPass
@@ -38,7 +39,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
       return ⟨.Old expr, expr.source⟩
     else
       return expr
-  | .Old inner =>
+  | .Old inner _ =>
     -- Nested `old` is redundant; `Resolution` warns. Here we just drop it.
     return inner
   | _ => return expr
@@ -46,7 +47,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
 @[expose]
 def visitOld (expr : StmtExprMd) : PushOldM (Option StmtExprMd) := do
   match expr.val with
-  | .Old inner =>
+  | .Old inner _ =>
     let (inner', _changed) ← (mapStmtExprM insideOld inner).run false
     return some inner'
   | _ => return none
@@ -56,28 +57,33 @@ def pushOldInwardExpr (expr : StmtExprMd) : PushOldM StmtExprMd :=
   mapStmtExprPrePostM visitOld pure expr
 
 @[expose]
-def procInoutNames (proc : Procedure) : List String :=
-  proc.inputs.filterMap fun inp =>
-    if proc.outputs.any (·.name == inp.name) then some inp.name.text else none
+def procInoutNames (proc : Procedure) : Except String (List String) :=
+  proc.inputs.foldlM (init := []) fun result inp => do
+    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
+    pure (if isInout then result ++ [inp.name.text] else result)
 
 @[expose]
-def transformProcedurePushOld (proc : Procedure) : PushOldM Procedure := do
-  modify fun s => { s with inoutNames := procInoutNames proc }
+def transformProcedurePushOld (proc : Procedure) (inoutNames : List String) : PushOldM Procedure := do
+  modify fun s => { s with inoutNames := inoutNames }
   mapProcedureM pushOldInwardExpr proc
 
 /-- Push every `StmtExpr.Old` inward until it immediately wraps an inout
     variable. (No-op `old` usage is diagnosed by `Resolution`.) -/
-def pushOldInward (program : Program) : Program :=
-  let (program', _finalState) :=
-    (program.staticProcedures.mapM transformProcedurePushOld).run {}
-  { program with staticProcedures := program' }
+def pushOldInward (program : Program) : Except String Program := do
+  let procsResult ← program.staticProcedures.foldlM (init := ([], ({}  : PushOldState))) fun (procs, state) proc => do
+    let inoutNames ← procInoutNames proc
+    let (proc', state') := (transformProcedurePushOld proc inoutNames).run state
+    pure (procs ++ [proc'], state')
+  pure { program with staticProcedures := procsResult.1 }
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def pushOldInwardPass : LoweringPass where
-  name := "pushOldInward"
+  name := "PushOldInward"
   documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. No-op `old(...)` usage is diagnosed by Resolution."
   run := fun _ p _ =>
-    (pushOldInward p, [], {})
+    match pushOldInward p with
+    | .ok p' => (p', [], {})
+    | .error e => (p, [Message.fromString e .strataBug], {})
 
 end -- public section
 end Laurel

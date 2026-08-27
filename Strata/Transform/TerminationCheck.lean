@@ -4,10 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
 import Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.FactoryProps
 import Strata.Util.Tactics
 
 /-! # Termination Checking for Recursive Functions
@@ -31,7 +33,7 @@ namespace Core
 namespace TermCheck
 
 open Lambda
-open Strata (DiagnosticModel FileRange)
+open Strata (Message FileRange)
 open Strata.DL.Util (FuncAttr)
 open Core.Transform
 
@@ -123,7 +125,7 @@ private def extractTermObligations
     (recFuncNames : List String)
     (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
     : Except String (List Expression.Expr) :=
-  go body []
+  go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
   go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
       : Except String (List Expression.Expr) :=
@@ -175,13 +177,13 @@ where
 private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
   match concreteTy with
   | .tcons adtName concreteArgs =>
-    if concreteArgs.isEmpty then []
+    if concreteArgs.isEmpty then Subst.empty
     else match tf.getType adtName with
       | some dt =>
-        if dt.typeArgs.length != concreteArgs.length then []
-        else [dt.typeArgs.zip concreteArgs]
-      | none => []
-  | _ => [] -- unreachable: termCheck Step 1 rejects non-.tcons types
+        if dt.typeArgs.length != concreteArgs.length then Subst.empty
+        else Strata.Util.HMaps.ofScopes [dt.typeArgs.zip concreteArgs]
+      | none => Subst.empty
+  | _ => Subst.empty -- unreachable: termCheck Step 1 rejects non-.tcons types
 
 /-- Compute the call-site measure expression. For structural, wraps the
     decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/
@@ -317,7 +319,7 @@ private def mkAdtRankDecls
   | none => ⟨[], []⟩
   | some block =>
     { namedDecls := block.map fun dt =>
-        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md)
+        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt).toFunc md)
       axioms := block.flatMap fun dt =>
         let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
         axioms.mapIdx fun i ax =>
@@ -326,11 +328,8 @@ private def mkAdtRankDecls
 /-- Main transformation: iterate over declarations, generating adtRank axioms
     and termination-checking procedures for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
-  match (← get).factory with
-  | .none => return (false, p)
-  | .some _ =>
-    let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
-    return (changed, { decls := newDecls })
+  let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+  return (changed, { decls := newDecls })
 where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)
@@ -347,16 +346,19 @@ where
       | .recFuncBlock funcs md => do
         let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
         let throwErr (msg : String) : CoreTransformM Unit :=
-          throw (DiagnosticModel.withRange fileRange msg)
-        -- Step 1: Validate measures and determine DecreasesKind for each function.
-        -- Skip polymorphic functions: adtRank axioms are monomorphic.
+          throw (Message.withRange fileRange msg)
+        -- Step 1: Validate measures and determine DecreasesKind for every
+        -- function in the block, polymorphic ones included; downstream passes
+        -- specialize and check them at their ground instantiations.  Including
+        -- poly members here also keeps `funcKindMap` complete, so a monomorphic
+        -- member's recursive call to a polymorphic sibling still gets its
+        -- decrease obligation.
         let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []
         for func in funcs do
-          if func.typeArgs.isEmpty then
-            match getDecreasesKind func tf with
-            | .error msg => throwErr msg
-            | .ok kind =>
-              funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
+          match getDecreasesKind func tf with
+          | .error msg => throwErr msg
+          | .ok kind =>
+            funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
         let funcKindMap := funcKindList.reverse
         -- Reject mutual blocks that mix structural and int-valued measures.
         let hasStructural := funcKindMap.any fun (_, k, _, _) => match k with
@@ -413,7 +415,17 @@ where
       | .type (.data block) _md => do
         tf := tf.push block
         acc := acc.push d
-      | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
+      | .proc proc _ => do
+        -- A CFG body is not walked here, and the recursive calls inside one
+        -- would go unchecked. `noCFGBodies` is declared as a requirement; this
+        -- is where it is enforced.
+        match proc.body with
+        | .cfg _ =>
+          throw (Strata.Message.fromFormat
+            f!"❌ TerminationCheck: procedure {proc.header.name.name} has a CFG body; \
+               termination is only checked on structured bodies.")
+        | .structured _ => acc := acc.push d
+      | .func _ _ | .ax _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
         acc := acc.push d
       remaining := rest
@@ -425,8 +437,19 @@ end TermCheck
     recursive functions. Model-preserving because it only adds new
     assertions and procedures. -/
 def termCheckPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "TermCheck" fun prog => do
-    TermCheck.termCheck prog
+  -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
+  -- substituting the call's arguments, and a function-typed parameter applied to
+  -- an abstraction argument leaves a redex behind. `noPolymorphicProcedures` is
+  -- not claimed either: the procedures this adds inherit the checked function's
+  -- type arguments.
+  modelPreservingPipelinePhase "termCheck"
+    (requires := factSet![.noCFGBodies])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noInternalFuncDecl, .noPolymorphicFunctions])
+    fun prog => do
+      TermCheck.termCheck prog
 
 end Core
 
