@@ -114,8 +114,6 @@ private def translateFromTermType (t:SMT.TermType):
         (.iden_indexed smtProv
           (mkSymbol "BitVec")
           (smtAnn #[idx])))
-    | .trigger =>
-      throw "don't know how to translate a trigger type"
     | _ =>
       let res:String ← match tp with
           | .bool => .ok "Bool"
@@ -251,37 +249,23 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
     else
       let body <- translateFromTerm body
 
-      -- Handle triggers/patterns
+      -- Handle triggers/patterns: each inner list is one `:pattern` group.
       let bodyWithPattern <-
-        match tr with
-        | .app .triggers triggerTerms .trigger =>
-          if triggerTerms.isEmpty then
-            -- No patterns - return body as-is
-            pure body
-          else
-            -- Extract trigger groups. The Encoder builds:
-            --   .app .triggers [.app .triggers group₁ .trigger, .app .triggers group₂ .trigger, ...] .trigger
-            -- Each inner .app .triggers represents one :pattern group.
-            -- If a trigger term is NOT .app .triggers, treat it as a single-term group.
-            let mut patternAttrs : Array (SMTDDM.Attribute Provenance) := #[]
-            for trigTerm in triggerTerms do
-              let sexprs ← match trigTerm with
-                | .app .triggers its _ => do
-                  let ddmTerms ← its.mapM translateFromTerm
-                  ddmTerms.mapM termToSExpr
-                | other => do
-                  let ddmTerm ← translateFromTerm other
-                  pure [← termToSExpr ddmTerm]
-              let attr : SMTDDM.Attribute Provenance :=
-                .att_kw smtProv
-                  (.kw_symbol smtProv (mkSimpleSymbol "pattern"))
-                  (smtAnn (some (.av_sel smtProv (smtAnn sexprs.toArray))))
-              patternAttrs := patternAttrs.push attr
-            -- Wrap body with bang operator and pattern attributes
-            pure (.bang smtProv body (smtAnn patternAttrs))
-        | _ =>
-          -- Unexpected trigger format - return body as-is
+        if tr.isEmpty then
+          -- No patterns - return body as-is
           pure body
+        else do
+          let mut patternAttrs : Array (SMTDDM.Attribute Provenance) := #[]
+          for group in tr do
+            let ddmTerms ← group.mapM translateFromTerm
+            let sexprs ← ddmTerms.mapM termToSExpr
+            let attr : SMTDDM.Attribute Provenance :=
+              .att_kw smtProv
+                (.kw_symbol smtProv (mkSimpleSymbol "pattern"))
+                (smtAnn (some (.av_sel smtProv (smtAnn sexprs.toArray))))
+            patternAttrs := patternAttrs.push attr
+          -- Wrap body with bang operator and pattern attributes
+          pure (.bang smtProv body (smtAnn patternAttrs))
 
       match qkind with
       | .all =>

@@ -121,7 +121,7 @@ instance TermType.denoteTyped.instInhabited
 theorem Term.denoteTyped_quant_eq
     {ctx : TypedContext} (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
     (divByZero modByZero : Int → Int)
-    (qk : Strata.SMT.QuantifierKind) (vs : List TermVar) (tr body : Term)
+    (qk : Strata.SMT.QuantifierKind) (vs : List TermVar) (tr : List (List Term)) (body : Term)
     (h : Term.typeCheck ctx (.quant qk vs tr body) = .ok .bool)
     (hbody : Term.typeCheck { ctx with Γ := vs.reverse ++ ctx.Γ } body = .ok .bool) :
     Term.denoteTyped ufInterp env divByZero modByZero (.quant qk vs tr body) .bool h
@@ -142,7 +142,7 @@ theorem Term.denoteTyped_quant_eq
 /-- `.all`-binder denotes `true` iff the body denotes `true` under every extension. -/
 theorem Term.denoteTyped_forall_eq_true
     {ctx : TypedContext} (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
-    (divByZero modByZero : Int → Int) (vs : List TermVar) (tr body : Term)
+    (divByZero modByZero : Int → Int) (vs : List TermVar) (tr : List (List Term)) (body : Term)
     (h : Term.typeCheck ctx (.quant .all vs tr body) = .ok .bool)
     (hbody : Term.typeCheck { ctx with Γ := vs.reverse ++ ctx.Γ } body = .ok .bool) :
     (Term.denoteTyped ufInterp env divByZero modByZero (.quant .all vs tr body) .bool h = true)
@@ -156,7 +156,7 @@ theorem Term.denoteTyped_forall_eq_true
 /-- `.exist`-binder denotes `true` iff the body denotes `true` under some extension. -/
 theorem Term.denoteTyped_exists_eq_true
     {ctx : TypedContext} (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
-    (divByZero modByZero : Int → Int) (vs : List TermVar) (tr body : Term)
+    (divByZero modByZero : Int → Int) (vs : List TermVar) (tr : List (List Term)) (body : Term)
     (h : Term.typeCheck ctx (.quant .exist vs tr body) = .ok .bool)
     (hbody : Term.typeCheck { ctx with Γ := vs.reverse ++ ctx.Γ } body = .ok .bool) :
     (Term.denoteTyped ufInterp env divByZero modByZero (.quant .exist vs tr body) .bool h = true)

@@ -66,14 +66,14 @@ structure TypedContext where
   Γ : TermVarCtx
 
 /-- Whether a `TermType` is a denotable primitive base sort — `bool`/`int`/`string`/`bitvec`.
-    `real`/`regex`/`trigger` and the compound sorts are excluded for now. -/
+    `real`/`regex` and the compound sorts are excluded for now. -/
 def TermType.isBase : TermType → Bool
   | .prim .bool | .prim .int | .prim .string | .prim (.bitvec _) => true
   | _ => false
 
 mutual
 /-- Well-formedness of `TermType` w.r.t. `USCtx`. A primitive sort is well-formed only when it is a
-    denotable base sort (`isBase`), so `real`/`regex`/`trigger` cannot enter the type-checked fragment
+    denotable base sort (`isBase`), so `real`/`regex` cannot enter the type-checked fragment
     through the `option`/`array`/variable/UF sort positions — matching their rejection as primitive
     literals. -/
 def TermType.WFSort (uss : USCtx) : TermType → Bool
@@ -211,11 +211,11 @@ def Term.typeCheckAll (ctx : TypedContext) : List Term → Bool
   | [] => true
   | t :: ts => (typeCheck ctx t).toOption.isSome && typeCheckAll ctx ts
 
-/-- Well-formedness of a quantifier trigger: a `triggers` group is well-formed when each of its patterns
-    type-checks (to some type); any other form (e.g. a bound-variable placeholder) is accepted directly. -/
-def Term.wfTriggers (ctx : TypedContext) : Term → Bool
-  | .app .triggers ts _ => typeCheckAll ctx ts
-  | _ => true
+/-- Well-formedness of a quantifier's triggers: every pattern in every group must type-check (to some
+    type). An empty trigger list (no patterns) is trivially well-formed. -/
+def Term.wfTriggers (ctx : TypedContext) : List (List Term) → Bool
+  | [] => true
+  | group :: rest => typeCheckAll ctx group && wfTriggers ctx rest
 end
 
 /- ═══════════════════════════════════════════════════════════════════════════
@@ -373,7 +373,11 @@ private def Term.typeCheck_intCmp_inv {ctx : TypedContext} {op : Op.Num}
     (simp only [Term.typeCheck, bind, Except.bind] at h
      split at h <;> (try split at h) <;> (try split at h) <;> simp_all)
 
-private def Term.typeCheck_quant_inv {ctx : TypedContext} {tr : Term}
+/-- Inversion for a well-typed quantifier: when `.quant k vs tr body` type-checks to `τ`, the body
+    type-checks to `.bool` in the binder-extended context (`vs.reverse ++ ctx.Γ`), and the overall
+    result type is `.bool`. The bound-sort well-formedness and trigger-well-formedness guards inside
+    `Term.typeCheck`'s `.quant` case are elided; only the body/return facts survive. -/
+private def Term.typeCheck_quant_inv {ctx : TypedContext} {tr : List (List Term)}
     {k : Strata.SMT.QuantifierKind} {vs : List TermVar} {body : Term} {τ : TermType}
     (h : Term.typeCheck ctx (.quant k vs tr body) = .ok τ) :
     Term.typeCheck { ctx with Γ := vs.reverse ++ ctx.Γ } body = .ok .bool ∧ τ = .bool := by

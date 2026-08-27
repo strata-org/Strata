@@ -107,15 +107,6 @@ def ite (t₁ t₂ t₃ : Term) : Term :=
   | _, _ =>
     .app .ite [t₁, t₂, t₃] t₂.typeOf
 
-def addTrigger : Term → Term → Term
-| t, .app .triggers ts .trigger =>  .app .triggers (t :: ts) .trigger
-| t, _ => t
-
-def addTriggerList (args : List Term) (ty : TermType) : Term  :=
-  match args with
-  | [t, ts] => addTrigger t ts
-  | _ => .app .triggers args ty
-
 /-
 Returns the result of applying function to a list of terms.
 
@@ -125,32 +116,20 @@ Returns the result of applying function to a list of terms.
 def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
-def isSimpleTrigger : Term → Bool
-| .var _ => true
-| .app .triggers [] .trigger => true
-| .app .triggers [t] .trigger => isSimpleTrigger t
-| _ => false
-
-def mkSimpleTrigger (x : String) (ty : TermType) : Term :=
-  .app .triggers [.var (TermVar.mk x ty)] .trigger -- TODO: empty list instead?
-
-theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
-  simp [isSimpleTrigger, mkSimpleTrigger]
+/-- A trigger is "simple" (carries no meaningful pattern) when it has no groups. -/
+def isSimpleTrigger (tr : List (List Term)) : Bool := tr.isEmpty
 
 -- Coalesces nested same-kind quantifiers, since SMT-Lib binds multiple variables at once.
 -- Correctness: `Factory.quant_correct`
-def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
+def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : List (List Term)) (e : Term) : Term :=
   -- Check if we can coalesce with a nested quantifier
   match e with
   | .quant qk2 args2 tr2 e2 =>
     -- Coalesce if:
     -- 1. Same quantifier kind
-    -- 2. Outer trigger is just a bound variable (indicating no meaningful trigger)
+    -- 2. Outer trigger is empty (indicating no meaningful trigger)
     if qk = qk2 && isSimpleTrigger tr then
-      -- If both triggers are simple, use the first variable as trigger
-      -- Otherwise use the inner trigger (which is more meaningful)
-      let coalescedTrigger := if isSimpleTrigger tr2 then (mkSimpleTrigger x ty) else tr2
-      .quant qk ([⟨x, ty⟩] ++ args2) coalescedTrigger e2
+      .quant qk ([⟨x, ty⟩] ++ args2) tr2 e2
     else
       .quant qk [⟨x, ty⟩] tr e
   | _ =>

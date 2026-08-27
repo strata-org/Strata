@@ -188,8 +188,6 @@ inductive Op : Type where
   | str : Op.Strings → Op
   -- SMTLib theory of arrays (`ArraysEx`)
   | arr : Op.Arrays → Op
-  -- An operator to group triggers together
-  | triggers
   -- Core ADT operators with a trusted mapping to SMT
   | option_get
   -- Datatype ops (for user-defined algebraic datatypes)
@@ -320,7 +318,6 @@ def Op.mkName : Op → String
   | .ubv_to_int    => "ubv_to_int"
   | .sbv_to_int    => "sbv_to_int"
   | .int_to_bv _   => "int_to_bv"
-  | .triggers      => "triggers"
   | .option_get    => "option.get"
   | .datatype_op .tester name => s!"is-{name}"
   | .datatype_op _ name => name
