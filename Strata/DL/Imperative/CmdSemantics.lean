@@ -87,6 +87,9 @@ structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 structure WellFormedSemanticEvalInt {P : PureExpr}
     [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P]
     (f : P.Factory) : Prop where
+  /-- Comparing two evaluated integer numerals with `<` reduces to a Boolean
+      value: the result is either `tt` or `ff`, never a stuck or non-Boolean
+      expression. -/
   ltReduces : ∀ σ x y nx ny,
     P.eval f σ x = some nx → HasInt.isNumeral nx = Bool.true →
     P.eval f σ y = some ny → HasInt.isNumeral ny = Bool.true →
