@@ -140,21 +140,23 @@ def run (p : Program) : CoreTransformM Program := do
   let out ← p.decls.foldlM (init := (#[] : Array Decl)) fun acc decl => do
     match decl with
     | .proc proc md =>
-      -- Checked for every procedure, not only the polymorphic ones the
-      -- substitution reaches.
-      match proc.body with
-      | .cfg _ =>
-        throw (Strata.Message.fromFormat
-          f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} has a CFG \
-             body; monomorphization only handles structured bodies.")
-      | .structured ss =>
-        if !(Statements.noCalls ss) then
+      if proc.header.typeArgs.isEmpty then
+        -- Already monomorphic: no substitution needed, skip structural checks.
+        pure (acc.push decl)
+      else
+        match proc.body with
+        | .cfg _ =>
           throw (Strata.Message.fromFormat
-            f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} still \
-               contains a call; eliminate calls before monomorphizing.")
-        else
-          let contrib ← monomorphizeProc proc md
-          pure (acc ++ contrib.toArray)
+            f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} has a CFG \
+               body; monomorphization only handles structured bodies.")
+        | .structured ss =>
+          if !(Statements.noCalls ss) then
+            throw (Strata.Message.fromFormat
+              f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} still \
+                 contains a call; eliminate calls before monomorphizing.")
+          else
+            let contrib ← monomorphizeProc proc md
+            pure (acc ++ contrib.toArray)
     | _ => pure (acc.push decl)
   return { decls := out.toList }
 

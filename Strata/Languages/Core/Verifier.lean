@@ -1583,6 +1583,28 @@ def corePipelinePhases (procs : Option (List String) := none)
         symbolicEvalPipelinePhase options moreFns]
     ++ [betaReducePipelinePhase] ++ csePhases
 
+/-- Pipeline phases for `genVCs` in `MetaVerifier` — the meta-verifier path used by
+    the `gen_smt_vcs` tactic.
+
+    This is a subset of `corePipelinePhases` that omits the preprocessing from
+    `transformPipelinePhases` (call elimination, precondition lifting, etc.) because
+    programs arriving via the Boole→Core translation are already free of those
+    constructs.  The phase order matches `corePipelinePhases` exactly; any future
+    reordering there should be reflected here.
+
+    Note: `symbolicEvalPipelinePhase` is intentionally omitted because `genVCs`
+    needs the pre-symbolic-evaluation program for `buildEnv` and calls
+    `Core.toCoreProofObligationProgram` directly after this phase list. -/
+def genVCsPipelinePhases (options : VerifyOptions := .default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
+  [insertLoopInvariantAssertsPipelinePhase,
+   loopElimPipelinePhase,
+   monomorphizeProceduresPipelinePhase,
+   typeCheckPipelinePhase options typeCheckFactory,
+   monomorphizeFunctionsPipelinePhase,
+   nondetElimPipelinePhase]
+
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is
     rejected the same way as one whose phases do not fit.

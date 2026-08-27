@@ -5,11 +5,6 @@
 -/
 module
 
-import Strata.Transform.LoopElim
-import Strata.Transform.InsertLoopInvariantAsserts
-import Strata.Transform.MonomorphizeFunctions
-import Strata.Transform.MonomorphizeProcedures
-import Strata.Transform.NondetElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
@@ -78,47 +73,27 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  -- Pre-typecheck transforms. `monomorphizeProcedures` matches `corePipelinePhases`
-  -- which runs it before `typeCheck`. The factory must be seeded with `Core.Factory`
-  -- so that `monomorphizeFunctions` (below) can look up built-in polymorphic functions.
-  let preTransform : Transform.CoreTransformM (Bool × Program) := do
-    let (_, p₁) ← insertLoopInvariantAsserts program
-    let (_, p₂) ← loopElim p₁
-    -- nondetElim must run before symbolic evaluation, which rejects surviving
-    -- nondeterministic guards.
-    let (_, p₃) ← nondetElim p₂
-    -- monomorphizeProcedures requires that call elimination has run (no calls
-    -- in procedure bodies). Skip it for programs with no polymorphic procedures,
-    -- since it would be a no-op and the noCalls precondition may not hold here.
-    if p₃.noPolymorphicProcedures then
-      pure (false, p₃)
-    else
-      monomorphizeProcedures p₃
+  -- Run the shared genVCsPipelinePhases (a subset of corePipelinePhases).
+  -- The factory is seeded with Core.Factory so monomorphizeFunctions can look
+  -- up built-in polymorphic functions.
   let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
-  let (preRes, preState) := StateT.run (ExceptT.run preTransform) initState
-  let (_, preProgram) ← preRes.toOption
-  match Core.typeCheck options preProgram with
+  let (monoProgram, monoState) ←
+    runPhasesOpt program (genVCsPipelinePhases options) initState
+  -- symbolicEval (toCoreProofObligationProgram) runs separately so we can keep
+  -- monoProgram for buildEnv, which needs the pre-symbolic-evaluation program.
+  match Core.toCoreProofObligationProgram options monoProgram with
   | .error _ => none
-  | .ok tcProgram =>
-    -- `monomorphizeFunctions` must run after `typeCheck`: it needs the type
-    -- annotations on call sites to determine what concrete instantiations to
-    -- generate. Running it before typeCheck would make it a no-op.
-    let (monoRes, monoState) :=
-      StateT.run (ExceptT.run (monomorphizeFunctions tcProgram)) preState
-    let (_, monoProgram) ← monoRes.toOption
-    match Core.toCoreProofObligationProgram options monoProgram with
+  | .ok (oblProgram, _stats) =>
+    match Core.ObligationExtraction.extractObligations oblProgram with
     | .error _ => none
-    | .ok (oblProgram, _stats) =>
-      match Core.ObligationExtraction.extractObligations oblProgram with
-      | .error _ => none
-      | .ok obligations =>
-        let E := match Core.buildEnv options monoProgram monoState.factory with
-          | .ok (initE, _) =>
-            match Program.eval initE with
-            | .ok (pEs, _) => pEs.head?.getD initE
-            | .error _ => initE
-          | .error _ => Env.init (empty_factory := true)
-        return obligations.toList.map (fun ob => (E, ob))
+    | .ok obligations =>
+      let E := match Core.buildEnv options monoProgram monoState.factory with
+        | .ok (initE, _) =>
+          match Program.eval initE with
+          | .ok (pEs, _) => pEs.head?.getD initE
+          | .error _ => initE
+        | .error _ => Env.init (empty_factory := true)
+      return obligations.toList.map (fun ob => (E, ob))
 
 end Core
 
