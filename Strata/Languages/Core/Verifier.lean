@@ -1296,9 +1296,11 @@ def VCResult.isUnknown (vr : VCResult) : Bool :=
   | .ok o => o.isUnknown
   | .error _ => false
 
--- Weaker gate for requeryDropAxioms: triggers when validity is unknown regardless
--- of satisfiability. Nat VCs land in satisfiableValidityUnknown (sat + unknown_validity)
--- so VCResult.isUnknown (which requires both unknown) misses them.
+/-- Weaker gate than `VCResult.isUnknown`: triggers when the *validity* component is
+    unknown, regardless of satisfiability.  Used by `requeryDropAxioms` because nat
+    VCs with bridge axioms land in `satisfiableValidityUnknown` (sat + unknown
+    validity), which `VCResult.isUnknown` — requiring both components unknown — does
+    not catch. -/
 def VCResult.hasValidityUnknown (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => match o.validityProperty with | .unknown _ => true | _ => false

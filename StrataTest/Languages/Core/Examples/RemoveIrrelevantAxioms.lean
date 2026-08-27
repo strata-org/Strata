@@ -126,6 +126,8 @@ Result: ✅ pass
 Obligation: a3
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a4
 Property: assert
@@ -192,6 +194,8 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -200,42 +204,62 @@ Result: ✅ pass
 Obligation: a3
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a4
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❓ unknown
+Model:
+(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 -/
 #guard_msgs in
-#eval Core.verify irrelevantAxiomsTestPgm
+#eval do
+  let results ← Core.verify irrelevantAxiomsTestPgm
         (options := {Core.VerifyOptions.models with removeIrrelevantAxioms := .Off})
+  IO.println (normalizeModelValues (toString results))
 
 end Strata
 end
