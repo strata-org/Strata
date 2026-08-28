@@ -881,14 +881,29 @@ transitive closure.
 ## Program-wide Semantics
 
 The per-component semantics above are linked to program-wide specifications via
-two key definitions in
-[`Specification.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/Specification.lean):
+two key definitions:
 
-- `Hoare.Triple`: a partial-correctness triple `{Pre} s {Post}` stating that
+- `Strata.Logic.Hoare.Triple`, in
+  [`Logic/HoareTemplate.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/HoareTemplate.lean):
+  a partial-correctness triple `{Pre} s {Post}` stating that
   if `Pre` holds on entry and the statement terminates, the postcondition holds
-  and no assertion has failed.
-- `AllAssertsValid`: universally quantifies over all assertion sites in a
+  and no assertion has failed.  It is stated over the abstract `Lang P` bundle of
+  [`Logic/LangDef.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/LangDef.lean).
+  The same module holds the Imperative structural rules (`seq_append`, `ite`,
+  `while_rule`, …) in `Imperative.Logic.Hoare`, each stated at an arbitrary
+  initial-environment well-formedness condition.
+- `AllAssertsValid`, in
+  [`Specification.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/Specification.lean):
+  universally quantifies over all assertion sites in a
   statement, requiring each to hold on every reachable path.
 
-The two are shown equivalent by `hoareTriple_implies_assertValid` and
-`allAssertsValid_implies_hoareTriple`.
+The two are shown equivalent in
+[`SpecHoareConnection.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/SpecHoareConnection.lean)
+by `hoareTriple_implies_assertValid` and `allAssertsValid_implies_hoareTriple`.
+
+Core instantiates the rules in
+[`Core/Logic/Hoare.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/Hoare.lean),
+at its own `InitEnvWF`/`BlockInitEnvWF`, and shows that nothing beyond those is
+needed: no `WFFactoryExtension` hypothesis on the factory extension and no assumption
+about the procedure environment, only a syntactic `noFuncDecl` on the sub-statement a
+rule runs.

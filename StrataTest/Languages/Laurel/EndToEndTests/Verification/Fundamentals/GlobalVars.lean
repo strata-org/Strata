@@ -589,7 +589,7 @@ program Laurel;
 composite GlobalCell {
   var value: int
 }
-var globalCell: GlobalCell := new GlobalCell
+var globalCell: GlobalCell := <??>
 procedure setGlobalField()
   opaque
   ensures globalCell#value == 11
@@ -790,7 +790,7 @@ program Laurel;
 composite Counter {
   var value: int
 }
-var counter: Counter := new Counter
+var counter: Counter := <??>
 procedure bumpField()
   opaque
   ensures counter#value == old(counter#value) + 1
@@ -851,5 +851,71 @@ procedure readsOnly(c: Cell)
   modifies c
 {
   c#value := 1
+};
+#end
+
+/-! ## `new` in a global's initializer is rejected
+
+Allocation is a statement, not an expression: `new C` expands into a block that
+reads `Heap..nextReference!($heap)` and then assigns `$heap := increment($heap)`. A
+file-scope initializer has no statement position to sequence that in and no `$heap`
+to sequence it against -- the initializer only reaches one when the globals pass
+emits it into an entry procedure's prologue, which happens after `new` is lowered.
+
+Diagnosed rather than left alone because the failure is otherwise silent: the type
+flattening at the end of the type-hierarchy pass rewrites the field's declared type
+to `Composite` while the initializer still says `new C`, and nothing objects until
+something re-resolves the program.
+
+The initializer is optional, so a composite-valued global is still declarable as
+`var cell: DiagCell` -- an arbitrary reference, which is what a verification root
+quantifies over anyway (see the composite-valued global cases above). -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite DiagCell {
+  var value: int
+}
+var diagCell: DiagCell := new DiagCell
+//                        ^^^^^^^^^^^^ error: the initializer of file-scope global 'diagCell' must be effect-free (no assignments or declarations, no allocation with 'new', and no calls to heap-reading or heap-writing procedures)
+procedure readsIt()
+  opaque
+{
+  assert diagCell#value == diagCell#value
+};
+#end
+
+/-! ## An entry procedure may use the heap
+
+An `entry` procedure receives its globals as body locals rather than parameters. That
+is a problem only for the heap, which is the one global arriving with generated contract
+clauses attached: `ModifiesClauses` and `HeapParameterization` produce two-state clauses
+naming `$heap` (a frame over `readField(old($heap), …) == readField($heap, …)`, and a
+monotonic-pointer `free ensures`), and `ContractPass` extracts every condition into a
+helper procedure parameterized by the signature, which a body local can never reach.
+
+`HeapParameterization` therefore skips those clauses for an entry procedure, and
+Resolution requires a heap-touching one to declare `modifies *` -- the wildcard is what
+stops `ModifiesClauses` building a frame. Without that, the clauses referred to nothing:
+`Resolution failed: '$heap' is not defined`, reported as an internal error.
+
+`e` below is the shape that exercises it: an entry procedure that allocates (which is
+itself a heap write, see `HeapAnalysis`) and then reads back what it wrote. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite EntryHeapCell { var v: int }
+procedure e()
+  entry
+  opaque
+  modifies *
+{
+  var c: EntryHeapCell := new EntryHeapCell;
+  c#v := 1;
+  assert c#v == 1
 };
 #end

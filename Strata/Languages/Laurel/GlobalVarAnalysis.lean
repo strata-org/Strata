@@ -85,13 +85,32 @@ private def collectGlobalExprMd (model : SemanticModel) (globals : Std.HashSet N
     (expr : StmtExprMd) : GlobalAnalysisM Unit :=
   foldStmtExprM (collectGlobalNode model globals) expr
 
-/-- Collect effects from every expression-bearing part of a procedure. -/
+/-- Record a *declared* global effect (`reads`/`writes` on an opaque spec).
+
+A procedure with no implementation has no statement from which to infer its global
+effects, so the declaration is the only evidence — the role `modifies` plays for
+the heap. A declared write also counts as a read: a written global is threaded as
+an inout, so it is an input too. -/
+private def collectDeclaredGlobals (globals : Std.HashSet Nat)
+    (readsGlobals writesGlobals : List Identifier) : GlobalAnalysisM Unit := do
+  let record (record : Nat → GlobalAnalysisM Unit) (name : Identifier) : GlobalAnalysisM Unit :=
+    match name.uniqueId with
+    | some id => if globals.contains id then record id else pure ()
+    | none => pure ()
+  readsGlobals.forM (record recordGlobalRead)
+  writesGlobals.forM (record recordGlobalReadWrite)
+
+/-- Collect effects from every expression-bearing part of a procedure, plus any
+    global effects it *declares* (see `collectDeclaredGlobals`). -/
 private def analyzeProcGlobals (model : SemanticModel) (globals : Std.HashSet Nat)
     (proc : Procedure) : GlobalAnalysisResult :=
   let collect (expr : StmtExprMd) : StateM GlobalAnalysisResult StmtExprMd := do
     collectGlobalExprMd model globals expr
     return expr
-  (mapProcedureM collect proc |>.run {}).2
+  let action : StateM GlobalAnalysisResult Unit := do
+    let _ ← mapProcedureM collect proc
+    collectDeclaredGlobals globals proc.readsGlobals proc.writesGlobals
+  (action.run {}).2
 
 private def analyzeAllProcs (model : SemanticModel) (globals : Std.HashSet Nat)
     (procs : List Procedure) : List (Procedure × GlobalAnalysisResult) :=

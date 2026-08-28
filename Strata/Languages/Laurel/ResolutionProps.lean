@@ -713,6 +713,12 @@ theorem resolveProcedure_clean (proc : Procedure) :
     refine postM_bind (resolveExceptionalContract_clean masterSynth masterCheck proc)
       fun exceptional hexc => ?_
     obtain ⟨throwsType', throwsBinding', throwsOn'⟩ := exceptional
+    -- `readsGlobals`/`writesGlobals` are resolved in two binds of their own,
+    -- after the exceptional contract and just before the record is assembled.
+    -- They are `List Identifier`: resolving one renames a declared global but
+    -- yields no expression, so neither adds a component to `CleanProcFields`.
+    refine postM_bind_any fun _ => ?_
+    refine postM_bind_any fun _ => ?_
     exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
 
 /-! Bridge: `CleanProcFields proc` implies the validator's per-procedure walk
@@ -932,6 +938,12 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
   refine postM_bind (resolveExceptionalContract_clean masterSynth masterCheck proc)
     fun exceptional hexc => ?_
   obtain ⟨throwsType', throwsBinding', throwsOn'⟩ := exceptional
+  -- `readsGlobals`/`writesGlobals` are resolved in two binds of their own,
+  -- after the exceptional contract and just before the record is assembled.
+  -- They are `List Identifier`: resolving one renames a declared global but
+  -- yields no expression, so neither adds a component to `CleanProcFields`.
+  refine postM_bind_any fun _ => ?_
+  refine postM_bind_any fun _ => ?_
   exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
 
 /-- Cleanliness of a resolved type definition, matching what the validator walks. -/

@@ -25,7 +25,25 @@ import Std.Tactic.BVDecide.Normalize.BitVec
 
 public section
 
-/-! ## Theorems related to StatementSemantics -/
+/-! ## Theorems related to StatementSemantics
+
+Metatheory of Core's own statement semantics (`EvalCommand`, `CoreStepStar`).  Key
+results, beyond the `InitStates`/`UpdateStates`/`HavocVars` plumbing:
+
+- Store-domain characterisation of a run: `evalCommand_preserves_none_of_not_def`
+  and `evalCommand_preserves_isSome` at the command level, lifted to
+  `core_stmt_run_terminal_preserves_none_of_not_definedVars_true`,
+  `core_block_run_terminal_preserves_none_of_not_definedVars` and
+  `core_stmts_preserves_isSome`, and combined in
+  `core_stmt_run_terminal_store_isSome_eq`, which pins the store domain after a
+  statement *exactly*: an inclusion either way is not enough, because
+  `defUseWellFormed` uses its definedness predicate in both directions.
+- `evalCommand_storeWellDefined`: a command leaves a store that holds only values,
+  given that it started from one.
+- `CoreStepStar_to_StepStmtStar` / `StepStmtStar_to_CoreStepStar`: `CoreStepStar` is
+  a separate mutual inductive, so results stated over the generic `StepStmtStar`
+  transfer only through these.
+-/
 
 namespace Core
 open Imperative
@@ -2027,94 +2045,6 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-/-
-
-/-
-NOTE:
-  In order to prove this refinement theorem, we need to reason about the
-  assymmetry between the two semantics regarding the temporary variables
-  created in the concrete semantics. That is, evaluating the procedure body may
-  create new variables in the store, and since the temporary variables are
-  discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant.
--/
-theorem EvalCallBodyRefinesContract :
-  ∀ {π φ fac σ n callArgs σ' p md md'},
-  π n = .some p →
-  EvalCommand π φ fac σ (CmdExt.call n callArgs md) σ' false →
-  EvalCommandContract π fac σ (CmdExt.call n callArgs md') σ' false := by
-  intros π φ fac σ n callArgs σ' p md md' pFound H
-  cases H with
-  | call_sem hlkup _ _ heval hread hwfs hwfv hwfvar hwfb hwftwo hdef hinit_i hinit_o hpre hbody hpost hread_f hupd =>
-    exact EvalCommandContract.call_sem hlkup rfl rfl heval hread hwfs hwfv hwfvar hwfb hwftwo hdef hinit_i hinit_o hpre sorry hpost hread_f hupd
-
-theorem EvalCommandRefinesContract :
-EvalCommand π φ fac σ c σ' f →
-EvalCommandContract π fac σ c σ' f := by
-  intros H
-  cases H with
-  | cmd_sem H => exact EvalCommandContract.cmd_sem H
-  | call_sem _ =>
-    apply EvalCallBodyRefinesContract <;> try assumption
-    constructor <;> assumption
-
-/-- A single `StepStmt` with `EvalCommand` can be simulated by a single
-    `StepStmt` with `EvalCommandContract`. -/
-private theorem StepStmt_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
-    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
-  intro H
-  induction H with
-  | step_cmd hcmd => exact .step_cmd (EvalCommandRefinesContract hcmd)
-  | step_seq_inner _ ih => exact .step_seq_inner ih
-  | step_block_body _ ih => exact .step_block_body ih
-  | step_block => exact .step_block
-  | step_ite_true h1 h2 => exact .step_ite_true h1 h2
-  | step_ite_false h1 h2 => exact .step_ite_false h1 h2
-  | step_ite_nondet_true => exact .step_ite_nondet_true
-  | step_ite_nondet_false => exact .step_ite_nondet_false
-  | step_loop_enter h1 h2 h3 h4 h5 h6 h7 => exact .step_loop_enter h1 h2 h3 h4 h5 h6 h7
-  | step_loop_exit h1 h2 h3 h4 => exact .step_loop_exit h1 h2 h3 h4
-  | step_loop_nondet_enter => exact .step_loop_nondet_enter
-  | step_loop_nondet_exit => exact .step_loop_nondet_exit
-  | step_exit => exact .step_exit
-  | step_funcDecl => exact .step_funcDecl
-  | step_typeDecl => exact .step_typeDecl
-  | step_stmts_nil => exact .step_stmts_nil
-  | step_stmts_cons => exact .step_stmts_cons
-  | step_seq_done => exact .step_seq_done
-  | step_seq_exit => exact .step_seq_exit
-  | step_block_done => exact .step_block_done
-  | step_block_exit_none => exact .step_block_exit_none
-  | step_block_exit_match h => exact .step_block_exit_match h
-  | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
-
-/-- Small-step execution with `EvalCommand` refines `EvalCommandContract`. -/
-theorem StepStmtStar_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
-  intro H
-  induction H with
-  | refl => exact .refl _
-  | step _ _ _ hstep _ ih =>
-    exact .step _ _ _ (StepStmt_refines_contract hstep) ih
-
-/-- `EvalStatements` with concrete semantics refines contract semantics. -/
-theorem EvalStatementsRefinesContract :
-    EvalStatements π φ ρ ss ρ' →
-    EvalStatementsContract π φ ρ ss ρ' :=
-  StepStmtStar_refines_contract
-
-/-- `EvalStatement` with concrete semantics refines contract semantics. -/
-theorem EvalStatementRefinesContract :
-    EvalStatement π φ ρ s ρ' →
-    EvalStatementContract π φ ρ s ρ' :=
-  StepStmtStar_refines_contract
-
--/
-
 
 /-! ## Properties of CoreStep and CoreStepStar. -/
 
@@ -2295,6 +2225,245 @@ theorem core_wfEval_preserved_stmts
   CoreConfig.wfEval_implies_wfEval _
     (core_star_preserves_cfg_wfEval π φ h_wf_ext hstar
       (show CoreConfig.wfEval (.stmts ss ρ) from hwf₀))
+
+/-! ## Store-domain preservation along a Core run
+
+Two dual facts about a terminating Core run, each an instantiation of the
+`Q`-keyed engine in `Strata.DL.Imperative.StmtSemanticsProps` at `EvalCommand`
+(the engine's non-`step_cmd` cases are purely structural, so only the
+command-level fact below is Core-specific):
+
+* nothing already defined becomes undefined — `core_stmts_preserves_isSome`;
+* nothing outside the run's `definedVars` becomes defined —
+  `core_block_run_terminal_preserves_none_of_not_definedVars`.
+
+Together they pin the store domain after a run, which is what a compositional
+Hoare rule needs in order to re-establish a block-level well-formedness gate on
+the tail of a statement list (see `Strata.Languages.Core.Logic.Hoare`). -/
+
+/-- `UpdateState` cannot define a slot that was undefined: it requires its
+    target to already hold a value, and leaves every other slot unchanged. -/
+private theorem updateState_preserves_none
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    (h : UpdateState Expression σ x v σ') :
+    ∀ y, σ y = none → σ' y = none := by
+  cases h with
+  | update h_some _ h_other =>
+    intro y hy
+    by_cases hxy : x = y
+    · subst hxy; rw [hy] at h_some; exact absurd h_some (by simp)
+    · rw [h_other y hxy]; exact hy
+
+/-- `UpdateState` cannot undefine a slot: the target keeps a value and every
+    other slot is unchanged. -/
+private theorem updateState_preserves_isSome
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    (h : UpdateState Expression σ x v σ') :
+    ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
+  cases h with
+  | update _ h_some' h_other =>
+    intro y hy
+    by_cases hxy : x = y
+    · subst hxy; rw [h_some']; simp
+    · rw [h_other y hxy]; exact hy
+
+/-- Pointwise lift of `updateState_preserves_none` along a whole write-back. -/
+private theorem updateStates_preserves_none
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') :
+    ∀ y, σ y = none → σ' y = none := by
+  induction h with
+  | update_none => exact fun _ hy => hy
+  | update_some hupd _ ih =>
+    exact fun y hy => ih y (updateState_preserves_none hupd y hy)
+
+/-- Pointwise lift of `updateState_preserves_isSome` along a whole write-back. -/
+private theorem updateStates_preserves_isSome
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') :
+    ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
+  induction h with
+  | update_none => exact fun _ hy => hy
+  | update_some hupd _ ih =>
+    exact fun y hy => ih y (updateState_preserves_isSome hupd y hy)
+
+/-- Writing a list of *values* into a store that holds only values leaves a store
+    that holds only values. -/
+private theorem updateStates_preserves_wellFormedStore {f : Expression.Factory}
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') (hvs : ∀ v ∈ vs, HasVal.value f v)
+    (hsv : Imperative.WellFormedStore σ f) :
+    Imperative.WellFormedStore σ' f := by
+  induction h with
+  | update_none => exact hsv
+  | update_some hupd _hrest ih =>
+    rename_i x v _xs _vs _σa _σb
+    refine ih (fun w hw => hvs w (List.mem_cons_of_mem _ hw)) ?_
+    cases hupd with
+    | update _hold hnew hoth =>
+      intro z w hz
+      by_cases hzx : x = z
+      · subst hzx; rw [hnew] at hz; cases hz
+        exact hvs v List.mem_cons_self
+      · rw [hoth z hzx] at hz; exact hsv z w hz
+
+/-- An `EvalCommand` step only defines the slots the command itself declares; a `call`
+    declares nothing. -/
+theorem evalCommand_preserves_none_of_not_def
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π φ f σ c σ' hf)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ HasVarsImp.definedVars (P := Expression) c false) :
+    σ' y = none := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact evalCmd_preserves_none_of_not_def h h_none
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+  | call_sem => exact updateStates_preserves_none (by assumption) y h_none
+
+/-- An `EvalCommand` step never undefines a store slot. -/
+theorem evalCommand_preserves_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π φ f σ c σ' hf)
+    (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h => exact EvalCmd_preserves_isSome h h_some
+  | call_sem => exact updateStates_preserves_isSome (by assumption) y h_some
+
+/-- An `EvalCommand` step leaves a store that holds only values. -/
+theorem evalCommand_storeWellDefined
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool}
+    (h : EvalCommand π φ fac σ c σ' fl)
+    (hsv : Imperative.WellFormedStore σ fac) :
+    Imperative.WellFormedStore σ' fac := by
+  cases h with
+  | cmd_sem hcmd =>
+    -- Core's `WellFormedSemanticEvalVal` holds at every factory, so nothing has to
+    -- be threaded through the run.
+    exact Imperative.evalCmd_storeWellDefined
+      (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
+  | call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hvals hupd =>
+    exact updateStates_preserves_wellFormedStore hupd hvals hsv
+
+/-- Core analogue of `stmts_preserves_isSome`: a slot defined at the start of a
+    terminating `.stmts` run is still defined at the end. -/
+theorem core_stmts_preserves_isSome
+    {y : Expression.Ident} {ss : Statements} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π φ (.stmts ss ρ) (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_of (evalCmd := EvalCommand π φ)
+    (extendFactory := EvalPureFunc φ)
+    (fun he hs => evalCommand_preserves_isSome π φ he hs)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Core analogue of `block_run_terminal_preserves_none_of_not_definedVars`: a
+    terminating `.stmts bss` run leaves `store y = none` for every
+    `y ∉ Block.definedVars bss false`. -/
+theorem core_block_run_terminal_preserves_none_of_not_definedVars
+    {y : Expression.Ident} {bss : Statements} {ρ ρ' : Env Expression}
+    (h_y_not_def : y ∉ Block.definedVars (P := Expression) (C := Command) bss false)
+    (h_none : ρ.store y = none)
+    (h_run : CoreStepStar π φ (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedThroughout_star_of (Q := (· = y)) (evalCmd := EvalCommand π φ)
+    (extendFactory := EvalPureFunc φ)
+    (fun he hn hnd => evalCommand_preserves_none_of_not_def π φ he hn hnd)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (by rintro z rfl; exact ⟨h_none, all_not_mem_definedVars_of_block h_y_not_def⟩) y rfl
+
+/-- Scope-aware Core store-domain bound: a terminating run of `s` newly defines
+    only `Stmt.definedVars s true`.  Unlike
+    `core_block_run_terminal_preserves_none_of_not_definedVars` this permits `s`
+    to `init` `y` inside a nested scope, since leaving that scope projects the
+    inner store through the parent's. -/
+theorem core_stmt_run_terminal_preserves_none_of_not_definedVars_true
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    (h_y_not_def : y ∉ Stmt.definedVars (P := Expression) (C := Command) s true)
+    (h_none : ρ.store y = none)
+    (h_run : CoreStepStar π φ (.stmt s ρ) (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedScoped_star_of (Q := (· = y)) (evalCmd := EvalCommand π φ)
+    (extendFactory := EvalPureFunc φ)
+    (fun he hn hnd => evalCommand_preserves_none_of_not_def π φ he hn hnd)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (by rintro z rfl; exact ⟨h_none, h_y_not_def⟩) y rfl
+
+/-- A terminating statement run never undefines a store slot: whatever was defined
+    on entry is still defined at the terminal environment.  `.stmt` variant of
+    `core_stmts_preserves_isSome`. -/
+private theorem core_stmt_preserves_isSome
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π φ (.stmt s ρ) (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_of (evalCmd := EvalCommand π φ)
+    (extendFactory := EvalPureFunc φ)
+    (fun he hs => evalCommand_preserves_isSome π φ he hs)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Core lift of `evalCmd_definedVars_isSome`.  `Command.definedVars (.call ..) = []`
+    — a procedure call declares nothing, writing its results back through
+    `UpdateStates` — so that case is vacuous. -/
+private theorem evalCommand_definedVars_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π φ f σ c σ' hf)
+    (h_def : y ∈ HasVarsImp.definedVars (P := Expression) c true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact evalCmd_definedVars_isSome h
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
+  | call_sem => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+
+/-- **Exact store domain after a terminating statement run.**  A terminating run
+    of `s` from `ρ` leaves exactly `dom(ρ.store) ∪ Stmt.definedVars s true`
+    defined.
+
+    Equality, rather than either inclusion, is what `Block.defUseWellFormed` needs: it
+    uses its definedness predicate in both directions — reads and writes must be
+    defined, and `init` targets must *not* be. -/
+theorem core_stmt_run_terminal_store_isSome_eq
+    {s : Statement} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π φ (.stmt s ρ) (.terminal ρ')) (n : Expression.Ident) :
+    (ρ'.store n).isSome
+      = ((ρ.store n).isSome ||
+          decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
+  by_cases hd : n ∈ Stmt.definedVars (P := Expression) (C := Command) s true
+  · -- `Stmt.definedVars _ true` is nonempty only for `.cmd`, whose run is one step.
+    simp only [hd, decide_true, Bool.or_true]
+    match s with
+    | .cmd c =>
+      cases h_run with
+      | step hstep hrest =>
+        cases hstep with
+        | step_cmd h_eval =>
+          cases hrest with
+          | refl =>
+            simp only [Stmt.definedVars] at hd
+            exact evalCommand_definedVars_isSome π φ h_eval hd
+          | step hstep' _ => exact nomatch hstep'
+    | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl .. | .typeDecl .. =>
+      simp [Stmt.definedVars] at hd
+  · simp only [hd, decide_false, Bool.or_false]
+    by_cases hs : (ρ.store n).isSome = true
+    · rw [hs, core_stmt_preserves_isSome π φ h_run hs]
+    · have hnone : ρ.store n = none := by
+        cases h : ρ.store n with
+        | none => rfl
+        | some v => rw [h] at hs; simp at hs
+      rw [hnone] at hs
+      rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π φ hd hnone h_run,
+        hnone]
 
 /-! ## projectStore and expression evaluation -/
 

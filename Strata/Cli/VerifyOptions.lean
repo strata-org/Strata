@@ -7,18 +7,19 @@ module
 
 public import Strata.Cli.Framework
 public import Strata.Languages.Core.Verifier
-public import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 /-! # Verify-options flag parsing
 
-Common CLI flag definitions and parsers for `Core.VerifyOptions` and
-`Laurel.LaurelVerifyOptions`. -/
+Common CLI flag definitions and parsers for `Core.VerifyOptions`.
+
+The Laurel counterpart lives in `Strata.Languages.Laurel.CliOptions`, which
+builds on `parseVerifyOptions` from here. Keeping it there leaves this module
+free of any dependency on the Laurel layer. -/
 
 public section
 
 open Strata
 open Core (VerifyOptions VerboseMode VerificationMode CheckLevel)
-open Laurel (LaurelVerifyOptions LaurelTranslateOptions)
 
 def parseCheckMode (pflags : ParsedFlags)
     (default : VerificationMode := .deductive) : IO VerificationMode :=
@@ -221,17 +222,5 @@ def parseVerifyOptions (pflags : ParsedFlags)
     parallelWorkers,
     keepAllFilesPrefix
   }
-
-/-- Build a `LaurelVerifyOptions` from parsed CLI flags. -/
-def parseLaurelVerifyOptions (pflags : ParsedFlags)
-    (base : LaurelVerifyOptions := default)
-    (inputFile : Option String := none) : IO LaurelVerifyOptions := do
-  let verifyOptions ← parseVerifyOptions pflags base.verifyOptions (inputFile := inputFile)
-  let translateOptions : LaurelTranslateOptions :=
-    { base.translateOptions with
-      keepAllFilesPrefix := verifyOptions.keepAllFilesPrefix
-      overflowChecks := verifyOptions.overflowChecks
-      enumeratedModifiesClauses := verifyOptions.useArrayTheory }
-  return { translateOptions, verifyOptions }
 
 end -- public section

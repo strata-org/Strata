@@ -30,6 +30,11 @@ evaluation relation `EvalCmd`. Key results:
 - None-preservation: `InitState_preserves_none`, `UpdateState_preserves_none`,
   `evalCmd_preserves_none`, and `evalCmd_preserves_none_of_not_def` (a command
   preserves a `none` slot it neither defines nor modifies).
+- `evalCmd_definedVars_isSome`: the converse — a command defines every slot it
+  declares.  Together with the previous item this pins the store domain exactly.
+- `evalCmd_storeWellDefined`: a command leaves a store that holds only values,
+  given that it started from one.  The command-level half of
+  `Imperative.Config.storeWellDefined_star_of`.
 -/
 
 public section
@@ -505,6 +510,35 @@ theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
   | eval_assume _ _ => exact h_none
   | eval_cover _ => exact h_none
 
+/-- `InitState` writes `some v`, so the slot cannot come back `none`. -/
+private theorem initState_isSome {P : PureExpr}
+    {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr}
+    (h : InitState P σ x v σ') : (σ' x).isSome = true := by
+  cases h with
+  | init _ h_some _ => rw [h_some]; simp
+
+/-- **Declarations take effect.**  A command that declares `y` leaves `y` defined in the
+    resulting store.  Only `init` declares variables. -/
+theorem evalCmd_definedVars_isSome {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {hf : Bool} {y : P.Ident}
+    (h_eval : EvalCmd P f σ c σ' hf)
+    (h_def : y ∈ Cmd.definedVars c) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | eval_init _ h_init _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at h_def
+    subst h_def; exact initState_isSome h_init
+  | eval_init_unconstrained h_init _ _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at h_def
+    subst h_def; exact initState_isSome h_init
+  | eval_set _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_set_nondet _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_assert_pass _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_assert_fail _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_assume _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_cover _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+
 /-- A single command preserves a `none` slot `y` that the command does not
 `init`/`set` as its target. -/
 theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
@@ -528,5 +562,38 @@ theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
   | eval_assert_fail _ _ => exact h_none
   | eval_assume _ _ => exact h_none
   | eval_cover _ => exact h_none
+
+/-- **A command leaves the store holding only values.**  Every writing rule supplies
+    value-hood for what it writes, and the rest do not touch the store. -/
+theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {fl : Bool}
+    (hval : WellFormedSemanticEvalVal (P := P) f)
+    (h : EvalCmd P f σ c σ' fl) (hsv : WellFormedStore σ f) :
+    WellFormedStore σ' f := by
+  -- `InitState` and `UpdateState` differ only in what they require of the old
+  -- store, so one helper covers all four writing rules.
+  have hwrite : ∀ (x : P.Ident) (v : P.Expr), HasVal.value f v →
+      σ' x = some v → (∀ y, x ≠ y → σ' y = σ y) → WellFormedStore σ' f := by
+    intro x v hv hx hoth z w hz
+    by_cases hzx : x = z
+    · subst hzx; rw [hx] at hz; cases hz; exact hv
+    · rw [hoth z hzx] at hz; exact hsv z w hz
+  cases h with
+  | eval_init heval hinit _ =>
+    cases hinit with
+    | init _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
+  | eval_init_unconstrained hinit hv _ =>
+    cases hinit with
+    | init _ hx hoth => exact hwrite _ _ hv hx hoth
+  | eval_set heval hup _ =>
+    cases hup with
+    | update _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
+  | eval_set_nondet hup hv _ =>
+    cases hup with
+    | update _ hx hoth => exact hwrite _ _ hv hx hoth
+  | eval_assert_pass _ _ => exact hsv
+  | eval_assert_fail _ _ => exact hsv
+  | eval_assume _ _ => exact hsv
+  | eval_cover _ => exact hsv
 
 end -- public section

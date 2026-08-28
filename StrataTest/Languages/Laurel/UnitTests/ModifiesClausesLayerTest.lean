@@ -41,18 +41,23 @@ private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := .unknown
 private def cRef : StmtExprMd :=
   ⟨.Var (.Local { text := "c", uniqueId := some 1 }), .unknown⟩
 
-/-- A model that knows exactly one thing: `c` is a composite. That is all
-    `extractModifiesEntries` needs to classify `cRef` as an individual ref. -/
+/-- A model that knows two things: `c` is a composite (all
+    `extractModifiesEntries` needs to classify `cRef` as an individual ref), and
+    the procedure under test writes the heap — which is what the transform asks,
+    rather than inspecting the signature. -/
 private def cModel : SemanticModel :=
-  { nextId := 2, compositeCount := 1,
+  { nextId := 3, compositeCount := 1,
     refToDef := ({} : Std.HashMap Nat ResolvedNode).insert 1
-      (.var { text := "c", uniqueId := some 1 } (mkTy (.UserDefined (mkId "Cell")))) }
+      (.var { text := "c", uniqueId := some 1 } (mkTy (.UserDefined (mkId "Cell")))),
+    heapWriters := ({} : Std.HashSet Nat).insert 2 }
 
-/-- An opaque heap-writing procedure (a `$heap` output, as heap
-    parameterization leaves it) carrying the given modifies groups. -/
+/-- An opaque heap-writing procedure carrying the given modifies groups. The
+    `$heap` output mirrors what heap parameterization leaves, but what marks it a
+    heap writer is `cModel.heapWriters` (uniqueId 2) — that is what the transform
+    consults. -/
 private def procWithGroups (groups : List ModifiesGroup)
     (bodiless : Bool := false) : Procedure :=
-  { name := mkId "p"
+  { name := { text := "p", uniqueId := some 2 }
     inputs := []
     outputs := [{ name := mkId "$heap", type := mkTy (.UserDefined (mkId "Heap")) }]
     preconditions := []

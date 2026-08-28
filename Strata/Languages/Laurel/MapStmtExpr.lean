@@ -725,7 +725,12 @@ def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : P
     | other => pure other
   let constants ← program.constants.mapM fun c => do
     pure { c with initializer := ← c.initializer.mapM mapExpr }
-  return { program with types := types, constants := constants }
+  -- A file-scope global's initializer is an ordinary expression: without this it would
+  -- be skipped by every program-wide expression rewrite.
+  let staticFields ← program.staticFields.mapM fun field => do
+    let initializer ← field.initializer.mapM mapExpr
+    pure { field with initializer }
+  return { program with types, constants, staticFields }
 
 /-- Pure version of `mapProgramStmtExprM`. -/
 def mapProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=

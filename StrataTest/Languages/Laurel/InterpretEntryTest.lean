@@ -334,10 +334,10 @@ private def opaqueSpecArity (op : StrataDDM.Operation) : Option Nat :=
   | _ => none
 
 -- The 2-arg `opaqueSpec` parses without error and yields no exceptional behavior
--- cases, rather than failing to match the 3-argument shape. The arities are
--- printed on both sides so the test cannot pass vacuously: were the rewrite not
--- to fire, `before` and `after` would both read 3.
-/-- info: opaqueSpec arity before = (some 3), after = (some 2)
+-- cases, rather than failing to match the current (5-argument) shape. The arities
+-- are printed on both sides so the test cannot pass vacuously: were the rewrite
+-- not to fire, `before` and `after` would both read 5.
+/-- info: opaqueSpec arity before = (some 5), after = (some 2)
 opaqueSpec 2-arg parse ok, throwsOn cases = 0
 -/
 #guard_msgs in

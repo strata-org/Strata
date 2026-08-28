@@ -15,6 +15,10 @@ import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.EliminateExceptions
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.HeapParameterizationConstants
+-- For the pass-ordering metadata below: this pass must run after the heap trio and
+-- before the contract pass.
+import Strata.Languages.Laurel.ModifiesClauses
+import Strata.Languages.Laurel.ContractPass
 
 /-!
 # Global Parameterization
@@ -90,10 +94,14 @@ private def prepareProcedureGlobals (proc : Procedure) (globals : List Identifie
   let boundNames := collectBoundNames proc
   let reservedNames := globals.foldl
     (fun names global => names.insert global.text)
-    (boundNames.insert heapVarName.text)
+    -- `$heap` is not reserved: it is one of `globals`, so reserving it would rename it
+    -- to `$global_$heap` and desync it from the literal `$heap` that `ModifiesClauses`
+    -- emits in its frames. Shadowing by a user binding is covered by `boundNames`, and
+    -- resolution rejects a user parameter named `$heap`.
+    boundNames
   modify fun s => { s with localGlobals := {}, usedNames := reservedNames, freshCounter := 0 }
   for global in globals do
-    let localName ← if boundNames.contains global.text || global.text == heapVarName.text then do
+    let localName ← if boundNames.contains global.text then do
         let fresh ← freshName s!"$global_{global.text}"
         pure { fresh with source := global.source }
       else
@@ -250,10 +258,66 @@ private def transformNode (model : SemanticModel) (valueUsed : Bool) (expr : Stm
       return [{ expr with val := .IncrDecr mode op (← renameTarget model target) }]
   | _ => return [expr]
 
+/-- Thread hidden globals through a multi-target assigned call (`assign x, r := f(...)`),
+    intercepting it before the bottom-up traversal reaches the call.
+
+    The ordinary path visits the call on its own, where `emitStaticCall` wraps it in a
+    block yielding a single value. Two or more receivers cannot be fed from one such
+    value, so the hidden arguments are threaded and the hidden receivers merged into the
+    assignment's existing target list instead.
+
+    Single-target assignments are left to the ordinary path, which correctly handles a
+    target that *is* one of the threaded globals (`g := writer()`); merging would list
+    `g` twice. -/
+private def transformAssignWithCall (model : SemanticModel)
+    (transformArg : StmtExprMd → GlobalTransformM StmtExprMd) (expr : StmtExprMd)
+    : GlobalTransformM (Option (List StmtExprMd)) := do
+  match expr.val with
+  | .Assign targets rhs =>
+    match rhs.val with
+    | .StaticCall callee args =>
+      if targets.length <= 1 then return none
+      let hiddenOutputs ← writeGlobalsOf callee
+      if hiddenOutputs.isEmpty && (← inputGlobalsOf callee).isEmpty then
+        return none
+      -- Arguments go through the full transform, not a bare rename: an argument may
+      -- itself be a call needing its own hidden globals threaded, and returning `some`
+      -- below stops the traversal from reaching it. `threadedStaticCall` then binds any
+      -- effectful argument to a temporary, preserving left-to-right evaluation.
+      let args' ← args.mapM transformArg
+      let targets' ← targets.mapM (renameTarget model)
+      let (bindings, call, outputs) ← threadedStaticCall model callee args' expr.source
+      -- A source target may name a global the callee also writes, which would give that
+      -- global's alias both a hidden receiver and a source one. The source assignment
+      -- happens after the call, so it wins; the hidden receiver is diverted to a discard
+      -- temporary, which keeps one receiver per callee output.
+      let sourceNames := targets'.filterMap fun target =>
+        match target.val with
+        | .Local name => some name.text
+        | _ => none
+      let hiddenTargets ← outputs.mapM fun global => do
+        let alias ← localGlobalName global
+        if sourceNames.contains alias.text then
+          return mkVarMd (.Declare ⟨← freshVarName, some (← globalTypeOf global)⟩) callee.source
+        else
+          return mkVarMd (.Local alias) callee.source
+      -- Receivers must follow the callee's output order, which
+      -- `globalTransformProcedure` assembles as `hidden globals ++ proc.outputs`. Every
+      -- hidden receiver therefore precedes every one the source wrote, including an
+      -- explicit inout receiver, which keeps its position inside `targets'`.
+      -- `emitStaticCall` orders its own receivers the same way.
+
+      let allTargets := hiddenTargets ++ targets'
+      return some (bindings ++ [{ expr with val := .Assign allTargets call }])
+    | _ => return none
+  | _ => return none
+
 /-- Thread globals through calls and rewrite resolved global references. -/
-private def globalTransformExpr (model : SemanticModel) (expr : StmtExprMd)
+private partial def globalTransformExpr (model : SemanticModel) (expr : StmtExprMd)
     (valueUsed : Bool := true) : GlobalTransformM StmtExprMd :=
-  mapStmtExprFlattenM (fun _ _ => pure none) (transformNode model) valueUsed expr
+  mapStmtExprFlattenM
+    (fun _ e => transformAssignWithCall model (globalTransformExpr model · true) e)
+    (transformNode model) valueUsed expr
 
 /-- Add hygienic global parameters and rewrite all procedure expressions. -/
 private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
@@ -261,6 +325,10 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
   let inGlobals ← inputGlobalsOf proc.name
   let outGlobals ← writeGlobalsOf proc.name
   prepareProcedureGlobals proc inGlobals
+  -- The `reads`/`writes` declarations are inputs to this pass, folded into the effect
+  -- maps consulted above. Clear them: `staticFields` is emptied once every global is
+  -- threaded, so a surviving declaration would name a global that no longer exists.
+  let proc := { proc with readsGlobals := [], writesGlobals := [] }
   let transformValue (expr : StmtExprMd) := globalTransformExpr model expr true
   let preconditions ← proc.preconditions.mapM (·.mapM transformValue)
   let decreases ← proc.decreases.mapM transformValue
@@ -382,12 +450,16 @@ public def globalParameterizationPass : LoweringPass where
      ⟨ eliminateValueInReturnsPass.meta,
        "eliminate value in returns must precede any pass that changes the number of output parameters." ⟩,
      ⟨ liftInstanceProceduresPass.meta,
-       "operate on the flat staticProcedures list, after instance procedures are lifted into it." ⟩]
+       "operate on the flat staticProcedures list, after instance procedures are lifted into it." ⟩,
+     ⟨ heapParameterizationPass.meta,
+       "the heap is modeled as one file-scope global: heap parameterization declares `$heap` and rewrites field access against it, and this pass then threads it through signatures and call sites like any other global." ⟩,
+     ⟨ modifiesClausesTransformPass.meta,
+       "the modifies pass builds heap frames over `$heap` and needs it still in scope as a global; it also ends the heap trio's shared re-resolve, which binds `$heap` references as `$static` fields so this pass can recognize them." ⟩]
   comesBefore :=
     [⟨ liftImperativeExpressionsPass.meta,
        "the global parameterization pass introduces assignments (threading globals) that need to be lifted." ⟩,
-     ⟨ heapParameterizationPass.meta,
-       "the heap must stay the final hidden input (preserving source evaluation order), and globals-before-heap lets the heap later be modeled as one global (future work)." ⟩]
+     ⟨ contractPass.meta,
+       "the contract pass builds its postcondition helpers from the signature, so a global must already be threaded as an ordinary inout by then: its existing `$out`/`old` machinery then handles `$heap` with no knowledge of globals." ⟩]
 
 end Strata.Laurel
 

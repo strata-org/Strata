@@ -26,7 +26,12 @@ program Laurel;
 
 composite Cell { var x: int }
 
-var g: Cell := new Cell
+// `<??>` rather than `new Cell`: allocation is an effect, and a file-scope
+// initializer has no statement position to sequence the heap increment in (see
+// `validateGlobalInitializers`). The hole is an arbitrary `Cell` reference, which is
+// what this test wants: `requires g#x == 0` constrains its field, and nothing here
+// depends on `g` being freshly allocated.
+var g: Cell := <??>
 
 coroutine tick()
   requires g#x == 0

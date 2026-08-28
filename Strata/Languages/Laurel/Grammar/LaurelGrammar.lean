@@ -31,6 +31,8 @@ module
 -- Rebuild trigger token: coroutines+exceptions merge (assignTargetDecl-prec0,
 -- throwsOn-blocks).
 -- Rebuild trigger token: guarded-modifies-groups
+-- Rebuild trigger: file-scope global declarations.
+-- Rebuild trigger: declared global reads/writes on opaqueSpec.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

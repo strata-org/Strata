@@ -4431,7 +4431,7 @@ factory triple (the shared `EnvStoreAgree`).  Terminal / exiting reuse the
 `nondetElim_sound_kind*_compositional` sims and `CanFail` reuses
 `nondetElim_to_fail_compositional`, at the diagonal `ρ_tgt := ρ₀`. -/
 section NondetElimOverapprox
-open Specification Specification.Transform
+open Specification Specification.Transform Imperative.Logic
 
 /-- `Block.nondetElim` overapproximates its source up to `EnvStoreAgree`: for a
 block that is func-decl-free, has unique inits, and never writes an `ndelimKind`
