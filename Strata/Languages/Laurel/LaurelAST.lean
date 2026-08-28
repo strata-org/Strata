@@ -767,6 +767,15 @@ structure Procedure : Type where
       case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
       its throwing paths beyond the declared `throwsType`. -/
   throwsOn : List ThrowsOnBlock := []
+  /-- File-scope globals this procedure declares that it reads, via a `reads` clause
+      on its opaque spec. Only meaningful for a bodiless procedure: with no
+      statements there is nothing for the effect analysis to infer from, so the
+      declaration is the only evidence -- the role `modifies` plays for the heap.
+      A defaulted field rather than a `Body.Opaque` argument so that
+      `{ proc with ... }` rebuilds preserve it. -/
+  readsGlobals : List Identifier := []
+  /-- File-scope globals this procedure writes. See `readsGlobals`. -/
+  writesGlobals : List Identifier := []
 
 /-- A short user-facing name for the construct, used in diagnostic messages. -/
 def StmtExpr.constrName : StmtExpr → String

@@ -4282,6 +4282,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     let axioms' ← proc.axioms.mapM resolveStmtExpr
     let (throwsType', throwsBinding', throwsOn') ← resolveExceptionalContract proc
+    -- A declared global effect names a file-scope global. Resolve each name so it
+    -- carries the global's `uniqueId`: `GlobalVarAnalysis` and
+    -- `GlobalParameterization` both identify globals by id, not by text.
+    let readsGlobals' ← proc.readsGlobals.mapM (resolveRef ·)
+    let writesGlobals' ← proc.writesGlobals.mapM (resolveRef ·)
     return { name := procName', typeArgs := typeArgs',
              inputs := inputs', outputs := outputs',
              preconditions := pres',
@@ -4292,6 +4297,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
              axioms := axioms',
              throwsType := throwsType', throwsBinding := throwsBinding',
              throwsOn := throwsOn',
+             readsGlobals := readsGlobals', writesGlobals := writesGlobals',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -4342,6 +4348,11 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     modify fun s => { s with instanceTypeName := savedInstType }
     let axioms' ← proc.axioms.mapM resolveStmtExpr
     let (throwsType', throwsBinding', throwsOn') ← resolveExceptionalContract proc
+    -- A declared global effect names a file-scope global. Resolve each name so it
+    -- carries the global's `uniqueId`: `GlobalVarAnalysis` and
+    -- `GlobalParameterization` both identify globals by id, not by text.
+    let readsGlobals' ← proc.readsGlobals.mapM (resolveRef ·)
+    let writesGlobals' ← proc.writesGlobals.mapM (resolveRef ·)
     return { name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
@@ -4349,6 +4360,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
              axioms := axioms',
              throwsType := throwsType', throwsBinding := throwsBinding',
              throwsOn := throwsOn',
+             readsGlobals := readsGlobals', writesGlobals := writesGlobals',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -5516,7 +5528,29 @@ private def validateGlobalNames (program : Program) : List Message :=
             MessageKind.userError)
         else none
     | _ => none
+  -- A user parameter named `$heap` would shadow the compiler-generated heap global, so
+  -- the literal `$heap` that `ModifiesClauses` writes into its frames would bind to the
+  -- user's variable instead. Runs only on the initial resolve of user source, so the
+  -- synthesized `$heap` parameters added later are unaffected. Pinned by
+  -- GenericCompositeTest's `user_heap_output_rejected`.
+  -- Instance procedures are inspected alongside the static list, as the sibling
+  -- validators in this file do: an instance procedure's parameters are just as capable
+  -- of colliding with `$heap`.
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let heapParamErrors := (program.staticProcedures ++ instanceProcs).flatMap fun proc =>
+    (proc.inputs ++ proc.outputs).filterMap fun param =>
+      -- Spelled literally rather than via `heapVarName`: that constant lives in
+      -- `HeapParameterizationConstants`, which imports this module.
+      if param.name.text == "$heap" then
+        some (diagnosticFromSource param.name.source
+          s!"parameter name '{param.name.text}' is reserved for the compiler-generated heap \
+             variable; rename it"
+          MessageKind.userError)
+      else none
   globalErrors ++ staticOwnerErrors ++ binderErrors ++ constrainedBinderErrors
+    ++ heapParamErrors
 
 /-- Reject a file-scope global with a generic (`.Applied`) type. A generic composite/datatype
     FIELD is supported by #1394 (monomorphization for composites, HeapParam `.Applied` boxing for
@@ -6001,16 +6035,49 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
           containsProcId writerIds callee
       | _ => false) expr
   analysis.allProcs.filterMap fun proc =>
+    -- A spec that *declares* its global effects supplies the evidence this check
+    -- exists for, so its postconditions may refer to globals: the declaration says
+    -- which are written, and `GlobalParameterization` threads them accordingly.
+    let declaresEffects := !(proc.readsGlobals.isEmpty && proc.writesGlobals.isEmpty)
     let postconditions := match proc.body with
-      | .Opaque posts none _ => posts
+      | .Opaque posts none _ => if declaresEffects then [] else posts
       | .Abstract posts => posts
       | .Opaque _ (some _) _ | .Transparent _ | .External => []
     postconditions.find? (fun post =>
       usesGlobal post.condition && !definesOutputFromGlobal proc post.condition &&
         !hasWriterCall post.condition) |>.map fun post =>
       diagnosticFromSource post.condition.source
-        s!"global references in postconditions of procedure '{proc.name.text}' without an implementation are not yet supported"
+        s!"global references in postconditions of procedure '{proc.name.text}' without an implementation are not yet supported: declare the effect with 'reads'/'writes'"
         MessageKind.userError
+
+/-- Reject a declared global effect that cannot be honoured: a name that is not a
+    file-scope global, or a declaration on a procedure that *has* an
+    implementation (where the effects are inferred from its statements, so a
+    declaration is either redundant or a lie). -/
+private def validateDeclaredGlobalEffects (program : Program)
+    (analysis : InitialEffectAnalysis) : List Message :=
+  let globalIds : Std.HashSet Nat :=
+    program.staticFields.foldl (init := {}) fun ids f =>
+      match f.name.uniqueId with | some id => ids.insert id | none => ids
+  let hasImplementation (proc : Procedure) : Bool :=
+    match proc.body with
+    | .Opaque _ (some _) _ | .Transparent _ => true
+    | _ => false
+  analysis.allProcs.flatMap fun proc =>
+    let declared := proc.readsGlobals ++ proc.writesGlobals
+    if declared.isEmpty then [] else
+    -- `Option.any` is `false` on `none`, so this keeps only names that resolved to a
+    -- non-global definition; an unresolved name is already reported by `resolveRef`.
+    let notGlobal := declared.filter fun n => n.uniqueId.any fun id => !globalIds.contains id
+    (notGlobal.map fun n =>
+      diagnosticFromSource n.source
+        s!"'{n.text}' is not a file-scope global, so it cannot appear in a 'reads'/'writes' clause"
+        MessageKind.userError) ++
+    (if hasImplementation proc then
+      [diagnosticFromSource proc.name.source
+        s!"procedure '{proc.name.text}' has an implementation, so its global effects are inferred from its body: remove the 'reads'/'writes' clause"
+        MessageKind.userError]
+     else [])
 
 private def firstInitializerEffectSource (model : SemanticModel)
     (expr : StmtExprMd) : Option FileRange :=
@@ -6018,6 +6085,10 @@ private def firstInitializerEffectSource (model : SemanticModel)
     match node.val with
     | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _
     | .Var (.Declare _) => true
+    -- Allocation is a heap effect: `new` expands to a heap-mutating block, and a
+    -- file-scope initializer has no heap to mutate yet. A composite-valued global is
+    -- still declarable as `var c: C := <??>`.
+    | .New _ => true
     | .StaticCall callee _ | .InstanceCall _ callee _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
     | _ => false
@@ -6041,7 +6112,7 @@ private def validateGlobalInitializers (model : SemanticModel)
         | none => []) ++
       (match firstInitializerEffectSource model initializer with
         | some source => [diagnosticFromSource source
-            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, and no calls to heap-reading or heap-writing procedures)"
+            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, no allocation with 'new', and no calls to heap-reading or heap-writing procedures)"
             MessageKind.userError]
         | none => [])
 
@@ -6055,6 +6126,76 @@ private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalys
     `contractExpressions` must partition the full contract surface. -/
 private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
   postconditionExpressions proc ++ contractExpressions proc
+
+/-- An entry procedure may not carry `requires`/`ensures`, and if it touches the heap it
+    must declare `modifies *`.
+
+    Its globals are body locals (`GlobalParameterization`), which a contract cannot see.
+    The `modifies` rule keeps `ModifiesClauses` free of any entry special case: that pass
+    drops a wildcard group, so requiring the wildcard is what stops it building a frame
+    over `old($heap)`/`$heap`. Requiring it is necessary because a procedure with no
+    `modifies` still carries the always-present unguarded group, whose targets are empty
+    rather than a wildcard, and that group yields the default "nothing changes" frame.
+
+    Covers the complement of `validateEntryContractGlobalUse` below, which reports a
+    contract that *names* a global, so each clause yields one diagnostic. -/
+private def validateEntryProcedureContracts (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  -- A condition that *names* a global is reported by `validateEntryContractGlobalUse`
+  -- below; reporting it here too would put two diagnostics on one clause. This rule
+  -- covers the complement -- a contract that mentions no global -- which that check
+  -- deliberately allows and which is still not expressible on an entry procedure.
+  let namesGlobal (c : Condition) : Bool :=
+    (firstGlobalUseSource model dependentIds c.condition).isSome
+  (program.staticProcedures ++ instanceProcs).flatMap fun proc =>
+    if !proc.isInterpretEntry then [] else
+    let modifiesGroups := match proc.body with
+      | .Opaque _ _ groups => groups
+      | _ => []
+    let postconditions := match proc.body with
+      | .Opaque postconds _ _ => postconds
+      | .Abstract postconds => postconds
+      | _ => []
+    let contractErrors :=
+      (proc.preconditions.filter (!namesGlobal ·) |>.map fun c =>
+        diagnosticFromSource c.condition.source
+          s!"entry procedure '{proc.name.text}' cannot have a 'requires' clause: an entry \
+             procedure initializes its globals as locals inside its body, which a contract \
+             cannot see"
+          MessageKind.userError) ++
+      (postconditions.filter (!namesGlobal ·) |>.map fun c =>
+        diagnosticFromSource c.condition.source
+          s!"entry procedure '{proc.name.text}' cannot have an 'ensures' clause: an entry \
+             procedure initializes its globals as locals inside its body, which a contract \
+             cannot see"
+          MessageKind.userError)
+    let nonWildcardErrors := modifiesGroups.flatMap fun g =>
+      if g.targets.isEmpty || hasModifiesWildcard g.targets then [] else
+      g.targets.map fun t =>
+        diagnosticFromSource t.source
+          s!"entry procedure '{proc.name.text}' may only declare 'modifies *': a narrower \
+             frame is stated in terms of the heap, which an entry procedure holds as a \
+             body local rather than a parameter"
+          MessageKind.userError
+    let writesHeap := proc.name.uniqueId.any model.heapWriters.contains
+    let declaresWildcard := modifiesGroups.any fun g => hasModifiesWildcard g.targets
+    -- A narrow frame already draws a `nonWildcardErrors` diagnostic per target, and it
+    -- is not a wildcard, so firing here too would report one mistake twice. A procedure
+    -- with no `modifies` at all still reaches this: its always-present unguarded group
+    -- has empty targets, which `nonWildcardErrors` skips.
+    let missingWildcardErrors :=
+      if writesHeap && !declaresWildcard && nonWildcardErrors.isEmpty then
+        [diagnosticFromSource proc.name.source
+          s!"entry procedure '{proc.name.text}' uses the heap, so it must declare \
+             'modifies *': its heap is a body local, so no narrower frame can be stated \
+             about it"
+          MessageKind.userError]
+      else []
+    contractErrors ++ nonWildcardErrors ++ missingWildcardErrors
 
 private def validateEntryContractGlobalUse (model : SemanticModel)
     (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
@@ -6417,10 +6558,13 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     initialAnalysis.map (validateUnsupportedGlobalCalls semanticModel program') |>.getD []
   let bodilessGlobalErrors :=
     initialAnalysis.map (validateBodilessGlobalPostconditions semanticModel program') |>.getD []
+  let declaredGlobalErrors :=
+    initialAnalysis.map (validateDeclaredGlobalEffects program') |>.getD []
   let globalInitializerErrors :=
     initialAnalysis.map (validateGlobalInitializers semanticModel program') |>.getD []
   let entryGlobalErrors :=
     initialAnalysis.map (fun analysis =>
+      validateEntryProcedureContracts semanticModel program' analysis ++
       validateEntryContractGlobalUse semanticModel program' analysis ++
       validateCallsToGlobalEntryProcedures program' analysis ++
       validateEntryConstrainedGlobalUse program' analysis) |>.getD []
@@ -6490,7 +6634,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
       globalNameErrors ++ globalTypeErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
       globalInitializerErrors ++
-      globalCallErrors ++ bodilessGlobalErrors ++ entryGlobalErrors ++ invokeOnErrors ++
+      globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++
+      entryGlobalErrors ++ invokeOnErrors ++
       coroutineErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
   }
 

@@ -665,7 +665,7 @@ program Laurel;
 composite MetadataCell {
   var value: int
 }
-var c: MetadataCell := new MetadataCell
+var c: MetadataCell := <??>
 procedure modifiesGlobal()
   opaque
   modifies c
@@ -693,7 +693,7 @@ program Laurel;
 composite DecreasesCell {
   var value: int
 }
-var decreasesCell: DecreasesCell := new DecreasesCell
+var decreasesCell: DecreasesCell := <??>
 procedure measured() opaque {
 };
 #end

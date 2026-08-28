@@ -68,6 +68,7 @@ private theorem ndelimKind_not_s2uKind {s : String} (h : ndelimKind s) :
 
 open Imperative.Specification
 open Imperative.Specification.Transform
+open Imperative.Logic
 
 variable [HasFvar P] [HasFvars P] [HasBoolOps P]
   [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]

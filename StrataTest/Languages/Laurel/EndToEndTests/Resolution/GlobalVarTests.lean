@@ -1221,3 +1221,189 @@ var g: Box<int> := new Box<int>
 //     ^^^^^^^^ error: a generic datatype instantiation ('Box<…>') is not yet supported as a file-scope global type
 procedure u() opaque { assert 1 == 1 };
 #end
+
+
+/-! ## Declared global effects on a bodiless procedure
+
+`reads`/`writes` on an opaque spec declare the global effects of a procedure with no
+body. Effects are otherwise inferred from statements, and a bodiless procedure has none,
+so the declaration is the only evidence — the role `modifies` plays for the heap.
+
+`writes g` makes the procedure a global writer, so `g` is threaded as an inout and the
+caller's knowledge of `g` is replaced by what the postcondition states. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setsGTo7()
+  opaque
+  ensures g == 7
+  writes g;
+procedure callerSees()
+  opaque
+{
+  setsGTo7();
+  assert g == 7
+};
+#end
+
+/-! Without a postcondition the caller's prior knowledge of `g` is correctly
+    invalidated: the declared write alone says the value may change. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure clobbersG()
+  opaque
+  writes g;
+procedure callerCannotAssume()
+  opaque
+{
+  var before: int := g;
+  clobbersG();
+  assert g == before
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! `reads g` threads `g` as a plain input, and a postcondition may relate the result
+    to it. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure echoesG() returns (r: int)
+  opaque
+  ensures r == g
+  reads g;
+procedure callerReads()
+  opaque
+{
+  var v: int := echoesG();
+  assert v == g
+};
+#end
+
+/-! A declared effect must name a file-scope global. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure notAGlobal(p: int)
+  opaque
+  writes p;
+//       ^ error: 'p' is not a file-scope global, so it cannot appear in a 'reads'/'writes' clause
+#end
+
+/-! An undefined name in a declared effect is reported once, by resolution. The
+    "not a file-scope global" diagnostic is for names that resolved to something that
+    is not a global, so it would be a second report of the same mistake. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure typoedEffect()
+  opaque
+  writes undefinedGlobal;
+//       ^^^^^^^^^^^^^^^ error: Resolution failed: 'undefinedGlobal' is not defined
+#end
+
+/-! A procedure with an implementation has its effects inferred, so declaring them is
+    rejected rather than silently ignored. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure hasBody()
+//        ^^^^^^^ error: procedure 'hasBody' has an implementation, so its global effects are inferred from its body: remove the 'reads'/'writes' clause
+  opaque
+  writes g
+{
+  g := 1
+};
+#end
+
+/-! ## The entry-procedure rules cover instance procedures
+
+`LiftInstanceProcedures` lifts every instance procedure into `staticProcedures` before
+`HeapParameterization` runs, so this rule must inspect the instance half of the program
+too: a validator that walks only `program.staticProcedures` inspects a different program
+than the one compiled, and the unsupported shape reaches Core — reported against the
+compiler rather than the declaration that caused it.
+
+An `entry` instance procedure that uses the heap therefore gets the same clean diagnostic
+as its static twin. It takes no parameters because `self` is an input, and an entry point
+is invoked with no arguments; it reaches the heap by allocating instead. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Holder2 {
+  var v: int
+  procedure runsMe()
+//          ^^^^^^ error: entry procedure 'runsMe' uses the heap, so it must declare 'modifies *': its heap is a body local, so no narrower frame can be stated about it
+    entry
+    opaque
+  {
+    var h: Holder2 := new Holder2;
+    h#v := 1
+  };
+}
+#end
+
+/-! A `requires` clause on an entry procedure is rejected: the clause cannot see the
+    globals the procedure initializes as body locals. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure runMe()
+  requires true
+//         ^^^^ error: entry procedure 'runMe' cannot have a 'requires' clause: an entry procedure initializes its globals as locals inside its body, which a contract cannot see
+  entry
+  opaque
+{
+  var x: int := 1
+};
+#end
+
+/-! A narrow frame on an entry procedure is rejected. The procedure also uses the heap,
+    so the "must declare 'modifies *'" rule applies to it as well, but that diagnostic is
+    suppressed while a narrower frame is being reported: one mistake earns one diagnostic
+    from that rule.
+
+    The second diagnostic comes from a different rule, and states a different fact. A
+    narrow target can only name a file-scope global -- an entry procedure takes no inputs,
+    so there is nothing else in scope to name -- and a contract naming a global is
+    rejected in its own right. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Cell3 { var v: int }
+var c3: Cell3 := <??>
+procedure runMe()
+  entry
+  opaque
+  modifies c3
+//         ^^ error: entry procedure 'runMe' may only declare 'modifies *': a narrower frame is stated in terms of the heap, which an entry procedure holds as a body local rather than a parameter
+//         ^^ error: the contract of entry procedure 'runMe' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see
+{
+  c3#v := 1
+};
+#end

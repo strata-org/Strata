@@ -371,6 +371,12 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   -- `ensures`/`modifies`, so they are emitted with it. (A `.Transparent` body has
   -- no spec block to carry them; such a procedure cannot be written in the
   -- surface grammar, since these cases require `opaque`.)
+  -- One clause per non-empty list; each carries its names as a `CommaSepBy Ident`.
+  let globalsClauseArgs (opName : String) (globals : List Identifier) : Array Arg :=
+    if globals.isEmpty then #[]
+    else #[laurelOp opName #[commaSep (globals.map (ident ·.text) |>.toArray)]]
+  let readsArgs := globalsClauseArgs "readsGlobalsClause" proc.readsGlobals
+  let writesArgs := globalsClauseArgs "writesGlobalsClause" proc.writesGlobals
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
       (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
@@ -379,11 +385,13 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
       let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
       (optionArg (some (laurelOp "opaqueSpec"
-        #[seqArg ens, seqArg mods, seqArg throwsOnArgs])), body)
+        #[seqArg ens, seqArg mods, seqArg throwsOnArgs,
+          seqArg readsArgs, seqArg writesArgs])), body)
     | .Abstract postconds =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       (optionArg (some (laurelOp "opaqueSpec"
-        #[seqArg ens, seqArg #[], seqArg throwsOnArgs])), optionArg none)
+        #[seqArg ens, seqArg #[], seqArg throwsOnArgs,
+          seqArg readsArgs, seqArg writesArgs])), optionArg none)
     | .External =>
       (optionArg none, optionArg (some (laurelOp "externalBody")))
   { ann := sr

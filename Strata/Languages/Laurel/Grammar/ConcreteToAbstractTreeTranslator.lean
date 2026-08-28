@@ -914,22 +914,53 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
             | _, _ => TransM.error s!"Expected throwsOnClause, got {repr bOp.name}"
           | _ => TransM.error "Expected operation in throwsOn sequence"
       | _ => pure []
-    let (isOpaque, postconditions, modifies, throwsOn) ←
+    -- Each `reads`/`writes` clause names one or more globals; repeated clauses
+    -- union their names, as the `modifies` clauses do.
+    let parseGlobalsClauses (opName : QualifiedIdent) (a : Arg) : TransM (List Identifier) :=
+      match a with
+      | .seq _ _ clauses => do
+        let mut names : List Identifier := []
+        for arg in clauses do
+          match arg with
+          | .op cOp =>
+            if cOp.name == opName then
+              match cOp.args with
+              | #[globalsArg] =>
+                -- A one-element `CommaSepBy` arrives as the bare element, not a
+                -- `.seq` (the shape `extends` handles for its parent list).
+                let clauseNames ← match globalsArg with
+                  | .seq _ .comma args => args.toList.mapM translateIdent
+                  | singleArg => do let n ← translateIdent singleArg; pure [n]
+                names := names ++ clauseNames
+              | _ => TransM.error s!"Expected one argument for {opName}, got {repr cOp.args}"
+            else TransM.error s!"Expected {opName}, got {repr cOp.name}"
+          | _ => TransM.error "Expected operation in globals clause sequence"
+        pure names
+      | _ => pure []
+    let (isOpaque, postconditions, modifies, throwsOn, readsGlobals, writesGlobals) ←
       match opaqueSpecArg with
       | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
-        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg, throwsOnArg] =>
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg, throwsOnArg, readsArg, writesArg] =>
           let postconditions ← translateEnsuresClauses ensuresArg
           let modifies ← translateModifiesClauses modifiesArg
           let throwsOn ← parseThrowsOn throwsOnArg
-          pure (true, postconditions, modifies, throwsOn)
+          let reads ← parseGlobalsClauses q`Laurel.readsGlobalsClause readsArg
+          let writes ← parseGlobalsClauses q`Laurel.writesGlobalsClause writesArg
+          pure (true, postconditions, modifies, throwsOn, reads, writes)
+        | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg, throwsOnArg] =>
+          -- Legacy (pre-declared-global-effects) shape.
+          let postconditions ← translateEnsuresClauses ensuresArg
+          let modifies ← translateModifiesClauses modifiesArg
+          let throwsOn ← parseThrowsOn throwsOnArg
+          pure (true, postconditions, modifies, throwsOn, [], [])
         | q`Laurel.opaqueSpec, #[ensuresArg, modifiesArg] =>
           -- Legacy (pre-exceptional-case) shape.
           let postconditions ← translateEnsuresClauses ensuresArg
           let modifies ← translateModifiesClauses modifiesArg
-          pure (true, postconditions, modifies, [])
+          pure (true, postconditions, modifies, [], [], [])
         | _, _ => TransM.error s!"Expected opaqueSpec operation, got {repr opaqueSpecOp.name}"
-      | .option _ none => pure (false, [], [], [])
-      | _ => pure (false, [], [], [])
+      | .option _ none => pure (false, [], [], [], [], [])
+      | _ => pure (false, [], [], [], [], [])
     -- Parse optional body
     let isExternal ← match bodyArg with
       | .option _ (some (.op bodyOp)) => match bodyOp.name, bodyOp.args with
@@ -962,6 +993,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       throwsType := throwsType
       throwsBinding := throwsBinding
       throwsOn := throwsOn
+      readsGlobals := readsGlobals
+      writesGlobals := writesGlobals
       body := procBody
     }
   | q`Laurel.procedure, args =>
