@@ -336,17 +336,6 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
     | .error e => throw e
   pure (current, state)
 
-/-- Pure analogue of `runTransforms` for non-IO contexts (e.g. `genVCs`).
-    Runs each phase in sequence via `Transform.runWith`; returns `none` on the
-    first failure. -/
-def runPhasesOpt (p : Program) (phases : List PipelinePhase)
-    (initState : Transform.CoreTransformState := .emp) :
-    Option (Program × Transform.CoreTransformState) :=
-  phases.foldlM (init := (p, initState)) fun (prog, state) pp =>
-    let (result, newState) :=
-      Transform.runWith prog (fun q => do let (_, q') ← pp.transform q; return q') state
-    result.toOption.map fun q' => (q', newState)
-
 end -- public section
 
 end Core

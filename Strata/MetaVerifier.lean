@@ -73,12 +73,20 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  -- Run the shared genVCsPipelinePhases (a subset of corePipelinePhases).
+  -- Boole programs arrive with structured bodies and no calls; add loop phases
+  -- before the shared preSymbolicEvalPipelinePhases.
+  let phases := [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
+                  ++ preSymbolicEvalPipelinePhases options
+  -- Validate phase composition starting from Boole's guaranteed invariants.
+  let _ ← (ValidatedPipeline.ofListFrom (factSet![.noCFGBodies, .noCalls]) phases).toOption
   -- The factory is seeded with Core.Factory so monomorphizeFunctions can look
   -- up built-in polymorphic functions.
   let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
   let (monoProgram, monoState) ←
-    runPhasesOpt program (genVCsPipelinePhases options) initState
+    phases.foldlM (init := (program, initState)) fun (prog, state) pp =>
+      let (result, newState) :=
+        Transform.runWith prog (fun q => do let (_, q') ← pp.transform q; return q') state
+      result.toOption.map fun q' => (q', newState)
   -- symbolicEval (toCoreProofObligationProgram) runs separately so we can keep
   -- monoProgram for buildEnv, which needs the pre-symbolic-evaluation program.
   match Core.toCoreProofObligationProgram options monoProgram with

@@ -141,7 +141,10 @@ def run (p : Program) : CoreTransformM Program := do
     match decl with
     | .proc proc md =>
       if proc.header.typeArgs.isEmpty then
-        -- Already monomorphic: no substitution needed, skip structural checks.
+        -- Skip: nothing to substitute.  The structural guards (`.noCalls`,
+        -- `.noCFGBodies`) protect the substitution step, which is only applied
+        -- to polymorphic procedures; passing a non-polymorphic procedure through
+        -- unchanged is always safe regardless of its body or call sites.
         pure (acc.push decl)
       else
         match proc.body with
