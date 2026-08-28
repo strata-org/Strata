@@ -6,6 +6,8 @@
 module
 
 import Strata.Languages.Core.ObligationExtraction
+import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.LoopElim
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
