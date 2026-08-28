@@ -1286,16 +1286,6 @@ def VCResult.isUnknown (vr : VCResult) : Bool :=
   | .ok o => o.isUnknown
   | .error _ => false
 
-/-- Weaker gate than `VCResult.isUnknown`: triggers when the *validity* component is
-    unknown, regardless of satisfiability.  Used by `requeryDropAxioms` because nat
-    VCs with bridge axioms land in `satisfiableValidityUnknown` (sat + unknown
-    validity), which `VCResult.isUnknown` — requiring both components unknown — does
-    not catch. -/
-def VCResult.hasValidityUnknown (vr : VCResult) : Bool :=
-  match vr.outcome with
-  | .ok o => match o.validityProperty with | .unknown _ => true | _ => false
-  | .error _ => false
-
 def VCResult.isImplementationError (vr : VCResult) : Bool :=
   match vr.outcome with
   | .error (.encoding _) | .error (.solverCrash _) => true
@@ -1322,6 +1312,16 @@ def VCResult.isBugFindingSuccess (vr : VCResult) : Bool :=
 def VCResult.isBugFindingFailure (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.bugFindingFailure
+  | .error _ => false
+
+/-- Weaker gate than `VCResult.isUnknown`: triggers when the *validity* component is
+    unknown, regardless of satisfiability.  Used by `requeryDropAxioms` because nat
+    VCs with bridge axioms land in `satisfiableValidityUnknown` (sat + unknown
+    validity), which `VCResult.isUnknown` — requiring both components unknown — does
+    not catch. -/
+def VCResult.hasValidityUnknown (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => match o.validityProperty with | .unknown _ => true | _ => false
   | .error _ => false
 
 /-- True when either SMT property inside a successful outcome is `.err`.
@@ -2128,7 +2128,7 @@ When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
 drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
 `showsProfiling`; `options.profile` only decides the `outputMode` of the
 context created internally when `pipelineCtx` is `none`. -/
-def verify (program : Program)
+partial def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
@@ -2186,42 +2186,23 @@ def verify (program : Program)
   let results : VCResults := (VCss.map (·.fst)).toArray.flatten
   let merged := results.mergeByAssertion
   -- Re-query pass: if the caller specified axioms to drop and any obligation is
-  -- still unknown, re-run those obligations without those axioms so the solver
-  -- can return a certified sat (counterexample) unimpeded by the universals.
+  -- still unknown, re-run the full pipeline on the program with those axioms
+  -- removed.  Running verify again (rather than surgery on oblProgram) is robust
+  -- to axiom-label changes that transforms may introduce.
   if requeryDropAxioms.isEmpty || !merged.any (·.hasValidityUnknown) then
     return merged
-  -- Bridge axioms live in `program` (the original input); `oblProgram` already
-  -- excludes them because `toCoreProofObligationProgram` only keeps .type decls,
-  -- eval-derived functions, distinct constraints, and obligation procedures.
-  -- Check existence against `program.decls` so mis-spelled names still warn.
   let programAxiomNames := program.decls.filterMap fun d => d.getAxiom?.map (·.name)
   let matchedAxioms := requeryDropAxioms.filter (programAxiomNames.contains ·)
   if matchedAxioms.isEmpty then
     let _ ← IO.println s!"[Strata] requeryDropAxioms: none of {requeryDropAxioms} matched any axiom declaration — re-query skipped" |>.toBaseIO
     return merged
-  -- Bridge axioms were baked into `oblProgram`'s procedure bodies as `assume`
-  -- statements by `toCoreProofObligationProgram`. Strip those assumes so the
-  -- re-query SMT problem is axiom-free and cvc5 can certify a counterexample.
-  let oblProgramNoAxioms : Program :=
-    { oblProgram with
-      decls := oblProgram.decls.map fun d =>
-        match d with
-        | .proc p md =>
-          let newBody := match p.body with
-            | .structured ss =>
-              .structured (ss.filter fun s =>
-                match s with
-                | .cmd (.cmd (.assume label _ _)) => !matchedAxioms.contains label
-                | _ => true)
-            | other => other
-          .proc { p with body := newBody } md
-        | other => other }
-  let requerySolver := mkDefaultCoreSMTSolver options counter tempDir axiomCache?
-    axiomNames (axiomProgram := program) externalPhases phases
-    (mkDischarge := mkDischarge) pctx
-  let (reQueryVCs, _) ← pctx.withPhase "requeryVcDischarge" do
-    requerySolver moreFns oblProgramNoAxioms
-  let reQueryMerged := reQueryVCs.mergeByAssertion
+  let programWithoutAxioms : Program :=
+    { program with decls := program.decls.filter fun d =>
+        match d.getAxiom? with
+        | some ax => !matchedAxioms.contains ax.name
+        | none => true }
+  let reQueryMerged ← verify programWithoutAxioms tempDir proceduresToVerify options moreFns
+    externalPhases prefixPhases solver mkDischarge (some pctx) (requeryDropAxioms := [])
   -- Build an index for O(n) lookup instead of O(n²) linear scan per unknown.
   let reQueryIndex : Std.HashMap String VCResult :=
     reQueryMerged.foldl (fun acc r => acc.insert r.obligation.label r) {}
