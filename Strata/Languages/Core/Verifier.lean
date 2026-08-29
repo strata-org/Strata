@@ -2128,7 +2128,7 @@ When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
 drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
 `showsProfiling`; `options.profile` only decides the `outputMode` of the
 context created internally when `pipelineCtx` is `none`. -/
-partial def verify (program : Program)
+def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
@@ -2138,10 +2138,6 @@ partial def verify (program : Program)
     (solver : Option CoreSMTSolver := none)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
-    -- Axiom names to strip on a re-query when obligations remain unknown after
-    -- the primary pass. Sound only when the named axioms are consequences of
-    -- the remaining definitions (any sat model satisfies them automatically).
-    (requeryDropAxioms : List String := [])
     : EIO Message VCResults := do
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
@@ -2184,36 +2180,7 @@ partial def verify (program : Program)
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
   let results : VCResults := (VCss.map (·.fst)).toArray.flatten
-  let merged := results.mergeByAssertion
-  -- Re-query pass: if the caller specified axioms to drop and any obligation is
-  -- still unknown, re-run the full pipeline on the program with those axioms
-  -- removed.  Running verify again (rather than surgery on oblProgram) is robust
-  -- to axiom-label changes that transforms may introduce.
-  if requeryDropAxioms.isEmpty || !merged.any (·.hasValidityUnknown) then
-    return merged
-  let programAxiomNames := program.decls.filterMap fun d => d.getAxiom?.map (·.name)
-  let matchedAxioms := requeryDropAxioms.filter (programAxiomNames.contains ·)
-  if matchedAxioms.isEmpty then
-    let _ ← IO.println s!"[Strata] requeryDropAxioms: none of {requeryDropAxioms} matched any axiom declaration — re-query skipped" |>.toBaseIO
-    return merged
-  let programWithoutAxioms : Program :=
-    { program with decls := program.decls.filter fun d =>
-        match d.getAxiom? with
-        | some ax => !matchedAxioms.contains ax.name
-        | none => true }
-  let reQueryMerged ← verify programWithoutAxioms tempDir proceduresToVerify options moreFns
-    externalPhases prefixPhases solver mkDischarge (some pctx) (requeryDropAxioms := [])
-  -- Build an index for O(n) lookup instead of O(n²) linear scan per unknown.
-  let reQueryIndex : Std.HashMap String VCResult :=
-    reQueryMerged.foldl (fun acc r => acc.insert r.obligation.label r) {}
-  -- Only upgrade unknown → failure; never treat a re-query unsat as a proof
-  -- (the dropped axioms might have been load-bearing for the unsat direction).
-  return merged.map fun r =>
-    if !r.hasValidityUnknown then r
-    else
-      match reQueryIndex.get? r.obligation.label with
-      | some r2 => if r2.isFailure then r2 else r
-      | none    => r
+  return results.mergeByAssertion
 
 end -- public section
 end Core
