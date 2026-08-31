@@ -15,12 +15,12 @@ program Laurel;
 
 procedure paddedBelow(res: Sequence<int>, c: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(res) ==> seqSelect(res, k) == c
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(res) ==> seqSelect(res, k) == c
 };
 
 procedure copiedBelow(res: Sequence<int>, s: Sequence<int>, pad: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> 0 <= pad + k ==> pad + k < seqLength(res) ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> 0 <= pad + k ==> pad + k < seqLength(res) ==>
     seqSelect(res, pad + k) == seqSelect(s, k)
 };
 
@@ -65,12 +65,12 @@ program Laurel;
 
 procedure paddedBelow(res: Sequence<int>, c: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(res) ==> seqSelect(res, k) == c
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(res) ==> seqSelect(res, k) == c
 };
 
 procedure copiedBelow(res: Sequence<int>, s: Sequence<int>, pad: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> 0 <= pad + k ==> pad + k < seqLength(res) ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> 0 <= pad + k ==> pad + k < seqLength(res) ==>
     seqSelect(res, pad + k) == seqSelect(s, k)
 };
 

@@ -11,8 +11,7 @@ import StrataLaurel.Implementation.LaurelPipelinePrinter
 Pinning the table here captures the state of the pipeline: a change to what a
 pass creates, removes or rejects shows up as a diff in the expected output. -/
 
-/--
-info: V starts holding here   | holds, and is carried on   + required here, holds, and is carried on
+/-- info: V starts holding here   | holds, and is carried on   + required here, holds, and is carried on
 ' was holding, and is dropped here   : not holding, but would be carried   (blank) not holding, and would not be carried
 S: LaurelProgram.staticFunctions.cons   O: Program.Ordered   N: Pseudo.needsOverrideRules
 I: StmtExpr.IncrDecr   C: StmtExpr.CompoundAssign   Ic: CompositeType.instanceProcedures.cons
@@ -58,11 +57,12 @@ phase                                   O   I   Ic  In  Co  Tr  Ts  Tf  Sc  pI  
 24 LoopInvariantWellFormedness        | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | : | | | : | V | | | |
 25 Contracts                          + + | | | | | | | | | | | | | | + + + | | | | | | | | | | | | | : | | | : | | | | | |
 26 Transparency                       ' + | | | | | | | | | | | | | | | | + | | | | | | | | | | | | |   ' | ' : | | | | | |
-27 FunctionalRewritePass              : + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | :   | V : | | | | | |
-28 LiftImperativeExpressions          : + | + + | | | | | | | | | | | | | | + | | | | | | | | | | | | V : | | : | | | | | |
-29 InlineLocalVariables               : + | + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | : | | | | | |
-30 Ordering                           : ' | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | | | | |
-31 LaurelToCoreSchema                 : : | + + + | + + | + + | | | | | | | | + + + + + + + + + + + + + + + + + + + + + + + -/
+27 PackageFunctionOutputsPass         : + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | : : | : : | | | | | |
+28 FunctionalRewritePass              : + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | :   | V : | | | | | |
+29 LiftImperativeExpressions          : + | + + | | | | | | | | | | | | | | + | | | | | | | | | | | | V : | | : | | | | | |
+30 InlineLocalVariables               : + | + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | : | | | | | |
+31 Ordering                           : ' | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | | | | |
+32 LaurelToCoreSchema                 : : | + + + | + + | + + | | | | | | | | + + + + + + + + + + + + + + + + + + + + + + + -/
 #guard_msgs in
 #eval IO.println Strata.Laurel.shapeLifelineTable
 

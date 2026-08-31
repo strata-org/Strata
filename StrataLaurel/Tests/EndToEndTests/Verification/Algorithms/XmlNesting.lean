@@ -18,7 +18,7 @@ procedure openAt(ev: Sequence<int>, hi: int, d: int): int;
 
 procedure nestAxioms(): bool
 {
-  (forall(ev: Sequence<int>) => depth(ev, 0) == 0)
+  return (forall(ev: Sequence<int>) => depth(ev, 0) == 0)
   && (forall(ev: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(ev) ==>
         depth(ev, h) == depth(ev, h - 1) + (if seqSelect(ev, h - 1) > 0 then 1 else -1))
   && (forall(ev: Sequence<int>) => forall(d: int) => openAt(ev, 0, d) == 0)
@@ -28,13 +28,13 @@ procedure nestAxioms(): bool
 
 procedure matchedBelow(ev: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(ev) ==> seqSelect(ev, k) < 0 ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(ev) ==> seqSelect(ev, k) < 0 ==>
     depth(ev, k) > 0 && openAt(ev, k, depth(ev, k) - 1) == -seqSelect(ev, k)
 };
 
 procedure stackModels(ev: Sequence<int>, st: Sequence<int>, hi: int): bool
 {
-  forall(d: int) => 0 <= d ==> d < seqLength(st) ==> seqSelect(st, d) == openAt(ev, hi, d)
+  return forall(d: int) => 0 <= d ==> d < seqLength(st) ==> seqSelect(st, d) == openAt(ev, hi, d)
 };
 
 procedure wellNested(ev: Sequence<int>) returns (ok: bool)
@@ -74,7 +74,7 @@ procedure openAt(ev: Sequence<int>, hi: int, d: int): int;
 
 procedure nestAxioms(): bool
 {
-  (forall(ev: Sequence<int>) => depth(ev, 0) == 0)
+  return (forall(ev: Sequence<int>) => depth(ev, 0) == 0)
   && (forall(ev: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(ev) ==>
         depth(ev, h) == depth(ev, h - 1) + (if seqSelect(ev, h - 1) > 0 then 1 else -1))
   && (forall(ev: Sequence<int>) => forall(d: int) => openAt(ev, 0, d) == 0)
@@ -84,13 +84,13 @@ procedure nestAxioms(): bool
 
 procedure matchedBelow(ev: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(ev) ==> seqSelect(ev, k) < 0 ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(ev) ==> seqSelect(ev, k) < 0 ==>
     depth(ev, k) > 0 && openAt(ev, k, depth(ev, k) - 1) == -seqSelect(ev, k)
 };
 
 procedure stackModels(ev: Sequence<int>, st: Sequence<int>, hi: int): bool
 {
-  forall(d: int) => 0 <= d ==> d < seqLength(st) ==> seqSelect(st, d) == openAt(ev, hi, d)
+  return forall(d: int) => 0 <= d ==> d < seqLength(st) ==> seqSelect(st, d) == openAt(ev, hi, d)
 };
 
 procedure wellNested(ev: Sequence<int>) returns (ok: bool)

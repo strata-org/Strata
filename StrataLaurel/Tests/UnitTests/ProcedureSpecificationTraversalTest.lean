@@ -365,10 +365,11 @@ writer specifications lowered: true
 
 /-! ## Calls in heap-aware specifications
 
-Heap-reading calls remain ordinary calls with an added heap argument. Calls to
-heap-writing procedures must also remain calls in specifications: executable
-lowering would synthesize an assignment block and obscure the source-level
-"procedure call in a contract" diagnostic.
+Heap-reading calls remain ordinary calls with an added heap argument, and so do calls to
+heap-writing procedures: `HeapParameterization` does not lower a specification's calls
+into assignment blocks. A heap writer is a global writer, so resolution rejects calling one
+from a specification, and reports the source call rather than an assignment synthesized
+later.
 -/
 
 private def specificationCallProgram : LaurelProgram :=
@@ -448,7 +449,7 @@ private def checkSpecificationCalls : IO Unit := do
   let (_, diagnostics, _, _) ← translateWithLaurel {} impureSpecificationCallProgram
   let messages := diagnostics.map fun diagnostic => (Std.format diagnostic.message).pretty
   let reportsSourceCall := messages.any
-    (·.contains "calling multi-output procedure 'mutator'")
+    (·.contains "calls to global-writing procedure 'mutator'")
   let reportsSyntheticAssignment := messages.any
     (·.contains "destructive assignments are not supported in transparent bodies or contracts")
   IO.println s!"writer call diagnostics: {resolved.errors.size == 2}"

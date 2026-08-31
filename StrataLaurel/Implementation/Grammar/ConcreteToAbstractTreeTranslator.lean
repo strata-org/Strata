@@ -549,11 +549,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           return mkStmtExprMd (.StaticCall name argsList []) src
       | _ =>
         return mkStmtExprMd (.StaticCall (mkId "") argsList []) src
-    | q`Laurel.return, #[arg0] =>
+    | q`Laurel.return, #[arg0, moreArg] =>
       let value ← match arg0 with
         | .option _ (some valArg) => some <$> translateStmtExpr valArg
         | _ => pure none
-      return mkStmtExprMd (.Return value) src
+      let more ← match moreArg with
+        | .option _ (some (.op moreOp)) => match moreOp.name, moreOp.args with
+          | q`Laurel.returnMore, #[valuesSeq] => match valuesSeq with
+            | .seq _ .comma vals => vals.toList.mapM translateStmtExpr
+            | _ => pure []
+          | _, _ => pure []
+        | _ => pure []
+      if value.isNone && !more.isEmpty then
+        TransM.error "return: value list cannot begin with a comma"
+      else
+        return mkStmtExprMd (.Return (value.toList ++ more)) src
     | q`Laurel.yield, _ => return mkStmtExprMd .Yield src
     | q`Laurel.ifThenElse, #[arg0, arg1, elseArg] =>
       let cond ← translateStmtExpr arg0

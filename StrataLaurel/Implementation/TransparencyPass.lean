@@ -80,6 +80,13 @@ private def functionCopyCallee (asFunctionNames : Std.HashSet String) (callee : 
     position is rejected by the schema pass, so stripping is not optional at any site
     that renames calls. The two are one operation here rather than a choice per site.
 
+    A proof step whose condition writes state keeps that write. After
+    `GlobalParameterization`, a call to a procedure that writes a global or the heap sits
+    in the condition as `{ assign g, var $t := f(g); $t }`, so deleting the step would also
+    delete the write and the copy would compute a state the procedure never reaches. Such
+    a step becomes `{ var $assertCondition := <condition> }`: `FunctionalRewrite` hoists
+    the write out of the initializer, and only the check is dropped.
+
     `mapStmtExprFlattenM` is what makes dropping a proof step a *deletion*: its `post`
     returns a list, so `[]` removes the node and the enclosing `Block` flattens over the
     gap. Nothing is substituted in its place, not even where the step is the last
@@ -105,7 +112,14 @@ private def functionalize (asFunctionNames : Std.HashSet String)
   mapStmtExprFlattenM (m := Id) (fun _ _ => none)
     (fun resultUsed e =>
       match e.val with
-      | .Assert .. | .Assume _ => []
+      | .Assert cond _ | .Assume cond =>
+        if (collectStmtExprList (fun n => match n.val with
+            | .Assign .. => [()]
+            | _ => []) cond).isEmpty then []
+        else
+          let decl : StmtExprMd :=
+            ⟨.Assign [⟨.Declare ⟨mkId "$assertCondition", none⟩, e.source⟩] cond, e.source⟩
+          [⟨.Block [decl] none, e.source⟩]
       | .StaticCall callee args tyArgs =>
         if !resultUsed then []
         else [⟨.StaticCall (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
@@ -145,8 +159,7 @@ private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr
 
 /-- Apply `redirectCallsToFunctional` to a procedure's implementation and
     postcondition expressions. Used in `AnalysisMode.Verify` so that calls to
-    transparent, single-output procedures become pure function applications at
-    their call sites. -/
+    transparent procedures become pure function applications at their call sites. -/
 private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Procedure) : Procedure :=
   let r := redirectCallsToFunctional redirectNames
   match proc.body with
@@ -469,13 +482,11 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
     { program with staticFunctions := program.staticFunctions ++ functions, staticProcedures := coreProcedures }
   | .Verify | .BothSuboptimally =>
-    -- Names of single-output procedures whose calls can be redirected to their
-    -- `$asFunction` version: `mkFreePostcondition` only equates a single output
-    -- to the function, and a single function application can only fill one
-    -- assignment target. Multi-output procedures are excluded.
-    let singleOutputNames : Std.HashSet String :=
+    -- Names of procedures whose calls can be redirected to their `$asFunction`
+    -- version: a transparent body is what makes the twin carry the procedure's meaning.
+    let redirectNames : Std.HashSet String :=
       imperativeProcs.foldl (fun s p =>
-        if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
+        if p.body.isTransparent then s.insert p.name.text else s) {}
     -- $asFunction copies for procedures that have a procedural twin;
     -- transparent-only procedures keep their original name.
     let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
@@ -515,7 +526,7 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
     let coreProcedures := rewritten.map fun proc =>
       match options.analysisMode with
       | .Verify =>
-        -- Redirect every call to a single-output twinned procedure to its
+        -- Redirect every call to a transparent twinned procedure to its
         -- `$asFunction` version so calls stay constant-foldable during symbolic
         -- evaluation (instead of producing fresh symbolic outputs via the
         -- procedural twin). Callers of a redirected procedure observe the pure
@@ -528,8 +539,8 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
         -- can no longer discharge a goal about `P`. Procedures whose twin no
         -- axiom mentions get no bridge, since injecting the uninterpreted twin
         -- equation only weakens the solver (turning refutable goals into unknown).
-        let proc := redirectCallsInProc singleOutputNames proc
-        if axiomTwinNames.contains proc.name.text && !singleOutputNames.contains proc.name.text then
+        let proc := redirectCallsInProc redirectNames proc
+        if axiomTwinNames.contains proc.name.text && !redirectNames.contains proc.name.text then
           addFreePostcondition proc (mkFreePostcondition proc)
         else proc
       | _ =>

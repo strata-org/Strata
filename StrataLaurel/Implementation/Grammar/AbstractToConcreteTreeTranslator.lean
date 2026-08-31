@@ -249,8 +249,11 @@ where
         laurelOp "doWhile" #[stmtExprToArg body, stmtExprToArg cond, seqArg invArgs]
       else
         laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
-    | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
-    | .Return none => laurelOp "return" #[optionArg none]
+    | .Return [] => laurelOp "return" #[optionArg none, optionArg none]
+    | .Return (value :: more) =>
+      let moreOpt := optionArg (if more.isEmpty then none
+        else some (laurelOp "returnMore" #[commaSep (more.map stmtExprToArg).toArray]))
+      laurelOp "return" #[optionArg (some (stmtExprToArg value)), moreOpt]
     | .Yield => laurelOp "yield" #[]
     | .Resume target none =>
       laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target]]

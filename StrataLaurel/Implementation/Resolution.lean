@@ -1692,7 +1692,8 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
       | .Field obj _ => collectThrownTypes env obj
       | _ => pure [])
     pure (ts.flatten ++ (← collectThrownTypes env v))
-  | .Return (some v) => collectThrownTypes env v
+  | .Return vs =>
+    pure (← vs.attach.mapM (fun ⟨v, _⟩ => collectThrownTypes env v)).flatten
   | .ProveBy v pf => pure ((← collectThrownTypes env v) ++ (← collectThrownTypes env pf))
   | .Try body catches finally? =>
     let ff ← match _hf : finally? with | some f => collectThrownTypes env f | none => pure []
@@ -2431,27 +2432,27 @@ def Check.exit (target : String) (source : FileRange) :
     ```
     T_o-bar = []                                           (Return-None-Void)
     ─────────────────────────
-    Γ ⊢ Return none ⇒ TVoid
+    Γ ⊢ Return [] ⇒ TVoid
 
     T_o-bar = [T]                                          (Return-None-Single)
     ──────────────────────────────────
-    Γ ⊢ Return none ⇒ TVoid
+    Γ ⊢ Return [] ⇒ TVoid
 
     T_o-bar = [T_1;…;T_n]  n ≥ 2                           (Return-None-Multi)
     ──────────────────────────────────
-    Γ ⊢ Return none ⇒ TVoid
+    Γ ⊢ Return [] ⇒ TVoid
 
-    T_o-bar = [T]    Γ ⊢ e ⇐ T                             (Return-Some)
+    T_o-bar = [T_1;…;T_n]    Γ ⊢ e_i ⇐ T_i                 (Return-Values)
     ──────────────────────────────────
-    Γ ⊢ Return (some e) ⇒ TVoid
+    Γ ⊢ Return [e_1;…;e_n] ⇒ TVoid
 
     T_o-bar = []                                           (Return-Void-Error)
     ───────────────────────────────────────────────────────────
-    Γ ⊢ Return (some e) ↝ "void procedure cannot return a value"
+    Γ ⊢ Return [e_1;…;e_m] ↝ "void procedure cannot return a value"
 
-    T_o-bar = [T_1;…;T_n]  n ≥ 2                           (Return-Multi-Error)
+    T_o-bar = [T_1;…;T_n]  m ≠ n  m ≥ 1                    (Return-Arity-Error)
     ───────────────────────────────────────────────────────────
-    Γ ⊢ Return (some e) ↝ "multi-output procedure cannot use 'return e'; assign to named outputs instead"
+    Γ ⊢ Return [e_1;…;e_m] ↝ "procedure declares n outputs, so 'return' takes n values, not m"
     ```
     `return` is the *only* rule whose premises depend on the enclosing
     procedure's declared outputs. It is a control-flow terminator: it
@@ -2472,45 +2473,44 @@ def Check.exit (target : String) (source : FileRange) :
     declared output retains whatever was last assigned to it via
     named-output assignment.
 
-    `return e` is checked against the declared output type in the
-    single-output case. Multi-output procedures use named-output
-    assignment (`r := …` on the declared output parameters); `return e`
-    syntactically takes a single `Option StmtExpr` and cannot carry
-    multiple values, so it is flagged with a diagnostic pointing users
-    at the named-output convention.
-
-    Regardless of which arm fires, `e` is always elaborated — it is
-    checked against the declared output in the single-output case,
-    otherwise synthesized — so any errors inside `e` are reported in
-    addition to the arity diagnostic. -/
+    A valued `return` supplies one value per declared output, left to
+    right, each checked against the type of the output it fills. Every
+    value is elaborated even when the count is wrong — synthesized rather
+    than checked — so errors inside a value are reported in addition to
+    the arity diagnostic. -/
 def Check.return (exprMd : StmtExprMd)
-    (val : Option StmtExprMd) (source : FileRange)
-    (h : exprMd.val = .Return val) :
+    (vals : List StmtExprMd) (source : FileRange)
+    (h : exprMd.val = .Return vals) :
     ResolveM StmtExprMd := do
   let expectedReturn := (← get).answerType
-  let val' ← val.attach.mapM (fun a => have := a.property; do
+  let synthAll : ResolveM (List StmtExprMd) :=
+    vals.attach.mapM (fun a => have := a.property; do
+      let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
+  let vals' ←
     match expectedReturn with
-    | some [singleOutput] => Check.resolveStmtExpr a.val singleOutput
-    | _ => let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
-  match val, expectedReturn with
-  | none,   some []          => pure ()
-  | none,   some [singleOutput] => pure ()
-  | none,   some _           => pure ()
-  | some _, some []          =>
+    | some outs =>
+      if outs.length == vals.length then
+        (vals.attach.zip outs).mapM (fun (a, ty) =>
+          have := a.property; Check.resolveStmtExpr a.val ty)
+      else synthAll
+    | none => synthAll
+  match vals, expectedReturn with
+  | [], _ => pure ()
+  | _ :: _, some [] =>
     let diag := diagnosticFromSource source
       "void procedure cannot return a value"
     modify fun s => { s with errors := s.errors.push diag }
-  | some _, some [_]         => pure ()
-  | some _, some _           =>
-    let diag := diagnosticFromSource source
-      "multi-output procedure cannot use 'return e'; assign to named outputs instead"
-    modify fun s => { s with errors := s.errors.push diag }
-  | _,      none             => pure ()
+  | _ :: _, some outs =>
+    if outs.length != vals.length then
+      let diag := diagnosticFromSource source
+        s!"procedure declares {outs.length} outputs, so 'return' takes {outs.length} values, not {vals.length}"
+      modify fun s => { s with errors := s.errors.push diag }
+  | _ :: _, none => pure ()
   -- `return` is a control-flow jump; it doesn't deliver a value to the
   -- enclosing block, so no TVoid-vs-expected subsumption is required.
-  -- The return value (if any) was already checked against the declared
-  -- output above via `answerType`.
-  pure { val := .Return val', source := source }
+  -- The returned values were already checked against the declared
+  -- outputs above via `answerType`.
+  pure { val := .Return vals', source := source }
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
@@ -5861,7 +5861,7 @@ private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
       | .Field obj _ => exceptionEscapes model lattice obj
       | _ => [])
       ++ exceptionEscapes model lattice value
-  | .Return (some v) => exceptionEscapes model lattice v
+  | .Return vs => vs.attach.flatMap (fun ⟨v, _⟩ => exceptionEscapes model lattice v)
   | .ProveBy v pf => exceptionEscapes model lattice v ++ exceptionEscapes model lattice pf
   | _ => []
   termination_by sizeOf expr
@@ -6100,7 +6100,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
       | .Field obj _ => throwingCallSources model obj
       | _ => [])
       ++ checkValue value
-  | .Return (some v) => checkValue v
+  | .Return vs => vs.flatMap checkValue
   | .Throw op => throwingCallSources model op
   | .StaticCall _ args _ | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
   | _ => throwingCallSources model stmt
@@ -6782,8 +6782,8 @@ private def foldRestrictedStmtExprM [Monad m]
   | .Assigned name => foldRestrictedStmtExprM f restricted name
   | .Fresh name => foldRestrictedStmtExprM f restricted name
   | .Old value _ => foldRestrictedStmtExprM f true value
-  | .Assert cond _ => foldRestrictedStmtExprM f true cond
-  | .Assume cond => foldRestrictedStmtExprM f true cond
+  | .Assert cond _ => foldRestrictedStmtExprM f restricted cond
+  | .Assume cond => foldRestrictedStmtExprM f restricted cond
   | .Throw value => foldRestrictedStmtExprM f restricted value
   | .Try body catches finally? =>
     foldRestrictedStmtExprM f restricted body
@@ -6899,13 +6899,9 @@ private def validateGlobalCall (ctx : GlobalCallValidationContext) (restricted :
       s!"passing file-scope globals to explicit inout parameters of '{callee.text}' is not yet supported"
       MessageKind.userError])
   if writesGlobal then
-    if explicitInout then
+    if restricted then
       modify (· ++ [diagnosticFromSource callee.source
-        s!"calls to global-writing procedure '{callee.text}' with explicit inout outputs are not yet supported"
-        MessageKind.userError])
-    else if restricted then
-      modify (· ++ [diagnosticFromSource callee.source
-        s!"calls to global-writing procedure '{callee.text}' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions"
+        s!"calls to global-writing procedure '{callee.text}' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions"
         MessageKind.userError])
   if mutatingGlobalInout then
     modify (· ++ [diagnosticFromSource callee.source
@@ -6944,7 +6940,7 @@ private def globalCallErrors (ctx : GlobalCallValidationContext)
     (initialRestricted : Bool) (expr : StmtExprMd) : List Message :=
   let mutationError (source : FileRange) : GlobalValidationM Unit :=
     modify (· ++ [diagnosticFromSource source
-      "global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions"
+      "global mutations are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions"
       MessageKind.userError])
   (foldRestrictedStmtExprM (m := GlobalValidationM)
     (fun restricted node => do
@@ -6968,9 +6964,10 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
   let tupleLocations := collectStmtExprList (fun node => match node.val with
     | .Assign targets rhs =>
         if targets.length > 1 then
-          match tupleCallNeedingBlock ctx rhs with
-          | some callee => if containsProcId ctx.writerIds callee then [callee.source] else []
-          | none => []
+          match rhs.val with
+          | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+              if containsProcId ctx.writerIds callee then [callee.source] else []
+          | _ => []
         else []
     | _ => []) expr
   (mapStmtExprUsedM (m := GlobalValidationM) (fun resultUsed node => do
@@ -7050,7 +7047,10 @@ private def oldGlobalErrorsInExpr (model : SemanticModel)
     order during parameterization. -/
 private def validateUnsupportedGlobalCalls (model : SemanticModel)
     (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
-  let writerIds := globalWriterIds program analysis
+  -- The heap is a file-scope global too — `HeapParameterization` declares it and
+  -- `GlobalParameterization` threads it like any other — so a heap writer is a global
+  -- writer here, although `$heap` is not yet among the program's fields.
+  let writerIds := (globalWriterIds program analysis).union model.heapWriters
   let dependentIds := writerIds.union (globalReaderIds program analysis)
   let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
   let errorsIn (restricted checkUsedResults allowOldDirectReads : Bool)
@@ -7393,23 +7393,16 @@ def validateCoroutineClauses (program : LaurelProgram) : List Message :=
       else []
     reliesGuarError ++ ensuresError ++ oldMarkerErrors proc
 
-/-- Effective output count of a procedure, counting the implicit heap output a
-    heap-writing procedure gains during heap parameterization: a writer gains a
-    `$heap` output (`HeapParameterization` inserts it after existing inouts), so
-    its effective output count is
-    one more than declared. A procedure is "multi-output" when this count is
-    ≥ 2 — which is exactly when it cannot be lowered to a single-output Core
-    *function* and so cannot (yet) be called from a transparent body or a
-    contract.
+/-- Output count of a procedure as a call site sees it: its declared outputs. A procedure
+    is "multi-output" when this is ≥ 2, and must then be called from a transparent body or
+    a contract by assigning one target per output.
 
-    `heapWriters` is keyed by resolution `uniqueId` (from `SemanticModel`),
-    not name text, so a heap-writing `A.foo` does not contaminate a same-named
-    pure `B.foo` in another composite. -/
-private def effectiveOutputCount (heapWriters : Std.HashSet Nat)
-    (proc : Procedure) : Except String Nat := do
-  let id ← Identifier.getUniqueId proc.name
-  let writesHeap := heapWriters.contains id
-  pure (proc.outputs.length + (if writesHeap then 1 else 0))
+    Written globals, the heap among them, are not counted. `GlobalParameterization`
+    threads each as an inout and adds its receiver to the call site itself, so a source
+    program never binds one. -/
+private def effectiveOutputCount (proc : Procedure) : Except String Nat := do
+  let _ ← Identifier.getUniqueId proc.name
+  pure proc.outputs.length
 
 /-- Every callee referenced by a `StaticCall`/`InstanceCall` anywhere in `e`,
     in pre-order, paired with the source range of the whole call node (so a
@@ -7423,50 +7416,60 @@ private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
     | .InstanceCall _ callee _ => [(callee, n.source)]
     | _ => []) e
 
-/-- The expressions of a procedure that end up in a transparent body or a
-    contract — the two contexts a multi-output call may not (yet) appear in.
+/-- A procedure's transparent body, whose whole implementation is transparent — the
+    `TransparencyPass` derives a pure `$asFunction` copy of it. An `.Opaque` body's
+    implementation is deliberately excluded: it is ordinary imperative code, verified
+    as a procedure. -/
+private def transparentBodyExprs (proc : Procedure) : List StmtExprMd :=
+  match proc.body with
+  | .Transparent b => [b]
+  | _ => []
 
-    - A `.Transparent` body's whole implementation is transparent (the
-      `TransparencyPass` derives a pure `$asFunction` copy of it).
-    - Preconditions, postconditions, the `decreases` measure, and the `invokeOn`
-      trigger are contract expressions (the `ContractPass` translates
-      pre/postconditions into `$pre`/`$post` helpers, and calls inside them are
-      redirected to pure `$asFunction` twins).
+/-- A procedure's contract expressions: preconditions, postconditions, the `decreases`
+    measure, and the `invokeOn` trigger. The `ContractPass` translates pre/postconditions
+    into `$pre`/`$post` helpers, and calls inside them are redirected to pure
+    `$asFunction` twins.
 
-    An `.Opaque` body's *implementation* is deliberately excluded: it is ordinary
-    imperative code (verified as a procedure), so it may call multi-output
-    procedures via multi-assignment. Its postconditions are still contracts and
-    are included.
-
-    `.Abstract` bodies have no implementation, only postconditions — those are
-    contracts and are included. `.External` bodies have neither implementation
-    nor postconditions, so nothing is collected. -/
-private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
-  let bodyExprs := match proc.body with
-    | .Transparent b => [b]
+    An `.Abstract` body has no implementation, only postconditions — those are contracts
+    and are included. `.External` has neither, so nothing is collected. -/
+private def contractExprs (proc : Procedure) : List StmtExprMd :=
+  let postconditions := match proc.body with
     | .Opaque posts _impl _mods => posts.map (·.condition)
     | .Abstract posts => posts.map (·.condition)
-    | .External => []
-  procedureSpecificationExprs proc ++ bodyExprs
+    | .Transparent _ | .External => []
+  procedureSpecificationExprs proc ++ postconditions
+
+private def destructuredCallSources (outputCount : Identifier → Option Nat)
+    (e : StmtExprMd) : Std.HashSet FileRange :=
+  Std.HashSet.ofList (collectStmtExprList (fun n => match n.val with
+    | .Assign targets value =>
+      let callee? := match value.val with
+        | .StaticCall callee _ _ => some callee
+        | .InstanceCall _ callee _ => some callee
+        | _ => none
+      match callee? with
+      | some callee =>
+        if targets.length ≥ 2 && outputCount callee == some targets.length then
+          [value.source]
+        else []
+      | none => []
+    | _ => []) e)
 
 /-- Reject calling a multi-output procedure from a transparent procedure or a
-    contract. A Core *function* has exactly one output, so a multi-output
-    procedure (one declaring ≥ 2 outputs, or a heap writer, which gains an
-    implicit `$heap` output — see `effectiveOutputCount`) cannot be lowered to
-    the pure `$asFunction` twin that transparent bodies and contracts are
-    translated against. Until that is supported, such a call is a user error.
+    contract, unless the call fills one assignment target per output — the one form
+    `PackageFunctionOutputs` can rewrite. A multi-output procedure is one declaring
+    ≥ 2 outputs (see `effectiveOutputCount`).
 
     Only calls in a transparent body or a contract expression are flagged (see
-    `restrictedContextExprs`); calls from ordinary opaque implementations are
-    fine. Composite instance procedures are included because this runs at
+    `transparentBodyExprs` and `contractExprs`); calls from ordinary opaque
+    implementations are fine. Composite instance procedures are included because this runs at
     initial resolution, before `LiftInstanceProcedures` moves them into the
     static list.
 
     Callees are resolved through the `SemanticModel`'s `refToDef` map by their
     `uniqueId`, so `self#foo()` resolves to the `foo` of the receiver's
-    composite — not whichever same-named `foo` a text keying happened to pick.
-    Combined with the `uniqueId`-keyed heap-writer set (`model.heapWriters`),
-    this makes the check composite-scope correct: no false positive from another
+    composite — not whichever same-named `foo` a text keying happened to pick, so
+    the check is composite-scope correct: no false positive from another
     composite's multi-output `foo`, and no false negative from another
     composite's single-output `foo`. -/
 private def validateMultiOutputCallContexts (model : SemanticModel)
@@ -7475,22 +7478,31 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
     | .Composite ct => ct.instanceProcedures
     | _ => []
   let allProcs := program.staticProcedures ++ instanceProcs
-  let heapWriters := model.heapWriters
-  allProcs.flatMap fun proc =>
-    (restrictedContextExprs proc).flatMap fun e =>
+  -- Must agree with `PackageFunctionOutputs.outputsToPackage`: a call is admitted only
+  -- when that pass will actually declare a datatype for the callee's twin.
+  let packagedOutputCount (callee : Identifier) : Option Nat :=
+    match model.get? callee with
+    | some (.staticProcedure callee')
+    | some (.instanceProcedure _ callee') =>
+      (effectiveOutputCount callee').toOption
+    | _ => none
+  let contexts := allProcs.flatMap fun proc =>
+    transparentBodyExprs proc ++ contractExprs proc
+  contexts.flatMap fun e =>
+      let destructured := destructuredCallSources packagedOutputCount e
       (calleesOf e).filterMap fun (callee, callSource) =>
         -- Resolve the callee to its scoped procedure via `refToDef` (keyed by
         -- the `uniqueId` the resolved call site carries), not by name text.
         match model.get? callee with
         | some (.staticProcedure callee')
         | some (.instanceProcedure _ callee') =>
-          match effectiveOutputCount heapWriters callee' with
+          match effectiveOutputCount callee' with
           | .error e => some (Message.fromString
               s!"Internal error: effectiveOutputCount: {e}" .strataBug)
           | .ok count =>
-            if count ≥ 2 then
+            if count ≥ 2 && !destructured.contains callSource then
               some (diagnosticFromSource callSource
-                s!"calling multi-output procedure '{callee.text}' is not (yet) supported from a transparent procedure or contract"
+                s!"calling multi-output procedure '{callee.text}' is not supported from a transparent procedure or contract: such a call must assign one target per output"
                 MessageKind.userError)
             else none
         | _ => none

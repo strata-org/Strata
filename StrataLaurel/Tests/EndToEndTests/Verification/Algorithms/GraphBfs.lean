@@ -15,24 +15,24 @@ program Laurel;
 
 procedure wellFormed(adj: Sequence<Sequence<int>>): bool
 {
-  forall(u: int) => forall(k: int) => 0 <= u ==> u < seqLength(adj) ==> 0 <= k ==> k < seqLength(seqSelect(adj, u)) ==>
+  return forall(u: int) => forall(k: int) => 0 <= u ==> u < seqLength(adj) ==> 0 <= k ==> k < seqLength(seqSelect(adj, u)) ==>
     0 <= seqSelect(seqSelect(adj, u), k) && seqSelect(seqSelect(adj, u), k) < seqLength(adj)
 };
 
 procedure edge(adj: Sequence<Sequence<int>>, u: int, v: int): bool
 {
-  0 <= u && u < seqLength(adj) && (exists(k: int) => 0 <= k && k < seqLength(seqSelect(adj, u)) && seqSelect(seqSelect(adj, u), k) == v)
+  return 0 <= u && u < seqLength(adj) && (exists(k: int) => 0 <= k && k < seqLength(seqSelect(adj, u)) && seqSelect(seqSelect(adj, u), k) == v)
 };
 
 procedure justified(adj: Sequence<Sequence<int>>, vis: Sequence<bool>, parent: Sequence<int>, src: int): bool
 {
-  forall(v: int) => 0 <= v ==> v < seqLength(adj) ==> v < seqLength(vis) ==> v < seqLength(parent) ==> seqSelect(vis, v) ==> v != src ==>
+  return forall(v: int) => 0 <= v ==> v < seqLength(adj) ==> v < seqLength(vis) ==> v < seqLength(parent) ==> seqSelect(vis, v) ==> v != src ==>
     0 <= seqSelect(parent, v) && seqSelect(parent, v) < seqLength(vis) && seqSelect(vis, seqSelect(parent, v)) && edge(adj, seqSelect(parent, v), v)
 };
 
 procedure queueValid(q: Sequence<int>, n: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(q) ==> 0 <= seqSelect(q, k) && seqSelect(q, k) < n
+  return forall(k: int) => 0 <= k ==> k < seqLength(q) ==> 0 <= seqSelect(q, k) && seqSelect(q, k) < n
 };
 
 procedure bfs(adj: Sequence<Sequence<int>>, src: int) returns (vis: Sequence<bool>, parent: Sequence<int>)
@@ -108,24 +108,24 @@ program Laurel;
 
 procedure wellFormed(adj: Sequence<Sequence<int>>): bool
 {
-  forall(u: int) => forall(k: int) => 0 <= u ==> u < seqLength(adj) ==> 0 <= k ==> k < seqLength(seqSelect(adj, u)) ==>
+  return forall(u: int) => forall(k: int) => 0 <= u ==> u < seqLength(adj) ==> 0 <= k ==> k < seqLength(seqSelect(adj, u)) ==>
     0 <= seqSelect(seqSelect(adj, u), k) && seqSelect(seqSelect(adj, u), k) < seqLength(adj)
 };
 
 procedure edge(adj: Sequence<Sequence<int>>, u: int, v: int): bool
 {
-  0 <= u && u < seqLength(adj) && (exists(k: int) => 0 <= k && k < seqLength(seqSelect(adj, u)) && seqSelect(seqSelect(adj, u), k) == v)
+  return 0 <= u && u < seqLength(adj) && (exists(k: int) => 0 <= k && k < seqLength(seqSelect(adj, u)) && seqSelect(seqSelect(adj, u), k) == v)
 };
 
 procedure justified(adj: Sequence<Sequence<int>>, vis: Sequence<bool>, parent: Sequence<int>, src: int): bool
 {
-  forall(v: int) => 0 <= v ==> v < seqLength(adj) ==> v < seqLength(vis) ==> v < seqLength(parent) ==> seqSelect(vis, v) ==> v != src ==>
+  return forall(v: int) => 0 <= v ==> v < seqLength(adj) ==> v < seqLength(vis) ==> v < seqLength(parent) ==> seqSelect(vis, v) ==> v != src ==>
     0 <= seqSelect(parent, v) && seqSelect(parent, v) < seqLength(vis) && seqSelect(vis, seqSelect(parent, v)) && edge(adj, seqSelect(parent, v), v)
 };
 
 procedure queueValid(q: Sequence<int>, n: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(q) ==> 0 <= seqSelect(q, k) && seqSelect(q, k) < n
+  return forall(k: int) => 0 <= k ==> k < seqLength(q) ==> 0 <= seqSelect(q, k) && seqSelect(q, k) < n
 };
 
 procedure bfs(adj: Sequence<Sequence<int>>, src: int) returns (vis: Sequence<bool>, parent: Sequence<int>)

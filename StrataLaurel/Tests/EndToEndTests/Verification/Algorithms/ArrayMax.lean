@@ -15,12 +15,12 @@ program Laurel;
 
 procedure boundsBelow(a: Sequence<int>, m: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) <= m
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) <= m
 };
 
 procedure occursBelow(a: Sequence<int>, m: int, hi: int): bool
 {
-  exists(k: int) => 0 <= k && k < hi && k < seqLength(a) && seqSelect(a, k) == m
+  return exists(k: int) => 0 <= k && k < hi && k < seqLength(a) && seqSelect(a, k) == m
 };
 
 procedure maximum(a: Sequence<int>) returns (r: int)
@@ -53,12 +53,12 @@ program Laurel;
 
 procedure boundsBelow(a: Sequence<int>, m: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) <= m
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) <= m
 };
 
 procedure occursBelow(a: Sequence<int>, m: int, hi: int): bool
 {
-  exists(k: int) => 0 <= k && k < hi && k < seqLength(a) && seqSelect(a, k) == m
+  return exists(k: int) => 0 <= k && k < hi && k < seqLength(a) && seqSelect(a, k) == m
 };
 
 procedure maximum(a: Sequence<int>) returns (r: int)

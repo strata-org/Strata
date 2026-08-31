@@ -15,13 +15,13 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
 procedure absentIn(a: Sequence<int>, key: int, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(a) ==> seqSelect(a, k) != key
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(a) ==> seqSelect(a, k) != key
 };
 
 procedure binarySearch(a: Sequence<int>, key: int) returns (r: int)
@@ -57,13 +57,13 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
 procedure absentIn(a: Sequence<int>, key: int, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(a) ==> seqSelect(a, k) != key
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(a) ==> seqSelect(a, k) != key
 };
 
 procedure binarySearch(a: Sequence<int>, key: int) returns (r: int)

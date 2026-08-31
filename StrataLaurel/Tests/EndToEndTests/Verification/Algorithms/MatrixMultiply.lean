@@ -15,20 +15,20 @@ program Laurel;
 
 procedure square(m: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(m) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(m, r)) == n)
+  return seqLength(m) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(m, r)) == n)
 };
 
 procedure at(m: Sequence<Sequence<int>>, r: int, c: int): int
   requires 0 <= r && r < seqLength(m) && 0 <= c && c < seqLength(seqSelect(m, r))
 {
-  seqSelect(seqSelect(m, r), c)
+  return seqSelect(seqSelect(m, r), c)
 };
 
 procedure dot(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, i: int, j: int, k: int): int;
 
 procedure dotAxioms(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int): bool
 {
-  (forall(i: int) => forall(j: int) => dot(a, b, i, j, 0) == 0)
+  return (forall(i: int) => forall(j: int) => dot(a, b, i, j, 0) == 0)
   && (forall(i: int) => forall(j: int) => forall(k: int) =>
         square(a, n) ==> square(b, n) ==> 0 <= i ==> i < n ==> 0 <= j ==> j < n ==> 1 <= k ==> k <= n ==>
           dot(a, b, i, j, k) == dot(a, b, i, j, k - 1) + at(a, i, k - 1) * at(b, k - 1, j))
@@ -36,17 +36,17 @@ procedure dotAxioms(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: i
 
 procedure rowsHaveLength(m: Sequence<Sequence<int>>, n: int, rows: int): bool
 {
-  forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(m) ==> seqLength(seqSelect(m, r)) == n
+  return forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(m) ==> seqLength(seqSelect(m, r)) == n
 };
 
 procedure rowIsProduct(row: Sequence<int>, a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, i: int, n: int, cols: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < cols ==> c < seqLength(row) ==> seqSelect(row, c) == dot(a, b, i, c, n)
+  return forall(c: int) => 0 <= c ==> c < cols ==> c < seqLength(row) ==> seqSelect(row, c) == dot(a, b, i, c, n)
 };
 
 procedure isProduct(res: Sequence<Sequence<int>>, a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int, rows: int): bool
 {
-  forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(res) ==> rowIsProduct(seqSelect(res, r), a, b, r, n, n)
+  return forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(res) ==> rowIsProduct(seqSelect(res, r), a, b, r, n, n)
 };
 
 procedure multiply(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int) returns (res: Sequence<Sequence<int>>)
@@ -102,20 +102,20 @@ program Laurel;
 
 procedure square(m: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(m) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(m, r)) == n)
+  return seqLength(m) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(m, r)) == n)
 };
 
 procedure at(m: Sequence<Sequence<int>>, r: int, c: int): int
   requires 0 <= r && r < seqLength(m) && 0 <= c && c < seqLength(seqSelect(m, r))
 {
-  seqSelect(seqSelect(m, r), c)
+  return seqSelect(seqSelect(m, r), c)
 };
 
 procedure dot(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, i: int, j: int, k: int): int;
 
 procedure dotAxioms(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int): bool
 {
-  (forall(i: int) => forall(j: int) => dot(a, b, i, j, 0) == 0)
+  return (forall(i: int) => forall(j: int) => dot(a, b, i, j, 0) == 0)
   && (forall(i: int) => forall(j: int) => forall(k: int) =>
         square(a, n) ==> square(b, n) ==> 0 <= i ==> i < n ==> 0 <= j ==> j < n ==> 1 <= k ==> k <= n ==>
           dot(a, b, i, j, k) == dot(a, b, i, j, k - 1) + at(a, i, k - 1) * at(b, k - 1, j))
@@ -123,17 +123,17 @@ procedure dotAxioms(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: i
 
 procedure rowsHaveLength(m: Sequence<Sequence<int>>, n: int, rows: int): bool
 {
-  forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(m) ==> seqLength(seqSelect(m, r)) == n
+  return forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(m) ==> seqLength(seqSelect(m, r)) == n
 };
 
 procedure rowIsProduct(row: Sequence<int>, a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, i: int, n: int, cols: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < cols ==> c < seqLength(row) ==> seqSelect(row, c) == dot(a, b, i, c, n)
+  return forall(c: int) => 0 <= c ==> c < cols ==> c < seqLength(row) ==> seqSelect(row, c) == dot(a, b, i, c, n)
 };
 
 procedure isProduct(res: Sequence<Sequence<int>>, a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int, rows: int): bool
 {
-  forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(res) ==> rowIsProduct(seqSelect(res, r), a, b, r, n, n)
+  return forall(r: int) => 0 <= r ==> r < rows ==> r < seqLength(res) ==> rowIsProduct(seqSelect(res, r), a, b, r, n, n)
 };
 
 procedure multiply(a: Sequence<Sequence<int>>, b: Sequence<Sequence<int>>, n: int) returns (res: Sequence<Sequence<int>>)

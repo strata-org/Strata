@@ -15,7 +15,7 @@ program Laurel;
 
 procedure absentBelow(a: Sequence<int>, key: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) != key
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) != key
 };
 
 procedure linearSearch(a: Sequence<int>, key: int) returns (r: int)
@@ -44,7 +44,7 @@ program Laurel;
 
 procedure absentBelow(a: Sequence<int>, key: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) != key
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> seqSelect(a, k) != key
 };
 
 procedure linearSearch(a: Sequence<int>, key: int) returns (r: int)

@@ -18,7 +18,7 @@ procedure inTree(key: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>, n: in
 
 procedure treeAxioms(key: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(key) == seqLength(lf) && seqLength(lf) == seqLength(rt)
+  return seqLength(key) == seqLength(lf) && seqLength(lf) == seqLength(rt)
   && (forall(lo: int) => forall(hi: int) => forall(h: int) => bst(key, lf, rt, -1, lo, hi, h))
   && (forall(n: int) => forall(lo: int) => forall(hi: int) => forall(h: int) => n != -1 ==>
         bst(key, lf, rt, n, lo, hi, h) ==
@@ -75,7 +75,7 @@ procedure inTree(key: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>, n: in
 
 procedure treeAxioms(key: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(key) == seqLength(lf) && seqLength(lf) == seqLength(rt)
+  return seqLength(key) == seqLength(lf) && seqLength(lf) == seqLength(rt)
   && (forall(lo: int) => forall(hi: int) => forall(h: int) => bst(key, lf, rt, -1, lo, hi, h))
   && (forall(n: int) => forall(lo: int) => forall(hi: int) => forall(h: int) => n != -1 ==>
         bst(key, lf, rt, n, lo, hi, h) ==

@@ -449,19 +449,14 @@ procedure unassignedOnOnePath(b: bool) returns (r: nat)
   if b then { r := 1 }
 };
 
-procedure tailValue(): nat { 3 };
-procedure tailValueIf(b: bool): nat { if b then 1 else 2 };
-procedure usesTailValues() opaque { assert tailValue() == 3; assert tailValueIf(true) == 1 };
+procedure returnValue(): nat { return 3 };
+procedure returnValueIf(b: bool): nat { return if b then 1 else 2 };
+procedure usesReturnValues() opaque { assert returnValue() == 3; assert returnValueIf(true) == 1 };
 
-procedure badTailValue(): nat { -1 };
-//                        ^^^ error: assertion does not hold
-//                              ^^ error: assertion does not hold
-procedure badTailValueIf(b: bool): nat { if b then 1 else -1 };
-//                                 ^^^ error: assertion does not hold
-//                                                        ^^ error: assertion does not hold
-procedure badTailValueBeforeAssert(): nat { -1; assert true };
-//                                    ^^^ error: assertion does not hold
-//                                          ^^ error: assertion does not hold
+procedure badReturnValue(): nat { return -1 };
+//                                ^^^^^^^^^ error: assertion does not hold
+procedure badReturnValueIf(b: bool): nat { return if b then 1 else -1 };
+//                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
 procedure knowsPositive(x: int) opaque ensures x > 0;
 procedure tailLemma(x: nat) returns (r: nat) { r := x * x; knowsPositive(x) };
@@ -480,5 +475,4 @@ procedure earlyBadReturn(x: int): nat { if x < 0 then { return x }; return 0 };
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 procedure q0() returns (r: nat) { r := 1; true };
-//        ^^ error: ❌ Type checking error.
 #end

@@ -15,7 +15,7 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure sumA(s: Sequence<int>, n: int): int;
@@ -23,7 +23,7 @@ procedure sumB(s: Sequence<int>, n: int): int;
 
 procedure adlerAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumA(s, 0) == 1 && sumB(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumA(s, 0) == 1 && sumB(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(n: int) => 1 <= n ==> n <= seqLength(s) ==>
         sumA(s, n) == (sumA(s, n - 1) + seqSelect(s, n - 1)) % 65521
         && sumB(s, n) == (sumB(s, n - 1) + sumA(s, n)) % 65521)
@@ -59,7 +59,7 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure sumA(s: Sequence<int>, n: int): int;
@@ -67,7 +67,7 @@ procedure sumB(s: Sequence<int>, n: int): int;
 
 procedure adlerAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumA(s, 0) == 1 && sumB(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumA(s, 0) == 1 && sumB(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(n: int) => 1 <= n ==> n <= seqLength(s) ==>
         sumA(s, n) == (sumA(s, n - 1) + seqSelect(s, n - 1)) % 65521
         && sumB(s, n) == (sumB(s, n - 1) + sumA(s, n)) % 65521)

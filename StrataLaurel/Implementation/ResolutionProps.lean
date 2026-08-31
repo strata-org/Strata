@@ -236,7 +236,7 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   | .While cond invs dec body _ =>
     collectStmtExprList g cond ++ invs.flatMap (collectStmtExprList g)
       ++ dec.elim [] (collectStmtExprList g) ++ collectStmtExprList g body
-  | .Return v => v.elim [] (collectStmtExprList g)
+  | .Return v => v.flatMap (collectStmtExprList g)
   | .Assign targets value =>
     targets.flatMap (fun v => match v with
       | ⟨.Field target _, _⟩ => collectStmtExprList g target

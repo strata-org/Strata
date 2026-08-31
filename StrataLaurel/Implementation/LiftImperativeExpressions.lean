@@ -398,9 +398,9 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       prependList argPrepends
       pure default
 
-  | .Return (some retExpr) =>
-      let seqRet ← transformExpr retExpr
-      return ⟨.Return (some seqRet), source⟩
+  | .Return retExprs =>
+      let seqRets ← retExprs.attach.mapM fun ⟨e, _⟩ => transformExpr e
+      return ⟨.Return seqRets, source⟩
 
   | .While .. =>
       -- A loop only occurs as a statement of a block; lift it whole, as a statement.
@@ -625,10 +625,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       modify fun s => { s with subst := {} }
       return prepends ++ [⟨.StaticCall name seqArgs.reverse tyArgs, source⟩]
 
-  | .Return (some retExpr) =>
-      let seqRet ← transformExpr retExpr
+  | .Return retExprs =>
+      let seqRets ← retExprs.attach.mapM fun ⟨e, _⟩ => transformExpr e
       let prepends ← takePrepends
-      return prepends ++ [⟨.Return (some seqRet), source⟩]
+      return prepends ++ [⟨.Return seqRets, source⟩]
 
   -- No `.Throw` / `.Try` arms: `EliminateExceptions` runs earlier in the
   -- pipeline, so by the time expression-lifting runs the exceptional channel has

@@ -126,7 +126,7 @@ type q$T$opaque_1;
 function q$pre0 (b : int) : bool {
   forall x : q$T$opaque_1 :: x == x
 }
-function q$T$opaque$asFunction () : int;
+function q$T$opaque$asFunction () : bool;
 function q$asFunction (b : int) : int;
 -/
 #guard_msgs in

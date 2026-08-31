@@ -21,13 +21,13 @@ composite Ring {
 
 procedure inRange(q: Ring): bool
 {
-  seqLength(q#buf) > 0 && 0 <= q#head && q#head < seqLength(q#buf) && 0 <= q#count && q#count <= seqLength(q#buf)
+  return seqLength(q#buf) > 0 && 0 <= q#head && q#head < seqLength(q#buf) && 0 <= q#count && q#count <= seqLength(q#buf)
 };
 
 procedure elementAt(buf: Sequence<int>, head: int, k: int): int
   requires seqLength(buf) > 0 && 0 <= head && 0 <= k
 {
-  seqSelect(buf, (head + k) % seqLength(buf))
+  return seqSelect(buf, (head + k) % seqLength(buf))
 };
 
 procedure push(q: Ring, v: int)
@@ -71,13 +71,13 @@ composite Ring {
 
 procedure inRange(q: Ring): bool
 {
-  seqLength(q#buf) > 0 && 0 <= q#head && q#head < seqLength(q#buf) && 0 <= q#count && q#count <= seqLength(q#buf)
+  return seqLength(q#buf) > 0 && 0 <= q#head && q#head < seqLength(q#buf) && 0 <= q#count && q#count <= seqLength(q#buf)
 };
 
 procedure elementAt(buf: Sequence<int>, head: int, k: int): int
   requires seqLength(buf) > 0 && 0 <= head && 0 <= k
 {
-  seqSelect(buf, (head + k) % seqLength(buf))
+  return seqSelect(buf, (head + k) % seqLength(buf))
 };
 
 procedure push(q: Ring, v: int)

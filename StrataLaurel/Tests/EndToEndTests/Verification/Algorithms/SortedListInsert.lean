@@ -17,7 +17,7 @@ procedure sortedPath(nx: Sequence<int>, val: Sequence<int>, s: int, len: int): b
 
 procedure sortedAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => sortedPath(nx, val, s, 0) == (s == -1))
+  return (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => sortedPath(nx, val, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => forall(len: int) => len >= 1 ==>
         sortedPath(nx, val, s, len) ==
           (0 <= s && s < seqLength(nx) && s < seqLength(val)
@@ -85,7 +85,7 @@ procedure sortedPath(nx: Sequence<int>, val: Sequence<int>, s: int, len: int): b
 
 procedure sortedAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => sortedPath(nx, val, s, 0) == (s == -1))
+  return (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => sortedPath(nx, val, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(val: Sequence<int>) => forall(s: int) => forall(len: int) => len >= 1 ==>
         sortedPath(nx, val, s, len) ==
           (0 <= s && s < seqLength(nx) && s < seqLength(val)

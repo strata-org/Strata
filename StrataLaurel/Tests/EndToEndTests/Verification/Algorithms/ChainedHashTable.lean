@@ -16,19 +16,19 @@ program Laurel;
 procedure bucketOf(key: int, n: int): int
   requires n > 0
 {
-  ((key % n) + n) % n
+  return ((key % n) + n) % n
 };
 
 procedure placed(t: Sequence<Sequence<int>>): bool
 {
-  seqLength(t) > 0
+  return seqLength(t) > 0
   && (forall(b: int) => forall(k: int) => 0 <= b ==> b < seqLength(t) ==> 0 <= k ==> k < seqLength(seqSelect(t, b)) ==>
         bucketOf(seqSelect(seqSelect(t, b), k), seqLength(t)) == b)
 };
 
 procedure inChain(c: Sequence<int>, key: int): bool
 {
-  exists(k: int) => 0 <= k && k < seqLength(c) && seqSelect(c, k) == key
+  return exists(k: int) => 0 <= k && k < seqLength(c) && seqSelect(c, k) == key
 };
 
 procedure put(t: Sequence<Sequence<int>>, key: int) returns (res: Sequence<Sequence<int>>)
@@ -55,19 +55,19 @@ program Laurel;
 procedure bucketOf(key: int, n: int): int
   requires n > 0
 {
-  ((key % n) + n) % n
+  return ((key % n) + n) % n
 };
 
 procedure placed(t: Sequence<Sequence<int>>): bool
 {
-  seqLength(t) > 0
+  return seqLength(t) > 0
   && (forall(b: int) => forall(k: int) => 0 <= b ==> b < seqLength(t) ==> 0 <= k ==> k < seqLength(seqSelect(t, b)) ==>
         bucketOf(seqSelect(seqSelect(t, b), k), seqLength(t)) == b)
 };
 
 procedure inChain(c: Sequence<int>, key: int): bool
 {
-  exists(k: int) => 0 <= k && k < seqLength(c) && seqSelect(c, k) == key
+  return exists(k: int) => 0 <= k && k < seqLength(c) && seqSelect(c, k) == key
 };
 
 procedure put(t: Sequence<Sequence<int>>, key: int) returns (res: Sequence<Sequence<int>>)

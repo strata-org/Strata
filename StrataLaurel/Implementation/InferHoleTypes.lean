@@ -324,8 +324,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
   -- recursion. Consequence: holes inside `try`/`catch`/`finally` arms are not
   -- type-inferred yet. Revisit if holes in those positions need inference.
   | .Try .. => return expr
-  | .Return (some retExpr) =>
-      return ⟨.Return (some (← inferExpr retExpr outputType outputType)), source⟩
+  | .Return (retExpr :: rest) =>
+      if rest.isEmpty then
+        return ⟨.Return [← inferExpr retExpr outputType outputType], source⟩
+      else
+        let vals ← (retExpr :: rest).attach.mapM fun ⟨e, _⟩ =>
+          inferExpr e ⟨ .Unknown, source ⟩ outputType
+        return ⟨.Return vals, source⟩
   | .Old v label? => return ⟨.Old (← inferExpr v expectedType outputType) label?, source⟩
   -- Coroutine two-state `old` forms wrap a value like `.Old`; on both lowering
   -- paths they are eliminated before this pass, but the match must stay total.
@@ -346,7 +351,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | some t => pure (some (← inferExpr t ⟨ .Unknown, source ⟩ outputType))
         | none => pure none
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
-  | .Exit _ | .Return none | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Exit _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
   | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
   termination_by sizeOf expr

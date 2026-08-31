@@ -142,7 +142,8 @@ procedure runAll() entry
 #end
 
 #guard_msgs in
--- No interpreters: the annotated errors are Laurel→Core translation rejections, not runtime failures.
+-- A local `e` in a `throwsOn` clause shadows the throws binding `e`, so the clause reads the
+-- local: `e > 0` holds and `e > 3` does not. No interpreters: they do not run `throwsOn` clauses.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -152,8 +153,18 @@ procedure bareUninitShadow()
   opaque
   throwsOn true {
     ensures { var e: int; e := 3; e > 0 }
-//            ^^^^^^^^^^ error: local variables must have initializers in transparent bodies or contracts
-//                        ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+  }
+{
+  var x: Err := new Err;
+  x#code := 5;
+  throw x
+};
+procedure bareUninitShadowControl()
+  throws (e: Err)
+  opaque
+  throwsOn true {
+    ensures { var e: int; e := 3; e > 3 }
+//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
   }
 {
   var x: Err := new Err;

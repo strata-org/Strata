@@ -15,22 +15,22 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure sameBelow(a: Sequence<int>, b: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> k < seqLength(b) ==> seqSelect(a, k) == seqSelect(b, k)
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> k < seqLength(b) ==> seqSelect(a, k) == seqSelect(b, k)
 };
 
 procedure symbol(x: int): int
 {
-  if x < 26 then 65 + x else if x < 52 then 97 + x - 26 else if x < 62 then 48 + x - 52 else if x == 62 then 43 else 47
+  return if x < 26 then 65 + x else if x < 52 then 97 + x - 26 else if x < 62 then 48 + x - 52 else if x == 62 then 43 else 47
 };
 
 procedure sextet(c: int): int
 {
-  if 65 <= c && c <= 90 then c - 65
+  return if 65 <= c && c <= 90 then c - 65
   else if 97 <= c && c <= 122 then c - 97 + 26
   else if 48 <= c && c <= 57 then c - 48 + 52
   else if c == 43 then 62 else if c == 47 then 63 else -1
@@ -39,7 +39,7 @@ procedure sextet(c: int): int
 procedure padOf(text: Sequence<int>): int
   requires seqLength(text) % 4 == 0
 {
-  if seqLength(text) == 0 then 0
+  return if seqLength(text) == 0 then 0
   else (if seqSelect(text, seqLength(text) - 1) == 61 then 1 else 0) + (if seqSelect(text, seqLength(text) - 2) == 61 then 1 else 0)
 };
 
@@ -115,22 +115,22 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure sameBelow(a: Sequence<int>, b: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> k < seqLength(b) ==> seqSelect(a, k) == seqSelect(b, k)
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(a) ==> k < seqLength(b) ==> seqSelect(a, k) == seqSelect(b, k)
 };
 
 procedure symbol(x: int): int
 {
-  if x < 26 then 65 + x else if x < 52 then 97 + x - 26 else if x < 62 then 48 + x - 52 else if x == 62 then 43 else 47
+  return if x < 26 then 65 + x else if x < 52 then 97 + x - 26 else if x < 62 then 48 + x - 52 else if x == 62 then 43 else 47
 };
 
 procedure sextet(c: int): int
 {
-  if 65 <= c && c <= 90 then c - 65
+  return if 65 <= c && c <= 90 then c - 65
   else if 97 <= c && c <= 122 then c - 97 + 26
   else if 48 <= c && c <= 57 then c - 48 + 52
   else if c == 43 then 62 else if c == 47 then 63 else -1
@@ -139,7 +139,7 @@ procedure sextet(c: int): int
 procedure padOf(text: Sequence<int>): int
   requires seqLength(text) % 4 == 0
 {
-  if seqLength(text) == 0 then 0
+  return if seqLength(text) == 0 then 0
   else (if seqSelect(text, seqLength(text) - 1) == 61 then 1 else 0) + (if seqSelect(text, seqLength(text) - 2) == 61 then 1 else 0)
 };
 

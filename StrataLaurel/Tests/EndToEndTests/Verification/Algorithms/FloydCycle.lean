@@ -15,14 +15,14 @@ program Laurel;
 
 procedure closed(nx: Sequence<int>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(nx) ==> 0 <= seqSelect(nx, i) && seqSelect(nx, i) < seqLength(nx)
+  return forall(i: int) => 0 <= i ==> i < seqLength(nx) ==> 0 <= seqSelect(nx, i) && seqSelect(nx, i) < seqLength(nx)
 };
 
 procedure iterate(nx: Sequence<int>, x: int, k: int): int;
 
 procedure iterAxioms(nx: Sequence<int>): bool
 {
-  (forall(x: int) => iterate(nx, x, 0) == x)
+  return (forall(x: int) => iterate(nx, x, 0) == x)
   && (forall(x: int) => forall(k: int) => k >= 1 ==> 0 <= x ==> x < seqLength(nx) ==>
         iterate(nx, x, k) == iterate(nx, seqSelect(nx, x), k - 1))
 };
@@ -75,14 +75,14 @@ program Laurel;
 
 procedure closed(nx: Sequence<int>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(nx) ==> 0 <= seqSelect(nx, i) && seqSelect(nx, i) < seqLength(nx)
+  return forall(i: int) => 0 <= i ==> i < seqLength(nx) ==> 0 <= seqSelect(nx, i) && seqSelect(nx, i) < seqLength(nx)
 };
 
 procedure iterate(nx: Sequence<int>, x: int, k: int): int;
 
 procedure iterAxioms(nx: Sequence<int>): bool
 {
-  (forall(x: int) => iterate(nx, x, 0) == x)
+  return (forall(x: int) => iterate(nx, x, 0) == x)
   && (forall(x: int) => forall(k: int) => k >= 1 ==> 0 <= x ==> x < seqLength(nx) ==>
         iterate(nx, x, k) == iterate(nx, seqSelect(nx, x), k - 1))
 };

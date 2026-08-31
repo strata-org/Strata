@@ -326,7 +326,7 @@ procedure failing(): int
 };
 procedure positive(): pos
 {
-  5
+  return 5
 };
 procedure throwing()
   throws (e: int)

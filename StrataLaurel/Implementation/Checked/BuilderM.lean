@@ -53,7 +53,7 @@ private instance : MonadState BuilderState BuilderM where
 
 def runAndReturn {ret} (act : BuilderM (Expr ret)) : AstNode StmtExpr :=
   let (r, st) := act.monad.run {}
-  let retStmt : AstNode StmtExpr := { val := .Return (some r.node), source := r.node.source }
+  let retStmt : AstNode StmtExpr := { val := .Return [r.node], source := r.node.source }
   if st.stmts.isEmpty then
     retStmt
   else

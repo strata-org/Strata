@@ -17,7 +17,7 @@ procedure ones(s: Sequence<bool>, hi: int): int;
 
 procedure onesAxioms(): bool
 {
-  (forall(s: Sequence<bool>) => ones(s, 0) == 0)
+  return (forall(s: Sequence<bool>) => ones(s, 0) == 0)
   && (forall(s: Sequence<bool>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         ones(s, h) == ones(s, h - 1) + (if seqSelect(s, h - 1) then 1 else 0))
 };
@@ -50,7 +50,7 @@ procedure ones(s: Sequence<bool>, hi: int): int;
 
 procedure onesAxioms(): bool
 {
-  (forall(s: Sequence<bool>) => ones(s, 0) == 0)
+  return (forall(s: Sequence<bool>) => ones(s, 0) == 0)
   && (forall(s: Sequence<bool>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         ones(s, h) == ones(s, h - 1) + (if seqSelect(s, h - 1) then 1 else 0))
 };

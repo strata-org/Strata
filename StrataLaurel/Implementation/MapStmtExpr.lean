@@ -1192,7 +1192,7 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.Block [covS, covS] none), 2),
   (covMd (.While covS [covS] (some covS) covS false), 4),
   (covMd (.Exit "blk"), 0),
-  (covMd (.Return (some covS)), 1),
+  (covMd (.Return [covS, covS]), 2),
   (covMd (.LiteralInt 0), 0),
   (covMd (.LiteralBool true), 0),
   (covMd (.LiteralString "x"), 0),

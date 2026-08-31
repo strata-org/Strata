@@ -163,10 +163,10 @@ def typeHierarchyTransform (model: SemanticModel) (program : LaurelProgram) : Ex
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants ← generateTypeHierarchyDecls model program
-  -- One downcast helper per composite — `function downcast$C(p: C): C requires (p is C) { p }`
+  -- One downcast helper per composite — `procedure downcast$C(p: C) returns (r: C) requires (p is C) { r := p }`
   -- — called by `HeapParameterization`'s cast lowering so an `x as C` cast works in a
   -- contract formula (the `is C` guard is a pure term; PrecondElim discharges it as a
-  -- well-definedness obligation). `C` flattens to `Composite` below, so `{ p }` type-checks.
+  -- well-definedness obligation). `C` flattens to `Composite` below, so `r := p` type-checks.
   let downcastHelpers : List Procedure := program.types.filterMap fun td =>
     match td with
     | .Composite ct =>
@@ -177,7 +177,8 @@ def typeHierarchyTransform (model: SemanticModel) (program : LaurelProgram) : Ex
              outputs := [{ name := "r", type := cty }],
              preconditions := [{ condition := lowerIsType pRef cty syntheticSource }],
              decreases := none,
-             body := .Transparent pRef }
+             body := .Transparent
+               (mkMd (.Assign [mkVarMd (.Local "r") syntheticSource] pRef) syntheticSource) }
     | _ => none
   -- Program-wide, because the composite-flattening sweep at the end of this pass is too: a
   -- position this missed would keep its `.IsType` node while losing the annotation that node

@@ -264,7 +264,7 @@ inductive HeapTransformContext where
     the heap-neutral `lowerAsTypeNodesOnly` path so the two can't drift.
 
     `t as T` lowers to a call to the synthesized `downcast$T` helper (defined in `TypeHierarchy`,
-    the next pass): `function downcast$T(p: T): T requires (p is T) { p }`. Its `requires (p is T)`
+    the next pass): `procedure downcast$T(p: T) returns (r: T) requires (p is T) { r := p }`. Its `requires (p is T)`
     precondition is discharged by PrecondElim as a well-definedness obligation — so the cast works
     in a contract FORMULA (which cannot host a statement `{ assert (t is T); t }` block) as well as
     in a body, which dynamic dispatch requires (dispatcher casts appear in tag-conditioned specs).
@@ -375,7 +375,7 @@ where
         let invs' ← invs.mapM (recurseOne ·)
         return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false) postTest, source ⟩]
     | .Return v =>
-        let v' ← match v with | some x => some <$> recurseOne x | none => pure none
+        let v' ← v.attach.mapM fun ⟨x, _⟩ => recurseOne x
         return [⟨ .Return v', source ⟩]
     | .Assign targets v =>
 

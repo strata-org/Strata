@@ -15,7 +15,7 @@ program Laurel;
 
 procedure noDivisorBelow(n: int, limit: int): bool
 {
-  forall(k: int) => 2 <= k ==> k < limit ==> n % k != 0
+  return forall(k: int) => 2 <= k ==> k < limit ==> n % k != 0
 };
 
 procedure isPrime(n: int) returns (r: bool)
@@ -48,7 +48,7 @@ program Laurel;
 
 procedure noDivisorBelow(n: int, limit: int): bool
 {
-  forall(k: int) => 2 <= k ==> k < limit ==> n % k != 0
+  return forall(k: int) => 2 <= k ==> k < limit ==> n % k != 0
 };
 
 procedure isPrime(n: int) returns (r: bool)

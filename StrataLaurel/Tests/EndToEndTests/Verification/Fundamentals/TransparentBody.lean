@@ -114,7 +114,7 @@ procedure dag(a: int) returns (r: int)
   return b
 };
 
-// Valueless early return (issue #1353): a bare `return` parses to `.Return none`.
+// Valueless early return (issue #1353): a bare `return` parses to `.Return []`.
 // Must verify cleanly — no value, used as an early exit.
 procedure valuelessEarlyReturn(b: bool)
   opaque
@@ -472,7 +472,7 @@ procedure exitInBlockValue(c: bool) returns (r: int)
   r := 1;
   {
     r := { if c then { exit done }; 5 };
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an `exit` or `return` inside an assigned block value is not YET supported in transparent bodies or contracts
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an `exit` or `return` inside an assigned block value is not YET supported in transparent bodies or contracts
     r := r + 100
   } done;
   return r
@@ -840,25 +840,30 @@ procedure testShadowingWithHole()
 };
 #end
 
--- An uninitialized local in a *polymorphic* transparent body. The hole mirrors the
--- enclosing inputs, whose types mention the type variable, so the hole is polymorphic
--- too — and monomorphization runs long before this pass, so it could never be
--- instantiated. Reported here rather than left to surface from SMT encoding as an
--- unresolved type variable.
+-- An uninitialized local in a *polymorphic* transparent body is bound to a hole like
+-- any other, and the hole is polymorphic alongside it. Read without being assigned, it
+-- yields an arbitrary but fixed value: two calls with the same input agree, and no
+-- particular value is provable.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure polyHole<T>(x: T) returns (r: T)
-//        ^^^^^^^^ error: a local without an initializer is not YET supported in a transparent body of a polymorphic procedure like 'polyHole'; give it an initializer
 {
   var y: T;
   return y
 };
+procedure callsPolyHole() opaque
+{
+  var a: int := polyHole(3);
+  var b: int := polyHole(3);
+  assert a == b;
+  assert a == 3
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
 #end
 
--- The converse: a polymorphic transparent body with every local initialized is
--- unaffected by that restriction and still verifies.
+-- A polymorphic transparent body with every local initialized verifies too.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata

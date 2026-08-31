@@ -237,7 +237,7 @@ private def pcAssign (k : Nat) : StmtExprMd :=
   { val := .Assign [selfFieldTarget "$pc" .unknown] (intLit (Int.ofNat k)), source := .unknown }
 
 /-- A bare `return` (no value) — the suspend half of a yield. -/
-private def bareReturn : StmtExprMd := { val := .Return none, source := .unknown }
+private def bareReturn : StmtExprMd := { val := .Return [], source := .unknown }
 
 /-- Rewrite every bare `return` inside `expr` to `{ $pc := 0; return }`,
     so a yield-free subtree emitted as a single state always shuts the
@@ -245,7 +245,7 @@ private def bareReturn : StmtExprMd := { val := .Return none, source := .unknown
 private def lowerBareReturns (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Return none =>
+    | .Return [] =>
       { val := .Block [{ val := .Assign [selfFieldTarget "$pc" e.source]
                                         (intLit (Int.ofNat endState)),
                          source := e.source }, e] none,
@@ -321,7 +321,7 @@ private def emitState (id : Nat) (body : StmtExprMd) : LinM Unit :=
       coroutine state, so it is read as a plain local. -/
 private def linearize (naming : FieldNaming) (resumeParam : Option Identifier)
     (stmt : StmtExprMd) (next : Nat) : LinM Nat := do
-  if let .Return none := stmt.val then
+  if let .Return [] := stmt.val then
     let id ← freshState
     emitState id (block [pcAssign endState, bareReturn])
     return id
@@ -687,7 +687,7 @@ private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
       { val := .Assign [outTarget] fieldRead, source := .unknown }
     let copyBeforeReturn (e : StmtExprMd) : StmtExprMd :=
       match e.val with
-      | .Return none => block (yieldCopies ++ [e])
+      | .Return [] => block (yieldCopies ++ [e])
       | _ => e
     let dispatchBody'' :=
       if proc.yields.isEmpty then dispatchBody'
@@ -722,7 +722,7 @@ private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
         decreases := none
         invokeOn := none
         body := .Transparent
-          { val := .Return (some pcNeqEnd), source := .unknown } }
+          { val := .Return [pcNeqEnd], source := .unknown } }
     { composite with
       instanceProcedures := resumeProc :: hasNextProc :: composite.instanceProcedures }
   | _ => composite
@@ -1176,8 +1176,7 @@ private def elaborateForVerification (_ : SemanticModel) (p : LaurelProgram)
         decreases := none
         invokeOn := none
         body := .Transparent
-          { val := .Return (some
-              { val := .LiteralBool true, source := .unknown }),
+          { val := .Return [{ val := .LiteralBool true, source := .unknown }],
             source := .unknown } }
     .Composite { composite with
       instanceProcedures := [resumeProc, hasNextProc] }

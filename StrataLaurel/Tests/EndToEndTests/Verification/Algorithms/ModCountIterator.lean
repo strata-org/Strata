@@ -53,7 +53,7 @@ procedure sumBelow(s: Sequence<int>, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         sumBelow(s, h) == sumBelow(s, h - 1) + seqSelect(s, h - 1))
 };
@@ -135,7 +135,7 @@ procedure sumBelow(s: Sequence<int>, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         sumBelow(s, h) == sumBelow(s, h - 1) + seqSelect(s, h - 1))
 };

@@ -252,37 +252,6 @@ constrained nat = x: int where x >= 0 witness 0
 procedure countOf<T>(x: T) : nat { return 0 };
 #end
 
--- Transparent body whose value is a trailing expression rather than a `return`:
--- the value becomes an assignment to the output, so it gets checked. The
--- fall-off-the-end exit check then restates it.
-/--
-info: procedure nat$constraint(x: int): bool
-{
-  $result := x >= 0;
-  return
-};
-procedure tail(): int
-{
-  $result := 3;
-  assert nat$constraint($result);
-  assert nat$constraint($result)
-};
-procedure $witness_nat()
-  opaque
-{
-  var $witness: int := 0;
-  assert nat$constraint($witness)
-};
--/
-#guard_msgs in
-#eval runPassAfterForIdiomaticity constrainedTypeElimPass
-  (fun p _ => (eliminateValueInReturnsTransform (.Unordered p)).laurelProgram!) <|
-#strata
-program Laurel;
-constrained nat = x: int where x >= 0 witness 0
-procedure tail() : nat { 3 };
-#end
-
 -- Transparent body that leaves its constrained output unassigned on a path:
 -- the check lands after the body, on the path that falls off its end.
 /--

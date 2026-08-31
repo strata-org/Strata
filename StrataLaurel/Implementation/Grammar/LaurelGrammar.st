@@ -172,7 +172,14 @@ op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBran
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op throw (value : StmtExpr) : StmtExpr => @[prec(0)] "throw " value:0;
-op return (value : Option StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
+// A multi-output procedure returns one value per declared output. The extra values are
+// an optional comma-separated tail on the existing op rather than a second op spelling
+// the same `StmtExpr.Return`: two ops both starting with `return ` are ambiguous for a
+// single value, and the parser commits to the one without the tail.
+category ReturnMore;
+op returnMore (values : CommaSepBy StmtExpr) : ReturnMore => ", " values:0;
+op return (value : Option StmtExpr, more : Option ReturnMore) : StmtExpr =>
+  @[prec(0)] "return " value:0 more:0;
 // Coroutine suspension. Always nullary; to yield a value, the user
 // assigns it to the coroutine's `yields` binding before suspending.
 // `yield` is dual-position: as a statement, drops the resumed value;

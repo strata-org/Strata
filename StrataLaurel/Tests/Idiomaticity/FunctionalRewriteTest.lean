@@ -479,15 +479,25 @@ procedure labelledBlockNotLast(x: int) returns (r: int) {
 };
 #end
 
-/-! ## A block-valued assignment is flattened into the enclosing statements
+/-! ## A block-valued assignment's statements are hoisted ahead of it
 
-An assignment's value is normally an expression, but the transparency pass can emit
-a transparent body as `$result := { <statements>; <tail expression> }`, whose
-statements are genuinely in statement position. The block is flattened:
-`r := { S; e }` is translated as `S` followed by `r := e` — so the destructive
-update inside the block below becomes a nested shadowing declaration, exactly as it
-would at statement level, and its scope extends over the statements after the
-assignment. This is the only shape where a *value* is descended into. -/
+The transparency pass can emit a transparent body as
+`$result := { <statements>; <tail expression> }`. `hoistStmts` moves the block's
+statements ahead of the assignment, which then binds the tail expression, so the
+statements are functionalized with the continuation that follows the whole assignment
+and their bindings scope over the rest of the body rather than staying inside the
+initializer.
+
+That is what makes a write inside the block visible after it. For an assignment to an
+*inout* parameter — which is how a written global or `$heap` is threaded — the
+statements after the block, including the packaged-output constructor, read the written
+value. See `writesGlobalThroughWrapper` in
+`Verification/Fundamentals/MultiOutputTransparentBody.lean`.
+
+A write to any variable declared outside the block, a parameter or an outer local,
+escapes it. This cannot capture an outer binding: `alphaConvertLocals` has already given
+every declared local a name unique in the body, so a declaration inside the block never
+shares a name with a variable declared outside it. -/
 
 /--
 info: procedure $declHole_blockValued_6(a: int): int
@@ -618,22 +628,16 @@ procedure uninitRead() returns (r: int) {
 };
 #end
 
-/-! ## A body with no outputs is left alone, without a diagnostic
+/-! ## A body with no outputs is not a diagnostic
 
-There is nothing for a function copy of a void procedure to evaluate to, so the
-copy is left untransformed rather than reported; the procedure itself carries
-the meaning. This has to stay legal — `valuelessEarlyReturn` is a transparent
-body with no outputs that must verify. -/
+There is nothing for a function copy of a void procedure to evaluate to, so its body is
+replaced by a placeholder value rather than reported; the procedure itself carries the
+meaning. This has to stay legal — `valuelessEarlyReturn` is a transparent body with no
+outputs that must verify. -/
 
 /--
 info: procedure valueless(b: bool)
-{
-  if b
-    then {
-      exit $return
-    };
-  exit $return
-}$return;
+true;
 -/
 #guard_msgs in
 #eval printRewritten <|
@@ -784,18 +788,31 @@ procedure assignsInput(a: int) returns (r: int) {
 
 /-! ### More than one output
 
-A function evaluates to a single value, so there is no way for one to yield
-several outputs at once. This needs a tuple construct in Laurel, or a real
-`let` in Core. -/
+A function evaluates to a single value, so a body with several outputs evaluates to a
+multi-value return — one value per output — which is what this pass produces on its own.
+In the pipeline `PackageFunctionOutputs` runs first and replaces that with a call to the
+constructor of a datatype holding all the outputs (see `PackageFunctionOutputsTest`). -/
 
 /--
-info: FunctionalRewritePass diagnostic[userError]: a transparent body with 2 output parameters is not supported; it must have at most one
+info: procedure $declHole_twoOuts_2(): int
+  opaque;
+procedure $declHole_twoOuts_3(): int
+  opaque;
 procedure twoOuts()
   returns (q: int, r: int)
 {
-  q := 1;
-  r := 2
-}$return;
+  var q: int := $declHole_twoOuts_2();
+  {
+    var r: int := $declHole_twoOuts_3();
+    {
+      var q: int := 1;
+      {
+        var r: int := 2;
+        return q, r
+      }
+    }
+  }
+};
 -/
 #guard_msgs in
 #eval printRewritten <|
@@ -848,6 +865,19 @@ procedure hasCall() returns (r: int) {
   callee();
   return y
 };
+#end
+
+/-! ### An empty body with no outputs -/
+
+/--
+info: procedure emptyTransparent()
+true;
+-/
+#guard_msgs in
+#eval printRewritten <|
+#strata
+program Laurel;
+procedure emptyTransparent() { };
 #end
 
 end Laurel

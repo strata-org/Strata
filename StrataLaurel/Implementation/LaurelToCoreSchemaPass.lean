@@ -1432,7 +1432,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   let inputs ← proc.inputs.mapM translateParameterToCore
   let outputTy ← match proc.outputs.head? with
     | some p => translateType p.type
-    | none => pure LMonoTy.int
+    | none => translateType ⟨.TVoid, proc.name.source⟩
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition.condition [] true

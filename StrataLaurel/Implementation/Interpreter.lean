@@ -374,10 +374,10 @@ def DisplayEvalState.format (s : DisplayEvalState) : String :=
     `return_` is thrown at a `return` statement and caught at the procedure-call
     boundary; the others are described on their constructors. -/
 inductive Control where
-  /-- A `return`. Carries the values of the procedure's outputs, which for a
-      multi-output procedure are read out of the frame rather than supplied by the
-      `return` itself. Caught at the call boundary. -/
-  | return_ (value : Option Value)
+  /-- A `return`, carrying the values it supplies: none for a bare `return`, whose
+      outputs are read out of the frame, one per output otherwise. Caught at the
+      call boundary. -/
+  | return_ (values : List Value)
   /-- `exit L` — leave the enclosing block labelled `L`. Caught by that block,
       which is how Laurel spells `break` and `continue`. -/
   | exit_ (label : String)
@@ -933,9 +933,9 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
         pure { c with body := cb }
       let fin' ← fin.mapM liftStmtBlock
       pure [⟨.Try body' catches' fin', src⟩]
-  | .Return (some v) => do
-      let (pre, v') ← liftExpr v
-      pure (pre ++ [⟨.Return (some v'), src⟩])
+  | .Return values => do
+      let lifted ← values.mapM liftExpr
+      pure (lifted.flatMap (·.1) ++ [⟨.Return (lifted.map (·.2)), src⟩])
   | .Throw v => do
       let (pre, v') ← liftExpr v
       pure (pre ++ [⟨.Throw v', src⟩])
@@ -1860,11 +1860,11 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         let summaryText := summary.getD "assertion"
         let failure := Strata.Message.withRange stmtSource s!"{summaryText} does not hold"
         modify fun s => { s with assertFailures := s.assertFailures.push failure }
-  | ⟨.Return value?, _⟩ => do
-      let v? ← match value? with
-               | some e => some <$> evalExprMd cfg e
-               | none   => pure none
-      throw (.return_ v?)
+  | ⟨.Return values, _⟩ => do
+      -- Every value is evaluated before any output is written, so `return q, p` on
+      -- outputs `(p, q)` swaps them rather than reading an overwritten `p`.
+      let vs ← values.mapM (evalExprMd cfg)
+      throw (.return_ vs)
   | stmt@⟨.StaticCall .., _⟩ => do
       -- Bare `foo(args)` as a statement — discard the return value.
       let _ ← evalExprMd cfg stmt
@@ -2030,7 +2030,7 @@ partial def resumeCoroutine (cfg : ExternalBackend) (target : Value) (sent : Val
         -- client is expected to have checked `has_next(co)`.
         let finalFrame := (← get).stack
         let completed := match signal with
-          | some (.return_ (some v)) => v
+          | some (.return_ [v]) => v
           | _ => .unset
         modify fun s =>
           let done := { (s.coros[addr]?.getD co) with
@@ -2230,7 +2230,20 @@ partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Proced
   let entry := if posts.isEmpty then (#[], {}) else (cur.heap, cur.globals)
   let returned : Option Value ←
     tryCatch (do evalStmt cfg body; pure none) fun
-      | .return_ v? => pure v?
+      | .return_ [] => pure none
+      | .return_ [v] => pure (some v)
+      | .return_ vs => do
+          -- A multi-value return writes each output, so the outputs are read back
+          -- out of the frame below exactly as when they are assigned by name.
+          if vs.length != proc.outputs.length then
+            restoreCaller
+            liftM (m := IO) (throw (IO.userError
+              s!"return supplies {vs.length} values but '{name}' has {proc.outputs.length} outputs"))
+          modify fun st =>
+            let stack := (proc.outputs.zip vs).foldl
+              (fun acc (o, v) => acc.insert o.name.text v) st.stack
+            { st with stack }
+          pure none
       | other => do
           -- Restore the caller's frame before the signal leaves, or an enclosing
           -- `catch` would run against the callee's locals.

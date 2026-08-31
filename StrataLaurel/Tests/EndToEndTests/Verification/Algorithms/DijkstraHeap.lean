@@ -15,14 +15,14 @@ program Laurel;
 
 procedure weights(w: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(w) == n
+  return seqLength(w) == n
   && (forall(u: int) => 0 <= u ==> u < n ==> seqLength(seqSelect(w, u)) == n)
   && (forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> seqSelect(seqSelect(w, u), v) >= -1)
 };
 
 procedure relaxed(w: Sequence<Sequence<int>>, d: Sequence<int>, reach: Sequence<bool>, n: int): bool
 {
-  forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> u < seqLength(reach) ==> v < seqLength(reach) ==>
+  return forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> u < seqLength(reach) ==> v < seqLength(reach) ==>
     seqSelect(reach, u) ==> seqSelect(seqSelect(w, u), v) >= 0 ==>
 //                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                                    ^^^^^^^^^^^^^^^ error: precondition could not be proved
@@ -37,7 +37,7 @@ procedure relaxed(w: Sequence<Sequence<int>>, d: Sequence<int>, reach: Sequence<
 
 procedure heapOrdered(key: Sequence<int>): bool
 {
-  forall(k: int) => 0 < k ==> k < seqLength(key) ==> seqSelect(key, (k - 1) / 2) <= seqSelect(key, k)
+  return forall(k: int) => 0 < k ==> k < seqLength(key) ==> seqSelect(key, (k - 1) / 2) <= seqSelect(key, k)
 };
 
 procedure push(key: Sequence<int>, vert: Sequence<int>, k: int, v: int) returns (key2: Sequence<int>, vert2: Sequence<int>)
@@ -193,14 +193,14 @@ program Laurel;
 
 procedure weights(w: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(w) == n
+  return seqLength(w) == n
   && (forall(u: int) => 0 <= u ==> u < n ==> seqLength(seqSelect(w, u)) == n)
   && (forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> seqSelect(seqSelect(w, u), v) >= -1)
 };
 
 procedure relaxed(w: Sequence<Sequence<int>>, d: Sequence<int>, reach: Sequence<bool>, n: int): bool
 {
-  forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> u < seqLength(reach) ==> v < seqLength(reach) ==>
+  return forall(u: int) => forall(v: int) => 0 <= u ==> u < n ==> 0 <= v ==> v < n ==> u < seqLength(reach) ==> v < seqLength(reach) ==>
     seqSelect(reach, u) ==> seqSelect(seqSelect(w, u), v) >= 0 ==>
 //                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 //                                    ^^^^^^^^^^^^^^^ error: precondition could not be proved
@@ -213,7 +213,7 @@ procedure relaxed(w: Sequence<Sequence<int>>, d: Sequence<int>, reach: Sequence<
 
 procedure heapOrdered(key: Sequence<int>): bool
 {
-  forall(k: int) => 0 < k ==> k < seqLength(key) ==> seqSelect(key, (k - 1) / 2) <= seqSelect(key, k)
+  return forall(k: int) => 0 < k ==> k < seqLength(key) ==> seqSelect(key, (k - 1) / 2) <= seqSelect(key, k)
 };
 
 procedure push(key: Sequence<int>, vert: Sequence<int>, k: int, v: int) returns (key2: Sequence<int>, vert2: Sequence<int>)

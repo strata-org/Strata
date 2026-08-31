@@ -15,32 +15,32 @@ program Laurel;
 
 procedure strictlyIncreasing(s: Sequence<int>): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(s) ==> seqSelect(s, i) < seqSelect(s, j)
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(s) ==> seqSelect(s, i) < seqSelect(s, j)
 };
 
 procedure contains(b: Sequence<int>, x: int): bool
 {
-  exists(k: int) => 0 <= k && k < seqLength(b) && seqSelect(b, k) == x
+  return exists(k: int) => 0 <= k && k < seqLength(b) && seqSelect(b, k) == x
 };
 
 procedure common(a: Sequence<int>, b: Sequence<int>, hi: int): int;
 
 procedure commonAxioms(): bool
 {
-  (forall(a: Sequence<int>) => forall(b: Sequence<int>) => common(a, b, 0) == 0)
+  return (forall(a: Sequence<int>) => forall(b: Sequence<int>) => common(a, b, 0) == 0)
   && (forall(a: Sequence<int>) => forall(b: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(a) ==>
         common(a, b, h) == common(a, b, h - 1) + (if contains(b, seqSelect(a, h - 1)) then 1 else 0))
 };
 
 procedure bBelowAi(a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  0 <= i ==> i < seqLength(a) ==>
+  return 0 <= i ==> i < seqLength(a) ==>
     (forall(m: int) => 0 <= m ==> m < j ==> m < seqLength(b) ==> seqSelect(b, m) < seqSelect(a, i))
 };
 
 procedure aBelowBj(a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  0 <= j ==> j < seqLength(b) ==>
+  return 0 <= j ==> j < seqLength(b) ==>
     (forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqSelect(a, k) < seqSelect(b, j))
 };
 
@@ -86,32 +86,32 @@ program Laurel;
 
 procedure strictlyIncreasing(s: Sequence<int>): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(s) ==> seqSelect(s, i) < seqSelect(s, j)
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(s) ==> seqSelect(s, i) < seqSelect(s, j)
 };
 
 procedure contains(b: Sequence<int>, x: int): bool
 {
-  exists(k: int) => 0 <= k && k < seqLength(b) && seqSelect(b, k) == x
+  return exists(k: int) => 0 <= k && k < seqLength(b) && seqSelect(b, k) == x
 };
 
 procedure common(a: Sequence<int>, b: Sequence<int>, hi: int): int;
 
 procedure commonAxioms(): bool
 {
-  (forall(a: Sequence<int>) => forall(b: Sequence<int>) => common(a, b, 0) == 0)
+  return (forall(a: Sequence<int>) => forall(b: Sequence<int>) => common(a, b, 0) == 0)
   && (forall(a: Sequence<int>) => forall(b: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(a) ==>
         common(a, b, h) == common(a, b, h - 1) + (if contains(b, seqSelect(a, h - 1)) then 1 else 0))
 };
 
 procedure bBelowAi(a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  0 <= i ==> i < seqLength(a) ==>
+  return 0 <= i ==> i < seqLength(a) ==>
     (forall(m: int) => 0 <= m ==> m < j ==> m < seqLength(b) ==> seqSelect(b, m) < seqSelect(a, i))
 };
 
 procedure aBelowBj(a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  0 <= j ==> j < seqLength(b) ==>
+  return 0 <= j ==> j < seqLength(b) ==>
     (forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqSelect(a, k) < seqSelect(b, j))
 };
 

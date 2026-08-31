@@ -94,7 +94,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := src } }]
     body := .Transparent { val := .Block [
       { val := .Assign [{ val := .Local (mkId resultOutputName), source := src }] bodyExpr, source := src },
-      { val := .Return none, source := src }] none, source := src }
+      { val := .Return [], source := src }] none, source := src }
     decreases := none
     preconditions := [] }
 
@@ -213,46 +213,6 @@ def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.
     (body : StmtExprMd) : StmtExprMd :=
   (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model mixed) false body).run' 0
 
-private def isSpecStatement (s : StmtExprMd) : Bool :=
-  match s.val with
-  | .Assert .. | .Assume _ => true
-  | _ => false
-
-mutual
-/-- Turn the value a transparent body ends in into an assignment to `out`, following
-    `FunctionalRewrite`'s reading of the body: the last element that is not a
-    statement is the function's value, also inside the branches of a trailing `if`
-    and inside a trailing block. A `void` element, such as a call to a lemma, is not
-    a value. -/
-private def assignTail (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
-    (outTy : HighTypeMd) (s : StmtExprMd) : StmtExprMd :=
-  match s with
-  | ⟨.IfThenElse c t e, sSrc⟩ =>
-    ⟨.IfThenElse c (assignTail model lattice out outTy t)
-      (assignTailOpt model lattice out outTy e), sSrc⟩
-  | ⟨.Block stmts label, sSrc⟩ =>
-    ⟨.Block (assignTailList model lattice out outTy stmts) label, sSrc⟩
-  | ⟨.While .., _⟩ | ⟨.Exit _, _⟩ | ⟨.Return _, _⟩ | ⟨.Assign .., _⟩ | ⟨.IncrDecr .., _⟩
-  | ⟨.CompoundAssign .., _⟩ | ⟨.Var (.Declare _), _⟩ | ⟨.Assert .., _⟩ | ⟨.Assume _, _⟩
-  | ⟨.Throw _, _⟩ | ⟨.Try .., _⟩ | ⟨.Yield .., _⟩ | ⟨.Resume .., _⟩ => s
-  | _ =>
-    if isConsistentSubtype lattice (computeExprType model s) outTy then
-      ⟨.Assign [{ val := .Local out, source := s.source }] s, s.source⟩
-    else s
-
-private def assignTailOpt (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
-    (outTy : HighTypeMd) : Option StmtExprMd → Option StmtExprMd
-  | some s => some (assignTail model lattice out outTy s)
-  | none => none
-
-private def assignTailList (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
-    (outTy : HighTypeMd) : List StmtExprMd → List StmtExprMd
-  | [] => []
-  | s :: rest =>
-    if rest.all isSpecStatement then assignTail model lattice out outTy s :: rest
-    else s :: assignTailList model lattice out outTy rest
-end
-
 /-- Assert each constrained output's constraint where a transparent body exits without
     having just assigned it: before a `return` that does not directly follow an assignment
     to an output, which is already asserted, and after the body for the path that falls
@@ -269,12 +229,12 @@ private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter
   let guardReturns (stmts : List StmtExprMd) : List StmtExprMd :=
     (stmts.foldl (init := (([] : List StmtExprMd), false)) fun (acc, justAssigned) s =>
       match s.val with
-      | .Return none =>
+      | .Return [] =>
         (acc ++ (if justAssigned then [] else checks (some s.source)) ++ [s], false)
       | .Assert .. => (acc ++ [s], justAssigned)
       | _ => (acc ++ [s], assignsOutput s)).1
   let guardBranch (b : StmtExprMd) : StmtExprMd := match b.val with
-    | .Return none => ⟨.Block (checks (some b.source) ++ [b]) none, b.source⟩
+    | .Return [] => ⟨.Block (checks (some b.source) ++ [b]) none, b.source⟩
     | _ => b
   let guard (e : StmtExprMd) : StmtExprMd := match e.val with
     | .Block stmts label => ⟨.Block (guardReturns stmts) label, e.source⟩
@@ -290,7 +250,7 @@ private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter
   | .Return _ => ⟨.Block (checks (some body'.source) ++ [body']) none, body'.source⟩
   | _ => ⟨.Block (body' :: checks none) none, body'.source⟩
 
-def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
+def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     (mixed : Std.HashSet String) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
@@ -307,10 +267,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : Typ
     let constrained := proc.outputs.filter fun p =>
       (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).isSome
     if constrained.isEmpty then .Transparent (elimStmts ptMap model mixed bodyExpr) else
-    let tailed := match proc.outputs with
-      | [out] => assignTail model lattice out.name (resolveType ptMap out.type) bodyExpr
-      | _ => bodyExpr
-    let body := elimStmts ptMap model mixed tailed
+    let body := elimStmts ptMap model mixed bodyExpr
     .Transparent (addExitChecks ptMap constrained body)
   -- Output type-constraints go FIRST, before the user's own `ensures`. The order
   -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
@@ -414,12 +371,12 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap) (mixed : Std.Has
     definitions from the program. Any reference to a constrained type left inside
     a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
     resolve in later passes and the final Core translation. -/
-def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
+def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     (mixed : Std.HashSet String) (ct : CompositeType) (prepare : Procedure → Procedure := id) :
     CompositeType :=
   { ct with
     fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model lattice mixed ∘ prepare) }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model mixed ∘ prepare) }
 
 private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any ids.contains
@@ -463,7 +420,6 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     : LaurelProgram × List Message :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
-  let lattice := TypeLattice.ofTypes program.types
   let constraintProcs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
@@ -484,7 +440,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let prepared := program.staticProcedures.map addGlobalConditions
   ({ program with
     staticProcedures := constraintProcs ++
-      prepared.map (elimProc ptMap model lattice mixed)
+      prepared.map (elimProc ptMap model mixed)
                         ++ witnessProcedures ++ fieldAxiomProcedures
     staticFields := program.staticFields.map fun field =>
       { field with
@@ -493,7 +449,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct =>
-          some (.Composite (elimCompositeType ptMap model lattice mixed ct addGlobalConditions))
+          some (.Composite (elimCompositeType ptMap model mixed ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained

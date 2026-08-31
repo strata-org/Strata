@@ -17,7 +17,7 @@ procedure path(nx: Sequence<int>, s: int, len: int): bool;
 
 procedure pathAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(s: int) => path(nx, s, 0) == (s == -1))
+  return (forall(nx: Sequence<int>) => forall(s: int) => path(nx, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(s: int) => forall(len: int) => len >= 1 ==>
         path(nx, s, len) == (0 <= s && s < seqLength(nx) && path(nx, seqSelect(nx, s), len - 1)))
 };
@@ -69,7 +69,7 @@ procedure path(nx: Sequence<int>, s: int, len: int): bool;
 
 procedure pathAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(s: int) => path(nx, s, 0) == (s == -1))
+  return (forall(nx: Sequence<int>) => forall(s: int) => path(nx, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(s: int) => forall(len: int) => len >= 1 ==>
         path(nx, s, len) == (0 <= s && s < seqLength(nx) && path(nx, seqSelect(nx, s), len - 1)))
 };

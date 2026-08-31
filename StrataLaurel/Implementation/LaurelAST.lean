@@ -557,8 +557,9 @@ inductive StmtExpr : Type where
     (postTest : Bool)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
-  /-- Return from the enclosing procedure with an optional value. -/
-  | Return (value : Option (AstNode StmtExpr))
+  /-- Return from the enclosing procedure with one value per declared output; a bare
+      `return` is `[]`. The arity is checked by `Check.return`. -/
+  | Return (values : List (AstNode StmtExpr))
   /-- An integer literal. -/
   | LiteralInt (value : Int)
   /-- A boolean literal. -/
@@ -1011,6 +1012,19 @@ def exnResultValue : String := exnResultMember exnResultValueField
 
 /-- Destructor reading the thrown exception: `Result..err`. -/
 def exnResultErr : String := exnResultMember exnResultErrField
+
+def multiOutputDatatypeName (fnName : String) : String := s!"$outputs_{fnName}"
+
+def multiOutputCtorName (fnName : String) : String := s!"$mkOutputs_{fnName}"
+
+/-- Must match the name `Resolution.resolveTypeDefinition` generates for a datatype
+    field, i.e. `DatatypeDefinition.destructorName`. -/
+def multiOutputDestructorName (fnName outName : String) : String :=
+  s!"{multiOutputDatatypeName fnName}..{outName}"
+
+def multiOutputPackedName : String := "$packedOutputs"
+
+def multiOutputCallTempName (site : Nat) : String := s!"$callOutputs_{site}"
 
 /-- The base composite NAME of a type reference, for consumers that need the parent
     name rather than its instantiation: `.UserDefined Base` and `.Applied (UserDefined

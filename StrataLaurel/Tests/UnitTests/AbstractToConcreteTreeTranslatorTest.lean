@@ -432,7 +432,7 @@ procedure test(): int
 { <??> };
 #end)
 
--- Valueless return (issue #1353): a bare `return` round-trips as `.Return none`,
+-- Valueless return (issue #1353): a bare `return` round-trips as `.Return []`,
 -- not as the old `return { }` block hack, and re-parses stably.
 /--
 info: procedure earlyExit(b: bool)
@@ -452,6 +452,71 @@ program Laurel;
 procedure earlyExit(b: bool)
   opaque
 { if b then { return }; assert true };
+#end)
+
+-- Multi-value return: `return b, a` fills one output per value.
+/--
+info: procedure swap(a: int, b: int)
+  returns (x: int, y: int)
+  opaque
+{
+  return b, a
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure swap(a: int, b: int) returns (x: int, y: int)
+  opaque
+{ return b, a };
+#end)
+
+-- The single-value form must still print without a tail and re-parse identically.
+/--
+info: procedure justOne(a: int)
+  returns (r: int)
+  opaque
+{
+  return a
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure justOne(a: int) returns (r: int)
+  opaque
+{ return a };
+#end)
+
+-- Three values: the first case whose `returnMore` tail contains a comma of its own.
+/--
+info: procedure rotate(a: int, b: int, c: int)
+  returns (x: int, y: int, z: int)
+  opaque
+{
+  return c, b, a
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure rotate(a: int, b: int, c: int) returns (x: int, y: int, z: int)
+  opaque
+{ return c, b, a };
+#end)
+
+-- A tail with no leading value parses, and is rejected rather than read as `return 2, 3`.
+/-- error: Translation errors: return: value list cannot begin with a comma -/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure leadingComma() returns (a: int, b: int)
+  opaque
+{ return , 2, 3 };
 #end)
 
 -- Additional coverage: producer-marked `entry` point (interpreter entry marker)
@@ -884,8 +949,8 @@ private def leWrapper (nm : String) : Procedure :=
                { name := mkId "y", type := node .TInt }],
     outputs := [{ name := mkId resultOutputName, type := node .TBool }],
     preconditions := [], decreases := none,
-    body := .Transparent (node (.Return (some (node (.StaticCall (mkId "$intLe")
-      [node (.Var (.Local (mkId "x"))), node (.Var (.Local (mkId "y")))] []))))) }
+    body := .Transparent (node (.Return [node (.StaticCall (mkId "$intLe")
+      [node (.Var (.Local (mkId "x"))), node (.Var (.Local (mkId "y")))] [])])) }
 
 /--
 info: procedure $le(x: int, y: int): bool

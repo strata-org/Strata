@@ -22,7 +22,7 @@ composite Slab {
 
 procedure wellFormed(s: Slab): bool
 {
-  seqLength(s#values) == seqLength(s#occupied) && seqLength(s#occupied) == seqLength(s#nextFree)
+  return seqLength(s#values) == seqLength(s#occupied) && seqLength(s#occupied) == seqLength(s#nextFree)
   && -1 <= s#freeHead && s#freeHead < seqLength(s#occupied)
   && (s#freeHead != -1 ==> !seqSelect(s#occupied, s#freeHead))
 };
@@ -84,7 +84,7 @@ composite Slab {
 
 procedure wellFormed(s: Slab): bool
 {
-  seqLength(s#values) == seqLength(s#occupied) && seqLength(s#occupied) == seqLength(s#nextFree)
+  return seqLength(s#values) == seqLength(s#occupied) && seqLength(s#occupied) == seqLength(s#nextFree)
   && -1 <= s#freeHead && s#freeHead < seqLength(s#occupied)
   && (s#freeHead != -1 ==> !seqSelect(s#occupied, s#freeHead))
 };

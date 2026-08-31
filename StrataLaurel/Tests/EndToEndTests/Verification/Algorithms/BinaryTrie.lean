@@ -17,7 +17,7 @@ procedure stored(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>, n: 
 
 procedure trieAxioms(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>, w: Sequence<int>): bool
 {
-  seqLength(c0) == seqLength(c1) && seqLength(c1) == seqLength(term)
+  return seqLength(c0) == seqLength(c1) && seqLength(c1) == seqLength(term)
   && (forall(d: int) => !stored(c0, c1, term, -1, w, d))
   && (forall(n: int) => forall(d: int) => 0 <= n ==> n < seqLength(c0) ==> d == seqLength(w) ==>
         stored(c0, c1, term, n, w, d) == seqSelect(term, n))
@@ -28,7 +28,7 @@ procedure trieAxioms(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>,
 
 procedure validChildren(c0: Sequence<int>, c1: Sequence<int>): bool
 {
-  forall(n: int) => 0 <= n ==> n < seqLength(c0) ==> n < seqLength(c1) ==>
+  return forall(n: int) => 0 <= n ==> n < seqLength(c0) ==> n < seqLength(c1) ==>
     -1 <= seqSelect(c0, n) && seqSelect(c0, n) < seqLength(c0) && -1 <= seqSelect(c1, n) && seqSelect(c1, n) < seqLength(c0)
 };
 
@@ -65,7 +65,7 @@ procedure stored(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>, n: 
 
 procedure trieAxioms(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>, w: Sequence<int>): bool
 {
-  seqLength(c0) == seqLength(c1) && seqLength(c1) == seqLength(term)
+  return seqLength(c0) == seqLength(c1) && seqLength(c1) == seqLength(term)
   && (forall(d: int) => !stored(c0, c1, term, -1, w, d))
   && (forall(n: int) => forall(d: int) => 0 <= n ==> n < seqLength(c0) ==> d == seqLength(w) ==>
         stored(c0, c1, term, n, w, d) == seqSelect(term, n))
@@ -76,7 +76,7 @@ procedure trieAxioms(c0: Sequence<int>, c1: Sequence<int>, term: Sequence<bool>,
 
 procedure validChildren(c0: Sequence<int>, c1: Sequence<int>): bool
 {
-  forall(n: int) => 0 <= n ==> n < seqLength(c0) ==> n < seqLength(c1) ==>
+  return forall(n: int) => 0 <= n ==> n < seqLength(c0) ==> n < seqLength(c1) ==>
     -1 <= seqSelect(c0, n) && seqSelect(c0, n) < seqLength(c0) && -1 <= seqSelect(c1, n) && seqSelect(c1, n) < seqLength(c0)
 };
 

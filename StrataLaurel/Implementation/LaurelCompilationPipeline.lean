@@ -32,6 +32,7 @@ import StrataLaurel.Implementation.FilterPrelude
 import StrataLaurel.Implementation.LiftImperativeExpressions
 import StrataLaurel.Implementation.InlineLocalVariables
 import StrataLaurel.Implementation.FunctionalRewrite
+import StrataLaurel.Implementation.PackageFunctionOutputs
 import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.ContractPass
 import StrataLaurel.Implementation.LoopInvariantWellFormedness
@@ -190,6 +191,10 @@ def laurelPipeline : Array LaurelPass := #[
   loopInvariantWellFormednessPass,
   contractPass,
   transparencyPass,
+  -- Before `FunctionalRewrite`: a call binding one target per output is an assignment
+  -- to several targets, which that pass rejects outright, so the rewrite into one bind
+  -- plus a projection per target has to happen while the statement is still there.
+  packageFunctionOutputsPass,
   functionalRewritePass,
   liftImperativeExpressionsPass,
   inlineLocalVariablesPass,

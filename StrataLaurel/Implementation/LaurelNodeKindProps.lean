@@ -169,9 +169,9 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
     [NodeKind.StmtExpr.While]
       ++ (if postTest then [NodeKind.StmtExpr.While.postTest.true] else [])
   | .Exit .. => [NodeKind.StmtExpr.Exit]
-  | .Return value =>
+  | .Return values =>
     [NodeKind.StmtExpr.Return]
-      ++ (if value.isSome then [NodeKind.StmtExpr.Return.value.some] else [])
+      ++ (if values.isEmpty then [] else [NodeKind.StmtExpr.Return.value.some])
   | .LiteralBool .. => [NodeKind.StmtExpr.LiteralBool]
   | .Var v => NodeKind.StmtExpr.Var :: NodeKind.ofVariable v
   | .Assign .. => [NodeKind.StmtExpr.Assign]
@@ -232,7 +232,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .Block stmts _ => stmts
   | .While cond invariants decreases body _ =>
     [cond] ++ invariants ++ decreases.toList ++ [body]
-  | .Return value => value.toList
+  | .Return values => values
   | .Resume target value => [target] ++ value.toList
   | .HasNext target => [target]
   | .Assign targets value => targets.flatMap (fun t => variableChildren t.val) ++ [value]
