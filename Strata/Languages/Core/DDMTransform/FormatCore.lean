@@ -780,7 +780,9 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | .seq .Build => pure (.seq_build default ty arg1 arg2)
   | .seq .Contains => pure (.seq_contains default ty arg1 arg2)
   | .seq .Take => pure (.seq_take default ty arg1 arg2)
+  | .seq .TakeUnsafe => pure (.seq_take_unsafe default ty arg1 arg2)
   | .seq .Drop => pure (.seq_drop default ty arg1 arg2)
+  | .seq .DropUnsafe => pure (.seq_drop_unsafe default ty arg1 arg2)
   -- String and Regex operations
   | .str .Concat => pure (.str_concat default arg1 arg2)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
@@ -810,6 +812,7 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   | .map .Update => pure (.map_set default ty ty arg1 arg2 arg3)
   -- Sequences
   | .seq .Update => pure (.seq_update default ty arg1 arg2 arg3)
+  | .seq .UpdateUnsafe => pure (.seq_update_unsafe default ty arg1 arg2 arg3)
   -- Strings and regexes
   | .str .Substr => pure (.str_substr default arg1 arg2 arg3)
   | .str .IndexOf => pure (.str_indexof default arg1 arg2 arg3)

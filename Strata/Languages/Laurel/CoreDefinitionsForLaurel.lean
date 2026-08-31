@@ -133,6 +133,26 @@ procedure mapRemove<K, V>(m: Map<K, V>, k: K) : Map<K, V>
   return update(m, k, $MapAbsent())
 };
 
+opaque Sequence<T>
+
+procedure seqEmpty<T>() : Sequence<T> external;
+procedure seqLength<T>(s: Sequence<T>) : int external;
+procedure seqSelect<T>(s: Sequence<T>, i: int) : T
+  requires 0 <= i && i < seqLength(s)
+  external;
+procedure seqBuild<T>(s: Sequence<T>, v: T) : Sequence<T> external;
+procedure seqUpdate<T>(s: Sequence<T>, i: int, v: T) : Sequence<T>
+  requires 0 <= i && i < seqLength(s)
+  external;
+procedure seqAppend<T>(s: Sequence<T>, t: Sequence<T>) : Sequence<T> external;
+procedure seqContains<T>(s: Sequence<T>, v: T) : bool external;
+procedure seqTake<T>(s: Sequence<T>, n: int) : Sequence<T>
+  requires 0 <= n && n <= seqLength(s)
+  external;
+procedure seqDrop<T>(s: Sequence<T>, n: int) : Sequence<T>
+  requires 0 <= n && n <= seqLength(s)
+  external;
+
 // --- Type-specific external operators (Core primitives) ---
 
 // Integer arithmetic

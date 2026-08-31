@@ -298,6 +298,40 @@ private def coreSetOpName? (name : String) : Option String :=
   | "setDifference" => some "Set.difference"
   | _ => none
 
+/-- Laurel prelude name → Core `Sequence.*` factory function name.
+
+    The four partial operations target the unsafe (`!`) Core variants, because the
+    prelude already states their bounds as a Laurel `requires`. Using the checked
+    variant would obligate the same condition twice and report it twice. -/
+private def coreSeqOpName? (name : String) : Option String :=
+  match name with
+  | "seqEmpty"    => some "Sequence.empty"
+  | "seqLength"   => some "Sequence.length"
+  | "seqSelect"   => some "Sequence.select!"
+  | "seqBuild"    => some "Sequence.build"
+  | "seqUpdate"   => some "Sequence.update!"
+  | "seqAppend"   => some "Sequence.append"
+  | "seqContains" => some "Sequence.contains"
+  | "seqTake"     => some "Sequence.take!"
+  | "seqDrop"     => some "Sequence.drop!"
+  | _ => none
+
+/-- The element type to annotate an empty-collection call (`setEmpty()`, `seqEmpty()`)
+    with: the type argument of `expectedType`, when that is an application of `typeName`.
+
+    `none` when the context does not determine it; the caller emits the op unannotated and
+    a concrete type elsewhere in the term may still fix it. A generic parameter will not —
+    `Sequence<T>` unifies `T` with the free variable rather than pinning it. -/
+private def emptyCollectionElemTy? (typeName : String) (expectedType : Option HighTypeMd) :
+    TranslateM (Option LMonoTy) := do
+  match expectedType with
+  | some ⟨.Applied base [elemTy], _⟩ =>
+    match base.val with
+    | .UserDefined n =>
+      if n.text == typeName then return some (← translateType elemTy) else return none
+    | _ => return none
+  | _ => return none
+
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
@@ -651,21 +685,16 @@ def translateExpr (expr : StmtExprMd)
                 | _ => pure (.tcons "TypeTag" [])
               pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
           | _ => pure (.op () ⟨callee.text, ()⟩ none)
-        else match coreSetOpName? callee.text with
-        -- A set primitive: emit Core's `Set.*` factory op under its own name.
+        else match coreSetOpName? callee.text <|> coreSeqOpName? callee.text with
+        -- A set or sequence primitive: emit Core's `Set.*`/`Sequence.*` factory op under
+        -- its own name.
         | some coreName =>
-          -- `setEmpty()` takes no arguments, so — exactly like `mapConst`'s key — its
-          -- element type cannot come from an actual and must be read off the context.
-          -- Without the annotation the element type variable reaches the SMT encoder
-          -- unresolved and verification aborts.
+          -- Only the two empty constructors need the element type annotated; every other
+          -- operation has it in an argument. See `emptyCollectionElemTy?`.
           if coreName == "Set.empty" then
-            let elemTy : Option LMonoTy ← match expectedType with
-              | some ⟨.Applied base [et], _⟩ =>
-                match base.val with
-                | .UserDefined n => if n.text == "Set" then pure (some (← translateType et)) else pure none
-                | _ => pure none
-              | _ => pure none
-            pure (Core.setEmptyOp elemTy)
+            pure (Core.setEmptyOp (← emptyCollectionElemTy? "Set" expectedType))
+          else if coreName == "Sequence.empty" then
+            pure (Core.seqEmptyOp (← emptyCollectionElemTy? "Sequence" expectedType))
           else pure (.op () ⟨coreName, ()⟩ none)
         | none => pure (.op () ⟨callee.text, ()⟩ none)
       args.attach.foldlM (fun acc ⟨arg, _⟩ => do
@@ -1207,10 +1236,11 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}
-  /-- Laurel turns array theory ON by default, unlike `Core.VerifyOptions.default`.
-      Laurel's collections are the reason: `Set τ` encodes as `Array τ Bool` and `Map` as
-      `Array`, which makes membership and update native array operations instead of
-      quantified axioms, and makes set equality extensional. -/
+  /-- Laurel turns array theory ON by default, unlike `Core.VerifyOptions.default`:
+      `TotalMap` encodes as `Array` and `Set τ` as `Array τ Bool`, making lookup, membership
+      and update native array operations instead of quantified axioms. `Sequence` is
+      unaffected — it is an uninterpreted sort constrained by the `Sequence.*` axioms either
+      way. -/
   verifyOptions : Core.VerifyOptions := { Core.VerifyOptions.default with useArrayTheory := true }
 
 instance : Inhabited LaurelVerifyOptions where
