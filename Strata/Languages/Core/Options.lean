@@ -157,6 +157,12 @@ structure VerifyOptions where
   -- Encoding options
   /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
   useArrayTheory : Bool
+  /-- Route SMT encoding through the refactored encoder
+      (`VerifiedSMTGen.SMTEncoder`) instead of the production `SMTEncoder`.
+      The refactored path builds an `EncodeResult` and reuses the
+      production `encodeCore` back-end. Off by default; the default-off
+      path is byte-for-byte the existing production encoding. -/
+  useRefactoredEncoder : Bool := false
   -- Verification behavior
   /-- Exit after the first verification error instead of
       continuing. -/
@@ -230,6 +236,7 @@ def VerifyOptions.default : VerifyOptions := {
   stopOnFirstError := false,
   removeIrrelevantAxioms := .Off,
   useArrayTheory := false,
+  useRefactoredEncoder := false,
   solverTimeout := 10,
   outputSarif := false,
   solver := defaultSolver
