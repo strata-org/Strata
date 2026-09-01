@@ -97,6 +97,7 @@ import Strata.DL.SMT.Translate
 import Strata.DL.SMT.DenoteTyped
 import Strata.DL.SMT.DenoteTypedProps
 import Strata.DL.SMT.DenoteSemanticsEquiv
+import Strata.DL.SMT.DenoteTypedSMTQuery
 
 /- Other -/
 import Strata.MetaVerifier
