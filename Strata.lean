@@ -38,6 +38,7 @@ import Strata.Languages.Laurel.Interpreter
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.LaurelASTProps
 import Strata.Languages.Laurel.ResolutionProps
+import Strata.Languages.Laurel.Checked
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
