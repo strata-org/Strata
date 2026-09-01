@@ -10,7 +10,7 @@
 The `SMTQuery` record models an SMT query as the production pipeline's SMT emitter groups it (sorts,
 datatypes, function declarations/definitions, function axioms, variable declarations/definitions,
 assumptions, goal). This file gives its typing (via `Term.typeCheck`), its order-aware well-formedness
-`SMTQuery.WF`, and its denotation in terms of satisfiability (`checkSat` / `ProvesGoal`, via
+`SMTQuery.WF`, and its denotation in terms of (un)satisfiability (`checkSat` / `UnsatWithNegObl`, via
 `Term.denoteTyped`). In emission order, every `define-fun` body type-checks against only the context
 accumulated up to it (prior declarations + earlier definitions + its own params, no forward references)
 and every assertion placed after the declarations and definitions type-checks against the full symbol context.
@@ -19,8 +19,9 @@ Scope: the well-formedness judgments type-check terms against an EMPTY sort cont
 they currently assume the query declares no uninterpreted sorts or datatypes — the `sorts` and
 `datatypes` fields are carried for structural fidelity but are not yet threaded into typing/denotation.
 
-Key definitions: `SMTQuery.WF`, `SMTQuery.checkSat`, `SMTQuery.ProvesGoal`. Key results:
-`SMTQuery.WF.fsTypeCheck`, `SMTQuery.WF.assertOrLitTypeCheck`.
+Key definitions: `SMTQuery.WF`, `SMTQuery.checkSat`, `SMTQuery.UnsatWithNegObl` / `UnsatWithObl`,
+`SMTQuery.EntailsObl` / `EntailsNegObl`. Key results: `SMTQuery.WF.fsTypeCheck`,
+`SMTQuery.WF.assertOrLitTypeCheck`.
 -/
 
 module
@@ -42,27 +43,32 @@ public structure RConstructor where
   args : List (String × TermType)
   deriving Repr, Inhabited
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   The emitted query record.
-   ═══════════════════════════════════════════════════════════════════════════ -/
-
+/-- The query record. -/
 public structure SMTQuery where
-  sorts : List Strata.DL.SMT.Sort  -- uninterpreted sorts (declare-sort)
+  /-- Uninterpreted sorts (`declare-sort`). -/
+  sorts : List Strata.DL.SMT.Sort
   /-- User datatype declarations (`declare-datatype[s]`), in topological/mutual-block order. Emitted
       after `sorts`, since datatype constructors may reference the declared sorts. -/
   datatypes : List (List (String × List String × List RConstructor))
-  fnDecls : List UF              -- uninterpreted factory functions (declare-fun)
-  fnDefs : List IF               -- interpreted functions (define-fun)
+  /-- Uninterpreted functions (`declare-fun`). -/
+  fnDecls : List UF
+  /-- Interpreted functions (`define-fun`). -/
+  fnDefs : List IF
+  /-- Function axioms. -/
   fnAxioms : List Term
-  varDecls : List UF             -- variables; declare-fun
-  varDefs : List IF              -- nullary define-funs
-  assumptions : List Term        -- including `.distinct` terms
-  obl : Term                     -- obligation / goal
+  /-- Variable declarations (`declare-fun`). -/
+  varDecls : List UF
+  /-- Variable definitions (nullary `define-fun`). -/
+  varDefs : List IF
+  /-- Program assumptions (including `distinct` terms). -/
+  assumptions : List Term
+  /-- The proof obligation / goal. -/
+  obl : Term
   deriving Inhabited
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Projections: the UF typing context, the define-fun preamble, the persistent asserts.
-   ═══════════════════════════════════════════════════════════════════════════ -/
+---------------------------------------------------------------------
+-- Projections: UF context, define-fun preamble, persistent asserts
+---------------------------------------------------------------------
 
 /-- The `define-fun` preamble: interpreted functions followed by variable definitions. -/
 def SMTQuery.fs (q : SMTQuery) : List IF := q.fnDefs ++ q.varDefs
@@ -75,9 +81,9 @@ def SMTQuery.ufs (q : SMTQuery) : UFCtx :=
 /-- The persistent assertions: function axioms followed by program assumptions. -/
 def SMTQuery.asserts (q : SMTQuery) : List Term := q.fnAxioms ++ q.assumptions
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   UF-context hygiene + lookup.
-   ═══════════════════════════════════════════════════════════════════════════ -/
+---------------------------------------------------------------------
+-- UF-context hygiene and lookup
+---------------------------------------------------------------------
 
 /-- SMT symbol names are distinct, and none collides with a reserved `$__bv{n}` binder id. -/
 structure UFCtxWF (ufs : UFCtx) : Prop where
@@ -88,9 +94,9 @@ structure UFCtxWF (ufs : UFCtx) : Prop where
 def lookupUF (ufs : UFCtx) (name : String) : Option UF :=
   ufs.find? (·.id == name)
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Order-aware well-formedness (SMT-LIB emission faithfulness).
-   ═══════════════════════════════════════════════════════════════════════════ -/
+---------------------------------------------------------------------
+-- Order-aware well-formedness (SMT-LIB emission faithfulness)
+---------------------------------------------------------------------
 
 /-- Well-formedness of a single `define-fun` at UF context `ufs`: its body type-checks to its declared
     output `f.out` under `ufs` extended with its formal parameters `f.args`. -/
@@ -123,9 +129,9 @@ structure SMTQuery.WF (q : SMTQuery) : Prop where
   /-- The goal type-checks to `bool` against the full context `q.ufs`. -/
   oblWF : Term.typeCheck ⟨[], q.ufs, []⟩ q.obl = .ok .bool
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Typing at the full context: every define-fun, assertion, and the goal type-check against `q.ufs`.
-   ═══════════════════════════════════════════════════════════════════════════ -/
+---------------------------------------------------------------------
+-- Typing at the full context
+---------------------------------------------------------------------
 
 /-- Each function in an `IFsWF ufsBase fs` type-checks at the full context `ufsBase ++ fs.map IF.toUF`. -/
 private theorem IFsWF.mem_wf {ufsBase : UFCtx} {fs : List IF} (h : IFsWF ufsBase fs) :
@@ -168,9 +174,9 @@ theorem SMTQuery.WF.notOblTypeCheck {q : SMTQuery} (hwf : SMTQuery.WF q) :
     Term.typeCheck ⟨[], q.ufs, []⟩ (Term.app (.core .not) [q.obl] .bool) = .ok .bool := by
   simp [Term.typeCheck, hwf.oblWF, bind, Except.bind]
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Model-side satisfaction (denotation), over the trivial base-sort interpretation.
-   ═══════════════════════════════════════════════════════════════════════════ -/
+---------------------------------------------------------------------
+-- Model-side satisfaction (denotation)
+---------------------------------------------------------------------
 
 /-- The trivial sort interpretation, mapping every sort to `Unit`. -/
 def defaultσ : SortInterp := fun _ _ => Unit
@@ -180,7 +186,7 @@ instance : SortInterp.AllInhabited defaultσ := ⟨fun _ _ => ⟨()⟩⟩
 variable {σ : SortInterp} {𝒜 : ArrayTheory} [SortInterp.AllInhabited σ]
 
 /-- Build a `VarEnv` binding the variables `bvs` to an HList of values, with `default` elsewhere. -/
-noncomputable def hlToEnv : (bvs : TermVarCtx) → HList (TermType.denoteTyped σ 𝒜) (bvs.map (·.ty)) → VarEnv σ 𝒜
+def hlToEnv : (bvs : TermVarCtx) → HList (TermType.denoteTyped σ 𝒜) (bvs.map (·.ty)) → VarEnv σ 𝒜
   | [], _ => fun _ => default
   | v :: rest, hl =>
     match hl with
@@ -221,16 +227,117 @@ def SMTQuery.checkSat (q : SMTQuery) (hwf : SMTQuery.WF q) (lits : List Term)
       Term.denoteTyped ufInterp smtEnv divByZero modByZero t .bool
         (hwf.assertOrLitTypeCheck hlits ht) = true)
 
-/-- Validity verdict: no model satisfies the assertions together with the negated goal (so the
-    assertions entail the goal). -/
-def SMTQuery.ProvesGoal (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
+/-- The assertions together with `¬obl` are unsatisfiable (equivalently, the assertions entail `obl` —
+    see `EntailsObl`). -/
+def SMTQuery.UnsatWithNegObl (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
   ¬ q.checkSat hwf [Term.app (.core .not) [q.obl] .bool]
       (fun t ht => by rw [List.mem_singleton] at ht; subst ht; exact hwf.notOblTypeCheck)
 
-/-- Refutation verdict: no model satisfies the assertions together with the goal (so the assertions
-    entail `¬goal`). -/
-def SMTQuery.RefutesGoal (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
+/-- The assertions together with `obl` are unsatisfiable (equivalently, the assertions entail `¬obl` —
+    see `EntailsNegObl`). -/
+def SMTQuery.UnsatWithObl (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
   ¬ q.checkSat hwf [q.obl]
       (fun t ht => by rw [List.mem_singleton] at ht; subst ht; exact hwf.oblWF)
+
+/-- The assertions entail `obl`: in every model respecting the `define-fun` preamble in which all
+    persistent assertions denote `true`, `obl` denotes `true`. -/
+def SMTQuery.EntailsObl (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
+  ∀ (σ : SortInterp) (hσ : SortInterp.AllInhabited σ) (𝒜 : ArrayTheory)
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) (divByZero modByZero : Int → Int),
+    haveI := hσ
+    IFs.UFConsistent q.fs hwf.fsTypeCheck ufInterp divByZero modByZero →
+    (∀ t (ht : t ∈ q.asserts),
+      Term.denoteTyped ufInterp smtEnv divByZero modByZero t .bool (hwf.assertsWF t ht) = true) →
+    Term.denoteTyped ufInterp smtEnv divByZero modByZero q.obl .bool hwf.oblWF = true
+
+/-- The assertions entail `¬obl`: in every model respecting the `define-fun` preamble in which all
+    persistent assertions denote `true`, `obl` denotes `false`. -/
+def SMTQuery.EntailsNegObl (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
+  ∀ (σ : SortInterp) (hσ : SortInterp.AllInhabited σ) (𝒜 : ArrayTheory)
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) (divByZero modByZero : Int → Int),
+    haveI := hσ
+    IFs.UFConsistent q.fs hwf.fsTypeCheck ufInterp divByZero modByZero →
+    (∀ t (ht : t ∈ q.asserts),
+      Term.denoteTyped ufInterp smtEnv divByZero modByZero t .bool (hwf.assertsWF t ht) = true) →
+    Term.denoteTyped ufInterp smtEnv divByZero modByZero q.obl .bool hwf.oblWF = false
+
+---------------------------------------------------------------------
+-- Entailment / unsatisfiability equivalences
+---------------------------------------------------------------------
+
+/-- The assertions entail `obl` iff they are unsatisfiable together with `¬obl`. -/
+theorem SMTQuery.entailsObl_iff_unsatWithNegObl (q : SMTQuery) (hwf : SMTQuery.WF q) :
+    q.EntailsObl hwf ↔ q.UnsatWithNegObl hwf := by
+  constructor
+  · -- Entails → Unsat
+    intro hE hsat
+    obtain ⟨σ, hσ, 𝒜, ufInterp, smtEnv, dz, mz, hUF, hall⟩ := hsat
+    haveI := hσ
+    have hasserts : ∀ t (ht : t ∈ q.asserts),
+        Term.denoteTyped ufInterp smtEnv dz mz t .bool (hwf.assertsWF t ht) = true := by
+      intro t ht
+      exact hall t (List.mem_append.mpr (Or.inl ht))
+    have hobl := hE σ hσ 𝒜 ufInterp smtEnv dz mz hUF hasserts
+    have hlit := hall (Term.app (.core .not) [q.obl] .bool)
+      (List.mem_append.mpr (Or.inr (List.mem_singleton.mpr rfl)))
+    rw [Term.denoteTyped_not] at hlit
+    simp only [cast_eq] at hlit
+    -- `hlit : (! denote q.obl) = true`, with a proof-arg defeq to `hwf.oblWF`
+    have key : (! Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF) = true := hlit
+    rw [hobl] at key
+    simp at key
+  · -- Unsat → Entails
+    intro hU σ hσ 𝒜 ufInterp smtEnv dz mz hUF hasserts
+    haveI := hσ
+    rcases Bool.eq_false_or_eq_true
+        (Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF) with hb | hb
+    · exact hb
+    · exfalso
+      apply hU
+      refine ⟨σ, hσ, 𝒜, ufInterp, smtEnv, dz, mz, hUF, ?_⟩
+      intro t ht
+      rcases List.mem_append.mp ht with h | h
+      · exact hasserts t h
+      · rw [List.mem_singleton] at h
+        subst h
+        rw [Term.denoteTyped_not]
+        simp only [cast_eq]
+        show (! Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF) = true
+        rw [hb]
+        rfl
+
+/-- The assertions entail `¬obl` iff they are unsatisfiable together with `obl`. -/
+theorem SMTQuery.entailsNegObl_iff_unsatWithObl (q : SMTQuery) (hwf : SMTQuery.WF q) :
+    q.EntailsNegObl hwf ↔ q.UnsatWithObl hwf := by
+  constructor
+  · -- EntailsNeg → Unsat
+    intro hE hsat
+    obtain ⟨σ, hσ, 𝒜, ufInterp, smtEnv, dz, mz, hUF, hall⟩ := hsat
+    haveI := hσ
+    have hasserts : ∀ t (ht : t ∈ q.asserts),
+        Term.denoteTyped ufInterp smtEnv dz mz t .bool (hwf.assertsWF t ht) = true := by
+      intro t ht
+      exact hall t (List.mem_append.mpr (Or.inl ht))
+    have hobl := hE σ hσ 𝒜 ufInterp smtEnv dz mz hUF hasserts
+    have hlit := hall q.obl (List.mem_append.mpr (Or.inr (List.mem_singleton.mpr rfl)))
+    have key : Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF = true := hlit
+    rw [hobl] at key
+    simp at key
+  · -- Unsat → EntailsNeg
+    intro hU σ hσ 𝒜 ufInterp smtEnv dz mz hUF hasserts
+    haveI := hσ
+    rcases Bool.eq_false_or_eq_true
+        (Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF) with hb | hb
+    · exfalso
+      apply hU
+      refine ⟨σ, hσ, 𝒜, ufInterp, smtEnv, dz, mz, hUF, ?_⟩
+      intro t ht
+      rcases List.mem_append.mp ht with h | h
+      · exact hasserts t h
+      · rw [List.mem_singleton] at h
+        subst h
+        show Term.denoteTyped ufInterp smtEnv dz mz q.obl .bool hwf.oblWF = true
+        exact hb
+    · exact hb
 
 end Strata.SMT.DenoteTyped
