@@ -110,11 +110,12 @@ inductive StatementHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       TContext.Equiv (T := CoreLParams) Δ Γ →
       StatementHasType' τ P C Γ L (.exit label md) C Δ
 
-  /-- Local function declaration. The function is non-recursive and well-typed
-      (per `FuncHasType'`, evaluated in the ambient `C, Γ`); the resulting `func`
-      is added to `C` for subsequent statements. -/
+  /-- Local function declaration. The declaration must be non-recursive, and
+      every declared type must be a monotype. The resulting function is added to
+      `C` for subsequent statements. -/
   | funcDecl : ∀ C Γ L decl func md Δ,
       ¬ decl.isRecursive →
+      Function.ofPureFunc decl = .ok func →
       FuncHasType' τ C Γ func →
       TContext.Equiv (T := CoreLParams) Δ Γ →
       StatementHasType' τ P C Γ L (.funcDecl decl md) (C.addFactoryFunction func.toLFunc) Δ
