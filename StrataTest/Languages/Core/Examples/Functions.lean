@@ -164,18 +164,11 @@ theorem quantBodyFuncPgm_correct : smtVCsCorrect quantBodyFuncPgm := by
 
 ---------------------------------------------------------------------
 
-/-! ## Regression: `gen_smt_vcs` with a polymorphic uninterpreted function
+/-! ## `gen_smt_vcs` with a polymorphic uninterpreted function
 
-`genVCs` previously skipped monomorphization, so `gen_smt_vcs` would fail
-for programs whose obligations contain a reference to a polymorphic function
-— either a user-defined uninterpreted function or a built-in such as
-`Sequence.select`. Without monomorphization the SMT encoder encounters an
-unresolved type variable and returns `none`.
-
-This example uses an uninterpreted `mirror<T>` (no body, so it is not
-inlined by symbolic evaluation) and asserts `mirror(a) == mirror(a)`, which
-is trivially true by reflexivity and requires no axioms. The obligation still
-contains a reference to `mirror<int>`, exercising the monomorphization path.
+`mirror<T>` has no body, so symbolic evaluation does not inline it; the
+obligation retains a reference to `mirror<int>` that the monomorphization
+pass must instantiate before the SMT encoder runs.
 -/
 
 private def polyUninterpPgm : Program :=
@@ -188,6 +181,26 @@ procedure testMirror(a : int) {
 #end
 
 theorem polyUninterpPgm_correct : smtVCsCorrect polyUninterpPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
+/-! ## `gen_smt_vcs` with a polymorphic procedure and polymorphic uninterpreted function
+
+Both the procedure and the uninterpreted function are parameterized by the
+same type variable `T`, so monomorphization must handle a polymorphic call
+site inside a polymorphic procedure body.
+-/
+
+private def polyProcUninterpPgm : Program :=
+#strata
+program Core;
+function mirror<T>(x : T) : T;
+procedure testMirrorPoly<T>(a : T) {
+  assert [mirrorPolyRefl]: mirror(a) == mirror(a);
+};
+#end
+
+theorem polyProcUninterpPgm_correct : smtVCsCorrect polyProcUninterpPgm := by
   gen_smt_vcs
   all_goals (try grind)
 
