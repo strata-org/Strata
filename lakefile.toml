@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen"]
+defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen", "CoreSyntaxGen"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
@@ -20,6 +20,14 @@ rev = "bump_to_v4.29.0-rc8"
 [[lean_lib]]
 name = "Strata"
 moreLeancArgs = ["-fbracket-depth=512"]
+
+# Editor syntax-highlighting generator, factored out of `editors/GenSyntax.lean`
+# so `StrataTest.EditorSyntaxFreshness` can reuse it for the freshness check.
+# `srcDir` points at `editors/` so the module resolves to `editors/CoreSyntaxGen.lean`.
+[[lean_lib]]
+name = "CoreSyntaxGen"
+srcDir = "editors"
+globs = ["CoreSyntaxGen"]
 
 [[lean_lib]]
 name = "StrataExamples"
