@@ -115,7 +115,7 @@ spec {
       var |special-name-for-old-measure-value| : int := int.sub(n, i);
       sum := int.add(sum, i);
       i := int.add(i, 1);
-      assert [measure_decreases]: int.lt(int.sub(n, i), special-name-for-old-measure-value);
+      assert [measure_decreases]: int.lt(int.sub(n, i), |special-name-for-old-measure-value|);
       assert [measure_imp_not_guard]: if int.le(int.sub(n, i), 0) then !(int.lt(i, n)) else true;
       assert [arbitrary_iter_maintain_invariant_0]: int.le(i, n) && int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
     }

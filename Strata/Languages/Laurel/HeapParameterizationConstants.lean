@@ -46,7 +46,7 @@ datatype NotSupportedYet {}
 
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
-  MkHeap(data: Map Composite Map Field $Box, nextReference: int)
+  MkHeap(data: TotalMap Composite TotalMap Field $Box, nextReference: int)
 }
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]

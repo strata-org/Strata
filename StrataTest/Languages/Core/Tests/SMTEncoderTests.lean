@@ -276,6 +276,52 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 
 end ArrayTheory
 
+/-! ## `smtTermToLExpr`: unary `-` decodes by operand type
+
+The model parser represents a unary `-` in a counterexample as a UF
+application whose return type is an untyped placeholder, so `smtTermToLExpr`
+decides `int.neg` vs `real.neg` from the operand, which is expected to be a
+numeric constant: a real constant ⇒ `real.neg`, otherwise `int.neg`. -/
+
+/-- Build the untyped `(- arg)` UF application that a parsed model yields for
+    unary minus. -/
+private def negUF (arg : Strata.SMT.Term) : Strata.SMT.Term :=
+  .app (.core (.uf { id := "-", args := [], out := .constr "_placeholder" [] }))
+    [arg] (.constr "_placeholder" [])
+
+-- Integer constant operand ⇒ `Int.Neg`.
+#guard smtTermToLExpr (negUF (.prim (.int 1)))
+  == .app () (.op () "Int.Neg" none) (.intConst () 1)
+
+-- Real constant operand ⇒ `Real.Neg` (the untyped placeholder return type is ignored).
+#guard smtTermToLExpr (negUF (.prim (.real (StrataDDM.Decimal.mk 628 (-2)))))
+  == .app () (.op () "Real.Neg" none) (.realConst () (StrataDDM.Decimal.mk 628 (-2)).toRat)
+
+-- A non-constant operand (here a variable) is not a real literal ⇒ defaults to `Int.Neg`.
+#guard smtTermToLExpr (negUF (.var { id := "x", ty := .constr "_placeholder" [] }))
+  == .app () (.op () "Int.Neg" none) (.fvar () "x" none)
+
+/-- Build a binary `(- a b)` UF application (two operands). -/
+private def binMinusUF (a b : Strata.SMT.Term) : Strata.SMT.Term :=
+  .app (.core (.uf { id := "-", args := [], out := .constr "_placeholder" [] }))
+    [a, b] (.constr "_placeholder" [])
+
+-- Binary `-` (two args) is NOT rewritten to Int.Neg; it falls through to a plain UF.
+#guard smtTermToLExpr (binMinusUF (.prim (.int 3)) (.prim (.int 1)))
+  == .app () (.app () (.fvar () "-" none) (.intConst () 3)) (.intConst () 1)
+
+-- Nested negation `-(-(1))` decodes recursively to `int.neg(int.neg(1))`.
+#guard smtTermToLExpr (negUF (negUF (.prim (.int 1))))
+  == .app () (.op () "Int.Neg" none)
+       (.app () (.op () "Int.Neg" none) (.intConst () 1))
+
+-- Nested real negation: `smtTermIsReal` inspects only the immediate operand, so
+-- the outer `-` sees an `.app` (not a real literal) and defaults to `Int.Neg`,
+-- while the inner `-` over the real literal is `Real.Neg`.
+#guard smtTermToLExpr (negUF (negUF (.prim (.real (StrataDDM.Decimal.mk 100 0)))))
+  == .app () (.op () "Int.Neg" none)
+       (.app () (.op () "Real.Neg" none) (.realConst () (StrataDDM.Decimal.mk 100 0).toRat))
+
 /-! ## Test that built-in types do not produce declare-sort -/
 
 -- Callers of addType (i.e. LMonoTy.toSMTType) should not call addType for

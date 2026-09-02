@@ -117,7 +117,7 @@ spec {
         return := true;
       }
       idx := int.add(idx, 1);
-      assert [measure_decreases]: int.lt(int.sub(Array.Len(arr), idx), special-name-for-old-measure-value);
+      assert [measure_decreases]: int.lt(int.sub(Array.Len(arr), idx), |special-name-for-old-measure-value|);
       assert [measure_imp_not_guard]: if int.le(int.sub(Array.Len(arr), idx), 0) then !(int.lt(idx, Array.Len(arr))) else true;
       assert [arbitrary_iter_maintain_invariant_0]: true;
     }

@@ -71,7 +71,7 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
   -- hole on its own — but the operands must agree, which makes the first non-hole sibling a sound
   -- guess. Decline here so `unresolvedOperatorArgType` supplies it and `<?> == s` takes `string`.
   -- Blanking the slots instead would leave the hole with nothing and report "could not infer
-  -- type". No such reasoning is available in general: `select<K,V>(map: Map K V, key: K)` has
+  -- type". No such reasoning is available in general: `select<K,V>(map: TotalMap K V, key: K)` has
   -- differently-typed slots, and its map argument says nothing about the key.
   if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
     none
@@ -85,7 +85,7 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
     -- `int` of `f<T>(x: int, y: T)` still infers `int`. Blanking the whole list instead would
     -- turn that hole into a "could not infer type" error.
     --
-    -- The variable need not be at the top of the type — `Map K V` nests them — hence
+    -- The variable need not be at the top of the type — `TotalMap K V` nests them — hence
     -- `mentionsTVar` rather than a `.TVar` test. A hole in one of these `.Unknown` slots is
     -- reported as "could not infer type": the instantiation is knowable from the call's other
     -- arguments, but this pass does not compute it.

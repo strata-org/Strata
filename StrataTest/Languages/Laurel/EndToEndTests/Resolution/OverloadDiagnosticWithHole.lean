@@ -32,7 +32,7 @@ declines for these two names and `unresolvedOperatorArgType` supplies it, lettin
 `<?> == "hello"` infer `string`. Typing the hole from `T` would leave it with
 nothing and report "could not infer type"; the general rule for a generic callee
 blanks only the slots whose declared type mentions a type variable (`mentionsTVar`),
-which is right where the slots differ, as in `select<K,V>(map: Map K V, key: K)`.
+which is right where the slots differ, as in `select<K,V>(map: TotalMap K V, key: K)`.
 -/
 
 -- Baseline, no hole: the operator reports.

@@ -49,7 +49,7 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ❌ fail
 Model:
-(g@2, -(1)) (g@3, 0)
+(g@2, int.neg(1)) (g@3, 0)
 -/
 #guard_msgs in
 #eval Core.verify atSignDisambiguation

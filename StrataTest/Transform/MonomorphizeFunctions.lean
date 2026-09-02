@@ -13,6 +13,8 @@ meta import Strata.Transform.MonomorphizeFunctions
 meta import Strata.Transform.MonomorphizeProcedures
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.TerminationCheck
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 
 meta section
 
@@ -182,7 +184,7 @@ procedure P (out r : int)
 spec {
   ensures [P_ensures_0]: r == 5;
   } {
-  r := $__mono#id#int(5);
+  r := |$__mono#id#int|(5);
 };
 -/
 #guard_msgs in
@@ -222,8 +224,8 @@ procedure P (out r : int, out b : bool)
 spec {
   ensures [P_ensures_0]: r == 5;
   } {
-  r := $__mono#id#int(5);
-  b := $__mono#id#bool(true);
+  r := |$__mono#id#int|(5);
+  b := |$__mono#id#bool|(true);
 };
 -/
 #guard_msgs in
@@ -332,13 +334,13 @@ function |$__mono#g#int| (x : int) : int {
   x
 }
 function |$__mono#f#int| (x : int) : int {
-  $__mono#g#int(x)
+  |$__mono#g#int|(x)
 }
 procedure P (out r : int)
 spec {
   ensures [P_ensures_0]: r == 5;
   } {
-  r := $__mono#f#int(5);
+  r := |$__mono#f#int|(5);
 };
 -/
 #guard_msgs in
@@ -411,7 +413,7 @@ datatype MyList (a : Type) {
 };
 rec function |$__mono#len#int| (@[cases] xs : MyList int) : int
 {
-  if MyList..isNil(xs) then 0 else int.add(1, $__mono#len#int(MyList..tl(xs)))
+  if MyList..isNil(xs) then 0 else int.add(1, |$__mono#len#int|(MyList..tl(xs)))
 };
 procedure P (out r : int)
 spec {
@@ -419,7 +421,7 @@ spec {
   } {
   var xs : (MyList int);
   xs := Cons(1, Nil);
-  r := $__mono#len#int(xs);
+  r := |$__mono#len#int|(xs);
 };
 -/
 #guard_msgs in
@@ -468,17 +470,17 @@ function |$__mono#g#string#bool| (x : string, y : bool) : bool {
   y
 }
 function |$__mono#f#int| (x : int) : int {
-  $__mono#g#int#int(1, $__mono#g#string#int("s", x))
+  |$__mono#g#int#int|(1, |$__mono#g#string#int|("s", x))
 }
 function |$__mono#f#bool| (x : bool) : bool {
-  $__mono#g#int#bool(1, $__mono#g#string#bool("s", x))
+  |$__mono#g#int#bool|(1, |$__mono#g#string#bool|("s", x))
 }
 procedure P (out r : int, out b : bool)
 spec {
   ensures [P_ensures_0]: true;
   } {
-  r := $__mono#f#int(5);
-  b := $__mono#f#bool(true);
+  r := |$__mono#f#int|(5);
+  b := |$__mono#f#bool|(true);
 };
 -/
 #guard_msgs in
@@ -527,11 +529,11 @@ datatype MyList (a : Type) {
 };
 rec function |$__mono#evenLen#int| (@[cases] xs : MyList int) : bool
 {
-  if MyList..isNil(xs) then true else $__mono#oddLen#int(MyList..tl(xs))
+  if MyList..isNil(xs) then true else |$__mono#oddLen#int|(MyList..tl(xs))
 }
 function |$__mono#oddLen#int| (@[cases] xs : MyList int) : bool
 {
-  if MyList..isNil(xs) then false else $__mono#evenLen#int(MyList..tl(xs))
+  if MyList..isNil(xs) then false else |$__mono#evenLen#int|(MyList..tl(xs))
 };
 procedure P (out r : bool)
 spec {
@@ -539,7 +541,7 @@ spec {
   } {
   var xs : (MyList int);
   xs := Cons(1, Nil);
-  r := $__mono#evenLen#int(xs);
+  r := |$__mono#evenLen#int|(xs);
 };
 -/
 #guard_msgs in
@@ -595,21 +597,21 @@ function |$__mono#ignore#int#string| (x : int, y : string) : string {
 }
 rec function |$__mono#f#int| (x : int) : int
 {
-  $__mono#ignore#int#int($__mono#g#int(0), x)
+  |$__mono#ignore#int#int|(|$__mono#g#int|(0), x)
 }
 function |$__mono#f#string| (x : string) : string
 {
-  $__mono#ignore#int#string($__mono#g#int(0), x)
+  |$__mono#ignore#int#string|(|$__mono#g#int|(0), x)
 }
 function |$__mono#g#int| (y : int) : int
 {
-  $__mono#ignore#string#int($__mono#f#string(""), y)
+  |$__mono#ignore#string#int|(|$__mono#f#string|(""), y)
 };
 procedure P (out r : int)
 spec {
   ensures [P_ensures_0]: true;
   } {
-  r := $__mono#f#int(5);
+  r := |$__mono#f#int|(5);
 };
 -/
 #guard_msgs in
@@ -666,21 +668,21 @@ function |$__mono#ignore#int#string| (x : int, y : string) : string {
 }
 rec function |$__mono#f#int| (x : int) : int
 {
-  $__mono#ignore#int#int($__mono#g#int(0), x)
+  |$__mono#ignore#int#int|(|$__mono#g#int|(0), x)
 }
 function |$__mono#f#string| (x : string) : string
 {
-  $__mono#ignore#int#string($__mono#g#int(0), x)
+  |$__mono#ignore#int#string|(|$__mono#g#int|(0), x)
 }
 function |$__mono#g#int| (y : int) : int
 {
-  $__mono#ignore#string#int($__mono#f#string(""), y)
+  |$__mono#ignore#string#int|(|$__mono#f#string|(""), y)
 };
 procedure P (out r : int)
 spec {
   ensures [P_ensures_0]: true;
   } {
-  r := $__mono#f#int(5);
+  r := |$__mono#f#int|(5);
 };
 -/
 #guard_msgs in
@@ -732,21 +734,21 @@ function |$__mono#fst#string#int| (x : string, y : int) : string {
 }
 rec function |$__mono#f#int| (x : int) : int
 {
-  $__mono#fst#int#int(x, $__mono#g#int#bool(0, true))
+  |$__mono#fst#int#int|(x, |$__mono#g#int#bool|(0, true))
 }
 function |$__mono#f#string| (x : string) : string
 {
-  $__mono#fst#string#int(x, $__mono#g#int#bool(0, true))
+  |$__mono#fst#string#int|(x, |$__mono#g#int#bool|(0, true))
 }
 function |$__mono#g#int#bool| (u : int, v : bool) : int
 {
-  $__mono#fst#int#string(u, $__mono#f#string(""))
+  |$__mono#fst#int#string|(u, |$__mono#f#string|(""))
 };
 procedure P (out r : int)
 spec {
   ensures [P_ensures_0]: true;
   } {
-  r := $__mono#f#int(5);
+  r := |$__mono#f#int|(5);
 };
 -/
 #guard_msgs in
@@ -933,7 +935,7 @@ spec {
   var xs : (MyList int);
   xs := Cons(7, Nil);
   assert [set_r_calls_head_0]: MyList..isCons(xs);
-  r := $__mono#head#int(xs);
+  r := |$__mono#head#int|(xs);
 };
 -/
 #guard_msgs in
@@ -975,7 +977,7 @@ spec {
   requires [P_requires_0]: m[0] == 42;
   ensures [P_ensures_1]: r == 42;
   } {
-  r := $__mono#get0#int(m);
+  r := |$__mono#get0#int|(m);
 };
 -/
 #guard_msgs in
@@ -1177,6 +1179,46 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval verifyMono measureInvariantPgm quietOpts
+
+---------------------------------------------------------------------
+/-! ### Print-parse roundtrip: a monomorphized program re-parses
+
+Monomorphization renames functions to `$__mono#<f>#<types>`, whose `#`
+separators are not legal in a *bare* Strata identifier, so the printer must
+pipe-quote every such name — at its declaration and at every reference — for
+the printed program to re-parse.
+
+`monoRoundtrips` checks `print (parse (print p)) = print p`.  Comparing
+reformatted output (not merely parse success) catches semantic drift such as
+wrong variable indices. -/
+private def monoRoundtrips (t : StrataDDM.Program) : IO Bool := do
+  match monoFns t with
+  | .error _ => pure false
+  | .ok (p, _) =>
+    let printed := (Core.formatProgram p).pretty
+    let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect, Core]
+    let body := if printed.startsWith "program Core;\n\n" then
+      (printed.drop "program Core;\n\n".length).toString else printed
+    let inputCtx := StrataDDM.Parser.stringInputContext ⟨"mono-roundtrip-test"⟩ body
+    try
+      let sp ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
+      let (ast2, errs) := TransM.run Inhabited.default (translateProgram sp)
+      pure (errs.isEmpty && (Core.formatProgram ast2).pretty == printed)
+    catch _ => pure false
+
+/--
+info: done
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let cases : List (String × StrataDDM.Program) :=
+    [("id", idPgm), ("idTwo", idTwoPgm), ("transitive", transitivePgm),
+     ("transitiveMultiInst", transitiveMultiInstPgm), ("recUsed", recUsedPgm),
+     ("mutualRecUsed", mutualRecUsedPgm), ("mutualDiffArities", mutualDiffAritiesPgm),
+     ("mapGet", mapGetPgm)]
+  for (nm, pgm) in cases do
+    if !(← monoRoundtrips pgm) then IO.println s!"FAIL: {nm}"
+  IO.println "done"
 
 end MonomorphizeFunctionsTests
 

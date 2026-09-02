@@ -33,7 +33,7 @@ in the table below is stated in both directions:
   * ClassCastException          (Sub) x        thrown exactly when x is not a Sub
 
 Conventions forced by the current feature set: nullness/arrays are modeled
-explicitly (a boolean flag for null, a `Map int int` + length for an array), and
+explicitly (a boolean flag for null, a `TotalMap int int` + length for an array), and
 `throws Exception` is the coarse declaration standing in for these otherwise
 undeclared runtime exceptions.
 -/
@@ -116,7 +116,7 @@ directions a caller needs:
 program Laurel;
 composite Exception {}
 composite IndexError extends Exception {}
-procedure get(a: Map int int, alen: int, i: int)
+procedure get(a: TotalMap int int, alen: int, i: int)
   returns (r: int)
   throws (e: Exception)
   opaque

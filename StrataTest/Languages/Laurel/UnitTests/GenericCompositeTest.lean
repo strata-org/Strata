@@ -17,7 +17,7 @@ meta import all StrataTest.Util.LaurelCorpusHarness
 /-!
 # Generic composite tests
 
-Generic composites end-to-end: monomorphization, nested generics, Map-typed fields, `new C<τ>`, chained writes, `is`/`as`, and type aliases.
+Generic composites end-to-end: monomorphization, nested generics, TotalMap-typed fields, `new C<τ>`, chained writes, `is`/`as`, and type aliases.
 -/
 
 meta section
@@ -46,68 +46,68 @@ procedure useBox() opaque { var b: Box<int> := new Box; b#val := 42; assert b#va
     src := r"
 composite Box<T> { var val: T }
 procedure useTwo() opaque { var a: Box<int> := new Box; a#val := 7; var b: Box<bool> := new Box; b#val := true; assert a#val == 7 };"},
-  -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type.
-  -- `instTagCommon` tags `.TMap` (`Map$a2$int$int`), so this monomorphizes and verifies.
+  -- `Box<TotalMap int int>`: a generic composite instantiated at a COLLECTION type.
+  -- `instTagCommon` tags `.TMap` (`TotalMap$a2$int$int`), so this monomorphizes and verifies.
   -- SOUND, not coalescing — the `map_fields_distinct` twin below pins that distinct
-  -- `(K,V)` Map fields stay distinct boxes, and the `*_wrong` cases pin that false reads fail.
+  -- `(K,V)` TotalMap fields stay distinct boxes, and the `*_wrong` cases pin that false reads fail.
   { name := "generic_box_map_arg", outcome := .verifies,
-    why := "`Box<Map int int>` monomorphizes via the `.TMap` tag; field round-trips"
+    why := "`Box<TotalMap int int>` monomorphizes via the `.TMap` tag; field round-trips"
     src := r"
 composite Box<T> { var val: T }
-procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 2 };"},
+procedure u() opaque { var b: Box<TotalMap int int> := new Box<TotalMap int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 2 };"},
 
   { name := "generic_box_map_arg_wrong", outcome := .failsExactly 1,
-    why := "a FALSE read of the boxed `Map int int` field must FAIL — the Map-tag boxing is sound, not vacuous"
+    why := "a FALSE read of the boxed `TotalMap int int` field must FAIL — the TotalMap-tag boxing is sound, not vacuous"
     src := r"
 composite Box<T> { var val: T }
-procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 3 };"},
+procedure u() opaque { var b: Box<TotalMap int int> := new Box<TotalMap int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 3 };"},
   { name := "map_field_read", outcome := .verifies,
-    why := "read/write a `Map`-typed composite field round-trips (heap-boxed via the `.TMap` tag)"
+    why := "read/write a `TotalMap`-typed composite field round-trips (heap-boxed via the `.TMap` tag)"
     src := r"
-composite H { var m: Map int bool }
+composite H { var m: TotalMap int bool }
 procedure u() opaque { var h: H := new H; h#m := update(h#m, 3, true); assert select(h#m, 3) == true };"},
 
   { name := "map_field_read_wrong", outcome := .failsExactly 1,
-    why := "a FALSE read of the Map-typed field must FAIL — the field boxing is sound, not vacuous"
+    why := "a FALSE read of the TotalMap-typed field must FAIL — the field boxing is sound, not vacuous"
     src := r"
-composite H { var m: Map int bool }
+composite H { var m: TotalMap int bool }
 procedure u() opaque { var h: H := new H; h#m := update(h#m, 3, true); assert select(h#m, 3) == false };"},
 
   { name := "map_fields_distinct", outcome := .verifies,
-    why := "two DIFFERENT-(K,V) Map fields in one composite both round-trip — distinct instantiations stay distinct boxes (no coalescing)"
+    why := "two DIFFERENT-(K,V) TotalMap fields in one composite both round-trip — distinct instantiations stay distinct boxes (no coalescing)"
     src := r"
-composite H { var mib: Map int bool
-  var mii: Map int int }
+composite H { var mib: TotalMap int bool
+  var mii: TotalMap int int }
 procedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mib, 1) == true; assert select(h#mii, 1) == 9 };"},
 
   { name := "map_fields_distinct_wrong", outcome := .failsExactly 1,
-    why := "a FALSE read of the second distinct Map field (mii) must FAIL — the per-(K,V) boxes are sound, not vacuous (non-coalescing itself is pinned by the verifying `map_fields_distinct` twin)"
+    why := "a FALSE read of the second distinct TotalMap field (mii) must FAIL — the per-(K,V) boxes are sound, not vacuous (non-coalescing itself is pinned by the verifying `map_fields_distinct` twin)"
     src := r"
-composite H { var mib: Map int bool
-  var mii: Map int int }
+composite H { var mib: TotalMap int bool
+  var mii: TotalMap int int }
 procedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mii, 1) == 8 };"},
-  -- A generic over a COLLECTION type (`Map K V`): the consistency relation recurses into
-  -- `.TMap` element-wise (like `.Applied`) so a concrete `Map int bool` argument satisfies a
-  -- `Map K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. The
+  -- A generic over a COLLECTION type (`TotalMap K V`): the consistency relation recurses into
+  -- `.TMap` element-wise (like `.Applied`) so a concrete `TotalMap int bool` argument satisfies a
+  -- `TotalMap K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. The
   -- `ensures r == m` makes the accept OBSERVABLE (a real obligation), not just translatable;
   -- the strictness twin pins that concrete-vs-concrete stays strict.
   { name := "generic_map_param", outcome := .verifies,
-    why := "a concrete `Map int bool` into a generic `Map K V` proc param verifies, returned map observed via `ensures r == m`"
+    why := "a concrete `TotalMap int bool` into a generic `TotalMap K V` proc param verifies, returned map observed via `ensures r == m`"
     src := r"
-procedure idm<K,V>(m: Map K V) returns (r: Map K V) opaque ensures r == m { r := m };
-procedure u() opaque { var mm: Map int bool; var rr: Map int bool := idm(mm); assert rr == mm };"},
+procedure idm<K,V>(m: TotalMap K V) returns (r: TotalMap K V) opaque ensures r == m { r := m };
+procedure u() opaque { var mm: TotalMap int bool; var rr: TotalMap int bool := idm(mm); assert rr == mm };"},
 
   { name := "generic_map_param_wrong", outcome := .failsExactly 1,
     why := "the returned map equals `mm`, not the unrelated `nn` — `assert rr == nn` must FAIL (accept is sound, not vacuous)"
     src := r"
-procedure idm<K,V>(m: Map K V) returns (r: Map K V) opaque ensures r == m { r := m };
-procedure u() opaque { var mm: Map int bool; var nn: Map int bool; var rr: Map int bool := idm(mm); assert rr == nn };"},
+procedure idm<K,V>(m: TotalMap K V) returns (r: TotalMap K V) opaque ensures r == m { r := m };
+procedure u() opaque { var mm: TotalMap int bool; var nn: TotalMap int bool; var rr: TotalMap int bool := idm(mm); assert rr == nn };"},
 
   { name := "map_concrete_mismatch", outcome := .rejected (some .userError),
-    why := "STRICTNESS: a concrete `Map int int` into a `Map int bool` param must be REJECTED — the `.TMap` arm recurses but stays strict on concrete leaves (no hole opened)"
+    why := "STRICTNESS: a concrete `TotalMap int int` into a `TotalMap int bool` param must be REJECTED — the `.TMap` arm recurses but stays strict on concrete leaves (no hole opened)"
     src := r"
-procedure needsIB(m: Map int bool) opaque { assert 1 == 1 };
-procedure u() opaque { var mm: Map int int; needsIB(mm); assert 1 == 1 };"},
+procedure needsIB(m: TotalMap int bool) opaque { assert 1 == 1 };
+procedure u() opaque { var mm: TotalMap int int; needsIB(mm); assert 1 == 1 };"},
   -- Generic-composite instantiation in type positions beyond the original three (field /
   -- proc in-out / body Declare); the monomorphizer now collects+rewrites every position.
   { name := "generic_in_datatype", outcome := .verifies,
@@ -163,11 +163,11 @@ composite C { var v: int }
 procedure u() opaque { var p: bool := forall(c: C) => c#v == 5; assert p };"},
 
   { name := "generic_box_map_in_datatype", outcome := .verifies,
-    why := "`Box<Map int int>` as a datatype ctor arg monomorphizes via the `.TMap` tag in this position too; construction round-trips by equality"
+    why := "`Box<TotalMap int int>` as a datatype ctor arg monomorphizes via the `.TMap` tag in this position too; construction round-trips by equality"
     src := r"
 composite Box<T> { var val: T }
-datatype Wrap { MkWrap(b: Box<Map int int>) }
-procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; var w: Wrap := MkWrap(b); assert w == MkWrap(b) };"},
+datatype Wrap { MkWrap(b: Box<TotalMap int int>) }
+procedure u() opaque { var b: Box<TotalMap int int> := new Box<TotalMap int int>; var w: Wrap := MkWrap(b); assert w == MkWrap(b) };"},
   -- NESTED GENERICS: a composite whose field is a generic instantiation of the same param
   -- (`Nest<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
   { name := "nested_generic", outcome := .verifies,
@@ -341,9 +341,9 @@ type B = A
 procedure u() opaque { var x: B := 7; assert x == 7 };"},
 
   { name := "alias_map", outcome := .verifies,
-    why := "`type IM = Map int bool` — select/const work through the alias"
+    why := "`type IM = TotalMap int bool` — select/const work through the alias"
     src := r"
-type IM = Map int bool
+type IM = TotalMap int bool
 procedure u() opaque { var m: IM := mapConst(false); assert select(m, 9) == false };"},
 
   { name := "alias_composite_field", outcome := .verifies,
@@ -364,27 +364,27 @@ procedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 4 };"},
   -- `.Applied`-alias arm) both perform the param substitution, so the consistency relation agrees
   -- with elimination.
   { name := "generic_alias_map", outcome := .verifies,
-    why := "`type MyPair<A,B> = Map A B` at <int,bool> substitutes to `Map int bool`; select works through it"
+    why := "`type MyPair<A,B> = TotalMap A B` at <int,bool> substitutes to `TotalMap int bool`; select works through it"
     src := r"
-type MyPair<A,B> = Map A B
+type MyPair<A,B> = TotalMap A B
 procedure u() opaque { var m: MyPair<int, bool> := mapConst(false); assert select(m, 9) == false };"},
 
   { name := "generic_alias_map_wrong", outcome := .failsExactly 1,
-    why := "a false read through the generic Map alias must FAIL (substitution is sound, not vacuous)"
+    why := "a false read through the generic TotalMap alias must FAIL (substitution is sound, not vacuous)"
     src := r"
-type MyPair<A,B> = Map A B
+type MyPair<A,B> = TotalMap A B
 procedure u() opaque { var m: MyPair<int, bool> := mapConst(false); assert select(m, 9) == true };"},
 
   { name := "generic_alias_order", outcome := .verifies,
-    why := "`type Swapped<A,B> = Map B A` at <int,bool> must substitute to `Map bool int` (param ORDER preserved)"
+    why := "`type Swapped<A,B> = TotalMap B A` at <int,bool> must substitute to `TotalMap bool int` (param ORDER preserved)"
     src := r"
-type Swapped<A,B> = Map B A
+type Swapped<A,B> = TotalMap B A
 procedure u() opaque { var m: Swapped<int, bool> := mapConst(5); assert select(m, true) == 5 };"},
 
   { name := "generic_alias_arity_wrong", outcome := .rejected (some .userError),
     why := "a generic alias applied at the wrong arity (`MyPair<int>`) is a clean UserError — the resolver's `.Applied`-arm arity check catches it before TypeAliasElim leaves a dangling unfolded reference"
     src := r"
-type MyPair<A,B> = Map A B
+type MyPair<A,B> = TotalMap A B
 procedure u() opaque { var m: MyPair<int> := mapConst(false); assert true };"},
   -- Generic alias of a generic COMPOSITE (unfold `.Applied`-alias + reorder).
   { name := "generic_alias_composite", outcome := .verifies,
@@ -432,19 +432,19 @@ procedure u() opaque { var b: B<int> := new Box<int>; b#val := 5; assert b#val =
 type A<T> = B<T>
 type B<U> = A<U>
 procedure u() opaque { var x: A<int> := 0; assert true };"},
-  -- NESTED Map-typed field (`Map int Map int int`, no-paren grammar): exercises the RECURSIVE
-  -- `.TMap` arm of instTagCommon + the box fns (tag `Map$a2$int$Map$a2$int$int`). Read/write round-trips.
+  -- NESTED TotalMap-typed field (`TotalMap int TotalMap int int`, no-paren grammar): exercises the RECURSIVE
+  -- `.TMap` arm of instTagCommon + the box fns (tag `TotalMap$a2$int$TotalMap$a2$int$int`). Read/write round-trips.
   { name := "nested_map_field", outcome := .verifies,
-    why := "a nested-Map composite field round-trips — the recursive `.TMap` box-tag handles `Map int (Map int int)`"
+    why := "a nested-TotalMap composite field round-trips — the recursive `.TMap` box-tag handles `TotalMap int (TotalMap int int)`"
     src := r"
-composite H { var m: Map int Map int int }
-procedure u() opaque { var h: H := new H; var inner: Map int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 3 };"},
+composite H { var m: TotalMap int TotalMap int int }
+procedure u() opaque { var h: H := new H; var inner: TotalMap int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 3 };"},
 
   { name := "nested_map_field_wrong", outcome := .failsExactly 1,
-    why := "a false read of the nested-Map field must FAIL — the recursive tag is sound, not vacuous"
+    why := "a false read of the nested-TotalMap field must FAIL — the recursive tag is sound, not vacuous"
     src := r"
-composite H { var m: Map int Map int int }
-procedure u() opaque { var h: H := new H; var inner: Map int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 4 };"},
+composite H { var m: TotalMap int TotalMap int int }
+procedure u() opaque { var h: H := new H; var inner: TotalMap int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 4 };"},
   -- NESTED generic operand in `is` (`Box<Pair<int,bool>>`): the monomorph tag nests (`Box$a1$Pair$a2$int$bool`).
   { name := "is_nested_generic_operand", outcome := .verifies,
     why := "`b is Box<Pair<int,bool>>` against the matching instantiation verifies (nested `>>` operand)"
@@ -586,7 +586,7 @@ procedure u() opaque { f(1, <?>); assert 1 == 1 };"},
   { name := "hole_in_map_primitive_key_reports_cleanly", outcome := .rejected (some .userError),
     why := "same for `select`'s key slot, whose `K` is uninstantiated at hole-typing time"
     src := r"
-procedure u() opaque { var m: Map int bool := mapConst(false); var b: bool := select(m, <?>); assert b == b };"},
+procedure u() opaque { var m: TotalMap int bool := mapConst(false); var b: bool := select(m, <?>); assert b == b };"},
 ]
 
 private def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus

@@ -108,7 +108,7 @@ private def lowerInt32 : HighType → HighType
 #guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), default⟩)
   == HighType.TSet ⟨.TInt, default⟩
 
--- `Map int32 string` -> `Map int string`: recursion through `.TMap`'s key and
+-- `TotalMap int32 string` -> `TotalMap int string`: recursion through `.TMap`'s key and
 -- value types (the non-constrained value type is untouched). Also covered
 -- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`.
 #guard HighType.mapType lowerInt32

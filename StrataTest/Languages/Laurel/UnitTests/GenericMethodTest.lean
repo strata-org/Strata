@@ -340,11 +340,11 @@ private def runGenericMethodTest : IO Unit := checkCases genericMethodCorpus
 
 /-! ## `mapConst` key-type annotation round-trips as `<TypeTag>` for internal calls
 
-`mapConst` is emitted by `TypeHierarchy` to build the `Map TypeTag bool` ancestor
+`mapConst` is emitted by `TypeHierarchy` to build the `TotalMap TypeTag bool` ancestor
 tables of a program with `extends`. The Laurel→Core schema pass annotates such an
-internal call's op with the concrete function type `V → Map TypeTag V` so
+internal call's op with the concrete function type `V → TotalMap TypeTag V` so
 `Core.formatProgram` recovers `K` and prints `mapConst<TypeTag>(...)`. This pins
-that the CONTEXT-derived key annotation (added so a USER `var m: Map int bool :=
+that the CONTEXT-derived key annotation (added so a USER `var m: TotalMap int bool :=
 mapConst(false)` binding annotates `<int>`) still defaults to `TypeTag` for these
 internal calls — i.e. the fix did not regress the internal round-trip to the
 un-annotated `mapConst<$__unknown_type>` an untyped op would produce. -/

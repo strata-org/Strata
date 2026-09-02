@@ -378,9 +378,106 @@ function j () : Map (Sequence (int -> int)) int;
 
 
 -------------------------------------------------------------------------------
--- Test: every named operator roundtrips
+-- Test: context-sensitive `old x` vs `|old x|` round-trip
+--
+-- An `old x` free variable is printed as the CST `old x` construct only when
+-- its base `x` is an in-scope inout variable (a genuine pre-state binding).
+-- Otherwise the name is a plain free variable, printed `|old x|`. `old x` and
+-- `|old x|` both translate back to the same AST name "old x".
 -------------------------------------------------------------------------------
 
+-- `x` is inout, so `old x` denotes its pre-state and prints as `old x`.
+private def oldInoutPgm : Program :=
+#strata
+program Core;
+procedure P(inout x : int)
+{
+  assert [a]: old x == x;
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (inout x : int)
+{
+  assert [a]: old x == x;
+};
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let (ast, errs) := TransM.run Inhabited.default (translateProgram oldInoutPgm)
+  for e in errs do IO.println s!"error: {e}"
+  IO.println (Core.formatProgram ast).pretty
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip oldInoutPgm
+
+-- `x` is an `in` (not inout) parameter, so `old x` is not a pre-state binding:
+-- it prints pipe-quoted as `|old x|`, not the `old` construct. This pins the
+-- printer's decision only — a bare `old x` on a non-inout variable is not a real
+-- pre-state reference, so the `|old x|` output is not itself re-parseable.
+private def oldFlatPgm : Program :=
+#strata
+program Core;
+procedure Q(x : int)
+{
+  assert [b]: old x == x;
+};
+#end
+
+/--
+info: program Core;
+
+procedure Q (x : int)
+{
+  assert [b]: |old x| == x;
+};
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let (ast, errs) := TransM.run Inhabited.default (translateProgram oldFlatPgm)
+  for e in errs do IO.println s!"error: {e}"
+  IO.println (Core.formatProgram ast).pretty
+
+-- Shadowing: with an inout `x` AND a local `|old x|`, an `old x` reference binds
+-- to the nearest binding named "old x" — the local `|old x|` assigned 10 — not a
+-- fresh pre-state of `x`. Both surface forms denote the same name, so it
+-- round-trips.
+private def oldShadowPgm : Program :=
+#strata
+program Core;
+procedure P(inout x : int)
+{
+  var |old x| : int := 10;
+  assert [c]: old x == 11;
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (inout x : int)
+{
+  var |old x| : int := 10;
+  assert [c]: |old x| == 11;
+};
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let (ast, errs) := TransM.run Inhabited.default (translateProgram oldShadowPgm)
+  for e in errs do IO.println s!"error: {e}"
+  IO.println (Core.formatProgram ast).pretty
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip oldShadowPgm
+
+
+-------------------------------------------------------------------------------
+-- Test: every named operator roundtrips
+-------------------------------------------------------------------------------
 /-!
 Translate and FormatCore each maintain a hand-written table mapping the
 grammar's named operators to internal Core ops and back. A transposed or

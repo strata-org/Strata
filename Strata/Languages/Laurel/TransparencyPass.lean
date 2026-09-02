@@ -411,6 +411,9 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
   let opaqueTypes := program.types.filterMap fun td => match td with
     | .Opaque ot => some ot
     | _ => none
+  let aliases := program.types.filterMap fun td => match td with
+    | .Alias ta => some ta
+    | _ => none
   match options.analysisMode with
   | .Execute =>
     -- Concrete execution: keep every procedure as a real procedure (no call
@@ -438,7 +441,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     let coreProcedures := imperativeProcs.map fun proc =>
       let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
-    { functions, coreProcedures, datatypes, opaqueTypes, constants := program.constants }
+    { functions, coreProcedures, datatypes, opaqueTypes, aliases, constants := program.constants }
   | .Verify | .BothSuboptimally =>
     let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     -- Names of single-output procedures whose calls can be redirected to their
@@ -508,7 +511,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
         -- `BothSuboptimally`: keep calls as-is and tie each procedure to its
         -- twin via a free postcondition, at the cost of fresh symbolic outputs.
         addFreePostcondition proc (mkFreePostcondition proc)
-    { functions, coreProcedures, datatypes, opaqueTypes, constants := program.constants }
+    { functions, coreProcedures, datatypes, opaqueTypes, aliases, constants := program.constants }
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "Transparency"

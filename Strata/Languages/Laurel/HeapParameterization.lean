@@ -23,7 +23,7 @@ import Strata.Languages.Laurel.EliminateReturnStatements
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field $Box)` map
+The heap is modeled as a `Heap` datatype containing a `data: TotalMap Composite (TotalMap Field $Box)` map
 and a `nextReference: int` for allocating new objects. `$Box` is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
@@ -134,9 +134,9 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name || isOpaque model name then s!"$Box..{name.text}Val!"
       else "$Box..compositeVal!"
   | .TBv n => s!"$Box..bv{n}Val!"
-  -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
+  -- Generic datatype instantiation `Bx<int>` + built-in `TotalMap`: one box variant per
   -- instantiation, named via `appliedBoxTag`. (`.TSet` is unreachable — LaurelGrammar.st has
-  -- only `mapType`, no Set production — kept for symmetry with `.TMap`.)
+  -- only `totalMapType`, no Set production — kept for symmetry with `.TMap`.)
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"$Box..{tag}Val!"
@@ -157,7 +157,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name || isOpaque model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
-  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`.
+  -- Generic datatype instantiation `Bx<int>`, and built-in collections `TotalMap`/`Set`.
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"Box..{tag}"
@@ -881,7 +881,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
-  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `TotalMap Composite (TotalMap Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with
