@@ -50,9 +50,7 @@ import all Strata.Util.HList
 
 namespace Strata.SMT.DenoteTyped
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Sort well-formedness
-   ═══════════════════════════════════════════════════════════════════════════ -/
+/-! ## Sort well-formedness -/
 
 /-- Typing contexts: declared sort constructors, functions, and variables. -/
 abbrev USCtx := List Strata.DL.SMT.Sort
@@ -91,9 +89,7 @@ def TermType.WFSorts (uss : USCtx) : List TermType → Bool
   | ty :: tys => TermType.WFSort uss ty && TermType.WFSorts uss tys
 end
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   SMT-term type checker
-   ═══════════════════════════════════════════════════════════════════════════ -/
+/-! ## SMT-term type checker -/
 
 mutual
 /-- Type-check a term against a UF context and a variable context, additionally certifying
@@ -218,9 +214,7 @@ def Term.wfTriggers (ctx : TypedContext) : List (List Term) → Bool
   | group :: rest => typeCheckAll ctx group && wfTriggers ctx rest
 end
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Typed Term denotation
-   ═══════════════════════════════════════════════════════════════════════════ -/
+/-! ## Typed Term denotation -/
 
 /-- Interpretation of the non-primitive sorts: assigns each sort constructor `TermType.constr id args`
     a Lean carrier. -/
@@ -298,9 +292,7 @@ def UFInterp (σ : SortInterp) (𝒜 : ArrayTheory) := (uf : UF) → UF.denoteTy
 def VarEnv (σ : SortInterp) (𝒜 : ArrayTheory) := (x : TermVar) → (TermType.denoteTyped σ 𝒜 x.ty)
 
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   Type-checking inversion lemmas (consumed by `Term.denoteTyped`)
-   ═══════════════════════════════════════════════════════════════════════════ -/
+/-! ## Type-checking inversion lemmas (consumed by `Term.denoteTyped`) -/
 
 private def Term.typeCheck_prim_inv {ctx : TypedContext} {p : TermPrim} {τ : TermType}
     (h : Term.typeCheck ctx (.prim p) = .ok τ) : τ = p.typeOf := by

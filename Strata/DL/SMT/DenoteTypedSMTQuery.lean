@@ -4,7 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+module
+
+public import Strata.DL.SMT.Factory
+import all Strata.DL.SMT.Factory
+public import Strata.DL.SMT.DenoteTyped
+import all Strata.DL.SMT.DenoteTyped
+public import Strata.DL.SMT.DenoteTypedProps
+import all Strata.DL.SMT.DenoteTypedProps
+
+/-!
 # `SMTQuery`: definition, typing, and denotation for an SMT query
 
 The `SMTQuery` record models an SMT query as the production pipeline's SMT emitter groups it (sorts,
@@ -23,15 +32,6 @@ Key definitions: `SMTQuery.WF`, `SMTQuery.checkSat`, `SMTQuery.UnsatWithNegObl` 
 `SMTQuery.EntailsObl` / `EntailsNegObl`. Key results: `SMTQuery.WF.fsTypeCheck`,
 `SMTQuery.WF.assertOrLitTypeCheck`.
 -/
-
-module
-
-public import Strata.DL.SMT.Factory
-import all Strata.DL.SMT.Factory
-public import Strata.DL.SMT.DenoteTyped
-import all Strata.DL.SMT.DenoteTyped
-public import Strata.DL.SMT.DenoteTypedProps
-import all Strata.DL.SMT.DenoteTypedProps
 
 open Strata.SMT Std
 
@@ -60,15 +60,16 @@ public structure SMTQuery where
   varDecls : List UF
   /-- Variable definitions (nullary `define-fun`). -/
   varDefs : List IF
-  /-- Program assumptions (including `distinct` terms). -/
+  /-- Assumptions (including `distinct` terms). These are not fundamentally different from `obl`: both
+      are emitted as `(assert <t>)`. `obl` is carried separately only because the last term is frequently
+      negated before the satisfiability check; this file provides `UnsatWithNegObl` / `UnsatWithObl` as
+      helpers for that case. -/
   assumptions : List Term
-  /-- The proof obligation / goal. -/
+  /-- The goal term. -/
   obl : Term
   deriving Inhabited
 
----------------------------------------------------------------------
--- Projections: UF context, define-fun preamble, persistent asserts
----------------------------------------------------------------------
+/-! ## Projections: UF context, define-fun preamble, persistent asserts -/
 
 /-- The `define-fun` preamble: interpreted functions followed by variable definitions. -/
 def SMTQuery.fs (q : SMTQuery) : List IF := q.fnDefs ++ q.varDefs
@@ -78,12 +79,10 @@ def SMTQuery.fs (q : SMTQuery) : List IF := q.fnDefs ++ q.varDefs
 def SMTQuery.ufs (q : SMTQuery) : UFCtx :=
   q.fnDecls ++ q.fnDefs.map IF.toUF ++ q.varDecls ++ q.varDefs.map IF.toUF
 
-/-- The persistent assertions: function axioms followed by program assumptions. -/
+/-- The persistent assertions: function axioms followed by assumptions. -/
 def SMTQuery.asserts (q : SMTQuery) : List Term := q.fnAxioms ++ q.assumptions
 
----------------------------------------------------------------------
--- UF-context hygiene and lookup
----------------------------------------------------------------------
+/-! ## UF-context hygiene and lookup -/
 
 /-- SMT symbol names are distinct, and none collides with a reserved `$__bv{n}` binder id. -/
 structure UFCtxWF (ufs : UFCtx) : Prop where
@@ -94,9 +93,7 @@ structure UFCtxWF (ufs : UFCtx) : Prop where
 def lookupUF (ufs : UFCtx) (name : String) : Option UF :=
   ufs.find? (·.id == name)
 
----------------------------------------------------------------------
--- Order-aware well-formedness (SMT-LIB emission faithfulness)
----------------------------------------------------------------------
+/-! ## Order-aware well-formedness (SMT-LIB emission faithfulness) -/
 
 /-- Well-formedness of a single `define-fun` at UF context `ufs`: its body type-checks to its declared
     output `f.out` under `ufs` extended with its formal parameters `f.args`. -/
@@ -129,9 +126,7 @@ structure SMTQuery.WF (q : SMTQuery) : Prop where
   /-- The goal type-checks to `bool` against the full context `q.ufs`. -/
   oblWF : Term.typeCheck ⟨[], q.ufs, []⟩ q.obl = .ok .bool
 
----------------------------------------------------------------------
--- Typing at the full context
----------------------------------------------------------------------
+/-! ## Typing at the full context -/
 
 /-- Each function in an `IFsWF ufsBase fs` type-checks at the full context `ufsBase ++ fs.map IF.toUF`. -/
 private theorem IFsWF.mem_wf {ufsBase : UFCtx} {fs : List IF} (h : IFsWF ufsBase fs) :
@@ -174,9 +169,7 @@ theorem SMTQuery.WF.notOblTypeCheck {q : SMTQuery} (hwf : SMTQuery.WF q) :
     Term.typeCheck ⟨[], q.ufs, []⟩ (Term.app (.core .not) [q.obl] .bool) = .ok .bool := by
   simp [Term.typeCheck, hwf.oblWF, bind, Except.bind]
 
----------------------------------------------------------------------
--- Model-side satisfaction (denotation)
----------------------------------------------------------------------
+/-! ## Model-side satisfaction (denotation) -/
 
 /-- The trivial sort interpretation, mapping every sort to `Unit`. -/
 def defaultσ : SortInterp := fun _ _ => Unit
@@ -261,9 +254,7 @@ def SMTQuery.EntailsNegObl (q : SMTQuery) (hwf : SMTQuery.WF q) : Prop :=
       Term.denoteTyped ufInterp smtEnv divByZero modByZero t .bool (hwf.assertsWF t ht) = true) →
     Term.denoteTyped ufInterp smtEnv divByZero modByZero q.obl .bool hwf.oblWF = false
 
----------------------------------------------------------------------
--- Entailment / unsatisfiability equivalences
----------------------------------------------------------------------
+/-! ## Entailment / unsatisfiability equivalences -/
 
 /-- The assertions entail `obl` iff they are unsatisfiable together with `¬obl`. -/
 theorem SMTQuery.entailsObl_iff_unsatWithNegObl (q : SMTQuery) (hwf : SMTQuery.WF q) :

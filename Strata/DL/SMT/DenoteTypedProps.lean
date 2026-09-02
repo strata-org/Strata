@@ -420,13 +420,12 @@ private theorem Term.denoteTyped_env_congr {ctx : TypedContext}
     Term.denoteTyped ufInterp env dz mz tm τ htc = Term.denoteTyped ufInterp env' dz mz tm τ htc := by
   rw [h]
 
-/- ═══════════════════════════════════════════════════════════════════════════
-   `Term.typeCheck` monotonicity under UF-context extension.
+/-! ## `Term.typeCheck` monotonicity under UF-context extension
 
-   The UF-app arm gates on `uf ∈ ctx.ufs` (exact membership), which is monotone under a superset; every
-   other arm ignores `ctx.ufs` (recurses / uses `uss`/`Γ` only). So a term well-typed at `ufs` stays
-   well-typed (to the same type) at any `ufs' ⊇ ufs`.
-   ═══════════════════════════════════════════════════════════════════════════ -/
+The UF-app arm gates on `uf ∈ ctx.ufs` (exact membership), which is monotone under a superset; every
+other arm ignores `ctx.ufs` (recurses / uses `uss`/`Γ` only). So a term well-typed at `ufs` stays
+well-typed (to the same type) at any `ufs' ⊇ ufs`.
+-/
 
 mutual
 theorem typeCheck_ufs_mono {uss : USCtx} {ufs ufs' : UFCtx}
