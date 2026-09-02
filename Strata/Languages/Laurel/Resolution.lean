@@ -472,7 +472,7 @@ private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
           s!"constrained (subset) type '{name.text}' is not yet supported as a generic datatype type argument") }
     | none => pure ()
   -- Recurse through compound types: a constrained type carried *inside* a type
-  -- argument (`Option<Map int int32>`) reaches the same refinement-dropping
+  -- argument (`Option<TotalMap int int32>`) reaches the same refinement-dropping
   -- outcome this check exists to prevent — `resolveBaseType` over-approximates it
   -- and `ConstrainedTypeElim` never sees an enforcement point for it — so the
   -- whole argument has to be inspected, not just its head.
@@ -496,9 +496,9 @@ private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
 
     Used to decide whether a datatype constructor's declared field type is a
     *polymorphic slot*. A field typed exactly `T` is the obvious case, but a
-    container over a parameter (`Map int T`, `Set T`, `Option<T>`) is equally
+    container over a parameter (`TotalMap int T`, `Set T`, `Option<T>`) is equally
     polymorphic: the parameter is erased, so checking an argument against the
-    declared type would compare a concrete instantiation (`Map int int`) with the
+    declared type would compare a concrete instantiation (`TotalMap int int`) with the
     phantom parameter and fail at every construction site.
 
     Each name is tested raw *and* unfolded: `unfold` is keyed on type-name text
@@ -3123,7 +3123,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let args' ← (args.attach.zip fieldTys).mapM (fun (⟨a, hMem⟩, fieldTy) => do
       have := hMem
       -- A field is a *polymorphic slot* when its declared type mentions one of the
-      -- datatype's own type parameters anywhere — `T`, but equally `Map int T` or
+      -- datatype's own type parameters anywhere — `T`, but equally `TotalMap int T` or
       -- `Option<T>`. The parameter is erased, so checking the argument against the
       -- declared type would compare a concrete instantiation against a phantom
       -- parameter and fail at every construction site; instead the argument is
@@ -6665,7 +6665,8 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions
-      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque)
+      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque
+        ++ uc.aliases.map .Alias)
       uc.constants
       []
       (uc.functions ++ uc.coreProcedures)
@@ -6714,7 +6715,8 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
 
     return { functions := functions', coreProcedures := coreProcedures',
-             datatypes := datatypes', opaqueTypes := opaqueTypes', constants := constants' }
+             datatypes := datatypes', opaqueTypes := opaqueTypes', aliases := uc.aliases,
+             constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
@@ -6722,8 +6724,12 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
   -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
   -- differ between passes, producing spurious "resolution introduced this diagnostic".
+  -- Aliases go in too, or `unfoldMap` is empty for them: the name would resolve (registered
+  -- above) but never unfold, so a parameter declared with an alias fails to match the
+  -- primitive it expands to.
   let typeLattice := { TypeLattice.ofTypes
-      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ additionalTypes) with
+      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ uc.aliases.map .Alias
+        ++ additionalTypes) with
     gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
     reservedNames := reservedNames }
   let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }

@@ -12,7 +12,16 @@ op stringType : LaurelType => "string";
 op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.UserDefined
 op coreType (name: Ident): LaurelType => "Core " name;
-op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
+// The TOTAL map (Core's `Map`, an SMT array): every key has a value, and `select` is
+// defined everywhere. Spelled `TotalMap` and not `Map` so that the bare identifier `Map`
+// stays lexable as an `Ident`, which is what lets the user-facing PARTIAL map be declared
+// as `opaque Map<K, V>` and parse through `appliedType`. A syntax atom is also a keyword
+// (see `StrataDDM/Parser.lean`'s `isToken`), so the two cannot share the spelling.
+//
+// This is the internal/low-level map: the heap (`HeapParameterizationConstants`), the
+// type-hierarchy ancestor tables, and the `select`/`update`/`mapConst` prelude primitives
+// are all stated over it. User code should prefer the partial `Map<K, V>`.
+op totalMapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "TotalMap " keyType " " valueType;
 // Generic type application, e.g. `Option<int>` or `Result<int, E>`.
 op appliedType (base: Ident, args: CommaSepBy LaurelType): LaurelType => base "<" args ">";
 op compositeType (name: Ident): LaurelType => name;

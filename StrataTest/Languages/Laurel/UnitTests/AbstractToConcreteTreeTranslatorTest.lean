@@ -797,7 +797,7 @@ procedure idp<T>(x: T): T
 /--
 info: composite Box<T> { var val: T }
 
-type MyPair<A, B> = Map A B
+type MyPair<A, B> = TotalMap A B
 
 type Foo<T> = Box<T>
 -/
@@ -806,8 +806,28 @@ type Foo<T> = Box<T>
 #strata
 program Laurel;
 composite Box<T> { var val: T }
-type MyPair<A, B> = Map A B
+type MyPair<A, B> = TotalMap A B
 type Foo<T> = Box<T>
+#end)
+
+-- The partial map round-trips through `appliedType`, nested and beside the total map. This is
+-- the point of respelling the total map `TotalMap`: `Map` has to lex as a bare `Ident` for
+-- `Map<K, V>` to parse at all, so if the keyword/ident boundary is ever broken again these
+-- stop re-parsing.
+--
+-- Both spellings come back parenthesized: `parenType` wraps a non-atomic type in an annotation
+-- slot, which is precisely what makes the printed form re-parse. The inner `Map<int, bool>` of
+-- the nested case needs no parens of its own.
+/--
+info: procedure useMap(m: (Map<int, bool>), n: (Map<int, Map<int, bool>>), t: (TotalMap int bool)): bool
+return mapContains(m, 1);
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure useMap(m: Map<int, bool>, n: Map<int, Map<int, bool>>, t: TotalMap int bool) : bool
+  return mapContains(m, 1);
 #end)
 
 /-! ## Legacy-arity artifacts fail loud

@@ -179,12 +179,18 @@ fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
   "Sequence.build" "(" s ", " v ")";
 fn seq_update (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
   "Sequence.update" "(" s ", " i ", " v ")";
+fn seq_update_unsafe (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
+  "Sequence.update!" "(" s ", " i ", " v ")";
 fn seq_contains (A : Type, s : Sequence A, v : A) : bool =>
   "Sequence.contains" "(" s ", " v ")";
 fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
   "Sequence.take" "(" s ", " n ")";
+fn seq_take_unsafe (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.take!" "(" s ", " n ")";
 fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
   "Sequence.drop" "(" s ", " n ")";
+fn seq_drop_unsafe (A : Type, s : Sequence A, n : int) : Sequence A =>
+  "Sequence.drop!" "(" s ", " n ")";
 
 // ---- Strings ----
 // FIXME: Define polymorphic length and concat functions?

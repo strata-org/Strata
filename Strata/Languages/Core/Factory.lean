@@ -612,12 +612,17 @@ def seqEmptyFunc : WFLFunc CoreLParams :=
             (~Sequence.empty : (Sequence %a))) == #0]
     ])
 
+/- Rename one operator throughout a list of axioms. Purely syntactic. -/
+private def renameOpIn («from» to : String) (axs : List Expression.Expr) :
+    List Expression.Expr :=
+  axs.map (·.substOps (Strata.Util.HMap.ofList
+    [(⟨«from», ()⟩, fun ty => .op () to ty)]))
+
 /- Each select-of-constructor axiom, paired with its `Sequence.select!` mirror
    (same axiom with `Sequence.select` renamed), so the unsafe selector reasons
    through constructors identically to the checked one. -/
 private def withSelectBang (axs : List Expression.Expr) : List Expression.Expr :=
-  axs ++ axs.map (·.substOps (Strata.Util.HMap.ofList
-    [(⟨"Sequence.select", ()⟩, fun ty => .op () "Sequence.select!" ty)]))
+  axs ++ renameOpIn "Sequence.select" "Sequence.select!" axs
 
 /- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
@@ -840,6 +845,16 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
       ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
+/- An *unsafe* total variant of `Sequence.update`: no bounds precondition, so no
+   out-of-bounds obligation per call site. The length axiom holds for any index, and
+   the select-of-update axioms stay guarded by their own bounds. -/
+def seqUpdateUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.update!" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.update" "Sequence.update!" seqUpdateFunc.func.axioms)
+
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
 def seqContainsFunc : WFLFunc CoreLParams :=
@@ -901,6 +916,17 @@ def seqTakeFunc : WFLFunc CoreLParams :=
       ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
+/- An *unsafe* total variant of `Sequence.take`. Its length axiom keeps
+   `Sequence.take`'s `0 <= n <= length(s)` guard: `Sequence.length` is axiomatised
+   as non-negative, so an unguarded `length(take!(s, n)) == n` would be false for a
+   negative `n` and make every goal provable. Out of range, `take!` is unconstrained. -/
+def seqTakeUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.take!" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.take" "Sequence.take!" seqTakeFunc.func.axioms)
+
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
    `drop(s, n)` returns the sequence with the first `n` elements removed.
    Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
@@ -948,6 +974,15 @@ def seqDropFunc : WFLFunc CoreLParams :=
               else #true))]
       ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
+
+/- An *unsafe* total variant of `Sequence.drop`, keeping `Sequence.drop`'s bounds
+   guard on the length axiom for the reason given on `seqTakeUnsafeFunc`. -/
+def seqDropUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.drop!" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.drop" "Sequence.drop!" seqDropFunc.func.axioms)
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
@@ -1133,9 +1168,12 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   seqSelectUnsafeFunc,
   seqBuildFunc,
   seqUpdateFunc,
+  seqUpdateUnsafeFunc,
   seqContainsFunc,
   seqTakeFunc,
+  seqTakeUnsafeFunc,
   seqDropFunc,
+  seqDropUnsafeFunc,
 
   emptyTriggersFunc,
   addTriggerGroupFunc,
@@ -1351,9 +1389,12 @@ def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
 def seqSelectUnsafeOp : Expression.Expr := seqSelectUnsafeFunc.opExpr
 def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr
 def seqUpdateOp : Expression.Expr := seqUpdateFunc.opExpr
+def seqUpdateUnsafeOp : Expression.Expr := seqUpdateUnsafeFunc.opExpr
 def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr
 def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
+def seqTakeUnsafeOp : Expression.Expr := seqTakeUnsafeFunc.opExpr
 def seqDropOp : Expression.Expr := seqDropFunc.opExpr
+def seqDropUnsafeOp : Expression.Expr := seqDropUnsafeFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp

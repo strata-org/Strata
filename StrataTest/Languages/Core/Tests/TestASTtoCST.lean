@@ -157,7 +157,7 @@ procedure Test1(x : bool, out y : bool)
 
 function intId(x : int): int;
 
-procedure Test2(x : bool, g : bool, out y : bool)
+procedure Test2(x : bool, inout g : bool, out y : bool)
 spec {
   ensures (y == x);
   ensures (x == y);
@@ -187,7 +187,7 @@ procedure Test1 (x : bool, out y : bool)
   y := x;
 };
 function intId (x : int) : int;
-procedure Test2 (x : bool, g : bool, out y : bool)
+procedure Test2 (x : bool, inout g : bool, out y : bool)
 spec {
   ensures [Test2_ensures_0]: y == x;
   ensures [Test2_ensures_1]: x == y;

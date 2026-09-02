@@ -44,25 +44,23 @@ procedure falseAssertionIsCaught()
 #end
 
 
--- Wrapped form (Heimdall, rev 1): a constrained type nested inside a `Map`
--- datatype field must also be lowered (`Map int32 string` -> `Map int string`),
--- exercising `resolveBaseType`'s `.TMap` recursion. Without it the `int32`
--- reference dangles after the constrained-type definition is dropped and the
--- Laurel-to-Core translator fails. (Laurel surface `Set` carries no element
--- type, so `Map` is the vehicle for wrapping the constrained type.)
+-- Wrapped form: a constrained type nested inside a `TotalMap` datatype field must also be
+-- lowered (`TotalMap int32 string` -> `TotalMap int string`), exercising `resolveBaseType`'s
+-- `.TMap` recursion. Without it the `int32` reference dangles after the constrained-type
+-- definition is dropped and the Laurel-to-Core translator fails.
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 constrained int32 = x: int where x >= -2147483648 && x <= 2147483647 witness 0
 
 datatype Boxed {
-  MkBoxed(m: Map int32 string)
+  MkBoxed(m: TotalMap int32 string)
 }
 
 // Construct a `Boxed` with a known map entry and read it back through the
 // destructed field: the concrete value round-trips, so the field value is
 // genuinely modelled (not just type-checked).
-procedure wrappedFieldValueIsModelled(m: Map int32 string)
+procedure wrappedFieldValueIsModelled(m: TotalMap int32 string)
   opaque
 {
   var b: Boxed := MkBoxed(update(m, 5, "hi"));
@@ -71,7 +69,7 @@ procedure wrappedFieldValueIsModelled(m: Map int32 string)
 
 // And a false assertion about the map entry fails (not vacuously passed),
 // mirroring `falseAssertionIsCaught` above.
-procedure falseWrappedAssertionIsCaught(m: Map int32 string)
+procedure falseWrappedAssertionIsCaught(m: TotalMap int32 string)
   opaque
 {
   var b: Boxed := MkBoxed(update(m, 5, "hi"));

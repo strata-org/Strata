@@ -1324,6 +1324,12 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let i ← translateExpr p bindings ia
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, i, v]
+  | .fn _ q`Core.seq_update_unsafe, [_, sa, ia, va] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .UpdateUnsafe)
+     let s ← translateExpr p bindings sa
+     let i ← translateExpr p bindings ia
+     let v ← translateExpr p bindings va
+     return .mkApp () fn [s, i, v]
   | .fn _ q`Core.seq_contains, [_, sa, va] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Contains)
      let s ← translateExpr p bindings sa
@@ -1334,8 +1340,18 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
+  | .fn _ q`Core.seq_take_unsafe, [_, sa, na] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .TakeUnsafe)
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp () fn [s, n]
   | .fn _ q`Core.seq_drop, [_, sa, na] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Drop)
+     let s ← translateExpr p bindings sa
+     let n ← translateExpr p bindings na
+     return .mkApp () fn [s, n]
+  | .fn _ q`Core.seq_drop_unsafe, [_, sa, na] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .DropUnsafe)
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]

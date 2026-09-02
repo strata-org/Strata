@@ -18,7 +18,7 @@ open Strata
 operations, and each operation lowers to the matching `Set.*` function in
 `Core.Factory`. Nothing here declares anything — these programs use the prelude.
 
-`Set` is its own Core sort, not a `Map T bool` alias, so the SMT encoder can later be
+`Set` is its own Core sort, not a `TotalMap T bool` alias, so the SMT encoder can later be
 pointed at a dedicated set theory. Today it encodes as an uninterpreted sort constrained
 by the pointwise `Set.*` axioms.
 

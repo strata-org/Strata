@@ -295,17 +295,17 @@ procedure useFoo() opaque {
 /-! ## A container-typed field over a type parameter is a polymorphic slot
 
 A field is a polymorphic slot when its declared type *mentions* a type parameter
-anywhere, not only when it is one. `Map int T` is erased just like `T`, so a
+anywhere, not only when it is one. `TotalMap int T` is erased just like `T`, so a
 concrete instantiation must be accepted: checking the argument against the
-declared type would compare `Map int int` with the phantom `T` and reject every
+declared type would compare `TotalMap int int` with the phantom `T` and reject every
 construction site. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 datatype Foo<T> {
-  Mk(m: Map int T)
+  Mk(m: TotalMap int T)
 }
-procedure buildFoo(m0: Map int int) opaque {
+procedure buildFoo(m0: TotalMap int int) opaque {
   var f: Foo<int> := Mk(m0)
 };
 #end
@@ -330,7 +330,7 @@ procedure buildWrapper(o: Option<int>) opaque {
 /-! ## A constrained type under a container inside a type argument
 
 The rejection of constrained types as type arguments inspects the whole argument,
-not just its head: smuggling `int32` under a `Map` inside the argument reaches the
+not just its head: smuggling `int32` under a `TotalMap` inside the argument reaches the
 same refinement-dropping outcome (`resolveBaseType` over-approximates it and the
 elimination pass finds no enforcement point for it), so it is rejected too. -/
 #eval testLaurelResolution <|
@@ -342,8 +342,8 @@ datatype Option<T> {
   Some(value: T)
 }
 procedure nestedConstrainedArg() opaque {
-  var o: Option<Map int int32> := Nothing()
-//                      ^^^^^ error: constrained (subset) type 'int32' is not yet supported as a generic datatype type argument
+  var o: Option<TotalMap int int32> := Nothing()
+//                           ^^^^^ error: constrained (subset) type 'int32' is not yet supported as a generic datatype type argument
 };
 #end
 

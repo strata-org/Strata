@@ -109,11 +109,14 @@ func Sequence.select! : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
 func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
   requires int.le(0, i) && int.lt(i, Sequence.length(s));
+func Sequence.update! : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
 func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
   requires int.le(0, n) && int.le(n, Sequence.length(s));
+func Sequence.take! : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
 func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
   requires int.le(0, n) && int.le(n, Sequence.length(s));
+func Sequence.drop! : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;
