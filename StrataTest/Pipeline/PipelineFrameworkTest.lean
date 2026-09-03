@@ -739,9 +739,36 @@ construct. -/
 #guard_msgs in
 #eval IO.println (runAsserter termCheckPipelinePhase cfgBodiedProgram)
 
-/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ has a CFG body; monomorphization only handles structured bodies. -/
+/-! A non-polymorphic procedure with a CFG body is passed through unchanged:
+    there is nothing to monomorphize, so structural checks are skipped. -/
+/-- info: accepted -/
 #guard_msgs in
 #eval IO.println (runAsserter monomorphizeProceduresPipelinePhase cfgBodiedProgram)
+
+/-! For a *polymorphic* procedure the CFG-body and noCalls checks still fire,
+    because the substitution cannot be applied without a structured body, and
+    monomorphization per procedure is only sound once calls are gone. -/
+
+private def polyProgOf (typeArgs : List String) (body : Procedure.Body) : Program :=
+  { decls := [.proc { (default : Procedure) with header.typeArgs := typeArgs, body := body }
+      default] }
+
+/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ has a CFG body; monomorphization only handles structured bodies. -/
+#guard_msgs in
+#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+  (polyProgOf ["T"] (.cfg { entry := "entry", blocks := [] })))
+
+/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ still contains a call; eliminate calls before monomorphizing. -/
+#guard_msgs in
+#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+  (polyProgOf ["T"] (.structured [Statement.call "f" [] {}])))
+
+/-! A non-polymorphic procedure with a call is similarly accepted:
+    monomorphization is a no-op, so the noCalls precondition does not apply. -/
+/-- info: accepted -/
+#guard_msgs in
+#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+  (progOf [Statement.call "f" [] {}]))
 
 /-! Symbolic evaluation reports a `loop` and a CFG body through the evaluator's
 error channel. -/
@@ -762,14 +789,6 @@ procedure '_': [ERROR] cannot evaluate a `loop` statement: eliminate loops befor
 procedure '_': [ERROR] CFG bodies not supported yet -/
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) cfgBodiedProgram)
-
-/-! A call reaching monomorphization is refused too: it is monomorphized per
-procedure, which is only sound once calls are gone. -/
-
-/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ still contains a call; eliminate calls before monomorphizing. -/
-#guard_msgs in
-#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
-  (progOf [Statement.call "f" [] {}]))
 
 /-! The back end enforces its own requirements the same way. A CFG body would
 otherwise yield no obligations at all, leaving a procedure's assertions unchecked
