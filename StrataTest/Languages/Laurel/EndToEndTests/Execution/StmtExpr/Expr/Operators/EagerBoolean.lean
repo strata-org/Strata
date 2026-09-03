@@ -17,15 +17,18 @@ short-circuiting counterparts `&&`/`||` (see `ShortCircuit.lean`), they evaluate
 check) is discharged regardless of what the left operand evaluates to.
 
 This file covers:
-- The truth tables of `&` and `|` on literals.
-- The defining logical laws on symbolic operands.
+- The truth tables of `&` and `|` on literals, plus `!` and boolean `==`.
+- The defining logical laws on symbolic operands (using `==>`).
 - The eager-evaluation contrast: the right operand's verification condition
   fires even when, under short-circuiting, the left operand would skip it.
 -/
 
-/-! ### Truth tables and logical laws -/
+/-! ### Truth tables
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+`&`, `|`, `!` and boolean `==` are all supported by the standalone Laurel
+interpreter, so this block runs all three paths. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure eagerAndTruthTable()
@@ -48,6 +51,37 @@ procedure eagerOrTruthTable()
   assert !(false | false)
 };
 
+procedure eagerNotAndEq()
+  entry
+  opaque
+{
+  var t: bool := true;
+  var f: bool := false;
+  assert (!f) == true;
+  assert (t & f) == false;
+  assert (t | f) == true;
+  assert (t == t) == true
+};
+
+procedure eagerAndNegative()
+  entry
+  opaque
+{
+  var t: bool := true;
+  var f: bool := false;
+  assert (t & f) == true
+//^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ### Logical laws (`==>`)
+
+`==>` (implies) is not yet supported by the standalone Laurel interpreter, so these
+laws stay verify-only (no `entry`; symbolic over `a`/`b`). -/
+
+#eval testLaurelExecution {}
+#strata
+program Laurel;
 procedure eagerAndLaws(a: bool, b: bool)
   opaque
 {
