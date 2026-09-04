@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.Languages.Core.VerifiedSMTGen.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.BetaReduce
@@ -1890,6 +1891,45 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
+/-- Convert a refactored-encoder `SMTQuery` into the production `EncodeResult`
+    consumed by `encodeCore`, so the refactored path reuses the production
+    back-end unchanged.
+
+    `baseCtx` supplies the datatype factory and `useArrayTheory` flag — the same
+    `SMT.Context` `verifySingleEnv` seeds the production encoder with. The
+    query's declaration chunks are folded onto it: opaque `sorts` via `addSort`,
+    uninterpreted functions (`fnDecls`) via `addUF`, and interpreted functions
+    (`fnDefs`) via `addIF`. The nullary program variables (`varDecls`/`varDefs`)
+    stay in the `EncodeResult`'s `varDecls`/`varDefs` so `encodeCore` emits them
+    under their own names as declare-fun/define-fun (folding them as UFs would
+    `f.N`-rename them), but they are ALSO pre-registered in `ctx.ufs` below. -/
+private def smtQueryToEncodeResult (baseCtx : SMT.Context)
+    (q : Strata.SMT.DenoteTyped.SMTQuery) : EncodeResult :=
+  let ctx := q.sorts.foldl (fun c s => c.addSort s) baseCtx
+  let ctx := q.fnDecls.foldl (fun c uf => c.addUF uf) ctx
+  -- Pre-register managed vars (`varDecls`/`varDefs` names) as nullary UFs in `ctx.ufs`. The refactored
+  -- query keeps managed vars OUT of `fnDecls`, but `encodeCore`'s managed-var branch requires them
+  -- present in `ctx.ufs` to pre-populate `estate.functions` — otherwise `encodeTerm` on a `.fvar $__cse.N`
+  -- reference lazily emits its own `declare-fun`, and the explicit `writeVarDefs` `define-fun` then
+  -- collides ("Cannot bind … already defined"). Production registers these during `encodeTerm`/
+  -- `encodeVarDefItem`; the stateless converter must do it explicitly. `ctx.ufs` is a set, so re-adding
+  -- a name already present (e.g. also in `fnDecls`) is idempotent.
+  let ctx := q.varDefs.foldl (fun c f => c.addUF ⟨f.id, [], f.out⟩) ctx
+  let ctx := q.varDecls.foldl (fun c uf => c.addUF uf) ctx
+  let ctx := q.fnDefs.foldl (fun c f => c.addIF f.id f.args f.out f.body) ctx
+  -- Mark reachable datatypes "seen": `encodeCore`/`emitDatatypes` only emit `seenDatatypes` (production
+  -- populates it during encoding; the converter builds `ctx` directly, so set it from the query's
+  -- collected datatype names — else datatype sorts like `IntTree`/`Heap` go undeclared).
+  let ctx := { ctx with
+    seenDatatypes := q.datatypes.foldl
+      (fun s blk => blk.foldl (fun s dt => s.insert dt.1) s) ctx.seenDatatypes }
+  { assumptions := q.fnAxioms ++ q.assumptions,
+    varDefs := q.varDefs.map (fun f => { name := f.id, ty := f.out, body := f.body }),
+    varDecls := q.varDecls.map (fun uf => { name := uf.id, ty := uf.out }),
+    goal := q.obl,
+    ctx := ctx,
+    stats := ({} : Statistics) }
+
 private
 def verifySingleEnv (oblProgram : Program)
     (factory : @Lambda.Factory CoreLParams)
@@ -2013,7 +2053,26 @@ def verifySingleEnv (oblProgram : Program)
       -- It advances over the obligation's history (encoding only the delta
       -- detection reports) and forks this obligation's result.
       let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
-        encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels snapCache0
+        if options.useRefactoredEncoder then
+          -- Refactored encoder path: build an `EncodeResult` from a
+          -- stateless `SMTQuery` produced by `encodeObligationRun` on the
+          -- *pruned* `obligation` (irrelevant axioms already removed by `preprocessObligation`, so no
+          -- `prunedLabels` filter is needed), then feed it into the same
+          -- `encodeCore` back-end below. The refactored run threads neither
+          -- `SMTEncodeState` nor the snapshot cache, so `encState0`/`snapCache0` are
+          -- returned unchanged; since one flag value governs the whole run, nothing
+          -- downstream relies on them advancing.
+          -- `karities`: opaque (`declare-sort`) type arities the refactored collect resolves abstract
+          -- `.tcons` heads against. Produced by walking the obligation + every factory function for
+          -- `.tcons` usages (arity = arg-count), so `Map`, datatypes, and user abstract types are all
+          -- covered from usage — no reliance on which declaration form introduced the sort.
+          let karities := Core.Refactor.karitiesOf E.factory obligation
+          match Core.Refactor.encodeObligationRun options.useArrayTheory E.factory
+                  E.datatypes karities obligation with
+          | .ok q => .ok (smtQueryToEncodeResult smtCtx q, encState0, snapCache0)
+          | .error err => .error err
+        else
+          encodeObligationToSMTCached E.factory encState0 origObligation prunedAxiomLabels snapCache0
       match maybeTerms with
       | .error err =>
         let result := { obligation,
@@ -2050,12 +2109,21 @@ def verifySingleEnv (oblProgram : Program)
           let (emState1, captured) ← pctx.withRepeatedPhase "renderSMTText" do
             match emState0 with
             | none => pure (none, none)
-            | some es => IO.toEIO (fun e => Message.fromFormat f!"{e}") do
-              let (es, cf) ← es.syncAndEmit E.factory encState'.frames
-                encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
-                ctx obligationTerm obligation.metadata obligation.label
-                (managedNameSet varDefs varDecls) needSatCheck needValCheck
-              pure (some es, cf)
+            | some es =>
+              -- The env-scoped emitter (`syncAndEmit`) renders each obligation's assumptions / var-decls
+              -- / var-defs from the incremental `encState'.frames`. The refactored encoder builds a
+              -- complete, self-contained `EncodeResult` but does NOT advance `encState`, so those frames
+              -- are empty for it — capturing here would drop its assumptions and variable declarations
+              -- (e.g. leaving `(assert (not (f m@1)))` with `m@1` undeclared). Skip capture on the
+              -- refactored path so `dischargeObligation` renders via `encodeCore` from the `EncodeResult`.
+              if options.useRefactoredEncoder then
+                pure (some es, none)
+              else IO.toEIO (fun e => Message.fromFormat f!"{e}") do
+                let (es, cf) ← es.syncAndEmit E.factory encState'.frames
+                  encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
+                  ctx obligationTerm obligation.metadata obligation.label
+                  (managedNameSet varDefs varDecls) needSatCheck needValCheck
+                pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
             captured pctx

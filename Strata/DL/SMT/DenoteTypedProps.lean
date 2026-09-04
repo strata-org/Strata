@@ -13,6 +13,18 @@
   `.quant` case, exposing the binder as a plain `∀`/`∃` over environment extensions.
 * `TermType.denoteTyped.inhabited` / `TermType.denoteTyped.instInhabited` — every denoted sort is
   inhabited, given inhabited carriers for the sort constructors.
+* `typeCheck_ufs_mono` / `typeCheck_ufs_mono_append` — `Term.typeCheck` is monotone under extending the
+  UF context.
+* `Term.denoteTyped_congr` — term-equality congruence for `Term.denoteTyped` (equal terms denote equally).
+* `Term.denoteTyped_quant_coalesce` — one-step quantifier coalescing: a merged multi-binder denotes as
+  the nested single binders.
+* `Term.typeCheck_quant_ok_iff` — decomposition of a well-typed quantifier (body/sort/trigger
+  obligations plus `τ = bool`).
+* `denote_prim_inj` — distinct primitive literals at a base sort have distinct denotations.
+* `distinct_typeCheck` — a `distinct` over ≥2 same-base-sort terms type-checks to `bool`.
+* `not_someNone_of_base` / `isBase_cases` — base-sort witnesses (a base-typed term is neither
+  `.some`/`.none`; the four base SMT sorts).
+* `hlist_getElem` — indexing an `HList` over a `List.replicate` argument vector.
 -/
 
 module
@@ -166,6 +178,130 @@ theorem Term.denoteTyped_exists_eq_true
   rw [Term.denoteTyped_quant_eq ufInterp env divByZero modByZero .exist vs tr body h hbody]
   dsimp only []
   exact @decide_eq_true_iff _ (Classical.propDecidable _)
+
+/- ═══════════════════════════════════════════════════════════════════════════
+   Quantifier binder-context congruence and one-step coalescing.
+   ═══════════════════════════════════════════════════════════════════════════ -/
+
+/-- `Term.denoteTyped` is invariant under a propositional equality of the typing context (the context
+    is only used to type-check; equal contexts give equal denotations, modulo transporting the proof). -/
+private theorem Term.denoteTyped_ctx_congr
+    {ctx ctx' : TypedContext} (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
+    (divByZero modByZero : Int → Int) (tm : Term) {τ : TermType}
+    (hctx : ctx = ctx') (h : Term.typeCheck ctx tm = .ok τ) (h' : Term.typeCheck ctx' tm = .ok τ) :
+    Term.denoteTyped ufInterp env divByZero modByZero tm τ h
+      = Term.denoteTyped ufInterp env divByZero modByZero tm τ h' := by
+  subst hctx; rfl
+
+/-- **One-step quantifier-coalescing transparency** at the `Term.denoteTyped` level: a merged binder over
+    `⟨x,ty⟩ :: args2` denotes exactly as the nested binders `⟨x,ty⟩` then `args2`. Triggers are ignored
+    by `Term.denoteTyped`, so this is purely about the `combinedEnv` membership reassociation
+    (`v ∈ ⟨x,ty⟩::args2` ↔ `v ∈ [⟨x,ty⟩] ∨ v ∈ args2`). -/
+theorem Term.denoteTyped_quant_coalesce
+    {ctx : TypedContext} (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
+    (divByZero modByZero : Int → Int)
+    (qk : Strata.SMT.QuantifierKind) (x : String) (ty : TermType)
+    (tr trM tr2 : List (List Term)) (args2 : List TermVar) (e2 : Term) {τ : TermType}
+    (hM : Term.typeCheck ctx (.quant qk ([⟨x, ty⟩] ++ args2) trM e2) = .ok τ)
+    (hN : Term.typeCheck ctx (.quant qk [⟨x, ty⟩] tr (.quant qk args2 tr2 e2)) = .ok τ) :
+    Term.denoteTyped ufInterp env divByZero modByZero (.quant qk ([⟨x, ty⟩] ++ args2) trM e2) τ hM
+      = Term.denoteTyped ufInterp env divByZero modByZero
+          (.quant qk [⟨x, ty⟩] tr (.quant qk args2 tr2 e2)) τ hN := by
+  have hτb : τ = .bool := (Term.typeCheck_quant_inv hM).2
+  subst hτb
+  -- Body context equality (as full `TypedContext`s): merged binder's body context
+  -- `{ctx with Γ := (⟨x,ty⟩::args2).reverse ++ ctx.Γ}` equals the nested inner's
+  -- `{ctx with Γ := args2.reverse ++ (⟨x,ty⟩ :: ctx.Γ)}`.
+  have hctx : ({ctx with Γ := ([(⟨x, ty⟩ : TermVar)] ++ args2).reverse ++ ctx.Γ} : TypedContext)
+      = {ctx with Γ := args2.reverse ++ ((⟨x, ty⟩ : TermVar) :: ctx.Γ)} := by
+    simp [List.append_assoc]
+  -- Body typecheck at the merged (shared) context, and its transport to the nested-inner context.
+  have hbodyM : Term.typeCheck {ctx with Γ := ([(⟨x, ty⟩ : TermVar)] ++ args2).reverse ++ ctx.Γ} e2
+      = .ok .bool := (Term.typeCheck_quant_inv hM).1
+  have hbody_e2 : Term.typeCheck {ctx with Γ := args2.reverse ++ ((⟨x, ty⟩ : TermVar) :: ctx.Γ)} e2
+      = .ok .bool := hctx ▸ hbodyM
+  -- Nested: the outer body `.quant qk args2 tr2 e2` type-checks at `{ctx with Γ := ⟨x,ty⟩ :: ctx.Γ}`.
+  have hbodyN : Term.typeCheck {ctx with Γ := [(⟨x, ty⟩ : TermVar)].reverse ++ ctx.Γ}
+      (.quant qk args2 tr2 e2) = .ok .bool := (Term.typeCheck_quant_inv hN).1
+  -- Merged env vs nested env reassociation (over `VarEnv`, independent of the typing context).
+  -- (a) The SAME `ext` for both nested binders reproduces the merged env.
+  have hmerge : ∀ (ext : VarEnv σ 𝒜),
+      (fun v => if hv : v ∈ args2 then ext v else if hv : v ∈ [(⟨x, ty⟩ : TermVar)] then ext v else env v)
+        = (fun v => if hv : v ∈ [(⟨x, ty⟩ : TermVar)] ++ args2 then ext v else env v) := by
+    intro ext; funext v
+    by_cases ha : v ∈ args2 <;> by_cases hb : v ∈ [(⟨x, ty⟩ : TermVar)] <;>
+      simp only [ha, hb, List.mem_append, or_true, or_false,
+        dif_pos, dif_neg, not_false_eq_true]
+  -- (b) Combining `ext1` (for `[v0]`) and `ext2` (for `args2`) into one `ext` reproduces the nested env.
+  have hcombine : ∀ (ext1 ext2 : VarEnv σ 𝒜),
+      (fun v => if hv : v ∈ [(⟨x, ty⟩ : TermVar)] ++ args2 then (if v ∈ args2 then ext2 v else ext1 v) else env v)
+        = (fun v => if hv : v ∈ args2 then ext2 v else if hv : v ∈ [(⟨x, ty⟩ : TermVar)] then ext1 v else env v) := by
+    intro ext1 ext2; funext v
+    by_cases ha : v ∈ args2 <;> by_cases hb : v ∈ [(⟨x, ty⟩ : TermVar)] <;>
+      simp only [ha, hb, List.mem_append, or_true, or_false,
+        dif_pos, dif_neg, if_pos, if_neg, not_false_eq_true]
+  -- `Term.denoteTyped` into `Bool`; equal iff equal-as-Prop (`Bool.eq_iff_iff`). Bridge each `qk` case
+  -- via the per-kind `_eq_true` corollaries + the env reassociations.
+  rw [Bool.eq_iff_iff]
+  cases qk with
+  | all =>
+    rw [Term.denoteTyped_forall_eq_true (hbody := hbodyM)]
+    rw [Term.denoteTyped_forall_eq_true (h := hN) (hbody := hbodyN)]
+    constructor
+    · -- merged ⟹ nested: outer `ext1`, inner `ext2`; apply merged at `combine ext1 ext2`.
+      intro hAll ext1
+      rw [Term.denoteTyped_forall_eq_true ufInterp _ divByZero modByZero args2 tr2 e2 hbodyN hbody_e2]
+      intro ext2
+      have h := hAll (fun v => if v ∈ args2 then ext2 v else ext1 v)
+      rw [hcombine ext1 ext2] at h
+      -- `h` is at body proof `hbodyM` (merged context); goal at `hbody_e2` (nested-inner context) —
+      -- equal contexts (`hctx`), so transport.
+      rw [Term.denoteTyped_ctx_congr ufInterp _ divByZero modByZero e2 hctx hbodyM hbody_e2] at h
+      exact h
+    · -- nested ⟹ merged: outer at `ext`, inner at `ext`.
+      intro hNest ext
+      have h1 := hNest ext
+      rw [Term.denoteTyped_forall_eq_true ufInterp _ divByZero modByZero args2 tr2 e2 hbodyN hbody_e2] at h1
+      have h2 := h1 ext
+      rw [hmerge ext] at h2
+      rw [Term.denoteTyped_ctx_congr ufInterp _ divByZero modByZero e2 hctx hbodyM hbody_e2]
+      exact h2
+  | exist =>
+    rw [Term.denoteTyped_exists_eq_true (hbody := hbodyM)]
+    rw [Term.denoteTyped_exists_eq_true (h := hN) (hbody := hbodyN)]
+    constructor
+    · intro ⟨ext, hex⟩
+      -- merged witness `ext`; reuse it for both nested binders. Goal env (nested) = merged env via `hmerge`.
+      refine ⟨ext, ?_⟩
+      rw [Term.denoteTyped_exists_eq_true ufInterp _ divByZero modByZero args2 tr2 e2 hbodyN hbody_e2]
+      refine ⟨ext, ?_⟩
+      rw [hmerge ext]
+      exact (Term.denoteTyped_ctx_congr ufInterp _ divByZero modByZero e2 hctx hbodyM hbody_e2) ▸ hex
+    · intro ⟨ext1, hex1⟩
+      rw [Term.denoteTyped_exists_eq_true ufInterp _ divByZero modByZero args2 tr2 e2 hbodyN hbody_e2] at hex1
+      obtain ⟨ext2, hex2⟩ := hex1
+      refine ⟨fun v => if v ∈ args2 then ext2 v else ext1 v, ?_⟩
+      rw [Term.denoteTyped_ctx_congr ufInterp _ divByZero modByZero e2 hctx hbodyM hbody_e2]
+      rw [hcombine ext1 ext2]
+      exact hex2
+
+/-- **Decomposition of a well-typed quantifier.** `.quant qk vs tr body` type-checks at `τ` iff its body
+    type-checks at `Bool` (in the binder-extended context), every bound sort is well-formed, every trigger
+    pattern type-checks, and `τ = Bool`. `Term.typeCheck` ignores the quantifier kind, so the fact is
+    uniform in `qk`. -/
+theorem Term.typeCheck_quant_ok_iff {ctx : TypedContext} {qk : Strata.SMT.QuantifierKind}
+    {vs : List TermVar} {tr : List (List Term)} {body : Term} {τ : TermType} :
+    Term.typeCheck ctx (.quant qk vs tr body) = .ok τ
+      ↔ (Term.typeCheck {ctx with Γ := vs.reverse ++ ctx.Γ} body = .ok .bool
+          ∧ (vs.all (fun v => TermType.WFSort ctx.uss v.ty)) = true
+          ∧ Term.wfTriggers {ctx with Γ := vs.reverse ++ ctx.Γ} tr = true
+          ∧ τ = .bool) := by
+  constructor
+  · intro h
+    simp only [Term.typeCheck, bind, Except.bind] at h
+    split at h <;> (try split at h) <;> simp_all
+  · rintro ⟨hbody, hA, hB, rfl⟩
+    simp [Term.typeCheck, bind, Except.bind, hbody, hA, hB]
 
 /- ═══════════════════════════════════════════════════════════════════════════
    Cast-free unfoldings of `Term.denoteTyped`, one per operator.
@@ -421,7 +557,6 @@ private theorem Term.denoteTyped_env_congr {ctx : TypedContext}
   rw [h]
 
 /-! ## `Term.typeCheck` monotonicity under UF-context extension
-
 The UF-app arm gates on `uf ∈ ctx.ufs` (exact membership), which is monotone under a superset; every
 other arm ignores `ctx.ufs` (recurses / uses `uss`/`Γ` only). So a term well-typed at `ufs` stays
 well-typed (to the same type) at any `ufs' ⊇ ufs`.
@@ -616,5 +751,223 @@ theorem typeCheck_ufs_mono_append {uss : USCtx} {ufs tail : UFCtx}
     (h : Term.typeCheck ⟨uss, ufs, Γ⟩ t = .ok τ) :
     Term.typeCheck ⟨uss, ufs ++ tail, Γ⟩ t = .ok τ :=
   typeCheck_ufs_mono (fun _ hu => List.mem_append_left _ hu) Γ t τ h
+
+/- ── `typeCheck` shape lemmas for `distinct` / UF applications. ── -/
+
+/-- A list all type-checking at `ty` type-checks as `distinct`'s argument vector. -/
+private theorem distinct_args_tc {ufs : UFCtx} {ty : TermType} :
+    ∀ (ts : List Term), (∀ i (hi : i < ts.length), Term.typeCheck ⟨[], ufs, []⟩ ts[i] = .ok ty) →
+      Term.typeCheckArgs ⟨[], ufs, []⟩ ts (List.replicate ts.length ty) = true := by
+  intro ts
+  induction ts with
+  | nil => intro _; rfl
+  | cons t rest ih =>
+    intro h
+    rw [List.length_cons, List.replicate_succ]
+    have h0 : Term.typeCheck ⟨[], ufs, []⟩ t = .ok ty := by have := h 0 (by simp); simpa using this
+    simp only [Term.typeCheckArgs, h0, beq_self_eq_true, Bool.true_and]
+    exact ih (fun i hi => by have := h (i+1) (by simp only [List.length_cons]; omega); simpa using this)
+
+/-- `distinct` over a `≥2`-element list, all at base sort `ty`, type-checks to `.bool`. -/
+theorem distinct_typeCheck {ufs : UFCtx} {ts : List Term} {ty : TermType} {t1 t2 : Term} {rest : List Term}
+    (hts : ts = t1 :: t2 :: rest)
+    (h : ∀ i (hi : i < ts.length), Term.typeCheck ⟨[], ufs, []⟩ ts[i] = .ok ty) :
+    Term.typeCheck ⟨[], ufs, []⟩ (.app (.core .distinct) ts .bool) = .ok .bool := by
+  subst hts
+  have h1 : Term.typeCheck ⟨[], ufs, []⟩ t1 = .ok ty := by have := h 0 (by simp); simpa using this
+  have hargs : Term.typeCheckArgs ⟨[], ufs, []⟩ (t2 :: rest) (List.replicate (t2 :: rest).length ty) = true := by
+    apply distinct_args_tc
+    intro i hi
+    have := h (i + 1) (by simp only [List.length_cons] at hi ⊢; omega); simpa using this
+  simp only [Term.typeCheck, h1, bind, Except.bind, hargs, beq_self_eq_true, Bool.and_true, if_true]
+
+/-- Inversion for a UF-application type-check: the args match `uf.args` and the result is `uf.out`. -/
+theorem tc_uf_inv {Γ : List TermVar} {ufs : UFCtx} {uf : UF}
+    {args : List Term} {rty τ : TermType}
+    (h : Term.typeCheck ⟨[], ufs, Γ⟩ (.app (.core (.uf uf)) args rty) = .ok τ) :
+    Term.typeCheckArgs ⟨[], ufs, Γ⟩ args uf.args = true ∧ τ = uf.out := by
+  simp only [Term.typeCheck] at h
+  split at h <;> (try split at h) <;> simp_all
+
+/-- Peel the head off a homogeneous (`List.replicate`) `typeCheckArgs` obligation. -/
+private theorem tcArgs_rest {ufs : UFCtx} {Γ : List TermVar} {t : Term} {ts : List Term}
+    {ty : TermType}
+    (htc : Term.typeCheckArgs ⟨[], ufs, Γ⟩ (t::ts) (ty :: List.replicate ts.length ty) = true) :
+    Term.typeCheckArgs ⟨[], ufs, Γ⟩ ts (List.replicate ts.length ty) = true := by
+  simp only [Term.typeCheckArgs] at htc
+  split at htc
+  · rename_i ty' he; simp only [Bool.and_eq_true] at htc; exact htc.2
+  · exact absurd htc (by simp)
+
+/- ── Base-sort witnesses. ── -/
+
+/-- The four base SMT sorts a `TermType.isBase` witness ranges over. -/
+theorem isBase_cases {τ : TermType} (h : TermType.isBase τ = true) :
+    τ = .bool ∨ τ = .int ∨ τ = .string ∨ ∃ n, τ = .bitvec n := by
+  cases τ with
+  | prim p =>
+    cases p with
+    | bool => exact Or.inl rfl
+    | int => exact Or.inr (Or.inl rfl)
+    | string => exact Or.inr (Or.inr (Or.inl rfl))
+    | bitvec n => exact Or.inr (Or.inr (Or.inr ⟨n, rfl⟩))
+    | _ => simp [TermType.isBase] at h
+  | option _ => simp [TermType.isBase] at h
+  | constr _ _ => simp [TermType.isBase] at h
+
+/-- A term that type-checks at a base SMT sort is neither a `.some` nor a `.none` (those are options). -/
+theorem not_someNone_of_base {ufs : UFCtx} {bvs : TermVarCtx} {t : Term} {smtτ' : TermType}
+    (hb : TermType.isBase smtτ' = true) (h : Term.typeCheck ⟨[], ufs, bvs⟩ t = .ok smtτ') :
+    (∀ a, t ≠ .some a) ∧ (∀ ty, t ≠ .none ty) := by
+  refine ⟨fun a ha => ?_, fun ty ha => ?_⟩
+  · subst ha
+    obtain ⟨τ', _, heq⟩ := Term.typeCheck_some_inv h
+    rcases isBase_cases hb with rfl | rfl | rfl | ⟨n, rfl⟩ <;> simp_all
+  · subst ha
+    have heq := Term.typeCheck_none_inv h
+    rcases isBase_cases hb with rfl | rfl | rfl | ⟨n, rfl⟩ <;> simp_all
+
+/- ── `Term.denoteTyped` congruence + primitive/variable value lemmas. ── -/
+
+/-- `Term.denoteTyped` respects term equality: equal terms denote equally (the typecheck proof is a `Prop`,
+    hence irrelevant). Lets us rewrite the term without hitting the dependent-motive wall that `rw` on
+    the raw `if`/`match` inside a `Term.denoteTyped _ … hproof` application would cause. -/
+theorem Term.denoteTyped_congr
+    {ctx : TypedContext} {ufInterp : UFInterp σ 𝒜} {env : VarEnv σ 𝒜}
+    {divByZero modByZero : Int → Int} {t1 t2 : Term} {τ : TermType}
+    (heqt : t1 = t2) (h1 : Term.typeCheck ctx t1 = .ok τ) (h2 : Term.typeCheck ctx t2 = .ok τ) :
+    Term.denoteTyped ufInterp env divByZero modByZero t1 τ h1
+      = Term.denoteTyped ufInterp env divByZero modByZero t2 τ h2 := by
+  subst heqt; rfl
+
+/-- `Term.denoteTyped` for a variable is HEq to the environment lookup. -/
+theorem SMTTerm_denote_var_heq {Γ : List TermVar} {ufs : UFCtx}
+    (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜) {divByZero modByZero : Int → Int}
+    (v : TermVar) (τ : TermType) (htc : Term.typeCheck ⟨[], ufs, Γ⟩ (.var v) = .ok τ) :
+    HEq (Term.denoteTyped ufInterp env divByZero modByZero (.var v) τ htc) (env v) := by
+  unfold Term.denoteTyped
+  obtain ⟨hmem, heq⟩ := Term.typeCheck_var_inv htc
+  simp only
+  exact cast_heq _ _
+
+theorem denote_prim_bool {ufs : UFCtx} {bvs : TermVarCtx}
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) {dz mz : Int → Int}
+    {b : Bool} (h : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim (.bool b)) = .ok .bool) :
+    Term.denoteTyped ufInterp smtEnv dz mz (.prim (.bool b)) .bool h = b := by
+  simp only [Term.denoteTyped]
+
+theorem denote_prim_int {ufs : UFCtx} {bvs : TermVarCtx}
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) {dz mz : Int → Int}
+    {i : Int} (h : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim (.int i)) = .ok .int) :
+    Term.denoteTyped ufInterp smtEnv dz mz (.prim (.int i)) .int h = i := by
+  simp only [Term.denoteTyped]
+
+theorem denote_prim_string {ufs : UFCtx} {bvs : TermVarCtx}
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) {dz mz : Int → Int}
+    {s : String} (h : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim (.string s)) = .ok .string) :
+    Term.denoteTyped ufInterp smtEnv dz mz (.prim (.string s)) .string h = s := by
+  simp only [Term.denoteTyped]
+
+theorem denote_prim_bitvec {ufs : UFCtx} {bvs : TermVarCtx}
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) {dz mz : Int → Int}
+    {n : Nat} {bv : BitVec n} (h : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim (.bitvec bv)) = .ok (.bitvec n)) :
+    Term.denoteTyped ufInterp smtEnv dz mz (.prim (.bitvec bv)) (.bitvec n) h = bv := by
+  simp only [Term.denoteTyped]
+
+/-- Distinct primitive literals (at the same base sort) have distinct denotations. -/
+theorem denote_prim_inj {ufs : UFCtx} {bvs : TermVarCtx}
+    (ufInterp : UFInterp σ 𝒜) (smtEnv : VarEnv σ 𝒜) {dz mz : Int → Int}
+    {p1 p2 : TermPrim} {smtτ' : TermType}
+    (hb : TermType.isBase smtτ' = true)
+    (h1 : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim p1) = .ok smtτ')
+    (h2 : Term.typeCheck ⟨[], ufs, bvs⟩ (.prim p2) = .ok smtτ')
+    (hne : (Term.prim p1) ≠ (Term.prim p2)) :
+    Term.denoteTyped ufInterp smtEnv dz mz (.prim p1) smtτ' h1
+      ≠ Term.denoteTyped ufInterp smtEnv dz mz (.prim p2) smtτ' h2 := by
+  intro hcontra
+  apply hne
+  have e1 := Term.typeCheck_prim_inv h1
+  have e2 := Term.typeCheck_prim_inv h2
+  rcases isBase_cases hb with rfl | rfl | rfl | ⟨n, rfl⟩
+  · obtain ⟨b1, rfl⟩ : ∃ b, p1 = .bool b := by
+      cases p1 with
+      | bool b => exact ⟨b, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e1
+    obtain ⟨b2, rfl⟩ : ∃ b, p2 = .bool b := by
+      cases p2 with
+      | bool b => exact ⟨b, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e2
+    rw [denote_prim_bool, denote_prim_bool] at hcontra; subst hcontra; rfl
+  · obtain ⟨i1, rfl⟩ : ∃ i, p1 = .int i := by
+      cases p1 with
+      | int i => exact ⟨i, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e1
+    obtain ⟨i2, rfl⟩ : ∃ i, p2 = .int i := by
+      cases p2 with
+      | int i => exact ⟨i, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e2
+    rw [denote_prim_int, denote_prim_int] at hcontra; subst hcontra; rfl
+  · obtain ⟨s1, rfl⟩ : ∃ s, p1 = .string s := by
+      cases p1 with
+      | string s => exact ⟨s, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e1
+    obtain ⟨s2, rfl⟩ : ∃ s, p2 = .string s := by
+      cases p2 with
+      | string s => exact ⟨s, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e2
+    rw [denote_prim_string, denote_prim_string] at hcontra; subst hcontra; rfl
+  · obtain ⟨bv1, rfl⟩ : ∃ bv : BitVec n, p1 = .bitvec bv := by
+      cases p1 with
+      | bitvec bv =>
+        rename_i m
+        have hmn : m = n := by
+          have h' : TermType.bitvec m = TermType.bitvec n := by simpa only [TermPrim.typeOf] using e1.symm
+          simpa only [TermType.bitvec, TermType.prim.injEq, TermPrimType.bitvec.injEq] using h'
+        subst hmn; exact ⟨bv, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e1
+    obtain ⟨bv2, rfl⟩ : ∃ bv : BitVec n, p2 = .bitvec bv := by
+      cases p2 with
+      | bitvec bv =>
+        rename_i m
+        have hmn : m = n := by
+          have h' : TermType.bitvec m = TermType.bitvec n := by simpa only [TermPrim.typeOf] using e2.symm
+          simpa only [TermType.bitvec, TermType.prim.injEq, TermPrimType.bitvec.injEq] using h'
+        subst hmn; exact ⟨bv, rfl⟩
+      | _ => simp [TermPrim.typeOf] at e2
+    rw [denote_prim_bitvec, denote_prim_bitvec] at hcontra; subst hcontra; rfl
+
+/- ── HList / distinct transfer helpers. ── -/
+
+theorem hlist_len {α} {f : α → Type} {a : α} : ∀ (n : Nat) (hl : HList f (List.replicate n a)),
+    (hlistReplicateToList n hl).length = n := by
+  intro n; induction n with
+  | zero => intro hl; rfl
+  | succ m ih => intro hl; match hl with | .cons x xs => simp [hlistReplicateToList, ih]
+
+theorem hlist_getElem {ufs : UFCtx} {Γ : List TermVar}
+    (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
+    {divByZero modByZero : Int → Int}
+    (ty : TermType) : ∀ (args : List Term)
+    (htc : Term.typeCheckArgs ⟨[], ufs, Γ⟩ args (List.replicate args.length ty) = true)
+    (i : Nat) (hi : i < args.length) (htci : Term.typeCheck ⟨[], ufs, Γ⟩ args[i] = .ok ty),
+    (hlistReplicateToList args.length
+      (Term.denoteTypedArgs ufInterp env divByZero modByZero args (List.replicate args.length ty) htc))[i]'(by rw [hlist_len]; exact hi)
+    = Term.denoteTyped ufInterp env divByZero modByZero args[i] ty htci := by
+  intro args
+  induction args with
+  | nil => intro htc i hi htci; simp at hi
+  | cons t ts ih =>
+    intro htc i hi htci
+    match i, hi with
+    | 0, _ => rfl
+    | j+1, hj =>
+      have hjlt : j < ts.length := by simpa using hj
+      have htcj : Term.typeCheck ⟨[], ufs, Γ⟩ ts[j] = .ok ty := htci
+      have htcrest := tcArgs_rest htc
+      have hstep : (hlistReplicateToList (t::ts).length
+          (Term.denoteTypedArgs ufInterp env divByZero modByZero (t::ts) (List.replicate (t::ts).length ty) htc))[j+1]'(by rw [hlist_len]; exact hj)
+        = (hlistReplicateToList ts.length
+            (Term.denoteTypedArgs ufInterp env divByZero modByZero ts (List.replicate ts.length ty) htcrest))[j]'(by rw [hlist_len]; exact hjlt) := rfl
+      rw [hstep]; exact ih htcrest j hjlt htcj
 
 end Strata.SMT.DenoteTyped

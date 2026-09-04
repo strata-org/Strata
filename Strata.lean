@@ -156,3 +156,11 @@ import Strata.Examples.EmbeddedData
 
 -- noimport: Strata.Util.IOTests (used for tests)
 -- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)
+
+import Strata.DL.SMT.DenoteTypedFactoryCorrect
+import Strata.Languages.Core.VerifiedSMTGen.SMTEncoder
+import Strata.Languages.Core.VerifiedSMTGen.ProofObligation
+import Strata.Languages.Core.VerifiedSMTGen.SharedWF
+import Strata.Languages.Core.VerifiedSMTGen.TranslateSound
+import Strata.Languages.Core.VerifiedSMTGen.CollectSound
+import Strata.Languages.Core.VerifiedSMTGen.EncoderSound
