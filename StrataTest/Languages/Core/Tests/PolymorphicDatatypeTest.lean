@@ -479,14 +479,6 @@ info: true
 
 /--
 info:
-Obligation: assume_assume_0_calls_Outer..inner_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_innerIsSome_calls_Outer..inner_0
-Property: assert
-Result: ✅ pass
-
 Obligation: innerIsSome
 Property: assert
 Result: ✅ pass
@@ -542,10 +534,6 @@ info: true
 
 /--
 info:
-Obligation: assert_test_calls_Outer..flag_0
-Property: assert
-Result: ✅ pass
-
 Obligation: test
 Property: assert
 Result: ❌ fail
@@ -612,35 +600,15 @@ procedure Check()
 
 /--
 info:
-Obligation: method_ok_body_calls_MethodSetting..LoggingLevel_0
+Obligation: stage_ok_body_calls_Option..val_0
 Property: assert
 Result: ✅ pass
 
-Obligation: method_ok_body_calls_MethodSetting..LoggingLevel_1
+Obligation: stage_ok_body_calls_Option..val_1
 Property: assert
 Result: ✅ pass
 
-Obligation: stage_ok_body_calls_Stage..MethodSettings_0
-Property: assert
-Result: ✅ pass
-
-Obligation: stage_ok_body_calls_Stage..MethodSettings_1
-Property: assert
-Result: ✅ pass
-
-Obligation: stage_ok_body_calls_Option..val_2
-Property: assert
-Result: ✅ pass
-
-Obligation: stage_ok_body_calls_Stage..MethodSettings_3
-Property: assert
-Result: ✅ pass
-
-Obligation: stage_ok_body_calls_Option..val_4
-Property: assert
-Result: ✅ pass
-
-Obligation: stage_ok_body_calls_Sequence.select_5
+Obligation: stage_ok_body_calls_Sequence.select_2
 Property: out-of-bounds access check
 Result: ✅ pass
 

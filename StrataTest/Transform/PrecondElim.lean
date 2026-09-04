@@ -523,9 +523,56 @@ A hypothesis captured outside a nested quantifier (`p == Outer_A(m)`) must have
 its de Bruijn indices shifted when the accessor-call obligation for the inner
 quantifier is generated. Otherwise `m` silently rebinds to the inner bound
 variable `j` and the generated obligation fails to type-check with
-"Impossible to unify (arrow Inner Outer) with (arrow int ...)". -/
+"Impossible to unify (arrow Inner Outer) with (arrow int ...)".
+
+`Inner` carries a second constructor so that `Inner..x` is a partial accessor
+whose tester precondition reaches the generated `$$wf` block. -/
 
 def nestedExistsWFPgm :=
+#strata
+program Core;
+datatype Inner { Inner_Cons(x : int), Inner_Nil() };
+datatype Outer { Outer_A(v : Inner) };
+
+function bug(p: Outer): bool {
+  exists m: Inner ::
+    p == Outer_A(m)
+    && (exists j: int :: Inner..x(m) == j)
+}
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+datatype Inner {
+  Inner_Cons(x : int),
+  Inner_Nil()
+};
+datatype Outer {
+  Outer_A(v : Inner)
+};
+procedure bug$$wf (p : Outer)
+{
+  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
+};
+function bug (p : Outer) : bool {
+  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+}
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedExistsWFPgm))
+
+/-! ### Test: a single-constructor datatype's accessor carries no obligation
+
+`Inner..x` above is guarded by `Inner..isInner_Cons` because `Inner` has a
+second constructor for that tester to rule out. Where the datatype has a single
+constructor the tester holds for every value of the type, so the accessor is
+total and the function body needs no `$$wf` block at all. -/
+
+def nestedExistsSingleConstrPgm :=
 #strata
 program Core;
 datatype Inner { Inner_Cons(x : int) };
@@ -550,16 +597,12 @@ datatype Inner {
 datatype Outer {
   Outer_A(v : Inner)
 };
-procedure bug$$wf (p : Outer)
-{
-  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
-};
 function bug (p : Outer) : bool {
   exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
 }
 -/
 #guard_msgs in
-#eval (Std.format (transformProgram nestedExistsWFPgm))
+#eval (Std.format (transformProgram nestedExistsSingleConstrPgm))
 
 /-! ### Test: `changed` flag for a nested function whose body calls a
     precondition-carrying function (regression)
