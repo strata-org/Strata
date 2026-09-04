@@ -76,16 +76,7 @@ private def collectBoundNames (proc : Procedure) : Std.HashSet String :=
   let initial := (proc.inputs ++ proc.outputs).foldl
     (fun names param => names.insert param.name.text) {}
   let collectExpr (expr : StmtExprMd) : StateM (Std.HashSet String) StmtExprMd := do
-    foldStmtExprM (fun node => do
-      match node.val with
-      | .Assign targets _ =>
-          for target in targets do
-            match target.val with
-            | .Declare param => modify (·.insert param.name.text)
-            | _ => pure ()
-      | .Var (.Declare param) => modify (·.insert param.name.text)
-      | .Quantifier _ param _ _ => modify (·.insert param.name.text)
-      | _ => pure ()) expr
+    modify (·.insertMany (boundNamesInStmtExpr expr))
     return expr
   (mapProcedureM collectExpr proc |>.run initial).2
 

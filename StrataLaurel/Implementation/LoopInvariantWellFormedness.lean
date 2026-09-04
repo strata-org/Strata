@@ -107,7 +107,13 @@ private def assignedLocals (node : StmtExprMd) : List Identifier :=
   |>.foldl (fun acc n => if acc.any (·.text == n.text) then acc else acc ++ [n]) []
 
 /-- Names declared by `var x : T` inside a statement; these are body-local and
-    must not be havoc'd even if they are also assigned. -/
+    must not be havoc'd even if they are also assigned.
+
+    Deliberately narrower than `boundNamesInStmtExpr`, and not reducible to it: this set is
+    subtracted from the havoc targets, so counting a quantifier binder here would drop a
+    loop-carried local that a binder in the body merely shadows, leaving its invariant's
+    well-formedness checked in the pre-state — the state this pass exists to stop trusting.
+    No test catches that substitution. -/
 private def declaredLocals (node : StmtExprMd) : List String :=
   collectStmtExprList (fun n =>
     match n.val with

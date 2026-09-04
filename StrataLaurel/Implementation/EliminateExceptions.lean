@@ -111,27 +111,25 @@ private def exitPendingVar (label : String) : String := s!"$exiting_{label}"
 private def exnResultVar : String := resultOutputName
 
 /-- The identifiers `proc` binds where a carrier collision could bite: inputs,
-    outputs, and every name bound in its body and postconditions — declarations,
-    `.Assign` targets, `catch` bindings, and quantifier binders. Binders open
-    nested scopes, but the carrier is referenced from postconditions that a
-    substitution may land inside (an authored `forall($result: …)` would capture
-    a carrier spelled `$result`), so scoping is ignored rather than modelled:
-    every bound name is treated as taken. Used to choose a carrier name that
-    collides with nothing it collects. -/
+    outputs, and every name `boundNamesOfNode` reports in its body and
+    postconditions. Binders open nested scopes, but the carrier is referenced
+    from postconditions that a substitution may land inside (an authored
+    `forall($result: …)` would capture a carrier spelled `$result`), so scoping
+    is ignored rather than modelled: every bound name is treated as taken. Used
+    to choose a carrier name that collides with nothing it collects. -/
 private def usedNames (proc : Procedure) : Std.HashSet String :=
   let fromBody (b : StmtExprMd) (acc : Std.HashSet String) : Std.HashSet String :=
     foldStmtExpr (fun n acc =>
+      let acc := (boundNamesOfNode n).foldl (fun acc name => acc.insert name.text) acc
+      -- Assigning to an existing `.Local` binds nothing, so `boundNamesOfNode` does not
+      -- report it; a carrier must avoid it anyway, since the target may be a file-scope
+      -- global rather than a local this procedure declares.
       match n.val with
-      | .Var (.Declare p) => acc.insert p.name.text
       | .Assign targets _ =>
         targets.foldl (fun acc t =>
           match t.val with
-          | .Declare p => acc.insert p.name.text
           | .Local id => acc.insert id.text
-          | .Field _ _ => acc) acc
-      | .Try _ catches _ =>
-        catches.foldl (fun acc c => acc.insert c.binding.text) acc
-      | .Quantifier _ param _ _ => acc.insert param.name.text
+          | .Declare _ | .Field _ _ => acc) acc
       | _ => acc) acc b
   let acc := (proc.inputs ++ proc.outputs).foldl
     (fun (acc : Std.HashSet String) p => acc.insert p.name.text) {}

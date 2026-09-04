@@ -681,6 +681,39 @@ def anyStmtExpr (p : StmtExprMd → Bool) (expr : StmtExprMd) : Bool :=
 def collectStmtExprList {β : Type} (f : StmtExprMd → List β) (expr : StmtExprMd) : List β :=
   foldStmtExpr (fun e acc => acc ++ f e) [] expr
 
+/-- The variable names the node `e` itself binds: a `Declare`'s name, a quantifier's binder, a
+    `catch` clause's binding. Not recursive -- the caller drives the walk (`foldStmtExpr`,
+    `foldProcedureExprsM`), so one that already folds over nodes needs no second traversal.
+
+    The arms follow the AST rather than a reachability argument: the forms that can bind are
+    exactly those carrying a `Variable` (`.Assign`, `.IncrDecr`, `.CompoundAssign`, `.Var`), a
+    `Parameter` (`.Quantifier`) or a `CatchClause` (`.Try`), which is what makes the wildcard
+    safe -- a new constructor carrying one of those needs an arm. Hence two arms that never
+    fire: `LaurelAST` forbids a `Declare` target on `.IncrDecr` and `.CompoundAssign`. A
+    `Block` label is not a binding either, being a name in a different namespace. -/
+def boundNamesOfNode (e : StmtExprMd) : List Identifier :=
+  let ofVariable (v : Variable) : List Identifier :=
+    match v with
+    | .Declare param => [param.name]
+    | .Local _ | .Field _ _ => []
+  match e.val with
+  | .Assign targets _ => targets.flatMap (ofVariable ·.val)
+  | .IncrDecr _ _ target | .CompoundAssign _ target _ => ofVariable target.val
+  | .Var v => ofVariable v
+  | .Quantifier _ param _ _ => [param.name]
+  | .Try _ catches _ => catches.map (·.binding)
+  | _ => []
+
+/-- Every variable name bound anywhere in `expr`, regardless of scope -- the answer to "is this
+    name in scope here?".
+
+    A caller that *subtracts* bound names from another set wants a narrower list than this:
+    there, every name counted is one more removed, so a binder that merely shadows an entry
+    deletes it. -/
+def boundNamesInStmtExpr (expr : StmtExprMd) : Std.HashSet String :=
+  foldStmtExpr (fun e acc =>
+    (boundNamesOfNode e).foldl (fun acc name => acc.insert name.text) acc) {} expr
+
 /-- Apply a monadic transformation to all procedure bodies. -/
 @[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
