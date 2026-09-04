@@ -1570,6 +1570,22 @@ def symbolicEvalPipelinePhase
       return (true, prog')
 
 
+/-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
+    monomorphize procedures, type-check, monomorphize functions, and eliminate
+    nondeterminism.
+
+    Factored out so `genVCs` in `MetaVerifier` can reuse them without pulling in
+    the full `transformPipelinePhases` prefix (call elimination, precondition
+    lifting, etc.), which is unnecessary for programs that already arrive
+    call-free from the Boole→Core translation. -/
+def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
+  [monomorphizeProceduresPipelinePhase,
+   typeCheckPipelinePhase options typeCheckFactory,
+   monomorphizeFunctionsPipelinePhase,
+   nondetElimPipelinePhase]
+
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim.
     CSE runs after symbolic evaluation to extract common
@@ -1581,16 +1597,10 @@ def corePipelinePhases (procs : Option (List String) := none)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
-  -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
-  -- fallback here is only a totality safety net.
-  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
   transformPipelinePhases procs prefixPhases
-    ++ [monomorphizeProceduresPipelinePhase,
-        typeCheckPipelinePhase options typeCheckFactory,
-        monomorphizeFunctionsPipelinePhase,
-        nondetElimPipelinePhase,
-        symbolicEvalPipelinePhase options moreFns]
-    ++ [betaReducePipelinePhase] ++ csePhases
+    ++ preSymbolicEvalPipelinePhases options moreFns
+    ++ [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase]
+    ++ csePhases
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is

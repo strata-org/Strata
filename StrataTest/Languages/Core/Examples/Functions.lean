@@ -162,5 +162,47 @@ theorem quantBodyFuncPgm_correct : smtVCsCorrect quantBodyFuncPgm := by
   gen_smt_vcs
   all_goals (try grind)
 
+---------------------------------------------------------------------
+
+/-! ## `gen_smt_vcs` with a polymorphic uninterpreted function
+
+`mirror<T>` has no body, so symbolic evaluation does not inline it; the
+obligation retains a reference to `mirror<int>` that the monomorphization
+pass must instantiate before the SMT encoder runs.
+-/
+
+private def polyUninterpPgm : Program :=
+#strata
+program Core;
+function mirror<T>(x : T) : T;
+procedure testMirror(a : int) {
+  assert [mirrorRefl]: mirror(a) == mirror(a);
+};
+#end
+
+theorem polyUninterpPgm_correct : smtVCsCorrect polyUninterpPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
+/-! ## `gen_smt_vcs` with a polymorphic procedure and polymorphic uninterpreted function
+
+Both the procedure and the uninterpreted function are parameterized by the
+same type variable `T`, so monomorphization must handle a polymorphic call
+site inside a polymorphic procedure body.
+-/
+
+private def polyProcUninterpPgm : Program :=
+#strata
+program Core;
+function mirror<T>(x : T) : T;
+procedure testMirrorPoly<T>(a : T) {
+  assert [mirrorPolyRefl]: mirror(a) == mirror(a);
+};
+#end
+
+theorem polyProcUninterpPgm_correct : smtVCsCorrect polyProcUninterpPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
 end Strata
 ---------------------------------------------------------------------
