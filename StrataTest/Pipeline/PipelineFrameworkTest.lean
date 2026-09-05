@@ -21,6 +21,8 @@ meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Transform.TerminationCheck
 meta import Strata.Transform.CommonSubexprElim
+meta import Strata.Transform.FunctionInlining
+meta import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Languages.Core.Verifier
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
@@ -30,6 +32,8 @@ import Strata.Transform.PrecondElim
 import Strata.Transform.ProcedureInlining
 import Strata.Transform.TerminationCheck
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.FunctionInlining
+import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.MonomorphizeProcedures
 import Strata.Languages.Core.ObligationExtraction
 
@@ -672,6 +676,50 @@ there. -/
 /-- info: accepted; phases [assertNoCFGBodies, inlineProcedures, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval report (coreValidatedPipeline [procedureInliningPipelinePhase])
+
+/-! The `functionInlining` and `unrollBoundedQuantifiers` options each insert phases
+after `symbolicEval`, independently of one another; unrolling brings its own
+`betaReduce` ahead of itself. -/
+
+private def inliningOnly : VerifyOptions :=
+  { VerifyOptions.default with functionInlining := true }
+
+private def unrollingOnly : VerifyOptions :=
+  { VerifyOptions.default with unrollBoundedQuantifiers := true }
+
+private def inliningAndUnrolling : VerifyOptions :=
+  { VerifyOptions.default with functionInlining := true, unrollBoundedQuantifiers := true }
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := inliningOnly))
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := unrollingOnly))
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := inliningAndUnrolling))
+
+/-! Unrolling on its own, with nothing established about the program, is refused. -/
+
+/-- info: rejected: phase #1 `unrollBoundedQuantifiers` requires:
+  • `noCFGBodies`: no preceding phase guarantees it
+  • `noLoops`: no preceding phase guarantees it
+  • `staticSingleAssignment`: no preceding phase guarantees it -/
+#guard_msgs in
+#eval check [unrollBoundedQuantifiersPipelinePhase]
+
+/-! Every fact either phase requires it also preserves. -/
+
+#guard requiredThenDropped unrollBoundedQuantifiersPipelinePhase == []
+
+#guard requiredThenDropped functionInliningPipelinePhase == []
+
+/-- info: rejected: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+#guard_msgs in
+#eval report (coreValidatedPipeline [functionInliningPipelinePhase])
 
 /-! Naming procedures to verify drops the others before the entry assertion
 looks at the program, so a CFG body the caller did not ask about cannot refuse

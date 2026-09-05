@@ -9,10 +9,12 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
+import Strata.Transform.FunctionInlining
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
@@ -1596,10 +1598,20 @@ def corePipelinePhases (procs : Option (List String) := none)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (prefixPhases : List PipelinePhase := []) : List PipelinePhase :=
   let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
+  -- Inlining runs first: a substituted function body can expose a bound the unroller resolves.
+  let inlinePhases :=
+    if options.functionInlining then [Core.functionInliningPipelinePhase] else []
+  -- Beta reduction precedes unrolling: the eligibility matchers read a guard
+  -- syntactically, so a guard left under a redex states no range they recognize.
+  let unrollPhases :=
+    if options.unrollBoundedQuantifiers then
+      [betaReducePipelinePhase, Core.unrollBoundedQuantifiersPipelinePhase]
+    else []
   transformPipelinePhases procs prefixPhases
     ++ preSymbolicEvalPipelinePhases options moreFns
-    ++ [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase]
-    ++ csePhases
+    ++ [symbolicEvalPipelinePhase options moreFns]
+    ++ inlinePhases ++ unrollPhases
+    ++ [betaReducePipelinePhase] ++ csePhases
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is

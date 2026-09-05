@@ -5,7 +5,9 @@
 -/
 
 import Strata.Languages.Core
+import Strata.Languages.Core.Verifier
 import Strata.Transform.FunctionInlining
+import StrataDDM.Integration.Lean.HashCommands
 
 open Core
 open Strata
@@ -371,5 +373,79 @@ private def cfgCallPgm : Core.Program :=
        | _ => false)
     | _ => false
   | _ => false
+
+/-! ### Inlining's position and a call's precondition obligation
+
+The `assert`s left after `precondElim` show whether the precondition was raised. -/
+
+private def precondPgm : StrataDDM.Program :=
+#strata
+program Core;
+
+inline function bump(x : int, y : int) : int
+  requires int.gt(y, 100);
+{ int.add(x, y) }
+
+procedure P(a : int, b : int)
+{
+  assert [a1]: int.ge(bump(a, b), 0);
+};
+#end
+
+/-- The `assert`s of every structured procedure body in `p`, in order. -/
+private def assertsOf (p : Core.Program) : Std.Format :=
+  Std.Format.joinSep
+    ((p.decls.flatMap fun
+      | .proc proc _ =>
+        match proc.body with
+        | .structured ss => ss
+        | .cfg _ => []
+      | _ => []).flatMap fun s =>
+        match s with
+        | .cmd (.cmd (.assert l e _)) => [Std.Format.text s!"{l}: " ++ Std.format e]
+        | _ => [])
+    Std.Format.line
+
+/-- The `assert`s left in `precondPgm` after running `phases` through `precondElim`. -/
+private def assertsThroughPrecondElim (phases : List Core.PipelinePhase) : Std.Format :=
+  let prefixPhases := phases.take (phases.findIdx (·.phase.name == "precondElim") + 1)
+  let step (prog : Core.Program) (pp : Core.PipelinePhase) :
+      Core.Transform.CoreTransformM Core.Program := do
+    let (_, next) ← pp.transform prog
+    return next
+  let start := TransM.run Inhabited.default (Strata.translateProgram precondPgm) |>.fst
+  match (prefixPhases.foldlM step start).run
+          { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | (.ok q, _) => assertsOf q
+  | (.error e, _) => Std.Format.text s!"pipeline failed: {e}"
+
+private def inliningOnly : Core.VerifyOptions :=
+  { Core.VerifyOptions.default with functionInlining := true }
+
+/-! At the phase's pipeline position, after `precondElim`, the precondition is
+raised as its own obligation beside the goal. -/
+
+/--
+info: assert_a1_calls_bump_0: int.gt(b, 100)
+a1: int.ge(bump(a, b), 0)
+-/
+#guard_msgs in
+#eval assertsThroughPrecondElim (Core.corePipelinePhases (options := inliningOnly))
+
+/-! Supplied as a caller's prefix phase, ahead of `precondElim`, the call is gone
+before the obligation can be raised. -/
+
+/-- info: a1: int.ge(int.add(a, b), 0) -/
+#guard_msgs in
+#eval assertsThroughPrecondElim
+  (Core.corePipelinePhases (prefixPhases := [Core.functionInliningPipelinePhase]))
+
+/-! No caller can use that ordering, though: the pipeline validator refuses it. -/
+
+/-- info: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+#guard_msgs in
+#eval match Core.coreValidatedPipeline [Core.functionInliningPipelinePhase] with
+      | .ok _ => Std.Format.text "accepted"
+      | .error e => Std.Format.text e
 
 end FunctionInliningTests
