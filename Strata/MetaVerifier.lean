@@ -324,8 +324,13 @@ instance : ToExpr (Std.HashSet String) where
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
   match translateQuery ctx.toCore ts t with
   | .error e =>
-    logInfo m!"Error translating query"
-    throwError e
+    -- Name the VC: the tactic must not drop an obligation it cannot state in
+    -- Lean (that would weaken the bridge axiom's premise), so it fails, and the
+    -- user should learn which obligation and why. A common cause is a datatype
+    -- sort in the query: the bridge introduces uninterpreted sorts and
+    -- functions but does not yet declare datatypes; the SMT path still checks
+    -- such VCs.
+    throwError m!"gen_smt_vcs: cannot translate verification condition '{label}' to a Lean goal: {e}"
   | .ok e =>
     trace[debug] "e := {e}"
     Meta.check e
