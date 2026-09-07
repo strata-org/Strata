@@ -10,6 +10,7 @@ public import StrataLaurel.Implementation.MapStmtExpr
 public import StrataLaurel.Implementation.Resolution
 import all StrataLaurel.Implementation.Resolution
 import all StrataLaurel.Implementation.MapStmtExpr
+public import StrataLaurel.Implementation.LaurelASTProps
 
 /-! # Resolution Properties
 
@@ -631,14 +632,20 @@ def CleanThrowsOnBlock (blk : ThrowsOnBlock) : Prop :=
   (∀ e ∈ blk.modifies, Clean e)
 
 /-- Procedure-level: everything `mapProcedureM` walks in the RESOLVED procedure
-    is Clean. Stated via the fields the validator's walk reads. -/
+    is Clean. Stated via the fields the validator's walk reads.
+
+    The last two components are the coroutine `relies`/`guarantees` clauses,
+    which `mapProcedureM` walks like any other condition (they are `[]` for a
+    regular procedure, so the obligation is vacuous there). -/
 def CleanProcFields (proc : Procedure) : Prop :=
   (∀ p ∈ proc.preconditions, Clean p.condition) ∧
   (∀ e ∈ proc.decreases, Clean e) ∧
   CleanBody proc.body ∧
   (∀ e ∈ proc.invokeOn, Clean e) ∧
   (∀ e ∈ proc.axioms, Clean e) ∧
-  (∀ blk ∈ proc.throwsOn, CleanThrowsOnBlock blk)
+  (∀ blk ∈ proc.throwsOn, CleanThrowsOnBlock blk) ∧
+  (∀ c ∈ proc.relies, Clean c.condition) ∧
+  (∀ c ∈ proc.guarantees, Clean c.condition)
 
 include masterSynth masterCheck in
 /-- The exceptional contract resolves to clean cases. A case's guard and each of its
@@ -693,10 +700,18 @@ theorem resolveProcedure_clean (proc : Procedure) :
         condition_mapM_clean c _
           (fun e => masterCheck e { val := .TBool, source := e.source })))
       fun pres' hpres => ?_
-    -- Coroutine `relies`/`guarantees` clauses (empty for a regular procedure)
-    -- are also untracked by `CleanProcFields`, so skip them too.
-    refine postM_bind_any fun relies' => ?_
-    refine postM_bind_any fun guarantees' => ?_
+    -- Coroutine `relies`/`guarantees` clauses (empty for a regular procedure) are
+    -- checked against `bool` by the same `resolveBoolCond` as the preconditions,
+    -- so they come back Clean by the same argument. `mapProcedureM` walks them,
+    -- so `CleanProcFields` tracks them.
+    refine postM_bind (postM_mapM _ _ (fun c _ =>
+        condition_mapM_clean c _
+          (fun e => masterCheck e { val := .TBool, source := e.source })))
+      fun relies' hrelies => ?_
+    refine postM_bind (postM_mapM _ _ (fun c _ =>
+        condition_mapM_clean c _
+          (fun e => masterCheck e { val := .TBool, source := e.source })))
+      fun guarantees' hguarantees => ?_
     refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
       fun dec' hdec => ?_
     refine postM_bind_any fun savedAnswer => ?_
@@ -719,7 +734,9 @@ theorem resolveProcedure_clean (proc : Procedure) :
     -- yields no expression, so neither adds a component to `CleanProcFields`.
     refine postM_bind_any fun _ => ?_
     refine postM_bind_any fun _ => ?_
-    exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
+    exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc,
+      fun c hc => hrelies c (mem_relies_withClauses _ _ _ _ _ hc),
+      fun c hc => hguarantees c (mem_guarantees_withClauses _ _ _ _ _ hc)⟩
 
 /-! Bridge: `CleanProcFields proc` implies the validator's per-procedure walk
     emits nothing. The walk is `mapProcedureM` in `StateM (List Message)`
@@ -815,13 +832,28 @@ theorem bodiesM_spec_fields (proc : Procedure) :
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
         p1.axioms = proc.axioms ∧
-        p1.throwsOn = proc.throwsOn) := by
+        p1.throwsOn = proc.throwsOn ∧
+        p1.contracts = proc.contracts) := by
   unfold mapProcedureBodiesM
   split
   all_goals
     repeat' first
-      | exact postS_pure ⟨rfl, rfl, rfl, rfl, rfl⟩
+      | exact postS_pure ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
       | (apply postS_bind_any; intro _)
+
+/-- `mapProcedureSpecificationsWithM` does not touch the coroutine clauses;
+    `mapProcedureM` walks them in a phase of its own afterwards. -/
+theorem specsM_contracts (proc : Procedure) :
+    PostS (δ := Message)
+      (mapProcedureSpecificationsWithM (m := StateM (List Message))
+        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
+        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
+        proc)
+      (fun p2 => p2.contracts = proc.contracts) := by
+  unfold mapProcedureSpecificationsWithM
+  repeat' first
+    | exact postS_pure rfl
+    | (apply postS_bind_any; intro _)
 
 open CollectEmits in
 /-- The validator's visitor keeps the state exactly when the tree is Clean. -/
@@ -837,17 +869,19 @@ theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
 open CollectEmits in
 theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
     procWalk proc = [] := by
-  obtain ⟨hpre, hdec, hbody, hinv, hax, hthrows⟩ := h
+  obtain ⟨hpre, hdec, hbody, hinv, hax, hthrows, hrel, hguar⟩ := h
   have hwalk : KeepsState (δ := Message)
       (mapProcedureM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) proc) := by
     unfold mapProcedureM mapProcedureBodiesM
-    -- Body first (mapProcedureBodiesM), then the five spec fields.
+    -- Body first (mapProcedureBodiesM), then the five spec fields, then the
+    -- coroutine clauses.
     apply keeps_bind_post (Q := fun p1 => p1.preconditions = proc.preconditions ∧
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
         p1.axioms = proc.axioms ∧
-        p1.throwsOn = proc.throwsOn)
+        p1.throwsOn = proc.throwsOn ∧
+        p1.contracts = proc.contracts)
       (hq := bodiesM_spec_fields proc)
     · -- mapProcedureBodiesM: match on proc.body
       rcases hb : proc.body with b | ⟨posts, impl, mods⟩ | posts | _
@@ -875,7 +909,10 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
         exact keeps_pure _
       · exact keeps_pure _
     · intro proc1 hfields
-      obtain ⟨hf1, hf2, hf3, hf4, hf5⟩ := hfields
+      obtain ⟨hf1, hf2, hf3, hf4, hf5, hf6⟩ := hfields
+      unfold mapProcedureSpecificationsWithCoroutineM' mapProcedureSpecificationsWithCoroutineM
+      apply keeps_bind_post (Q := fun p2 => p2.contracts = proc1.contracts)
+        (hq := specsM_contracts proc1)
       apply keeps_bind (keeps_mapM _ _ (fun c hc =>
         keeps_condition_mapM c _ (keeps_visitor _ (hpre c (hf1 ▸ hc)))))
       intro pres'
@@ -902,6 +939,20 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hm e he)))
       intro mods'
       exact keeps_pure _
+      -- Second goal of the inner `keeps_bind_post`: the coroutine clauses, which
+      -- `mapProcedureM` walks after the plain specification fields.
+      intro proc2 hcon
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hrel c (by
+          simp only [Procedure.relies, hcon, hf6] at hc
+          simpa [Procedure.relies] using hc)))))
+      intro relies'
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hguar c (by
+          simp only [Procedure.guarantees, hcon, hf6] at hc
+          simpa [Procedure.guarantees] using hc)))))
+      intro guarantees'
+      exact keeps_pure _
   have := hwalk []
   unfold procWalk
   simpa [StateT.run] using this
@@ -922,6 +973,16 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
       condition_mapM_clean c _
         (fun e => masterCheck e { val := .TBool, source := e.source })))
     fun pres' hpres => ?_
+  -- Same boolean check as the preconditions, so the clauses come back Clean by the
+  -- same argument; `withClauses` then puts them where `mapProcedureM` walks.
+  refine postM_bind (postM_mapM _ _ (fun c _ =>
+      condition_mapM_clean c _
+        (fun e => masterCheck e { val := .TBool, source := e.source })))
+    fun relies' hrelies => ?_
+  refine postM_bind (postM_mapM _ _ (fun c _ =>
+      condition_mapM_clean c _
+        (fun e => masterCheck e { val := .TBool, source := e.source })))
+    fun guarantees' hguarantees => ?_
   refine postM_bind (postM_option_mapM _ _ (fun e => resolveStmtExpr_clean masterSynth e))
     fun dec' hdec => ?_
   refine postM_bind_any fun savedAnswer => ?_
@@ -944,7 +1005,9 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
   -- yields no expression, so neither adds a component to `CleanProcFields`.
   refine postM_bind_any fun _ => ?_
   refine postM_bind_any fun _ => ?_
-  exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc⟩
+  exact postM_pure ⟨hpres, hdec, hbody, hinv, hax, hexc,
+    fun c hc => hrelies c (mem_relies_withClauses _ _ _ _ _ hc),
+    fun c hc => hguarantees c (mem_guarantees_withClauses _ _ _ _ _ hc)⟩
 
 /-- Cleanliness of a resolved type definition, matching what the validator walks. -/
 def CleanTypeDef (td : TypeDefinition) : Prop :=

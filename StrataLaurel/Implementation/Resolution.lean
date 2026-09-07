@@ -4413,6 +4413,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- coerces; the resolver owns it.
     let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
+    -- The coroutine clauses go through the same boolean check as the preconditions,
+    -- rather than trusting that a method never has any. `withClauses` drops them on
+    -- a `.Regular` contract, so this is a no-op for every method the grammar can
+    -- write, and nothing downstream can see an unresolved condition if one appears.
+    let relies' ← proc.relies.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
+    let guarantees' ← proc.guarantees.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -4427,9 +4435,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- `GlobalParameterization` both identify globals by id, not by text.
     let readsGlobals' ← proc.readsGlobals.mapM (resolveRef ·)
     let writesGlobals' ← proc.writesGlobals.mapM (resolveRef ·)
-    -- No `contracts` here, unlike the static case: an instance procedure's contracts are always
-    -- `.Regular` — a coroutine cannot be a method — so the value inherited from `proc` is correct.
+    -- An instance procedure's contracts are always `.Regular` — a coroutine cannot be a
+    -- method — so `withClauses` reduces to the value inherited from `proc`. Threading the
+    -- resolved clauses through it keeps that an observation rather than an assumption; the
+    -- channel bindings need no scope of their own for the same reason.
     return { proc with
+             contracts := proc.contracts.withClauses relies' guarantees' proc.yields proc.resumes,
              name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn', axioms := axioms',
@@ -5518,8 +5529,16 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
       -- already handled above), matching `PushOldInward`'s pre-order handling.
       pure (some n)
     | _ => pure none
-  (mapProcedureM (m := StateM (List Message))
-    (fun e => mapStmtExprPrePostM visit pure e) proc |>.run []).2
+  -- Body and specification fields only: deliberately *not* a coroutine's
+  -- `relies`/`guarantees` (which `mapProcedureM` walks). In those clauses `old`
+  -- denotes the state at the previous suspension, which the caller may have
+  -- changed between yields, so "the enclosing procedure does not modify the heap"
+  -- is not a reason for it to have no effect.
+  ((do
+    let proc ← mapProcedureBodiesM (m := StateM (List Message))
+      (fun e => mapStmtExprPrePostM visit pure e) proc
+    mapProcedureSpecificationsM (m := StateM (List Message))
+      (fun e => mapStmtExprPrePostM visit pure e) proc) |>.run []).2
 
 /-- Diagnose no-op `old(...)` usage across a program. This is a property of the
     user's *source* program (it does not depend on the heap-parameterized form),
