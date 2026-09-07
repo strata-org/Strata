@@ -566,9 +566,16 @@ end -- public section
     and rewrite call sites to use the lifted names. -/
 public def liftInstanceProceduresPass : LoweringPass where
   name := "LiftInstanceProcedures"
+  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  unsupported := [NodeKind.Pseudo.needsOverrideRules]
+  removes := [
+      NodeKind.CompositeType.instanceProcedures.cons,
+      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.This,
+      NodeKind.Pseudo.coroutineOverride
+    ]
   documentation := "Lifts every procedure declared inside a `composite` block to a top-level static procedure named `<CompositeName>$<methodName>` and rewrites call sites resolved to an instance procedure (including `obj#method(args)` surface syntax) to point at the lifted name. Clears `instanceProcedures` on every composite. Must run before HeapParameterization."
   needsResolves := true
   run := fun _ p m => let (p', diags) := liftInstanceProcedures m p; (p', diags, {})
-  comesBefore := [⟨ eliminateValueInReturnsPass.meta, "eliminateValueInReturns only applies to static methods, hence all instance methods must have been lifted before." ⟩]
 
 end Strata.Laurel

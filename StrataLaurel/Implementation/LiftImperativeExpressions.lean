@@ -547,7 +547,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       -- quantifier says rather than just making it harder to prove.
       --
       -- Nothing is left behind that needs lifting. `TransparencyPass` runs first
-      -- (see `liftImperativeExpressionsPass.comesBefore`) and rewrites every
+      -- (it removes `Pseudo.statementExpression`) and rewrites every
       -- quantifier body: `functionalize` removes its proof steps and calls
       -- become their `$asFunction` twins, so a body reaching this pass holds no
       -- assert, assume, or Core-procedure call. A proof procedure's steps are
@@ -797,6 +797,11 @@ def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
 
 public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
   name := "LiftImperativeExpressions"
+  creates := [NodeKind.StmtExpr.Var, NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.Block]
+  removes := [NodeKind.Pseudo.statementExpression]
+  -- Hoisting an imperative call out of a short-circuited operand would run it
+  -- unconditionally, so `DesugarShortCircuit` must have guarded those first.
+  unsupported := [NodeKind.Pseudo.imperativeShortCircuit]
   documentation := "Lifts assignments, assertions, assumptions and calls to a configurable list of procedures, that appear in expression contexts, to preceding statements. Lifting is necessary because Strata Core does not support assignments, assumes, asserts and calls to Core procedures within expressions. The pass introduces fresh temporary variables where needed. Lifting expressions that occur in conditional control flow that is also in an expression, can require duplicating some of that control flow. If we do not encode the heap before the lifting pass, we will need to lift any calls to heap mutating procedures, since they are implicitly mutating. The Laurel resolver should be able to tell us which procedures are heap mutating, so this is simple."
   needsResolves := true
   run := fun _ p m =>

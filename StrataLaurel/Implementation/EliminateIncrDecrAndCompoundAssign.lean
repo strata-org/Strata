@@ -130,6 +130,13 @@ def eliminateIncrDecrAndCompoundAssign (program : Program) : Program :=
 /-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
 public def eliminateIncrDecrAndCompoundAssignPass : LoweringPass where
   name := "EliminateIncrDecrAndCompoundAssign"
+  creates := [
+      NodeKind.StmtExpr.Assign,
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Block,
+      NodeKind.StmtExpr.Var
+    ]
+  removes := [NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign]
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
   run := fun _ p _m => (eliminateIncrDecrAndCompoundAssign p, [], {})
 

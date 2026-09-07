@@ -79,6 +79,8 @@ def pushOldInward (program : Program) : Except String Program := do
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def pushOldInwardPass : LoweringPass where
   name := "PushOldInward"
+  creates := [NodeKind.StmtExpr.Old.value.Var.Local]
+  removes := [NodeKind.Pseudo.oldExpr]
   documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. No-op `old(...)` usage is diagnosed by Resolution."
   run := fun _ p _ =>
     match pushOldInward p with

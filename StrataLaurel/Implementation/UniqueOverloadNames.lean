@@ -73,14 +73,9 @@ private def uniqueOverloadNames (program : Program) (model : SemanticModel) : Pr
 
 public def uniqueOverloadNamesPass : LoweringPass where
   name := "UniqueOverloadNames"
+  removes := [NodeKind.Pseudo.overload]
   documentation := "Renames overloaded static procedures to unique names so downstream name-keyed passes don't see collisions."
   needsResolves := true
   run := fun _ p model => (uniqueOverloadNames p model, [], {})
-  comesBefore := [
-    ⟨ contractPass.meta, "ContractPass derives helper names ($pre/$post) from the procedure's text name, so overloaded names must be made unique first." ⟩,
-    ⟨ transparencyPass.meta, "TransparencyPass derives $asFunction twins from the procedure's text name, so overloaded names must be made unique first." ⟩]
-  comesAfter := [
-    ⟨ modifiesClausesTransformPass.meta, "This pass renames the overloaded operator wrappers ($add, $lt, …), so every pass that builds operator calls must run first — otherwise those calls name a procedure that no longer exists. HeapParameterization/ModifiesClauses build such calls; so does the coroutine lowering." ⟩,
-    ⟨ yieldElimPass.meta, "YieldElim emits operator calls ($le/$lt in the per-yield/heap-wf conditions); those overloaded wrappers must still exist when it runs, so this rename must come after." ⟩]
 
 end Strata.Laurel

@@ -1390,7 +1390,33 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
 
 public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
   name := "LaurelToCoreSchema"
-  comesBefore := []
+  creates := [NodeKind.Pseudo.core]
+  removes := [NodeKind.Pseudo.orderedDeclarations]
+  unsupported := [
+      NodeKind.StmtExpr.While.postTest.true,
+      NodeKind.StmtExpr.IncrDecr,
+      NodeKind.StmtExpr.CompoundAssign,
+      NodeKind.StmtExpr.Var.var.Field,
+      NodeKind.StmtExpr.PureFieldUpdate,
+      NodeKind.StmtExpr.IsType,
+      NodeKind.StmtExpr.AsType,
+      NodeKind.StmtExpr.New,
+      NodeKind.StmtExpr.Old.label?.some,
+      NodeKind.Pseudo.oldExpr,
+      NodeKind.StmtExpr.Throw,
+      NodeKind.StmtExpr.Try,
+      NodeKind.StmtExpr.Yield,
+      NodeKind.StmtExpr.Resume,
+      NodeKind.StmtExpr.HasNext,
+      NodeKind.StmtExpr.Hole.deterministic.true,
+      NodeKind.CompositeType.typeArgs.cons,
+      NodeKind.Pseudo.statementExpression,
+      NodeKind.Pseudo.unorderedDeclarations,
+      NodeKind.Pseudo.letExpr,
+      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.CompositeType.instanceProcedures.cons,
+      NodeKind.StmtExpr.This
+    ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
   - Laurel parameter definitions are translated to Core ones.

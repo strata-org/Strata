@@ -1007,6 +1007,11 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
 /-- Pipeline pass: monomorphize generic composites. -/
 def monomorphizeCompositesPass : LoweringPass where
   name := "MonomorphizeComposites"
+  creates := [NodeKind.TypeDefinition.Composite]
+  -- Only the generic composite *definitions* are gone program-wide. `HighType.Applied` and
+  -- `HighType.TVar` survive over generic datatypes and polymorphic procedures, which this
+  -- pass leaves alone, so neither can be declared here.
+  removes := [NodeKind.CompositeType.typeArgs.cons]
   needsResolves := true
   documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Runs before heap parameterization."
   run := fun _ p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})

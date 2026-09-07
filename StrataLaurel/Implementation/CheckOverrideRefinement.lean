@@ -235,6 +235,12 @@ public section
 
 def checkOverrideRefinementPass : LoweringPass where
   name := "CheckOverrideRefinement"
+  creates := [
+      NodeKind.Program.staticProcedures.cons,
+      NodeKind.StmtExpr.Assert,
+      NodeKind.StmtExpr.Assume
+    ]
+  removes := [NodeKind.Pseudo.needsOverrideRules]
   needsResolves := true
   run := fun _ p m => (checkOverrideRefinement m p, [], {})
   documentation := "For every composite method that overrides an ancestor method, emits synthetic checker procedures that verify behavioral subtyping: the override's precondition is no stronger than the parent's (Parent.pre ⇒ Child.pre) and its postcondition is no weaker (Child.post ⇒ Parent.post). A failing checker is a Liskov violation. Purely additive; runs before LiftInstanceProcedures. This is the soundness prerequisite for dynamic dispatch."

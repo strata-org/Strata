@@ -528,13 +528,18 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "Transparency"
+  creates := [
+      NodeKind.Pseudo.asFunctionTwin,
+      NodeKind.Condition.mode.Assume,
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.Pseudo.unorderedDeclarations
+    ]
+  removes := [NodeKind.Pseudo.laurelProgram]
+  unsupported := [NodeKind.Pseudo.overload]
   -- The quantifier proof-block rewrite introduces fresh declarations (the havoc
   -- variable and the `$proof_N` guard) with no `uniqueId`, so the pipeline must
   -- re-resolve after this pass to bind them.
   needsResolves := true
-  comesBefore := [
-    ⟨ orderingPass.meta, "The transparency pass creates functions, and ordering can only be done once the Core functions and procedures are known, so the ordering pass needs to come after the transparency one." ⟩,
-    ⟨ liftImperativeExpressionsPass.meta, "First, the transparency pass changes some or all calls to procedures into calls to functions. Only calls to procedures need to be lifted, so doing the lifting before the transparency pass would lift all calls, which is unnecessary. Lifting complicates the code so it's better not to do it if not necessary. Secondly, the lifting pass will lift all assertions and assumptions, but the transparency pass removes all assertions and assumptions from functions. If we would lift these before the transparency pass, you would see the remnants of that lifting even though no lifting was necessary for functions." ⟩]
   documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
 
 This pass has three modes:

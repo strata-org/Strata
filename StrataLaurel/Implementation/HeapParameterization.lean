@@ -874,16 +874,37 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
+  creates := [
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.Procedure.inputs.cons,
+      NodeKind.Pseudo.totalMap,
+      NodeKind.Pseudo.box,
+      NodeKind.Pseudo.heapVar,
+      NodeKind.Pseudo.oldExpr,
+      NodeKind.Pseudo.generatedReturn,
+      NodeKind.Pseudo.statementExpression,
+      NodeKind.Program.staticFields.cons
+    ]
+  removes := [
+      NodeKind.Pseudo.implicitHeap,
+      NodeKind.StmtExpr.Var.var.Field,
+      NodeKind.StmtExpr.PureFieldUpdate,
+      NodeKind.StmtExpr.Snapshot,
+      NodeKind.StmtExpr.Old.label?.some
+    ]
+  unsupported := [
+      NodeKind.CompositeType.typeArgs.cons,
+      NodeKind.TypeDefinition.Constrained,
+      NodeKind.StmtExpr.Throw,
+      NodeKind.StmtExpr.Try,
+      NodeKind.StmtExpr.Return.value.some
+    ]
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `TotalMap Composite (TotalMap Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with
     | .ok p' => (p', [], {})
     | .error e => (p, [Message.fromString s!"Internal error in HeapParameterization: {e}" .strataBug], {})
-  comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
-  comesBefore := [
-    ⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩,
-    ⟨ eliminateReturnStatementsPass.meta, "the heap parameterization pass introduces helper procedures that use return statements. This dependency could be eliminated if those helpers would assign to the output parameter directly."⟩]
 
 end Strata.Laurel
 
