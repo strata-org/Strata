@@ -28,8 +28,8 @@ argument. The expected output below pins which `assume`/`assert` statements
 appear for each mode at each site.
 
 A condition may rely on earlier ones to be well-formed, so each helper assumes
-the conditions that precede it: `$pre_i` assumes `requires` clauses `0 … i-1`,
-and every `$post_i` assumes all the preconditions.
+the conditions that precede it: `$pre_i` assumes `requires` clauses `0 … i-1`, and
+`$post_i` assumes all the preconditions plus `ensures` clauses `0 … i-1`.
 -/
 
 import StrataTest.Util.TestLaurel
@@ -98,6 +98,7 @@ procedure callee$post1(x: int, r$out: int): bool
   assume x > 0;
   assume x > 1;
   assume x > 2;
+  assume r$out > 0;
   $result := r$out > 1;
   exit $return
 }$return;
@@ -106,6 +107,8 @@ procedure callee$post2(x: int, r$out: int): bool
   assume x > 0;
   assume x > 1;
   assume x > 2;
+  assume r$out > 0;
+  assume r$out > 1;
   $result := r$out > 2;
   exit $return
 }$return;

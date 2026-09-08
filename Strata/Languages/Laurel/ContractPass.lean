@@ -146,17 +146,26 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
     helper (only outputs are suffixed) and cannot contain `old(...)`, so they are
     assumed without the output-renaming applied to the postcondition body.
 
+    `precedingPosts` are the `ensures` clauses before this one, assumed for the same
+    reason: `ensures r != 0` followed by `ensures 10 / r > 1` makes the second clause
+    well-formed only given the first. They do mention outputs, so they are renamed
+    like the condition.
+
     `typeArgs` carries the source procedure's type parameters so a postcondition
     on a polymorphic procedure binds `T` (see `mkConditionProc`). -/
 private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
     (inputs outputs : List Parameter)
-    (preconditions : List Condition) (condition : Condition) : Procedure :=
+    (preconditions precedingPosts : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
   let postExpr := renameOutputsInPostExpr outputNames condition.condition
   let resultName := mkId "$result"
   let preAssumes : List StmtExprMd :=
     preconditions.map fun c => ⟨.Assume c.condition, c.condition.source⟩
+  let postAssumes : List StmtExprMd :=
+    precedingPosts.map fun c =>
+      let e := renameOutputsInPostExpr outputNames c.condition
+      ⟨.Assume e, e.source⟩
   -- The helper is a procedure, so its body assigns the postcondition to the
   -- `$result` output. The preconditions are assumed first so the postcondition's
   -- well-formedness may rely on them; those assumes are erased when
@@ -173,7 +182,8 @@ private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
   -- destructive assignment.
   let exitReturn : StmtExprMd := ⟨.Exit "$return", postExpr.source⟩
   let body : StmtExprMd :=
-    ⟨.Block (preAssumes ++ [assignResult, exitReturn]) (some "$return"), postExpr.source⟩
+    ⟨.Block (preAssumes ++ postAssumes ++ [assignResult, exitReturn]) (some "$return"),
+     postExpr.source⟩
   { name := mkId name
     typeArgs := typeArgs
     inputs := inputs ++ renamedOutputs
@@ -480,7 +490,8 @@ private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap
   let postProcs ← proc.body.postconditions.zipIdx.mapM fun (c, i) => do
     let condition' ← rw c.condition
     pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.typeArgs proc.inputs
-      proc.outputs proc.preconditions { c with condition := condition' })
+      proc.outputs proc.preconditions (proc.body.postconditions.take i)
+      { c with condition := condition' })
   return preProcs ++ postProcs
 
 /-- Conjoin a list of conditions into a single expression with `&&`. -/

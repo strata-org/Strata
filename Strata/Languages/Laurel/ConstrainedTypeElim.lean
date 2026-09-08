@@ -203,22 +203,24 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     if outputEnsures.isEmpty then .Transparent body
     else
       .Opaque outputEnsures (some body) []
+  -- Output type-constraints go FIRST, before the user's own `ensures`. The order
+  -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
+  -- postcondition is well-formed given its outputs' type constraints --
+  -- `returns (r: nonzero)` with `ensures 10 / r > 1` needs `r != 0`. Appended
+  -- instead, the constraint would come too late to be assumed.
   | .Opaque postconds impl modif =>
     let impl' := impl.map (elimStmts ptMap model)
-    .Opaque (postconds ++ outputEnsures) impl' modif
-  | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
+    .Opaque (outputEnsures ++ postconds) impl' modif
+  | .Abstract postconds => .Abstract (outputEnsures ++ postconds)
   | .External => .External
   let resolve := mapStmtExpr (resolveExprNode ptMap)
   let proc := { proc with
     body := body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    -- Prepend the generated input type-constraint requires. This is a
-    -- semantics-preserving normalization, not a verification change: each
-    -- precondition lowers to its own `$preN` helper (ContractPass), so the
-    -- assume block at the callee body start and the independent asserts at
-    -- call sites do not depend on this order. Kept constraints-first for
-    -- readability.
+    -- Prepend the generated input type-constraint requires, for the same ordering
+    -- reason as `outputEnsures` above: `$pre_i` sees the `requires` clauses before
+    -- it, so `(x: nonzero)` with `requires 10 / x > 1` needs `x != 0`.
     preconditions := inputRequires ++ proc.preconditions }
   mapProcedureM (m := Id) resolve proc
 

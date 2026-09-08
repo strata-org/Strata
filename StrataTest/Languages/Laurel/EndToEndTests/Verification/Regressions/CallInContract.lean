@@ -90,6 +90,43 @@ procedure conjunctionGuardInRequires(x: int) returns (r: int)
   r := 0
 };
 
+procedure precedingEnsuresDischarges() returns (r: int)
+  opaque
+  ensures r != 0
+  ensures 10 / r > 1
+{
+  r := 5
+};
+
+procedure unguardedDivisionInEnsures() returns (r: int)
+  opaque
+  ensures 10 / r > 1
+//        ^^^^^^ error: divisor is non-zero does not hold
+{
+  r := 5
+};
+
+// A type constraint on an output is an `ensures` too, emitted BEFORE the user's own
+// clauses, so a user postcondition may rely on it. `unguardedDivisionInEnsures` above
+// is the control: same clause, unconstrained output, and the division is rejected.
+constrained nonzero = x: int where x != 0 witness 1
+
+procedure outputConstraintDischargesEnsures() returns (r: nonzero)
+  opaque
+  ensures 10 / r > 1
+{
+  r := 5
+};
+
+// The input side, for symmetry: the constraint on `x` is a `requires` emitted before
+// the user's, and `unguardedDivisionInRequires` above is its control.
+procedure inputConstraintDischargesRequires(x: nonzero) returns (r: int)
+  requires 10 / x > 1
+  opaque
+{
+  r := 0
+};
+
 procedure ensuresDischargedByRequires(x: int) returns (r: int)
   requires x > 100
   opaque
