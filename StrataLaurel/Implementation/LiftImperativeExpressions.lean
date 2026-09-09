@@ -248,7 +248,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     (liftsAssertsAssumes : Bool := false) : Bool :=
   anyStmtExpr (fun e => match e.val with
     | .Assign .. | .IncrDecr .. | .CompoundAssign .. => true
-    | .StaticCall name _ => imperativeCallees.contains name.text
+    | .StaticCall name _ _ => imperativeCallees.contains name.text
     | .Assert .. | .Assume .. => liftsAssertsAssumes
     | _ => false) expr
 
@@ -352,11 +352,11 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
       return resultExpr
 
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
     let imperativeCallees := (← get).imperativeCallees
     if !imperativeCallees.contains callee.text then
       let seqArgs ← args.reverse.mapM transformExpr
-      let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
+      let seqCall := ⟨.StaticCall callee seqArgs.reverse tyArgs, source⟩
       return seqCall
     else
       let callResultVar ← freshTempVar
@@ -365,7 +365,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultType := stripTrailingErrors callResultTypeFull
 
       let prepends ← asLifted (transformStmtAssignImperativeCall
-        [⟨ .Declare ⟨callResultVar, some callResultType⟩, source⟩] callee args source source)
+        [⟨ .Declare ⟨callResultVar, some callResultType⟩, source⟩] callee args tyArgs source source)
       prependList prepends
       return ⟨.Var (.Local callResultVar), source⟩
 
@@ -597,11 +597,14 @@ def transformStmtAssignImperativeCall
     (targets : List (AstNode Variable))
     (callee: Identifier)
     (args: List StmtExprMd)
+    (typeArgs: List HighTypeMd)
     (source: FileRange)
     (callSource: FileRange): LiftM (List StmtExprMd) := do
   let seqArgs ← args.reverse.mapM transformExpr
   let argPrepends ← takePrepends
-  return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
+  -- `typeArgs` carried onto the rebuilt call: lifting reorders and renames arguments but does
+  -- not change the callee's instantiation.
+  return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse typeArgs, callSource⟩, source⟩]
   termination_by (sizeOf args, 0)
   decreasing_by
     all_goals try (apply Prod.Lex.right; omega)
@@ -650,10 +653,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       match _: valueMd with
       | AstNode.mk value callSource =>
       match _: value with
-      | .StaticCall callee args =>
+      | .StaticCall callee args tyArgs =>
           let imperativeCallees := (← get).imperativeCallees
           if imperativeCallees.contains callee.text then
-            transformStmtAssignImperativeCall targets callee args source callSource
+            transformStmtAssignImperativeCall targets callee args tyArgs source callSource
           else
             let seqValue ← transformExpr valueMd
             let prepends ← takePrepends
@@ -707,7 +710,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       return condPrepends ++
         [⟨.While seqCond invs dec seqBody postTest, source⟩]
 
-  | .StaticCall name args =>
+  | .StaticCall name args tyArgs =>
       -- Right-to-left, like the expression-position `.StaticCall` arm: a snapshot
       -- created for an assignment argument must be visible to the arguments to its
       -- *left* in source order (those are the ones that have to read the old
@@ -720,7 +723,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       -- rewrite that statement's reads to the stale snapshot, so clear it here
       -- as every sibling statement arm does.
       modify fun s => { s with subst := {} }
-      return prepends ++ [⟨.StaticCall name seqArgs.reverse, source⟩]
+      return prepends ++ [⟨.StaticCall name seqArgs.reverse tyArgs, source⟩]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr

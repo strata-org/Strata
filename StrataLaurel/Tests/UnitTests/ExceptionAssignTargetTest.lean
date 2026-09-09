@@ -70,7 +70,7 @@ private def writerProc : Procedure :=
     preconditions := []
     decreases := none
     body := .Transparent (nn (.Assign
-      [⟨.Field (nn (.StaticCall (mkId "mk") [])) (mkId "x"), .unknown⟩]
+      [⟨.Field (nn (.StaticCall (mkId "mk") [] [])) (mkId "x"), .unknown⟩]
       (nn (.LiteralInt 1)))) }
 
 private def program : Program :=

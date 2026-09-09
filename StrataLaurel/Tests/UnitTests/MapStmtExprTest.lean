@@ -229,11 +229,11 @@ end ProcedureTraversalCoverage
 section ResultUseCoverage
 
 private def resultCall (name : String) : StmtExprMd :=
-  ⟨.StaticCall (mkId name) [], default⟩
+  ⟨.StaticCall (mkId name) [] [], default⟩
 
 private def exposeResultUsed (used : Bool) (node : StmtExprMd) : StmtExprMd :=
   match node.val with
-  | .StaticCall _ _ => ⟨.LiteralBool used, node.source⟩
+  | .StaticCall _ _ _ => ⟨.LiteralBool used, node.source⟩
   | _ => node
 
 private def assignedOperandIsIgnored : Bool :=
@@ -311,7 +311,7 @@ private def bindingForms : List (String × StmtExprMd) := [
   -- Assigning to an existing local binds nothing, which is the distinction `usedNames` restates
   -- for itself; and a form that binds nothing at all must stay silent.
   ("Assign/local",    testMd (.Assign [⟨.Local (mkId "l"), default⟩] (testMd (.LiteralInt 0)))),
-  ("StaticCall",      testMd (.StaticCall (mkId "f") []))
+  ("StaticCall",      testMd (.StaticCall (mkId "f") [] []))
 ]
 
 /--

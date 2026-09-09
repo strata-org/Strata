@@ -187,7 +187,10 @@ where
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
       laurelOp opName #[targetArg, stmtExprToArg rhs]
-    | .StaticCall callee args =>
+    -- The inferred `typeArgs` are DROPPED when printing: the grammar's `call` op has no
+    -- type-argument slot (unlike `new`), so there is nothing to print them as. Nothing is lost —
+    -- they are a resolution output, and re-resolving the printed program re-infers them.
+    | .StaticCall callee args _ =>
       -- A call to a built-in operator wrapper (`$add`, `$lt`, …) came from
       -- operator syntax, so print it back as an operator to round-trip.
       match Operation.ofProcName? callee.text, args with

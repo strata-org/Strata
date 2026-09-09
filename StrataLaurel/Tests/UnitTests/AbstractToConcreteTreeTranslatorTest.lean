@@ -655,7 +655,7 @@ private def resolvedMultiAssign : Program :=
         body := .Opaque []
           (some (node (.Block [
             node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
-              (node (.StaticCall (mkId "twoOut") [])))
+              (node (.StaticCall (mkId "twoOut") [] [])))
           ] none)))
           [] }
     ],

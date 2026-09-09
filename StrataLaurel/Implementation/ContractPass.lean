@@ -48,7 +48,7 @@ def postCondProcName (procName : String) (i : Nat) : String := s!"{procName}$pos
 
 /-- Build a call expression. -/
 private def mkCall (callee : String) (args : List StmtExprMd) (source : FileRange) : StmtExprMd :=
-  mkMd (.StaticCall (mkId callee) args) source
+  mkMd (.StaticCall (mkId callee) args []) source
 
 /-- Convert parameters to identifier expressions. -/
 private def paramsToArgs (params : List Parameter) (source : FileRange) : List StmtExprMd :=
@@ -366,6 +366,7 @@ private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprM
     | none => tempRef
 
 private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (args : List StmtExprMd)
+    (typeArgs : List HighTypeMd)
     (info : ContractInfo) (src : FileRange)
     : ContractM (List StmtExprMd) := do
   let (tempDecls, tempRefs) ← mkTempAssignments model args info.inputParams src
@@ -379,7 +380,11 @@ private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (arg
         outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
         outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
       let callWithOutputs : StmtExprMd :=
-        ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
+        -- `typeArgs` re-attached. Dropping it is not cosmetic here: this rebuilt call becomes the
+        -- last statement of the block that replaces the original expression, so `computeExprType`
+        -- reads its type when an ENCLOSING call's temp is typed — and without the instantiation it
+        -- reports the declared `Sequence T`, leaving the outer call's parameter un-inferable.
+        ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs typeArgs, src⟩, src⟩
       let assume := mkPostAssumes info tempRefs outputRefs src
       let retVal : List StmtExprMd := match outputRefs with
         | [single] => [single]
@@ -391,15 +396,16 @@ private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (arg
       -- takes only the inputs, so `outputArgs` is simply empty. Without this a
       -- lemma-style `procedure p(x) ensures ...`, called purely for its proof
       -- effect, would contribute nothing at its call site.
-      pure (⟨.StaticCall callee tempRefs, src⟩, mkPostAssumes info tempRefs [] src, [])
+      pure (⟨.StaticCall callee tempRefs typeArgs, src⟩, mkPostAssumes info tempRefs [] src, [])
   return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
 
 private def rewriteAssignedCall (model : SemanticModel) (info : ContractInfo) (targets : List VariableMd)
+    (typeArgs : List HighTypeMd)
     (callee : Identifier) (args : List StmtExprMd) (src callSrc : FileRange)
     : ContractM (List StmtExprMd) := do
   let (tempDecls, tempRefs) ← mkTempAssignments model args info.inputParams src
   let callArgs := mkCallArgs info args tempRefs
-  let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
+  let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs typeArgs, callSrc⟩, src⟩
   let preCheck := mkPreChecks info tempRefs src
   let outputArgs := targets.filterMap fun t =>
     match t.val with
@@ -411,31 +417,31 @@ private def rewriteAssignedCall (model : SemanticModel) (info : ContractInfo) (t
 
 private def contractAssign? (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd)
-    : Option (ContractInfo × List VariableMd × Identifier × List StmtExprMd × FileRange) :=
+    : Option (ContractInfo × List VariableMd × Identifier × List StmtExprMd × List HighTypeMd × FileRange) :=
   match e.val with
-  | .Assign targets (.mk (.StaticCall callee args) callSrc) =>
-    (contractInfoMap.get? callee.text).map ((·, targets, callee, args, callSrc))
+  | .Assign targets (.mk (.StaticCall callee args tyArgs) callSrc) =>
+    (contractInfoMap.get? callee.text).map ((·, targets, callee, args, tyArgs, callSrc))
   | _ => none
 
 private def contractCall? (contractInfoMap : Std.HashMap String ContractInfo)
-    (e : StmtExprMd) : Option (ContractInfo × Identifier × List StmtExprMd) :=
+    (e : StmtExprMd) : Option (ContractInfo × Identifier × List StmtExprMd × List HighTypeMd) :=
   match e.val with
-  | .StaticCall callee args => (contractInfoMap.get? callee.text).map ((·, callee, args))
+  | .StaticCall callee args tyArgs => (contractInfoMap.get? callee.text).map ((·, callee, args, tyArgs))
   | _ => none
 
 private def rewriteContractAssign (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (rewriteArg : StmtExprMd → ContractM StmtExprMd) (e : StmtExprMd)
     : ContractM (Option (List StmtExprMd)) := do
-  let some (info, targets, callee, args, callSrc) := contractAssign? contractInfoMap e
+  let some (info, targets, callee, args, tyArgs, callSrc) := contractAssign? contractInfoMap e
     | return none
   let args' ← args.mapM rewriteArg
-  return some (← rewriteAssignedCall model info targets callee args' e.source callSrc)
+  return some (← rewriteAssignedCall model info targets tyArgs callee args' e.source callSrc)
 
 private def rewriteBareContractCall (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : ContractM (List StmtExprMd) := do
-  let some (info, callee, args) := contractCall? contractInfoMap e
+  let some (info, callee, args, tyArgs) := contractCall? contractInfoMap e
     | return [e]
-  rewriteStaticCall model callee args info e.source
+  rewriteStaticCall model callee args tyArgs info e.source
 
 /-- Rewrite call sites in a statement/expression tree.
 
@@ -503,7 +509,7 @@ private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap
 private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=
   match conds.map (·.condition) with
   | [] => none
-  | e :: rest => some (rest.foldl (fun acc x => mkMd (.StaticCall (mkId Operation.And.procName) [acc, x]) source) e)
+  | e :: rest => some (rest.foldl (fun acc x => mkMd (.StaticCall (mkId Operation.And.procName) [acc, x] []) source) e)
 
 /-- Build an axiom expression from `invokeOn` trigger and ensures clauses.
     Produces `∀ p1, ∀ p2, ..., ∀ pn :: { trigger } (preconds => ensures)`.
@@ -513,7 +519,7 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
   let src := trigger.source
   let ensures := (conjoin postconds src).getD (mkMd (.LiteralBool true) src)
   let body := match conjoin preconds src with
-    | some pre => mkMd (.StaticCall (mkId Operation.Implies.procName) [pre, ensures]) src
+    | some pre => mkMd (.StaticCall (mkId Operation.Implies.procName) [pre, ensures] []) src
     | none => ensures
   -- Wrap in nested Forall from last param (innermost) to first (outermost).
   -- The trigger is placed on the innermost quantifier.

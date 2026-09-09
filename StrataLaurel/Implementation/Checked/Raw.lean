@@ -47,7 +47,7 @@ def rawOfStmt {α : Ty} (val : StmtExpr) (source : FileRange := .unknown) : Expr
 
 /-- A static call `f(args…)`, tagged with the caller-chosen result type `α`. -/
 def rawCall {α : Ty} (f : String) (args : List (AstNode StmtExpr)) (source : FileRange := .unknown) : Expr α :=
-  rawOfStmt (.StaticCall (mkId f) args) source
+  rawOfStmt (.StaticCall (mkId f) args []) source
 
 /-- Reference a local/parameter by name as an `Expr`, tagged with the caller-chosen `α`. -/
 def rawLocalRef {α : Ty} (name : String) (source : FileRange := .unknown) : Expr α :=

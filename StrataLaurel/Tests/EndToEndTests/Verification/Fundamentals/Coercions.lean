@@ -106,7 +106,7 @@ private def intTruthinessToBool : Laurel.HighType → Laurel.StmtExprMd → Laur
     match ty with
     | .TInt =>
       let zero : Laurel.StmtExprMd := { val := .LiteralInt 0, source := e.source }
-      { val := .StaticCall (Laurel.mkId Laurel.Operation.Neq.procName) [e, zero], source := e.source }
+      { val := .StaticCall (Laurel.mkId Laurel.Operation.Neq.procName) [e, zero] [], source := e.source }
     | _ => e
 
 private def toBoolOptions : Laurel.LaurelVerifyOptions :=

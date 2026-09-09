@@ -72,7 +72,7 @@ private def collectGlobalNode (model : SemanticModel) (globals : Std.HashSet Nat
     (expr : StmtExprMd) : GlobalAnalysisM Unit :=
   match expr.val with
   | .Var (.Local name) => recordGlobalRef model globals name recordGlobalRead
-  | .StaticCall callee _ | .InstanceCall _ callee _ => recordCallee callee
+  | .StaticCall callee _ _ | .InstanceCall _ callee _ => recordCallee callee
   | .Assign targets _ =>
       targets.forM fun target => recordGlobalTarget model globals target recordGlobalWrite
   | .IncrDecr _ _ target | .CompoundAssign _ target _ =>

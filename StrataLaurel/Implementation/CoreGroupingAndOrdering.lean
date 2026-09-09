@@ -52,7 +52,7 @@ child nodes is handled by `collectStmtExprList`.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
   collectStmtExprList (fun e => match e.val with
-    | .StaticCall callee _ => [callee.text]
+    | .StaticCall callee _ _ => [callee.text]
     | _ => []) expr
 
 /--
