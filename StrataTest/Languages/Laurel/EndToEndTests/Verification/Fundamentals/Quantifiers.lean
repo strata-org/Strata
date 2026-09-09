@@ -591,3 +591,49 @@ procedure divisionInQuantifierBody()
   assert forall(x: int) => x > 0 ==> (x / x) == 1
 };
 #end
+
+/-! ### Contract-pass temporaries inside a quantifier *trigger*
+
+A trigger is the same spec position as the body, so a `requires`-bearing callee
+there gets the same contract-pass `assert`. Nothing lifts it out of the trigger,
+so the transparency pass has to strip it: without the trigger arm of
+`rewriteQuantifierBodiesM` these programs are rejected with "asserts are not YET
+supported in transparent bodies or contracts".
+
+`/` behind the `$div` wrapper is the shortest way to get a `requires` into a
+trigger. Its body divides too, so the body's own obligation is still raised and is
+discharged here by the `x != 0` guard — only the trigger's copy is stripped.
+
+`readsFirst` is the shape the boto3 PySpecs hit: a contracted procedure called in a
+trigger inside an `ensures`. Its callee appears *only* in the trigger, so it also
+pins down the deliberate consequence of stripping — a trigger guides instantiation
+and carries no truth obligation, so `headOf`'s `l > 0` raises none here. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+procedure G(x: int): int;
+
+procedure divisionInQuantifierTrigger()
+  opaque
+{
+  assume forall(x: int) { G(10 / x) } => x != 0 ==> G(10 / x) >= 0;
+  assert true
+};
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+procedure headOf(l: int) returns (v: int)
+  requires l > 0
+  opaque;
+
+procedure readsFirst(l: int) returns (r: bool)
+  opaque
+  ensures forall(i: int) { headOf(l) } => i == i
+{
+  r := true
+};
+#end

@@ -686,6 +686,76 @@ procedure testInnerDeclShadowsOuter()
 };
 #end
 
+-- Shadowing in a body that carries a proof step. The `assert` is what makes this a
+-- separate case from the two `innerDeclShadowsOuter*` cases above: it gives the procedure
+-- a procedural twin, so `functionalize` runs over the body, and a block holding a single
+-- statement keeps its wrapper so the inner `var x` stays in its own scope.
+--
+-- Core still rejects it, for the separate limitation `rewriteQuantifierBodiesM` documents:
+-- Laurel's resolution accepts shadowing by giving the declarations distinct `uniqueId`s,
+-- but Core keys its context on the name, and only the functional copy is alpha-converted
+-- (`alphaConvertLocals`) — which is why the assert-free cases above verify. When Laurel
+-- gains end-to-end shadowing support this becomes a clean `== 0` and the annotation goes.
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure innerDeclShadowsOuterWithProofStep() returns (r: int)
+{
+  var x: int := 0;
+  {
+    var x: int := 1
+//  ^^^^^^^^^^^^^^^ error: Variable x of type int already in context
+  };
+  assert 1 == 1;
+  return x
+};
+#end
+
+-- A transparent body whose statements are *all* proof steps, with a declared output whose
+-- type is not `bool`. Functionalizing deletes the proof steps, which empties the body, and
+-- an empty body is lowered to a hole of the declared type — so these verify. Substituting a
+-- `bool` in place of a deleted step instead would reject them with "Impossible to unify int
+-- with bool", which is what the pass used to do. Both `assert` and `assume` are covered
+-- because the pass treats them as one case, and a non-`int` output is covered because the
+-- old failure named the declared type, so `bool` alone would have passed either way.
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure proofStepOnlyBody() returns (r: int)
+{
+  assert true
+};
+
+procedure proofStepOnlyBodyAssume() returns (r: int)
+{
+  assume true
+};
+
+procedure proofStepOnlyBodyString() returns (r: string)
+{
+  assert true
+};
+#end
+
+-- An empty transparent body with a declared output. There are no proof steps to delete, so
+-- this pins the other half: functionalizing must leave the empty block alone rather than
+-- putting an expression there, since the pass that follows lowers it to a hole of the
+-- declared type. A `Block` arm that rewrote an emptied block would reject this.
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure emptyBodyWithOutput() returns (r: int)
+{
+};
+
+procedure emptyBodyWithOutputString() returns (r: string)
+{
+};
+#end
+
 -- The converse, which the renaming must *not* break: an `x := 1` inside a branch is an
 -- update of the outer `x`, not a new declaration, so it has to remain visible after the
 -- if. Substituting the continuation under the shadowing declaration is what propagates

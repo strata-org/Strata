@@ -482,8 +482,8 @@ private def unsupportedStmt (s : StmtExprMd) : String × MessageKind :=
       ("assignments to multiple targets are not YET supported in transparent bodies or contracts",
        .userError)
   -- The transparency pass strips asserts and assumes from a function copy
-  -- (`stripAssertAssume`) and rewrites calls into functional form
-  -- (`rewriteCallsToFunctional`), so none of these can be reached from a
+  -- and rewrites calls into functional form (`functionalize`), so none of these
+  -- can be reached from a
   -- well-ordered pipeline.
   | .Assert .. =>
     ("assert should have been stripped from the function copy by the transparency pass",

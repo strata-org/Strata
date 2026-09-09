@@ -548,7 +548,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       --
       -- Nothing is left behind that needs lifting. `TransparencyPass` runs first
       -- (see `liftImperativeExpressionsPass.comesBefore`) and rewrites every
-      -- quantifier body: `stripAssertAssume` removes its proof steps and calls
+      -- quantifier body: `functionalize` removes its proof steps and calls
       -- become their `$asFunction` twins, so a body reaching this pass holds no
       -- assert, assume, or Core-procedure call. A proof procedure's steps are
       -- moved by that pass into an ordinary `if $proof_N then { .. }` statement
