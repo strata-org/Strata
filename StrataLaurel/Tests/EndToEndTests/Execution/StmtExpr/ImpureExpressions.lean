@@ -57,6 +57,17 @@ procedure anotherConditionAssignmentInExpression(c: bool)
 //^^^^^^^^ error: assertion does not hold
 };
 
+// Both values, so the passing case is exercised too: at `false` the else-branch assigns
+// `true` and `z` holds; at `true` the then-branch assigns `false`, the if-expression
+// yields that `false`, and `|| b` reads the updated `b` -- which is what fails.
+procedure anotherConditionAssignmentInExpressionAtFalseAndTrue()
+  entry
+  opaque
+{
+  anotherConditionAssignmentInExpression(false);
+  anotherConditionAssignmentInExpression(true)
+};
+
 procedure blockWithTwoAssignmentsInExpression()
   entry
   opaque
@@ -162,6 +173,15 @@ procedure assertInsideConditionalExpression(a: int): int
 //    ^^^^^^^^^^^^ error: assertion does not hold
       5
     };
+
+// Both values, so the passing case is exercised too: `1` takes the else branch with
+// both asserts holding, `2` takes it and fails `a < 2`.
+procedure assertInsideConditionalExpressionAt1And2(): int
+  entry
+{
+  var held: int := assertInsideConditionalExpression(1);
+  return assertInsideConditionalExpression(2)
+};
 
 procedure assertInBlockExpr()
 entry

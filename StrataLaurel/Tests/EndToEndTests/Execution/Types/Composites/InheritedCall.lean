@@ -13,7 +13,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B {
@@ -35,7 +35,7 @@ procedure go(c: C)
 
 /-! ## 2. Deep chain: the method is two extends hops away. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite A2 {
@@ -61,7 +61,7 @@ procedure go(c: C2)
     REFINE B3's contract (Liskov behavioral subtyping): `r == 5` refines the
     weaker `r >= 0`, so the override is accepted and its own contract binds. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B3 {
@@ -93,7 +93,7 @@ procedure go(c: C3)
     C4.m `ensures r == 5` refines B4.m's weaker `ensures r >= 0` (Liskov), so B4's
     static contract still holds at the call site while the derived body runs. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B4 {
@@ -124,7 +124,7 @@ procedure go()
 /-! ## 5. Negative: no type in the chain declares the method — the diagnostic
     still names the RECEIVER type (C5$missing), not an ancestor. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B5 { }
@@ -148,7 +148,7 @@ procedure go(c: C5)
     other dispatch case holds a derived instance and takes an overrider branch;
     this is the one exercising the fallthrough + the guarded owner post. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B6 {
@@ -182,7 +182,7 @@ procedure go()
     fallthrough is non-vacuous (it does not leak the override's stronger post to
     a base-typed receiver) — the runtime-tag discrimination is real. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B6b {
@@ -216,7 +216,7 @@ procedure go()
     most-derived overrider wins across a multi-level chain, not the nearest
     declared ancestor. Each override refines its parent (6 ⊢ r>=1 ⊢ r>=0). -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite GP7 {
@@ -256,7 +256,7 @@ procedure go()
     B8-typed variable holding a C8b runs C8b's override (r == 7), NOT the sibling
     C8a's (r == 6) nor the base's — the runtime tag selects the correct branch. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite B8 {

@@ -9,7 +9,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 // Bitvector types in procedure signatures and variable declarations.

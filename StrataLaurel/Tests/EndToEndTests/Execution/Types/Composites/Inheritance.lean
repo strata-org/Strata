@@ -9,7 +9,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Base {
@@ -102,7 +102,7 @@ procedure diamondInheritance()
 -- type inherits them from two levels up, and a sibling tier is provably outside the
 -- catchable one. Only `extends` and `is` are exercised — no `throw`/`try` — so this
 -- belongs with inheritance rather than with the exception tests, which rely on it.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 

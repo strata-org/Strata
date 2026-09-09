@@ -46,7 +46,9 @@ composite Outermost {
 }
 
 procedure chainedReadWrite()
+  entry
   opaque
+  modifies *
 {
   var o: Outer := new Outer;
   var i: Inner := new Inner;
@@ -64,7 +66,9 @@ procedure chainedReadWrite()
 };
 
 procedure chainedReadAfterInnerAssign()
+  entry
   opaque
+  modifies *
 {
   var o: Outer := new Outer;
   var i: Inner := new Inner;
@@ -75,7 +79,9 @@ procedure chainedReadAfterInnerAssign()
 };
 
 procedure chainedAliasing()
+  entry
   opaque
+  modifies *
 {
   var o: Outer := new Outer;
   var i: Inner := new Inner;
@@ -89,7 +95,9 @@ procedure chainedAliasing()
 };
 
 procedure depth3ReadWrite()
+  entry
   opaque
+  modifies *
 {
   var a: Outermost := new Outermost;
   var b: Middle := new Middle;
@@ -104,7 +112,9 @@ procedure depth3ReadWrite()
 };
 
 procedure chainedReadOnBothSides()
+  entry
   opaque
+  modifies *
 {
   var o: Outer := new Outer;
   var p: Outer := new Outer;
@@ -122,7 +132,9 @@ procedure chainedReadOnBothSides()
 // because `fieldAccess` (prec 95) binds tighter than postfix `++`/`--` (prec 90),
 // and `leftassoc` lets the chain `o#inner#count` left-recurse.
 procedure chainedParenFreeIncrDecr()
+  entry
   opaque
+  modifies *
 {
   var o: Outer := new Outer;
   var i: Inner := new Inner;
@@ -137,6 +149,25 @@ procedure chainedParenFreeIncrDecr()
   assert o#inner#count == 11;
   assert y == 10
 };
+
+#end
+
+-- Verification only. `chainedReadUnconstrainedFails` and `chainedWriteIsolationFails`
+-- assert a value for a field that was never written; the initial heap is a hole, so that
+-- read leaves a residual `select` and the assert has no boolean value -- reported as
+-- "condition did not reduce to bool" rather than the "does not hold" pinned below.
+-- `chainedMayAliasFails` writes through the alias and would work as an entry on its own;
+-- it is here only because a block cannot mix entry and non-entry procedures.
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+composite Inner {
+  var count: int
+}
+
+composite Outer {
+  var inner: Inner
+}
 
 // Negative: an unconstrained chained field has no known value, so asserting a
 // concrete value must NOT be provable. Pins the chained read as non-vacuous.

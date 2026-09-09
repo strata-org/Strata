@@ -10,7 +10,7 @@ open Strata
 
 /-! CONTROL: a FALSE assertion with NO ambiguity verifies and FAILS -- the assert
     is actually checked when the program is not discarded. -/
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Base {
@@ -31,7 +31,7 @@ procedure go(o: Only)
     error prevents verification (program discarded), the assertion is NEVER checked,
     so only the ambiguity error fires. A false \"assert x == 999\" that produced no
     assertion failure here would otherwise be a silent unsound pass. -/
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite L {

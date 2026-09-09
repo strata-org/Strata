@@ -9,7 +9,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure assertAndAssumeInFunctions(a: int) returns (r: int)
@@ -53,7 +53,7 @@ An if-then-else followed by more statements is *not* an error: the continuation
 is duplicated into both branches. See `deadCodeAfterIfElse` in
 `Verification/Fundamentals/TransparentBody.lean`. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 

@@ -19,10 +19,11 @@ works around it for one case. These tests use the inline-annotation form instead
 failure's reported RANGE is part of the expectation and a drift in location fails the
 build.
 
-`testLaurelExecution {}`, not `testLaurelExecution { skipCoreInterpreter := false }`: a composite is a heap reference and the concrete
-interpreter does not model the heap, so only the verifier path applies here. The
-interpreter-covered half of the feature is the value-`T` procedure cases in
-`Procedures/PolyProcedure.lean`.
+Every case here is an `entry`, so each runs through both paths: the verifier, and the
+concrete interpreter reading and writing the same fields
+(`Core.Program.interpretMapsInFactory` reduces the heap's `select`/`update`). A
+monomorphization bug that crossed two clones' field ids would then have to survive
+both symbolic proof and concrete execution to go unnoticed.
 
 What monomorphization has to get right, and what each case pins:
 * one instantiation — the field's declared `T` becomes the concrete type at the clone;
@@ -42,7 +43,9 @@ program Laurel;
 composite Box<T> { var val: T }
 
 procedure oneInstantiation()
+  entry
   opaque
+  modifies *
 {
   var b: Box<int> := new Box<int>;
   b#val := 42;
@@ -58,7 +61,9 @@ program Laurel;
 composite Box<T> { var val: T }
 
 procedure oneInstantiationFalse()
+  entry
   opaque
+  modifies *
 {
   var b: Box<int> := new Box<int>;
   b#val := 42;
@@ -76,7 +81,9 @@ program Laurel;
 composite Box<T> { var val: T }
 
 procedure twoInstantiations()
+  entry
   opaque
+  modifies *
 {
   var bi: Box<int> := new Box<int>;
   var bb: Box<bool> := new Box<bool>;
@@ -95,7 +102,9 @@ program Laurel;
 composite Box<T> { var val: T }
 
 procedure twoInstantiationsFalse()
+  entry
   opaque
+  modifies *
 {
   var bi: Box<int> := new Box<int>;
   var bb: Box<bool> := new Box<bool>;
@@ -116,7 +125,9 @@ composite Pair<A, B> { var first: A
  var second: B }
 
 procedure twoTypeParams()
+  entry
   opaque
+  modifies *
 {
   var p: Pair<int, bool> := new Pair<int, bool>;
   p#first := 3;
@@ -135,7 +146,9 @@ composite Box<T> { var val: T }
 composite Plain { var n: int }
 
 procedure genericAndPlainCoexist()
+  entry
   opaque
+  modifies *
 {
   var b: Box<int> := new Box<int>;
   var q: Plain := new Plain;

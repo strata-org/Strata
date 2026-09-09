@@ -35,7 +35,7 @@ head, where the verifier cannot establish concrete reachability and falls back t
 `could not be proved`, which the interpret path's `does not hold` can never match
 (see the wording note on `testLaurelExecution`). -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure alwaysFails()

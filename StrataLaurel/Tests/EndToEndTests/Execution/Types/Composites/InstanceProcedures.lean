@@ -22,7 +22,7 @@ open Strata
 
 /-! ## 1. Basic instance method call: `c#reset()` -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Counter {
@@ -49,7 +49,7 @@ procedure useCounter()
     Without per-composite scoping, `tick` would collide in the global scope
     during pre-registration. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Counter {
@@ -93,7 +93,7 @@ procedure runClock()
 
 /-! ## 3. Method with multiple parameters: `c#setTo(v)` -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Cell {
@@ -119,7 +119,7 @@ procedure useCell(x: int)
 /-! ## 4. Boolean-typed field updated through an instance method, and read
     back via field access in the caller's `assert`. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Widget {
@@ -147,7 +147,7 @@ procedure useWidget()
     only `a`; the unused `b` parameter is included to confirm method
     dispatch picks the right receiver. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Counter {
@@ -174,7 +174,7 @@ procedure resetTwoCounters(a: Counter, b: Counter)
     confirms an extra (unused) method parameter doesn't break call
     dispatch or framing. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Account {
@@ -200,7 +200,7 @@ procedure useAccount()
 /-! ## 7. Instance method called through a field-selected receiver:
     `obj#field#method()`. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Inner {
@@ -225,7 +225,7 @@ procedure useOuter()
 
 /-! ## 8. Chained field read: `obj#field#x`. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Inner { var x: int }

@@ -21,7 +21,7 @@ diagnostic". (Other tests omit the flag and stay silent on success.) -/
 info: 32:16-23  error: call to 'f' expects 1 argument(s) but 2 were provided
 -/
 #guard_msgs in
-#eval testLaurelExecution {} (showLocations := true) <|
+#eval testLaurelExecution { skipCoreInterpreter := true } (showLocations := true) <|
 #strata
 program Laurel;
 procedure f(x: int): int { return x };
@@ -36,7 +36,7 @@ procedure caller()
 
 /-! ## Multi-return procedure assigned to single target -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure twoReturns() returns (a: int, b: int)

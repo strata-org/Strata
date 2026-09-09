@@ -30,7 +30,7 @@ never reaches) and live in
 `Verification/Fundamentals/LoopInvariantWellFormedness.lean`.
 -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure ordinaryLoopUnaffected() entry opaque {

@@ -25,7 +25,7 @@ rejection for file-scope globals inside resolution is pinned in `GlobalVarTests.
 /-! ### Declaration positions -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 type $alias = int
@@ -60,7 +60,7 @@ procedure withTypeParam<$T>(x: $T) opaque {
 /-! ### Binders inside a body -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure localBinder() opaque {
@@ -89,7 +89,7 @@ and in the `guarantees`/`relies` clauses — so they can shadow a generated name
 exactly as a parameter can. -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 coroutine emit() yields ($x: int)
@@ -101,7 +101,7 @@ coroutine emit() yields ($x: int)
 #end
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 coroutine take() resumes ($y: int)
@@ -114,7 +114,7 @@ coroutine take() resumes ($y: int)
 /-! ### A `throws` binding -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -126,7 +126,7 @@ procedure mayThrow() throws ($e: Err) opaque {
 /-! ### A block label -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure labelled() opaque {
@@ -170,7 +170,7 @@ A second output means the name cannot have come from the return-form desugaring,
 so the exemption does not apply. -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure twoOutputs(x: int) returns (a: int, $result: int) opaque {
@@ -186,7 +186,7 @@ The exemption is keyed on the name as well as on being the sole output, so a sol
 output with any other `$` name is still rejected. -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure soleOther(x: int) returns ($foo: int) opaque {
@@ -202,7 +202,7 @@ DDM's lexer accepts SMT-LIB pipe-delimited identifiers (`|any string|`) and Lean
 the reserved namespace. -/
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure |$piped|() opaque {
@@ -211,7 +211,7 @@ procedure |$piped|() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure «$quoted»() opaque {

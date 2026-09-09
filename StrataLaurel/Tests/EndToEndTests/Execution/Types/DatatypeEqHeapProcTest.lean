@@ -40,7 +40,9 @@ composite C { var x: int }
 datatype Pair { MkPair(a: int, b: int) }
 
 procedure cmp()
+  entry
   opaque
+  modifies *
 {
   var c: C := new C;
   var p1: Pair := MkPair(1, 2);
@@ -59,7 +61,9 @@ composite C { var x: int }
 datatype Pair { MkPair(a: int, b: int) }
 
 procedure cmp()
+  entry
   opaque
+  modifies *
 {
   var c: C := new C;
   var p1: Pair := MkPair(1, 2);

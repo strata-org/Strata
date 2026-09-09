@@ -9,7 +9,14 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+-- Verification only. `IntList..head`'s guard is a *function* precondition, which only
+-- the verifier turns into an obligation (`ObligationExtraction`); the concrete
+-- evaluator never checks one. Marking `unsafeDestructor` an `entry` therefore does not
+-- help: the interpreter reaches it, the destructor's `concreteEval` declines to reduce
+-- a `head` of `Nil`, and the call is simply left unevaluated with no diagnostic. So the
+-- safe and unsafe destructors are indistinguishable at runtime, and the annotation below
+-- can only fire under the verifier.
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 datatype IntList {
