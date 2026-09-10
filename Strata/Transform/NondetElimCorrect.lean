@@ -118,7 +118,7 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
       (Env.outcomeConfig oc ρt')) :
     StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
+               .ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρ)
       (Env.outcomeConfig oc ({ ρt' with
         store := projectStore (SemanticStore.update ρ.store ident (if b then HasBool.tt else HasBool.ff)) ρt'.store,
         factory := ρ.factory } : Env P)) := by
@@ -130,19 +130,19 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
   let ρg : Env P := { ρ with store := SemanticStore.update ρ.store ident v }
   have h1 : StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
+               .ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρ)
+      (.stmts [.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρg) :=
     stmts_cons_step P (EvalCmd P) extendFactory _ _ ρ ρg
       (step_init_havoc_to (extendFactory := extendFactory) ident HasBool.boolTy v md ρ h_none hval hwf_var)
-  have h_guard : P.eval ρg.factory ρg.store (HasFvar.mkFvar ident) = some v :=
-    eval_mkFvar_storeWith ρ.factory ρ.store ident v hval hwf_var hwf_mono
+  have h_guard : P.eval ρg.factory ρg.store (HasFvar.mkTypedFvar ident HasBool.boolTy) = some v :=
+    eval_mkTypedFvar_storeWith ρ.factory ρ.store ident v hval hwf_var hwf_mono
   have hwfb' : WellFormedSemanticEvalBool ρg.factory := hwfb
   have h_blk : StepStmtStar P (EvalCmd P) extendFactory
       (.block .none ρg.store ρg.factory (.stmts (if b then tss else ess) ρg))
       (Env.outcomeConfig oc ({ ρt' with store := projectStore ρg.store ρt'.store, factory := ρg.factory } : Env P)) :=
     blockT_none_build_outcome (extendFactory := extendFactory) _ ρg.store ρg.factory oc ρt' h_branch
   have h2 : StepStmtStar P (EvalCmd P) extendFactory
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg)
+      (.stmts [.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρg)
       (Env.outcomeConfig oc ({ ρt' with store := projectStore ρg.store ρt'.store, factory := ρg.factory } : Env P)) := by
     refine .step _ _ _ .step_stmts_cons ?_
     cases b with
@@ -200,7 +200,7 @@ theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     (hd : d.getEnv.hasFailure = true) :
     ∃ d', StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ) d'
+               .ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρ) d'
       ∧ d'.getEnv.hasFailure = true := by
   let v : P.Expr := if b then HasBool.tt else HasBool.ff
   have hval : HasVal.value ρ.factory v := by
@@ -210,12 +210,12 @@ theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Has
   let ρg : Env P := { ρ with store := SemanticStore.update ρ.store ident v }
   have h1 : StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
+               .ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρ)
+      (.stmts [.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md] ρg) :=
     stmts_cons_step P (EvalCmd P) extendFactory _ _ ρ ρg
       (step_init_havoc_to (extendFactory := extendFactory) ident HasBool.boolTy v md ρ h_none hval hwf_var)
-  have h_guard : P.eval ρg.factory ρg.store (HasFvar.mkFvar ident) = some v :=
-    eval_mkFvar_storeWith ρ.factory ρ.store ident v hval hwf_var hwf_mono
+  have h_guard : P.eval ρg.factory ρg.store (HasFvar.mkTypedFvar ident HasBool.boolTy) = some v :=
+    eval_mkTypedFvar_storeWith ρ.factory ρ.store ident v hval hwf_var hwf_mono
   -- The single-statement `.ite` scopes the chosen branch in a `.block .none`; run
   -- the branch inside that scope to the failing config `.block none ρg.store ρg.factory d`
   -- (a `.block`'s `getEnv` is its inner config's, so the failure flag is preserved).
@@ -225,13 +225,13 @@ theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     block_inner_star P (EvalCmd P) extendFactory _ _ .none ρg.store ρg.factory h_branch
   have hdblk : dblk.getEnv.hasFailure = true := by simpa only [dblk, Config.getEnv] using hd
   have h_ite : StepStmtStar P (EvalCmd P) extendFactory
-      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) dblk := by
+      (.stmt (.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md) ρg) dblk := by
     cases b with
     | true => exact .step _ _ _ (.step_ite_true h_guard hwfb) h_blk_run
     | false => exact .step _ _ _ (.step_ite_false h_guard hwfb) h_blk_run
   obtain ⟨d', h2, hd'⟩ :=
     stmt_to_singleton_stmts_fail (extendFactory := extendFactory)
-      (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg dblk h_ite hdblk
+      (.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md) ρg dblk h_ite hdblk
   exact ⟨d', ReflTrans_Transitive _ _ _ _ h1 h2, hd'⟩
 
 /-! ### ReflTransT decomposition helpers (for the loop fuel induction)
@@ -988,7 +988,7 @@ private theorem loop_nondet_exit_close_sa {P : PureExpr} [HasFvar P] [HasFvars P
     (∀ t, Q t →
         ρ'.store (HasIdent.ident (P := P) t) = none)
       ∧ ∃ ρ_out, StepStmtStar P (EvalCmd P) extendFactory
-          (.stmt (.loop (.det (HasFvar.mkFvar ident)) m inv
+          (.stmt (.loop (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) m inv
             (body' ++ [.cmd (HasHavoc.havoc ident md)]) md) ρ_tgt)
           (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
@@ -1007,9 +1007,9 @@ private theorem loop_nondet_exit_close_sa {P : PureExpr} [HasFvar P] [HasFvars P
       match hrest with
       | .refl _ => rfl
       | .step _ _ _ h _ => exact nomatch h
-    have h_guard_ff : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkFvar ident) = some HasBool.ff := by
+    have h_guard_ff : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkTypedFvar ident HasBool.boolTy) = some HasBool.ff := by
       rw [h_eval_eq]
-      exact eval_mkFvar_of_value ρ_src.factory ρ_tgt.store ident HasBool.ff
+      exact eval_mkTypedFvar_of_value ρ_src.factory ρ_tgt.store ident HasBool.ff
         (HasBool.boolIsVal ρ_src.factory).2 h_guard_def hwf.var hwf.mono
     subst hρ'_eq
     refine ⟨h_src_fresh, ρ_tgt, ?_, ?_, ?_, ?_, ?_⟩
@@ -1077,7 +1077,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
     (∀ t, Q t →
         ρ'.store (HasIdent.ident (P := P) t) = none)
       ∧ ∃ ρ_out, StepStmtStar P (EvalCmd P) extendFactory
-          (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+          (.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
             inv
             (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt)
           (Env.outcomeConfig oc ρ_out)
@@ -1107,11 +1107,11 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
         h_src_fresh h_tgt_fresh h_guard_def hrest
     · subst h_ent
       simp only [if_true] at h_guard_def
-      -- Guard reads tt in target (via mkFvar / h_guard_def).
-      have h_guard_tt : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkFvar (HasIdent.ident (P := P) g))
+      -- Guard reads tt in target (via mkTypedFvar / h_guard_def).
+      have h_guard_tt : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)
           = some HasBool.tt := by
         rw [h_eval_eq]
-        exact eval_mkFvar_of_value ρ_src.factory ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
+        exact eval_mkTypedFvar_of_value ρ_src.factory ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
           (HasBool.boolIsVal ρ_src.factory).1 h_guard_def hwf.var hwf.mono
       have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_eval_eq ▸ hwf.var
       cases oc with
@@ -1501,7 +1501,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_tgt.store ρ_tgt.factory h_body_tail) ?_
             exact .step _ _ _ StepStmt.step_block_done (.refl _)
           have h_loop_stmts_exit : StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+              (.stmts [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
                 inv
                 (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md] ρ_tgt_next)
               (.exiting lbl ρ_out) := by
@@ -2257,7 +2257,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         ((∀ t, Q t →
             ρ'.store (HasIdent.ident (P := P) t) = none)
           ∧ ∃ ρ_out, StepStmtStar P (EvalCmd P) extendFactory
-              (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+              (.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
                 inv
                 ((Block.nondetElimM body σ₁).1 ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md)
                 ({ ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) b } : Env P))
@@ -3401,7 +3401,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
             [.loop .nondet m inv body md]) a'),
         hrest.len ≤ n)) :
     ∃ d, StepStmtStar P (EvalCmd P) extendFactory
-        (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+        (.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
           inv
           (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt) d
       ∧ d.getEnv.hasFailure = true := by
@@ -3412,7 +3412,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
         reflTransT_from_terminal P extendFactory hrest
       rw [ha'_eq] at h_a'_fail
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
-      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+      exact ⟨.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
         inv
         (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
         by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
@@ -3425,7 +3425,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
       rw [ha'_eq] at h_a'_fail
       have : ρ_src.hasFailure = true := by
         simpa [Config.getEnv, Bool.or_false] using h_a'_fail
-      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+      exact ⟨.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
         inv
         (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
         by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
@@ -3435,24 +3435,24 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
         reflTransT_from_terminal P extendFactory hrest
       rw [ha'_eq] at h_a'_fail
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
-      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+      exact ⟨.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
         inv
         (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
         by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
     · subst h_ent
       simp only [if_true] at h_guard_def
-      have h_guard_tt : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkFvar (HasIdent.ident (P := P) g))
+      have h_guard_tt : P.eval ρ_tgt.factory ρ_tgt.store (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)
           = some HasBool.tt := by
         rw [h_eval_eq]
-        exact eval_mkFvar_of_value ρ_src.factory ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
+        exact eval_mkTypedFvar_of_value ρ_src.factory ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
           (HasBool.boolIsVal ρ_src.factory).1 h_guard_def hwf.var hwf.mono
       have h_step_enter : StepStmtStar P (EvalCmd P) extendFactory
-          (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+          (.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
             inv
             (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt)
           (.seq (.block .none ρ_tgt.store ρ_tgt.factory (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
             ρ_tgt))
-            [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m inv
+            [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m inv
               (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md]) :=
         .step _ _ _ (StepStmt.step_loop_enter
           h_guard_tt (h_eval_eq ▸ hwf.bool)) (.refl _)
@@ -3476,7 +3476,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
             (.block .none ρ_tgt.store ρ_tgt.factory d'') :=
           block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_tgt.store ρ_tgt.factory h_body_tail_fail
         refine ⟨.seq (.block .none ρ_tgt.store ρ_tgt.factory d'')
-          [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m inv
+          [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m inv
             (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md],
           ReflTrans_Transitive _ _ _ _ h_step_enter
             (seq_inner_star P (EvalCmd P) extendFactory _ _ _ h_blk_tgt), ?_⟩
@@ -3519,7 +3519,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
                     [.loop .nondet m inv body md]) d_loop),
                 hr.len ≤ n)) →
             ∃ d, StepStmtStar P (EvalCmd P) extendFactory
-                (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+                (.stmt (.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
                   inv
                   (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt) d
               ∧ d.getEnv.hasFailure = true := by
@@ -3591,7 +3591,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_tgt.store ρ_tgt.factory h_body_tail) ?_
             exact .step _ _ _ StepStmt.step_block_done (.refl _)
           have h_run_recurse_stmts : StepStmtStar P (EvalCmd P) extendFactory
-              (.stmts [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+              (.stmts [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m
                 inv
                 (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md] ρ_tgt_next)
               (.seq d ([] : List (Stmt P (Cmd P)))) :=
@@ -3624,7 +3624,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
               (.block .none ρ_tgt.store ρ_tgt.factory d'') :=
             block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_tgt.store ρ_tgt.factory h_body_tail_fail
           refine ⟨.seq (.block .none ρ_tgt.store ρ_tgt.factory d'')
-            [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m inv
+            [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m inv
               (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md],
             ReflTrans_Transitive _ _ _ _ h_step_enter
               (seq_inner_star P (EvalCmd P) extendFactory _ _ _ h_blk_tgt), ?_⟩

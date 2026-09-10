@@ -487,7 +487,7 @@ private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOption
     : IO (Except Message VCResults) := do
   let verifyOptions := effectiveCoreVerifyOptions options
   let runner tempDir : IO (Except Message VCResults) :=
-    (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
+    (_root_.Core.verify coreProgram tempDir verifyOptions).toBaseIO
   match verifyOptions.vcDirectory with
   | .none => IO.FS.withTempDir runner
   | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩

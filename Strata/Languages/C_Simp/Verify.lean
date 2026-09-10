@@ -195,7 +195,7 @@ def C_Simp.verify (p : StrataDDM.Program)
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
-    (_root_.Core.verify (to_core program) tempDir .none options (mkDischarge := mkDischarge))
+    (_root_.Core.verify (to_core program) tempDir options (mkDischarge := mkDischarge))
   match tempDir with
   | .none =>
     IO.FS.withTempDir runner

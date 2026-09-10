@@ -221,6 +221,10 @@ structure VerifyOptions where
       for quantified spec lemmas). Intended for local experimentation on the
       local solver invocation only. -/
   solverOptions : Array (String × String) := #[]
+  /-- When set, verify only these procedures: the pipeline's `filterProcedures`
+      phases restrict the program to them and to the obligation procedures
+      generated for them. An empty list verifies nothing. -/
+  proceduresToVerify : Option (List String) := none
   /-- When set, the program state after each pipeline phase is written to
       `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
       `--keep-all-files <dir>`, where the CLI derives the prefix as

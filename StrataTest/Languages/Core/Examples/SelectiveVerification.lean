@@ -73,8 +73,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify selectiveVerificationPgm
-        (options := .quiet)
-        (proceduresToVerify := (some ["MainProc"]))
+        (options := { Core.VerifyOptions.quiet with proceduresToVerify := some ["MainProc"] })
 
 --------- Verify all procedures (default behavior)
 
@@ -117,8 +116,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify selectiveVerificationPgm
-        (options := .quiet)
-        (proceduresToVerify := ["IndependentProc"])
+        (options := { Core.VerifyOptions.quiet with proceduresToVerify := ["IndependentProc"] })
 
 ---------- Verify multiple specific procedures
 
@@ -134,8 +132,8 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify selectiveVerificationPgm
-          (options := .quiet)
-          (proceduresToVerify := (some ["IndependentProc", "UnusedProc"]))
+          (options := { Core.VerifyOptions.quiet with
+                        proceduresToVerify := some ["IndependentProc", "UnusedProc"] })
 
 ---------------------------------------------------------------------
 

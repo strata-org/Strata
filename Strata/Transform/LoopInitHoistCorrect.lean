@@ -5988,20 +5988,20 @@ and the two hoist exit-coverage mutuals. -/
 section NondetElimShapeFree
 
 /-- The freshly generated ndelim guard ident is `∉ getVars` of any `Q`-foreign
-read-var slot: the only read is `mkFvar ident` whose vars ⊆ `[ident]` and `ident`
-carries the ndelim kind, foreign to `Q`. -/
+read-var slot: the only read is the guard variable, whose vars ⊆ `[ident]`, and
+`ident` carries the ndelim kind, foreign to `Q`. -/
 private theorem ndelim_guard_fresh {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
-    (pf : String) (σ : StringGenState)
+    (pf : String) (σ : StringGenState) (ty : P.Ty)
     (hforeign : ¬ Q (StringGenState.gen pf σ).1) :
     ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉
         HasFvars.getFvars (P := P)
-          (HasFvar.mkFvar (HasIdent.ident (P := P) (StringGenState.gen pf σ).1)) := by
+          (HasFvar.mkTypedFvar (HasIdent.ident (P := P) (StringGenState.gen pf σ).1) ty) := by
   intro str hQ hmem
   have hin : HasIdent.ident (P := P) str ∈
       [HasIdent.ident (P := P) (StringGenState.gen pf σ).1] :=
-    LawfulHasFvars.mkFvar_getFvars (P := P) _ hmem
+    LawfulHasFvars.mkTypedFvar_getFvars (P := P) _ ty hmem
   rw [List.mem_singleton] at hin
   exact hforeign (LawfulHasIdent.ident_inj hin ▸ hQ)
 
@@ -6054,7 +6054,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       rw [Block.exprsShapeFree_cons_iff]
       refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton, Stmt.exprsShapeFree_ite]
-      refine ⟨ndelim_guard_fresh ndelimItePrefix σ (hfi σ),
+      refine ⟨ndelim_guard_fresh ndelimItePrefix σ HasBool.boolTy (hfi σ),
               Block.nondetElimM_exprsShapeFree hfi hfl tss _ h.2.1,
               Block.nondetElimM_exprsShapeFree hfi hfl ess _ h.2.2⟩
   | .loop (.det e) m inv body md =>
@@ -6070,9 +6070,9 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton]
       refine loop_sf_transport .nondet
-        (.det (HasFvar.mkFvar (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)))
+        (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1) HasBool.boolTy))
         m inv body _ md h
-        (ndelim_guard_fresh ndelimLoopPrefix σ (hfl σ)) ?_
+        (ndelim_guard_fresh ndelimLoopPrefix σ HasBool.boolTy (hfl σ)) ?_
       refine Block.exprsShapeFree_append _ _
         ⟨Block.nondetElimM_exprsShapeFree hfi hfl body _ hbody, ?_⟩
       exact Block.exprsShapeFree_singleton.mpr (Stmt.exprsShapeFree_cmd_havoc _ _)

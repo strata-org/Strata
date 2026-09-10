@@ -422,6 +422,14 @@ private def assertsThroughPrecondElim (phases : List Core.PipelinePhase) : Std.F
 private def inliningOnly : Core.VerifyOptions :=
   { Core.VerifyOptions.default with functionInlining := true }
 
+/-- The default order with function inlining spliced directly after the entry
+    assertion, which is the earliest a caller can place it. -/
+private def inliningSplicedEarly : List Core.PipelinePhase :=
+  match Core.splicePhasesAfter "assertNoCFGBodies" [Core.functionInliningPipelinePhase]
+          Core.corePipelinePhases with
+  | .ok phases => phases
+  | .error _ => []
+
 /-! At the phase's pipeline position, after `precondElim`, the precondition is
 raised as its own obligation beside the goal. -/
 
@@ -432,19 +440,18 @@ a1: int.ge(bump(a, b), 0)
 #guard_msgs in
 #eval assertsThroughPrecondElim (Core.corePipelinePhases (options := inliningOnly))
 
-/-! Supplied as a caller's prefix phase, ahead of `precondElim`, the call is gone
-before the obligation can be raised. -/
+/-! Spliced in ahead of `precondElim` instead, the call is gone before the
+obligation can be raised. -/
 
 /-- info: a1: int.ge(int.add(a, b), 0) -/
 #guard_msgs in
-#eval assertsThroughPrecondElim
-  (Core.corePipelinePhases (prefixPhases := [Core.functionInliningPipelinePhase]))
+#eval assertsThroughPrecondElim inliningSplicedEarly
 
-/-! No caller can use that ordering, though: the pipeline validator refuses it. -/
+/-! No caller can run that ordering, though: the pipeline validator refuses it. -/
 
 /-- info: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
 #guard_msgs in
-#eval match Core.coreValidatedPipeline [Core.functionInliningPipelinePhase] with
+#eval match Core.validatePipeline inliningSplicedEarly with
       | .ok _ => Std.Format.text "accepted"
       | .error e => Std.Format.text e
 

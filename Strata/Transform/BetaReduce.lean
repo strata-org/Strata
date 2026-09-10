@@ -144,7 +144,7 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       return (true, Core.BetaReduce.betaReduceProgram prog)
 

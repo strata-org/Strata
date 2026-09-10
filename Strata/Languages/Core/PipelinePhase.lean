@@ -279,6 +279,14 @@ abbrev ValidatedPipeline.ofListDelivering (consumer : String) (needed : ProgramF
     (phases : List PipelinePhase) : Except String (ValidatedPipeline ProgramFactSet.empty) :=
   Strata.Pipeline.ValidatedPipeline.ofListDelivering consumer needed phases
 
+/-- Validate `phases` against facts assumed to hold on entry, and that what they
+    establish covers what `consumer` needs. The result is indexed by `σ₀`, so the
+    entry facts become part of the pipeline's type. -/
+abbrev ValidatedPipeline.ofListFromDelivering (σ₀ : ProgramFactSet) (consumer : String)
+    (needed : ProgramFactSet) (phases : List PipelinePhase) :
+    Except String (ValidatedPipeline σ₀) :=
+  Strata.Pipeline.ValidatedPipeline.ofListFromDelivering σ₀ consumer needed phases
+
 /-- The facts `p` needs that `σ` does not supply. Empty exactly when
     `p.requires ⊑ σ`; see `missingRequires_eq_nil_iff`. -/
 @[expose] def PipelinePhase.missingRequires (p : PipelinePhase) (σ : ProgramFactSet) :

@@ -134,6 +134,18 @@ inductive ProgramFact where
       copies at the instantiations reached from the program. Required by the back
       end, since an SMT function symbol has one signature. -/
   | noPolymorphicFunctions
+  /-- Every type annotation the back end reads is present: no operation, free
+      variable or quantifier carries a `none` type. Established by `typeCheck`,
+      which annotates the program, and required by the back end, whose SMT
+      encoder rejects an unannotated operation, free variable or quantifier.
+
+      Unlike every other fact this one exposes no executable check
+      (`check?` is `none`), so it has no `assert` form: confirming that
+      annotations are *present* would not establish that they are *correct*,
+      and a sound check means binding the type-checking algorithm to the
+      typing rules, which is future work. `typeCheck` is therefore its only
+      source. -/
+  | typeAnnotated
   deriving DecidableEq, Repr
 
 /-! ### Adding a fact
@@ -179,6 +191,7 @@ def ProgramFact.name : ProgramFact → String
   | .noInternalFuncDecl => "noInternalFuncDecl"
   | .noPolymorphicProcedures => "noPolymorphicProcedures"
   | .noPolymorphicFunctions => "noPolymorphicFunctions"
+  | .typeAnnotated => "typeAnnotated"
 
 /-- All known facts, in the order that defines canonical form. Verified
     complete by `ProgramFact.all_complete` and duplicate-free by
@@ -190,11 +203,12 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
    .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-   .noInternalFuncDecl, .noPolymorphicProcedures, .noPolymorphicFunctions]
+   .noInternalFuncDecl, .noPolymorphicProcedures, .noPolymorphicFunctions,
+   .typeAnnotated]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
-    duplicate-freeness are `by decide` over the twelve constructors. -/
+    duplicate-freeness are `by decide` over the constructors. -/
 instance : Strata.Pipeline.FactVocabulary ProgramFact where
   decEq := inferInstance
   all := ProgramFact.all
@@ -235,6 +249,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noInternalFuncDecl => some (Program.allStatements Statements.noFuncDecls)
   | .noPolymorphicProcedures => some Program.noPolymorphicProcedures
   | .noPolymorphicFunctions => some Program.noPolymorphicFunctions
+  | .typeAnnotated => none
 
 /-- What a fact asserts about a program: the `Prop` that a phase claiming
     the fact will have to prove of its output. -/
@@ -256,6 +271,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     fun p => Program.allStatements Statements.noFuncDecls p = true
   | .noPolymorphicProcedures => fun p => Program.noPolymorphicProcedures p = true
   | .noPolymorphicFunctions => fun p => Program.noPolymorphicFunctions p = true
+  | .typeAnnotated => fun p => Program.allExprs Lambda.LExpr.fullyAnnotated p = true
 
 end -- public section
 

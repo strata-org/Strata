@@ -383,6 +383,7 @@ has `none` for block-local variables thanks to `projectStore`. -/
 /-- A `HasFvar` instance for `MiniPureExpr` — needed by `EvalCmd`. -/
 instance : HasFvar MiniPureExpr where
   mkFvar _ := .tt  -- unused but required
+  mkTypedFvar _ _ := .tt  -- unused but required
   getFvar _ := none   -- no expression is a free variable reference
 
 /-- `WellFormedSemanticEvalVar` for `miniEval` — trivially holds since

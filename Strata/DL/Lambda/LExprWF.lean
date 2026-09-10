@@ -365,6 +365,24 @@ def maxBvarMultiplicity {T : LExprParamsT} : LExpr T → Nat
   | .const .. | .op .. | .bvar .. | .fvar .. => true
 
 /--
+Every type annotation the SMT encoder reads is present: no `.op`, `.fvar` or
+`.quant` carries a `none` type. This is a necessary condition for encoding, not
+full well-typedness: it says the annotations are there, not that they are right.
+An `.abs` carries an optional type of its own that this ignores, since the
+encoder rejects a lambda whether or not it is annotated; keeping lambdas away
+from the encoder is `noBetaRedexes`' business, not this predicate's.
+Mirrors `noBetaRedex`'s recursion so the equation compiler accepts it. -/
+@[expose] def fullyAnnotated {T : LExprParamsT} : LExpr T → Bool
+  | .op _ _ ty => ty.isSome
+  | .fvar _ _ ty => ty.isSome
+  | .quant _ _ _ ty trigger body => ty.isSome && fullyAnnotated trigger && fullyAnnotated body
+  | .abs _ _ _ body => fullyAnnotated body
+  | .app _ fn arg => fullyAnnotated fn && fullyAnnotated arg
+  | .ite _ c t e => fullyAnnotated c && fullyAnnotated t && fullyAnnotated e
+  | .eq _ e₁ e₂ => fullyAnnotated e₁ && fullyAnnotated e₂
+  | .const .. | .bvar .. => true
+
+/--
 β-reduce directly-applied lambda redexes `(.app (.abs body) arg)` everywhere in
 `e`, substituting the argument for the bound variable (via `betaReduce`, which
 shifts indices correctly for nested redexes). This eliminates `let`-alias
