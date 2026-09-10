@@ -72,6 +72,30 @@ structure Lang (P : PureExpr) where
       parameters are passed via `InitEnvWFParamsTy`. -/
   initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
 
+/-- Language interface for event-trace semantics. Reachability is expressed
+through chronological event traces and is independent of `hasFailure`. This is
+kept separate from `Lang` so existing language instances remain source
+compatible during migration. -/
+structure EventLang (P : PureExpr) (EventT : Type) where
+  /-- Statement type. -/
+  StmtT : Type
+  /-- Configuration type. -/
+  CfgT : Type
+  /-- Multi-step relation with emitted events in chronological order. -/
+  traceStar : CfgT → List EventT → CfgT → Prop
+  /-- Embed a statement and initial environment into a configuration. -/
+  stmtCfg : StmtT → Env P → CfgT
+  /-- Terminal configuration. -/
+  terminalCfg : Env P → CfgT
+  /-- Exiting configuration. -/
+  exitingCfg : String → Env P → CfgT
+  /-- Extract an environment from a configuration. -/
+  getEnv : CfgT → Env P
+  /-- Parameters threaded into `initEnvWF`. -/
+  InitEnvWFParamsTy : Type
+  /-- Language-specific initial-environment well-formedness. -/
+  initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
+
 end Strata.Logic
 
 
@@ -82,6 +106,46 @@ namespace Imperative
 namespace Logic
 
 open Strata.Logic
+
+/-- Build an event-trace language from `Imperative.Stmt`/`Config` with a given
+command event evaluator. Kept separate from `Lang.imperative` so clients can
+migrate without changing the existing failure-flag semantics. -/
+abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
+    (extendFactory : ExtendFactory P)
+    (ParamsTy : Type)
+    (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop) :
+    EventLang P EventT where
+  StmtT := Stmt P CmdT
+  CfgT := Config P CmdT
+  traceStar := StepStmtStarE P evalCmd extendFactory
+  stmtCfg := .stmt
+  terminalCfg := .terminal
+  exitingCfg := .exiting
+  getEnv := Config.getEnv
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
+
+/-- Event-trace language for block-level (statement-list) reachability.
+`StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. The
+`EventLang` counterpart of `Lang.imperativeBlock`; `wfPkg` carries the
+initial-environment well-formedness with no default (a real language supplies
+it), so no `isAtAssert` field is needed. -/
+abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT) (extendFactory : ExtendFactory P)
+    (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop)) :
+    EventLang P EventT where
+  StmtT := List (Stmt P CmdT)
+  CfgT := Config P CmdT
+  traceStar := StepStmtStarE P evalCmd extendFactory
+  stmtCfg := .stmts
+  terminalCfg := .terminal
+  exitingCfg := .exiting
+  getEnv := Config.getEnv
+  InitEnvWFParamsTy := wfPkg.1
+  initEnvWF := wfPkg.2
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator.

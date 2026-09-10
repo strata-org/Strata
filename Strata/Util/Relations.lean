@@ -83,5 +83,22 @@ noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
   | .step _ _ _ _ rest => 1 + rest.len
 
 
+/-! ## Trace-producing reflexive transitive closure -/
+
+/-- Reflexive-transitive closure of a relation whose steps emit a list of
+observations. The accumulated trace is chronological: a step's output precedes
+the trace emitted by the remaining execution. -/
+inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
+    A → List E → A → Prop where
+  /-- Reflexive execution emits the empty trace. -/
+  | refl : ∀ x, ReflTransTrace r x [] x
+  /-- Prepend one labeled step to a traced execution, concatenating its events
+  before the remaining trace. -/
+  | step : ∀ x emitted y rest z,
+      r x emitted y →
+      ReflTransTrace r y rest z →
+      ReflTransTrace r x (emitted ++ rest) z
+
+
 end Relation
 end

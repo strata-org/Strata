@@ -57,13 +57,21 @@ instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
   eq_of_beq h := (ExprOrNondet.beq_eq _ _).mp h
   rfl := (ExprOrNondet.beq_eq _ _).mpr rfl
 
-/-! ## Assertion Identity -/
+/-! ## Assertion and cover identity -/
 
 /-- An assertion identifier: the label + expression attached to an
     `assert` command. -/
 structure AssertId (P : PureExpr) where
   label : String
   expr  : P.Expr
+
+/-- A cover identifier: the source label and metadata attached to a `cover`
+command. Metadata distinguishes occurrences even when labels are reused.
+
+TODO: Update AssertId to have the identical definition, because labels can
+overlap, and expr may easily change after transformations.
+-/
+@[expose] abbrev CoverId (P : PureExpr) := String × MetaData P
 
 /-! ## Commands
 

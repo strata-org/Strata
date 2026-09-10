@@ -47,6 +47,12 @@ Structural and semantic results for `StepStmt`/`StepStmtStar` runs. Key results:
 - `Config.varsDefined`: the tracked variables stay defined along a run, with its
   single-step (`.step`) and multi-step (`.star`) preservation; `stmts_preserves_isSome`
   is its single-variable statement-list corollary.
+- `StepStmt.toStepStmtE`: reproduces every failure-flag statement step with
+  the source configuration's deterministic event trace and a target whose
+  cumulative failure flag is normalized to the source flag.
+- Event-trace structural helpers: `seq_run_decomposeE` splits a traced sequence
+  run chronologically, while `seq_reaches_terminalE` and
+  `seq_reaches_exitingE` specialize that decomposition to final outcomes.
 -/
 
 variable {P : PureExpr} {CmdT : Type}
@@ -3526,6 +3532,230 @@ theorem stmts_prefix_failing_append (P : PureExpr) [HasFvar P] [HasFvars P] [Has
     · obtain ⟨c', h_rest_full, hc'⟩ := ih ρ₁ d h_rest_run hd
       exact ⟨c', ReflTrans_Transitive _ _ _ _
         (stmts_cons_step P (EvalCmd P) extendFactory s (rest ++ sfx) ρ ρ₁ h_head_term) h_rest_full, hc'⟩
+
+/-- A command-free administrative step is already an event step after normalizing
+its silent trace and unchanged cumulative failure flag. -/
+private theorem StepStmt.adminToStepStmtE
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    (extendFactory : ExtendFactory P)
+    {c c' : Config P (Cmd P)}
+    (h : StepStmt P (noCommandEvalE P (Cmd P)) extendFactory c c') :
+    StepStmtE P (EvalCmdE P) extendFactory c c.emittedEvents
+      (c'.withFailure c.getEnv.hasFailure) := by
+  induction h <;>
+    simp_all [noCommandEvalE, Config.emittedEvents, Config.withFailure, Config.getEnv] <;>
+    first
+    | exact StepStmtE.step_seq_inner (by assumption)
+    | exact StepStmtE.step_block_body (by assumption)
+    | apply StepStmtE.step_admin
+      constructor <;> simp_all
+
+/-- A legacy statement step is reproduced by the event semantics with the
+source configuration's deterministic active-command trace. The event target is
+the legacy target with its cumulative failure flag normalized back to the
+source flag, because event semantics records assertion observations in the
+trace instead of mutating `hasFailure`. -/
+theorem StepStmt.toStepStmtE
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    (extendFactory : ExtendFactory P)
+    {c c' : Config P (Cmd P)}
+    (h : StepStmt P (EvalCmd P) extendFactory c c') :
+    StepStmtE P (EvalCmdE P) extendFactory c c.emittedEvents
+      (c'.withFailure c.getEnv.hasFailure) := by
+  induction h with
+  | step_cmd hcmd =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_cmd (extendFactory := extendFactory) hcmd.toEvalCmdE)
+  | step_block => exact StepStmt.adminToStepStmtE extendFactory .step_block
+  | step_ite_true heval hwf =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_ite_true heval hwf)
+  | step_ite_false heval hwf =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_ite_false heval hwf)
+  | step_ite_nondet_true =>
+      exact StepStmt.adminToStepStmtE extendFactory .step_ite_nondet_true
+  | step_ite_nondet_false =>
+      exact StepStmt.adminToStepStmtE extendFactory .step_ite_nondet_false
+  | step_loop_enter heval hwf =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_loop_enter heval hwf)
+  | step_loop_exit heval hwf =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_loop_exit heval hwf)
+  | step_loop_nondet_enter =>
+      exact StepStmt.adminToStepStmtE extendFactory .step_loop_nondet_enter
+  | step_loop_nondet_exit =>
+      exact StepStmt.adminToStepStmtE extendFactory .step_loop_nondet_exit
+  | step_exit => exact StepStmt.adminToStepStmtE extendFactory .step_exit
+  | step_funcDecl => exact StepStmt.adminToStepStmtE extendFactory .step_funcDecl
+  | step_typeDecl => exact StepStmt.adminToStepStmtE extendFactory .step_typeDecl
+  | step_stmts_nil => exact StepStmt.adminToStepStmtE extendFactory .step_stmts_nil
+  | step_stmts_cons => exact StepStmt.adminToStepStmtE extendFactory .step_stmts_cons
+  | step_seq_inner _ ih =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_seq_inner (ss := _) ih)
+  | step_seq_done => exact StepStmt.adminToStepStmtE extendFactory .step_seq_done
+  | step_seq_exit => exact StepStmt.adminToStepStmtE extendFactory .step_seq_exit
+  | step_block_body _ ih =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_block_body (label := _) (σ_parent := _) (f_parent := _) ih)
+  | step_block_done => exact StepStmt.adminToStepStmtE extendFactory .step_block_done
+  | step_block_exit_match hlabel =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_block_exit_match hlabel)
+  | step_block_exit_mismatch hlabel =>
+      exact StepStmt.adminToStepStmtE extendFactory (.step_block_exit_mismatch hlabel)
+
+/-! ## Traced (`StepStmtStarE`) structural helpers
+
+Trace-carrying analogues of the failure-flag `seq`/`stmts` helpers, used to lift
+per-statement event-trace overapproximation to statement lists. Administrative
+steps arise two ways from a `.seq`: natively via `step_seq_inner` (carrying the
+inner event list) or through `step_admin` (empty trace); both are handled and
+produce the same chronological trace. -/
+
+section EventTraceStructural
+
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P] [HasBoolOps P]
+  (EvalCmd : EvalCmdParamE P CmdT EventT) (extendFactory : ExtendFactory P)
+
+/-- Lift a traced inner run through a `.seq` frame, preserving its trace. -/
+theorem seq_inner_starE
+    {inner inner' : Config P CmdT} {ss : List (Stmt P CmdT)} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd extendFactory inner tr inner') :
+    StepStmtStarE P EvalCmd extendFactory (.seq inner ss) tr (.seq inner' ss) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ _ _ hstep _ ih => exact .step _ _ _ _ _ (.step_seq_inner hstep) ih
+
+/-- A traced run of an empty statement list emits no events and stays put or
+terminates. -/
+theorem stmts_nil_runE
+    {ρ₀ : Env P} {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd extendFactory (.stmts [] ρ₀) tr cfg) :
+    tr = [] ∧ (cfg = .stmts [] ρ₀ ∨ cfg = .terminal ρ₀) := by
+  cases h with
+  | refl => exact ⟨rfl, .inl rfl⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_stmts_nil =>
+        cases hrest with
+        | refl => exact ⟨by simp, .inr rfl⟩
+        | step _ _ _ _ _ h' _ => cases h' with | step_admin h'' => cases h''
+
+/-- Strip the leading `step_stmts_cons` from a traced cons-list run: either the
+run is empty, or it continues from the head-in-`.seq` configuration with the
+same trace. -/
+theorem stmts_cons_headE
+    {s : Stmt P CmdT} {ss : List (Stmt P CmdT)} {ρ₀ : Env P}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd extendFactory (.stmts (s :: ss) ρ₀) tr cfg) :
+    (cfg = .stmts (s :: ss) ρ₀ ∧ tr = []) ∨
+    StepStmtStarE P EvalCmd extendFactory (.seq (.stmt s ρ₀) ss) tr cfg := by
+  cases h with
+  | refl => exact .inl ⟨rfl, rfl⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_stmts_cons => exact .inr (by simpa using hrest)
+
+/-- Terminate a head statement, then step the enclosing list to its tail with
+the head's trace. -/
+theorem stmts_cons_stepE
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) {tr : List EventT}
+    (hstmt : StepStmtStarE P EvalCmd extendFactory (.stmt s ρ) tr (.terminal ρ')) :
+    StepStmtStarE P EvalCmd extendFactory (.stmts (s :: ss) ρ) tr (.stmts ss ρ') := by
+  have h2 := seq_inner_starE EvalCmd extendFactory (ss := ss) hstmt
+  have hchain := ReflTransTrace.trans _
+    (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons) h2)
+    (ReflTransTrace.step (r := StepStmtE P EvalCmd extendFactory)
+      _ _ _ _ _ (.step_admin .step_seq_done) (.refl _))
+  simpa using hchain
+
+/-- Decompose a traced `.seq inner ss` run to an arbitrary target: still inside
+the head, the head terminated and the tail continues, or the head exited. The
+trace splits chronologically as head ++ tail. -/
+theorem seq_run_decomposeE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd extendFactory (.seq inner ss) tr cfg) :
+    (∃ inner', cfg = .seq inner' ss ∧
+        StepStmtStarE P EvalCmd extendFactory inner tr inner')
+    ∨ (∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+        StepStmtStarE P EvalCmd extendFactory inner tr₁ (.terminal ρ₁) ∧
+        StepStmtStarE P EvalCmd extendFactory (.stmts ss ρ₁) tr₂ cfg)
+    ∨ (∃ lbl ρ₁, cfg = .exiting lbl ρ₁ ∧
+        StepStmtStarE P EvalCmd extendFactory inner tr (.exiting lbl ρ₁)) := by
+  suffices h_gen : ∀ src tr' tgt,
+      StepStmtStarE P EvalCmd extendFactory src tr' tgt →
+      ∀ inner ss, src = .seq inner ss →
+      (∃ inner', tgt = .seq inner' ss ∧
+          StepStmtStarE P EvalCmd extendFactory inner tr' inner')
+      ∨ (∃ ρ₁ tr₁ tr₂, tr' = tr₁ ++ tr₂ ∧
+          StepStmtStarE P EvalCmd extendFactory inner tr₁ (.terminal ρ₁) ∧
+          StepStmtStarE P EvalCmd extendFactory (.stmts ss ρ₁) tr₂ tgt)
+      ∨ (∃ lbl ρ₁, tgt = .exiting lbl ρ₁ ∧
+          StepStmtStarE P EvalCmd extendFactory inner tr' (.exiting lbl ρ₁)) by
+    exact h_gen _ _ _ hstar _ _ rfl
+  intro src tr' tgt hstar_g
+  induction hstar_g with
+  | refl x => intro inner ss hsrc; subst hsrc; exact .inl ⟨inner, rfl, .refl _⟩
+  | step x emitted y restTr z hstep hrest ih =>
+    intro inner ss hsrc; subst hsrc
+    cases hstep with
+    | step_seq_inner hinner =>
+      rcases ih _ _ rfl with
+        ⟨inner'', hcfg, hrun⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, hexit⟩
+      · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ hinner hrun⟩
+      · exact .inr (.inl ⟨ρ₁, emitted ++ tr₁, tr₂, by rw [htr]; simp [List.append_assoc],
+          .step _ _ _ _ _ hinner hterm, htail⟩)
+      · exact .inr (.inr ⟨lbl, ρ₁, hcfg, .step _ _ _ _ _ hinner hexit⟩)
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_seq_inner hinner' =>
+        rcases ih _ _ rfl with
+          ⟨inner'', hcfg, hrun⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, hexit⟩
+        · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ (.step_admin hinner') hrun⟩
+        · exact .inr (.inl ⟨ρ₁, tr₁, tr₂, by rw [htr]; simp,
+            .step _ _ _ _ _ (.step_admin hinner') hterm, htail⟩)
+        · exact .inr (.inr ⟨lbl, ρ₁, hcfg, .step _ _ _ _ _ (.step_admin hinner') hexit⟩)
+      | step_seq_done =>
+        exact .inr (.inl ⟨_, [], restTr, by simp, .refl _, hrest⟩)
+      | step_seq_exit =>
+        cases hrest with
+        | refl => exact .inr (.inr ⟨_, _, rfl, .refl _⟩)
+        | step _ _ _ _ _ h' _ => cases h' with | step_admin h'' => cases h''
+
+/-- A traced `.seq inner ss` run reaching terminal splits into the inner
+terminating and the tail running to terminal. -/
+theorem seq_reaches_terminalE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd extendFactory (.seq inner ss) tr (.terminal ρ')) :
+    ∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd extendFactory inner tr₁ (.terminal ρ₁) ∧
+      StepStmtStarE P EvalCmd extendFactory (.stmts ss ρ₁) tr₂ (.terminal ρ') := by
+  rcases seq_run_decomposeE EvalCmd extendFactory hstar with
+    ⟨inner', hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, _⟩
+  · simp at hcfg
+  · exact ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩
+  · simp at hcfg
+
+/-- A traced `.seq inner ss` run reaching exiting: the inner exited, or the
+inner terminated and the tail exited. -/
+theorem seq_reaches_exitingE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {lbl : String}
+    {ρ' : Env P} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd extendFactory (.seq inner ss) tr (.exiting lbl ρ')) :
+    StepStmtStarE P EvalCmd extendFactory inner tr (.exiting lbl ρ') ∨
+    ∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd extendFactory inner tr₁ (.terminal ρ₁) ∧
+      StepStmtStarE P EvalCmd extendFactory (.stmts ss ρ₁) tr₂ (.exiting lbl ρ') := by
+  rcases seq_run_decomposeE EvalCmd extendFactory hstar with
+    ⟨inner', hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl', ρ₁, hcfg, hexit⟩
+  · simp at hcfg
+  · exact .inr ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩
+  · injection hcfg with hl hρ; subst hρ; subst hl; exact .inl hexit
+
+end EventTraceStructural
 
 end -- public section
 end Imperative

@@ -35,6 +35,12 @@ evaluation relation `EvalCmd`. Key results:
 - `evalCmd_storeWellDefined`: a command leaves a store that holds only values,
   given that it started from one.  The command-level half of
   `Imperative.Config.storeWellDefined_star_of`.
+- `EvalCmdE.emitted_eq`: event-producing command evaluation emits exactly the
+  trace determined by the command and input snapshot.
+- `EvalCmd.toEvalCmdE`: every failure-flag command execution has an
+  event-producing execution with the same resulting store and the exact trace
+  selected by `Cmd.emittedEvents`; the converse is intentionally unavailable
+  for unconditional event assertions and assumptions.
 -/
 
 public section
@@ -595,5 +601,35 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
   | eval_assert_fail _ _ => exact hsv
   | eval_assume _ _ => exact hsv
   | eval_cover _ => exact hsv
+
+/-- Event-producing command evaluation emits exactly the trace selected by the
+command and its input snapshot. -/
+theorem EvalCmdE.emitted_eq {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
+    (h : EvalCmdE P f σ c σ' emitted) :
+    emitted = Cmd.emittedEvents P c f σ := by
+  cases h <;> rfl
+
+/-- Forgetting the failure result of an existing command execution yields an
+event-producing execution with the same resulting store and exactly the trace
+selected by `Cmd.emittedEvents` from the command and its input snapshot.
+
+The converse does not hold in general because `EvalCmdE` treats assertions and
+assumptions as unconditional observations, while `EvalCmd` requires the partial
+evaluator to reduce them to a Boolean. -/
+theorem EvalCmd.toEvalCmdE {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
+    (h : EvalCmd P f σ c σ' failed) :
+    EvalCmdE P f σ c σ' (Cmd.emittedEvents P c f σ) := by
+  cases h with
+  | eval_init heval hinit hvar => exact .eval_init heval hinit hvar
+  | eval_init_unconstrained hinit hval hvar =>
+      exact .eval_init_unconstrained hinit hval hvar
+  | eval_set heval hupdate hvar => exact .eval_set heval hupdate hvar
+  | eval_set_nondet hupdate hval hvar => exact .eval_set_nondet hupdate hval hvar
+  | eval_assert_pass _ _ => exact .eval_assert
+  | eval_assert_fail _ _ => exact .eval_assert
+  | eval_assume _ _ => exact .eval_assume
+  | eval_cover _ => exact .eval_cover
 
 end -- public section
