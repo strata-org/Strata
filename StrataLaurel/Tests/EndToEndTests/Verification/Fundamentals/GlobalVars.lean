@@ -879,7 +879,7 @@ composite DiagCell {
   var value: int
 }
 var diagCell: DiagCell := new DiagCell
-//                        ^^^^^^^^^^^^ error: the initializer of file-scope global 'diagCell' must be effect-free (no assignments or declarations, no allocation with 'new', and no calls to heap-reading or heap-writing procedures)
+//                        ^^^^^^^^^^^^ error: the initializer of file-scope global 'diagCell' must be effect-free (no assignments or declarations, no allocation with 'new', no field reads, and no calls to heap-reading or heap-writing procedures)
 procedure readsIt()
   opaque
 {

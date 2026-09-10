@@ -487,6 +487,50 @@ var fromHeap: int := readCell(new HeapCell)
 //                   ^^^^^^^^^^^^^^^^^^^^^^ error: the initializer of file-scope global 'fromHeap' must be effect-free
 #end
 
+-- A field READ in an initializer is a heap read, so the same rule rejects it.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+procedure mkC() returns (r: C) external;
+var n: int := mkC()#v
+//                  ^ error: the initializer of file-scope global 'n' must be effect-free (no assignments or declarations, no allocation with 'new', no field reads, and no calls to heap-reading or heap-writing procedures)
+#end
+
+-- The rule folds over the whole initializer, so a nested read is found too — here the read's own
+-- target is a read.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Inner { var v: int }
+composite Outer { var i: Inner }
+procedure mkO() returns (r: Outer) external;
+var n: int := mkO()#i#v
+//                    ^ error: the initializer of file-scope global 'n' must be effect-free
+#end
+
+-- ... and here the read's target is a quantifier binder rather than a call.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+var b: bool := forall(c: C) => c#v == 0
+//                               ^ error: the initializer of file-scope global 'b' must be effect-free
+#end
+
+-- A datatype's field is read through a selector call rather than a field access, so this arm leaves
+-- it alone.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Bx { MkBx(v: int) }
+var n: int := Bx..v(MkBx(5))
+#end
+
 #guard_msgs in
 #eval testLaurelResolution <|
 #strata
