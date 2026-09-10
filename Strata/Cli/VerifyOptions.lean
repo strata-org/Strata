@@ -12,7 +12,7 @@ public import Strata.Languages.Core.Verifier
 
 Common CLI flag definitions and parsers for `Core.VerifyOptions`.
 
-The Laurel counterpart lives in `Strata.Languages.Laurel.CliOptions`, which
+The Laurel counterpart lives in `StrataLaurel.Implementation.CliOptions`, which
 builds on `parseVerifyOptions` from here. Keeping it there leaves this module
 free of any dependency on the Laurel layer. -/
 

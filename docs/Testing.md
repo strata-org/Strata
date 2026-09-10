@@ -44,7 +44,7 @@ Use `testLaurelVerification`. The helper throws if any diagnostics fire, so no
 `#guard_msgs` / docstring is needed:
 
 ```lean
-import StrataTest.Util.TestLaurel
+import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 
@@ -129,7 +129,7 @@ Pipeline** section of the Laurel language implementor guide — published at
 [strata-org.github.io/Strata](https://strata-org.github.io/Strata/laurelimpl/html-multi/),
 source in [`docs/verso/LaurelImplementorGuide.lean`](verso/LaurelImplementorGuide.lean) — and the full
 pass list and exact ordering live in
-[`Strata/Languages/Laurel/LaurelCompilationPipeline.lean`](../Strata/Languages/Laurel/LaurelCompilationPipeline.lean)
+[`StrataLaurel/Implementation/LaurelCompilationPipeline.lean`](../StrataLaurel/Implementation/LaurelCompilationPipeline.lean)
 (`laurelPipeline`).
 
 ```lean
@@ -165,9 +165,9 @@ helper that takes a parsed `Strata.Program` and runs the stages you care about.
 it.
 
 ```lean
-import StrataTest.Util.TestLaurel
-import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateDeterministicHoles
+import StrataLaurel.Tests.Util.TestLaurel
+import StrataLaurel.Implementation.InferHoleTypes
+import StrataLaurel.Implementation.EliminateDeterministicHoles
 
 open Strata
 open StrataTest.Util
@@ -246,7 +246,7 @@ diagnostics across all the contained procedures in one block.
 1. Write the `#strata` block first, prefaced with `#eval testLaurelVerification`.
 2. For negative tests, sketch placeholder annotations like `// ^ error:`
    below the offending lines — column positions don't have to be right yet.
-3. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
+3. Run it: `lake env lean StrataLaurel/Tests/<your_file>.lean`.
 4. On failure: the helper prints exactly which annotations went unmatched
    and which diagnostics had no annotation, including the line/column range
    actually produced. Copy those into your annotations, save, re-run.
@@ -275,5 +275,5 @@ file held.
 | --- | --- |
 | `#strata` elaborator + `SourcedProgram` | `Strata/DDM/Integration/Lean/HashCommands.lean` |
 | `Diagnostic` data type | `Strata/Languages/Core/Verifier.lean` |
-| Laurel test helpers | `StrataTest/Util/TestLaurel.lean` |
-| Example tests | `StrataTest/Languages/Laurel/EndToEndTests/**/*.lean` |
+| Laurel test helpers | `StrataLaurel/Tests/Util/TestLaurel.lean` |
+| Example tests | `StrataLaurel/Tests/EndToEndTests/**/*.lean` |

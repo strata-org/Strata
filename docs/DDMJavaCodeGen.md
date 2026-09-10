@@ -67,4 +67,4 @@ def myFiles : GeneratedFiles := getIonSerializer% MyType "com.example.mypackage"
 ## Implementation
 
 The generator lives in `Strata/Java/Gen.lean`.
-The Laurel-specific CLI wrapper is `Scripts/LaurelJavaGen.lean`.
+The Laurel-specific CLI wrapper is `StrataLaurel/Scripts/LaurelJavaGen.lean`.

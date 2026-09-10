@@ -1,0 +1,49 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
+Smoke test for the `#strata` test ergonomics. See `StrataLaurel.Tests.Util.TestLaurelExecution`
+for the helpers.
+-/
+
+import StrataLaurel.Tests.Util.TestLaurel
+
+open StrataTest.Util
+open Strata
+
+/-! ## Positive smoke test -/
+
+#eval testLaurelExecution {}
+#strata
+program Laurel;
+procedure foo() opaque { assert true };
+#end
+
+/-! ## Negative smoke test: variable used as type. The inline annotation pins
+    the expected diagnostic to the line above it. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure foo() opaque {
+  var x: int := 1;
+  var y: x := 2
+//       ^ error: 'x' resolves to variable, but expected
+};
+#end
+
+/-! ## Negative smoke test: a verifier-level diagnostic. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure unsafeDivision(x: int)
+  opaque
+{
+  var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+};
+#end

@@ -6,15 +6,15 @@
 
 import VersoManual
 
-import Strata.Languages.Laurel.LaurelAST
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.ModifiesClauses
+import StrataLaurel.Implementation.LaurelAST
+import StrataLaurel.Implementation.LaurelTypes
+import StrataLaurel.Implementation.LaurelCompilationPipeline
+import StrataLaurel.Implementation.HeapParameterization
+import StrataLaurel.Implementation.LiftImperativeExpressions
+import StrataLaurel.Implementation.ModifiesClauses
 -- Provides `Strata.parseLaurelText`, used by the `laurel` code block below to
 -- parse-check every example at doc-elaboration time.
-import Strata.Languages.Laurel
+import StrataLaurel.Implementation
 
 -- This gets access to most of the manual genre
 open Verso.Genre Manual

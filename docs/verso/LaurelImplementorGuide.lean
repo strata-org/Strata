@@ -6,12 +6,12 @@
 
 import VersoManual
 
-import Strata.Languages.Laurel.LaurelAST
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.ModifiesClauses
+import StrataLaurel.Implementation.LaurelAST
+import StrataLaurel.Implementation.LaurelTypes
+import StrataLaurel.Implementation.LaurelCompilationPipeline
+import StrataLaurel.Implementation.HeapParameterization
+import StrataLaurel.Implementation.LiftImperativeExpressions
+import StrataLaurel.Implementation.ModifiesClauses
 
 open Strata.Laurel
 
@@ -106,7 +106,7 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
     Usage inside a `#doc` block: `{testingStrategyDocs}` -/
 @[block_command]
 def testingStrategyDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := include_str "../../StrataTest/Languages/Laurel/README.md"
+  let md := include_str "../../StrataLaurel/Tests/README.md"
   let some ast := MD4Lean.parse md
     | Lean.throwError "Failed to parse testingStrategyDocs as Markdown"
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
@@ -138,7 +138,7 @@ The parts of the language definition map onto the implementation files as follow
   references to their definitions.
 - *Operational semantics* — Laurel does not yet have a standalone interpreter; its runtime meaning is
   given operationally by the compilation to Core described below. The pass files under
-  `Strata/Languages/Laurel/` and the pipeline in `LaurelCompilationPipeline.lean` therefore
+  `StrataLaurel/Implementation/` and the pipeline in `LaurelCompilationPipeline.lean` therefore
   constitute the operational semantics, delegating to Core's own execution and verification semantics.
 
 *Laurel program type definition*
@@ -440,7 +440,7 @@ statement or a whole assignment right-hand side is handled), and a `catch` handl
 its own exception binding (the binding substitution matches by name and is not scope-aware).
 
 *Reading the actual output.* The pass's real output is pinned as golden cases in
-`StrataTest/Languages/Laurel/Idiomaticity/EliminateExceptionsTest.lean` — a bodiless throwing
+`StrataLaurel/Tests/Idiomaticity/EliminateExceptionsTest.lean` — a bodiless throwing
 procedure with a contract, a `try` / `catch` around a throwing call, a void-returning throwing
 procedure, and the `finally` unwinding cases among them. That file is the place to look for the
 concrete shapes rather than a transcription here, which would go stale the first time the pass

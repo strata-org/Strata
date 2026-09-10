@@ -19,6 +19,7 @@ import Strata.DL.Imperative
 /- Utilities -/
 import Strata.Util.NameProofs
 import Strata.Util.OrderedSetProps
+import Strata.Util.IonDeserializer
 import Strata.Util.Sarif
 import Strata.Util.Worklist
 
@@ -30,15 +31,6 @@ import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.WFProps
-
-import Strata.Languages.Laurel
-import Strata.Languages.Laurel.CliOptions
-import Strata.Languages.Laurel.Grammar
-import Strata.Languages.Laurel.Interpreter
-import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.LaurelASTProps
-import Strata.Languages.Laurel.ResolutionProps
-import Strata.Languages.Laurel.Checked
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
@@ -84,8 +76,6 @@ import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
 import Strata.Languages.GOTO
-import Strata.Languages.Laurel.FilterPrelude
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslatorProps
 
 /- DDM -/
 import StrataDDM
@@ -150,7 +140,6 @@ import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
-
 
 import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData
