@@ -6,6 +6,7 @@
 module
 import all Strata.Util.Name
 import Std.Data.HashSet.Lemmas
+public import Strata.Util.StringProps
 
 /-!
 # Proofs about `Strata.Name.findUnique`
@@ -17,11 +18,16 @@ combines them into a single correctness theorem for `findUnique`.
 
 namespace Strata.Name
 
-/-- `disambiguate` is injective in its suffix when the base name is fixed.
-    This follows from `Nat.repr` injectivity, which is not yet available in our
-    Lean toolchain. -/
-def DisambiguateInjective : Prop :=
-  ∀ (baseName : String) (m n : Nat), disambiguate baseName m = disambiguate baseName n → m = n
+/-- `disambiguate` is injective in its suffix when the base name is fixed:
+    `disambiguate base m = disambiguate base n → m = n`. The `findUnique` correctness theorems below
+    take it unconditionally rather than as a hypothesis. -/
+theorem disambiguate_injective
+    (baseName : String) (m n : Nat) (h : disambiguate baseName m = disambiguate baseName n) : m = n := by
+  -- `disambiguate base k = base ++ "@" ++ toString k`. Push `.toList` through both sides (simp rewrites
+  -- every `(· ++ ·).toList`), leaving a shared `base.toList ++ "@".toList` prefix to cancel.
+  have h1 := congrArg String.toList h
+  simp only [disambiguate, String.toList_append] at h1
+  exact Nat.toString_injective (String.ext_iff.mpr (List.append_cancel_left h1))
 
 /-- When `findUniqueFast` returns `some result`, the result is not in `usedNames`. -/
 theorem findUniqueFast_not_mem (baseName candidate : String) (suffix : Nat)
@@ -66,7 +72,6 @@ theorem findUniqueSlow_not_mem (baseName candidate : String) (suffix : Nat)
     `disambiguate` is injective. The invariant tracks that every member of `usedSet`
     is either still in `remaining` or was a previously tried candidate. -/
 private theorem findUniqueSlow_ne_none
-    (h_inj : DisambiguateInjective)
     (baseName : String) (suffix : Nat)
     (usedSet : Std.HashSet String) (remaining : List String)
     (h_covers : ∀ s, s ∈ usedSet → s ∈ remaining ∨
@@ -84,7 +89,7 @@ private theorem findUniqueSlow_ne_none
       have h_in_rem : disambiguate baseName suffix ∈ remaining := by
         rcases h_covers _ h_in_set with h | ⟨k, hk, heq⟩
         · exact h
-        · exact absurd (h_inj _ _ _ heq) (by omega)
+        · exact absurd (disambiguate_injective _ _ _ heq) (by omega)
       split
       · have h_len : (remaining.erase (disambiguate baseName suffix)).length <
             remaining.length := by grind
@@ -98,9 +103,9 @@ private theorem findUniqueSlow_ne_none
         · exact Or.inr ⟨k, by omega, heq⟩
       · exact absurd (List.contains_iff_mem.mpr h_in_rem) ‹_›
 
-/-- `findUnique` returns a name not in `usedNames`, given that `disambiguate` is
-    injective in its suffix argument. -/
-theorem findUnique_not_mem (h_inj : DisambiguateInjective)
+/-- `findUnique` returns a name not in `usedNames`. Unconditional: the `disambiguate`-injectivity the
+    pigeonhole fallback needs is supplied by `disambiguate_injective` (proven above). -/
+theorem findUnique_not_mem
     (baseName : String) (startSuffix : Nat)
     (usedNames : Std.HashSet String) :
     findUnique baseName startSuffix usedNames ∉ usedNames := by
@@ -113,7 +118,7 @@ theorem findUnique_not_mem (h_inj : DisambiguateInjective)
     · next hslow => exact findUniqueSlow_not_mem _ _ _ _ _ _ hslow
     · next hslow =>
       exfalso
-      exact findUniqueSlow_ne_none h_inj baseName (startSuffix + 1000000) usedNames
+      exact findUniqueSlow_ne_none baseName (startSuffix + 1000000) usedNames
         usedNames.toList (fun s hs => Or.inl (Std.HashSet.mem_toList.mpr hs)) hslow
 
 end Strata.Name
