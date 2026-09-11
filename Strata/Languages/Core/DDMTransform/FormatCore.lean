@@ -896,12 +896,10 @@ partial def lexprToExpr {M} [Inhabited M]
     -- declarations — functions, constants, datatypes, and types — (which are
     -- DDM .fvars). Note that Strata Core does not allow variable shadowing.
     --
-    -- A free variable named `old x` is reconstructed as the CST `old x`
-    -- construct only when its base `x` is an in-scope inout variable AND `x` is
-    -- the most-recently-declared binding among `{x, old x}` (no nearer local
-    -- `old x` shadows it). That is the only case where `old x` denotes a
-    -- pre-state binding. Otherwise `old x` is the nearer local (or a plain free
-    -- variable) and is emitted flat, printed as `|old x|`.
+    -- When the name starts with `old`, check whether it is a genuine pre-state
+    -- reference: `x` must be an in-scope inout variable and must be declared
+    -- more recently than any `old x` binding (no nearer local shadows it).
+    -- Otherwise emit as a plain free variable.
     let oldStr := Core.CoreIdent.oldStr
     let baseName := (id.name.drop oldStr.length).toString
     -- A higher `findBoundVarIndex?` means declared later (more recent).
@@ -917,12 +915,11 @@ partial def lexprToExpr {M} [Inhabited M]
         | none => pure (CoreType.tvar default unknownTypeVar)
       let baseExpr ← match ctx.findBoundVarIndex? baseName with
         | some idx => pure (CoreDDM.Expr.bvar default (ctx.allBoundVars.size - (idx + 1)))
-        | none =>
-          match ctx.freeVarIndex? baseName with
-          | some idx => pure (CoreDDM.Expr.fvar default idx)
-          | none => do
-            modify (·.addGlobalFreeVars #[baseName])
-            pure (CoreDDM.Expr.fvar default ctx.allFreeVars.size)
+        | none => do
+          -- Unreachable: `xIsLastInout` is true only when `baseName` is a bound
+          -- variable (the `none, _ => false` arm above rules out an unbound base).
+          ToCSTM.logError "lexprToExpr" "old-var base unexpectedly not bound" baseName
+          pure (CoreDDM.Expr.fvar default 0)
       pure (.old default tyCST baseExpr)
     else
     match ctx.findBoundVarIndex? id.name with
@@ -1396,8 +1393,8 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure)
       | .inParam => Binding.mkBinding default paramName (TypeP.expr paramType)
     pure (binding, id.toPretty)
   let mut allBindings : Array (Binding M × String) := #[]
-  -- Inout parameters (inputs that are also outputs); recorded so `lexprToExpr`
-  -- can reconstruct `old x` on an inout `x` as the CST `old` construct.
+  -- Record inout parameter names so `old x` can later be distinguished
+  -- from a plain free variable of the same name.
   let mut inoutNames : Array String := #[]
   for (id, ty) in proc.header.inputs.toArray do
     let isInout := outputSet.contains id
