@@ -23,7 +23,7 @@ within it and nowhere after it.
 These tests read the names back off the translated AST. Lambda is locally
 nameless, so a free variable carries its own name, and `getFvars` /
 `HasVarsImp.readVars` report the names the AST holds independently of how it
-would be printed. `RoundtripTest` covers the printing direction. See P505711117.
+would be printed. `RoundtripTest` covers the printing direction.
 -/
 
 namespace Strata.Test.LoopBodyScope
@@ -32,20 +32,19 @@ open Strata
 open Strata.CoreDDM
 open Lambda Imperative
 
-private def translateCore (p : StrataDDM.Program) : Core.Program :=
+def translateCore (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
-/-- Variable names, in the order the AST holds them. -/
-private def names (vs : List Core.Expression.Ident) : List String := vs.map (·.name)
+def names (vs : List Core.Expression.Ident) : List String := vs.map (·.name)
 
 /-- The structured statements of procedure `name`. -/
-private def procStmts (prog : Core.Program) (name : String) : Core.Statements :=
+def procStmts (prog : Core.Program) (name : String) : Core.Statements :=
   match prog.findProcByString? name with
   | some proc => proc.body.getStructured.toOption.getD []
   | none => []
 
 /-- The statements following the first loop, at the loop's own nesting level. -/
-private def afterLoop : Core.Statements → Core.Statements
+def afterLoop : Core.Statements → Core.Statements
   | [] => []
   | .loop .. :: rest => rest
   | _ :: rest => afterLoop rest
@@ -54,7 +53,7 @@ private def afterLoop : Core.Statements → Core.Statements
     guard, invariant and measure, then those read inside the body, then those read
     by the statements following the loop. `readVars` is the whole-statement read
     set, so `body` and `after` include nested statements. -/
-private def loopReport (prog : StrataDDM.Program) : String :=
+def loopReport (prog : StrataDDM.Program) : String :=
   let ss := procStmts (translateCore prog) "p"
   match ss.findSome? (fun s =>
       match s with
@@ -73,7 +72,7 @@ private def loopReport (prog : StrataDDM.Program) : String :=
 
 `dead` is deliberately unused, so it should appear at no position below. -/
 
-private def oneDecl :=
+def oneDecl :=
 #strata
 program Core;
 procedure p (n : int)
@@ -102,7 +101,7 @@ procedure p (n : int)
 The same names are read at the same positions with two declarations rather than
 one, so the result does not depend on how many names the body introduces. -/
 
-private def twoDecls :=
+def twoDecls :=
 #strata
 program Core;
 procedure p (n : int)
@@ -127,7 +126,7 @@ procedure p (n : int)
 `while *` reads nothing, so the guard names no variable while the statements
 after the loop still name what the source wrote. -/
 
-private def nondetGuard :=
+def nondetGuard :=
 #strata
 program Core;
 procedure p (n : int)
@@ -151,7 +150,7 @@ procedure p (n : int)
 The baseline: with no declaration in the body, every position names exactly what
 the source wrote. -/
 
-private def noDecls :=
+def noDecls :=
 #strata
 program Core;
 procedure p (n : int)
@@ -173,7 +172,7 @@ procedure p (n : int)
 
 `before` is in scope at the loop, so the body reads it by name, alongside `i`. -/
 
-private def declBeforeLoop :=
+def declBeforeLoop :=
 #strata
 program Core;
 procedure p (n : int)
@@ -198,7 +197,7 @@ The inner loop's guard is resolved in the outer body's scope, so it names `i` an
 the outer body's `outerDecl`. The statement after the inner loop, still inside the
 outer body, names the same two. -/
 
-private def nestedLoops :=
+def nestedLoops :=
 #strata
 program Core;
 procedure p (n : int)
@@ -218,7 +217,7 @@ procedure p (n : int)
 #end
 
 /-- The names read at each position around the loop nested in the outer body. -/
-private def innerLoopReport (prog : StrataDDM.Program) : String :=
+def innerLoopReport (prog : StrataDDM.Program) : String :=
   let outerBody := (procStmts (translateCore prog) "p").findSome? fun s =>
     match s with
     | .loop _ _ _ body _ => some body
@@ -240,6 +239,63 @@ private def innerLoopReport (prog : StrataDDM.Program) : String :=
 #guard_msgs in
 #eval IO.println (innerLoopReport nestedLoops)
 
+/-! ## Generated labels stay distinct across a body
+
+An `assert` written without a label is given a generated one, and the counter
+behind those labels advances across the whole program. So an assertion inside a
+loop body and one after the loop carry different labels, and the same holds either
+side of a top-level block. -/
+
+partial def stmtAssertLabels (s : Core.Statement) : List String :=
+  match s with
+  | .cmd (.cmd (.assert l _ _)) => [l]
+  | .loop _ _ _ body _ => body.flatMap stmtAssertLabels
+  | .ite _ thenSs elseSs _ => (thenSs ++ elseSs).flatMap stmtAssertLabels
+  | .block _ inner _ => inner.flatMap stmtAssertLabels
+  | _ => []
+
+/-- Assertion labels across the program, in declaration and statement order. -/
+def assertLabels (prog : Core.Program) : List String :=
+  prog.decls.flatMap fun d =>
+    match d with
+    | .proc proc _ => (proc.body.getStructured.toOption.getD []).flatMap stmtAssertLabels
+    | _ => []
+
+def labelsAroundLoop :=
+#strata
+program Core;
+procedure p (n : int)
+{
+  var i : int := 0;
+  while (int.lt(i, n))
+  {
+    var dead : int := 5;
+    assert int.le(0, i);
+  }
+  assert int.le(0, i);
+};
+#end
+
+/-- info: [assert_0, assert_1] -/
+#guard_msgs in
+#eval IO.println (assertLabels (translateCore labelsAroundLoop))
+
+def labelsAroundBlock :=
+#strata
+program Core;
+{
+  assert int.le(0, 1);
+};
+procedure p ()
+{
+  assert int.le(0, 2);
+};
+#end
+
+/-- info: [assert_0, assert_1] -/
+#guard_msgs in
+#eval IO.println (assertLabels (translateCore labelsAroundBlock))
+
 /-! ## A top-level block
 
 `b` is declared after the block, so its value names `a`, the constant declared
@@ -250,7 +306,7 @@ expression the AST holds rather than its variables. `RoundtripTest` has no
 counterpart: a top-level block prints with an empty procedure name, which does not
 parse back. -/
 
-private def blockCommandThenConst :=
+def blockCommandThenConst :=
 #strata
 program Core;
 const a : int := 1;
@@ -261,7 +317,7 @@ const b : int := int.add(a, 2);
 #end
 
 /-- The value of the nullary function a `const` declaration becomes. -/
-private def constValue (prog : Core.Program) (name : String) : String :=
+def constValue (prog : Core.Program) (name : String) : String :=
   match Core.Program.Function.find? prog ⟨name, ()⟩ with
   | some f => match f.body with
     | some e => (Std.format e).pretty
