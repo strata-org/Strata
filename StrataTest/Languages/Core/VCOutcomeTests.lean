@@ -146,6 +146,34 @@ Sat:unknown|Val:unknown ❓ unknown, Unknown (solver timeout or incomplete), SAR
 #guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome (.sat []) .unsat) = Strata.Sarif.Level.none
 #guard outcomeToLevel .bugFindingAssumingCompleteSpec .assert (mkOutcome .unknown (.sat [])) = Strata.Sarif.Level.error
 
+/-! ### `bugFinding` at the `minimal` check level
+
+`bugFinding` runs the satisfiability check only, so `validityProperty` is
+`unknown` on every goal. Classify with `bugFindingSuccess`/`bugFindingFailure`
+so a goal that is not a definite bug is not labelled a failure. -/
+
+#guard (mkOutcome (.sat []) .unknown).label .assert .minimal .bugFinding
+  = "no definite bug"
+#guard (mkOutcome (.sat []) .unknown).emoji .assert .minimal .bugFinding = "✅"
+#guard (mkOutcome .unsat .unknown).label .assert .minimal .bugFinding = "fail"
+#guard (mkOutcome .unsat .unknown).emoji .assert .minimal .bugFinding = "❌"
+#guard (mkOutcome .unknown .unknown).label .assert .minimal .bugFinding
+  = "unknown"
+#guard (mkOutcome .unknown .unknown).emoji .assert .minimal .bugFinding = "❓"
+
+/-! ### `minimal` labels for the other two modes are unchanged
+
+`bugFindingAssumingCompleteSpec` runs both checks and treats any
+counterexample as an error, so it keeps the satisfiability-based labels. -/
+
+#guard (mkOutcome (.sat []) (.sat [])).label .assert .minimal
+  .bugFindingAssumingCompleteSpec = "satisfiable"
+#guard (mkOutcome .unsat (.sat [])).label .assert .minimal
+  .bugFindingAssumingCompleteSpec = "fail"
+#guard (mkOutcome (.sat []) .unsat).label .assert .minimal .deductive = "pass"
+#guard (mkOutcome (.sat []) (.sat [])).label .assert .minimal .deductive
+  = "fail"
+
 /-! ### Outcome table verification -/
 
 private def printOutcomeRow (sat val : Imperative.SMT.Result (Ident := Core.Expression.Ident)) : IO Unit := do
