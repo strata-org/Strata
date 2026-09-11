@@ -68,7 +68,7 @@ namespace Strata.Laurel
 
     A parent method is only an overridden parent of `childMethod` when it is a genuine
     OVERRIDE (`isOverrideOf`), not a same-name Java OVERLOAD. This keeps the Liskov
-    gate in lockstep with `isVirtualDispatchMethod`/`descendantOverriders`: the exact same
+    gate in lockstep with `virtualDispatchFamilies`/`descendantOverriders`: the exact same
     pairs form a family in both passes, so no overload is Liskov-checked as if it refined a
     parent (which would spuriously reject two unrelated methods) and no real override
     escapes the check. -/

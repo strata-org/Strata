@@ -212,7 +212,7 @@ procedure u() opaque { var b: Base := new Sub; var d: TotalMap int int; var r: i
 
   -- GATE-CONSISTENCY (unified dispatch/checker gate): a method with
   -- an `.Applied`-typed parameter (`b: Box<int>`) is dispatched virtually, so it
-  -- MUST be Liskov-checked. Both passes gate on the single `isVirtualDispatchMethod`,
+  -- MUST be Liskov-checked. Both passes range over the single `virtualDispatchFamilies` list,
   -- so a violating override (r==-1 vs r>=0) is REJECTED — a checker that instead keys
   -- on parameter types (skipping on `.Applied`) while the dispatcher keys on composite
   -- type params would diverge and silently ACCEPT it.

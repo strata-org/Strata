@@ -3266,7 +3266,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       -- real body at `Base$m$impl`), so for `b : Base` holding a `Sub` that overrides `m`,
       -- `b#m` binds Base.m's contract but the Sub override actually RUNS. This is sound
       -- because `CheckOverrideRefinement` (the Liskov pass, gated on the same
-      -- `isVirtualDispatchMethod` predicate as dispatcher generation) proves every override
+      -- `virtualDispatchFamilies` enumerator as dispatcher generation) proves every override
       -- refines its parent's contract (Parent.pre ⇒ Child.pre, Child.post ⇒ Parent.post), so
       -- the parent contract bound here holds for whatever override dispatch selects. (jverify
       -- enforces its own monomorphism check on its side.)

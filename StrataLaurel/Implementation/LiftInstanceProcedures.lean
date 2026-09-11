@@ -195,30 +195,6 @@ def declaredByAncestor (model : SemanticModel) (declarerName : Identifier)
   (((computeAncestors model declarerName).toOption.getD []).drop 1).any (fun anc =>
     anc.instanceProcedures.any (isOverrideOf baseM ·))
 
-/-- `baseM` declared on `declarerName` is overridden within its inheritance family:
-    some strict descendant OVERRIDES it, OR some strict ancestor declares an override of
-    it. Membership is by name AND signature (`isOverrideOf`), not name alone, so a Java
-    OVERLOAD (same name, different parameter types) sharing an ancestry is NOT treated as a
-    virtual family — which would otherwise conflate two unrelated methods into one
-    dispatcher and spuriously reject (or, for incompatible types, `.strataBug`). -/
-def isOverriddenMethod (model : SemanticModel) (program : Program)
-    (declarerName : Identifier) (baseM : Procedure) : Bool :=
-  (! (descendantOverriders model program declarerName baseM).isEmpty)
-  || declaredByAncestor model declarerName baseM
-
-/-- The predicate defining a virtually-dispatched method: overridden by a strict
-    descendant, or itself an override of an ancestor. `virtualDispatchFamilies` folds this
-    into the single family list all passes consume (see its docstring for the gate-parity
-    invariant this predicate exists to serve).
-
-    Generic inheriting families ARE supported: the dispatcher's `is`/`as` tag-tests use
-    the applied form (`appliedTagType`, so `self is SBox<T>` not bare `SBox`), and the
-    Liskov checker carries the composite's type params so it monomorphizes per
-    instantiation. So any overridden method — generic or not — is virtual + checked. -/
-def isVirtualDispatchMethod (model : SemanticModel) (program : Program)
-    (declarerName : Identifier) (baseM : Procedure) : Bool :=
-  isOverriddenMethod model program declarerName baseM
-
 /-- A virtual-dispatch family: a composite declaring a virtual method, and the
     descendant composites that override it (most-derived-first, possibly empty for
     a leaf override that is itself an override of an ancestor but has no further
@@ -239,9 +215,9 @@ structure DispatchFamily where
     * `liftInstanceProcedures` generates a dispatcher + `$impl` for each family.
 
     Gate-parity is structural: all three passes range over the same list rather than
-    independently re-walking `program.types` and gating on `isVirtualDispatchMethod`, so
-    they cannot drift into an unsound "dispatcher without checker" state. Each family's
-    `overriders` are precomputed once and reused, rather than recomputed per consumer.
+    independently re-walking `program.types` and re-deriving virtuality, so they cannot
+    drift into an unsound "dispatcher without checker" state. Each family's `overriders`
+    are precomputed once and reused, rather than recomputed per consumer.
 
     The program is assumed closed-world: every subtype and every override is present
     in `program.types`. If an overrider were invisible to this scan, the dispatcher's
@@ -255,12 +231,11 @@ def virtualDispatchFamilies (model : SemanticModel) (program : Program)
     match td with
     | .Composite ct =>
       ct.instanceProcedures.filterMap fun m =>
-        -- Virtuality is exactly `isOverriddenMethod` (descendant OR ancestor direction),
-        -- but computed here so the descendant `overriders` — needed anyway — are reused
-        -- instead of recomputed by the gate. The ancestor branch (`declaredByAncestor`)
-        -- keeps a leaf override virtual: its dispatcher dispatches only to its own `$impl`
-        -- (empty `overriders`) but must exist for a parent-typed reference to find it.
         let overriders := descendantOverriders model program ct.name m
+        -- Membership is per DECLARATION (keyed downstream on the method's `uniqueId`), so an
+        -- ancestor's entry does not cover its overrider's own declaration. Hence
+        -- `declaredByAncestor`: without it an override that nothing below overrides gets no
+        -- `$impl` for the ancestor's dispatcher to branch to, and no checker against its parent.
         if !overriders.isEmpty || declaredByAncestor model ct.name m
         then some { owner := ct, method := m, overriders }
         else none
