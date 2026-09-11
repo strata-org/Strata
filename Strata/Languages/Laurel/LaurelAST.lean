@@ -839,6 +839,18 @@ def StmtExpr.constrName : StmtExpr → String
     frame semantics, so construction sites should route through these rather
     than restate the literals. -/
 
+/-- The postconditions declared by a procedure body. `.Opaque`/`.Abstract` bodies carry
+    them; `.Transparent`/`.External` carry none here (their guarantee is their visible body,
+    not a refinable contract). Each returned `Condition` keeps its own `free` flag. -/
+def bodyPostconditions : Body → List Condition
+  | .Opaque posts _ _ => posts
+  | .Abstract posts => posts
+  | _ => []
+
+def bodyModifies : Body → List ModifiesGroup
+  | .Opaque _ _ modifies => modifies
+  | _ => []
+
 /-- The opaque default frame: one unguarded group with no targets — the
     procedure changes nothing. Distinct from `[]` (no groups), which means
     *unframed*. -/
@@ -848,6 +860,16 @@ def ModifiesGroup.nothingChanges : List ModifiesGroup := [{ targets := [] }]
     modify anything. -/
 def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
   [{ targets := [{ val := .All, source }] }]
+
+/-- Namespace the Python frontend uses for the Laurel it *generates* — its
+    parameter copies, condition temporaries and quantifier binders.
+
+    Outside the namespace `validateNoDollarNames` reserves, so it needs no exemption
+    there, while still marking these names as generated rather than authored.
+
+    Lives here rather than in the frontend because `bodyLabel` below is built
+    from it and is shared with the resolver. -/
+def pythonGeneratedPrefix : String := "py$"
 
 /-- The label of the implicit block that wraps every procedure body.
 
@@ -860,9 +882,10 @@ def ModifiesGroup.wildcard (source : FileRange) : List ModifiesGroup :=
     though the label has no syntactic declaration site.
 
     Shared here so the translator, the resolver, and frontends agree on the
-    exact string rather than each hard-coding it. The leading `$` keeps it
-    out of the user-name space (no source identifier can contain `$`). -/
-def bodyLabel : String := "$body"
+    exact string rather than each hard-coding it. Only the Python frontend
+    actually emits it, so it sits in that frontend's generated namespace rather
+    than starting with a bare `$`, which `validateNoDollarNames` reserves. -/
+def bodyLabel : String := pythonGeneratedPrefix ++ "body"
 
 /-! ### Names of the injected exception-result datatype
 
@@ -1575,6 +1598,35 @@ partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
             | _ => pure ()
   return out
 
+/-- Match a SUBSTITUTED ancestor `anc` (from `substitutedAncestors`) against a target `sup`,
+    wildcarding a `.TVar`/`.Unknown` on either side and recursing element-wise through
+    applications/collections; every other leaf is exact `highEq`. Used at `isSubtype`'s
+    `substitutedAncestors` sites instead of exact `highEq`.
+
+    Motivating case: an instance method INHERITED (not redeclared) from a generic parent lifts to
+    `Base$get<T>(self: Base<T>)`, checked against a `Sub<int>` receiver. `substitutedAncestors Sub
+    [int]` yields concrete `Base<int>`, but the target is `Base<T>`, so exact `highEq` would
+    mis-reject the sound upcast (`int` ≠ `T`); the wildcard absorbs the concrete arg. (`anc` is not
+    always concrete — a still-generic body can yield `Base<T>` — so the wildcard fires on either
+    side.)
+
+    SOUND (no new admission): concrete-vs-concrete stays strict (`Base<int>` vs `Base<bool>` fails
+    on the leaf), and the `.TVar`/`.Unknown` wildcard set is a STRICT SUBSET of `isConsistent`'s. A
+    `T`-abstract accept is not final: `MonomorphizeComposites` re-resolves each clone concretely
+    (`needsResolves := true`), where the strict leaf check rejects a wrong instantiation — so a
+    wrong-`T` is deferred to monomorphization, never silently accepted. A local `partial def` (not a
+    call to `isConsistent`) only because the latter is defined below `isSubtype`. -/
+partial def ancestorMatchesTarget (anc sup : HighTypeMd) : Bool :=
+  match anc.val, sup.val with
+  | .TVar _, _ | _, .TVar _ => true
+  | .Unknown, _ | _, .Unknown => true
+  | .Applied ba aargs, .Applied bb bargs =>
+    ancestorMatchesTarget ba bb && aargs.length == bargs.length &&
+      (aargs.zip bargs).all (fun (x, y) => ancestorMatchesTarget x y)
+  | .TMap ka va, .TMap kb vb => ancestorMatchesTarget ka kb && ancestorMatchesTarget va vb
+  | .TSet ea, .TSet eb => ancestorMatchesTarget ea eb
+  | _, _ => highEq anc sup
+
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
     (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
     unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
@@ -1592,23 +1644,27 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     -- is a subtype of any type in its extending chain.
     (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
   -- GENERIC UPCAST (remap-aware, sound): `C<args> <: sup` iff some SUBSTITUTED ancestor of
-  -- `C<args>` `highEq`s `sup`. `substitutedAncestors` applies the `extends` remap, so
+  -- `C<args>` matches `sup`. `substitutedAncestors` applies the `extends` remap, so
   -- `P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the ancestor `Pair<bool,int>` (not
-  -- `Pair<int,bool>`), and `Box<bool> extends Base<int>` has ancestor `Base<int>`. Args INVARIANT
-  -- (exact `highEq`), so wrong instantiations (`Box<int> <: Base<bool>`) fail; a non-substituting
-  -- check would be unsound.
+  -- `Pair<int,bool>`), and `Box<bool> extends Base<int>` has ancestor `Base<int>`. The match is
+  -- `ancestorMatchesTarget` (wildcard-aware on `sup`'s `.TVar`/`.Unknown`), NOT exact `highEq`, so a
+  -- concrete substituted ancestor `Base<int>` also satisfies a still-type-variable target `Base<T>`
+  -- (the inherited-generic-method `self` case). Concrete args stay INVARIANT (`Base<int>` vs
+  -- `Base<bool>` fails on the leaf), so wrong instantiations (`Box<int> <: Base<bool>`) still fail;
+  -- a non-substituting check would be unsound.
   | .Applied subBase subArgs, _ =>
     (match highBaseName? subBase.val with
-     | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => highEq anc sup')
+     | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => ancestorMatchesTarget anc sup')
      | none => false)
     || highEq sub' sup'
   -- CONCRETE child of a GENERIC-INSTANTIATION parent (`IntBox extends Box<int>` ⊢
   -- `IntBox <: Box<int>`): same remap-aware check as the `.Applied` arm, with no args to
   -- substitute — `substitutedAncestors subName []` yields the `extends` expression verbatim
-  -- (`Box<int>`), matched by exact `highEq`. So `IntBox <: Box<bool>` (wrong inst) fails. No
-  -- reflexive `highEq` fallback: a `.UserDefined` never `highEq`s an `.Applied`, so it'd be dead.
+  -- (`Box<int>`), matched by `ancestorMatchesTarget` (so a `Box<T>` target is also satisfied). So
+  -- `IntBox <: Box<bool>` (wrong inst) still fails on the leaf. No reflexive `highEq` fallback: a
+  -- `.UserDefined` never matches an `.Applied`, so it'd be dead.
   | .UserDefined subName, .Applied _ _ =>
-    (ctx.substitutedAncestors subName.text []).any (fun anc => highEq anc sup')
+    (ctx.substitutedAncestors subName.text []).any (fun anc => ancestorMatchesTarget anc sup')
   | _, _ => highEq sub' sup'
 
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
@@ -2250,10 +2306,16 @@ structure Program where
   deriving Inhabited
 
 /-- Reserved internal name of a function's anonymous (short `: T`) return
-    output. The leading `$` follows Strata's reserved-name convention and
-    cannot be written as a surface identifier, so user parameters/locals named
-    `result` never collide with the return value. To refer to the return value
-    explicitly, use the named-return form `returns (r: T)`. -/
+    output. The leading `$` follows Strata's reserved-name convention, so user
+    parameters/locals named `result` never collide with the return value. To
+    refer to the return value explicitly, use the named-return form
+    `returns (r: T)`.
+
+    This is the one `$`-prefixed spelling a source program may still write, and
+    only in the position the desugaring itself produces: a procedure's sole
+    output. Used anywhere else — a local, a global, a bound variable, a second
+    output — it is rejected by `validateNoDollarNames` like any other name
+    starting with `$`. -/
 def resultOutputName : String := "$result"
 
 /-- Reserved prefix stamped onto a call site whose overload resolution failed

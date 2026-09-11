@@ -93,7 +93,10 @@ def NondetTransferCmd.stripMetaData : NondetTransferCmd Label P → NondetTransf
 command that indicates where to go next. It can be deterministic or
 non-deterministic depending on the type of transfer command. -/
 structure BasicBlock (TransferCmd Cmd : Type) where
+  /-- The straight-line body commands, executed in order. -/
   cmds : List Cmd
+  /-- The transfer command run after the body, selecting the successor block(s)
+  (or halting). -/
   transfer : TransferCmd
   deriving DecidableEq
 
@@ -116,7 +119,10 @@ non-deterministic commands. -/
 /-- A control flow graph is a list of blocks paired with a label indicating
 where execution should start. -/
 structure CFG (Label Block : Type) where
+  /-- The label of the block where execution begins. -/
   entry : Label
+  /-- The labeled blocks of the graph, as an association list from label to
+  block. -/
   blocks : List (Label × Block)
   deriving DecidableEq
 

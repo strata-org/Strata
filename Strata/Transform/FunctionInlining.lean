@@ -150,6 +150,22 @@ open Strata (inlineFuncDefs inlineFuncDefsBounded)
     | .proc p md => .proc (p.mapExprs f) md
     | other => other }
 
+/-- Add the program's own non-recursive `.func` definitions to `base`, which by
+    default holds only built-ins, so their calls become inlinable. Recursive
+    functions are skipped: inlining one only unfolds it until the budget runs out.
+    A parsed program cannot reach that case, since `rec function` arrives as its own
+    declaration kind; the guard is for a program built directly. -/
+def withProgramFuncs (base : @Lambda.Factory Core.CoreLParams) (prog : Program) :
+    @Lambda.Factory Core.CoreLParams :=
+  prog.decls.foldl (fun F decl =>
+    match decl with
+    | .func f _ =>
+      let lf := f.toLFunc
+      -- The push cannot fail here: `precondElim` pushes the same functions and
+      -- rejects a program whose function names collide with the factory's.
+      if lf.isRecursive then F else (F.tryPush lf).toOption.getD F
+    | _ => F) base
+
 /-- Program-level function inlining, with the factory taken from the
     transform state: `maxDepth = none` inlines non-recursive definitions to a
     fixpoint (`inlineFuncDefs`), `maxDepth = some d` unrolls up to depth `d`
@@ -167,12 +183,30 @@ def run (prog : Program) (maxDepth : Option Nat := none) :
 
 end FunctionInlining
 
-/-- FunctionInlining pipeline phase: inlines known function definitions
-    throughout every expression of the program. Model-preserving because a
-    call is replaced by the called function's definitional body. -/
+/-- Inline known function definitions throughout every expression of the program.
+    `noBetaRedexes` is not preserved: substituting a body for a call introduces
+    redexes that beta reduction removes. Requiring `noPrecondsFromFuncs` orders the
+    phase after `precondElim`, since inlining a call removes the site where the
+    function's precondition would be raised as an obligation. -/
 def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhase :=
-  modelPreservingPipelinePhase "FunctionInlining" fun prog =>
-    FunctionInlining.run prog maxDepth
+  modelPreservingPipelinePhase "functionInlining"
+    (requires := factSet![.noPrecondsFromFuncs])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
+                         .noNondetGuards, .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated])
+    fun prog => do
+      -- The program's functions are in the factory for this pass alone: the encoder
+      -- environment registers every `.func` itself and rejects a redefinition.
+      let base ← Transform.getFactory
+      Transform.setFactory (FunctionInlining.withProgramFuncs base prog)
+      try
+        let res ← FunctionInlining.run prog maxDepth
+        Transform.setFactory base
+        return res
+      catch e =>
+        Transform.setFactory base
+        throw e
 
 end Core
 

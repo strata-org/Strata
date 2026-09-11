@@ -163,7 +163,7 @@ def insertInvariantAsserts (s : Statement)
       | none => ([], [])
       | some m =>
         let m_old_ident    := HasIdent.ident s!"{insertLoopInvAssertReservedPrefix}_measure_{loop_num}"
-        let m_old_expr     := HasFvar.mkFvar m_old_ident
+        let m_old_expr     := HasFvar.mkTypedFvar m_old_ident HasInt.intTy
         let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy .nondet md)
         let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
           s!"{insertLoopInvAssumePrefix}measure_{loop_num}" (HasIntOps.eq m_old_expr m) md)
@@ -209,7 +209,7 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
   preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                       .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions]
+                         .noPolymorphicFunctions, .typeAnnotated]
 
 end -- public section
 

@@ -1229,6 +1229,31 @@ procedure selfRefOuterShadow() opaque {
 };
 #end
 
+/-! ### The same, with an *annotated* declaration.
+
+`Synth.assign`/`Check.assign` resolve an annotated declaration's value while the
+declared name is still out of scope, exactly as `Synth.declInfer` does for the
+unannotated form, so the inner `x : int := x` reads the *outer* `x` rather than its
+own fresh binding. The two paths are symmetric.
+
+That symmetry is required rather than cosmetic: it is what keeps resolution
+idempotent. `declInfer` rewrites `var x := e` into the annotated form, so re-resolving
+an already-resolved declaration must still bind its initializer in the enclosing
+scope — as it does here — for two consecutive `needsResolves` passes to agree. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure annotatedSelfRefOuterShadow() opaque {
+  var x := 1;
+  {
+    var x: int := x;
+    assert x
+//         ^ error: expected 'bool', got 'int'
+  }
+};
+#end
+
 /-! ### Inference chains: from a parameter, and from another inferred variable.
 
 The initializer can be any synthesizing expression, including a parameter

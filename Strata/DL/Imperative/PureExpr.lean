@@ -57,12 +57,19 @@ class LawfulHasIdent (P : PureExpr) [HasIdent P] where
 
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr
+  /-- A free variable carrying its type. A pass that introduces a variable after
+      type checking has run must annotate it itself, since nothing downstream
+      will. -/
+  mkTypedFvar : P.Ident → P.Ty → P.Expr
   getFvar : P.Expr → Option P.Ident
 
 /-- Lawfulness of `HasFvar`: the round-trip `getFvar (mkFvar x) = some x`. -/
 class LawfulHasFvar (P : PureExpr) [HasFvar P] where
   getFvar_mkFvar : ∀ x : P.Ident,
     HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x
+  /-- The annotation does not change which variable the expression is. -/
+  getFvar_mkTypedFvar : ∀ (x : P.Ident) (ty : P.Ty),
+    HasFvar.getFvar (HasFvar.mkTypedFvar (P := P) x ty) = some x
 
 /-- Multi-variable version of `HasFvar.getFvar`: returns ALL free variables in
     a (possibly compound) expression.  `HasFvar.getFvar` only returns Some when
@@ -77,6 +84,9 @@ class HasFvars (P : PureExpr) where
 class LawfulHasFvars (P : PureExpr) [HasFvar P] [HasFvars P] where
   mkFvar_getFvars : ∀ x : P.Ident,
     HasFvars.getFvars (HasFvar.mkFvar (P := P) x) ⊆ [x]
+  /-- The annotation contributes no free variables of its own. -/
+  mkTypedFvar_getFvars : ∀ (x : P.Ident) (ty : P.Ty),
+    HasFvars.getFvars (HasFvar.mkTypedFvar (P := P) x ty) ⊆ [x]
 
 /-- Returns ALL operator/function names referenced in an expression
     (e.g., `.op` constructs in Lambda). -/

@@ -76,7 +76,9 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify oldModifiesPgm (options := .quiet) (proceduresToVerify := ["h_correct", "h_incorrect"])
+#eval Core.verify oldModifiesPgm
+        (options := { Core.VerifyOptions.quiet with
+                      proceduresToVerify := ["h_correct", "h_incorrect"] })
 
 
 -- An inout call whose caller argument variable (`y`) differs in name from the

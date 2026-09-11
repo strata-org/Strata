@@ -63,7 +63,7 @@ constructs and atomic commands pass through, recursing into sub-bodies. -/
       let (tss', σ₂) := Block.nondetElimM tss σ₁
       let (ess', σ₃) := Block.nondetElimM ess σ₂
       ([.cmd (HasInit.init ident HasBool.boolTy .nondet md),
-        .ite (.det (HasFvar.mkFvar ident)) tss' ess' md], σ₃)
+        .ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss' ess' md], σ₃)
   | .loop (.det e) m inv body md => fun σ =>
       let (body', σ') := Block.nondetElimM body σ
       ([.loop (.det e) m inv body' md], σ')
@@ -72,7 +72,7 @@ constructs and atomic commands pass through, recursing into sub-bodies. -/
       let ident := HasIdent.ident (P := P) g
       let (body', σ₂) := Block.nondetElimM body σ₁
       ([.cmd (HasInit.init ident HasBool.boolTy .nondet md),
-        .loop (.det (HasFvar.mkFvar ident)) m inv
+        .loop (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) m inv
           (body' ++ [.cmd (HasHavoc.havoc ident md)]) md], σ₂)
   | .exit lbl md => fun σ => ([.exit lbl md], σ)
   | .funcDecl d md => fun σ => ([.funcDecl d md], σ)
@@ -140,6 +140,6 @@ def nondetElimPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .typeAnnotated])
 
 end Core

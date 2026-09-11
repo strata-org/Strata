@@ -17,7 +17,7 @@ A quantifier whose body carries assert/assume steps is preceded by a proof block
 That scaffolding is verification-only. The nondet `$proof_0` guard is an
 uninitialized bool — meaningful to a symbolic verifier, but not to the concrete
 interpreter — and the `assume false` seal has nothing to seal under execution. So
-`AnalysisMode.Execute` keeps the plain `stripAssertAssume` behavior instead.
+`AnalysisMode.Execute` keeps the plain `functionalize` behavior instead.
 
 This is checked at the pass level rather than end-to-end because the interpreter
 cannot evaluate a quantified `assert` at all ("condition did not reduce to bool"),
@@ -113,7 +113,9 @@ info: procedure proofProcedure()
         };
         assume false
       };
-    forall(x: int) => x * x >= 0
+    forall(x: int) => {
+      x * x >= 0
+    }
   }
 };
 -/
@@ -158,7 +160,9 @@ procedure plainQuantifier()
 info: procedure proofProcedure()
   opaque
 {
-  assert forall(x: int) => x * x >= 0
+  assert forall(x: int) => {
+    x * x >= 0
+  }
 };
 -/
 #guard_msgs in
@@ -200,13 +204,17 @@ info: procedure nested()
                 };
                 assume false
               };
-            forall(y: int) => $havoc_0 + y >= $havoc_0
+            forall(y: int) => {
+              $havoc_0 + y >= $havoc_0
+            }
           };
           $havoc_0 * $havoc_0 >= 0
         };
         assume false
       };
-    forall(x: int) => x * x >= 0
+    forall(x: int) => {
+      x * x >= 0
+    }
   }
 };
 -/

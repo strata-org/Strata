@@ -320,7 +320,12 @@ def fuel (exprs : List Expression.Expr) : Nat :=
     indices starting at `startIdx`), rewrites the body to reference them, and
     prepends the declarations. Returns `none` when there is nothing to extract. -/
 def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × Nat) :=
-  let targets := collectExprsToAbbreviate (Statements.collectExprs body)
+  -- A duplicate whose type is unknown is left alone: abbreviating it would name
+  -- it with an unannotated variable, which the SMT encoder cannot read. This is
+  -- what makes the `typeAnnotated` claim below true, and it makes the `none`
+  -- branch of `ty` unreachable.
+  let targets := (collectExprsToAbbreviate (Statements.collectExprs body)).filter
+    (fun (_, dup) => dup.typeOf.isSome)
   if targets.isEmpty then
     none
   else
@@ -404,6 +409,6 @@ def Core.commonSubexprElimPhase : Core.PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .typeAnnotated])
 
 end -- public section

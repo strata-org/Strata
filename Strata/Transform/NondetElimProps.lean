@@ -59,7 +59,7 @@ theorem Stmt.nondetElimM_ite_nondet_out {P : PureExpr} [HasIdent P] [HasFvar P] 
       let ident := HasIdent.ident (P := P) g
       let σ₁ := (StringGenState.gen ndelimItePrefix σ).2
       [Stmt.cmd (HasInit.init ident HasBool.boolTy .nondet md),
-       Stmt.ite (.det (HasFvar.mkFvar ident)) (Block.nondetElimM tss σ₁).1
+       Stmt.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) (Block.nondetElimM tss σ₁).1
          (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md] := by
   rw [Stmt.nondetElimM]
   rcases hg : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
@@ -84,7 +84,7 @@ theorem Stmt.nondetElimM_loop_nondet_out {P : PureExpr} [HasIdent P] [HasFvar P]
       let ident := HasIdent.ident (P := P) g
       let σ₁ := (StringGenState.gen ndelimLoopPrefix σ).2
       [Stmt.cmd (HasInit.init ident HasBool.boolTy .nondet md),
-       Stmt.loop (.det (HasFvar.mkFvar ident)) m inv
+       Stmt.loop (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) m inv
          ((Block.nondetElimM body σ₁).1 ++ [Stmt.cmd (HasHavoc.havoc ident md)]) md] := by
   rw [Stmt.nondetElimM]
   rcases hg : StringGenState.gen ndelimLoopPrefix σ with ⟨g, σ₁⟩

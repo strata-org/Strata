@@ -38,6 +38,7 @@ import Strata.Languages.Laurel.Interpreter
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.LaurelASTProps
 import Strata.Languages.Laurel.ResolutionProps
+import Strata.Languages.Laurel.Checked
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
@@ -47,6 +48,7 @@ import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
 import Strata.Transform.FunctionInliningProps
+import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist

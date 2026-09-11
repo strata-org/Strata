@@ -58,7 +58,7 @@ def desugarShortCircuit (program : Program) : Program :=
   -- them are still in expression position here. They therefore all count as
   -- imperative callees whose short-circuited operands must be guarded.
   let imperativeCallees := program.staticProcedures.map (·.name.text)
-  mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
+  mapProgramStmtExpr (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section
 

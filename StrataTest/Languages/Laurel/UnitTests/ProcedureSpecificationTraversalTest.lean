@@ -68,14 +68,17 @@ must then rewrite every embedded `nat` annotation to `int`.
 -/
 
 private def addConstrainedSpecifications (proc : Procedure) : Procedure :=
-  let natType := ty (.UserDefined (mkId "nat"))
-  let n := localExpr "n"
+  -- Embed the constrained `nat` in a quantifier BINDER (`forall(v: nat) => true`) in every
+  -- spec position. A quantifier binder is the prelude-free way to carry a constrained-type
+  -- annotation into a spec: `v as nat` / `v is nat` resolve as errors (a constrained
+  -- type unfolds to its non-composite base `int`, and `is`/`as` are composite-only), so
+  -- the annotation rides the binder. ConstrainedTypeElim rewrites the
+  -- binder's `nat` to `int` in all three positions (decreases, invoke-on, axiom).
   let quantified (name : String) : StmtExprMd :=
     let binder := param name (.UserDefined (mkId "nat"))
-    md (.Quantifier .Forall binder none
-      (md (.IsType (localExpr name) natType)))
+    md (.Quantifier .Forall binder none (md (.LiteralBool true)))
   { proc with
-    decreases := some (md (.AsType n natType))
+    decreases := some (quantified "decreaseValue")
     invokeOn := some (quantified "triggerValue")
     axioms := [quantified "axiomValue"] }
 
@@ -134,14 +137,12 @@ private def isIntType (t : HighTypeMd) : Bool :=
   | _ => false
 
 private def constrainedSpecificationsHasExpectedTypes (proc : Procedure) : Bool :=
-  let decreasesIsInt := match proc.decreases with
-    | some expr => match expr.val with
-      | .AsType _ t => isIntType t
-      | _ => false
-    | none => false
   let quantifierBinderIsInt (expr : StmtExprMd) := match expr.val with
     | .Quantifier _ binder _ _ => isIntType binder.type
     | _ => false
+  let decreasesIsInt := match proc.decreases with
+    | some expr => quantifierBinderIsInt expr
+    | none => false
   let invokeOnIsInt := match proc.invokeOn with
     | some expr => quantifierBinderIsInt expr
     | none => false
@@ -194,11 +195,15 @@ private def fieldRead (owner field : String) : StmtExprMd :=
   md (.Var (.Field (localExpr owner) (mkId field)))
 
 private def addHeapSpecifications (proc : Procedure) : Procedure :=
+  -- Park the composite field-read `cell#value` directly in every spec position. `is` is
+  -- composite-target-only, so an `is int` over the field read resolves as an error; the
+  -- bare field read carries the same heap-effect + field-syntax that this test exercises
+  -- heap-parameterization lowering on.
   let value := fieldRead "cell" "value"
   { proc with
     decreases := some value
-    invokeOn := some (md (.IsType value (ty .TInt)))
-    axioms := [md (.IsType value (ty .TInt))] }
+    invokeOn := some value
+    axioms := [value] }
 
 private def effectExpr (callee : String) : StmtExprMd :=
   md (.StaticCall (mkId callee) [fieldRead "cell" "value"])
@@ -292,21 +297,15 @@ private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
         | _ => false
   | _ => false
 
-private def isExpectedHeapTypeTest (expr : StmtExprMd) : Bool :=
-  match expr.val with
-  | .IsType value expectedType =>
-      isExpectedHeapRead value && isIntType expectedType
-  | _ => false
-
 private def heapSpecificationsHasExpectedValues (proc : Procedure) : Bool :=
   let decreasesIsExpected := match proc.decreases with
     | some expr => isExpectedHeapRead expr
     | none => false
   let invokeOnIsExpected := match proc.invokeOn with
-    | some expr => isExpectedHeapTypeTest expr
+    | some expr => isExpectedHeapRead expr
     | none => false
   let axiomsAreExpected := match proc.axioms with
-    | [axiomExpr] => isExpectedHeapTypeTest axiomExpr
+    | [axiomExpr] => isExpectedHeapRead axiomExpr
     | _ => false
   decreasesIsExpected && invokeOnIsExpected && axiomsAreExpected
 
@@ -496,7 +495,7 @@ private def liftedAxiomCallIsStatic (proc : Procedure) : Bool :=
 
 private def checkLiftedInstanceAxiom : IO Unit := do
   let resolved := resolve instanceAxiomProgram
-  let lifted := liftInstanceProcedures resolved.model resolved.program
+  let (lifted, _) := liftInstanceProcedures resolved.model resolved.program
   let owner := (findProcedure lifted "Cell$owner").get!
   let instancesCleared := lifted.types.all fun
     | .Composite composite => composite.instanceProcedures.isEmpty
@@ -597,7 +596,7 @@ private def checkEmptySpecifications : IO Unit := do
 
   -- Heap parameterization expects instance procedures to have been lifted. The
   -- writer and reader bodies force its write and read branches, respectively.
-  let lifted := liftInstanceProcedures resolved.model resolved.program
+  let (lifted, _) := liftInstanceProcedures resolved.model resolved.program
   let staticAfterLift :=
     (findAnyProcedure lifted "staticEmptySpecifications").get!
   let instanceAfterLift :=
@@ -664,7 +663,11 @@ private def contractHoleProgram : Program :=
     decreases := some decreases
     invokeOn := some invokeOn
     body := .Opaque [{ condition := hole }] none []
-    axioms := [hole, md (.IsType hole (ty .TInt))] }
+    -- Second axiom: a bool-valued proposition that gives its hole an INT type-context,
+    -- via `$gt(<?>, 0)`. `is` is composite-target-only, so a primitive `is int` resolves
+    -- as an error. `$gt` is bool-valued yet types the hole `int` through the operator's
+    -- parameter, preserving the int-hole count this test pins.
+    axioms := [hole, md (.StaticCall (mkId Operation.Gt.procName) [hole, md (.LiteralInt 0)])] }
   let instanceProc := {
     externalProc "instanceContractHoles"
       [param "self" (.UserDefined (mkId "ContractHolder"))] with
@@ -737,8 +740,10 @@ private def staticContractPositionsMatch (program : Program) (proc : Procedure) 
       generatedCallMatches program .TBool "x" postcondition.condition
     let bareAxiomMatches := generatedCallMatches program .TBool "x" bareAxiom
     let typedAxiomMatches := match typedAxiom.val with
-      | .IsType holeCall expectedType =>
-          isIntType expectedType && generatedCallMatches program .TInt "x" holeCall
+      | .StaticCall callee [holeCall, rhs] =>
+          callee.text == Operation.Gt.procName &&
+            (match rhs.val with | .LiteralInt 0 => true | _ => false) &&
+            generatedCallMatches program .TInt "x" holeCall
       | _ => false
     comparisonMatches && requiresMatches && decreasesMatches && invokeOnMatches &&
       postconditionMatches && bareAxiomMatches && typedAxiomMatches

@@ -231,6 +231,116 @@ def retagOldAs (kind : OldKind) (e : StmtExprMd) : StmtExprMd :=
       | .OldGuarantee => { n with val := .OldGuarantee inner }
     | _ => n) e
 
+/-! ### Small boolean-combinator builders + contract param-alignment
+
+Shared by the passes that synthesize obligation expressions (e.g. the Liskov
+refinement checker and the dynamic-dispatch dispatcher), which otherwise hand-roll
+the same `.StaticCall Operation.And/.Implies/.Not.procName` nodes and the same
+param-renaming map. -/
+
+def andMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
+  ⟨ .StaticCall (mkId Operation.And.procName) [a, b], src ⟩
+
+/-- `a ==> b` as a `StmtExprMd`. A literal-`true` antecedent is dropped (`true ==> b` ≡ `b`),
+    so a vacuous guard (e.g. an empty `notAnyOverrider` conjunction) does not clutter the
+    emitted formula. -/
+def impliesMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
+  match a.val with
+  | .LiteralBool true => b
+  | _ => ⟨ .StaticCall (mkId Operation.Implies.procName) [a, b], src ⟩
+
+def notMd (src : FileRange) (a : StmtExprMd) : StmtExprMd :=
+  ⟨ .StaticCall (mkId Operation.Not.procName) [a], src ⟩
+
+/-- Conjoin a list of boolean `StmtExprMd`s: the empty list is the literal `true` (the `.And`
+    identity), a non-empty list folds from its FIRST element so there is no leading `true &`
+    conjunct cluttering the emitted formula (`[p]` is `p`, `[p, q]` is `p & q`). -/
+def conjoinAnd (src : FileRange) (es : List StmtExprMd) : StmtExprMd :=
+  match es with
+  | [] => ⟨ .LiteralBool true, src ⟩
+  | e :: rest => rest.foldl (andMd src) e
+
+/-! ### Virtual-dispatch family naming
+
+The synthetic names minted for a virtual-dispatch family, in ONE place so the mint
+sites (LiftInstanceProcedures, CheckOverrideRefinement) cannot drift. All use `$` as
+the separator — already a reserved-by-convention synthetic marker (`$body`, `$heap`);
+a user identifier colliding with one of these is caught fail-loud at re-resolution
+(see `LaurelCompilationPipeline`'s duplicate-definition net). -/
+
+/-- Top-level name for a lifted instance method (also the dispatcher name when the
+    method is virtual): `T$m`. -/
+def liftedProcName (typeName methodName : Identifier) : Identifier :=
+  {mkId s!"{typeName.text}${methodName.text}" with source := methodName.source}
+
+/-- Name of the synthesized downcast helper for type `T`: `downcast$T`. Minted by
+    `TypeHierarchy` (the definition `function downcast$T(p: T): T requires (p is T)`) and
+    `HeapParameterization` (the `AsType`-arm call site). -/
+def downcastProcName (typeName : Identifier) : Identifier :=
+  {mkId s!"downcast${typeName.text}" with source := typeName.source}
+
+/-- The `$impl` marker appended to a method's real (non-dispatcher) implementation.
+    Not necessarily a trailing suffix: monomorphization appends its own `$a{n}$…`
+    instantiation tag after it (`Box$get$impl$a1$int`). -/
+def implTag : String := "$impl"
+
+/-- Name for the real implementation of a method on `typeName`, a dispatcher branch
+    target: `T$m$impl`. -/
+def implProcName (typeName methodName : Identifier) : Identifier :=
+  {mkId s!"{typeName.text}${methodName.text}{implTag}" with source := methodName.source}
+
+/-- The local name a dispatcher branch binds for the downcast receiver: `$self$O`. -/
+def dispatchCastName (overriderName : Identifier) : Identifier :=
+  mkId s!"$self${overriderName.text}"
+
+/-- The name of a Liskov refinement checker / its child-spec companion for `child.m`.
+    `suffix` is `"refines$pre"`, `"refines$post"`, or `"childspec"`. -/
+def refinementProcName (childTypeName methodName : Identifier) (suffix : String) : Identifier :=
+  {mkId s!"{childTypeName.text}${methodName.text}${suffix}" with source := methodName.source}
+
+/-- The non-`free` conditions of `cs`. A `free` (`ConditionMode.Assume`) condition is
+    ASSUMED, not checked, so it is never a guarantee a caller may rely on — every place
+    that turns a contract into an obligation (a dispatcher's conveyed posts, a Liskov
+    pre/post checker) must drop the free ones first. -/
+def nonFreeConditions (cs : List Condition) : List Condition :=
+  cs.filter (fun c => c.mode.doesAssert)
+
+/-- Shared by the dynamic-dispatch dispatcher (each branch calls a `$impl`) and the
+    Liskov post-checker (calls the `$childspec` companion). The void case is left a bare
+    call deliberately — block-wrapping for branch symmetry (a void heap-writer's
+    `$heap`-threaded call) is the caller's concern. -/
+def mkCallAssigningOutputs (src : FileRange) (callee : Identifier)
+    (args : List StmtExprMd) (outputs : List Parameter) : StmtExprMd :=
+  let call : StmtExprMd := ⟨ .StaticCall callee args, src ⟩
+  match outputs with
+  | [] => call
+  | outs => ⟨ .Assign (outs.map fun o => ⟨ .Local o.name, src ⟩) call, src ⟩
+
+/-- Positional alignment map from a SOURCE procedure's parameter names to a TARGET
+    procedure's, over inputs then outputs (outputs inserted last ⇒ they win a
+    name collision). `zip` truncates to the shorter list, so on arity mismatch
+    surplus source names are left UNMAPPED (a later unresolved reference fails loud
+    rather than silently passing). Used to express one procedure's contract in
+    terms of another's parameters (e.g. a parent method's contract over a child
+    method's names, or an overrider's over a dispatcher's). -/
+def alignParamMap (source target : Procedure) : Std.HashMap String Identifier :=
+  (source.inputs.zip target.inputs ++ source.outputs.zip target.outputs).foldl
+    (fun m st => m.insert st.1.name.text st.2.name) {}
+
+/-- Rename free `.Var (.Local _)` references in an expression from a SOURCE
+    procedure's parameter names to a TARGET procedure's (via `alignParamMap`).
+    Argument order matters: the contract being rewritten belongs to `source` and
+    is re-expressed in `target`'s names. Touches only local-variable leaves — never
+    `.Var (.Field _)` receivers, type-level names, or structure. -/
+def renameProcLocals (source target : Procedure) : StmtExprMd → StmtExprMd :=
+  let ren := alignParamMap source target
+  mapStmtExpr (fun n => match n.val with
+    | .Var (.Local r) =>
+      match ren.get? r.text with
+      | some r' => { n with val := .Var (.Local r') }
+      | none => n
+    | _ => n)
+
 /--
 Bottom-up monadic traversal where `post` returns a list of statements, and both
 callbacks are told whether the node's *result is used* (`resultUsed`, threaded

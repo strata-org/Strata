@@ -2568,17 +2568,25 @@ def Synth.assign (exprMd : StmtExprMd)
   -- is the synth result of resolving its receiver (`Synth.resolveStmtExpr`, the
   -- authoritative synthesizer), so the field type is concretized against it directly
   -- rather than re-derived by a separate, weaker pass.
-  let targetsWithTy ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
+  --
+  -- A `Declare` target yields its type but is *not* bound yet — the name enters
+  -- scope only after the value is resolved. Binding first would put the declared
+  -- name in scope for its own initializer, which makes resolution non-idempotent: a
+  -- second resolve of an already-resolved `var x : T := <expr mentioning x>` rebinds
+  -- that `x` to the declaration itself instead of the outer binding it named. Passes
+  -- that re-resolve (`needsResolves`) then silently change the program's meaning.
+  let pending ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
     have := hv
     let ⟨vv, vs⟩ := v
     match vv with
     | .Local ref =>
       let ref' ← resolveRef ref source
-      pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
+      pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
     | .Field target fieldName =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
       let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
-      pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
+      pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
+        ← concretizeFieldType holderTy fieldName'))
     | .Declare param =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
@@ -2591,24 +2599,32 @@ def Synth.assign (exprMd : StmtExprMd)
           match compTy with
           | some t => declInferValueType param.name vs t
           | none => pure { val := .Unknown, source := vs }
-      let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure ((⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd), ty')
-  let targets' := targetsWithTy.map (·.1)
-  let targetTys := targetsWithTy.map (·.2)
+      pure (Sum.inr ((param, ty', vs) : Parameter? × HighTypeMd × FileRange))
+  let targetTys := pending.map fun p =>
+    match p with
+    | .inl (_, ty) => ty
+    | .inr (_, ty', _) => ty'
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  match inferInfo with
-  | some (value', valueTy) =>
-    -- RHS already synthesized for inference; enforce the boundary tuple-wise
-    -- (unless `componentTypes` already reported an arity mismatch, which the
-    -- tuple check would only restate against the `Unknown` fallback bindings).
-    unless arityError do
-      checkSubtype value'.source expectedTy valueTy
-    pure (.Assign targets' value', expectedTy)
-  | none =>
-    let value' ← Check.resolveStmtExpr value expectedTy
-    pure (.Assign targets' value', expectedTy)
+  -- The value is resolved while the declared names are still out of scope.
+  let value' ← match inferInfo with
+    | some (value', valueTy) =>
+      -- RHS already synthesized for inference; enforce the boundary tuple-wise
+      -- (unless `componentTypes` already reported an arity mismatch, which the
+      -- tuple check would only restate against the `Unknown` fallback bindings).
+      unless arityError do
+        checkSubtype value'.source expectedTy valueTy
+      pure value'
+    | none => Check.resolveStmtExpr value expectedTy
+  -- Only now do the declarations enter scope.
+  let targets' ← pending.mapM fun p => do
+    match p with
+    | .inl (t, _) => pure t
+    | .inr (param, ty', vs) =>
+      let name' ← defineNameCheckDup param.name (.var param.name ty')
+      pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
+  pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -2635,6 +2651,9 @@ def Check.assign (exprMd : StmtExprMd)
   -- Reuse `Synth.assign` for the target/value/expectedTy work (identical), then add the
   -- [⇐] Sub boundary check. The call is on the SAME `exprMd`, so termination is by the
   -- lexicographic tag (2 > 1 = Synth.assign's), not a subterm decrease.
+  --
+  -- Delegating also means the deferred-binding rule in `Synth.assign` (declared names
+  -- enter scope only after the value is resolved) applies here with no duplication.
   let (synthExpr, expectedTy) ← Synth.assign exprMd targets value source h
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
@@ -2661,10 +2680,19 @@ def Check.assign (exprMd : StmtExprMd)
     Scoping: the initializer is synthesized *before* `defineNameCheckDup`
     introduces the binding, so `e` cannot see the `x` being declared — a
     self-referential `var x := x + 1` reports "'x' is not defined" (or reads
-    an outer `x` if one is in scope). This is asymmetric with the *annotated*
-    path, which resolves targets first: `var x : int := x + 1` accepts the
-    self-reference, reading the fresh (uninitialized) binding. Pinned by
-    `selfRefNoOuter`/`selfRefOuterShadow` in `ResolutionTypeCheckTests`. -/
+    an outer `x` if one is in scope).
+
+    `Synth.assign`/`Check.assign` follow the *same* scoping for annotated declarations
+    (`var x : int := x + 1`): they resolve the value while the declared names are still
+    out of scope, and bind them afterwards. That symmetry is what keeps resolution
+    idempotent — this function rewrites `var x := e` into the annotated form, so
+    re-resolving an already-resolved declaration still binds its initializer in the
+    enclosing scope rather than to the declaration itself. See the comment on
+    `Synth.assign`.
+
+    Pinned by `selfRefNoOuter`/`selfRefOuterShadow` for the unannotated form and
+    `annotatedSelfRefOuterShadow` for the annotated form, in
+    `ResolutionTypeCheckTests`. -/
 def Synth.declInfer (exprMd : StmtExprMd)
     (name : Identifier) (vs : FileRange) (value : StmtExprMd)
     (source : FileRange)
@@ -3232,11 +3260,16 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       -- declarer, rejecting an incomparable diamond rather than picking silently. The
       -- receiver reaches the winner's `self` parameter by the ordinary subtype check.
       --
-      -- SOUND ONLY because Laurel has no dynamic dispatch: the DECLARED type selects
-      -- the member, so for `b : Base` holding a `Sub` that overrides `m`, `b#m` binds
-      -- Base.m's contract and Base.m runs. Adding dispatch would need a monomorphism
-      -- check here (jverify already enforces one on its side); flagged so the
-      -- dependency is not silent.
+      -- The DECLARED type selects the member DECLARER: `b : Base` binds the lifted key
+      -- `Base$m`. Under dynamic dispatch,
+      -- `LiftInstanceProcedures` generates `Base$m` as a runtime-tag DISPATCHER (with the
+      -- real body at `Base$m$impl`), so for `b : Base` holding a `Sub` that overrides `m`,
+      -- `b#m` binds Base.m's contract but the Sub override actually RUNS. This is sound
+      -- because `CheckOverrideRefinement` (the Liskov pass, gated on the same
+      -- `isVirtualDispatchMethod` predicate as dispatcher generation) proves every override
+      -- refines its parent's contract (Parent.pre ⇒ Child.pre, Child.post ⇒ Parent.post), so
+      -- the parent contract bound here holds for whatever override dispatch selects. (jverify
+      -- enforces its own monomorphism check on its side.)
       let s ← get
       let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
       match s.typeLattice.resolveInheritedMember tyName declares with
@@ -3372,6 +3405,37 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     else { val := HighType.Applied { val := .UserDefined ref', source := source } typeArgs', source := source }
   pure (.New ref' typeArgs', ty)
 
+/-- Is the target type of an `is`/`as` a NON-composite (so the cast is unsupported)?
+    `is`/`as` are only implemented for composite types — lowering keys off a runtime type tag
+    only composites carry (`TypeHierarchy`), and only a composite target has a `downcast$T` helper
+    (`HeapParameterization`). A non-composite target that slips through reaches lowering and fails
+    as an internal error (dangling `downcast$T`, or a silently mis-verifying `.Hole`); rejecting it
+    here turns that into a clean diagnostic. Rejected shapes:
+    - datatype / primitive / collection: no type tag, no `downcast$T`.
+    - `.TVar`: Laurel type parameters are unconstrained (no `<T extends C>`), so `x as T` can never
+      be statically known to target a composite. Rejecting up front also pre-empts the case where
+      monomorphization concretizes `T` to a non-composite and trips this check *after* resolution,
+      where the user error would surface as a compiler bug.
+    `unfold` first, so an alias/constrained type is judged by its base (an alias OF a composite is
+    fine); `.Unknown` (a prior error) passes through, stacking no cascading diagnostic.
+    A gradual dynamic-top `.UserDefined` (e.g. Python's `Any`, registered in `gradualTypes`) is
+    deliberately NOT exempted here: it IS rejected as a non-composite target. `coerce` would accept
+    it at resolution (it is a boxable wildcard), but there is no downstream lowering for `as`/`is`
+    against a gradual top — `HeapParameterization` would synthesize a `downcast$Any` call and
+    `TypeHierarchy` an `Any_TypeTag`, neither of which is minted (both are composite-only), so a
+    leaked gradual top faults as an internal error after re-resolution. Rejecting it up front keeps
+    the guard and the (composite-only) lowering consistent and yields a clean user diagnostic.
+    Reachability is nil today (no frontend builds `as`/`is` nodes against a gradual name), so this
+    is defensive; if such lowering is ever added, give the gradual top a real lowering
+    (`as Any` ↦ identity, `is Any` ↦ `true`) rather than relaxing this guard. -/
+def castTargetIsNonComposite (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
+  match (ctx.unfold ty).val with
+  | .Unknown => false
+  | .TVar _ => true
+  | u => match highBaseName? u with
+         | some name => ! ctx.parentExprMap.contains name.text
+         | none => true
+
 /-- (AsType)
     ```
     Γ ⊢ target ⇒ U
@@ -3387,7 +3451,10 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     upcast `cat as Animal`). Sibling casts (`Dog as Cat`) and casts
     between unrelated primitives (`"hi" as int`) are rejected. The
     synthesized type is `T` — the user's claim is honored once the
-    relation check passes. -/
+    relation check passes.
+
+    `is`/`as` are supported only for COMPOSITE targets (see
+    `castTargetIsNonComposite`); a non-composite target is rejected up front. -/
 def Synth.asType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
@@ -3395,7 +3462,11 @@ def Synth.asType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  if castTargetIsNonComposite ctx ty' then
+    let diag := diagnosticFromSource ty.source
+      s!"'as' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+    modify fun s => { s with errors := s.errors.push diag }
+  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
       s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
@@ -3424,7 +3495,11 @@ def Synth.isType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  if castTargetIsNonComposite ctx ty' then
+    let diag := diagnosticFromSource ty.source
+      s!"'is' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+    modify fun s => { s with errors := s.errors.push diag }
+  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
       s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
@@ -5495,11 +5570,12 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
   | .constant constant => some constant.name
   | .unresolved _ => none
 
-/-- Names in compiler-generated namespaces cannot be user binders: generated
-    qualified global references are re-resolved after constrained-type lowering. -/
+/-- A file-scope global may not take a name in the compiler's namespace — one starting
+    with `$` — because generated qualified global references (`$static.g`) are
+    re-resolved after constrained-type lowering. -/
 private def validateGlobalNames (program : Program) : List Message :=
   let globalErrors := program.staticFields.filterMap fun field =>
-    if field.name.text.contains '$' then
+    if field.name.text.startsWith "$" then
       some (diagnosticFromSource field.name.source
         s!"file-scope global name '{field.name.text}' is reserved for compiler-generated variables"
         MessageKind.userError)
@@ -5551,6 +5627,112 @@ private def validateGlobalNames (program : Program) : List Message :=
       else none
   globalErrors ++ staticOwnerErrors ++ binderErrors ++ constrainedBinderErrors
     ++ heapParamErrors
+
+/-- Every declared name in a program, as `(what it is, spelling, where)` triples.
+    Covers the positions `buildRefToDef` cannot: that map is keyed by `uniqueId`,
+    so it is empty before resolution has stamped any, and it structurally misses
+    type parameters, a constrained type's `valueName`, block labels, and binders
+    inside a field initializer. -/
+private def declaredNames (program : Program) : List (String × String × FileRange) :=
+  let ofId (kind : String) (name : Identifier) := (kind, name.text, name.source)
+  -- Binders introduced *inside* an expression. Labels are the one name here that
+  -- is a bare `String` rather than an `Identifier` (see `StmtExpr.Block`), so they
+  -- borrow the block's own range.
+  let inExpr (e : StmtExprMd) : List (String × String × FileRange) :=
+    match e.val with
+    | .Var (.Declare p) => [ofId "variable" p.name]
+    | .Assign targets _ => targets.filterMap fun
+      | ⟨.Declare p, _⟩ => some (ofId "variable" p.name)
+      | _ => none
+    | .IncrDecr _ _ ⟨.Declare p, _⟩ => [ofId "variable" p.name]
+    | .CompoundAssign _ ⟨.Declare p, _⟩ _ => [ofId "variable" p.name]
+    | .Quantifier _ param _ _ => [ofId "bound variable" param.name]
+    | .Try _ catches _ => catches.map (ofId "catch binding" ·.binding)
+    | .Block _ (some label) => [("block label", label, e.source)]
+    | _ => []
+  let inExprs (e : StmtExprMd) := collectStmtExprList inExpr e
+  -- The `WithCoroutine` variant matters here: plain `mapProcedureM` skips a
+  -- coroutine's `relies`/`guarantees`, leaving a binder there unchecked.
+  let procExprNames (proc : Procedure) : List (String × String × FileRange) :=
+    let collect : StmtExprMd → StateM (List (String × String × FileRange)) StmtExprMd :=
+      fun e => do modify (· ++ inExprs e); pure e
+    let walk : StateM (List (String × String × FileRange)) Procedure := do
+      mapProcedureSpecificationsWithCoroutineM' collect (← mapProcedureBodiesM collect proc)
+    (walk.run []).2
+  let ofProc (proc : Procedure) : List (String × String × FileRange) :=
+    -- See `resultOutputName` for why a sole output may be spelled `$result`.
+    let soleResult := proc.outputs.length == 1
+    ofId "procedure" proc.name
+      :: proc.typeArgs.map (ofId "type parameter")
+      ++ proc.inputs.map (ofId "parameter" ·.name)
+      ++ (proc.outputs.filter (fun p => !(soleResult && p.name.text == resultOutputName))
+            |>.map (ofId "output parameter" ·.name))
+      ++ proc.throwsBinding.toList.map (ofId "throws binding")
+      -- A coroutine's channel bindings are declarations too: `yields (x: T)` and
+      -- `resumes (y: U)` are in scope in the body and in the guarantees/relies
+      -- clauses, so they can shadow a generated name exactly as a parameter can.
+      -- They hang off `contracts`, not `inputs`/`outputs`, so nothing above reaches them.
+      ++ (match proc.contracts with
+          | .Coroutine _ _ yields resumes =>
+            yields.map (ofId "yields binding" ·.name)
+              ++ resumes.map (ofId "resumes binding" ·.name)
+          | .Regular => [])
+      ++ procExprNames proc
+  let ofField (kind : String) (f : Field) : List (String × String × FileRange) :=
+    ofId kind f.name :: f.initializer.toList.flatMap inExprs
+  program.types.flatMap (fun
+    | .Composite ct =>
+      ofId "type" ct.name
+        :: ct.typeArgs.map (ofId "type parameter")
+        ++ ct.fields.flatMap (ofField "field")
+        ++ ct.instanceProcedures.flatMap ofProc
+    | .Constrained ct =>
+      [ofId "type" ct.name, ofId "value binding" ct.valueName]
+        ++ inExprs ct.constraint ++ inExprs ct.witness
+    | .Datatype dt =>
+      ofId "type" dt.name
+        :: dt.typeArgs.map (ofId "type parameter")
+        ++ dt.constructors.flatMap (fun c =>
+             ofId "constructor" c.name :: c.args.map (ofId "constructor argument" ·.name))
+    | .Opaque ot =>
+      ofId "type" ot.name :: ot.typeArgs.map (ofId "type parameter")
+    | .Alias ta =>
+      ofId "type" ta.name :: ta.typeArgs.map (ofId "type parameter"))
+    ++ program.staticProcedures.flatMap ofProc
+    ++ program.staticFields.flatMap (ofField "file-scope global")
+    ++ program.constants.flatMap (fun c =>
+         ofId "constant" c.name :: c.initializer.toList.flatMap inExprs)
+
+/-- A leading `$` marks the compiler's own namespace, so a *source* program may not
+    declare a name that starts with one. Everything in that namespace is generated
+    deliberately: the prelude's operator delegates (`$add`, `$intAdd`), the parser's
+    anonymous return output (`$result`), and what the lowering passes synthesize
+    (`$heap`, `$thrown`, `$return`, `$static.g`). A source declaration starting with `$`
+    would shadow one of those or be shadowed by it.
+
+    Only the *first* character is reserved. A `$` further along (`Box$a1$int`,
+    `Nat$constraint`, `tmp$3`) is legal in source, which also leaves the frontends free
+    to namespace their generated Laurel as `py$…` / `java?…` without an exemption here.
+    Whether such a name later collides with a generated one is a separate concern, and
+    not what this check is for.
+
+    Must run on the *raw* program — before the prelude is prepended and before the
+    initial resolution — the only point at which a leading `$` can only have come from
+    source. Nothing therefore needs exempting beyond the single case below, and a
+    prelude declaration need not be told apart from a user one: the prelude is not
+    present yet.
+
+    The check reads the AST, after the lexer has unescaped the identifier, so the
+    namespace cannot be entered by spelling a name `|$x|` or `«$x»`.
+
+    The one exception is `$result` as a procedure's *sole* output; see
+    `resultOutputName`. -/
+def validateNoDollarNames (program : Program) : List Message :=
+  (declaredNames program).filterMap fun (kind, name, source) =>
+    if !name.startsWith "$" then none
+    else some (diagnosticFromSource source
+      s!"{kind} name '{name}' may not start with '$': that namespace is reserved for compiler-generated names"
+      MessageKind.userError)
 
 /-- Reject a file-scope global with a generic (`.Applied`) type. A generic composite/datatype
     FIELD is supported by #1394 (monomorphization for composites, HeapParam `.Applied` boxing for

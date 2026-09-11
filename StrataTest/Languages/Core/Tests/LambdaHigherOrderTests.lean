@@ -899,7 +899,11 @@ Result: ✅ pass-/
 
 /-! ## Datatype with function-typed field + lambda -/
 
--- A datatype whose constructor takes a function argument, instantiated with a lambda
+-- A datatype whose constructor takes a function argument, instantiated with a lambda.
+-- The constructor and both projections are applied to literals, so partial evaluation
+-- discharges the obligation and `Transformer` never reaches the SMT encoder. Contrast
+-- the symbolic program below, where the datatype must be encoded and its
+-- function-typed field is rejected.
 def datatypeFnFieldLambdaPgm :=
 #strata
 program Core;
@@ -920,7 +924,12 @@ spec {
 };
 #end
 
-/-- error: Cannot encode datatype 'Transformer' to SMT: constructor 'MkTransformer' has function-typed field 'f' of type '(arrow int int)'. Function types cannot be represented in SMT-LIB datatypes.-/
+/--
+info:
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Core.verify datatypeFnFieldLambdaPgm (options := .quiet)
 
@@ -980,13 +989,12 @@ spec {
 };
 #end
 
-/-- info: Obligation: set_result_calls_Box..val_0
-Property: assert
-Result: ✅ pass
-
+/--
+info:
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Core.verify polyDatatypeFnInstPgm (options := .quiet)
 

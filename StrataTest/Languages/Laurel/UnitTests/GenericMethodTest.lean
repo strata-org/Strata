@@ -331,6 +331,210 @@ composite Parent { var x: int }
 composite Child extends Parent { var y: int }
 procedure d(p: Parent) returns (r: int) opaque ensures true { var c: Child := p as Child; r := c#y };
 procedure u() opaque { var got: int := d(new Parent); assert 1 == 1 };"},
+
+  { name := "generic_upcast_same_inst_wrong_value", outcome := .failsExactly 1,
+    why := "a WRONG inherited value read through the same-inst upcast must FAIL — the upcast is sound, not vacuous"
+    src := r"
+composite Base<T> { var tag: T }
+composite Box<T> extends Base<T> { var val: T }
+procedure u() opaque { var b: Box<int> := new Box<int>; b#tag := 1; var base: Base<int> := b; assert base#tag == 2 };"},
+
+  -- Same diamond-inherited field access, but INSIDE an instance method (`self#f`).
+  -- `validateDiamondFieldAccesses` walks instance-method bodies (not only lifted
+  -- `staticProcedures`), so an ambiguous field read there is rejected as a clean `.userError`
+  -- at definition time.
+  { name := "diamond_field_in_method", outcome := .rejectedExactly .userError,
+    why := "a diamond-inherited field read inside an instance method must be REJECTED as a `.userError` (the diamond check walks instance methods, not just lifted static procs)"
+    src := r"
+composite Top<T> { var f: T }
+composite L<T> extends Top<T> { }
+composite R<T> extends Top<T> { }
+composite D<T> extends L<T>, R<T> {
+  procedure getF(self: D<T>) returns (r: T) opaque ensures 1 == 1 { r := self#f };
+}
+procedure u() opaque { var d: D<int> := new D<int>; assert 1 == 1 };"},
+
+  { name := "unique_field_in_method", outcome := .verifies,
+    why := "positive twin: a UNIQUELY-inherited field read inside an instance method is NOT a diamond and must verify — the diamond-in-method check must not over-reject"
+    src := r"
+composite Top<T> { var f: T }
+composite Mid<T> extends Top<T> { }
+composite D<T> extends Mid<T> {
+  procedure getF(self: D<T>) returns (r: T) opaque ensures 1 == 1 { r := self#f };
+}
+procedure u() opaque { var d: D<int> := new D<int>; assert 1 == 1 };"},
+
+  -- Diamond access inside a QUANTIFIER body: the diamond check traverses ALL
+  -- sub-expressions (via `mapStmtExprM`), so an ambiguous read in a `forall` is caught
+  -- as a clean `.userError`, not silently accepted (the coverage gap that motivated the
+  -- total-traversal rewrite; the same class of skipped positions covers `old`/`as`/`is`).
+  { name := "diamond_field_in_quantifier", outcome := .rejectedExactly .userError,
+    why := "a diamond-inherited field read inside a `forall` must be REJECTED — the diamond check covers quantifier bodies, not just statement positions"
+    src := r"
+composite Top { var f: int }
+composite L extends Top { }
+composite R extends Top { }
+composite D extends L, R { }
+procedure u(d: D) opaque { assume forall(i: int) => d#f >= 0; assert 1 == 1 };"},
+
+  { name := "unique_field_in_quantifier", outcome := .verifies,
+    why := "positive twin: a UNIQUELY-inherited field read inside a `forall` must verify — the total traversal must not over-reject"
+    src := r"
+composite Top { var f: int }
+composite Mid extends Top { }
+composite D extends Mid { }
+procedure u(d: D) opaque { assume forall(i: int) => d#f >= 0; assert 1 == 1 };"},
+
+  -- Diamond access in a PRECONDITION: the check drives over every procedure position
+  -- (via `mapProcedureM`), not just the body, so an ambiguous read in a `requires`
+  -- clause is rejected as a clean `.userError` (it was silently accepted when the driver
+  -- walked only `proc.body`; `invokeOn`/axioms are covered the same way).
+  { name := "diamond_field_in_precondition", outcome := .rejectedExactly .userError,
+    why := "a diamond-inherited field read in a `requires` precondition must be REJECTED — the diamond check covers all procedure positions, not just the body"
+    src := r"
+composite Top { var f: int }
+composite L extends Top { }
+composite R extends Top { }
+composite D extends L, R { }
+procedure u(d: D) requires d#f >= 0 opaque ensures 1 == 1 { };"},
+
+  { name := "unique_field_in_precondition", outcome := .verifies,
+    why := "positive twin: a UNIQUELY-inherited field read in a `requires` precondition must verify — widening the driver to preconditions must not over-reject"
+    src := r"
+composite Top { var f: int }
+composite Mid extends Top { }
+composite D extends Mid { }
+procedure u(d: D) requires d#f >= 0 opaque ensures 1 == 1 { };"},
+
+  { name := "diamond_field_in_method_precondition", outcome := .rejectedExactly .userError,
+    why := "a diamond-inherited field read in an INSTANCE-method precondition must be REJECTED — the driver walks instance methods' every position, not only lifted static procs' bodies"
+    src := r"
+composite Top { var f: int }
+composite L extends Top { }
+composite R extends Top { }
+composite E extends L, R {
+  procedure m(self: E) returns (r: int) requires self#f >= 0 opaque ensures 1 == 1 { r := 0 };
+}
+procedure caller(e: E) opaque { assert 1 == 1 };"},
+
+  { name := "diamond_single_parent_field", outcome := .verifies,
+    why := "positive twin: a UNIQUELY-inherited field (`lf` on the L side of a generic `D<int>`) reads back its written value — only the ambiguous diamond field is rejected, not all inheritance on a diamond shape"
+    src := r"
+composite Top<T> { var f: T }
+composite L<T> extends Top<T> { var lf: int }
+composite R<T> extends Top<T> { }
+composite D<T> extends L<T> { var df: int }
+procedure u() opaque { var d: D<int> := new D<int>; d#lf := 5; assert d#lf == 5 };"},
+
+  { name := "field_tvar_inherited_remap_write_correct", outcome := .verifies,
+    why := "the positive twin: writing the REMAP-CORRECT type (`bool`) into inherited `g#h` at `GHolder<int,bool>` translates (not over-rejected)"
+    src := r"
+composite Base<U,V> { var h: U }
+composite GHolder<A,B> extends Base<B,A> { var k: int }
+procedure u(g: GHolder<int,bool>) opaque modifies g { g#h := false };"},
+
+  { name := "as_guarded_downcast_value_observed", outcome := .verifies,
+    why := "the value THROUGH a guarded downcast is real, not havoc: in a heap-writer, after `c := p as Child` write `c#y := 9` then read back `== 9`. Discriminates on all axes — unguarded fails the is-obligation (`_value_observed_unguarded`), wrong value fails (`_value_observed_wrong`)."
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) opaque modifies p { if (p is Child) then { var c: Child := p as Child; c#y := 9; assert c#y == 9 } else { } };
+procedure u() opaque { assert 1 == 1 };"},
+
+  { name := "as_guarded_downcast_value_observed_wrong", outcome := .failsExactly 1,
+    why := "a wrong read after the guarded-downcast write must FAIL — the write-through-cast-then-read is a genuine value obligation, not vacuous"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) opaque modifies p { if (p is Child) then { var c: Child := p as Child; c#y := 9; assert c#y == 8 } else { } };
+procedure u() opaque { assert 1 == 1 };"},
+
+  { name := "as_guarded_downcast_value_observed_unguarded", outcome := .failsExactly 1,
+    why := "the SAME write-through-cast body WITHOUT the `is Child` guard must fail the cast's is-obligation (opaque `Parent` not provably a `Child`) — proves the guard, not just the read, is load-bearing"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) opaque modifies p { var c: Child := p as Child; c#y := 9; assert c#y == 9 };
+procedure u() opaque { assert 1 == 1 };"},
+
+  -- `as` cast in a CONTRACT position. `as` lowers to a call to the synthesized `downcast$T`
+  -- helper (a pure preconditioned function), so `(p as Child)#y` can appear in a formula
+  -- (a statement-shaped lowering cannot). PrecondElim discharges `downcast$Child`'s `is Child`
+  -- precondition as a well-definedness obligation, guarded here by the `p is Child` antecedent.
+  { name := "as_in_contract_postcondition", outcome := .verifies,
+    why := "`(p as Child)#y` in a postcondition translates + verifies (downcast$T helper + PrecondElim WD obligation, guarded by `p is Child`)"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) returns (r: int) opaque ensures (p is Child) ==> (r == (p as Child)#y) { if (p is Child) then { var c: Child := p as Child; r := c#y } else { r := 0 } };
+procedure u() opaque { assert 1 == 1 };"},
+
+  { name := "as_in_contract_postcondition_wrong", outcome := .failsExactly 1,
+    why := "a WRONG postcondition through the downcast (`r == (p as Child)#y + 1`) must FAIL — the contract cast is a real obligation, not vacuous"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) returns (r: int) opaque ensures (p is Child) ==> (r == (p as Child)#y + 1) { if (p is Child) then { var c: Child := p as Child; r := c#y } else { r := 0 } };
+procedure u() opaque { assert 1 == 1 };"},
+
+  { name := "as_guarded_downcast_generic_inst", outcome := .verifies,
+    why := "the generics × as-cast intersection: a guarded downcast to a GENERIC instantiation (`base is Box<int>` then `base as Box<int>`) writes + reads the child field, verifies"
+    src := r"
+composite Base<T> { var tag: T }
+composite Box<T> extends Base<T> { var val: T }
+procedure d(base: Base<int>) opaque modifies base { if (base is Box<int>) then { var b: Box<int> := base as Box<int>; b#val := 9; assert b#val == 9 } else { } };
+procedure u() opaque { assert 1 == 1 };"},
+
+  -- `is`/`as` are supported only for COMPOSITE (class) targets: lowering keys off a runtime
+  -- type tag only composites carry. A non-composite target (datatype / primitive / alias /
+  -- constrained) is rejected up front at resolution with ONE clean `.userError`, rather than
+  -- reaching lowering and dying as a strataBug (datatype → dangling `downcast$T`) or a
+  -- silently-mis-verifying `.Hole` (primitive `is`). `rejectedExactly` pins the clean single
+  -- diagnostic. Composite `is`/`as` (above) and generic-composite instantiations still work.
+  { name := "as_datatype_target_rejected", outcome := .rejectedExactly .userError,
+    why := "`w as Wrapper` on a datatype is not a composite cast — rejected cleanly, no dangling downcast$Wrapper strataBug"
+    src := r"
+datatype Wrapper { MkW(v: int) }
+procedure u() opaque { var w: Wrapper := MkW(3); var w2: Wrapper := w as Wrapper; assert 1 == 1 };"},
+
+  { name := "is_primitive_target_rejected", outcome := .rejectedExactly .userError,
+    why := "`5 is int` on a primitive is not a composite test — rejected cleanly, not a silently-verifying .Hole"
+    src := r"
+procedure u() opaque { var b: bool := 5 is int; assert b };"},
+
+  { name := "as_constrained_target_rejected", outcome := .rejectedExactly .userError,
+    why := "`5 as nat` on a constrained type is not a composite cast — rejected cleanly at resolution (unfold sees the base `int`)"
+    src := r"
+constrained nat = x: int where x >= 0 witness 0
+procedure u() opaque { var n: nat := 5 as nat; assert n == 5 };"},
+
+  -- A bare type parameter `T` is not a composite, so `x as T` / `x is T` in a generic
+  -- procedure is rejected as a single clean `.userError` — exercises `castTargetIsNonComposite`'s
+  -- `.TVar` arm (the other cases here cover `.UserDefined` datatype, `.TInt` primitive, and a
+  -- constrained target).
+  { name := "as_tvar_target_rejected", outcome := .rejectedExactly .userError,
+    why := "`x as T` where T is a bare type parameter is not a composite cast — rejected cleanly"
+    src := r"
+procedure foo<T>(x: T) returns (r: T) opaque ensures true { r := x as T };"},
+
+  { name := "is_tvar_target_rejected", outcome := .rejectedExactly .userError,
+    why := "`x is T` where T is a bare type parameter is not a composite test — rejected cleanly, mirroring the `as` case"
+    src := r"
+procedure foo<T>(x: T) returns (r: bool) opaque ensures true { r := x is T };"},
+
+  -- SOUNDNESS: a `#`-call on a NON-COMPOSITE receiver is REJECTED at resolution (an `int` has no
+  -- methods), not silently bound to a same-named top-level static procedure. Binding it to the
+  -- global `sideEffect` would be unsound: LiftInstanceProcedures/ContractPass only inject the
+  -- callee's precondition for a genuine instance call, so `requires x>0` would be dropped.
+  { name := "instance_call_on_noncomposite_rejected", outcome := .rejectedExactly .userError,
+    why := "`z#sideEffect(-1)` where `z: int` and `sideEffect` is a top-level static proc must be REJECTED — a `#` call needs a composite receiver; else the callee's precondition is silently dropped (unsound)"
+    src := r"
+procedure sideEffect(x: int) requires x > 0 opaque ensures 1 == 1 { };
+procedure caller() opaque { var z: int := 5; z#sideEffect(-1); assert 1 == 1 };"},
+
+  { name := "instance_call_on_composite_still_works", outcome := .verifies,
+    why := "positive twin: a genuine `bx#get()` on a composite receiver still resolves + verifies (the non-composite rejection must not break real instance calls)"
+    src := boxGet ++ "procedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 7; var got: int := bx#get(); assert got == 7 };"},
 ]
 
 private def runGenericMethodTest : IO Unit := checkCases genericMethodCorpus

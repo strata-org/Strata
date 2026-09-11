@@ -183,6 +183,12 @@ structure VerifyOptions where
       so individual obligations may still flip between conclusive and
       `unknown` (or hit different solver timeouts). -/
   disableCSE : Bool := false
+  /-- Replace calls to the program's own non-recursive functions with their bodies,
+      so a term carries the definition rather than an uninterpreted application. -/
+  functionInlining : Bool := false
+  /-- Replace a bounded index quantifier whose instance count is known with the
+      conjunction or disjunction of its instances. -/
+  unrollBoundedQuantifiers : Bool := false
   /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
   overflowChecks : OverflowChecks := {}
   /-- Maximum number of continuing symbolic-evaluation paths allowed
@@ -221,6 +227,10 @@ structure VerifyOptions where
       for quantified spec lemmas). Intended for local experimentation on the
       local solver invocation only. -/
   solverOptions : Array (String × String) := #[]
+  /-- When set, verify only these procedures: the pipeline's `filterProcedures`
+      phases restrict the program to them and to the obligation procedures
+      generated for them. An empty list verifies nothing. -/
+  proceduresToVerify : Option (List String) := none
   /-- When set, the program state after each pipeline phase is written to
       `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
       `--keep-all-files <dir>`, where the CLI derives the prefix as

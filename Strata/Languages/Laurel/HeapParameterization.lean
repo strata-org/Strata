@@ -244,32 +244,40 @@ inductive HeapTransformContext where
   | executable
   | specification
 
-/-- Lower an `AsType` node `t as T` to `{ assert (t is T); t }`, given the ALREADY-lowered
-    target `target'`. The single source of truth for `as`-cast lowering, shared by
-    `heapTransformExpr`'s `.AsType` arm and the heap-neutral `lowerAsTypeNodesOnly` path so the
-    two can't drift: a single lowering is what keeps an effectful target from being evaluated twice.
-    - `.specification`: double-embed `target'` (once in the check, once as the result). This is
-      not a soundness hedge but the only representable form here: a spec cannot host a `.Declare`
-      temp (no local inference in specs), so capture-once is unavailable — and it is safe because
-      an effectful target cannot reach a spec (effectful statements are rejected upstream at
-      translation), so `target'` is pure and evaluating it twice is meaning-preserving.
-    - `.executable`: capture `target'` into a fresh local ONCE — an effectful target (a
-      heap-writing call, or a compound like `{ x := x-1; e }` before imperative lifting) must
-      run exactly once. No type annotation on the declare: a generic callee's declared return
-      type names unbound type params here; the resolver infers the instantiated type. -/
+/-- Lower an `AsType` node `t as T`, given the ALREADY-lowered target `target'`. The single
+    source of truth for `as`-cast lowering, shared by `heapTransformExpr`'s `.AsType` arm and
+    the heap-neutral `lowerAsTypeNodesOnly` path so the two can't drift.
+
+    `t as T` lowers to a call to the synthesized `downcast$T` helper (defined in `TypeHierarchy`,
+    the next pass): `function downcast$T(p: T): T requires (p is T) { p }`. Its `requires (p is T)`
+    precondition is discharged by PrecondElim as a well-definedness obligation — so the cast works
+    in a contract FORMULA (which cannot host a statement `{ assert (t is T); t }` block) as well as
+    in a body, which dynamic dispatch requires (dispatcher casts appear in tag-conditioned specs).
+    The single call embeds `target'` EXACTLY ONCE, so an effectful executable target (a heap-writing
+    call, or a pre-lift compound `{ x := x-1; e }`) still runs once with no capture temp — and a
+    pure spec target is likewise embedded once. `context` therefore matters only for the base-name
+    fallback below.
+
+    Fallback (a target type with no base name — should not occur for a real composite cast): the
+    assert-block `{ assert (t is T); t }`, context-aware:
+    - `.specification`: double-embed `target'` (once in the check, once as the result) — the only
+      representable form (a spec cannot host a `.Declare` temp, no local inference in specs), and
+      safe because an effectful target cannot reach a spec (rejected upstream), so `target'` is pure.
+    - `.executable`: capture `target'` into a fresh local ONCE. No type annotation on the declare:
+      a generic callee's declared return type names unbound type params; the resolver infers it. -/
 private def lowerAsTypeNode (target' : StmtExprMd) (ty : HighTypeMd) (source : FileRange)
     (context : HeapTransformContext) : TransformM StmtExprMd := do
-  -- The positions differ only in whether the target may be named twice (a pure spec) or must
-  -- first be bound into a fresh local (an effectful executable target must run exactly once).
-  -- `prelude` holds that binding (empty for specs); `ref` is what the check and result mention.
-  let (prelude, ref) ← match context with
-    | .specification => pure ([], target')
-    | .executable =>
-      let result ← freshVarName
-      let capture : StmtExprMd := ⟨.Assign [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
-      pure ([capture], ⟨.Var (.Local result), source⟩)
-  let check : StmtExprMd := ⟨.Assert ⟨.IsType ref ty, source⟩ none, source⟩
-  return ⟨.Block (prelude ++ [check, ref]) none, source⟩
+  match highBaseName? ty.val with
+  | some tn => return ⟨ .StaticCall (downcastProcName tn) [target'], source ⟩
+  | none =>
+    let (prelude, ref) ← match context with
+      | .specification => pure ([], target')
+      | .executable =>
+        let result ← freshVarName
+        let capture : StmtExprMd := ⟨.Assign [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
+        pure ([capture], ⟨.Var (.Local result), source⟩)
+    let check : StmtExprMd := ⟨.Assert ⟨.IsType ref ty, source⟩ none, source⟩
+    return ⟨.Block (prelude ++ [check, ref]) none, source⟩
 
 /--
 Transform an expression, adding heap parameters where needed.

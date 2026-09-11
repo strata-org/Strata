@@ -270,13 +270,11 @@ composite Inner { var v: int }
 composite Outer { var i: Inner }
 procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5; assert o#i#v == 6 };"},
   -- A heap-writer with a USER output named `$heap` must FAIL LOUD (never translate): a heap
-  -- pass synthesizes a `$heap` name, so the user's `$heap` collides with it. Re-resolution
-  -- catches the clash as `Duplicate definition '$heap'` and reports it as a `.userError` with a
-  -- rename hint (the collision-classification net — the colliding name is user-provided, so it
-  -- is a user error, not an internal `.strataBug`). The sanity twin below pins that a writer
+  -- pass synthesizes a `$heap` name, so the user's `$heap` would collide with it.
+  -- `validateNoDollarNames` rejects it up front. The sanity twin below pins that a writer
   -- WITHOUT a user `$heap` still gets its single synth inout and verifies.
   { name := "user_heap_output_rejected", outcome := .rejected (some .userError),
-    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution net as a `.userError` (the colliding name is user-provided, so it is a user error — `Duplicate definition '$heap'` with a rename hint — not an `Internal error`/`.strataBug`)"
+    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejected as a `.userError` by `validateNoDollarNames` before any pass runs, since a source name may not start with `$`"
     src := r"
 composite Inner { var v: int }
 procedure u() returns ($heap: int) opaque { var o: Inner := new Inner; o#v := 5; $heap := 0 };"},

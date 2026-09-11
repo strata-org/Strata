@@ -86,7 +86,7 @@ procedure divisionByUnknown(a: int, b: int) returns (r: int)
   opaque
 {
   r := a / b
-//^^^^^^^^^^ error: precondition does not hold
+//^^^^^^^^^^ error: divisor is non-zero does not hold
 };
 
 // A loop invariant containing a division over a loop-varying operand: the operands

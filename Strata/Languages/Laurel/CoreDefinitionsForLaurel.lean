@@ -245,16 +245,16 @@ procedure $sub(x: int, y: int) : int
 procedure $mul(x: int, y: int) : int
   return $intMul(x, y);
 procedure $div(x: int, y: int) : int
-  requires y != 0
+  requires y != 0 summary "divisor is non-zero"
   return $intSafeDiv(x, y);
 procedure $mod(x: int, y: int) : int
-  requires y != 0
+  requires y != 0 summary "modulus is non-zero"
   return $intSafeMod(x, y);
 procedure $divT(x: int, y: int) : int
-  requires y != 0
+  requires y != 0 summary "divisor is non-zero"
   return $intSafeDivT(x, y);
 procedure $modT(x: int, y: int) : int
-  requires y != 0
+  requires y != 0 summary "modulus is non-zero"
   return $intSafeModT(x, y);
 procedure $neg(x: int) : int
   return $intNeg(x);

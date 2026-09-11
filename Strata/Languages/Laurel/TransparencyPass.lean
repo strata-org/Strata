@@ -31,22 +31,6 @@ namespace Strata.Laurel
 
 public section
 
-/-- Deep traversal that strips all Assert and Assume nodes from a StmtExpr tree.
-    Assert/Assume nodes are replaced with `LiteralBool true`, and Block nodes
-    are collapsed by filtering out trivial `LiteralBool true` leftovers. -/
-def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
-  mapStmtExpr (fun e =>
-    match e.val with
-    | .Assert .. | .Assume _ => ⟨.LiteralBool true, e.source⟩
-    | .Block stmts label =>
-      let stmts' := stmts.filter fun s =>
-        match s.val with | .LiteralBool true => false | _ => true
-      match stmts' with
-      | [] => ⟨.LiteralBool true, e.source⟩
-      | [s] => if label.isNone then s else ⟨.Block [s] label, e.source⟩
-      | _ => ⟨.Block stmts' label, e.source⟩
-    | _ => e) expr
-
 /-- Adjust a datatype selector (destructor) name based on the `proof` flag.
     Destructor names contain `..` (e.g. `IntList..head`, `IntList..head!`).
     Tester names also contain `..` but start with `is` after the separator.
@@ -79,24 +63,48 @@ private def adjustSafeOperatorName (name : Identifier) : Identifier :=
   | some text => { name with text }
   | none => name
 
-/-- Rewrite StaticCall callees to their `$asFunction` versions,
-    but only for procedures whose names appear in `nonExternalNames`. -/
-private def rewriteCallsToFunctional (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
-  mapStmtExpr (fun e =>
-    match e.val with
-    | .StaticCall callee args =>
-      if asFunctionNames.contains callee.text then
-        let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
-        ⟨.StaticCall funcCallee args, e.source⟩
-      else
-        let newName := adjustSafeOperatorName (adjustSelectorName callee)
-        ⟨ .StaticCall newName args, e.source⟩
-    | _ => e) expr
+/-- Make an expression pure: drop its proof steps and point its calls at the
+    `$asFunction` twins. A `StaticCall` to a procedure with a twin is renamed (other
+    callees get their selector/checked-operator adjustment).
+
+    Every position that reaches Core as a function body or as a spec expression goes
+    through this, and they all need both halves: an `assert` left in an expression
+    position is rejected by the schema pass, so stripping is not optional at any site
+    that renames calls. The two are one operation here rather than a choice per site.
+
+    `mapStmtExprFlattenM` is what makes dropping a proof step a *deletion*: its `post`
+    returns a list, so `[]` removes the node and the enclosing `Block` flattens over the
+    gap. Nothing is substituted in its place, not even where the step is the last
+    statement of a block: a block emptied that way is left empty, for the pass that
+    lowers an empty body to a correctly-typed `$declHole`. Putting a `bool` there instead
+    would be wrong wherever the position's type is whatever the user declared.
+
+    A proof step cannot be the last element of a *boolean* spec position — a quantifier
+    body, invariant or contract ending in one is rejected before this pass with
+    "expected 'bool', got 'void'" — so no such position can be emptied here.
+
+    There is also no `Block` arm, so an emptied or single-statement block is left exactly
+    as it was and this cannot drop a block's label or hoist a declaration out of its
+    scope. -/
+private def functionalize (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExprFlattenM (m := Id) (fun _ _ => none)
+    (fun _ e =>
+      match e.val with
+      | .Assert .. | .Assume _ => []
+      | .StaticCall callee args =>
+        if asFunctionNames.contains callee.text then
+          let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
+          [⟨.StaticCall funcCallee args, e.source⟩]
+        else
+          let newName := adjustSafeOperatorName (adjustSelectorName callee)
+          [⟨.StaticCall newName args, e.source⟩]
+      | _ => [e])
+    true expr
 
 /-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
     to their `$asFunction` versions, leaving everything else (selectors,
     operator calls, non-redirected calls) untouched. Unlike
-    `rewriteCallsToFunctional`, this does not adjust selector names or swap
+    `functionalize`, this does not adjust selector names or swap
     checked operators for unchecked ones, so it is safe to apply to imperative
     procedure bodies.
 
@@ -161,8 +169,8 @@ private def renameBoundVarRefs (boundUid : Nat) (newName : Identifier)
       if name.uniqueId == some boundUid then ⟨.Var (.Local newName), e.source⟩ else e
     | _ => e) expr
 
-/-- Rewrite quantifier bodies and loop invariants like function bodies: strip
-    assert/assume and rewrite calls to their `$asFunction` variants.
+/-- Rewrite quantifier triggers and bodies, and loop invariants, like function
+    bodies: strip assert/assume and rewrite calls to their `$asFunction` variants.
 
     For quantifiers this ensures that calls inside them (e.g. in modifies frame
     conditions) reference the pure functional version and are not treated as
@@ -175,7 +183,7 @@ private def renameBoundVarRefs (boundUid : Nat) (newName : Identifier)
     passes cannot represent it. Rewriting it to the pure `$asFunction` twin keeps the
     invariant a pure expression that can stay in place. Without this, a
     `requires`-bearing callee — including the `$div` wrapper behind `/` — makes the
-    contract pass inject an `assert` into the invariant, which `stripAssertAssume`
+    contract pass inject an `assert` into the invariant, which `functionalize`
     removes here: the precondition is checked at the call sites that matter, not at
     the loop head.
 
@@ -212,7 +220,7 @@ private def renameBoundVarRefs (boundUid : Nat) (newName : Identifier)
     never make an unprovable goal verify. See the `Quantifiers.lean` tests.
 
     `emitProofBlocks := false` suppresses the scaffolding entirely, keeping only
-    the `stripAssertAssume` + call-rewriting behavior. Used in `AnalysisMode.Execute`,
+    the plain `functionalize` behavior. Used in `AnalysisMode.Execute`,
     where the nondet `$proof_N` guard has no meaningful concrete semantics. -/
 private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
     (nonExternalNames : Std.HashSet String) (expr : StmtExprMd) : StateM Nat StmtExprMd :=
@@ -226,7 +234,7 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
   -- the inner rewrite would already have replaced the outer's body with its own
   -- proof block, whose `assume false` seal makes `containsAssertOrAssume` fire
   -- again, so the outer would wrap the inner's scaffolding. The outer's
-  -- `stripAssertAssume` only removes `.Assert`/`.Assume`, leaving the inner
+  -- `functionalize` only removes `.Assert`/`.Assume`, leaving the inner
   -- `var $proof_N`/`var $havoc_N` and `IfThenElse` behind in the goal — an
   -- uninitialized declaration in a transparent position, which the schema pass
   -- rejects with "local variables must have initializers in transparent bodies
@@ -234,18 +242,23 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
   --
   -- Returning `some` from `pre` skips the generic recursion, so this case
   -- recurses explicitly into the *proof body* only (a quantifier nested there
-  -- gets its own proof block). The goal is `stripAssertAssume`d, so it holds no
+  -- gets its own proof block). The goal is `functionalize`d, so it holds no
   -- proof steps and needs no proof block of its own.
   mapStmtExprPrePostM (m := StateM Nat)
     (pre := fun e =>
     match e.val with
-    | .Quantifier mode param trigger body =>
-      let trigger' := trigger.map (rewriteCallsToFunctional nonExternalNames)
+    | .Quantifier _ param _ body =>
+      -- `functionalize` is applied to the whole quantifier, which reaches both the body
+      -- and the trigger: `mapStmtExpr` recurses into each and leaves the `.Quantifier`
+      -- node itself alone. Both are spec positions that nothing is lifted out of, so a
+      -- `requires`-bearing callee in either — including the `$div` wrapper behind `/` —
+      -- would otherwise leave the contract pass's `assert` sitting in expression
+      -- position, where the schema pass rejects it. The obligation is not dropped by
+      -- this: a trigger only guides instantiation and carries no truth obligation, so
+      -- its well-formedness is checked at the call sites that matter.
       if emitProofBlocks && containsAssertOrAssume body then do
         let n ← modifyGet (fun n => (n, n + 1))
-        let body' := rewriteCallsToFunctional nonExternalNames (stripAssertAssume body)
-        let strippedQuantifier : StmtExprMd :=
-          ⟨.Quantifier mode param trigger' body', e.source⟩
+        let strippedQuantifier : StmtExprMd := functionalize nonExternalNames e
         -- Self-sealing branch: { var $havoc_n: T; <body[x := $havoc_n]>; assume false }
         --
         -- The havoc variable gets a *fresh* name rather than reusing the binder's.
@@ -298,17 +311,15 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         -- Outer block: { guardDecl; sealedBranch; strippedQuantifier }
         pure (some ⟨.Block [guardDecl, sealedBranch, strippedQuantifier] none, e.source⟩)
       else
-        -- No proof steps of its own: strip and rewrite calls, as before. The body is
-        -- already fully handled here, so this also returns `some` — recursing would
-        -- revisit a `stripAssertAssume`d tree to no effect.
-        let body' := rewriteCallsToFunctional nonExternalNames (stripAssertAssume body)
-        pure (some ⟨.Quantifier mode param trigger' body', e.source⟩)
+        -- No proof steps of its own. The quantifier is already fully handled here, so
+        -- this also returns `some` — recursing would revisit a `functionalize`d tree to
+        -- no effect.
+        pure (some (functionalize nonExternalNames e))
     | _ => pure none)
     (post := fun e =>
     match e.val with
     | .While cond invs dec body postTest =>
-      let rewriteSpec := fun (s : StmtExprMd) =>
-        rewriteCallsToFunctional nonExternalNames (stripAssertAssume s)
+      let rewriteSpec := functionalize nonExternalNames
       -- Only the invariants and `decreases` are spec positions; `cond` and `body`
       -- are ordinary imperative code and must keep their procedure calls. Runs in
       -- `post`, so `cond`/`body` still get the generic recursion (a quantifier in
@@ -359,7 +370,9 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
     else proc.name
   let body := match proc.body with
-    | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
+    -- Stripping is unconditional: without a twin, `needsProcTwin` already established
+    -- the body holds no assert/assume, so it only ever has an effect in the twin case.
+    | .Transparent b => .Transparent (functionalize asFunctionNames b)
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
   { proc with name := funcName, body := body }
@@ -437,9 +450,9 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     -- uninitialized bool with no meaningful concrete semantics, so under
     -- interpretation the branch would be taken (or not) arbitrarily and its
     -- `assume false` seal has nothing to seal. Execute mode therefore uses only
-    -- `stripAssertAssume`, without the proof-block scaffolding.
+    -- `functionalize`, without the proof-block scaffolding.
     let coreProcedures := imperativeProcs.map fun proc =>
-      let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+      let proc := { proc with axioms := proc.axioms.map (functionalize toUpdateNames) }
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
     { functions, coreProcedures, datatypes, opaqueTypes, aliases, constants := program.constants }
   | .Verify | .BothSuboptimally =>
@@ -458,7 +471,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     -- `$asFunction` twins before we decide which procedures still need the free
     -- postcondition bridge.
     let rewritten := imperativeProcs.map fun proc =>
-      let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+      let proc := { proc with axioms := proc.axioms.map (functionalize toUpdateNames) }
       rewriteQuantifierBodiesInProc (emitProofBlocks := true) toUpdateNames proc
     -- Names whose `$asFunction` twin is referenced by some rewritten axiom or
     -- quantifier body. The axiom/quantifier rewrites above turn a reference to

@@ -19,6 +19,7 @@ lake build Strata:docs
 cd "${curpwd}"
 lake exe ddm --with-html-single --output _out/ddm
 lake exe langdef --with-html-single --output _out/langdef
+lake exe langsem --with-html-single --output _out/langsem
 lake exe laureldesign --with-html-multi --output _out/laureldesign
 lake exe laurelimpl --with-html-multi --output _out/laurelimpl
 lake exe laurelguide --with-html-multi --output _out/laurelguide

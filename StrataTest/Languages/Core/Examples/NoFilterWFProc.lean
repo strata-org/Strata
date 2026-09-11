@@ -49,8 +49,7 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify noFilterWFPgm
-        (options := .quiet)
-        (proceduresToVerify := some ["P"])
+        (options := { Core.VerifyOptions.quiet with proceduresToVerify := some ["P"] })
 
 -- Don't verify P, and don't produce a procedure for the contract
 /--
@@ -58,8 +57,7 @@ info:
 -/
 #guard_msgs in
 #eval Core.verify noFilterWFPgm
-        (options := .quiet)
-        (proceduresToVerify := some [])
+        (options := { Core.VerifyOptions.quiet with proceduresToVerify := some [] })
 
 end Strata
 end

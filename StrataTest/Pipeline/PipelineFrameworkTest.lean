@@ -11,6 +11,7 @@ import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core
 -- The `#eval`s below run the validator on production phases, which needs the
 -- compiled code of the modules those phases are defined in.
+meta import Strata.Languages.Core
 meta import Strata.Languages.Core.PipelinePhase
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Transform.CallElim
@@ -21,6 +22,8 @@ meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Transform.TerminationCheck
 meta import Strata.Transform.CommonSubexprElim
+meta import Strata.Transform.FunctionInlining
+meta import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Languages.Core.Verifier
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
@@ -30,6 +33,8 @@ import Strata.Transform.PrecondElim
 import Strata.Transform.ProcedureInlining
 import Strata.Transform.TerminationCheck
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.FunctionInlining
+import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.MonomorphizeProcedures
 import Strata.Languages.Core.ObligationExtraction
 
@@ -326,7 +331,7 @@ example : ProgramFact.noCFGBodies.check?.isSome = true := by decide
 
 /-! ### What the back end needs at exit -/
 
-/-- info: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval IO.println (factNames backEndRequiredFacts)
 
@@ -507,34 +512,6 @@ info: rejected: phase #2 `testMultiRequirer` requires:
 
 /-! ### Production pipeline -/
 
-/-- The back end's demand, as a row: it consumes the program the pipeline
-    produces rather than transforming it, so only its requirements are shown. -/
-private def backEndRow : PipelinePhase where
-  transform := fun p => return (false, p)
-  phase := { name := "the back end" }
-  requires := backEndRequiredFacts
-
-/-- `s` padded with spaces to `w` characters. -/
-private def pad (w : Nat) (s : String) : String :=
-  s ++ String.ofList (List.replicate (w - s.length) ' ')
-
-/-- Columns joined, the last one unpadded so no row ends in spaces. -/
-private def joinCells (cells : List String) : String :=
-  match cells.reverse with
-  | [] => ""
-  | last :: rest => "".intercalate (rest.reverse.map (pad 4)) ++ last
-
-/-- What one phase claims about one fact, in two fixed positions: `!` or blank
-    for the requirement, then what the phase leaves behind — `*` established,
-    `=` preserved, `.` neither. Fixing the positions puts every claim of a kind
-    in one vertical line. A fact a phase establishes holds on its output whether
-    or not the phase also lists it as preserved, so `*` wins over `=`; naming it
-    twice is reported under the table. -/
-private def cellFor (p : PipelinePhase) (f : ProgramFact) : String :=
-  let req := if f ∈ p.requires then '!' else ' '
-  let out := if f ∈ p.establishes then '*' else if f ∈ p.preserves then '=' else '.'
-  String.ofList [req, out]
-
 /-- Facts a phase lists as both established and preserved. Establishing a fact
     already guarantees it, so the contract should name it once. A phase that
     returns its input is exempt: it preserves everything by construction. -/
@@ -563,92 +540,65 @@ private def findings (title : String) (phases : List PipelinePhase)
     | fs => some s!"  {p.phase.name}: {", ".intercalate (fs.map (·.name))}"
   if rows.isEmpty then [s!"{title}: none"] else s!"{title}:" :: rows
 
-/-- Trailing spaces removed, so a row does not end in blanks. -/
-private def dropTrailingSpaces (s : String) : String :=
-  String.ofList (s.toList.reverse.dropWhile (· == ' ')).reverse
-
-/-- Two-letter column label for a fact, derived from its name: drop a leading
-    `no`, capitalize the first letter, and follow it with the second letter when
-    the name opens on an acronym (`CFGBodies` gives `CF`) or with the initial of
-    the next word otherwise (`BetaRedexes` gives `BR`, `staticSingleAssignment`
-    gives `SS`). -/
-private def labelOf (name : String) : String :=
-  let cs := name.toList
-  match (if cs.take 2 == ['n', 'o'] then cs.drop 2 else cs) with
-  | [] => "?"
-  | c :: rest =>
-    let second := match rest with
-      | [] => c
-      | d :: _ => if d.isUpper then d else (rest.find? (·.isUpper)).getD d
-    String.ofList [c.toUpper, second]
-
-/-- `labelOf` for every fact, widened when two names would collide: a colliding
-    label takes the next lower-case letter of the word it was built from, so
-    `noPolymorphicFunctions` reads `PoF` beside `noPrecondsFromFuncs`' `PF`
-    rather than becoming a number. -/
-private def factLabels : List String :=
-  (ProgramFact.all.foldl (init := ([] : List String)) fun taken f =>
-    let base := labelOf f.name
-    let widened :=
-      let cs := (if f.name.toList.take 2 == ['n', 'o'] then f.name.toList.drop 2 else f.name.toList)
-      match cs with
-      | c :: d :: _ => String.ofList [c.toUpper, d] ++ base.drop 1
-      | _ => base
-    let label := if base ∈ taken then widened else base
-    label :: taken).reverse
-
-/-- The contracts as a table: one row per phase, one column per fact in
-    `ProgramFact.all` order, `consumer` as the last row, and anything worth a
-    second look reported underneath. The consistency checks cover `phases`
-    only: `consumer` states requirements and transforms nothing. -/
-private def contractTable (phases : List PipelinePhase) (consumer : PipelinePhase) : String :=
-  let all := phases ++ [consumer]
-  let nameW := all.foldl (fun w p => max w p.phase.name.length) 5 + 1
-  -- A colon, not `=`, so the legend cannot be read as the `=` that means
-  -- preserved.
-  let named := (ProgramFact.all.zip factLabels).map fun (f, l) => s!"{l}: {f.name}"
-  let header := pad nameW "phase" ++ joinCells factLabels
-  let row (p : PipelinePhase) : String :=
-    pad nameW p.phase.name ++ joinCells (ProgramFact.all.map (cellFor p))
-  -- The consumer hands on no program, so it has nothing to establish or
-  -- preserve: its row carries requirements only.
-  let consumerRow : String :=
-    dropTrailingSpaces (pad nameW consumer.phase.name ++
-      joinCells (ProgramFact.all.map fun f => if f ∈ consumer.requires then "! " else "  "))
+/-- The contract table produced by the production renderer `Core.phaseTable`,
+    with the back end as the consumer row, followed by the contract-hygiene
+    findings the CLI does not print but a phase author wants. -/
+private def contractTable (phases : List PipelinePhase) : String :=
+  phaseTable phases (consumer := some ("the backend", backEndRequiredFacts)) ++ "\n\n" ++
   "\n".intercalate (
-    ["! requires   * establishes   = preserves   . neither",
-     "   ".intercalate (named.take 4), "   ".intercalate (named.drop 4), ""] ++
-    [header] ++ phases.map row ++ [consumerRow] ++ [""] ++
     findings "established and preserved, name it once" phases redundantlyPreserved ++
     findings "required and established, that is a preserve" phases requiredAndEstablished ++
     findings "required then dropped" phases requiredThenDropped)
 
-/-- info: ! requires   * establishes   = preserves   . neither
+/-- info: V starts holding here   | holds, and is carried on   + required here, and holds
+: not holding, but would be carried   (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
 
-phase                      CF  Ca  Lo  LI  LM  SS  BR  PF  NG  IF  PP  PoF
-assertNoCFGBodies           *   =   =   =   =   =   =   =   =   =   =   =
-liftInternalFuncDecls       =   =   =   =   =   =   =   =   =   *   =   .
-callElim                   !=   *   =   =   =   .   .   =   =   =   =   =
-termCheck                  !=   =   =   =   =   =   .   =   =   =   .   =
-precondElim                !=   =   =   =   =   =   .   *   =   =   .   =
-insertLoopInvariantAsserts !=   =   =   *   *   =   =   =   =   =   =   =
-loopElim                   !=   =   *  !=  !=   .   =   =   =   =   =   =
-monomorphizeProcedures     !=  !=   =   =   =   =   =   =   =   =   *   =
-typeCheck                   =   =   =   =   =   =   =   =   =   =   =   =
-monomorphizeFunctions       =   =   =   =   =   =   =   =   =  !=  !=   *
-nondetElim                 !=   =   =   =   =   .   =   =   *   =   =   =
-symbolicEval               !=   *  !=   *   *   *   .   =  !=   =   =   =
-betaReduce                  =   =   =   =   =   =   *   =   =   =   =   =
-commonSubexprElim          !=   =   =   =   =  !=   =   =   =   =   =   =
-the back end               !   !   !           !   !   !       !   !   !
+                              CF  Lo  LM  BR  NG  PP  TA
+phase                           Ca  LI  SS  PF  IF  PoF
+ 1 assertNoCFGBodies          V : : : : : : : : : : : :
+ 2 liftInternalFuncDecls      | : : : : : : : : V :
+ 3 callElim                   + V : : :     : : | : :
+ 4 termCheck                  + | : : : :   : : |   : :
+ 5 precondElim                + | : : : :   V : |   : :
+ 6 insertLoopInvariantAsserts + | : V V : : | : | : : :
+ 7 loopElim                   + | V + +   : | : | : : :
+ 8 monomorphizeProcedures     + + | | | : : | : | V : :
+ 9 typeCheck                  | | | | | : : | : | | : V
+10 monomorphizeFunctions      | | | | | : : | : + + V |
+11 nondetElim                 + | | | |   : | V | | | |
+12 symbolicEval               + V + | | V   | + | | | |
+13 betaReduce                 | | | | | | V | | | | | |
+14 commonSubexprElim          + | | | | + | | | | | | |
+   the backend                + + +     + + +   + + + +
 
 established and preserved, name it once: none
 required and established, that is a preserve: none
 required then dropped: none -/
 #guard_msgs in
-#eval IO.println (contractTable corePipelinePhases backEndRow)
+#eval IO.println (contractTable corePipelinePhases)
+
+/-! The two cells that report trouble, on a deliberately broken list:
+`testNoop` neither establishes nor preserves the fact `testEstablisher` just
+established, so that fact is dropped (`'`), and `testRequirer` then asks for it
+where it does not hold (`#`). The walk carries on past the unmet requirement
+rather than stopping at it, which is what shows both cells at once. -/
+
+/--
+info: # required here, and does not hold   V starts holding here   ' was holding, and is dropped here
+(blank) not holding, and would not be carried
+CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+
+                   CF  Lo  LM  BR  NG  PP  TA
+phase                Ca  LI  SS  PF  IF  PoF
+ 1 testEstablisher V
+ 2 testNoop        '
+ 3 testRequirer    #
+-/
+#guard_msgs in
+#eval IO.println (phaseTable [testEstablisher, testNoop, testRequirer])
 
 /-- info: assertNoCFGBodies establishes noCFGBodies, proved: true, preserves all: true -/
 #guard_msgs in
@@ -657,21 +607,93 @@ required then dropped: none -/
 proved: {assertNoCFGBodiesPhase.provesContract}, \
 preserves all: {assertNoCFGBodiesPhase.preserves.facts == ProgramFact.all}"
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report coreValidatedPipeline
 
-/-- info: accepted; phases [filterProcedures, assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, filterProcedures, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: accepted; phases [filterProcedures, assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, filterProcedures, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
-#eval report (coreValidatedPipeline (procs := some ["main"]))
+#eval report (coreValidatedPipeline
+  (options := { Core.VerifyOptions.default with proceduresToVerify := some ["main"] }))
 
-/-! A caller-supplied phase runs after the entry assertion, so a phase requiring
-structured bodies composes: procedure inlining is what a front end inserts
-there. -/
+/-! A phase list assembled by hand is validated the same way. `splicePhasesAfter`
+places procedure inlining just after the entry assertion, where it composes
+because the assertion has established the structured bodies it requires. -/
 
-/-- info: accepted; phases [assertNoCFGBodies, inlineProcedures, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: accepted; phases [assertNoCFGBodies, inlineProcedures, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
-#eval report (coreValidatedPipeline [procedureInliningPipelinePhase])
+#eval report (do
+  let phases ← Strata.Core.splicePhasesAfter "assertNoCFGBodies"
+    [procedureInliningPipelinePhase] corePipelinePhases
+  Strata.Core.validatePipeline phases)
+
+/-! An anchor that is not in the list is refused, rather than the phases landing
+somewhere the caller did not ask for. -/
+
+/-- info: rejected: Cannot splice after phase 'noSuchPhase': no phase of that name is in the list. -/
+#guard_msgs in
+#eval report (do
+  let phases ← Strata.Core.splicePhasesAfter "noSuchPhase"
+    [procedureInliningPipelinePhase] corePipelinePhases
+  Strata.Core.validatePipeline phases)
+
+/-! Anchoring on the last phase is the boundary where nothing follows it, so the
+spliced phases end the list. -/
+
+/-- info: [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+#guard_msgs in
+#eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
+    [procedureInliningPipelinePhase] corePipelinePhases with
+  | .ok ps => toString (ps.map Strata.Core.phaseName)
+  | .error e => e)
+
+/-! The `functionInlining` and `unrollBoundedQuantifiers` options each insert phases
+after `symbolicEval`, independently of one another; unrolling brings its own
+`betaReduce` ahead of itself. -/
+
+private def inliningOnly : VerifyOptions :=
+  { VerifyOptions.default with functionInlining := true }
+
+private def unrollingOnly : VerifyOptions :=
+  { VerifyOptions.default with unrollBoundedQuantifiers := true }
+
+private def inliningAndUnrolling : VerifyOptions :=
+  { VerifyOptions.default with functionInlining := true, unrollBoundedQuantifiers := true }
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := inliningOnly))
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := unrollingOnly))
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+#guard_msgs in
+#eval report (coreValidatedPipeline (options := inliningAndUnrolling))
+
+/-! Unrolling on its own, with nothing established about the program, is refused. -/
+
+/-- info: rejected: phase #1 `unrollBoundedQuantifiers` requires:
+  • `noCFGBodies`: no preceding phase guarantees it
+  • `noLoops`: no preceding phase guarantees it
+  • `staticSingleAssignment`: no preceding phase guarantees it -/
+#guard_msgs in
+#eval check [unrollBoundedQuantifiersPipelinePhase]
+
+/-! Every fact either phase requires it also preserves. -/
+
+#guard requiredThenDropped unrollBoundedQuantifiersPipelinePhase == []
+
+#guard requiredThenDropped functionInliningPipelinePhase == []
+
+/-- info: rejected: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+#guard_msgs in
+#eval report (Strata.Core.validatePipeline
+  (match Strata.Core.splicePhasesAfter "assertNoCFGBodies" [functionInliningPipelinePhase]
+           corePipelinePhases with
+   | .ok phases => phases
+   | .error _ => []))
 
 /-! Naming procedures to verify drops the others before the entry assertion
 looks at the program, so a CFG body the caller did not ask about cannot refuse
@@ -696,16 +718,159 @@ private def runPhases (phases : List PipelinePhase) (p : Program) : String :=
 
 /-- info: accepted -/
 #guard_msgs in
-#eval IO.println (runPhases (transformPipelinePhases (procs := some ["structured"])) namedMixedProgram)
+#eval IO.println (runPhases (transformPipelinePhases
+    { Core.VerifyOptions.default with proceduresToVerify := some ["structured"] }) namedMixedProgram)
 
 /-- info: rejected: ❌ Expected every procedure body to be structured, but at least one is a CFG. -/
 #guard_msgs in
-#eval IO.println (runPhases (transformPipelinePhases (procs := some ["cfgHelper"])) namedMixedProgram)
+#eval IO.println (runPhases (transformPipelinePhases
+    { Core.VerifyOptions.default with proceduresToVerify := some ["cfgHelper"] }) namedMixedProgram)
 
 private def cfgBodiedProgram : Program :=
   { decls := [.proc
       { (default : Procedure) with body := .cfg { entry := "entry", blocks := [] } }
       default] }
+
+/-! ### Configuring a pipeline by name
+
+`--phases` resolves names against the option-derived phase list plus the extra
+phases a user may name, and accepts an `assert<Fact>` form for every fact that
+has an executable check. These pin that resolution, and that the resulting list
+is validated the same way the default one is. The helpers live in the curated
+`Strata.Core` API surface, so they are named in full here. -/
+
+/-- info: [assertNoCFGBodies, liftInternalFuncDecls, inlineProcedures] -/
+#guard_msgs in
+#eval IO.println (match Strata.Core.resolvePhases
+    (corePipelinePhases ++ [Strata.Core.passInlineAll])
+    ["assertNoCFGBodies", "liftInternalFuncDecls", "inlineProcedures"] with
+  | .ok ps => toString (ps.map Strata.Core.phaseName)
+  | .error e => e)
+
+/-! An unknown name is a user error naming the flag that lists the choices. -/
+
+/-- info: Unknown phase name 'noSuchPhase'. Use --display-phases to see the available phases. -/
+#guard_msgs in
+#eval IO.println (match Strata.Core.resolvePhases corePipelinePhases ["noSuchPhase"] with
+  | .ok ps => toString (ps.map Strata.Core.phaseName)
+  | .error e => e)
+
+/-! Every fact with a check has an assert form; `typeAnnotated`, which has none,
+does not, so `typeCheck` stays its only source. -/
+
+/-- info: assertNoCFGBodies, assertNoCalls, assertNoLoops, assertNoLoopInvariants, assertNoLoopMeasures, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoPrecondsFromFuncs, assertNoNondetGuards, assertNoInternalFuncDecl, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions -/
+#guard_msgs in
+#eval IO.println (", ".intercalate (ProgramFact.all.filterMap fun f =>
+  let nm := Strata.Core.assertPhaseName f
+  (Strata.Core.assertPhaseFor nm).map (fun _ => nm)))
+
+/-! An assert phase establishes just the fact it names and carries everything
+else, which is what lets it stand in for the transform that established it. -/
+
+/-- info: assertNoLoops establishes noLoops, preserves all: true -/
+#guard_msgs in
+#eval IO.println (match Strata.Core.assertPhaseFor "assertNoLoops" with
+  | some p => s!"{Strata.Core.phaseName p} establishes {factNames p.establishes}, \
+                 preserves all: {p.preserves.facts == ProgramFact.all}"
+  | none => "no such assert phase")
+
+/-! An all-assert pipeline is what a front end emitting already-passive Core
+runs: type checking plus one assert per remaining fact the back end requires
+composes, transforms nothing, and checks everything. -/
+
+private def allAssertNames : List String :=
+  "typeCheck" :: (backEndRequiredFacts.facts.filterMap fun f =>
+    let nm := Strata.Core.assertPhaseName f
+    (Strata.Core.assertPhaseFor nm).map (fun _ => nm))
+
+/-- info: accepted; phases [typeCheck, assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoPrecondsFromFuncs, assertNoInternalFuncDecl, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions]; exit noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+#guard_msgs in
+#eval report (match Strata.Core.resolvePhases
+                     (corePipelinePhases ++ [Strata.Core.passInlineAll])
+                     allAssertNames with
+  | .ok ps => Strata.Core.validatePipeline ps
+  | .error e => .error e)
+
+/-! An empty name list resolves to an empty pipeline. `ofList` accepts it — no
+phase requires anything, so nothing can be violated — while `validatePipeline`
+rejects it, since it checks delivery to the back end as well. -/
+
+/-- info: resolves to [] -/
+#guard_msgs in
+#eval IO.println (match Strata.Core.resolvePhases corePipelinePhases [] with
+  | .ok ps => s!"resolves to {ps.map Strata.Core.phaseName}"
+  | .error e => s!"unexpected: {e}")
+
+/-- info: accepted; phases []; exit (none) -/
+#guard_msgs in
+#eval check []
+
+/--
+info: rejected: phase #1 `the verification back end` requires:
+  • `noCFGBodies`: no preceding phase guarantees it
+  • `noCalls`: no preceding phase guarantees it
+  • `noLoops`: no preceding phase guarantees it
+  • `staticSingleAssignment`: no preceding phase guarantees it
+  • `noBetaRedexes`: no preceding phase guarantees it
+  • `noPrecondsFromFuncs`: no preceding phase guarantees it
+  • `noInternalFuncDecl`: no preceding phase guarantees it
+  • `noPolymorphicProcedures`: no preceding phase guarantees it
+  • `noPolymorphicFunctions`: no preceding phase guarantees it
+  • `typeAnnotated`: no preceding phase guarantees it
+-/
+#guard_msgs in
+#eval report (Strata.Core.validatePipeline [])
+
+/-! A caller that can prove facts of its own output assumes them at entry
+instead, and the phases they made unnecessary can go. Here `noLoops` assumed at
+entry lets both loop phases drop out, and the result still delivers what the
+back end needs. -/
+
+/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+#guard_msgs in
+#eval report (Strata.Core.validatePipelineFrom factSet![.noLoops]
+  (corePipelinePhases.filter fun p =>
+    Strata.Core.phaseName p ∉ ["loopElim", "insertLoopInvariantAsserts"]))
+
+/-! Dropping those two phases without assuming the fact is rejected, naming the
+phase that needed it. -/
+
+/-- info: rejected: phase #10 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated` -/
+#guard_msgs in
+#eval report (Strata.Core.validatePipeline
+  (corePipelinePhases.filter fun p =>
+    Strata.Core.phaseName p ∉ ["loopElim", "insertLoopInvariantAsserts"]))
+
+/-! The `--display-phases` text: the default order as a pasteable argument, then
+the phases that exist but are not in it. -/
+
+/--
+info: To run the phases in the default order:
+
+  --phases assertNoCFGBodies,liftInternalFuncDecls,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+
+You can change this order. Give it back to --phases with no input file and
+Strata reports whether it composes without verifying anything.
+To see the declared dependencies between phases, use --display-phase-contracts.
+
+Available, not in the default order:
+
+  inlineProcedures
+-/
+#guard_msgs in
+#eval IO.println (Strata.Core.displayPhasesText corePipelinePhases
+  (extras := [Strata.Core.passInlineAll]))
+
+/-! Feeding `--display-phases`' output back through `--phases` reproduces the
+default pipeline, which is the round-trip the two flags promise. -/
+
+/-- info: true -/
+#guard_msgs in
+#eval IO.println (toString (match Strata.Core.resolvePhases
+    (corePipelinePhases ++ [Strata.Core.passInlineAll])
+    (corePipelinePhases.map Strata.Core.phaseName) with
+  | .ok ps => ps.map Strata.Core.phaseName == corePipelinePhases.map Strata.Core.phaseName
+  | .error _ => false))
 
 private def runAsserter (phase : PipelinePhase) (p : Program) : String :=
   match (phase.transform p).run .emp with

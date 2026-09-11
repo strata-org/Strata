@@ -550,11 +550,15 @@ private def mkDestructorFunc {T} [BEq T.Identifier] [Inhabited T.IDMeta]
     output := ty,
     concreteEval := some (fun _ => destructorConcreteEval d c i),
     attr := #[.evalIfConstr 0],
-    preconditions := if safe then [⟨testerExpr, default⟩] else [] }
+    -- With one constructor the tester follows from exhaustiveness, so a
+    -- precondition would only add a vacuously true obligation at every use site.
+    preconditions := if safe && d.constrs.length > 1 then [⟨testerExpr, default⟩] else [] }
 
 /--
-Generate destructor functions with a precondition that the corresponding tester holds, e.g.
-`List..head(x)` requires `List..isCons(x)`
+Generate destructor functions. When the datatype has two or more constructors, each
+destructor carries a precondition that the corresponding tester holds, e.g.
+`List..head(x)` requires `List..isCons(x)`. For a single-constructor datatype the
+tester holds for every value of the type, so no precondition is attached.
 -/
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]
   [Inhabited T.Metadata] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) :

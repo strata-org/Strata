@@ -17,6 +17,9 @@ here is what only makes sense for Core, where a fact *means* something about a
 
 * `ProgramFactSet.holds_of_subset` — a smaller fact set asserts less, so facts
   carried forward stay true.
+* `ProgramFactSet.empty_holds` — the empty set holds of every program, which is
+  what discharges the entry-facts obligation of `verify`/`verifyProgram` when a
+  caller assumes nothing.
 * `ProgramFactSet.holds_applyPhase` — everything `applyPhase` reports really does
   hold on the output program: the bridge between the framework's set bookkeeping
   and what the facts mean on a program.
@@ -51,6 +54,10 @@ theorem ProgramFactSet.ext_of_mem_iff {σ₁ σ₂ : ProgramFactSet}
 theorem ProgramFactSet.holds_of_subset {σ₁ σ₂ : ProgramFactSet} {p : Program}
     (h : σ₁ ⊑ σ₂) (hσ₂ : ProgramFactSet.holds σ₂ p) : ProgramFactSet.holds σ₁ p := by
   intro f hf; exact hσ₂ f (h f hf)
+
+/-- The empty fact set holds of every program, since it asks nothing. -/
+theorem ProgramFactSet.empty_holds (p : Program) : ProgramFactSet.empty.holds p :=
+  fun _ hf => absurd hf not_mem_emptyFactSet
 
 /-- Everything `applyPhase` reports really does hold on the output program, given
     the phase's own obligations. This is the bridge between the framework's set

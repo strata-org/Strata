@@ -293,22 +293,31 @@ def ValidatedPipeline.ofList (phases : List P) :
     Except String (ValidatedPipeline P F emptyFactSet) :=
   ofListFrom emptyFactSet phases
 
-/-- Validate `phases`, and that what they establish covers what `consumer` needs
-    of the program they produce.
+/-- Validate `phases` against facts `σ₀` assumed to hold on the input program, and
+    that what they establish covers what `consumer` needs of the program they
+    produce. The result is indexed by `σ₀`, so a caller must supply a proof that
+    `σ₀` holds of the program it hands to the pipeline.
 
     The consumer is not a phase — it hands on no program — so it is not modelled
     as one; it is reported through the same diagnostic, at the position after the
     last phase. -/
-def ValidatedPipeline.ofListDelivering (consumer : String) (needed : FactSet F)
-    (phases : List P) : Except String (ValidatedPipeline P F emptyFactSet) := do
-  let validated ← ofList phases
+def ValidatedPipeline.ofListFromDelivering (σ₀ : FactSet F) (consumer : String)
+    (needed : FactSet F) (phases : List P) :
+    Except String (ValidatedPipeline P F σ₀) := do
+  let validated ← ofListFrom σ₀ phases
   let delivered := validated.establishes
   if needed ⊑ delivered then
     .ok validated
   else
     let history := phases.zipIdx.map (fun (p, i) => (i + 1, p))
-    .error (requiresDiagnostic emptyFactSet history (phases.length + 1) consumer
+    .error (requiresDiagnostic σ₀ history (phases.length + 1) consumer
               needed delivered [])
+
+/-- `ofListFromDelivering` for a phase list that assumes nothing about its input
+    program. -/
+def ValidatedPipeline.ofListDelivering (consumer : String) (needed : FactSet F)
+    (phases : List P) : Except String (ValidatedPipeline P F emptyFactSet) :=
+  ofListFromDelivering emptyFactSet consumer needed phases
 
 end -- public section
 

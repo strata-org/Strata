@@ -160,7 +160,7 @@ def loopElimPipelinePhase : PipelinePhase where
   preserves := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
                       .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions]
+                         .noPolymorphicFunctions, .typeAnnotated]
 
 end -- public section
 

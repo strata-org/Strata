@@ -198,18 +198,21 @@ bodies gain a wider statement language, this test is where the change shows up. 
 then the throwing-call combinations are covered with an opaque callee, in
 `ThrowsOnClause.lean`. -/
 
--- A transparent (no `opaque`) procedure that throws: rejected, at the `throw`.
+-- A transparent (no `opaque`) procedure that throws: rejected at the declaration,
+-- because a transparent body becomes a function and throwing is not expressible as
+-- an expression. Reported by `EliminateExceptions` before it rewrites the body to
+-- return `Result`, so the user sees this rather than a downstream type mismatch.
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
 procedure thrower(x: int): int
+//        ^^^^^^^ error: transparent procedure 'thrower' cannot declare `throws`: a transparent body is translated to a function, and throwing is not expressible as an expression. Mark it `opaque`.
   throws (e: Err)
 {
   if x < 0 then {
     var e: Err := new Err;
     throw e
-//  ^^^^^^^ error: ending a transparent body with a Throw statement is not supported
   };
   return x
 };
@@ -222,6 +225,24 @@ procedure catchesTransparent(x: int) returns (out: int)
   } catch e when e is Err {
     out := -1
   }
+};
+#end
+
+-- The same rejection without a `throws` clause: an inline `try`/`catch` whose body
+-- throws is still not expressible as an expression. Reported once, at the procedure,
+-- rather than letting the lowering proceed — which would synthesize a `Result`
+-- carrier and surface as a misleading "2 output parameters" error plus leaked
+-- `$thrown`/`$returning` assignments that do not point at the `throw`.
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Err {}
+procedure inlineTryCatchNoThrows(x: int): int {
+//        ^^^^^^^^^^^^^^^^^^^^^^ error: transparent procedure 'inlineTryCatchNoThrows' cannot `throw`: a transparent body is translated to a function, and throwing is not expressible as an expression. Mark it `opaque`.
+  try { var e: Err := new Err; throw e }
+  catch e when e is Err { return 0 - 1 };
+  return x
 };
 #end
 
@@ -328,8 +349,14 @@ in a case postcondition may bind `$result` itself, and that postcondition is
 exactly where the pass splices references to the carrier. If the freshener
 missed the binder it would pick `$result` and the spliced reference would be
 captured by the authored `forall` — silently, since nothing downstream could
-tell. The third case pins that program; the arm-by-arm collision coverage is
-`CarrierFreshnessTest.lean`. -/
+tell.
+
+A source name may not start with `$`, and `validateNoDollarNames` allows `$result`
+only as a procedure's sole output, so the quantifier spelling is rejected before
+any pass runs (the third case pins that). The freshener
+still has to handle it, because *generated* Laurel and the passes themselves can
+still produce such a binder — the arm-by-arm coverage is `CarrierFreshnessTest.lean`,
+which builds the AST directly and so does not go through that check. -/
 
 -- Short form, with a `throwsOn` case and an `ensures` so the contract rewriting has
 -- to reach the postconditions and not just the body.
@@ -371,9 +398,10 @@ procedure explicitDollarResult(x: int)
 };
 #end
 
--- A quantifier binder named `$result` inside a case postcondition: the carrier
--- freshens to `$result_1`, so the `e` substituted into the case's `ensures`
--- refers to the carrier, not the authored quantified variable.
+-- A quantifier binder named `$result` inside a case postcondition. `$result` is
+-- legal only as a procedure's sole output, so this is rejected outright rather
+-- than reaching the carrier freshening.
+#guard_msgs in
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;
@@ -383,6 +411,7 @@ procedure quantifierBindsResult(x: int)
   opaque
   throwsOn x < 0 {
     ensures forall($result: int) => e is Err
+//                 ^^^^^^^ error: bound variable name '$result' may not start with '$': that namespace is reserved for compiler-generated names
   }
 {
   if x < 0 then {

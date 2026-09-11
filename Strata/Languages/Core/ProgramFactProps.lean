@@ -41,7 +41,7 @@ theorem ProgramFact.all_nodup : ProgramFact.all.Nodup := by decide
 theorem ProgramFact.holds_iff_check {f : ProgramFact} {c : Program → Bool}
     (h : f.check? = some c) (p : Program) : f.holds p ↔ c p = true := by
   cases f <;>
-    simp only [ProgramFact.check?, Option.some.injEq] at h <;>
+    simp only [ProgramFact.check?, Option.some.injEq, reduceCtorEq] at h <;>
     subst h <;>
     simp [ProgramFact.holds]
 

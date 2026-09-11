@@ -23,8 +23,11 @@ public section
 Structural and semantic results for `StepStmt`/`StepStmtStar` runs. Key results:
 
 - Store projection/agreement plumbing (`projectStore_id`, the `StoreAgreement`
-  projection helpers) and `mkFvar` evaluation (`eval_mkFvar_of_value`,
-  `eval_mkFvar_storeWith` — the `SemanticStore.update` specialization).
+  projection helpers) and free-variable evaluation: `eval_fvarExpr_of_value` reads
+  any expression that `getFvar` sees as an ident out of a store that maps it to a
+  value, with `eval_fvarExpr_storeWith` the `SemanticStore.update` specialization;
+  `eval_mkFvar_of_value`/`eval_mkFvar_storeWith` and the `mkTypedFvar` twins are
+  corollaries at the bare and annotated variables a transform builds.
 - `projectStore_eq_dropVars` — leaving a block drops exactly the names its body scopes.
   This is what lets `Imperative.Logic.Hoare.PostWF` be a syntactic condition on the body
   rather than a statement about the parent store.
@@ -2645,19 +2648,19 @@ theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   refine .step _ _ _ ?_ (.refl _)
   simpa [Bool.or_false] using h_step
 
-/-- Reading the guard variable `mkFvar ident` out of any store where `ident`
-maps to a *value* `b` yields exactly `b`.  `WellFormedSemanticEvalVar` reads free
-variables straight from the store, but only on well-formed stores; we read from
-the minimal well-formed store (only `ident ↦ b`, a value) then monotonically
-extend (`WellFormedSemanticEvalMono`) to the actual store, which retains that
-binding. -/
-theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
-    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+/-- Reading a free-variable expression out of any store where its variable maps
+to a *value* `b` yields exactly `b`.  The proof evaluates in a minimal
+well-formed store and extends to an arbitrary one via `WellFormedSemanticEvalVar`
+and `WellFormedSemanticEvalMono`.  Stated over any `e` that `getFvar` reads as
+`ident`, so it serves an annotated variable as well as a bare one. -/
+theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (hfv : HasFvar.getFvar e = some ident)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
     (hwf_var : WellFormedSemanticEvalVar δ)
     (hwf_mono : WellFormedSemanticEvalMono δ) :
-    P.eval δ σ (HasFvar.mkFvar ident) = some b := by
+    P.eval δ σ e = some b := by
   let σ₀ : SemanticStore P := fun y => if y = ident then some b else none
   have hwf₀ : WellFormedStore σ₀ δ := by
     intro x v hx
@@ -2667,9 +2670,8 @@ theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq 
       have : b = v := Option.some.inj hx
       subst this; exact hval
     · rw [if_neg hxi] at hx; exact absurd hx (by simp)
-  have h₀ : P.eval δ σ₀ (HasFvar.mkFvar ident) = some b := by
-    have h := hwf_var (HasFvar.mkFvar (P := P) ident) ident σ₀ hwf₀
-      (LawfulHasFvar.getFvar_mkFvar ident)
+  have h₀ : P.eval δ σ₀ e = some b := by
+    have h := hwf_var e ident σ₀ hwf₀ hfv
     rw [h]; simp only [σ₀, if_pos rfl]
   refine hwf_mono _ _ σ₀ σ ?_ h₀
   intro x w hx
@@ -2680,20 +2682,65 @@ theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq 
     subst this; rw [hxi]; exact h_def
   · rw [if_neg hxi] at hx; exact absurd hx (by simp)
 
-/-- Reading the guard variable `mkFvar ident` out of a `SemanticStore.update _ ident b`
-store yields exactly `b`.  A corollary of `eval_mkFvar_of_value` at the
-`SemanticStore.update` store (which defines `ident ↦ b`), discharging its `h_def`
-premise by `simp [SemanticStore.update]`.  Kept as a named cross-module convenience
-(used from the transform-correctness proofs) so those call sites need not repeat that
-discharge; cannot be `private` as it is consumed outside this module. -/
+/-- Reading a bare free-variable expression `mkFvar ident` from a store that maps
+`ident` to a value yields that value. -/
+theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (h_def : σ ident = some b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ σ (HasFvar.mkFvar ident) = some b :=
+  eval_fvarExpr_of_value δ σ ident _ b (LawfulHasFvar.getFvar_mkFvar ident)
+    hval h_def hwf_var hwf_mono
+
+/-- Evaluating a type-annotated free variable in a store that holds a value for it
+yields that value: the annotation does not affect the lookup. -/
+theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (h_def : σ ident = some b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ σ (HasFvar.mkTypedFvar ident ty) = some b :=
+  eval_fvarExpr_of_value δ σ ident _ b (LawfulHasFvar.getFvar_mkTypedFvar ident ty)
+    hval h_def hwf_var hwf_mono
+
+/-- Evaluating a free-variable expression in a store just updated at the variable
+that expression denotes yields the value written there, given a well-formed
+evaluator. -/
+theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (hfv : HasFvar.getFvar e = some ident)
+    (hval : HasVal.value δ b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ (SemanticStore.update σ ident b) e = some b :=
+  eval_fvarExpr_of_value δ (SemanticStore.update σ ident b) ident e b hfv hval
+    (by simp [SemanticStore.update]) hwf_var hwf_mono
+
+/-- Evaluating a bare free variable in a store just updated at that variable
+yields the value written there. -/
 theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
     (hwf_mono : WellFormedSemanticEvalMono δ) :
     P.eval δ (SemanticStore.update σ ident b) (HasFvar.mkFvar ident) = some b :=
-  eval_mkFvar_of_value δ (SemanticStore.update σ ident b) ident b hval
-    (by simp [SemanticStore.update]) hwf_var hwf_mono
+  eval_fvarExpr_storeWith δ σ ident _ b (LawfulHasFvar.getFvar_mkFvar ident)
+    hval hwf_var hwf_mono
+
+/-- Evaluating a type-annotated free variable in a store just updated at that
+variable yields the value written there: the annotation does not affect the
+lookup. -/
+theorem eval_mkTypedFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ (SemanticStore.update σ ident b) (HasFvar.mkTypedFvar ident ty) = some b :=
+  eval_fvarExpr_storeWith δ σ ident _ b
+    (LawfulHasFvar.getFvar_mkTypedFvar ident ty) hval hwf_var hwf_mono
 
 /-! ### Agreement-preserving replay of a single source command
 
