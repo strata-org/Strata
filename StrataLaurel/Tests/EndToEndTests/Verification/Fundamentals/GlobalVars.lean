@@ -919,3 +919,58 @@ procedure e()
   assert c#v == 1
 };
 #end
+
+/-! ## An `is` type test inside a global's INITIALIZER.
+
+Guards `TypeHierarchy` lowering `is` program-wide, not procedure bodies alone. Four things make it
+able to fail, each easy to lose in a simplification:
+
+- the reader is `entry`, so the global carries its initializer's value and the assert pins what the
+  lowered `is` finds in the ancestors map;
+- the operand is a CALL, which cannot be dropped without losing its obligations. A variable operand
+  can be: `mkChild() is Parent` is decided by its declared type, so a pass discharging statically
+  decided tests would fold the whole test away, leaving nothing for this pass to lower. Reachable
+  here as a quantifier binder, since an initializer cannot read a global;
+- the twin rules out lowering `is` to something trivially true;
+- both are verification roots; a resolution-only root never runs the pass. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Parent {
+}
+composite Child extends Parent {
+}
+procedure mkChild() returns (r: Child)
+  opaque
+  ensures r is Child;
+var childIsParent: bool := mkChild() is Parent
+procedure e()
+  entry
+  opaque
+{
+  assert childIsParent
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Parent {
+}
+composite Child extends Parent {
+}
+procedure mkParent() returns (r: Parent)
+  opaque
+  ensures r is Parent;
+var parentIsChild: bool := mkParent() is Child
+procedure e2()
+  entry
+  opaque
+{
+  assert parentIsChild
+//^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
