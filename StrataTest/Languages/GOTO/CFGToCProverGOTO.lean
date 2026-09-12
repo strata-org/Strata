@@ -74,6 +74,7 @@ private abbrev md : Lambda.Typed Unit := { underlying := (), type := mty[bool] }
 
 instance : Imperative.HasFvar LExprTP where
   mkFvar := (.fvar md · none)
+  mkTypedFvar := fun v ty => .fvar md v (some ty)
   getFvar
   | .fvar _ v _ => some v
   | _ => none

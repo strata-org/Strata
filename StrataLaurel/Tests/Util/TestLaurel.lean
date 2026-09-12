@@ -1,0 +1,757 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.Pipeline.Messages
+import StrataDDM.Integration.Lean.HashCommands
+import StrataDDM.Elab
+import StrataDDM.BuiltinDialects.Init
+import StrataLaurel.Implementation.Grammar.LaurelGrammar
+import StrataLaurel.Implementation.Grammar.ConcreteToAbstractTreeTranslator
+import StrataLaurel.Implementation.Resolution
+import StrataLaurel.Implementation.EliminateValueInReturns
+import StrataLaurel.Implementation.GlobalParameterization
+import StrataLaurel.Implementation.LaurelCompilationPipeline
+import StrataLaurel.Implementation
+import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.Verifier
+import StrataLaurel.Implementation.Interpreter
+
+open Strata
+open Strata.Laurel
+open StrataDDM (SourcedProgram)
+
+namespace StrataTest.Util
+
+/-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
+    `Program`. Used by tests that need to plug in a custom post-translation
+    pipeline stage; throws if translation fails. -/
+def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
+  | .error e => throw (IO.userError s!"Translation errors: {e}")
+  | .ok laurelProgram => pure laurelProgram
+
+/-- Prepend Laurel's built-in definitions to a program, exactly as the real
+    pipeline does (`runLaurelPasses`).
+
+    Operators are calls to the `$`-prefixed wrapper procedures declared in
+    `CoreDefinitionsForLaurel` (`$add`, `$eq`, `$lt`, …), so a test that resolves
+    a snippet without these would see every `+`, `==`, `<`, … as an undefined
+    name — and any pass keying off the callee's declaration (e.g.
+    `InferHoleTypes` reading its parameter types to type a hole operand) would
+    silently get nothing. Any test driving `resolve` on a bare snippet needs
+    this. -/
+def withBuiltins (program : Laurel.Program) : Laurel.Program :=
+  { program with
+    staticProcedures :=
+      Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
+    types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
+
+def printGlobalParameterization (includeStaticFieldCount : Bool)
+    (program : StrataDDM.Program) : IO Unit := do
+  let parsed ← translateLaurel program
+  let builtinNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
+  let laurelProgram := withBuiltins parsed
+  let first := Laurel.resolve laurelProgram
+  for diagnostic in first.errors do
+    IO.println s!"initial diagnostic: {diagnostic.message}"
+  let prepared := Laurel.eliminateValueInReturnsTransform first.program
+  let preparedResult := Laurel.resolve prepared (some first.model)
+  for diagnostic in preparedResult.errors do
+    IO.println s!"pre-lowering diagnostic: {diagnostic.message}"
+  let (lowered, diagnostics, _) :=
+    Laurel.globalParameterizationPass.run {} preparedResult.program preparedResult.model
+  for diagnostic in diagnostics do
+    IO.println s!"lowering diagnostic: {diagnostic.message}"
+  let second := Laurel.resolve lowered (some preparedResult.model)
+  for diagnostic in second.errors do
+    IO.println s!"post-lowering diagnostic: {diagnostic.message}"
+  if includeStaticFieldCount then
+    IO.println s!"staticFields: {lowered.staticFields.length}"
+  for proc in lowered.staticProcedures do
+    unless builtinNames.contains proc.name.text do
+      let rendered := toString (Std.Format.pretty
+        (Laurel.formatProgram
+          { staticProcedures := [proc], staticFields := [], types := [] }))
+      IO.println (rendered.replace "return \n" "return\n")
+
+/-- Convert pipeline `Message`s (carrying file-global byte offsets in
+    their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
+    subtracting `basePos` and looking up in a snippet `FileMap`. -/
+private def renderSnippetLocal (basePos : Nat) (snippet : String)
+    (dms : Array Strata.Message) : Array Strata.Diagnostic :=
+  let fileMap := Lean.FileMap.ofString snippet
+  dms.map fun dm =>
+    let startB := dm.fileRange.range.start.byteIdx
+    let stopB  := dm.fileRange.range.stop.byteIdx
+    let startB' : Nat := if startB ≥ basePos then startB - basePos else 0
+    let stopB'  : Nat := if stopB  ≥ basePos then stopB  - basePos else 0
+    let startPos := fileMap.toPosition ⟨startB'⟩
+    let endPos   := fileMap.toPosition ⟨stopB'⟩
+    { start := { line := startPos.line, column := startPos.column }
+      ending := { line := endPos.line, column := endPos.column }
+      message := dm.message
+      type := dm.kind }
+
+/-- Default options used by `testLaurelExecution` when the caller doesn't override:
+    quiet verifier, default solver. Override by passing
+    `(options := …)` to `testLaurelExecution`. -/
+def defaultLaurelTestOptions : LaurelVerifyOptions :=
+  { verifyOptions := { Core.VerifyOptions.quiet with useArrayTheory := true } }
+
+/-- Run translate + resolve only on a parsed program. Skips SMT verification.
+    Returns diagnostics as `Message`s so the caller can choose how to
+    render them (snippet-local for inline annotations, file-global for editor
+    navigation). -/
+private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
+    (program : StrataDDM.Program) :
+    IO (Array Strata.Message) := do
+  let uri := Strata.Uri.file "<#strata>"
+  match Laurel.TransM.run uri (Laurel.parseProgram program) with
+  | .error e =>
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
+  | .ok laurelProgram =>
+    let result := Laurel.resolve (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
+    return result.errors
+
+/-- Run the full Laurel pipeline (translate + resolve + verify).
+    Returns diagnostics as `Message`s. -/
+private def runLaurelPipelineRaw (program : StrataDDM.Program)
+    (options : LaurelVerifyOptions) : IO (Array Strata.Message) := do
+  let uri := Strata.Uri.file "<#strata>"
+  match Laurel.TransM.run uri (Laurel.parseProgram program) with
+  | .error e =>
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
+  | .ok laurelProgram =>
+    -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
+    -- back as a structured `Message` (rather than thrown like the CLI),
+    -- so it flows through the same snippet-local `line:col` rendering as every
+    -- other diagnostic instead of leaking a raw byte offset in its message.
+    Laurel.verifyToMessagesCapturing laurelProgram options
+
+/-! ## Concrete-interpretation path
+
+Alongside the verifier, `testLaurelExecution { skipCoreInterpreter := false }` drives a
+Laurel program through the `laurelInterpret` pipeline — Laurel → Core → concretely
+execute the procedures the producer marked `entry` — and checks the *runtime*
+assertion failures against the very same inline `// ^^^` annotations the verifier is
+checked against. (With the default `paths` the interpreter is off and only
+verification runs, never taking this path.)
+
+This shares its implementation with `laurelInterpretCommand` in `StrataMainLib`:
+translate to Core and type-check here, then hand off to
+`Core.Program.interpretEntries`, which the CLI command also calls. So the parts
+that define what interpretation means — inlining bodied functions, the evaluator
+flags, mapping an `AssertFail` back to source via the metadata the failure
+carries — cannot drift between the two.
+
+Only *deterministic* assertion failures reproduce under concrete execution:
+verifier-only diagnostics (a precondition that "does not hold" over all inputs,
+a loop invariant that "could not be proved", a symbolic division-by-zero check)
+do not fire when the single concrete path happens to satisfy them. Because
+`testLaurelExecution` holds the interpreter to the *same* annotations as the
+verifier (every annotation must fire in both modes), a block carrying such
+verifier-only negatives must leave `skipCoreInterpreter` on (the default `paths`):
+only blocks where the two modes agree should set `skipCoreInterpreter := false`.
+
+**`assume` semantics under interpretation:** Laurel's `assume <E>` is a no-op
+during concrete execution — a false assume does not stop execution and following
+asserts run unconstrained. This matches the language-level semantics: `assume`
+constrains the verifier's symbolic state but has no runtime effect. Consequently
+`assume E; assert E` reports one failure (the assert), not two. The harness sets
+`ignoreAssumes := true` to implement this; the verifier treats the same assume as
+a hypothesis that makes the assert pass. A test whose annotations rely on the
+assume constraining the interpreter (e.g. expecting zero failures because the
+assume makes the assert unreachable) must leave `skipCoreInterpreter` on. -/
+
+/-- Run the interpret path on a translated, type-checked Core program: execute
+    every `entry` procedure from a fresh environment and return the runtime
+    assertion failures as `Message`s (mapped back to source), so they
+    flow through the same snippet-local rendering and annotation matching as the
+    verifier's diagnostics.
+
+    The run itself is `Core.Program.interpretEntries`, the same implementation
+    the `laurelInterpret` CLI command uses, so these tests exercise the CLI's
+    evaluator configuration (notably `collectAllAssertFailures` and
+    `ignoreAssumes`) directly. This function only decides how to *report* what
+    that run found.
+
+    A non-assertion runtime error (out of fuel, or a `Misc` such as marking a
+    procedure with parameters `entry`), and an assertion failure that maps to no
+    source range, are both test *mis-setup* rather than properties of the program
+    under test, so they are thrown rather than reported as diagnostics. A run can
+    hit both; the error is reported first because it says the interpreter stopped,
+    which subsumes an unmapped label as a diagnosis. The message still counts the
+    unmapped labels so neither signal is lost. -/
+private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
+    IO (Array Strata.Message) := do
+  let outcome ← match Core.Program.interpretEntries core (Core.Program.entryProcedures core) fuel with
+    | .error diag => throw <| IO.userError s!"interpreter setup failed: {diag.message}"
+    | .ok outcome => pure outcome
+  let dms := outcome.diagnostics
+  if let some (procName, e) := outcome.errors[0]? then
+    let collected := if dms.isEmpty then "" else
+      "\ncollected assertion failures before the error:" ++
+        String.join (dms.toList.map fun d => s!"\n  {d.message}")
+    let alsoUnmapped := if outcome.unmapped.isEmpty then "" else
+      s!"\nalso {outcome.unmapped.size} assertion failure(s) with no source range"
+    let formatted := Imperative.EvalError.toFormat (P := Core.Expression) e
+    throw <| IO.userError
+      s!"interpret: '{procName}' raised a non-assertion error: {formatted}{collected}{alsoUnmapped}"
+  if let some (procName, label) := outcome.unmapped[0]? then
+    throw <| IO.userError
+      s!"interpret: assertion '{label}' in '{procName}' failed with no source range"
+  return dms
+
+/-- Translate + type-check a Laurel program for the interpret path, then run
+    every `entry` procedure. Returns `none` when the program marks *no* entry
+    point (nothing to interpret — the test is verify-only), and `some dms`
+    otherwise.
+
+    The `entry` markers are read off the *parsed Laurel* program before
+    translating, so a verify-only block is skipped without translating at all.
+    That matters: some verify-only tests deliberately provoke a Laurel→Core
+    translation error (e.g. "void procedure cannot return a value"), and the
+    verifier reports it through its own capturing path; the interpret path must
+    not turn that expected diagnostic into a thrown test failure. Once a program
+    *does* mark an entry, a translate/type-check failure here is a real problem
+    and is thrown. -/
+private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 10000) :
+    IO (Option (Array Strata.Message)) := do
+  let uri := Strata.Uri.file "<#strata>"
+  let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
+    | .error _ => return none  -- doesn't even parse as Laurel → leave it to verify
+    | .ok p => pure p
+  -- Gate on the producer's `entry` markers at the Laurel level: nothing marked
+  -- → verify-only, skip (without translating, so expected translation errors in
+  -- verify-only negatives don't surface here).
+  unless laurelProgram.staticProcedures.any (·.isInterpretEntry) do
+    return none
+  let core ← match ← Laurel.translate { analysisMode := .Execute } laurelProgram with
+    | (some core, _) => pure core
+    | (none, diags) =>
+      throw (IO.userError s!"interpret: Laurel→Core failed: {diags.map (·.message)}")
+  let core ← match Core.typeCheck Core.VerifyOptions.quiet core with
+    | .ok prog => pure prog
+    | .error e => throw (IO.userError s!"interpret: Core type checking failed: {e.message}")
+  return some (← runLaurelInterpretCore core fuel)
+
+/-- Run the **standalone Laurel interpreter** (`Evaluator.evalProgram`) on a
+    `#strata`-parsed program and return its runtime assertion failures as
+    `Message`s (mapped back to source), so they flow through the same
+    snippet-local rendering and annotation matching as the verifier and the
+    Core interpret path.
+
+    Unlike `runLaurelInterpretRaw`, this does *not* go through Laurel→Core: it
+    drives the Laurel-level evaluator directly. The evaluator supports only a
+    subset of Laurel today, so an unsupported construct surfaces as a thrown
+    `IO.userError` from `evalProgram` — enable this path (`skipLaurelInterpreter
+    := false`) only on blocks whose constructs are all supported.
+
+    Entry selection mirrors `runLaurelInterpretRaw`: the `entry` markers are read
+    off the parsed Laurel program. `none` means no entry is marked (verify-only,
+    skip). Otherwise each `entry` procedure is run once from a fresh evaluator
+    (the evaluator itself never iterates), and their failures are concatenated in
+    entry order. -/
+private def runLaurelEvalRaw (program : StrataDDM.Program) :
+    IO (Option (Array Strata.Message)) := do
+  let uri := Strata.Uri.file "<#strata>"
+  let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
+    | .error _ => return none  -- doesn't even parse as Laurel → leave it to verify
+    | .ok p => pure p
+  let entries := laurelProgram.staticProcedures.filter (·.isInterpretEntry)
+  if entries.isEmpty then
+    return none
+  let mut allMessages : Array Strata.Message := #[]
+  for p in entries do
+    let (_, failures) ← Strata.Laurel.Interpreter.evalProgram
+      ({} : Strata.Laurel.Interpreter.ExternalBackend)
+      { entryProcedure := p.name.text, dumpState := false }
+      laurelProgram
+    allMessages := allMessages ++ failures
+  return some allMessages
+
+/-! ## Inline-annotation matcher
+
+Negative tests embed `// ^^^^^^ <kind>: <message>` annotations directly in the
+source of a `#strata` block. Each annotation pins one expected diagnostic to
+the line above it. Example:
+
+```
+#strata
+program Laurel;
+procedure foo() opaque {
+  var x: int := 1;
+  var y: x := 2
+//       ^ error: 'x' resolves to variable, but expected ...
+};
+#end
+```
+
+The `testLaurelVerification` / `testLaurelResolution` helpers parse these
+annotations from the snippet, run the pipeline, and assert exact match
+between actual diagnostics and annotations: every diagnostic must have an
+annotation, every annotation must fire, positions must match exactly,
+and the actual message must contain the annotation text as a substring.
+-/
+
+/-- One expected diagnostic parsed from a `// ^^^ <kind>: <message>` comment. -/
+private structure DiagnosticAnnotation where
+  /-- 1-indexed line within the snippet that the diagnostic applies to. -/
+  line : Nat
+  /-- 0-indexed column of first caret. -/
+  colStart : Nat
+  /-- 0-indexed column past the last caret. -/
+  colEnd : Nat
+  /-- Diagnostic kind: "error", "warning", "not-yet-implemented", "strata-bug". -/
+  kind : String
+  /-- Substring expected to appear in the diagnostic message. -/
+  message : String
+
+/-- Render the `kind` of a `Diagnostic` to the string used in annotations. -/
+private def messageKindString (k : Strata.MessageKind) : String :=
+  match k.category with
+  | "warning" => "warning"
+  | "userError" => "error"
+  | "notYetImplemented" => "not-yet-implemented"
+  | _ => "strata-bug"
+
+/-! ## Unified reporting normal form
+
+Actual diagnostics (`Strata.Diagnostic`) and expected annotations
+(`DiagnosticAnnotation`) are two views of the *same* thing — a kinded message
+pinned to a `line:col` range. They are compared against each other and printed
+side-by-side in mismatch reports, so they MUST share one coordinate system and
+one layout. Rather than keep two parallel formatters in sync by discipline
+(they drifted once — actuals went file-relative while expecteds stayed
+snippet-local), both project into a single `LocatedMessage` and flow through
+the *one* `render` / `matches` below. There is no other way to format or
+compare a located message, so the two views cannot diverge again. -/
+
+/-- The common normal form: a kinded, located message in **snippet-local**
+    coordinates (1-indexed line, 0-indexed columns), the system both
+    `Strata.Diagnostic` and `DiagnosticAnnotation` natively use. `message` is
+    the substring to match (when this is an expected annotation) or the full
+    diagnostic text (when this is an actual diagnostic). -/
+private structure LocatedMessage where
+  line : Nat
+  colStart : Nat
+  colEnd : Nat
+  kind : String
+  message : String
+
+/-- View an actual pipeline `Diagnostic` as a `LocatedMessage`. -/
+private def LocatedMessage.ofDiagnostic (d : Strata.Diagnostic) : LocatedMessage :=
+  { line := d.start.line, colStart := d.start.column, colEnd := d.ending.column
+    kind := messageKindString d.type, message := d.message }
+
+/-- View an expected `DiagnosticAnnotation` as a `LocatedMessage`. -/
+private def LocatedMessage.ofAnnotation (a : DiagnosticAnnotation) : LocatedMessage :=
+  { line := a.line, colStart := a.colStart, colEnd := a.colEnd
+    kind := a.kind, message := a.message }
+
+/-- The single renderer for any located message — used for BOTH the
+    "actual diagnostics" and "expected (annotated)" halves of every report, so
+    the two are always in the same coordinate system and layout.
+
+    Prints the **file-relative** `line:col` range (snippet line `L` is file line
+    `block.baseLine + L - 1`; columns coincide). The filename is intentionally
+    omitted: the Lean test runner already reports which file a diagnostic came
+    from, and dropping it keeps `#guard_msgs` goldens stable regardless of how
+    the file was opened. With `showSnippet := true` the snippet-relative range
+    is appended in parens — useful for correlating against inline `// ^^^`
+    annotations, which are snippet-local.
+
+    Format: `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`, or with
+    `showSnippet`:
+    `<fileLine>:<colStart>-<colEnd> (snippet <line>:<colStart>-<colEnd>)  <kind>: <message>` -/
+private def LocatedMessage.render (block : SourcedProgram) (m : LocatedMessage)
+    (showSnippet : Bool := false) : String :=
+  let fileLine := block.baseLine + m.line - 1
+  let snippet := if showSnippet then
+      s!" (snippet {m.line}:{m.colStart}-{m.colEnd})"
+    else ""
+  s!"{fileLine}:{m.colStart}-{m.colEnd}{snippet}  {m.kind}: {m.message}"
+
+/-- Format an actual `Diagnostic` for reporting. Thin wrapper over
+    `LocatedMessage.render` so callers don't project by hand. -/
+def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
+    (showSnippet : Bool := false) : String :=
+  (LocatedMessage.ofDiagnostic d).render block showSnippet
+
+/-- Number of leading whitespace characters (`' '` or `'\t'`) in a list. -/
+private def leadingWhitespace (cs : List Char) : Nat :=
+  (cs.takeWhile (fun c => c == ' ' || c == '\t')).length
+
+private def listStartsWith (xs : List Char) (prefix_ : String) : Bool :=
+  let p := prefix_.toList
+  p.length ≤ xs.length && (xs.take p.length) == p
+
+/-- Parse `// ^^^^ <kind>: <message>` annotations out of a snippet. The
+    annotation lives on the line *after* the offending source line. Lines
+    are returned 1-indexed (matching `Lean.Position.line`). -/
+private def parseAnnotations (snippet : String) : Array DiagnosticAnnotation := Id.run do
+  let lineLists : Array (List Char) :=
+    ((snippet.splitOn "\n").map String.toList).toArray
+  let mut annotations : Array DiagnosticAnnotation := #[]
+  for i in [0:lineLists.size] do
+    let chars : List Char := lineLists[i]!
+    let leadWs := leadingWhitespace chars
+    let body : List Char := chars.drop leadWs
+    unless listStartsWith body "//" do continue
+    -- Past the `//`: any non-caret prefix (typically spaces), then carets, then
+    -- optional whitespace, then `<kind>: <message>`.
+    let afterMarker : List Char := body.drop 2
+    let preCarets : List Char := afterMarker.takeWhile (· != '^')
+    let carets : List Char :=
+      (afterMarker.drop preCarets.length).takeWhile (· == '^')
+    if carets.isEmpty then continue
+    let trailing : List Char :=
+      (afterMarker.drop (preCarets.length + carets.length)).dropWhile
+        (fun c => c == ' ' || c == '\t')
+    let some colonIdx := trailing.findIdx? (· == ':')
+      | continue
+    let kind := (String.ofList (trailing.take colonIdx)).trimAscii.toString
+    let message := (String.ofList (trailing.drop (colonIdx + 1))).trimAscii.toString
+    -- Caret columns: leadWs + 2 (for `//`) + offset of first caret.
+    let colStart := leadWs + 2 + preCarets.length
+    let colEnd := colStart + carets.length
+    -- Diagnostic applies to the *previous* non-comment, non-blank line.
+    let mut target := i
+    let mut found := false
+    while target > 0 && !found do
+      target := target - 1
+      let prev : List Char := lineLists[target]!
+      let prevWs := leadingWhitespace prev
+      let prevBody : List Char := prev.drop prevWs
+      if listStartsWith prevBody "//" || prevBody.isEmpty then continue
+      found := true
+    unless found do continue
+    annotations := annotations.push {
+      line := target + 1, colStart, colEnd, kind, message
+    }
+  pure annotations
+
+private def isSubstrOf (needle haystack : String) : Bool :=
+  !needle.isEmpty && (haystack.splitOn needle).length > 1
+
+/-- Does an actual diagnostic satisfy an expected annotation? Both are viewed
+    as `LocatedMessage`s and compared in the shared snippet-local coordinate
+    system: start line and the full column range must agree exactly, kinds must
+    be equal, and the expected `message` must appear as a substring of the
+    actual one (real messages carry volatile detail — unique-id suffixes, full
+    types — so we pin only the stable fragment). The diagnostic's *ending* line
+    is intentionally not constrained, so a future multi-line diagnostic doesn't
+    silently fail to match. -/
+private def LocatedMessage.matches (actual expected : LocatedMessage) : Bool :=
+  actual.line == expected.line
+    && actual.colStart == expected.colStart
+    && actual.colEnd == expected.colEnd
+    && actual.kind == expected.kind
+    && isSubstrOf expected.message actual.message
+
+/-- Format a single annotation for reporting. Thin wrapper over
+    `LocatedMessage.render` — the SAME renderer used for actual diagnostics, so
+    the "expected (annotated)" and "actual diagnostic" halves of a mismatch
+    report are always in the same coordinate system and layout. -/
+private def formatAnnotation (block : SourcedProgram) (a : DiagnosticAnnotation)
+    (showSnippet : Bool := false) : String :=
+  (LocatedMessage.ofAnnotation a).render block showSnippet
+
+/-- Check an already-rendered set of `actual` diagnostics against the block's
+    inline `// ^^^` annotations. Shared by the verifier and the interpreter
+    paths so both are held to the same annotations in the same coordinate
+    system. `label` names the path in mismatch reports (e.g. `verify` /
+    `interpret`) so a failure says which path disagreed.
+
+    - If the snippet contains no annotations, succeeds iff `actual` is empty.
+    - Otherwise, every actual diagnostic must match a distinct annotation (no
+      spurious or mislocated diagnostics). `requireAllAnnotationsFire` further
+      controls whether every annotation must also be matched:
+      * `true` (the default) — an exact match: every annotation must fire.
+        Both the verifier and the interpreter path (`testLaurelExecution`) use
+        this, so the two modes are held to the same annotations. A block whose
+        negatives are verifier-only (they cannot reproduce on the single
+        concrete path the interpreter walks) therefore must not run through the
+        interpreter — leave `skipCoreInterpreter` on (verification only).
+      * `false` — the actuals may be a subset of the annotations (no annotation
+        is required to fire). Currently unused; retained for callers that want
+        an under-approximation check.
+    Throws on mismatch. -/
+private def checkAgainstAnnotations (block : SourcedProgram) (label : String)
+    (annotations : Array DiagnosticAnnotation) (actual : Array Strata.Diagnostic)
+    (requireAllAnnotationsFire : Bool := true)
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
+  -- By default the suite stays silent on success — the inline `// ^^^`
+  -- annotations (matched below) are what assert correctness. `showLocations`
+  -- opts a test into echoing each diagnostic's file-relative `line:col`
+  -- (computed from the snippet's `baseLine`, no manual offsets) so a
+  -- `#guard_msgs` golden can pin it; `showSnippet` further appends the
+  -- snippet-relative range for correlating against the inline markers. Note the
+  -- *failure* reports below always use this same file-relative format, so a
+  -- mismatch points straight at the offending `.lean` line regardless.
+  if showLocations then
+    for d in actual do
+      IO.println (formatDiagnostic block d showSnippet)
+  if annotations.isEmpty then
+    unless actual.isEmpty do
+      let mut report := s!"[{label}] expected no diagnostics, got {actual.size}:\n"
+      for d in actual do
+        report := report ++ s!"  {formatDiagnostic block d showSnippet}\n"
+      throw <| IO.userError report
+    return
+  -- Pair up: every actual diagnostic must match exactly one annotation.
+  let mut unmatchedDiags : Array Strata.Diagnostic := #[]
+  let mut matchedAnnotationIdxs : Array Nat := #[]
+  for d in actual do
+    let mut matchIdx? : Option Nat := none
+    for h : i in [0:annotations.size] do
+      let a := annotations[i]
+      if !matchedAnnotationIdxs.contains i
+          && (LocatedMessage.ofDiagnostic d).matches (LocatedMessage.ofAnnotation a) then
+        matchIdx? := some i
+        break
+    match matchIdx? with
+    | some i => matchedAnnotationIdxs := matchedAnnotationIdxs.push i
+    | none => unmatchedDiags := unmatchedDiags.push d
+  -- Annotations the actuals never matched. Only a failure when this path is
+  -- required to fire every annotation (the verifier); the interpreter, an
+  -- under-approximation, is allowed to leave verifier-only annotations unfired.
+  let mut unmatchedAnnotations : Array DiagnosticAnnotation := #[]
+  if requireAllAnnotationsFire then
+    for h : i in [0:annotations.size] do
+      if !matchedAnnotationIdxs.contains i then
+        unmatchedAnnotations := unmatchedAnnotations.push annotations[i]
+  if unmatchedDiags.isEmpty && unmatchedAnnotations.isEmpty then return
+  let mut report := s!"[{label}] diagnostics did not match annotations\n"
+  if !unmatchedAnnotations.isEmpty then
+    report := report ++ s!"\nExpected (annotated) but never fired:\n"
+    for a in unmatchedAnnotations do
+      report := report ++ s!"  {formatAnnotation block a showSnippet}\n"
+  if !unmatchedDiags.isEmpty then
+    report := report ++ s!"\nActual diagnostics with no matching annotation:\n"
+    for d in unmatchedDiags do
+      report := report ++ s!"  {formatDiagnostic block d showSnippet}\n"
+  throw <| IO.userError report
+
+/-- Drive a `SourcedProgram` against its inline annotations.
+
+    - If the snippet contains no annotations, succeeds iff the pipeline
+      produces no diagnostics and prints `ok`.
+    - Otherwise asserts an exact match: every diagnostic must be annotated,
+      every annotation must fire. Throws on mismatch. -/
+private def runAndCheck (block : SourcedProgram)
+    (run : StrataDDM.Program → IO (Array Strata.Message))
+    (label : String := "verify")
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
+  let annotations := parseAnnotations block.source
+  let dms ← run block.program
+  let actual := renderSnippetLocal block.basePos block.source dms
+  checkAgainstAnnotations block label annotations actual
+    (showLocations := showLocations) (showSnippet := showSnippet)
+
+/-- Shared verification pass used by both `testLaurelVerification` and `testLaurelExecution`:
+    run the full Laurel pipeline (translate + resolve + verify) and check the
+    diagnostics against the block's inline `// ^^^` annotations. Inlined here
+    (rather than via `runAndCheck`) so the raw diagnostics can be echoed under
+    `debug` before they're matched. -/
+private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOptions)
+    (annotations : Array DiagnosticAnnotation)
+    (showLocations showSnippet debug : Bool) : IO Unit := do
+  let verifyDms ← runLaurelPipelineRaw block.program options
+  let verifyActual := renderSnippetLocal block.basePos block.source verifyDms
+  if debug then
+    IO.println s!"[debug verify] {verifyActual.size} diagnostic(s):"
+    for d in verifyActual do
+      IO.println s!"  {formatDiagnostic block d (showSnippet := true)}"
+  checkAgainstAnnotations block "verify" annotations verifyActual
+    (showLocations := showLocations) (showSnippet := showSnippet)
+
+/-- Which execution paths a `testLaurelExecution` block should run. Each enabled
+    path is checked against the *same* inline `// ^^^` annotations, so the modes
+    are held honest against each other.
+
+    - `skipVerification` — skip the full Laurel pipeline (translate + resolve +
+      verify). `false` by default (verification runs); this is what every block
+      wants unless it is exercising the interpreter in isolation.
+    - `skipCoreInterpreter` — skip the concrete interpret path (Laurel → Core →
+      `Core.Program.interpretEntries`). `true` by default (interpreter off). Set
+      it `false` to run the interpreter; that requires the program to mark a
+      parameterless procedure `entry` (see `isInterpretEntry`), and enabling it
+      without any `entry` procedure is a mis-setup and throws.
+    - `skipLaurelInterpreter` — skip the standalone Laurel interpreter path
+      (`Strata.Laurel.Interpreter.evalProgram`, driven directly on the
+      Laurel program without going through Core). `true` by default (off),
+      because the standalone evaluator supports only a subset of Laurel; enable
+      it on a block only when every construct it uses is supported. Like the Core
+      path it requires a parameterless `entry` procedure and is held to the same
+      annotations. -/
+structure MultiplePathTestOptions where
+  skipVerification : Bool := false
+  skipCoreInterpreter : Bool := true
+  skipLaurelInterpreter : Bool := true
+  deriving Inhabited
+
+/-- Run the full Laurel pipeline (translate + resolve + verify) on a
+    `#strata`-parsed program and check its diagnostics against the block's inline
+    `// ^^^ kind: message` annotations: with annotations, assert an exact match;
+    without them, expect no diagnostics.
+
+    This is the **verification-only** entry point — it never runs the concrete
+    interpreter, even when the program marks a procedure `entry`; use
+    `testLaurelExecution { skipCoreInterpreter := false }` for that. Keeping
+    verification standalone lets a test carry verifier-only annotations (a
+    precondition or invariant that "does not hold"/"could not be proved" over all
+    inputs, a symbolic division-by-zero check) without reproducing them under
+    concrete execution.
+
+    `options`, `showLocations`, `showSnippet`, and `debug` behave as in
+    `testLaurelExecution`. -/
+def testLaurelVerification (block : SourcedProgram)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions)
+    (showLocations : Bool := false) (showSnippet : Bool := false)
+    (debug : Bool := false) : IO Unit := do
+  let annotations := parseAnnotations block.source
+  runVerifyPath block options annotations showLocations showSnippet debug
+
+/-- Run a `#strata`-parsed program through the execution paths selected by
+    `paths`, checking each enabled path against the block's inline
+    `// ^^^ kind: message` annotations: with annotations, assert an exact match;
+    without them, expect no diagnostics.
+
+    With the default `paths` (`skipVerification := false`, interpreters off) this
+    is the **verification-only** entry point: it never runs the concrete
+    interpreter, so a test can carry verifier-only annotations (a precondition or
+    invariant that "does not hold"/"could not be proved" over all inputs, a
+    symbolic division-by-zero check) without having to reproduce them under
+    concrete execution.
+
+    Set `skipCoreInterpreter := false` to *also* run the concrete interpreter and
+    hold it to the *same* annotations as the verifier — an exact match: every
+    annotation must fire in both modes, so the interpreter is not allowed to
+    report fewer diagnostics than the annotations expect. Running one set of
+    annotations through both keeps the two honest against each other — a
+    deterministic `assert`/postcondition failure must surface identically whether
+    proved false by SMT or hit at runtime.
+
+    Because the interpreter is strict, a block whose negative cases are
+    verifier-only (they cannot reproduce on the single concrete path the
+    interpreter walks) must leave `skipCoreInterpreter` on: mixing verifier-only
+    annotations into an interpreter run would make the interpret path fail on the
+    un-fired annotations.
+
+    **Known limitation — wording must agree across both paths.** An annotation's
+    message is matched as a substring against *both* paths' diagnostics, but the
+    verifier and the interpreter can word the *same* failing assert differently:
+    the verifier distinguishes "does not hold" from "could not be proved" based
+    on the SMT outcome (see `Core/Verifier.lean`), whereas the interpret path
+    always renders a concretely-failed assert as "{summary} does not hold". So an
+    assert that the verifier reports as "could not be proved" (e.g. one reachable
+    only through a loop head with a weak invariant) cannot be annotated to match
+    both paths at once. For now such a case simply leaves `skipCoreInterpreter`
+    on (its default) — keep it verification-only. (Unifying the two wordings
+    in the matcher is possible but deliberately not done here.)
+
+    Multiple preconditions at a single call site are each reported independently,
+    matching the verifier: `mkPreChecks` emits one `Assert` per precondition at
+    the *same* call-site source position, and each failure carries its own
+    metadata.
+
+    If `skipCoreInterpreter := false` but the program marks no `entry`, there is
+    nothing for the interpreter to run, which is a mis-use and is reported as an
+    error.
+
+    Set `skipLaurelInterpreter := false` to *also* run the standalone Laurel
+    interpreter (`Evaluator.evalProgram`, driven directly on the Laurel program
+    without going through Core) and hold it to the *same* annotations. This third
+    path is off by default because the standalone evaluator supports only a subset
+    of Laurel; enable it on a block only when every construct it uses is
+    supported, otherwise the evaluator throws on the first unsupported construct.
+    Like the Core path it requires a parameterless `entry` procedure and throws if
+    none is marked.
+
+    `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
+    solver). Pass an explicit value to override the solver, timeout, etc. — for
+    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`.
+
+    Succeeds silently by default; the inline `// ^^^` annotations assert
+    correctness. Set `showLocations := true` to echo each diagnostic's
+    file-relative `line:col` range (so a `#guard_msgs` golden can pin the
+    localization), and `showSnippet := true` to also append the snippet-relative
+    range. (Failure reports always use the file-relative format regardless.) -/
+def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : SourcedProgram)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions)
+    (showLocations : Bool := false) (showSnippet : Bool := false)
+    (debug : Bool := false) : IO Unit := do
+  let annotations := parseAnnotations block.source
+  if paths.skipVerification && paths.skipCoreInterpreter && paths.skipLaurelInterpreter then
+    throw <| IO.userError
+      "testLaurelExecution: all paths are skipped (skipVerification, \
+       skipCoreInterpreter, and skipLaurelInterpreter are all true), so nothing \
+       would run."
+  if !paths.skipVerification then
+    runVerifyPath block options annotations showLocations showSnippet debug
+  if !paths.skipCoreInterpreter then
+    -- Drive the interpret path. The runner returns `none` when nothing is marked
+    -- `entry`; with the interpreter explicitly requested that is a mis-setup.
+    match ← runLaurelInterpretRaw block.program with
+    | some dms =>
+      let actual := renderSnippetLocal block.basePos block.source dms
+      if debug then
+        IO.println s!"[debug interpret] {actual.size} diagnostic(s):"
+        for d in actual do
+          IO.println s!"  {formatDiagnostic block d (showSnippet := true)}"
+      -- Strict: `requireAllAnnotationsFire` defaults to `true`, so the interpreter
+      -- must fire every annotation, exactly like the verifier.
+      checkAgainstAnnotations block "interpret" annotations actual
+        (showLocations := showLocations) (showSnippet := showSnippet)
+    | none =>
+      throw <| IO.userError
+        "testLaurelExecution: skipCoreInterpreter is false but no `entry` procedure \
+         is marked, so the interpreter has nothing to run."
+  if !paths.skipLaurelInterpreter then
+    -- Standalone Laurel interpreter path, checked against the same annotations.
+    -- Like the Core path above, `none` means nothing is marked `entry`; with
+    -- the interpreter explicitly requested that is a mis-setup.
+    match ← runLaurelEvalRaw block.program with
+    | some dms =>
+      let actual := renderSnippetLocal block.basePos block.source dms
+      if debug then
+        IO.println s!"[debug laurel-interpret] {actual.size} diagnostic(s):"
+        for d in actual do
+          IO.println s!"  {formatDiagnostic block d (showSnippet := true)}"
+      -- Strict, exactly like verify/interpret: every annotation must fire.
+      checkAgainstAnnotations block "laurel-interpret" annotations actual
+        (showLocations := showLocations) (showSnippet := showSnippet)
+    | none =>
+      throw <| IO.userError
+        "testLaurelExecution: skipLaurelInterpreter is false but no `entry` procedure \
+         is marked, so the Laurel interpreter has nothing to run."
+
+/-- Path to the directory for intermediate files, inside the build directory.
+    Resolved from the current working directory so it works on any machine. -/
+def buildDir : IO String := do
+  let cwd ← IO.currentDir
+  return s!"{cwd}/.lake/build/intermediatePrograms/"
+
+def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+  let dir ← buildDir
+  runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
+
+/-- Like `testLaurelVerification` but skips SMT verification
+    (translate + resolve only). Use when the test only cares about resolution,
+    not the verifier — e.g. "shadowing in nested blocks is OK", or asserting a
+    specific resolution error without the verifier surfacing unrelated noise.
+
+    As with `testLaurelVerification`, succeeds silently by default; `showLocations := true`
+    echoes each diagnostic's file-relative `line:col` range and
+    `showSnippet := true` appends the snippet-relative range. -/
+def testLaurelResolution (block : SourcedProgram)
+    (gradualTypes : Std.HashSet String := {})
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block (runLaurelResolutionRaw gradualTypes) (label := "resolve")
+    (showLocations := showLocations) (showSnippet := showSnippet)
+
+end StrataTest.Util

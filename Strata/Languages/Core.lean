@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import StrataDDM
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.PipelinePhasePrinter
 public import Strata.Transform.ProcedureInlining
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
@@ -186,30 +187,128 @@ abstracted (model-validation) view used downstream.
 
 /-- The program-to-program transform phases applied before type checking.
     Shape assertion, inlining/loop-elim/call-elim/filtering, in the order
-    required by the verification pipeline. `prefixPhases` are inserted after
-    the shape assertion. See the underlying definition for ordering
-    rationale. -/
-def Core.transformPipelinePhases (procs : Option (List String) := none)
-    (prefixPhases : List Core.PipelinePhase := [])
+    required by the verification pipeline. See the underlying definition for
+    ordering rationale. -/
+def Core.transformPipelinePhases (options : Core.VerifyOptions := Core.VerifyOptions.default)
     : List Core.PipelinePhase :=
-  _root_.Core.transformPipelinePhases procs prefixPhases
+  _root_.Core.transformPipelinePhases options
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim. -/
-def Core.corePipelinePhases (procs : Option (List String) := none)
+def Core.corePipelinePhases
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.PipelinePhase :=
-  _root_.Core.corePipelinePhases procs options moreFns prefixPhases
+  _root_.Core.corePipelinePhases options moreFns
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
-def Core.coreAbstractedPhases (procs : Option (List String) := none)
+def Core.coreAbstractedPhases
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (prefixPhases : List Core.PipelinePhase := [])
     : List Core.AbstractedPhase :=
-  _root_.Core.coreAbstractedPhases procs options moreFns prefixPhases
+  _root_.Core.coreAbstractedPhases options moreFns
+
+/-- The name a phase is known by: the camelCase name shown in
+    `--keep-all-files` output, in the dependency table, and accepted by
+    `--phases`. -/
+def Core.phaseName (p : Core.PipelinePhase) : String := p.phase.name
+
+/-- Validate an arbitrary phase list, both that its phases compose and that
+    what they establish covers what the verification back end requires of the
+    program they produce. On failure, an explanatory diagnostic; on success, a
+    `ValidatedPipeline` the type of which carries the composition proof, so an
+    unchecked order cannot reach `verifyProgram`. -/
+def Core.validatePipeline (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  Core.ValidatedPipeline.ofListDelivering
+    "the verification back end" Core.backEndRequiredFacts phases
+
+/-- Like `validatePipeline`, but validates against facts `entryFacts` assumed to
+    hold on the input program. The result is indexed by `entryFacts`, so
+    `verifyProgram` will require a proof that they hold of the program verified.
+    This is the API-only path a Lean front end uses to skip phases whose facts
+    it can prove of its own output. -/
+def Core.validatePipelineFrom (entryFacts : Core.ProgramFactSet)
+    (phases : List Core.PipelinePhase) :
+    Except String (Core.ValidatedPipeline entryFacts) :=
+  Core.ValidatedPipeline.ofListFromDelivering
+    entryFacts "the verification back end" Core.backEndRequiredFacts phases
+
+/-- `phases` with `extra` inserted directly after the phase named `after`.
+    Anchoring by name rather than by index is what lets a caller place a phase
+    relative to one whose facts it needs — procedure inlining after
+    `assertNoCFGBodies`, which establishes the structured bodies inlining
+    requires. An anchor that is not in the list is an error rather than a
+    silent placement, since the position is the point. -/
+def Core.splicePhasesAfter (after : String) (extra : List Core.PipelinePhase)
+    (phases : List Core.PipelinePhase) : Except String (List Core.PipelinePhase) :=
+  match phases.findIdx? (fun p => Core.phaseName p == after) with
+  | some i => .ok (phases.take (i + 1) ++ extra ++ phases.drop (i + 1))
+  | none => .error s!"Cannot splice after phase '{after}': no phase of that name \
+                      is in the list."
+
+/-! ### Resolving a phase list from names
+
+A command that lets a user name phases needs to turn those names into phases,
+resolving `assert<Fact>` forms, and to render what is available. These helpers do
+that, so a command and the API agree on what a name means.
+
+The flags themselves are deliberately not declared here. Whether phase selection
+belongs to `verify` alone or to a shared set of commands is not settled, so
+nothing advertises the flags yet; the rendered text names `--phases` and
+`--display-phases` as the intended spelling for whoever wires them up. -/
+
+/-- The name of the `assert` phase for a fact: `assert` followed by the fact's
+    name with its first letter capitalized, so `noCFGBodies` gives
+    `assertNoCFGBodies`, which is what the default pipeline's first phase is
+    already called. -/
+def Core.assertPhaseName (f : Core.ProgramFact) : String :=
+  "assert" ++ (match f.name.toList with
+               | [] => ""
+               | c :: rest => String.ofList (c.toUpper :: rest))
+
+/-- The `assert<Fact>` phase a name denotes, if any: for a fact `F` with an
+    executable check, `assertPhaseName F` is a phase that checks `F` and passes
+    the program through. A fact without a check (`typeAnnotated`) has no assert
+    form, so `none`. -/
+def Core.assertPhaseFor (phaseName : String) : Option Core.PipelinePhase :=
+  (Core.ProgramFact.all.find? fun f => phaseName == Core.assertPhaseName f).bind
+    fun f =>
+      if h : f.check?.isSome = true then
+        some (Core.assertFactPhase phaseName f
+                s!"❌ Expected {f.name}, but the program does not satisfy it." h)
+      else none
+
+/-- Resolve a list of phase names against the phases `available`, also accepting
+    `assert<Fact>` forms. A caller decides what is nameable: the option-derived
+    pipeline, plus any phase outside it that it is willing to run. An unknown name
+    is a user error. -/
+def Core.resolvePhases (available : List Core.PipelinePhase) (requested : List String) :
+    Except String (List Core.PipelinePhase) :=
+  requested.mapM fun nm =>
+    match available.find? (fun p => Core.phaseName p == nm) with
+    | some p => .ok p
+    | none =>
+      match Core.assertPhaseFor nm with
+      | some p => .ok p
+      | none => .error s!"Unknown phase name '{nm}'. \
+                          Use --display-phases to see the available phases."
+
+/-- The text describing the available phases: the default order as a pasteable
+    `--phases` argument, and the phases available but not in that order. -/
+def Core.displayPhasesText (defaultPhases : List Core.PipelinePhase)
+    (extras : List Core.PipelinePhase := []) : String :=
+  let names := ",".intercalate (defaultPhases.map Core.phaseName)
+  let base :=
+    s!"To run the phases in the default order:\n\n  --phases {names}\n\n\
+       You can change this order. Give it back to --phases with no input file and\n\
+       Strata reports whether it composes without verifying anything.\n\
+       To see the declared dependencies between phases, use --display-phase-contracts."
+  match extras.map Core.phaseName with
+  | [] => base
+  | extraNames =>
+    base ++ "\n\nAvailable, not in the default order:\n\n"
+      ++ "\n".intercalate (extraNames.map (fun n => s!"  {n}"))
 
 /-- Front-end phase: any translation from a source language to Core may
     introduce over-approximations. Until front-ends can validate models or
@@ -226,21 +325,31 @@ Verify a Core program, including any external solver invocation that is
 necessary.
 
 The basic call form passes just `program` and `options`.
+
+Verifying only some procedures requires two `filterProcedures` phases at specific
+positions — one before the entry assertion, one after precondition lifting, which
+targets the procedures generated from those named. `options.proceduresToVerify`
+puts those phases into the phase list, so a caller supplying its own `pipeline`
+gets the same filtering by building that pipeline from the options it verifies
+with.
 -/
 def Core.verifyProgram
     (program : Core.Program)
     (options : Core.VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
-    (prefixPhases : List Core.PipelinePhase := [])
+    (entryFacts : Core.ProgramFactSet := Core.ProgramFactSet.empty)
+    (pipeline : Option (Core.ValidatedPipeline entryFacts) := none)
+    (entryFactsHold : entryFacts.holds program :=
+      by exact _root_.Core.ProgramFactSet.empty_holds _)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     (fileMap : Option Lean.FileMap := none)
     : EIO String Core.VCResults := do
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
-      (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
+      (Core.verify program tempDir options moreFns externalPhases
+        (entryFacts := entryFacts) (pipeline := pipeline) (entryFactsHold := entryFactsHold)
         (mkDischarge := mkDischarge)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
@@ -257,10 +366,10 @@ with DDM translation errors panicking and verifier diagnostics formatted using
 def Core.verify
     (env : StrataDDM.Program)
     (ictx : Lean.Parser.InputContext := Inhabited.default)
-    (proceduresToVerify : Option (List String) := none)
     (options : Core.VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
@@ -272,9 +381,11 @@ def Core.verify
   let program ← match translated with
     | .ok p => pure p
     | .error msg => throw (IO.userError msg)
+  -- The caller-supplied `pipeline` (when present) assumes nothing at entry: a
+  -- command line cannot prove entry facts, so this path is always empty-indexed.
   Core.verifyProgram program options moreFns
-    (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
+    (pipeline := pipeline)
     (mkDischarge := mkDischarge)
     (pipelineCtx := pipelineCtx)
     (fileMap := some ictx.fileMap)

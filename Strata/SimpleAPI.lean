@@ -18,7 +18,7 @@ API modules:
 * `StrataDDM` – file I/O for the generic Strata representation.
 * `Strata.Languages.Core` – Core dialect translation, transforms, and verification.
 
-For the Laurel dialect, import `Strata.Languages.Laurel` directly: Laurel is a
+For the Laurel dialect, import `StrataLaurel.Implementation` directly: Laurel is a
 separate layer above Core and is deliberately not re-exported here.
 
 It is intended for use cases that are essentially equivalent to more

@@ -504,7 +504,7 @@ def precondElimPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicFunctions])
+                         .noInternalFuncDecl, .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       PrecondElim.precondElim prog
 

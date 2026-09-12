@@ -12,7 +12,7 @@ public import Strata.Languages.Core.Verifier
 
 Common CLI flag definitions and parsers for `Core.VerifyOptions`.
 
-The Laurel counterpart lives in `Strata.Languages.Laurel.CliOptions`, which
+The Laurel counterpart lives in `StrataLaurel.Implementation.CliOptions`, which
 builds on `parseVerifyOptions` from here. Keeping it there leaves this module
 free of any dependency on the Laurel layer. -/
 
@@ -77,6 +77,10 @@ def verifyOptionsFlags : List Flag := [
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
   { name := "no-cse",
     help := "Skip common subexpression elimination on proof obligations." },
+  { name := "function-inlining",
+    help := "Replace calls to the program's own non-recursive functions with their bodies." },
+  { name := "unroll-bounded-quantifiers",
+    help := "Unroll a bounded quantifier whose instance count is known." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
@@ -213,6 +217,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
     disableCSE := pflags.getBool "no-cse" || base.disableCSE,
+    functionInlining := pflags.getBool "function-inlining" || base.functionInlining,
+    unrollBoundedQuantifiers :=
+      pflags.getBool "unroll-bounded-quantifiers" || base.unrollBoundedQuantifiers,
     solverOptions,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,

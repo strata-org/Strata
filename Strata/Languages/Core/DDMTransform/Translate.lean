@@ -1662,10 +1662,12 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Core.while_statement, #[annotsArg, ca, ma, ia, ba] =>
     let measure ← translateMeasure p bindings ma
     let invs ← translateInvariants p bindings ia
-    let (bodyss, bindings) ← translateBlock p bindings ba
+    -- Only the label counters propagate out of the body; propagating its
+    -- declarations would shift variable indices in the guard and later statements.
+    let (bodyss, bodyBindings) ← translateBlock p bindings ba
     let md ← getMetaDataWithAnn op annotsArg
     let guard ← translateCondBool p bindings ca
-    return ([.loop guard measure invs bodyss md], bindings)
+    return ([.loop guard measure invs bodyss md], { bindings with gen := bodyBindings.gen })
   | q`Core.call_statement, #[annotsArg, fa, callArgsa] =>
     let f ← translateIdent String fa
     let .seq _ .comma rawArgs := callArgsa
@@ -1956,7 +1958,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
 def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_block 1
-  let (body, bindings) ← translateBlock p bindings op.args[0]!
+  -- Same scoping rule as the loop body above.
+  let (body, blockBindings) ← translateBlock p bindings op.args[0]!
   let md ← getOpMetaData op
   return (.proc { header := { name := "",
                               typeArgs := [],
@@ -1967,7 +1970,7 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                   body := .structured body
                 }
                 md,
-          bindings)
+          { bindings with gen := blockBindings.gen })
 
 ---------------------------------------------------------------------
 

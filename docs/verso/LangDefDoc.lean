@@ -12,6 +12,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.KleeneStmt
 import Strata.DL.Imperative.KleeneStmtSemantics
+import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
@@ -36,7 +37,7 @@ open Verso.Genre.Manual.InlineLean
 set_option pp.rawOnError true
 set_option verso.docstring.allowMissing false
 
-#doc (Manual) "The Strata Core Language Definition" =>
+#doc (Manual) "The Strata Core Language Syntax" =>
 %%%
 shortTitle := "The Strata Core Language"
 %%%
@@ -105,9 +106,11 @@ The remainder of this document is structured as follows:
 2. Section 4 describes how Strata Core assembles these blocks into a concrete
    verification language with procedures, type declarations, functions, axioms,
    and programs.
-3. Section 5 describes the semantics of each layer — operational and
-   denotational for `Lambda`, and operational for `Imperative` — and how they
-   compose to give meaning to Strata Core programs.
+
+The semantics of each layer — operational and denotational for `Lambda`, and
+operational for `Imperative` — and how they compose to give meaning to Strata
+Core programs, are described in a companion document,
+[The Strata Core Language Semantics](https://github.com/strata-org/Strata/blob/main/docs/verso/LangSemDoc.lean).
 
 We do not consider the Core language set in stone. It may evolve over time,
 particularly to add new fundamental constructs, and this document will be
@@ -209,6 +212,11 @@ the valid type of each expression form.
 
 {docstring Lambda.LExpr.HasType}
 
+After Lambda's type inference ({name LExpr.resolve}`LExpr.resolve`), the type-annotated
+expressions follow tighter typing rules which are defined by
+{name LExpr.HasTypeA}`LExpr.HasTypeA`. The rule doesn't require typing
+contexts.
+
 # Imperative
 
 The `Imperative` language is a standard core imperative calculus, parameterized
@@ -265,6 +273,31 @@ includes assumptions.
 
 {docstring Imperative.KleeneStmt}
 
+## Control-Flow Graphs
+
+`Imperative` offers a control-flow graph (CFG) as well.
+A CFG is a flat collection of labeled basic blocks wired together by terminators
+(explicit jumps). This is the natural representation for
+lowering unstructured source languages and for interacting with backends that
+already think in terms of basic blocks and jumps.
+
+A {name Imperative.BasicBlock}`BasicBlock` is a straight-line list of body
+commands.
+
+{docstring Imperative.BasicBlock}
+
+{docstring Imperative.DetTransferCmd}
+
+{docstring Imperative.NondetTransferCmd}
+
+Specializing the transfer type gives the two block flavors,
+{name Imperative.DetBlock}`DetBlock` and {name Imperative.NondetBlock}`NondetBlock`.
+
+A {name Imperative.CFG}`CFG` then bundles an entry label with the graph's labeled
+blocks.
+
+{docstring Imperative.CFG}
+
 ## Metadata
 
 Metadata allows additional information to be attached to nodes in the Strata
@@ -317,26 +350,12 @@ pieces:
    `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
    instantiations of these typeclasses.
 
-3. *Well-formedness of the evaluator*, defined in
-   `Strata/DL/Imperative/CmdSemantics.lean`.
-   The rules assume the evaluator supplied via
-   `PureExpr.eval` respects a few sanity conditions on values, variable
-   lookups, and Boolean negation. A concrete instantiation must supply
-   witnesses for each of these predicates (or the bundle
-   {name Imperative.WellFormedSemanticEval}`WellFormedSemanticEval`) against its
-   factory of choice. See
-   `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
-   discharge of these predicates.
-
-   {docstring Imperative.WellFormedSemanticEvalBool}
-
-   {docstring Imperative.WellFormedSemanticEvalVal}
-
-   {docstring Imperative.WellFormedSemanticEvalVar}
-
-   {docstring Imperative.WellFormedSemanticEvalExprCongr}
-
-   {docstring Imperative.WellFormedSemanticEval}
+3. *Well-formedness of the evaluator.* The semantics rules assume the evaluator
+   supplied via `PureExpr.eval` respects a few sanity conditions on values,
+   variable lookups, and Boolean negation. These predicates, and the bundle
+   {name Imperative.WellFormedSemanticEval}`WellFormedSemanticEval` that packages
+   them, are described in the companion document, "The Strata Core Language
+   Semantics" (see its "Well-Formedness of the Evaluator" section).
 
 The Strata Core language, described next, is a worked example of an
 `Imperative` instantiation: it picks `Lambda` expressions for `PureExpr`,
@@ -706,18 +725,6 @@ call ProcName([out/inout] e₁, ..., [out/inout] eₙ);
 
 Note that `out` and `inout` keywords can only be attached when `eᵢ` is a variable.
 
-The semantics of a call are:
-
-1. Evaluate the argument expressions `e₁, ..., eₙ`.
-2. *Assert* each (non-free) precondition, substituting actuals for formals.
-3. *Havoc* the output variables `y₁, ..., yₘ`.
-4. *Assume* each postcondition, substituting actuals for formals and binding
-   `old v` to the value of `v` immediately before the call.
-5. Update the caller's state with the new values of the output variables.
-
-This enables *modular verification*: each procedure is verified
-against its contract independently, and callers reason only about the contract.
-
 ### Body and verification
 
 If a procedure has a non-empty body, the preconditions are assumed to hold on
@@ -744,166 +751,3 @@ one of:
 {docstring Core.Decl}
 
 {docstring Core.Program}
-
-# Semantics
-
-This section describes the formal semantics of the Strata Core building blocks.
-The layers compose: `Lambda` expressions are reduced via small-step reduction
-or interpreted via a denotational semantics. Commands use an expression
-evaluator over a variable store. Statements thread configurations through
-commands, managing control flow.
-
-## Lambda Operational Semantics
-
-The operational semantics of the {name LExpr}`LExpr` type are specified using
-the small-step inductive relation {name Lambda.Step}`Lambda.Step`.
-This relation is parameterized by a `Factory`, which describes built-in
-functions via an optional body and/or evaluation function.
-
-{docstring Lambda.Step}
-
-Typically we will want to talk about arbitrarily long sequences of steps, such
-as from an initial expression to a value. The
-{name Lambda.StepStar}`Lambda.StepStar` relation describes the reflexive,
-transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
-
-{docstring Lambda.StepStar}
-
-## Lambda Denotational Semantics
-
-In addition to the operational semantics, Strata provides a denotational
-semantics for `Lambda` that interprets well-typed expressions as Lean values.
-This enables reasoning about program meaning without stepping through
-individual reductions.
-
-The denotation maps monomorphic types to Lean types via _sorts_. A
-{name Lambda.LSort}`LSort` is a ground monomorphic type — an `LMonoTy` with no
-free type variables. The {name Lambda.SortDenote}`SortDenote` function interprets
-sorts into Lean types: built-in sorts (bool, int, real, string, bitvec, arrow)
-are mapped to their Lean counterparts, and all others are delegated to a
-user-provided type constructor interpretation
-({name Lambda.TyConstrInterp}`TyConstrInterp`).
-
-{docstring Lambda.LSort}
-
-{docstring Lambda.SortDenote}
-
-The denotation function `LExpr.denote` interprets a well-typed annotated
-expression into a Lean value of the appropriate type. It is parameterized by
-interpretations for type constructors, operators, and free variables. Each
-Lambda construct is denoted into the corresponding Lean one; for example, an
-if-then-else becomes a Lean if-then-else, a `forall` quantifier becomes a Lean
-`forall`, and so on. Since Lambda allows unbounded quantification and equality
-over arbitrary types, this denotation can be used only for reasoning, not for
-computation. Validity of a Lambda expression means that `LExpr.denote` evaluates
-to `true` under all possible interpretations.
-
-### Well-Annotated Output of Type Resolution
-
-The theorem `resolve_HasTypeA` establishes
-that when type inference (`LExpr.resolve`) succeeds, the resulting expression
-satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
-internally consistent. This allows us to give well-defined denotations for all
-terms that pass the typechecker.
-
-### Consistency with Operational Semantics
-
-A key metatheoretic result is that the operational and denotational semantics
-agree. The theorem `Step.denote_preserved` states that a single evaluation step
-preserves the denotation of an expression. `StepStar.denote_preserved` lifts
-this to `StepStar`, showing that denotation is preserved across arbitrary
-reduction sequences.
-
-## Command Semantics
-
-The semantics of commands are specified in terms of how they interact with a
-program state. An execution environment ({name Imperative.Env}`Env`) bundles
-three components:
-
-1. A *store* mapping variables to their current values.
-2. An expression *evaluator*.
-3. A cumulative *failure flag* that is the disjunction of per-command assertion failures.
-
-{docstring Imperative.Env}
-
-Given a state, the {name InitState}`InitState` relation describes how a
-variable obtains its initial value, and the
-{name UpdateState}`UpdateState` relation describes how a variable's value can
-change.
-
-{docstring Imperative.InitState}
-
-{docstring Imperative.UpdateState}
-
-Given these state relations, the semantics of each command is specified in
-a standard way.
-
-{docstring Imperative.EvalCmd}
-
-## Structured Statement Semantics
-
-The semantics of the {name Stmt}`Stmt` type is defined in terms of
-*configurations*, represented by the {name Imperative.Config}`Config` type.
-
-{docstring Imperative.Config}
-
-The {name StepStmt}`StepStmt` relation describes how each type of statement
-transforms configurations. It is parameterized by a command evaluator and an
-`extendFactory` function (used by `funcDecl` to add new function definitions to
-the expression evaluator within a scope).
-
-{docstring Imperative.StepStmt}
-
-The {name StepStmtStar}`Imperative.StepStmtStar` relation describes
-the reflexive, transitive closure of the {name StepStmt}`Imperative.StepStmt`
-relation.
-
-{docstring Imperative.StepStmtStar}
-
-## Non-deterministic Statement Semantics
-
-The semantics of {name KleeneStmt}`KleeneStmt` follow the same small-step
-pattern, with configurations ({name Imperative.KleeneConfig}`KleeneConfig`) that
-can be: executing a single statement, in a sequence context, or terminal.
-
-{docstring Imperative.KleeneConfig}
-
-The {name Imperative.StepKleene}`StepKleene` relation describes a single
-execution step for non-deterministic statements.
-
-{docstring Imperative.StepKleene}
-
-The {name Imperative.StepKleeneStar}`StepKleeneStar` relation is the reflexive,
-transitive closure.
-
-{docstring Imperative.StepKleeneStar}
-
-## Program-wide Semantics
-
-The per-component semantics above are linked to program-wide specifications via
-two key definitions:
-
-- `Strata.Logic.Hoare.Triple`, in
-  [`Logic/HoareTemplate.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/HoareTemplate.lean):
-  a partial-correctness triple `{Pre} s {Post}` stating that
-  if `Pre` holds on entry and the statement terminates, the postcondition holds
-  and no assertion has failed.  It is stated over the abstract `Lang P` bundle of
-  [`Logic/LangDef.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/LangDef.lean).
-  The same module holds the Imperative structural rules (`seq_append`, `ite`,
-  `while_rule`, …) in `Imperative.Logic.Hoare`, each stated at an arbitrary
-  initial-environment well-formedness condition.
-- `AllAssertsValid`, in
-  [`Specification.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/Specification.lean):
-  universally quantifies over all assertion sites in a
-  statement, requiring each to hold on every reachable path.
-
-The two are shown equivalent in
-[`SpecHoareConnection.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/SpecHoareConnection.lean)
-by `hoareTriple_implies_assertValid` and `allAssertsValid_implies_hoareTriple`.
-
-Core instantiates the rules in
-[`Core/Logic/Hoare.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/Hoare.lean),
-at its own `InitEnvWF`/`BlockInitEnvWF`, and shows that nothing beyond those is
-needed: no `WFFactoryExtension` hypothesis on the factory extension and no assumption
-about the procedure environment, only a syntactic `noFuncDecl` on the sub-statement a
-rule runs.

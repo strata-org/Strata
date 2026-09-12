@@ -46,8 +46,9 @@ procedure caller() {
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
       (Strata.Core.verifyProgram inlined
-        { Core.VerifyOptions.default with verbose := .quiet }
-        (proceduresToVerify := some ["caller"]))
+        { Core.VerifyOptions.default with
+          verbose := .quiet,
+          proceduresToVerify := some ["caller"] })
   let mut output := ""
   for vcr in vcResults do
     output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"

@@ -225,6 +225,9 @@ def callElimPipelinePhase : PipelinePhase where
   -- function-typed formal is given one.
   requires := factSet![.noCFGBodies]
   establishes := factSet![.noCalls]
+  -- `typeAnnotated` is absent: the substitutions that replace a callee's
+  -- parameters with the caller's variables build those references unannotated,
+  -- so a fully annotated input does not stay one.
   preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
                       .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
                          .noInternalFuncDecl, .noPolymorphicProcedures,

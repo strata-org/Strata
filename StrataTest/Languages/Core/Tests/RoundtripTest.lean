@@ -592,6 +592,106 @@ function negNegLit () : real {
 #guard_msgs in
 #eval roundtripText (Core.formatProgram negRealLitPgm).pretty
 
+-------------------------------------------------------------------------------
+-- Test: A loop whose body declares a variable
+--
+-- The guard and the statements after the loop name the variables the source
+-- names; the body's declarations are visible only within the body.
+-- `LoopBodyScopeTest` checks those names on the AST; these tests check them
+-- through print/parse.
+-------------------------------------------------------------------------------
+
+private def testLoopDeclaringBodyRoundtrip : Program :=
+#strata
+program Core;
+
+procedure p (n : int)
+{
+  var i : int := 0;
+  while (int.lt(i, n))
+  invariant int.le(0, i)
+  {
+    var dead : int := 5;
+    i := int.add(i, 1);
+  }
+  i := int.add(i, 100);
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testLoopDeclaringBodyRoundtrip
+
+-- The same holds when the body declares two variables rather than one.
+private def testLoopTwoDeclsRoundtrip : Program :=
+#strata
+program Core;
+
+procedure p (n : int)
+{
+  var i : int := 0;
+  while (int.lt(i, n))
+  {
+    var d1 : int := 5;
+    var d2 : int := 7;
+    i := int.add(i, 1);
+  }
+  i := int.add(i, 100);
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testLoopTwoDeclsRoundtrip
+
+-- A nondeterministic guard names no variable, while the statements after the
+-- loop name what the source wrote.
+private def testNondetLoopDeclaringBodyRoundtrip : Program :=
+#strata
+program Core;
+
+procedure p (n : int)
+{
+  var i : int := 0;
+  while *
+  {
+    var dead : int := 5;
+    i := int.add(i, 1);
+  }
+  i := int.add(i, 100);
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testNondetLoopDeclaringBodyRoundtrip
+
+-- A loop nested in a body that declares: the inner guard is resolved in the outer
+-- body's scope, where the outer declaration is visible and the inner one is not.
+private def testNestedLoopDeclaringBodyRoundtrip : Program :=
+#strata
+program Core;
+
+procedure p (n : int)
+{
+  var i : int := 0;
+  while (int.lt(i, n))
+  {
+    var outerDecl : int := 5;
+    while (int.lt(i, outerDecl))
+    {
+      var innerDecl : int := 7;
+      i := int.add(i, 1);
+    }
+    i := int.add(i, outerDecl);
+  }
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testNestedLoopDeclaringBodyRoundtrip
+
 end Strata.Test.Roundtrip
 
 end
