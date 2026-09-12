@@ -25,12 +25,13 @@ ordinary monomorphic composites.
 Runs after resolution, before `HeapParameterization`. `needsResolves := true`
 re-resolves the injected concrete composites.
 
-Instantiations are collected from every type position (fields, datatype ctor args,
-constants, static fields, procedure signatures, and body + contract statements) and
-from `new C<τ>` allocation sites, then driven to a fixpoint by a depth-capped worklist
-that also clones poly procedures materializing a generic composite. The pipeline reads,
-top to bottom: `indexGenerics` → `collectSeeds` → fixpoint drain (`processWorklistItem`)
-→ uncalled-proc witnesses → `topoSortMonomorphs` → rewrite all type/`new` positions.
+Instantiations are collected from every type position (fields, datatype ctor args, a
+constrained type's base, constants, static fields, procedure signatures, and body +
+contract statements) and from `new C<τ>` allocation sites, then driven to a fixpoint by a
+depth-capped worklist that also clones poly procedures materializing a generic composite.
+The pipeline reads, top to bottom: `indexGenerics` → `collectSeeds` → fixpoint drain
+(`processWorklistItem`) → uncalled-proc witnesses → `topoSortMonomorphs` → rewrite all
+type/`new` positions.
 -/
 
 namespace Strata.Laurel
@@ -161,6 +162,20 @@ private def collectInTy (genComposites : Std.HashMap String (List Identifier))
   here ++ nested
   termination_by ty
   decreasing_by ast_recursion_decreasing
+
+/-- Apply `f` to every type slot of a type definition, for the COLLECT and REWRITE paths alike
+    (`f` records in the first, rewrites in the second), so they cannot disagree about which slots
+    a definition has.
+
+    That is `mapTypeDefinitionHighTypesM` plus a composite's `extending`, which it excludes
+    because `extending` names a composite AS A CLASS rather than a value. This pass must rewrite
+    it anyway: `IntBox extends Box<int>` has to point at the monomorph `Box$a1$int`. (Cloned
+    generics do not need this: their parent is seeded separately.) -/
+private def mapTypeDefTypesM [Monad m] (f : HighTypeMd → m HighTypeMd)
+    (td : TypeDefinition) : m TypeDefinition := do
+  match ← mapTypeDefinitionHighTypesM f td with
+  | .Composite ct => pure (.Composite { ct with extending := ← ct.extending.mapM f })
+  | other => pure other
 
 /-- Does `ty` mention a generic composite instantiated at a type variable in `tvSet` —
     an `.Applied (UserDefined C) args` (`C` a generic composite) some of whose args is a
@@ -778,21 +793,11 @@ private def collectSeeds (program : Program) (model : SemanticModel)
   let mut insts : Std.HashMap String Inst := {}
   let recordInsts (is : List Inst) (m : Std.HashMap String Inst) : Std.HashMap String Inst :=
     is.foldl (fun m i => m.insert (instKey i) i) m
-  -- field types of all composites + datatype constructor arg types
+  -- Type slots of every type definition (see `mapTypeDefTypesM`).
   for td in program.types do
-    match td with
-    | .Composite ct =>
-        for f in ct.fields do insts := recordInsts (collectInTy genComposites f.type) insts
-        -- `extending`: a (typically non-generic) composite that extends a generic
-        -- INSTANTIATION (`IntBox extends Box<int>`) needs that parent monomorph
-        -- (`Box$a1$int`) emitted — else the rewritten `extends` reference dangles.
-        -- (For a GENERIC composite being cloned, the substituted-parent seed is enqueued
-        -- inside the worklist; this is the SEED for the non-cloned, concrete case.)
-        for p in ct.extending do insts := recordInsts (collectInTy genComposites p) insts
-    | .Datatype dt =>
-        for ctor in dt.constructors do
-          for arg in ctor.args do insts := recordInsts (collectInTy genComposites arg.type) insts
-    | _ => pure ()
+    let (_, insts') := (mapTypeDefTypesM (m := StateM (Std.HashMap String Inst))
+      (fun ty => do modify (recordInsts (collectInTy genComposites ty)); pure ty) td).run insts
+    insts := insts'
   -- top-level constants and global (static) fields
   for c in program.constants do insts := recordInsts (collectInTy genComposites c.type) insts
   for f in program.staticFields do insts := recordInsts (collectInTy genComposites f.type) insts
@@ -925,19 +930,13 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
       MessageKind.notYetImplemented]
 
   -- 4. Rewrite all type positions + drop generic composites.
+  let rwTypeDef (td : TypeDefinition) : TypeDefinition :=
+    mapTypeDefTypesM (m := Id) (rewriteTy genComposites) td
   let types' : List TypeDefinition := program.types.filterMap fun td =>
     match td with
-    | .Composite ct => if !ct.typeArgs.isEmpty then none
-        else some (.Composite { ct with
-          fields := ct.fields.map (fun f => { f with type := rewriteTy genComposites f.type }),
-          -- rewrite the `extending` list too, so a non-generic composite that extends a
-          -- generic instantiation (`IntBox extends Box<int>`) points at the monomorph
-          -- (`Box$a1$int`) rather than the dropped generic head (`Box`). Seeded in
-          -- `collectSeeds` so that monomorph is emitted.
-          extending := ct.extending.map (rewriteTy genComposites) })
-    | .Datatype dt => some (.Datatype { dt with constructors := dt.constructors.map (fun ctor =>
-        { ctor with args := ctor.args.map (fun p => { p with type := rewriteTy genComposites p.type }) }) })
-    | other => some other
+    -- A generic composite is DROPPED here, replaced by the monomorphs emitted for it.
+    | .Composite ct => if ct.typeArgs.isEmpty then some (rwTypeDef td) else none
+    | _ => some (rwTypeDef td)
   -- Static procedures: DROP the indexed poly procedures (replaced by their clones,
   -- like generic composites are dropped), keep+rewrite the rest, append the clones
   -- (also rewritten for any generic composites in their now-concrete signatures).
