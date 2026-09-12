@@ -604,9 +604,9 @@ private def contractTable (phases : List PipelinePhase) : String :=
 /-- info: V starts holding here   | holds, and is carried on   + required here, holds, and is carried on
 - required here, holds, and is dropped here   : not holding, but would be carried   (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
 
-                              CF  Lo  LM  BR  NG  IF  PoF
+                              CF  Lo  LM  BR  NG  IF  Po
 phase                           Ca  LI  SS  PF  HO  PP  TA
  1 assertNoCFGBodies          V : : : : : : : : : : : : :
  2 liftInternalFuncDecls      | : : : : : : : :   V :
@@ -641,9 +641,9 @@ rather than stopping at it, which is what shows both cells at once. -/
 info: # required here, and does not hold   V starts holding here   ' was holding, and is dropped here
 (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
 
-                   CF  Lo  LM  BR  NG  IF  PoF
+                   CF  Lo  LM  BR  NG  IF  Po
 phase                Ca  LI  SS  PF  HO  PP  TA
  1 testEstablisher V
  2 testNoop        '
@@ -651,6 +651,13 @@ phase                Ca  LI  SS  PF  HO  PP  TA
 -/
 #guard_msgs in
 #eval IO.println (phaseTable [testEstablisher, testNoop, testRequirer])
+
+private def glossaryLabels : List String :=
+  let rendered := phaseTable corePipelinePhases
+  ProgramFact.all.map fun f =>
+    ((rendered.splitOn s!": {f.name}").head!.takeEnd 2).trimAscii.toString
+
+#guard glossaryLabels.Nodup
 
 /-- info: assertNoCFGBodies establishes noCFGBodies, proved: true, preserves all: true -/
 #guard_msgs in
@@ -1085,9 +1092,9 @@ assembling a phase list has to compare. -/
 info: # required here, and does not hold   V starts holding here   | holds, and is carried on
 + required here, holds, and is carried on   : not holding, but would be carried   (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
 
-                             CF  Lo  LM  BR  NG  IF  PoF
+                             CF  Lo  LM  BR  NG  IF  Po
 phase                          Ca  LI  SS  PF  HO  PP  TA
  1 callElim                  # V : : :     : :   : : :
  2 betaReduce                : | : : : : V : : : : : : :

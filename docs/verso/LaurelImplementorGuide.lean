@@ -12,6 +12,7 @@ import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.LiftImperativeExpressions
 import StrataLaurel.Implementation.ModifiesClauses
+import StrataLaurel.Implementation.LaurelPipelinePrinter
 
 open Strata.Laurel
 
@@ -42,6 +43,18 @@ def laurelPipelineDocsMarkdown : String :=
     if decls.isEmpty then base
     else base ++ "\n" ++ "\n".intercalate decls
   "\n".intercalate entries.toList
+
+def mdBlockCommand (what : String) (md : String) : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let some ast := MD4Lean.parse md
+    | Lean.throwError s!"Failed to parse {what} as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command rendering the shape lifeline table.
+    Usage inside a `#doc` block: `{laurelShapeTable}` -/
+@[block_command]
+def laurelShapeTable : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "shapeLifelineTableMarkdown" shapeLifelineTableMarkdown
 
 /-- Markdown dependency graph for the Laurel passes, observed by folding the live shape set
     over the pipeline (`passDependencies`). Nothing here is hand-written: each edge names the
@@ -85,34 +98,22 @@ Every edge is derived from the passes' declared node kinds:\n\n"
 /-- Block command that generates documentation for all Laurel pipeline passes.
     Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
 @[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDocsMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "laurelPipelineDocsMarkdown" laurelPipelineDocsMarkdown
 
 /-- Block command that generates a dependency graph for the Laurel pipeline passes
     derived from the passes' declared node kinds.
     Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
 @[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDependencyGraphMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "laurelPipelineDependencyGraphMarkdown" laurelPipelineDependencyGraphMarkdown
 
 
 /-- Block command that includes the Laurel test README as subsections.
     Usage inside a `#doc` block: `{testingStrategyDocs}` -/
 @[block_command]
-def testingStrategyDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := include_str "../../StrataLaurel/Tests/README.md"
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse testingStrategyDocs as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def testingStrategyDocs : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "testingStrategyDocs" (include_str "../../StrataLaurel/Tests/README.md")
 
 
 #doc (Manual) "The Laurel Implementor Guide" =>
@@ -292,6 +293,16 @@ carry an ordering constraint, and the intent is to remove them as the AST grows 
 structure to express them directly.
 
 {laurelPipelineDocs}
+
+### Shape lifelines
+
+One row per pass and one column per shape, tracking for each shape the fact that it is
+*absent*. Read a column downwards: the fact starts holding where a pass removes the shape,
+is dropped where a pass creates it again, and is required where a pass declares it
+`unsupported`. Only shapes some pass declares `unsupported` have a column, since a shape
+nothing rejects cannot constrain the order.
+
+{laurelShapeTable}
 
 ## Pass Dependency Graph
 
