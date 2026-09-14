@@ -403,7 +403,7 @@ private theorem processDecl_noFuncDecl
       have ⟨hpair, _⟩ := ok_pair_inj h
       subst hpair
       apply DeclsNoFuncDecl.singleton_proc_cfg
-      intro ss hcontra; rw [hbody] at hcontra; exact Procedure.Body.noConfusion hcontra
+      intro ss hcontra; rw [hbody] at hcontra; simp at hcontra
     | .structured ss =>
       simp only [hbody] at h
       obtain ⟨⟨lfs, stripped⟩, σ2, hstep, hk⟩ := bind_ok_inv _ _ h

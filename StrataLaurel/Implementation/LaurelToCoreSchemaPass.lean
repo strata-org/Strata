@@ -897,7 +897,7 @@ an inout argument is not a variable reference.
 -/
 private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression)
-    : TranslateM (List (Core.CallArg Core.Expression) × List Parameter × List String) := do
+    : TranslateM (List (Imperative.CallArg Core.Expression) × List Parameter × List String) := do
   let s ← get
   let (calleeInputs, calleeOutputs) := match s.model.get calleeId with
     | .staticProcedure proc => (proc.inputs, proc.outputs)
@@ -908,7 +908,7 @@ private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expressi
   let calleeInoutNames := calleeInputNames.filter (calleeOutputNames.contains ·)
   let inoutInputIndices := calleeInputNames.zipIdx.filterMap fun (name, i) =>
     if calleeInoutNames.contains name then some i else none
-  let mut callArgs : List (Core.CallArg Core.Expression) := []
+  let mut callArgs : List (Imperative.CallArg Core.Expression) := []
   for (arg, i) in coreArgs.zipIdx do
     if inoutInputIndices.contains i then
       match arg with
@@ -1005,7 +1005,7 @@ def translateStmt (stmt : StmtExprMd)
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
         let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
-        let outArgs : List (Core.CallArg Core.Expression) :=
+        let outArgs : List (Imperative.CallArg Core.Expression) :=
           (lhs.zip calleeOutputs).filterMap fun (target, output) =>
             if calleeInoutNames.contains output.name.text then none else some (.outArg target)
         return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
@@ -1070,7 +1070,7 @@ def translateStmt (stmt : StmtExprMd)
         let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
         -- Generate throwaway LHS for output-only params so Core arity checking passes.
         let mut inits : List Core.Statement := []
-        let mut outArgs : List (Core.CallArg Core.Expression) := []
+        let mut outArgs : List (Imperative.CallArg Core.Expression) := []
         for out in calleeOutputs do
           if calleeInoutNames.contains out.name.text then continue
           let id ← freshId

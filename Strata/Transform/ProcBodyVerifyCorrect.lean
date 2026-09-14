@@ -713,7 +713,7 @@ theorem procBodyVerify_procedureCorrect
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
   have h_ss_eq : ss = ss' := by
     have := h_body_eq.symm.trans h_body
-    exact Procedure.Body.structured.inj this
+    exact Imperative.Body.structured.inj this
   subst h_ss_eq
   let verifyLabel := s!"verify_{proc.header.name.name}"
   let bodyLabel := s!"body_{proc.header.name.name}"

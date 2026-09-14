@@ -38,7 +38,7 @@ theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := b
       simp only [Procedure.mapExprs, hmap]
       cases body with
       | structured ss =>
-        simp only [Procedure.mk.injEq, Procedure.Body.structured.injEq, true_and]
+        simp only [Imperative.Procedure.mk.injEq, Imperative.Body.structured.injEq, true_and]
         exact Statements.mapExprs_id ss
       | cfg c => rfl
 
