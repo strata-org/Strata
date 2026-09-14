@@ -167,7 +167,7 @@ def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
         d.constrs.foldl (init := acc) fun acc c =>
           let acc := acc.insert c.name.name
           c.args.foldl (init := acc) fun acc (fieldName, _) =>
-            acc.insert (d.name ++ ".." ++ fieldName.name)
+            acc.insert (Lambda.destructorFuncName d fieldName)
       else acc
   -- Built-in Option datatype names
   let acc := dtNames.insert "Option"
@@ -221,7 +221,7 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
 private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType useArrayTheory fieldTy)
+      (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
@@ -736,8 +736,7 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
       if name.isEmpty then
         (s!"$__bv{bvs.length}", 1)
       else
-        let (b, s) := Strata.Name.breakDisambiguated name
-        (Encoder.sanitizeSmtName b, s)
+        Strata.Name.breakDisambiguated name
     -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
     let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
       ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)

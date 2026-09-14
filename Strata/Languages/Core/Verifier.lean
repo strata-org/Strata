@@ -118,7 +118,7 @@ private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
 
 def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.functions.get? uf then return enc
-  let id ← uniquify (sanitizeSmtName uf.id)
+  let id ← uniquify uf.id
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun ty => liftM (termTypeToSort solver ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
@@ -286,7 +286,7 @@ private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : Abst
     let mut fields := []
     for (name, fieldTy) in c.args.reverse do
       let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType (ty := fieldTy))
-      fields := (d.name ++ ".." ++ name.name, s) :: fields
+      fields := (Lambda.destructorFuncName d name, s) :: fields
     result := (c.name.name, fields) :: result
   return result
 

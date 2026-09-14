@@ -17,6 +17,8 @@ import all Init.Data.Repr
 * `Nat.toString_injective` — decimal `toString` on `Nat` is injective
 * `listCharToNat?_roundtrip` — parsing the decimal digits of `n` recovers `n`
 * `isPrefixOf_append_self` — a list is a prefix of itself appended with any suffix
+* `hexVal_hexDigit` — reading back a hex digit recovers the value it names
+* `isHexDigit_hexDigit` — every character `hexDigit` produces is a hex digit
 -/
 
 public section
@@ -181,5 +183,22 @@ theorem listCharToNat?_roundtrip (n : Nat) :
       rw [h]
     rw [this]
     exact readBack_digitLoop n
+
+/-! ### Hex digits -/
+
+/-- `hexVal` inverts `hexDigit` on its range. -/
+theorem hexVal_hexDigit (n : Nat) (h : n < 16) : hexVal (hexDigit n) = n := by
+  match n, h with
+  | 0, _ => rfl | 1, _ => rfl | 2, _ => rfl | 3, _ => rfl
+  | 4, _ => rfl | 5, _ => rfl | 6, _ => rfl | 7, _ => rfl
+  | 8, _ => rfl | 9, _ => rfl | 10, _ => rfl | 11, _ => rfl
+  | 12, _ => rfl | 13, _ => rfl | 14, _ => rfl | 15, _ => rfl
+  | _ + 16, h => omega
+
+/-- Everything `hexDigit` produces is recognized by `isHexDigit`, so a decoder that
+    guards on it never rejects a digit an encoder emitted. -/
+theorem isHexDigit_hexDigit (n : Nat) : isHexDigit (hexDigit n) = true := by
+  unfold hexDigit
+  split <;> decide
 
 end

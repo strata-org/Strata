@@ -2385,9 +2385,9 @@ def filterDatatypeDecls (ldatatype : LDatatype Unit) (funcDecls : List Core.Decl
   let constructorNames := ldatatype.constrs.map fun c => c.name.name
   let testerNames := ldatatype.constrs.map fun c => c.testerName
   let fieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
-    acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name)) []
+    acc ++ (c.args.map fun (fieldName, _) => Lambda.destructorFuncName ldatatype fieldName)) []
   let unsafeFieldAccessorNames := ldatatype.constrs.foldl (fun acc c =>
-    acc ++ (c.args.map fun (fieldName, _) => ldatatype.name ++ ".." ++ fieldName.name ++ "!")) []
+    acc ++ (c.args.map fun (fieldName, _) => Lambda.unsafeDestructorFuncName ldatatype fieldName)) []
 
   let filterByNames (names : List String) := funcDecls.filter fun decl =>
     match decl with | .func f _ => names.contains f.name.name | _ => false

@@ -10,6 +10,7 @@ public import Strata.DL.SMT.Term
 public import Strata.Util.Provenance
 public import StrataDDM.Elab.LoadedDialects
 import StrataDDM.BuiltinDialects.Init
+import Strata.DL.SMT.Symbol
 import Strata.Util.Tactics
 
 namespace Strata
@@ -29,7 +30,18 @@ private abbrev smtAnn (v : α) : Ann α Provenance := Ann.mk smtProv v
 private def mkQualifiedIdent (s:String):QualifiedIdent Provenance :=
   .qualifiedIdentImplicit smtProv (smtAnn s)
 
-private def mkSimpleSymbol (s:String):SimpleSymbol Provenance :=
+/-- Render a *builtin operator* spelling. These are the fixed strings `Op.mkName`
+    produces — `+`, `-`, `=>`, `str.++` and so on — and they must reach the solver
+    verbatim, so no escaping applies. Anything not in the operator table is a
+    qualified identifier, which is how multi-character operators like `str.++`
+    and `bvadd` are spelled.
+
+    Kept separate from `mkIdentSymbol` because the two cannot be told apart from
+    the string alone: most of the special-character operators (`+ - * / = < >`)
+    are also characters an *identifier* must escape, so one shared path would
+    have to either break the operators or leave the identifiers unescaped. Only
+    the caller knows which it is emitting. -/
+private def mkOperatorSymbol (s:String):SimpleSymbol Provenance :=
   match List.find? (fun (_,sym) => sym = s) specialCharsInSimpleSymbol with
   | .some (name,_) =>
     -- This needs hard-coded for now.
@@ -54,11 +66,24 @@ private def mkSimpleSymbol (s:String):SimpleSymbol Provenance :=
   | .none =>
     .simple_symbol_qid smtProv (mkQualifiedIdent s)
 
-private def mkSymbol (s:String):Symbol Provenance :=
-  .symbol smtProv (mkSimpleSymbol s)
+/-- Render a *name* — a variable, a datatype constructor, a selector, a quantifier
+    binder. Escaped, so a reference spells the symbol the way its declaration
+    does, and the operator table is never consulted: a variable named `+` is a
+    name, not the addition operator. -/
+private def mkIdentSymbol (s:String):SimpleSymbol Provenance :=
+  .simple_symbol_qid smtProv (mkQualifiedIdent (SMT.Symbol.escapeForSMT s))
 
-private def mkIdentifier (s:String):SMTIdentifier Provenance :=
-  .iden_simple smtProv (mkSymbol s)
+private def mkOperatorSymbolWrapped (s:String):Symbol Provenance :=
+  .symbol smtProv (mkOperatorSymbol s)
+
+private def mkOperatorIdentifier (s:String):SMTIdentifier Provenance :=
+  .iden_simple smtProv (mkOperatorSymbolWrapped s)
+
+private def mkIdentSymbolWrapped (s:String):Symbol Provenance :=
+  .symbol smtProv (mkIdentSymbol s)
+
+private def mkNameIdentifier (s:String):SMTIdentifier Provenance :=
+  .iden_simple smtProv (mkIdentSymbolWrapped s)
 
 private def translateFromTermPrim (t:SMT.TermPrim):
     Except String (SMTDDM.Term Provenance) := do
@@ -77,7 +102,7 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       -- applied to the absolute value.
       let posTerm := Term.spec_constant_term smtProv (.sc_numeral smtProv abs_i.toNat)
       return .qual_identifier_args smtProv
-        (.qi_ident smtProv (mkIdentifier "-"))
+        (.qi_ident smtProv (mkOperatorIdentifier "-"))
         (smtAnn #[posTerm])
   | .real dec =>
     if dec.mantissa < 0 then
@@ -86,12 +111,12 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       let absDec := { dec with mantissa := -dec.mantissa }
       let posTerm := Term.spec_constant_term smtProv (.sc_decimal smtProv absDec)
       return .qual_identifier_args smtProv
-        (.qi_ident smtProv (mkIdentifier "-"))
+        (.qi_ident smtProv (mkOperatorIdentifier "-"))
         (smtAnn #[posTerm])
     else
       return .spec_constant_term smtProv (.sc_decimal smtProv dec)
   | .bitvec (n := n) bv =>
-    let bvty := mkSymbol (s!"bv{bv.toNat}")
+    let bvty := mkOperatorSymbolWrapped (s!"bv{bv.toNat}")
     let val:Index Provenance := .ind_numeral smtProv n
     return (.qual_identifier smtProv
       (.qi_ident smtProv (.iden_indexed smtProv bvty (smtAnn #[val]))))
@@ -112,7 +137,7 @@ private def translateFromTermType (t:SMT.TermType):
       let idx : Index Provenance := .ind_numeral smtProv n
       return (.smtsort_ident smtProv
         (.iden_indexed smtProv
-          (mkSymbol "BitVec")
+          (mkOperatorSymbolWrapped "BitVec")
           (smtAnn #[idx])))
     | _ =>
       let res:String ← match tp with
@@ -122,17 +147,17 @@ private def translateFromTermType (t:SMT.TermType):
           | .string => .ok "String"
           | .regex => .ok "RegLan"
           | _ => throw "unreachable"
-      return .smtsort_ident smtProv (mkIdentifier res)
+      return .smtsort_ident smtProv (mkNameIdentifier res)
   | .option ty =>
     let argty ← translateFromTermType ty
-    return .smtsort_param smtProv (mkIdentifier "Option") (smtAnn #[argty])
+    return .smtsort_param smtProv (mkOperatorIdentifier "Option") (smtAnn #[argty])
   | .constr id args =>
     let argtys <- args.mapM translateFromTermType
     let argtys_array := translateFromSMTSortList argtys
     if argtys_array.isEmpty then
-      return .smtsort_ident smtProv (mkIdentifier id)
+      return .smtsort_ident smtProv (mkNameIdentifier id)
     else
-      return .smtsort_param smtProv (mkIdentifier id) (smtAnn argtys_array)
+      return .smtsort_param smtProv (mkNameIdentifier id) (smtAnn argtys_array)
 
 -- Helper: convert an Index to an SExpr
 private def indexToSExpr (idx : SMTDDM.Index Provenance)
@@ -145,7 +170,7 @@ private def indexToSExpr (idx : SMTDDM.Index Provenance)
 private def indexedIdentToSExpr (sym : SMTDDM.Symbol Provenance)
     (indices : Ann (Array (SMTDDM.Index Provenance)) Provenance)
     : SMTDDM.SExpr Provenance :=
-  let underscoreSym := SMTDDM.SExpr.se_symbol smtProv (mkSymbol "_")
+  let underscoreSym := SMTDDM.SExpr.se_symbol smtProv (mkOperatorSymbolWrapped "_")
   let idxSExprs := indices.val.toList.map indexToSExpr
   .se_ls smtProv (smtAnn ((underscoreSym :: .se_symbol smtProv sym :: idxSExprs).toArray))
 
@@ -173,7 +198,7 @@ private def qiToSExpr (qi : SMTDDM.QualIdentifier Provenance)
     pure (indexedIdentToSExpr sym indices)
   | .qi_isort _ (.iden_simple _ sym) sort =>
     let sortSExpr ← sortToSExpr sort
-    let asSym := SMTDDM.SExpr.se_symbol smtProv (mkSymbol "as")
+    let asSym := SMTDDM.SExpr.se_symbol smtProv (mkOperatorSymbolWrapped "as")
     pure (.se_ls smtProv (smtAnn #[asSym, .se_symbol smtProv sym, sortSExpr]))
   | _ => throw s!"Doesn't know how to convert QI {repr qi} to SMTDDM.SExpr"
 
@@ -195,14 +220,14 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
   | .prim p => translateFromTermPrim p
   | .var v =>
     return .qual_identifier smtProv (.qi_ident smtProv (.iden_simple smtProv
-      (.symbol smtProv (mkSimpleSymbol v.id))))
+      (.symbol smtProv (mkIdentSymbol v.id))))
   | .none ty =>
     let retSort ← translateFromTermType (.option ty)
-    let qi := QualIdentifier.qi_isort smtProv (mkIdentifier "none") retSort
+    let qi := QualIdentifier.qi_isort smtProv (mkOperatorIdentifier "none") retSort
     return .qual_identifier smtProv qi
   | .some inner =>
     let innerTerm ← translateFromTerm inner
-    let qi := QualIdentifier.qi_ident smtProv (mkIdentifier "some")
+    let qi := QualIdentifier.qi_ident smtProv (mkOperatorIdentifier "some")
     return .qual_identifier_args smtProv qi (smtAnn #[innerTerm])
   | .app op args retTy =>
     let args' <- args.mapM translateFromTerm
@@ -217,32 +242,47 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
     match op with
     | .datatype_op .constructor name =>
       let retSort ← translateFromTermType retTy
-      let qi := QualIdentifier.qi_isort smtProv (mkIdentifier name) retSort
+      let qi := QualIdentifier.qi_isort smtProv (mkNameIdentifier name) retSort
       return mk_qual_identifier qi
     | .bv (.zero_extend n) =>
-      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "zero_extend")
+      let iden := SMTIdentifier.iden_indexed smtProv (mkOperatorSymbolWrapped "zero_extend")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .bv (.int_to_bv n) =>
-      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "int_to_bv")
+      let iden := SMTIdentifier.iden_indexed smtProv (mkOperatorSymbolWrapped "int_to_bv")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_index n) =>
-      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "re.^")
+      let iden := SMTIdentifier.iden_indexed smtProv (mkOperatorSymbolWrapped "re.^")
         (smtAnn #[.ind_numeral smtProv n])
       return mk_qual_identifier (.qi_ident smtProv iden)
     | .str (.re_loop n₁ n₂) =>
-      let iden := SMTIdentifier.iden_indexed smtProv (mkSymbol "re.loop")
+      let iden := SMTIdentifier.iden_indexed smtProv (mkOperatorSymbolWrapped "re.loop")
         (smtAnn #[.ind_numeral smtProv n₁, .ind_numeral smtProv n₂])
       return mk_qual_identifier (.qi_ident smtProv iden)
+    | .datatype_op .tester name =>
+      -- `is-` is SMT-LIB's spelling for a tester, not part of the name, so only
+      -- the constructor name is escaped. The solver derives the tester from the
+      -- constructor as *declared*, so this has to match the declaration's
+      -- spelling of the name and nothing more.
+      let iden := mkOperatorIdentifier ("is-" ++ SMT.Symbol.escapeForSMT name)
+      return mk_qual_identifier (.qi_ident smtProv iden)
     | _ =>
-      return mk_qual_identifier (.qi_ident smtProv (mkIdentifier op.mkName))
+      -- `op.mkName` yields a builtin operator spelling for most ops, but a
+      -- *user* name for a `uf` (its id) or a datatype selector. Dispatch on the
+      -- op rather than on the string: `+` as an operator must stay bare, while a
+      -- function or selector named `+` is a name and must be escaped, and the
+      -- two are indistinguishable once flattened to a string.
+      let iden := match op with
+        | .uf _ | .datatype_op _ _ => mkNameIdentifier op.mkName
+        | _ => mkOperatorIdentifier op.mkName
+      return mk_qual_identifier (.qi_ident smtProv iden)
   | .quant qkind args tr body =>
     let args_sorted:List (SMTDDM.SortedVar Provenance) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
           let ty' <- translateFromTermType ty
-          return .sorted_var smtProv (mkSymbol name) ty')
+          return .sorted_var smtProv (mkIdentSymbolWrapped name) ty')
     let args_array := args_sorted.toArray
     if args_array.isEmpty then
       throw "empty quantifier"
@@ -261,7 +301,7 @@ partial def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term Provenanc
             let sexprs ← ddmTerms.mapM termToSExpr
             let attr : SMTDDM.Attribute Provenance :=
               .att_kw smtProv
-                (.kw_symbol smtProv (mkSimpleSymbol "pattern"))
+                (.kw_symbol smtProv (mkOperatorSymbol "pattern"))
                 (smtAnn (some (.av_sel smtProv (smtAnn sexprs.toArray))))
             patternAttrs := patternAttrs.push attr
           -- Wrap body with bang operator and pattern attributes
@@ -329,6 +369,7 @@ responsibility to correctly fill in the types in .app/.uf, or faithfully
 ignore these.
 -/
 partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term StrataDDM.SourceRange)
+    (declaredNames : Std.HashSet String := {})
     : Except String Strata.SMT.Term := do
   match t with
   | .spec_constant_term _ sc =>
@@ -353,7 +394,7 @@ partial def translateFromDDMTermToUntyped (t : Strata.SMTResponseDDM.Term Strata
   | .qual_identifier_args _ qi args =>
     match resolveQI qi with
     | some (name, _, _) =>
-      let argTerms ← args.val.toList.mapM translateFromDDMTermToUntyped
+      let argTerms ← args.val.toList.mapM (translateFromDDMTermToUntyped · declaredNames)
       return mkUFApp name argTerms
     | none => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
   | _ => throw s!"translateFromDDMTermToUntyped: don't know how to convert {repr t}"
@@ -378,10 +419,17 @@ where
   /-- Build a `Term.app` with a UF op for a named function/constructor.
       Since the SMTDDM's term does not have any type annotation, the return
       type is always filled with a placeholder type "_placeholder".
-      Also, its arguments are simply assigned an empty list. -/
+      Also, its arguments are simply assigned an empty list.
+
+      The name is recovered from the spelling the solver answered with, so a
+      constructor or selector reads as it does in the source rather than in its
+      emitted form. Symbols the solver invented for the elements of an
+      uninterpreted sort are left alone; see `Symbol.ofSolverSymbol`. -/
   mkUFApp (name : String) (args : List Strata.SMT.Term) : Strata.SMT.Term :=
     let placeholderTy := Strata.SMT.TermType.constr "_placeholder" []
-    let uf : Strata.SMT.UF := { id := name, args := [], out := placeholderTy }
+    let uf : Strata.SMT.UF :=
+      { id := Strata.SMT.Symbol.ofSolverSymbol declaredNames name
+        args := [], out := placeholderTy }
     .app (.core (.uf uf)) args placeholderTy
 
 end SMTResponseDDM

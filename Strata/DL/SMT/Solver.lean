@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.SMT.Term
 import StrataDDM.Util.String
+import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.Languages.Core.Options
 
@@ -25,7 +26,7 @@ works purely with `Term` values and delegates string rendering to the Solver via
 
 namespace Strata.SMT
 
-open StrataDDM (escapeSMTStringLit quoteIdent)
+open StrataDDM (escapeSMTStringLit)
 
 public section
 
@@ -242,40 +243,41 @@ def comment (comment : String) : SolverM Unit :=
   emitln s!"; {inline}"
 
 def getValue (ids : List String) : SolverM Unit :=
-  let ids := Std.Format.joinSep (ids.map quoteIdent) " "
+  let ids := Std.Format.joinSep (ids.map Symbol.toSMTString) " "
   emitln s!"(get-value ({ids}))"
 
 def declareSort (id : String) (arity : Nat) : SolverM Unit :=
-  emitln s!"(declare-sort {id} {arity})"
+  emitln s!"(declare-sort {Symbol.toSMTString id} {arity})"
 
 /-- Convert a single constructor to its SMT-LIB string representation. -/
 private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
-  if c.args.isEmpty then return s!"({c.name})"
+  let cName := Symbol.toSMTString c.name
+  if c.args.isEmpty then return s!"({cName})"
   else
     let fieldStrs ← c.args.mapM fun (name, ty) => do
       let tyStr ← typeToSMTString ty
-      return s!"({name} {tyStr})"
-    return s!"({c.name} {String.intercalate " " fieldStrs})"
+      return s!"({Symbol.toSMTString name} {tyStr})"
+    return s!"({cName} {String.intercalate " " fieldStrs})"
 
 def declareDatatype (id : String) (params : List String) (constructors : List SMTConstructor) : SolverM Unit := do
   let cStrs ← constructors.mapM constructorToSMTString
   let cInline := "\n  " ++ String.intercalate "\n  " cStrs
-  let pInline := String.intercalate " " params
+  let pInline := String.intercalate " " (params.map Symbol.toSMTString)
   if params.isEmpty
-  then emitln s!"(declare-datatype {id} ({cInline}))"
-  else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
+  then emitln s!"(declare-datatype {Symbol.toSMTString id} ({cInline}))"
+  else emitln s!"(declare-datatype {Symbol.toSMTString id} (par ({pInline}) ({cInline})))"
 
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
 def declareDatatypes (dts : List (String × List String × List SMTConstructor)) : SolverM Unit := do
   if dts.isEmpty then return
-  let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
+  let sortDecls := dts.map fun (name, params, _) => s!"({Symbol.toSMTString name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
   let bodies ← dts.mapM fun (_, params, constrs) => do
     let cStrs ← constrs.mapM constructorToSMTString
     let cInline := String.intercalate " " cStrs
     if params.isEmpty then return s!"({cInline})"
     else
-      let pInline := String.intercalate " " params
+      let pInline := String.intercalate " " (params.map Symbol.toSMTString)
       return s!"(par ({pInline}) ({cInline}))"
   let bodyStr := String.intercalate "\n  " bodies
   emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
@@ -302,17 +304,17 @@ def assertId (id : String) : SolverM Unit :=
 /-- Declare a constant with a typed `TermType`. -/
 def declareConst (id : String) (ty : TermType) : SolverM Unit := do
   let tyStr ← typeToSMTString ty
-  emitln s!"(declare-const {quoteIdent id} {tyStr})"
+  emitln s!"(declare-const {Symbol.toSMTString id} {tyStr})"
 
 /-- Declare a function with typed argument and return types. -/
 def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
   let retStr ← typeToSMTString retTy
   if argTys.isEmpty then
-    emitln s!"(declare-const {quoteIdent id} {retStr})"
+    emitln s!"(declare-const {Symbol.toSMTString id} {retStr})"
   else
     let argStrs ← argTys.mapM typeToSMTString
     let inline := String.intercalate " " argStrs
-    emitln s!"(declare-fun {quoteIdent id} ({inline}) {retStr})"
+    emitln s!"(declare-fun {Symbol.toSMTString id} ({inline}) {retStr})"
 
 /-- Define a function with typed return type and a raw SMT-LIB string body.
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
@@ -320,10 +322,10 @@ def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType
     (body : String) : SolverM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do
     let tyStr ← typeToSMTString ty
-    return s!"({quoteIdent name} {tyStr})"
+    return s!"({Symbol.toSMTString name} {tyStr})"
   let inline := String.intercalate " " typedArgs
   let retStr ← typeToSMTString retTy
-  emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
+  emitln s!"(define-fun {Symbol.toSMTString id} ({inline}) {retStr} {body})"
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)

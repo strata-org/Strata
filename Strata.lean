@@ -92,6 +92,7 @@ import Strata.DL.SMT.DenoteTyped
 import Strata.DL.SMT.DenoteTypedProps
 import Strata.DL.SMT.DenoteSemanticsEquiv
 import Strata.DL.SMT.DenoteTypedSMTQuery
+import Strata.DL.SMT.SymbolProps
 
 /- Other -/
 import Strata.MetaVerifier

@@ -6,6 +6,7 @@
 module
 
 import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DL.SMT.Symbol
 import StrataDDM.Elab
 public import Strata.Pipeline.Context
 public import Strata.DL.Imperative.EvalContext
@@ -168,8 +169,13 @@ directly, which avoids the ambiguity that arises when parsing at the
 `Command` level.
 
 Returns a list of (key-string, value-Term) pairs on success.
+
+`declaredNames` are the names the program already uses. A symbol the solver
+invented for an element of an uninterpreted sort is renamed if it would collide
+with one of them; see `Strata.SMT.Symbol.ofSolverSymbol`.
 -/
-def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
+def parseModelDDM (modelStr : String) (declaredNames : Std.HashSet String := {}) :
+    IO (List (String × Strata.SMT.Term)) := do
   let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
   let op ←
     try StrataDDM.Elab.parseCategoryFromDialect
@@ -180,7 +186,7 @@ def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) :=
     let pairs ← vps.val.toList.filterMapM fun vp =>
       match vp with
       | .valuation_pair _ t1 t2 => do
-        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 with
+        match Strata.SMTResponseDDM.translateFromDDMTermToUntyped t2 declaredNames with
         | .ok t2' =>
           return .some (Strata.SMTResponseDDM.formatArg (.op (Strata.SMTResponseDDM.Term.toAst t1)),
                   t2')
@@ -196,6 +202,11 @@ def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) :=
 Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
 value in the model.
+
+The keys of `pairs` are escaped spellings, since the solver echoes what the emitter
+wrote through `Strata.SMT.Symbol.toSMTString`, while the `id` from `getSMTId` is the
+unescaped name. `findValue` maps the key back with `Strata.SMT.Symbol.ofSMTString`
+before comparing.
 -/
 def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
@@ -209,7 +220,7 @@ def processModel {P : PureExpr} [ToFormat P.Ident]
     let rest ← processModel typedVarToSMTFn vrest pairs E
     .ok ((var, value) :: rest)
   where findValue id pairs : Except Format Strata.SMT.Term :=
-    match pairs.find? (fun p => p.fst == id) with
+    match pairs.find? (fun p => Strata.SMT.Symbol.ofSMTString p.fst == id) with
     | none => .error f!"Cannot find model for id: {id}"
     | some p => .ok p.snd
 
@@ -247,7 +258,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
   -- given default on any error.
   let parseFollowingModel (rest : String) (default : Result P.Ident) :
       IO (Result P.Ident) := do
-    let rawModel ← parseModelDDM rest
+    let rawModel ← parseModelDDM rest E.usedNames
     match processModel typedVarToSMTFn vars rawModel E with
     | .ok model =>
       match default with
@@ -350,7 +361,7 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
         let pairs ← solver.getValue userVarTerms
         match pairs with
         | [(.prim (.string rawOutput), _)] =>
-          let rawModel ← parseModelDDM rawOutput
+          let rawModel ← parseModelDDM rawOutput estate.usedNames
           match processModel typedVarToSMTFn vars rawModel estate with
           | .ok model => return model
           | .error _ => return []

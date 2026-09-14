@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.SMT.AbstractSolver
+import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DL.SMT.Factory
 
@@ -22,8 +23,6 @@ repeated declarations of the same name. The shadow depth is tracked per name.
 -/
 
 namespace Strata.SMT
-
-open StrataDDM (quoteIdent)
 
 public section
 
@@ -90,6 +89,87 @@ private def typeToStr (ty : TermType) : IncrementalSolverM String := do
 private def disambiguatedName (name : String) (depth : Nat) : String :=
   if depth == 0 then name else s!"{name}@{depth}"
 
+/-! ### Reading a response that may contain quoted symbols
+
+A symbol we emit can contain any character, `(`, `)` and a space included, carried
+inside `|…|`. Scanning a response as raw text therefore misreads it: a `)` in a
+name looks like the end of the enclosing s-expression, and a space in one looks
+like a token boundary. These two helpers scan with that in mind, and are shared by
+the readers below so the rule lives in one place. -/
+
+/-- Whether a scan is currently inside a `|…|` quoted symbol or a `"…"` string
+    literal. SMT-LIB gives neither an escape mechanism, so the delimiters simply
+    alternate and one flag each suffices. -/
+structure QuoteScan where
+  inSymbol : Bool := false
+  inString : Bool := false
+  deriving Inhabited
+
+/-- Advance a scan over one character. -/
+def QuoteScan.step (st : QuoteScan) (c : Char) : QuoteScan :=
+  if st.inString then { st with inString := c != '"' }
+  else if st.inSymbol then { st with inSymbol := c != '|' }
+  else { inSymbol := c == '|', inString := c == '"' }
+
+/-- Whether the scan sits inside a quoted symbol or string literal. -/
+def QuoteScan.quoted (st : QuoteScan) : Bool := st.inSymbol || st.inString
+
+/-- Net paren depth contributed by `s`, counting only parens outside a quoted
+    symbol or string literal, together with the state to continue a later line
+    from.
+
+    Counting raw characters instead would end the response early on a name
+    containing `)`, truncating the model with no diagnostic. -/
+def scanParens (s : String) (st0 : QuoteScan) : Int × QuoteScan :=
+  s.toList.foldl
+    (fun (acc : Int × QuoteScan) c =>
+      let (d, st) := acc
+      let st' := st.step c
+      if st.quoted || st'.quoted then (d, st')
+      else if c == '(' then (d + 1, st')
+      else if c == ')' then (d - 1, st')
+      else (d, st'))
+    (0, st0)
+
+/-- State while tokenising a response list: nesting depth, the token being built,
+    the tokens so far, and the quoting scan. The lists are built reversed. -/
+private structure TokState where
+  depth : Int := 0
+  cur : List Char := []
+  acc : List (List Char) := []
+  scan : QuoteScan := {}
+
+/-- Finish the token being built, if there is one. -/
+private def TokState.flush (st : TokState) : TokState :=
+  if st.cur.isEmpty then st else { st with cur := [], acc := st.cur.reverse :: st.acc }
+
+/-- The elements of a response list `(e₁ e₂ …)`.
+
+    An element is not always an atom: `check-sat-assuming` takes negated literals, so
+    `((not p) q)` has to yield `(not p)` and `q` rather than three atoms. Nesting is
+    therefore tracked, and a quoted symbol or string literal is opaque, so a name
+    carrying a space or a paren survives as one token and still matches the spelling
+    that was sent. -/
+def splitTopLevelTokens (s : String) : List String :=
+  let fin := s.toList.foldl
+    (fun (st : TokState) c =>
+      let scan' := st.scan.step c
+      if st.scan.quoted || scan'.quoted then
+        { st with cur := c :: st.cur, scan := scan' }
+      else if c == '(' then
+        if st.depth == 0 then { st with depth := 1, scan := scan' }
+        else { st with depth := st.depth + 1, cur := c :: st.cur, scan := scan' }
+      else if c == ')' then
+        if st.depth ≤ 1 then { st.flush with depth := 0, scan := scan' }
+        else
+          let st := { st with depth := st.depth - 1, cur := c :: st.cur, scan := scan' }
+          if st.depth == 1 then st.flush else st
+      else if c == ' ' || c == '\t' then
+        if st.depth ≤ 1 then { st.flush with scan := scan' } else { st with cur := c :: st.cur, scan := scan' }
+      else { st with cur := c :: st.cur, scan := scan' })
+    {}
+  fin.flush.acc.reverse.map String.ofList
+
 /-- Spawn an incremental solver process. -/
 def spawn (path : String) (args : Array String) : IO IncrementalSolverState := do
   let solver ← Solver.spawn path args
@@ -150,14 +230,15 @@ private def formatConstrs (constrs : List (String × List (String × TermType)))
     : IncrementalSolverM (List String) := do
   let mut result := []
   for (cname, fields) in constrs.reverse do
+    let cStr := Symbol.toSMTString cname
     if fields.isEmpty then
-      result := s!"({cname})" :: result
+      result := s!"({cStr})" :: result
     else do
       let mut fieldStrs := []
       for (fname, fty) in fields.reverse do
         let tyStr ← typeToStr fty
-        fieldStrs := s!"({fname} {tyStr})" :: fieldStrs
-      result := s!"({cname} {String.intercalate " " fieldStrs})" :: result
+        fieldStrs := s!"({Symbol.toSMTString fname} {tyStr})" :: fieldStrs
+      result := s!"({cStr} {String.intercalate " " fieldStrs})" :: result
   return result
 
 /-- Construct the sort for a datatype given its name and type parameter names. -/
@@ -233,19 +314,19 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let smtName := disambiguatedName name count
     set { st with shadowCounts := st.shadowCounts.insert name (count + 1) }
     let tyStr ← typeToStr ty
-    emitln s!"(declare-const {quoteIdent smtName} {tyStr})"
+    emitln s!"(declare-const {Symbol.toSMTString smtName} {tyStr})"
     return Term.var ⟨smtName, ty⟩
 
   declareFun name argTys retTy := do
     let retStr ← typeToStr retTy
     if argTys.isEmpty then
-      emitln s!"(declare-const {quoteIdent name} {retStr})"
+      emitln s!"(declare-const {Symbol.toSMTString name} {retStr})"
     else
       let mut argStrs := []
       for ty in argTys.reverse do
         argStrs := (← typeToStr ty) :: argStrs
       let inline := String.intercalate " " argStrs
-      emitln s!"(declare-fun {quoteIdent name} ({inline}) {retStr})"
+      emitln s!"(declare-fun {Symbol.toSMTString name} ({inline}) {retStr})"
     return Term.var ⟨name, retTy⟩
 
   defineFun name args retTy body := do
@@ -253,13 +334,13 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let mut typedArgs := []
     for (n, ty) in args.reverse do
       let tyStr ← typeToStr ty
-      typedArgs := s!"({quoteIdent n} {tyStr})" :: typedArgs
+      typedArgs := s!"({Symbol.toSMTString n} {tyStr})" :: typedArgs
     let inline := String.intercalate " " typedArgs
     let bodyStr ← termToStr body
-    emitln s!"(define-fun {quoteIdent name} ({inline}) {retStr} {bodyStr})"
+    emitln s!"(define-fun {Symbol.toSMTString name} ({inline}) {retStr} {bodyStr})"
 
   declareSort name arity := do
-    emitln s!"(declare-sort {name} {arity})"
+    emitln s!"(declare-sort {Symbol.toSMTString name} {arity})"
     return (.constr name (List.replicate arity (.constr "_" [])))
 
   declareDatatype name params callback := do
@@ -270,10 +351,10 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
       let strs ← formatConstrs constrs
       let cInline := "\n  " ++ String.intercalate "\n  " strs
       if params.isEmpty then
-        emitln s!"(declare-datatype {name} ({cInline}))"
+        emitln s!"(declare-datatype {Symbol.toSMTString name} ({cInline}))"
       else
-        let pInline := String.intercalate " " params
-        emitln s!"(declare-datatype {name} (par ({pInline}) ({cInline})))"
+        let pInline := String.intercalate " " (params.map Symbol.toSMTString)
+        emitln s!"(declare-datatype {Symbol.toSMTString name} (par ({pInline}) ({cInline})))"
       return { sort := selfSort, constructors := mkConstructorHandles selfSort constrs }
 
   declareDatatypes dts callback := do
@@ -284,7 +365,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     match callback selfSorts paramSorts with
     | .error msg => throw (IO.userError msg)
     | .ok allConstrs =>
-      let sortDecls := dts.map fun (name, params) => s!"({name} {params.length})"
+      let sortDecls := dts.map fun (name, params) => s!"({Symbol.toSMTString name} {params.length})"
       let sortDeclStr := String.intercalate " " sortDecls
       let mut bodies := []
       for ((_, params), constrs) in (dts.zip allConstrs).reverse do
@@ -293,7 +374,7 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
         if params.isEmpty then
           bodies := s!"({cInline})" :: bodies
         else
-          let pInline := String.intercalate " " params
+          let pInline := String.intercalate " " (params.map Symbol.toSMTString)
           bodies := s!"(par ({pInline}) ({cInline}))" :: bodies
       let bodyStr := String.intercalate "\n  " bodies
       emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
@@ -337,10 +418,9 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
   getUnsatAssumptions := do
     emitln "(get-unsat-assumptions)"
     let response ← readln
-    -- Response is "(lit1 lit2 ...)" — strip parens and split
-    let inner := response.replace "(" "" |>.replace ")" ""
-    if inner.trimAscii.toString.isEmpty then return []
-    let literals := inner.trimAscii.toString.splitOn " " |>.filter (!·.isEmpty)
+    -- The literals are the symbols that were emitted, so one may carry a space or
+    -- a paren inside `|…|`; the response is tokenised with that in mind.
+    let literals := splitTopLevelTokens response
     let assumptionMap := (← get).lastAssumptions
     let mut result := []
     for lit in literals.reverse do
@@ -360,15 +440,16 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let mut modelOutput := ""
     let mut reading := true
     let mut parenDepth : Int := 0
+    let mut scan : QuoteScan := {}
     while reading do
       let respLine ← readln
       if respLine.isEmpty then
         reading := false
       else
         modelOutput := modelOutput ++ respLine ++ "\n"
-        for c in respLine.toList do
-          if c == '(' then parenDepth := parenDepth + 1
-          else if c == ')' then parenDepth := parenDepth - 1
+        let (delta, scan') := scanParens respLine scan
+        parenDepth := parenDepth + delta
+        scan := scan'
         if parenDepth ≤ 0 then reading := false
     -- Return the raw output as a single pair (the verifier parses it)
     return [(Term.string modelOutput, Term.string modelOutput)]
