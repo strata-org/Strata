@@ -134,7 +134,7 @@ procedure counter()
 };
 -/
 #guard_msgs in
-#eval printFull
+#eval printFull <|
 #strata
 program Laurel;
 coroutine counter() yields (x: int)
@@ -197,7 +197,7 @@ procedure echo$body()
 };
 -/
 #guard_msgs in
-#eval printVerify
+#eval printVerify <|
 #strata
 program Laurel;
 coroutine echo() yields (x: int) resumes (y: int)
@@ -270,7 +270,7 @@ procedure accumulate()
 };
 -/
 #guard_msgs in
-#eval printFull
+#eval printFull <|
 #strata
 program Laurel;
 coroutine accumulate() yields (sum: int) resumes (n: int)

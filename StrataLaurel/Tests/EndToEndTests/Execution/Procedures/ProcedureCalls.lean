@@ -11,7 +11,7 @@ open Strata
 
 -- Laurel interpreter stays off: `fooReassign` uses destructive assignment
 -- (`x := x + 1`), which the standalone evaluator does not yet support.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure fooReassign(): int

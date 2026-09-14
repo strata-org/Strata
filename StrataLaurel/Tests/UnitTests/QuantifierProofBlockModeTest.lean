@@ -120,7 +120,7 @@ info: procedure proofProcedure()
 };
 -/
 #guard_msgs in
-#eval printTransparency .Verify
+#eval printTransparency .Verify <|
 #strata
 program Laurel;
 procedure proofProcedure()
@@ -144,7 +144,7 @@ info: procedure plainQuantifier()
 };
 -/
 #guard_msgs in
-#eval printTransparency .Verify
+#eval printTransparency .Verify <|
 #strata
 program Laurel;
 procedure plainQuantifier()
@@ -166,7 +166,7 @@ info: procedure proofProcedure()
 };
 -/
 #guard_msgs in
-#eval printTransparency .Execute
+#eval printTransparency .Execute <|
 #strata
 program Laurel;
 procedure proofProcedure()
@@ -219,7 +219,7 @@ info: procedure nested()
 };
 -/
 #guard_msgs in
-#eval printTransparency .Verify
+#eval printTransparency .Verify <|
 #strata
 program Laurel;
 procedure nested()
@@ -255,7 +255,7 @@ quantifier binders: 1, declarations: 2
 ids shared between a declaration and a binder: 0
 -/
 #guard_msgs in
-#eval printHavocVsBinderIds
+#eval printHavocVsBinderIds <|
 #strata
 program Laurel;
 procedure proofProcedure()

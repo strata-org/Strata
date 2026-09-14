@@ -138,7 +138,7 @@ procedure caller()
 };
 -/
 #guard_msgs in
-#eval printLowered
+#eval printLowered <|
 #strata
 program Laurel;
 procedure callee(x: int) returns (r: int)

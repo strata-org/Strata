@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true }
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Container {
@@ -70,7 +70,7 @@ it did.
 Note the clause order: `ensures` must precede `modifies`, or it is a parse error
 rather than a test of any of this. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true }
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ taking them as parameters, so they are provably distinct — two parameters of t
 type may alias, which would make the assertion unprovable for a reason unrelated to
 the frame. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true }
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 

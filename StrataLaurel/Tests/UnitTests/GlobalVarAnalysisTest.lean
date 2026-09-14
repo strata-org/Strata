@@ -65,7 +65,7 @@ counter: writer
 other: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var counter: int := 0
@@ -94,7 +94,7 @@ g: both, callsWriter, writeLeaf
 other: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -126,7 +126,7 @@ writers:
 g: recur
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -148,7 +148,7 @@ writers:
 g: ping, pong
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -172,7 +172,7 @@ writers:
 g: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -190,7 +190,7 @@ writers:
 g: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -210,7 +210,7 @@ writers:
 g: incr
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -230,7 +230,7 @@ writers:
 g: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -251,7 +251,7 @@ g: (none)
 cell: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 composite Cell {
@@ -282,7 +282,7 @@ writers:
 g: compound
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 var g: int := 0
@@ -302,7 +302,7 @@ writers:
 cell: (none)
 -/
 #guard_msgs in
-#eval testGlobalEffects
+#eval testGlobalEffects <|
 #strata
 program Laurel;
 composite Cell {

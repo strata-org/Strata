@@ -16,7 +16,7 @@ open Strata
 
 /-! ## Positive smoke test -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure foo()

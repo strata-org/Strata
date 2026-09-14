@@ -38,7 +38,7 @@ file.
 -- Multi-instantiation in one caller: the same `idp` at `int` and at `bool`. Per-call-site
 -- freshening means the two sites do not share one `T`; without it the shared variable
 -- would have to unify with both `int` and `bool`. Both modes must agree on the values.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -60,7 +60,7 @@ procedure multiInstantiation()
 -- SOUNDNESS twin: a FALSE assertion on a polymorphic result must fail in both modes.
 -- Guards against the instantiated result becoming unconstrained (which would let the
 -- verifier pass it vacuously) and against the interpreter computing something else.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -79,7 +79,7 @@ procedure falseOnPolyResult()
 -- The type variable used in a COMPUTED position, not just passed through: `dup` returns
 -- its argument combined with itself, so a wrong instantiation changes the value rather
 -- than merely the type. Pins that freshening keeps the input and output slots coupled.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -105,7 +105,7 @@ procedure computedPolySlot()
 -- second independent one.  After `MonomorphizeFunctions` pre-encoding, `wrap<int>` and
 -- `wrap<bool>` are specialized before SMT so the poly-to-poly call encodes cleanly and
 -- both value assertions verify in both modes.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

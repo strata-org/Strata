@@ -99,7 +99,7 @@ procedure guard(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure guard(x: int) returns (r: int) {
@@ -165,7 +165,7 @@ procedure chainedGuards(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure chainedGuards(x: int) returns (r: int) {
@@ -227,7 +227,7 @@ procedure deadCodeAfterIfElse(b: bool)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure deadCodeAfterIfElse(b: bool) returns (r: int) {
@@ -298,7 +298,7 @@ procedure nestedIf(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure nestedIf(x: int) returns (r: int) {
@@ -366,7 +366,7 @@ procedure nestedGuard(x: int, y: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure nestedGuard(x: int, y: int) returns (r: int) {
@@ -419,7 +419,7 @@ procedure updateLocal(a: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure updateLocal(a: int) returns (r: int) {
@@ -481,7 +481,7 @@ procedure ifAssignsLocal(b: bool, a: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure ifAssignsLocal(b: bool, a: int) returns (r: int) {
@@ -549,7 +549,7 @@ procedure exitSkipsRest(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure exitSkipsRest(x: int) returns (r: int) {
@@ -605,7 +605,7 @@ procedure exitToLabel(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure exitToLabel(x: int) returns (r: int) {
@@ -654,7 +654,7 @@ procedure labelledBlockNotLast(x: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure labelledBlockNotLast(x: int) returns (r: int) {
@@ -712,7 +712,7 @@ procedure blockValued(a: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure blockValued(a: int) returns (r: int) {
@@ -778,7 +778,7 @@ procedure uninitThenAssign(a: int)
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure uninitThenAssign(a: int) returns (r: int) {
@@ -828,7 +828,7 @@ procedure uninitRead()
 };
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure uninitRead() returns (r: int) {
@@ -865,7 +865,7 @@ procedure valueless(x: int)
 }$return;
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure valueless(x: int) {
@@ -925,7 +925,7 @@ procedure hasLoop(n: int)
 diagnostic[userError]: loops are not YET supported in transparent bodies or contracts
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure hasLoop(n: int) returns (r: int) {
@@ -963,7 +963,7 @@ procedure hasAssert(x: int)
 diagnostic[error]: assert should have been stripped from the function copy by the transparency pass
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure hasAssert(x: int) returns (r: int) {
@@ -998,7 +998,7 @@ procedure hasAssume(x: int)
 diagnostic[error]: assume should have been stripped from the function copy by the transparency pass
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure hasAssume(x: int) returns (r: int) {
@@ -1037,7 +1037,7 @@ procedure assignsInput(a: int)
 diagnostic[userError]: destructive assignments are not supported in transparent bodies or contracts
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure assignsInput(a: int) returns (r: int) {
@@ -1070,7 +1070,7 @@ procedure twoOuts()
 diagnostic[userError]: a transparent body with 2 output parameters is not supported; it must have at most one
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure twoOuts() returns (q: int, r: int) {
@@ -1129,7 +1129,7 @@ procedure hasCall()
 diagnostic[error]: call should have been rewritten to functional form by the transparency pass
 -/
 #guard_msgs in
-#eval printRewritten
+#eval printRewritten <|
 #strata
 program Laurel;
 procedure callee() returns (r: int) {

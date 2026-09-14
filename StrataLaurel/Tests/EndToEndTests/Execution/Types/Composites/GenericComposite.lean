@@ -37,7 +37,7 @@ than passing vacuously (a vacuous pass would show up as no diagnostic at all).
 -/
 
 -- Single instantiation: write then read a `T`-typed field at `int`.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -55,7 +55,7 @@ procedure oneInstantiation()
 
 -- SOUNDNESS twin for the read: a FALSE assertion on the instantiated field must fail.
 -- If the clone's field type were erased to something unconstrained, this would pass.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -75,7 +75,7 @@ procedure oneInstantiationFalse()
 -- TWO instantiations of one generic composite in a single program. The keystone: each
 -- clone must own its own field, so writing through the `int` instance cannot be observed
 -- through the `bool` one. Cross-linked clone ids would break this.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -96,7 +96,7 @@ procedure twoInstantiations()
 
 -- Independence twin: the two instantiations are distinct allocations, so a false claim
 -- about one is caught even though the other's assertion holds.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -118,7 +118,7 @@ procedure twoInstantiationsFalse()
 
 -- Two type parameters, one field of each — pins that the per-instantiation substitution is
 -- positional (a swapped substitution would type `first` as `bool`).
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Pair<A, B> { var first: A
@@ -139,7 +139,7 @@ procedure twoTypeParams()
 
 -- A NON-generic composite alongside a generic one: the monomorphizer must leave the
 -- ordinary composite completely untouched.
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
