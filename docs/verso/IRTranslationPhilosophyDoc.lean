@@ -450,7 +450,7 @@ Strata/Languages/Python/
                               -- (imports Laurel; Laurel does not
                               -- import Python)
 
-Strata/Languages/Laurel/
+StrataLaurel/Implementation/
     LaurelToCoreTranslator.lean
                               -- Laurel.toCore : LaurelAST → CoreAST
                               -- (imports Core; Core does not import
@@ -549,7 +549,7 @@ The same rule used for the cross-package boundaries also governs
 these intra-package translations. The applied rule per direction:
 
 *Laurel → Core (lowering).* Lives in
-`Strata/Languages/Laurel/`, not in `Strata/Languages/Core/`.
+`StrataLaurel/Implementation/`, not in `Strata/Languages/Core/`.
 Laurel imports Core; Core does not import Laurel.
 
 The reasoning is the many-to-one-to-many test, not "who knows
@@ -562,7 +562,7 @@ elimination — which other consumers do not need.
 This direction matches today's `LaurelToCoreTranslator.lean`.
 
 *Core → Laurel (raising, if added).* Should live in
-`Strata/Languages/Laurel/`. Even though the source is Core, the
+`StrataLaurel/Implementation/`. Even though the source is Core, the
 _target_ is a spoke and Core is the waist; Laurel imports Core,
 not the reverse. The general guidance — both lowering and
 raising live at the source-facing end — applies here.

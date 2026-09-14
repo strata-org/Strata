@@ -16,7 +16,7 @@ how to create a new dialect and analysis using existing features.
 Language-specific manuals live alongside the code: Laurel,
 Strata's intermediate verification language, is documented by three
 guides indexed in
-[`Strata/Languages/Laurel/README.md`](Strata/Languages/Laurel/README.md),
+[`StrataLaurel/Implementation/README.md`](StrataLaurel/Implementation/README.md),
 and the [Python front-end guide](docs/PythonFrontend.md) describes how
 Python is compiled through Laurel.
 

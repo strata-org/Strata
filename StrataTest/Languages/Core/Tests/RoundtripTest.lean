@@ -598,7 +598,7 @@ function negNegLit () : real {
 -- The guard and the statements after the loop name the variables the source
 -- names; the body's declarations are visible only within the body.
 -- `LoopBodyScopeTest` checks those names on the AST; these tests check them
--- through print/parse. See P505711117.
+-- through print/parse.
 -------------------------------------------------------------------------------
 
 private def testLoopDeclaringBodyRoundtrip : Program :=

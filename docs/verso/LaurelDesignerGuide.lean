@@ -6,12 +6,12 @@
 
 import VersoManual
 
-import Strata.Languages.Laurel.LaurelAST
-import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelCompilationPipeline
-import Strata.Languages.Laurel.HeapParameterization
-import Strata.Languages.Laurel.LiftImperativeExpressions
-import Strata.Languages.Laurel.ModifiesClauses
+import StrataLaurel.Implementation.LaurelAST
+import StrataLaurel.Implementation.LaurelTypes
+import StrataLaurel.Implementation.LaurelCompilationPipeline
+import StrataLaurel.Implementation.HeapParameterization
+import StrataLaurel.Implementation.LiftImperativeExpressions
+import StrataLaurel.Implementation.ModifiesClauses
 
 open Strata.Laurel
 
