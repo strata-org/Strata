@@ -5281,10 +5281,10 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
 
-/-- Guard: flag a `catch` handler that re-declares its own exception
-    binding. The binding snapshot in `EliminateExceptions` substitutes by textual
-    name and is not scope-aware, so an inner re-declaration of the binding name is
-    miscompiled. Returns each offending source paired with the binding name. -/
+/-- Guard: flag a `catch` handler that re-declares its own exception binding.
+    The scope-aware substitution in `EliminateExceptions` would lower it, but
+    re-declaring the caught name inside its handler is almost always a mistake,
+    so reject it here. Returns each offending source paired with the binding name. -/
 private def checkCatchBindingShadowing (stmt : StmtExprMd)
     : List (FileRange × String) :=
   match _h : stmt.val with
@@ -5454,8 +5454,7 @@ private def validateExceptionLowerability (model : SemanticModel)
           MessageKind.notYetImplemented)
       ++ (checkCatchBindingShadowing body).map (fun (src, name) =>
         diagnosticFromSource src
-          s!"re-declaring the `catch` binding '{name}' inside its handler is not yet supported (it shadows the exception binding and would miscompile); rename the inner variable"
-          MessageKind.notYetImplemented))
+          s!"re-declaring the `catch` binding '{name}' inside its handler is not allowed: it shadows the exception binding, which is almost always a mistake; rename the inner variable"))
 
 /-! ## Entry point -/
 

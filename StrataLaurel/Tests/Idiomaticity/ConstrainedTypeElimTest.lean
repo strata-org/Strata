@@ -50,7 +50,7 @@ procedure $witness_nat()
 };
 -/
 #guard_msgs in
-#eval! printElim
+#eval! printElim <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -86,7 +86,7 @@ procedure $witness_pos()
 };
 -/
 #guard_msgs in
-#eval! printElim
+#eval! printElim <|
 #strata
 program Laurel;
 constrained pos = v: int where v > 0 witness 1
@@ -121,7 +121,7 @@ procedure $witness_posint()
 };
 -/
 #guard_msgs in
-#eval! printElim
+#eval! printElim <|
 #strata
 program Laurel;
 constrained posint = x: int where x > 0 witness 1

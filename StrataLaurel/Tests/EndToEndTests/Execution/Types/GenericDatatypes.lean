@@ -27,7 +27,7 @@ datatype is `$Box`, in the reserved `$`-namespace, so user `datatype Box`, `data
 `composite Box` are all accepted; that is pinned by the source-compatibility cases in
 `UnitTests/GenericCompositeTest.lean`. -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }
@@ -59,7 +59,7 @@ procedure testRecursive() entry opaque {
 A wrong expected payload must FAIL, so the selector reads above are pinning an
 evaluated value rather than passing vacuously. -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }

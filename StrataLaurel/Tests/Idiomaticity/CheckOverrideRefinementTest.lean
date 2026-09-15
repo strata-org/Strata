@@ -106,7 +106,7 @@ procedure Child$m$Parent$refines$post(self: Child, a: int)
 };
 -/
 #guard_msgs in
-#eval printChecked
+#eval printChecked <|
 #strata
 program Laurel;
 composite Parent {
@@ -159,7 +159,7 @@ procedure Child$m$Parent$refines$post(self: Child)
 };
 -/
 #guard_msgs in
-#eval printChecked
+#eval printChecked <|
 #strata
 program Laurel;
 composite Parent {
@@ -194,7 +194,7 @@ procedure u()
 };
 -/
 #guard_msgs in
-#eval printChecked
+#eval printChecked <|
 #strata
 program Laurel;
 composite Parent {
@@ -239,7 +239,7 @@ procedure Child$m$Parent$refines$pre(self: Child, a: int)
 };
 -/
 #guard_msgs in
-#eval printChecked
+#eval printChecked <|
 #strata
 program Laurel;
 composite Parent {

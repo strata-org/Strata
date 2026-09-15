@@ -25,7 +25,7 @@ This file covers, end-to-end:
 
 /-! ### Tautologies over a nondet value hold -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true }
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetIntReflexive()

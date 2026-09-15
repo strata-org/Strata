@@ -50,7 +50,7 @@ The wider one covers the whole invariant: with its call's precondition
 unproven, `pureDiv(10, d)` is an uninterpreted application, so the invariant
 itself cannot be proved at the loop head either. -/
 
-#eval testLaurelVerification
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -79,7 +79,7 @@ procedure callInInvariantUnchecked() entry opaque {
 Each invariant is assumed after its own checks, so `d > 0` is available when
 `pureDiv(10, d)`'s precondition is checked and the obligation is discharged. -/
 
-#eval testLaurelVerification
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ obligation holds in the pre-state but not at the loop head, where `d` is havoc'd
 so checking it at the loop head is what surfaces the failure. As above, the
 unproven precondition also leaves the invariant itself unprovable. -/
 
-#eval testLaurelVerification
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 

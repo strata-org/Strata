@@ -42,7 +42,7 @@ named `result`. It now resolves cleanly. The `#guard_msgs in` pins that
 resolution emits *no* diagnostics (not merely that it did not crash). -/
 
 #guard_msgs in
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure echo(result: int): int
@@ -59,7 +59,7 @@ user-scoped parameter `result` (not the internal `$result` auto-output) — the
 position most likely to regress. It must resolve cleanly, with no diagnostics. -/
 
 #guard_msgs in
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure ensuresResult(result: int): int
@@ -77,7 +77,7 @@ the identifier is free wherever a user name may appear, not just as a parameter.
 This local also used to collide with the auto-generated `result` output. -/
 
 #guard_msgs in
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure pick(): int
@@ -103,7 +103,7 @@ that the annotated run is otherwise silent (the annotation matched), so this
 control cannot pass vacuously. -/
 
 #guard_msgs in
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure clash(result: int, result: bool): int

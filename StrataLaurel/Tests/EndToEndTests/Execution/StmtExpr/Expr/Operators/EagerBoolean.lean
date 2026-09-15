@@ -79,7 +79,7 @@ procedure eagerAndNegative()
 `==>` (implies) is not yet supported by the standalone Laurel interpreter, so these
 laws stay verify-only (no `entry`; symbolic over `a`/`b`). -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true }
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure eagerAndLaws(a: bool, b: bool)

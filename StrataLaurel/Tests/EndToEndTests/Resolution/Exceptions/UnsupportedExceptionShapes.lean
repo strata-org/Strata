@@ -10,15 +10,16 @@ open StrataTest.Util
 open Strata
 
 /-
-Five exception source shapes that `EliminateExceptions` cannot yet lower are
-rejected up front at resolution (`validateExceptionLowerability`) with a "not yet supported"
-diagnostic, rather than surfacing downstream as an internal `strata-bug` or a
-silent miscompile:
+Four exception source shapes that `EliminateExceptions` cannot yet lower, plus one
+intentional source-program rejection, are diagnosed up front at resolution
+(`validateExceptionLowerability`) rather than surfacing downstream as an internal
+`strata-bug` or a silent miscompile. The unsupported shapes use a "not yet supported"
+diagnostic; re-declaring the caught name is deliberately rejected as a user error:
 
   1. a call to a `throws` procedure in a nested expression position (only a whole
      statement / whole assignment RHS is lowerable);
-  2. a `catch` handler that re-declares its own exception binding (the name-based
-     binding substitution is not scope-aware, so it would miscompile);
+  2. a `catch` handler that re-declares its own exception binding (shadowing the
+     caught name is almost always a mistake and is deliberately disallowed);
   3. a program that both uses exceptions and declares its own type named
      `Result`, which the injected result datatype would collide with;
   4. an exception escaping a `try` whose exception type is unrelated to the
@@ -61,7 +62,7 @@ procedure catchShadowsBinding()
     throw e
   } catch c {
     var c: int := 5;
-//  ^^^^^^^^^^^^^^^ not-yet-implemented: re-declaring the `catch` binding 'c' inside its handler is not yet supported
+//  ^^^^^^^^^^^^^^^ error: re-declaring the `catch` binding 'c' inside its handler is not allowed: it shadows the exception binding, which is almost always a mistake; rename the inner variable
     assert c == 5
   }
 };

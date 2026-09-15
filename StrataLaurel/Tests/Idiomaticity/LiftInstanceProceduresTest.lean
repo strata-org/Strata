@@ -81,7 +81,7 @@ procedure Box$get(self: Box)
 };
 -/
 #guard_msgs in
-#eval printLifted
+#eval printLifted <|
 #strata
 program Laurel;
 composite Box { var v: int
@@ -146,7 +146,7 @@ procedure Dog$speak(self: Dog)
 };
 -/
 #guard_msgs in
-#eval printLifted
+#eval printLifted <|
 #strata
 program Laurel;
 composite Animal {
@@ -235,7 +235,7 @@ procedure Cat$speak(self: Cat)
 };
 -/
 #guard_msgs in
-#eval printLifted
+#eval printLifted <|
 #strata
 program Laurel;
 composite Animal {

@@ -816,3 +816,190 @@ info: procedure propagateNarrow(pick: bool): (Result<bool, ParseError>)
 -/
 #guard_msgs in
 #eval (fmtProcs (runPass widenedPropagation))
+
+/-! ### 12. A handler whose only use of its binding is under a shadowing binder
+
+The snapshot local (`$exc_<binding>_<n>`) is emitted only when a *free*
+reference to the binding remains: the `forall(e: …)` below rebinds `e`, so the
+handler gets no snapshot and the quantifier is left untouched. -/
+
+private def fullyShadowedBinding : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite Err {}
+procedure catchBindingFullyShadowed()
+  throws (t: Err)
+  opaque
+{
+  try {
+    throw (new Err)
+  } catch e when e is Err {
+    assert (forall(e: int) => e >= e)
+  }
+};
+#end
+
+/--
+info: procedure catchBindingFullyShadowed(): (Result<bool, Err>)
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is Err
+  modifies  when Result..isGood($result)
+{
+  var $thrown: bool := false;
+  var $exc: Err;
+  var $returning: bool := false;
+  {
+    {
+      var $exc_0: Err;
+      {
+        {
+          {
+            $exc_0 := new Err;
+            $thrown := true;
+            exit $try_0
+          }
+        }$try_0;
+        if $thrown & $exc_0 is Err
+          then {
+            $thrown := false;
+            {
+              assert forall(e: int) => e >= e
+            }
+          }
+      }$tryfin_0;
+      if $thrown
+        then {
+          $exc := $exc_0;
+          exit $exnexit
+        };
+      if $returning
+        then {
+          exit $exnexit
+        }
+    }
+  }$exnexit;
+  if $thrown
+    then {
+      $result := Bad($exc)
+    }
+    else {
+      $result := Good(true)
+    }
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass fullyShadowedBinding))
+
+/-! ### 13. A `throwsOn` binder reusing an input's name
+
+The `throws (e: Err)` binding shadows the input `e: int`, so the case
+postcondition's `e#code` must become `Result..err($result)#code`. -/
+
+private def binderShadowsInputPin : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite Err { var code: int }
+procedure binderShadowsInput(e: int)
+  throws (e: Err)
+  opaque
+  throwsOn true {
+    ensures e#code == 5
+  }
+{
+  var x: Err := new Err;
+  x#code := 5;
+  throw x
+};
+#end
+
+/--
+info: procedure binderShadowsInput(e: int): (Result<bool, Err>)
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is Err
+  ensures true ==> Result..isBad($result)( summary "throwsOn case forces a throw")
+  ensures true & Result..isBad($result) ==> Result..err($result)#code == 5
+  ensures Result..isBad($result) ==> true( summary "throwsOn cases cover every throwing path")
+  modifies  when Result..isGood($result)
+{
+  var $thrown: bool := false;
+  var $exc: Err;
+  var $returning: bool := false;
+  {
+    {
+      var x: Err := new Err;
+      x#code := 5;
+      $exc := x;
+      $thrown := true;
+      exit $exnexit
+    }
+  }$exnexit;
+  if $thrown
+    then {
+      $result := Bad($exc)
+    }
+    else {
+      $result := Good(true)
+    }
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass binderShadowsInputPin))
+
+/-! ### 14. The short return form whose value output is `$result`
+
+The short form mints its value output under the carrier's preferred spelling,
+so the carrier freshens to `$result_1` in every rewritten contract. -/
+
+private def shortFormThrowsPin : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite Err { var code: int }
+procedure shortFormThrows(): int
+  throws (e: Err)
+  opaque
+  ensures $result > 0
+  throwsOn true {
+    ensures e#code == 5
+  }
+{
+  var x: Err := new Err;
+  x#code := 5;
+  throw x
+};
+#end
+
+/--
+info: procedure shortFormThrows()
+  returns ($result_1: (Result<int, Err>))
+  opaque
+  ensures Result..isGood($result_1) ==> Result..value($result_1) > 0
+  ensures Result..isBad($result_1) ==> Result..err($result_1) is Err
+  ensures true ==> Result..isBad($result_1)( summary "throwsOn case forces a throw")
+  ensures true & Result..isBad($result_1) ==> Result..err($result_1)#code == 5
+  ensures Result..isBad($result_1) ==> true( summary "throwsOn cases cover every throwing path")
+  modifies  when Result..isGood($result_1)
+{
+  var $thrown: bool := false;
+  var $exc: Err;
+  var $returning: bool := false;
+  var $result: int;
+  {
+    {
+      var x: Err := new Err;
+      x#code := 5;
+      $exc := x;
+      $thrown := true;
+      exit $exnexit
+    }
+  }$exnexit;
+  if $thrown
+    then {
+      $result_1 := Bad($exc)
+    }
+    else {
+      $result_1 := Good($result)
+    }
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass shortFormThrowsPin))

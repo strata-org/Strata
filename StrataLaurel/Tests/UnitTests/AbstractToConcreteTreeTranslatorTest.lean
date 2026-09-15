@@ -67,7 +67,7 @@ info: procedure foo()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure foo()
@@ -83,7 +83,7 @@ info: procedure add(x: int, y: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure add(x: int, y: int): int
@@ -98,7 +98,7 @@ info: procedure aFunction(x: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure aFunction(x: int): int
@@ -109,7 +109,7 @@ procedure aFunction(x: int): int
 info: composite Point { var x: int var y: int }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Point {
@@ -128,7 +128,7 @@ info: procedure test(x: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure test(x: int): int
@@ -148,7 +148,7 @@ info: procedure echo(result: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure echo(result: int): int
@@ -167,7 +167,7 @@ info: procedure foo()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure foo() returns (result: int)
@@ -189,7 +189,7 @@ info: procedure divide(x: int, y: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure divide(x: int, y: int): int
@@ -215,7 +215,7 @@ info: procedure divide(x: int, y: int): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure divide(x: int, y: int): int
@@ -238,7 +238,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure test()
@@ -261,7 +261,7 @@ procedure test(): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Point {
@@ -281,7 +281,7 @@ procedure test(): int
 info: datatype Color { Red, Green, Blue }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Color { Red, Green, Blue }
@@ -291,7 +291,7 @@ datatype Color { Red, Green, Blue }
 info: datatype Pair { MkPair(fst: int, snd: bool) }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Pair { MkPair(fst: int, snd: bool) }
@@ -309,7 +309,7 @@ procedure test(a: Animal): bool
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Animal {}
@@ -333,7 +333,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure test()
@@ -352,7 +352,7 @@ procedure test()
 info: constrained Positive = v: int where v > 0 witness 1
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 constrained Positive = v: int where v > 0 witness 1
@@ -373,7 +373,7 @@ procedure modify(c: Container)
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Container { var value: int }
@@ -403,7 +403,7 @@ procedure modifyWhen(c: Container, flag: bool)
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Container { var value: int }
@@ -424,7 +424,7 @@ info: procedure test(): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure test(): int
@@ -446,7 +446,7 @@ info: procedure earlyExit(b: bool)
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure earlyExit(b: bool)
@@ -465,7 +465,7 @@ info: procedure runMe()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure runMe()
@@ -491,7 +491,7 @@ info: procedure loop()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure loop()
@@ -508,7 +508,7 @@ info: var counter: int := 0
 var enabled: bool := false
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 var counter: int := 0
@@ -519,7 +519,7 @@ var enabled: bool := false
 info: var counter: int := 1 + 2 * 3
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 var counter: int := 1 + 2 * 3
@@ -531,7 +531,7 @@ var counter: int := 1 + 2 * 3
 info: datatype Option<T> { Nothing, Some(value: T) }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Option<T> { Nothing, Some(value: T) }
@@ -542,7 +542,7 @@ datatype Option<T> { Nothing, Some(value: T) }
 info: datatype Either<A, B> { First(a: A), Second(b: B) }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Either<A, B> { First(a: A), Second(b: B) }
@@ -566,7 +566,7 @@ procedure foo()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Option<T> { Nothing, Some(value: T) }
@@ -591,7 +591,7 @@ procedure foo()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Option<T> { Nothing, Some(value: T) }
@@ -622,7 +622,7 @@ procedure p()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure twoOut() returns (a: int, b: int)
@@ -698,7 +698,7 @@ procedure useBox(): int
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -712,7 +712,7 @@ procedure useBox(): int
 info: datatype Bx<T> { MkBx(v: T) }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }
@@ -725,7 +725,7 @@ info: composite Base<T> { var tag: T }
 composite Box<T> extends Base<T> { var val: T }
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Base<T> { var tag: T }
@@ -748,7 +748,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Inner { var v: int }
@@ -766,7 +766,7 @@ info: procedure id<T>(x: T): T
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure id<T>(x: T): T
@@ -783,7 +783,7 @@ info: procedure idp<T>(x: T): T
 };
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure idp<T>(x: T): T
@@ -802,7 +802,7 @@ type MyPair<A, B> = TotalMap A B
 type Foo<T> = Box<T>
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 composite Box<T> { var val: T }
@@ -823,7 +823,7 @@ info: procedure useMap(m: (Map<int, bool>), n: (Map<int, Map<int, bool>>), t: (T
 return mapContains(m, 1);
 -/
 #guard_msgs in
-#eval do IO.println (← roundtrip
+#eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
 procedure useMap(m: Map<int, bool>, n: Map<int, Map<int, bool>>, t: TotalMap int bool) : bool

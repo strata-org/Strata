@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Correct early return -/
 
-#eval testLaurelVerification
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure earlyReturnCorrect(x: int) returns (r: int)

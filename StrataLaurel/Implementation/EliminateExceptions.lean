@@ -68,7 +68,8 @@ escape.
   (`Bad($exc)` if thrown, else `Good(val)`).
 - `ensures P`  →  Good-path `isGood($result) ==> P[out := value($result)]`;
   each `throwsOn C { … }` case  →  `C ==> isBad($result)` plus, per `ensures P`,
-  `C ∧ isBad($result) ==> P[e := err($result)]`.
+  `C ∧ isBad($result) ==> P[e := err($result)]`. The substitution is scope-aware:
+  an inner binder in `P` reusing the name shadows the outer binding.
 
 Runs *before* heap parameterization (so `$exc_<i>` can be typed at a real
 exception type rather than the erased heap `Composite`) and needs a re-resolve
@@ -249,20 +250,58 @@ private def fillSrc (src : FileRange) (e : StmtExprMd) : StmtExprMd :=
 private def fillSrcs (src : FileRange) (es : List StmtExprMd) : List StmtExprMd :=
   es.map (fillSrc src)
 
-/-- Substitute every reference `Var (.Local name)` with `repl` throughout `e`. -/
-private def substLocal (name : String) (repl : StmtExprMd) (e : StmtExprMd) : StmtExprMd :=
+/-- The `uniqueId`s of binders in `e` re-declaring `name`: a `forall/exists(name)`
+    parameter, a declared local `var name`, or a `catch name` binding. -/
+private def innerBinderIds (name : String) (e : StmtExprMd) : List Nat :=
+  collectStmtExprList (fun n =>
+    match n.val with
+    | .Quantifier _ param _ _ =>
+      if param.name.text == name then param.name.uniqueId.toList else []
+    | .Var (.Declare p) =>
+      if p.name.text == name then p.name.uniqueId.toList else []
+    | .Assign targets _ =>
+      targets.flatMap (fun t => match t.val with
+        | .Declare p => if p.name.text == name then p.name.uniqueId.toList else []
+        | _ => [])
+    | .Try _ catches _ =>
+      catches.flatMap (fun c =>
+        if c.binding.text == name then c.binding.uniqueId.toList else [])
+    | _ => []) e
+
+/-- Whether `id` resolves to one of `boundIds` (an unresolved reference never is). -/
+private def refIsBound (boundIds : List Nat) (id : Identifier) : Bool :=
+  match id.uniqueId with
+  | some i => boundIds.contains i
+  | none => false
+
+/-- Substitute `repl` for every `Var (.Local name)` in `e` not bound to `boundIds`. -/
+private def substLocalBound (name : String) (boundIds : List Nat)
+    (repl : StmtExprMd) (e : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun n => match n.val with
-    | .Var (.Local id) => if id.text == name then repl else n
+    | .Var (.Local id) =>
+      if id.text == name && !refIsBound boundIds id then repl else n
     | _ => n) e
 
-/-- Whether a reference `Var (.Local name)` occurs anywhere in `e`. -/
-private def localOccurs (name : String) (e : StmtExprMd) : Bool :=
-  ((mapStmtExprM (m := StateM Bool)
-      (fun n => do
-        match n.val with
-        | .Var (.Local id) => if id.text == name then set true else pure ()
-        | _ => pure ()
-        pure n) e).run false).2
+/-- Substitute `repl` for every *free* `Var (.Local name)` in `e`. Freeness is
+    read from resolver `uniqueId`s. A declaration's initializer is resolved
+    before its target is bound, so its references already carry the outer id
+    and are rewritten here like any other free reference. -/
+private def substLocalScoped (name : String) (repl : StmtExprMd) (e : StmtExprMd) : StmtExprMd :=
+  substLocalBound name (innerBinderIds name e) repl e
+
+/-- Substitute `repl` for every reference resolving to `targetId`. Shadowing binders
+    and synthesized (id-less) references never carry `targetId`, so no scope analysis
+    is needed. -/
+private def substLocalById (targetId : Nat) (repl : StmtExprMd) (e : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun n => match n.val with
+    | .Var (.Local id) => if id.uniqueId == some targetId then repl else n
+    | _ => n) e
+
+/-- Whether a reference resolving to `targetId` occurs in `e`. -/
+private def localOccursById (targetId : Nat) (e : StmtExprMd) : Bool :=
+  anyStmtExpr (fun n => match n.val with
+    | .Var (.Local id) => id.uniqueId == some targetId
+    | _ => false) e
 
 /-! ### Callee lookup -/
 
@@ -648,12 +687,21 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- membership proof for the termination argument); the unreachable-catch case is
   -- handled by the `catchesReachable` guard rather than by mapping over the
   -- derived `effectiveCatches` list.
-  let clauses ← if catchesReachable then catches.attach.mapM (fun ⟨c, _⟩ => do
+  -- First-match-wins is enforced by clearing `$thrown` on a match: once a clause
+  -- fires, later `$thrown && guardⱼ` guards are false. So the chain is a *sequence*
+  -- of else-less `if`s rather than a nested `if`/`else` — an else-less `if` types
+  -- as void, avoiding a branch-type mismatch when a handler ends in an assignment
+  -- (which Laurel types as the assigned value, not void).
+  let catchChainStmts : List StmtExprMd ← if catchesReachable then
+    catches.attach.mapM (fun ⟨c, _⟩ => do
     -- The guard reads this try's `$exc` directly: it is evaluated at dispatch
     -- time, before the handler runs, so no nested throw has clobbered it yet.
-    let pExpr := match c.predicate with
-      | some p => substLocal c.binding.text (localRef excVar) p
-      | none => litBool true
+    -- An id-less binding cannot reach this pass (resolution rebuilds every
+    -- catch with its resolved binding), so the `none` arm substitutes nothing.
+    let pExpr := match c.predicate, c.binding.uniqueId with
+      | some p, some eid => substLocalById eid (localRef excVar) p
+      | some p, none => p
+      | none, _ => litBool true
     let hStmts := fillSrcs c.body.source (← lowerStmt catchCtx c.body)
     -- Snapshot the caught exception into a fresh per-handler local when the
     -- handler references its binding. A `throw`/throwing-call *inside* this
@@ -663,24 +711,22 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     -- is unused, to avoid an inert local in the common case. The snapshot is
     -- typed at this try's LCA (the binding's own type), so `e#field` in the
     -- handler needs no downcast.
+    -- Matched by id: lowered `hStmts` may hold id-less locals spelled like a user binding.
     let (bindDecls, hStmts) ←
-      if hStmts.any (localOccurs c.binding.text) then do
-        let bid ← freshNat
-        let bindLocal := s!"$exc_{c.binding.text}_{bid}"
-        pure ([declInit bindLocal excTy (localRef excVar)],
-              hStmts.map (substLocal c.binding.text (localRef bindLocal)))
-      else
-        pure ([], hStmts)
+      match c.binding.uniqueId with
+      | some eid =>
+        if hStmts.any (localOccursById eid) then do
+          let bid ← freshNat
+          let bindLocal := s!"$exc_{c.binding.text}_{bid}"
+          pure ([declInit bindLocal excTy (localRef excVar)],
+                hStmts.map (substLocalById eid (localRef bindLocal)))
+        else
+          pure ([], hStmts)
+      | none => pure ([], hStmts)
     let guard := andOf (localRef exnThrownVar) pExpr
     let handler := setLocal exnThrownVar (litBool false) :: (bindDecls ++ hStmts)
-    pure (guard, handler))
+    pure (iteOf guard (blockOf handler) none))
   else pure []
-  -- First-match-wins is enforced by clearing `$thrown` on a match: once a clause
-  -- fires, later `$thrown && guardⱼ` guards are false. So the chain is a *sequence*
-  -- of else-less `if`s rather than a nested `if`/`else` — an else-less `if` types
-  -- as void, avoiding a branch-type mismatch when a handler ends in an assignment
-  -- (which Laurel types as the assigned value, not void).
-  let catchChainStmts : List StmtExprMd := clauses.map (fun (g, h) => iteOf g (blockOf h) none)
   -- The unwinding `exit`s raised by the body and the handlers are this try's to
   -- re-dispatch after its `finally`. A jump whose *next* crossed `finally` lies
   -- further out keeps travelling, so it is also handed back to the enclosing
@@ -942,7 +988,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- Postconditions.
   let goodWrap (p : StmtExprMd) : StmtExprMd :=
     let p' := match valName? with
-      | some n => substLocal n (resultApp exnResultValue (localRef carrier)) p
+      | some n => substLocalScoped n (resultApp exnResultValue (localRef carrier)) p
       | none => p
     impliesOf (resultApp exnResultIsGood (localRef carrier)) p'
   -- A `free` condition corresponds to `ConditionMode.Assume` internally. A
@@ -1011,7 +1057,8 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
         mode := synthesizedMode }
     let posts := blk.postconditions.map (fun c =>
       let p' := match proc.throwsBinding with
-        | some b => substLocal b.text (resultApp exnResultErr (localRef carrier)) c.condition
+        | some b =>
+          substLocalScoped b.text (resultApp exnResultErr (localRef carrier)) c.condition
         | none => c.condition
       ({ c with condition := fillSrc c.condition.source (impliesOf (andOf blk.guard isBad) p')
                 mode := if isBodiless then ConditionMode.Assume else c.mode } : Condition))

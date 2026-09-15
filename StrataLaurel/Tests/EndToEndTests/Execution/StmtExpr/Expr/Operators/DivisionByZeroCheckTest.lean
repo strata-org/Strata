@@ -19,7 +19,7 @@ preconditions, so an unconstrained divisor surfaces as a failed precondition.
 
 /-! ### Safe paths verify cleanly -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure safeDivision()

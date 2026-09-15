@@ -27,7 +27,7 @@ procedure foo(x: int)
 
 /-! ## Assume false makes assert false trivially provable -/
 
-#eval testLaurelVerification
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure bar()
