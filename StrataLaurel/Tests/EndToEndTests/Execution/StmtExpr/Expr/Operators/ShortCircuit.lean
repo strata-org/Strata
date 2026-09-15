@@ -9,7 +9,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure mustNotCallFunc(x: int): int
@@ -118,7 +118,7 @@ Making the callee bool-returning drops the `>` dependency. (`==>` is left to the
 verify+Core blocks above until a lazy `.Implies` case lands beside
 `.AndThen`/`.OrElse` in `evalExpr`.) -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure boom() returns (r: bool)

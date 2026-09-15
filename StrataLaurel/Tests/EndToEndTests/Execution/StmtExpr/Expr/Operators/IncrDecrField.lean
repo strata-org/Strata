@@ -45,7 +45,9 @@ composite IncrDecrCounter {
 }
 
 procedure postIncrFieldStatement()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 10;
@@ -54,7 +56,9 @@ procedure postIncrFieldStatement()
 };
 
 procedure preIncrFieldStatement()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 10;
@@ -63,7 +67,9 @@ procedure preIncrFieldStatement()
 };
 
 procedure postDecrFieldStatement()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 10;
@@ -72,7 +78,9 @@ procedure postDecrFieldStatement()
 };
 
 procedure preDecrFieldStatement()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 10;
@@ -81,7 +89,9 @@ procedure preDecrFieldStatement()
 };
 
 procedure mixedFieldIncrDecrStatements()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 0;
@@ -93,7 +103,9 @@ procedure mixedFieldIncrDecrStatements()
 };
 
 procedure postIncrFieldInExpression()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 5;
@@ -104,7 +116,9 @@ procedure postIncrFieldInExpression()
 };
 
 procedure preIncrFieldInExpression()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 5;
@@ -115,7 +129,9 @@ procedure preIncrFieldInExpression()
 };
 
 procedure postDecrFieldInExpression()
+  entry
   opaque
+  modifies *
 {
   var c: IncrDecrCounter := new IncrDecrCounter;
   c#n := 5;
@@ -126,7 +142,9 @@ procedure postDecrFieldInExpression()
 };
 
 procedure parenFreeFieldIncrDecr()
+  entry
   opaque
+  modifies *
 {
   // Paren-free field incr/decr: `c#n++` parses as `(c#n)++` because `fieldAccess`
   // (prec 95) binds tighter than postfix `++`/`--` (prec 90).

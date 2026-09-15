@@ -20,7 +20,9 @@ composite Container {
 }
 
 procedure newsAreNotEqual()
+  entry
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -28,7 +30,9 @@ procedure newsAreNotEqual()
 };
 
 procedure simpleAssign()
+  entry
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var iv: int := c#intValue;
@@ -48,10 +52,16 @@ procedure simpleAssign()
 };
 
 procedure updatesAndAliasing()
+  entry
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var d: Container := new Container;
+
+  // A field starts unspecified, so give both a value before reading them.
+  c#intValue := 10;
+  d#intValue := 20;
 
   var initialCValue: int := c#intValue;
   var initialDValue: int := d#intValue;
@@ -66,7 +76,11 @@ procedure updatesAndAliasing()
   assert dAlias#intValue == d#intValue
 };
 
-procedure subsequentHeapMutations() opaque {
+procedure subsequentHeapMutations()
+  entry
+  opaque
+  modifies *
+{
   var c: Container := new Container;
 
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
@@ -75,7 +89,9 @@ procedure subsequentHeapMutations() opaque {
 };
 
 procedure implicitEquality()
+  entry
   opaque
+  modifies *
 {
   var c: Container := new Container;
   var d: Container := new Container;
@@ -90,7 +106,9 @@ procedure implicitEquality()
 };
 
 procedure useBool() returns (r: bool)
+  entry
   opaque
+  modifies *
 {
   var c: Container := new Container;
   r := c#boolValue
@@ -101,7 +119,9 @@ composite SameFieldName {
 }
 
 procedure sameFieldNameDifferentType()
+  entry
   opaque
+  modifies *
 {
   var a: Container := new Container;
   var b: SameFieldName := new SameFieldName;
@@ -123,7 +143,11 @@ composite Pixel {
   var color: Color
 }
 
-procedure datatypeField() opaque {
+procedure datatypeField()
+  entry
+  opaque
+  modifies *
+{
   var p: Pixel := new Pixel;
   p#color := Red();
   assert Color..isRed(p#color);
@@ -155,6 +179,8 @@ procedure datatypeField() opaque {
 //   assert x == 4;
 // }
 
+// The three procedures below call `modifyHeapAndReturnMultiple`, which is bodiless. They
+// stay verification-only; the rest of the file is `entry`.
 procedure modifyHeapAndReturnMultiple(c: Container) returns (x: int, y: int, z: int)
   opaque
   ensures x == 1 && y == 2 && z == 3

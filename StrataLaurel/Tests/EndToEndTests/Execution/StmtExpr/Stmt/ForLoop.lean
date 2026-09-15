@@ -9,7 +9,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure sumToThree()
@@ -38,7 +38,9 @@ than the whole loop. -/
 
 /-! ### The initial invariant fails on entry -/
 
-#eval testLaurelExecution {}
+-- Verification only: a loop invariant is a proof annotation, not a runtime check.
+-- Concrete execution runs the real loop, so the interpreter reports nothing here.
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure forBadInitialInvariant()
@@ -57,7 +59,8 @@ procedure forBadInitialInvariant()
 
 /-! ### A later invariant fails while earlier ones hold -/
 
-#eval testLaurelExecution {}
+-- Verification only, for the same reason as above.
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure forSecondInvFails()

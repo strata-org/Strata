@@ -11,7 +11,7 @@ open Strata
 
 -- Laurel interpreter stays off: `fooReassign` uses destructive assignment
 -- (`x := x + 1`), which the standalone evaluator does not yet support.
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure fooReassign(): int
@@ -64,7 +64,7 @@ procedure aFunctionCaller()
     bodies and can prove the call-site assertions, matching what the interpreters
     compute concretely. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure idBool(b: bool) returns (r: bool)

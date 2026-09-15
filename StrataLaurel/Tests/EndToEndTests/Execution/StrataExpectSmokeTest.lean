@@ -16,10 +16,13 @@ open Strata
 
 /-! ## Positive smoke test -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
-procedure foo() opaque { assert true };
+procedure foo()
+  entry
+  opaque
+{ assert true };
 #end
 
 /-! ## Negative smoke test: variable used as type. The inline annotation pins
@@ -37,7 +40,7 @@ procedure foo() opaque {
 
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)

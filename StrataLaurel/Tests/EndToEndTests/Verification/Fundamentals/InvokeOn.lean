@@ -10,7 +10,7 @@ open StrataTest.Util
 open Strata
 
 #eval testLaurelVerification
-    (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
+    (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } }) <|
 #strata
 program Laurel;
 procedure P(x: int): bool;

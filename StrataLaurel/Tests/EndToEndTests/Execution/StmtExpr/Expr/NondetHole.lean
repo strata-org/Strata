@@ -25,7 +25,7 @@ This file covers, end-to-end:
 
 /-! ### Tautologies over a nondet value hold -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetIntReflexive()
@@ -45,7 +45,7 @@ procedure nondetBoolExcludedMiddle()
 
 /-! ### A nondet value is arbitrary: specific-value assertions fail -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetIntIsArbitrary()
@@ -57,7 +57,7 @@ procedure nondetIntIsArbitrary()
 };
 #end
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetBoolIsArbitrary()
@@ -71,7 +71,7 @@ procedure nondetBoolIsArbitrary()
 
 /-! ### Two distinct nondet holes need not agree -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetHolesAreIndependent()
@@ -86,7 +86,7 @@ procedure nondetHolesAreIndependent()
 
 /-! ### `<??>` directly in a boolean position is arbitrary -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetHoleInAssert()

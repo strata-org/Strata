@@ -33,14 +33,16 @@ A datatype compared with `==` inside a heap-writing procedure. The `new C`
 makes `cmp` a heap writer; the datatype values must still compare
 structurally rather than being wrongly reference-compared. -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite C { var x: int }
 datatype Pair { MkPair(a: int, b: int) }
 
 procedure cmp()
+  entry
   opaque
+  modifies *
 {
   var c: C := new C;
   var p1: Pair := MkPair(1, 2);
@@ -52,14 +54,16 @@ procedure cmp()
 /-! Same shape with `!=`: two structurally-distinct datatype values are not
 equal, so the inequality holds. Exercises the `.Neq` arm of the same fix. -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite C { var x: int }
 datatype Pair { MkPair(a: int, b: int) }
 
 procedure cmp()
+  entry
   opaque
+  modifies *
 {
   var c: C := new C;
   var p1: Pair := MkPair(1, 2);

@@ -28,7 +28,7 @@ open Strata
     `SubX.val(AA)` (nearest declarer) and its `r == 42`. Asserting the value only
     that contract justifies records which one bound: with the argument-matching
     overload, `r` would be 0 and this fails. -/
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite AA { }
@@ -54,7 +54,7 @@ procedure c1(s: SubX, b: BB)
     argument cannot check against it -- selection ran before, and independently of,
     argument checking. A signature-aware rule would have picked `BaseZ.val(BB3)` and
     verified. -/
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite AA3 { }
@@ -81,7 +81,7 @@ procedure c2(s: SubZ, b: BB3)
     declarer IS the argument-matching one. Verifies cleanly, confirming C1/C2 are
     about argument-blindness in selection, not inherited calls being broken
     generally. -/
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite AA4 { }

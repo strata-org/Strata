@@ -28,7 +28,7 @@ private def printStats (program : StrataDDM.Program) : IO Unit := do
 /-! ## Laurel Statistics: simple procedure -/
 
 #guard_msgs in
-#eval! printStats
+#eval! printStats <|
 #strata
 program Laurel;
 procedure test(x: int) returns (y: int)
@@ -46,7 +46,7 @@ info: [statistics] EliminateHoles.holesEliminated: 1
 [statistics] InferHoleTypes.holesAnnotated: 1
 -/
 #guard_msgs in
-#eval! printStats
+#eval! printStats <|
 #strata
 program Laurel;
 procedure p1(a: bool, b: bool) returns (r: bool)

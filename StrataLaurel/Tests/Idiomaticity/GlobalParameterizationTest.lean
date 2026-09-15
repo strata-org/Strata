@@ -54,7 +54,7 @@ procedure reader(someGlobal: int)
 };
 -/
 #guard_msgs in
-#eval printGlobalParam
+#eval printGlobalParam <|
 #strata
 program Laurel;
 var someGlobal: int := 0
@@ -89,7 +89,7 @@ procedure useValue(g: int)
 };
 -/
 #guard_msgs in
-#eval printGlobalParam
+#eval printGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -123,7 +123,7 @@ procedure both(a: int, b: int)
 };
 -/
 #guard_msgs in
-#eval printGlobalParam
+#eval printGlobalParam <|
 #strata
 program Laurel;
 var a: int := 0
@@ -166,7 +166,7 @@ procedure reader(someGlobal: int)
 };
 -/
 #guard_msgs in
-#eval printGlobalParam
+#eval printGlobalParam <|
 #strata
 program Laurel;
 var someGlobal: int := 0

@@ -14,7 +14,7 @@ open Strata
 `UnitTests/PolyProcedureTest.lean` drives polymorphic procedures through the corpus
 harness, which runs the VERIFIER only and asserts four counters
 (`translated`/`numVCs`/`numFailures`/`numErrorOutcomes`). These tests run them through
-the *entire* pipeline with `testLaurelExecution { skipCoreInterpreter := false }` — translate + all lowering passes +
+the *entire* pipeline with `testLaurelExecution {}` — translate + all lowering passes +
 verify + **interpret** — checking both modes against the same inline annotations.
 
 That second mode is the point. Polymorphic procedures ride per-call-site type-variable
@@ -38,7 +38,7 @@ file.
 -- Multi-instantiation in one caller: the same `idp` at `int` and at `bool`. Per-call-site
 -- freshening means the two sites do not share one `T`; without it the shared variable
 -- would have to unify with both `int` and `bool`. Both modes must agree on the values.
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -60,7 +60,7 @@ procedure multiInstantiation()
 -- SOUNDNESS twin: a FALSE assertion on a polymorphic result must fail in both modes.
 -- Guards against the instantiated result becoming unconstrained (which would let the
 -- verifier pass it vacuously) and against the interpreter computing something else.
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -79,7 +79,7 @@ procedure falseOnPolyResult()
 -- The type variable used in a COMPUTED position, not just passed through: `dup` returns
 -- its argument combined with itself, so a wrong instantiation changes the value rather
 -- than merely the type. Pins that freshening keeps the input and output slots coupled.
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -105,7 +105,7 @@ procedure computedPolySlot()
 -- second independent one.  After `MonomorphizeFunctions` pre-encoding, `wrap<int>` and
 -- `wrap<bool>` are specialized before SMT so the poly-to-poly call encodes cleanly and
 -- both value assertions verify in both modes.
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -129,7 +129,7 @@ procedure nestedPoly()
 discarded parameters have different types each time. A substitution that crossed or dropped a
 slot returns the wrong value here rather than failing to typecheck. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure firstOf<A, B>(a: A, b: B): A { return a };
@@ -150,7 +150,7 @@ procedure twoTypeParams()
 A wrong expected value must FAIL, so the asserts above are pinning an evaluated result rather
 than passing on a body the pipeline silently dropped. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure firstOf<A, B>(a: A, b: B): A { return a };

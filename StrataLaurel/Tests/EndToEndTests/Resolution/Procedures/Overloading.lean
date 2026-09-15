@@ -20,7 +20,7 @@ open Strata
 
 /-! ## Overloads that differ in a parameter type are accepted (no error) -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo(x: int) opaque { };
@@ -36,7 +36,7 @@ tuple matches both, and `f(1, true)` must resolve to the first overload and
 `f(true, 1)` to the second. Each overload returns a different type; picking the
 wrong one (or none) would produce a type-mismatch diagnostic on the assignment. -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure f(x: int, y: bool) returns (r: int)
@@ -55,7 +55,7 @@ procedure caller()
 
 /-! ## Overloads that differ in arity are accepted (no error) -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure foo() opaque { };
@@ -69,7 +69,7 @@ Each overload returns a different type. If the call picked the wrong overload
 (or failed to pick one), the assignment to the typed target would produce a
 type-mismatch diagnostic. No diagnostics means selection worked. -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure f(x: int) returns (r: int)
@@ -134,7 +134,7 @@ procedure caller()
 
 Selecting among `f` overloads must not disturb resolution of other names. -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure f(x: int) returns (r: int)
@@ -218,7 +218,7 @@ a spurious ambiguity; the result is treated as `Unknown` and the only diagnostic
 are those the argument itself raises (a bare hole raises none). Same behavior for
 `f(undefined_id)` and `f(if b then <?> else <?>)`. -/
 
-#eval testLaurelResolution
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure f(x: int) returns (r: int) opaque ensures r == x;

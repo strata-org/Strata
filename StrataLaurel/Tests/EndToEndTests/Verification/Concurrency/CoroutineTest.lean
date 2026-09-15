@@ -31,9 +31,13 @@ open StrataTest.Util Strata StrataDDM
 
 /-- Run `testLaurelExecution` with `verifyCoroutine := true`. Drops the
     boilerplate options block every concurrency test would otherwise
-    repeat. -/
+    repeat.
+
+    Verification only: a coroutine's `resume`/`yield` schedule is what these tests
+    are about, and the concrete interpreter has no coroutine support, so no block
+    here marks an `entry`. -/
 def testCoroutine (block : SourcedProgram) : IO Unit :=
-  testLaurelExecution {}
+  testLaurelExecution { skipCoreInterpreter := true }
     (options := { defaultLaurelTestOptions with
       translateOptions := { defaultLaurelTestOptions.translateOptions with
         verifyCoroutine := true } })

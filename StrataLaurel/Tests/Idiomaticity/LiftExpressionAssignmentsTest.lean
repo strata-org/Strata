@@ -86,7 +86,7 @@ info: procedure assertInBlockExpr()
 };
 -/
 #guard_msgs in
-#eval printLifted []
+#eval printLifted [] <|
 #strata
 program Laurel;
 procedure assertInBlockExpr()
@@ -113,7 +113,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"] <|
 #strata
 program Laurel;
 procedure impure(): int {
@@ -138,7 +138,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"] <|
 #strata
 program Laurel;
 procedure test() {
@@ -163,7 +163,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"] <|
 #strata
 program Laurel;
 procedure impure(): int {
@@ -194,7 +194,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval printLifted ["impure", "multi_out"]
+#eval printLifted ["impure", "multi_out"] <|
 #strata
 program Laurel;
 procedure multi_out(x: int) returns (r: int, extra: int) {
@@ -227,7 +227,7 @@ procedure reproduce()
 };
 -/
 #guard_msgs in
-#eval printLifted ["writeHeap", "consume"]
+#eval printLifted ["writeHeap", "consume"] <|
 #strata
 program Laurel;
 procedure writeHeap(c: int, value: int, heap: int)
@@ -275,7 +275,7 @@ procedure ifCondLeaksToNextStmt()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -309,7 +309,7 @@ procedure whileCondLeaksToNextStmt()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -344,7 +344,7 @@ procedure ifCondLeaksIntoBranch()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -378,7 +378,7 @@ procedure whileCondLeaksIntoBody()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -422,7 +422,7 @@ procedure invariantReadsLiveVar()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -454,7 +454,7 @@ procedure exprIfBranchesReadLiveVar()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int)
@@ -491,7 +491,7 @@ procedure earlierArgSeesSnapshot()
 };
 -/
 #guard_msgs in
-#eval printLifted ["consume"]
+#eval printLifted ["consume"] <|
 #strata
 program Laurel;
 procedure consume(c: int, v: int, w: int)
@@ -524,7 +524,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval printLifted []
+#eval printLifted [] <|
 #strata
 program Laurel;
 procedure test() {
@@ -554,7 +554,7 @@ procedure hasXInBlock()
 };
 -/
 #guard_msgs in
-#eval printLifted []
+#eval printLifted [] <|
 #strata
 program Laurel;
 procedure readsX() {
@@ -583,7 +583,7 @@ procedure hasXInBlock() {
 info: Var (.Declare x) has no uniqueId
 -/
 #guard_msgs in
-#eval printLiftErrorUnresolved []
+#eval printLiftErrorUnresolved [] <|
 #strata
 program Laurel;
 procedure test() {
@@ -598,7 +598,7 @@ info: procedures unchanged: true
 { category := "error", impact := Strata.Pipeline.MessageImpact.internalError }: Internal error in LiftImperativeExpressions: Var (.Declare x) has no uniqueId
 -/
 #guard_msgs in
-#eval printLiftPassDiagnosticsUnresolved
+#eval printLiftPassDiagnosticsUnresolved <|
 #strata
 program Laurel;
 procedure test() {
@@ -625,7 +625,7 @@ info: procedure binderLocalNoProof()
 };
 -/
 #guard_msgs in
-#eval printLifted []
+#eval printLifted [] <|
 #strata
 program Laurel;
 procedure binderLocalNoProof() opaque {

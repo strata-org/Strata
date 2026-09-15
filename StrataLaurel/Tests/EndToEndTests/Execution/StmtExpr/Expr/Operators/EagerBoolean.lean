@@ -28,7 +28,7 @@ This file covers:
 `&`, `|`, `!` and boolean `==` are all supported by the standalone Laurel
 interpreter, so this block runs all three paths. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure eagerAndTruthTable()
@@ -79,7 +79,7 @@ procedure eagerAndNegative()
 `==>` (implies) is not yet supported by the standalone Laurel interpreter, so these
 laws stay verify-only (no `entry`; symbolic over `a`/`b`). -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure eagerAndLaws(a: bool, b: bool)
@@ -107,7 +107,7 @@ the call would be guarded and never reached (see `ShortCircuit.lean`), but `&`
 evaluates it regardless of the left operand, so its precondition must be
 discharged here and fails. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure mustNotBeCalled(): int
@@ -137,6 +137,7 @@ procedure mustNotBeCalled(): int
 };
 
 procedure eagerOrEvaluatesRightOperand()
+  entry
   opaque
 {
   var b: bool := true | mustNotBeCalled() > 0

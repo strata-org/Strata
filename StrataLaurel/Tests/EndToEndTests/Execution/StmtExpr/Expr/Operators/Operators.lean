@@ -14,7 +14,7 @@ open Strata
 Fully supported by the standalone Laurel interpreter, so this block runs all three
 paths (verify + Core interpret + Laurel interpret). -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure testArithmetic()
@@ -77,7 +77,7 @@ procedure testUnaryNegative()
 `!=` spans shapes via `primEq`; supported by the standalone interpreter, so this
 block runs all three paths. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure testInequality()
@@ -102,7 +102,7 @@ procedure testInequalityNegative()
 `&&`, `||`, `!` and boolean `==` are supported by the standalone interpreter; `==>`
 (implies) is not yet, so the `==>` laws live in their own verify+Core block below. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution { skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure testLogical()
@@ -126,7 +126,7 @@ this block stays verify + Core interpret only. Drop `skipLaurelInterpreter` (i.e
 `:= false`) once a lazy `.Implies` case lands beside `.AndThen`/`.OrElse` in
 `evalExpr`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testImplies()
@@ -143,7 +143,7 @@ procedure testImplies()
 /-! `/t` and `%t` (truncating division / remainder) are not yet supported by the
 standalone Laurel interpreter, so this block stays verify + Core interpret only. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testTruncatingDiv()

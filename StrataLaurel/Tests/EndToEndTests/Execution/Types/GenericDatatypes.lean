@@ -14,7 +14,7 @@ open Strata
 `UnitTests/GenericDatatypeTest.lean` covers generic datatypes on the verification
 path. Generic datatypes lower to native parametric Core sorts rather than being
 monomorphized, so they are the part of user-level polymorphism that the concrete
-interpreter can actually run — these tests drive them through `testLaurelExecution { skipCoreInterpreter := false }`
+interpreter can actually run — these tests drive them through `testLaurelExecution {}`
 (translate + all lowering passes + verify + interpret).
 
 Values are observed with a SELECTOR and then compared at a primitive type, rather
@@ -27,7 +27,7 @@ datatype is `$Box`, in the reserved `$`-namespace, so user `datatype Box`, `data
 `composite Box` are all accepted; that is pinned by the source-compatibility cases in
 `UnitTests/GenericCompositeTest.lean`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }
@@ -59,7 +59,7 @@ procedure testRecursive() entry opaque {
 A wrong expected payload must FAIL, so the selector reads above are pinning an
 evaluated value rather than passing vacuously. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }
@@ -77,7 +77,7 @@ read back with selectors at different concrete types, so a reconstruction that c
 payloads — or applied one parameter's instantiation to the other — returns the wrong value here
 rather than failing to typecheck. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Pr<A, B> { MkPr(a: A, b: B) }
@@ -98,7 +98,7 @@ As above, an annotation-free block passes only when the diagnostic set is empty 
 annotated failure a block would also pass if the interpreter produced nothing at all. This twin
 asserts a wrong concrete value for one selector, which must FAIL. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Pr<A, B> { MkPr(a: A, b: B) }
@@ -116,7 +116,7 @@ procedure twoTypeParamsWrong() entry opaque {
 `.Applied` arm of the box constructor/destructor naming — the arm whose `$Box..` prefix this
 change renames. No other case here has a type argument that is itself applied. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }
@@ -127,7 +127,7 @@ procedure testNested() entry opaque {
 };
 #end
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 datatype Bx<T> { MkBx(v: T) }

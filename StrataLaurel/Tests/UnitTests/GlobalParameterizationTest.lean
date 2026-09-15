@@ -120,7 +120,7 @@ procedure reader(someGlobal: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var someGlobal: int := 0
@@ -158,7 +158,7 @@ procedure useValue(g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -195,7 +195,7 @@ procedure both(a: int, b: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var a: int := 0
@@ -236,7 +236,7 @@ procedure useBoth(a: int, b: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var a: int := 0
@@ -275,7 +275,7 @@ procedure useIt(g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -314,7 +314,7 @@ procedure withLocal($global_g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -352,7 +352,7 @@ procedure loop(g: int, n: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -394,7 +394,7 @@ procedure useAssign(g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -439,7 +439,7 @@ procedure caller(g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -474,7 +474,7 @@ procedure collides($global_g_1: int, g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -517,7 +517,7 @@ procedure tempCollides(g: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -552,7 +552,7 @@ procedure recur(g: int, n: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0
@@ -583,7 +583,7 @@ private def testDistinctGlobalParameterIds (program : StrataDDM.Program) : IO Un
     throw (IO.userError s!"expected two distinct global parameter IDs, got {ids}")
 
 #guard_msgs in
-#eval testDistinctGlobalParameterIds
+#eval testDistinctGlobalParameterIds <|
 #strata
 program Laurel;
 var g: int := 0
@@ -597,7 +597,7 @@ procedure second() returns (r: int) { return g };
 info: resolution diagnostic: constant initializer 'globalConstant' cannot depend on file-scope globals
 -/
 #guard_msgs in
-#eval testRejectsGlobalConstant false
+#eval testRejectsGlobalConstant false <|
 #strata
 program Laurel;
 var g: int := 0
@@ -608,7 +608,7 @@ procedure readG() returns (r: int) { return g };
 info: resolution diagnostic: constant initializer 'globalConstant' cannot depend on file-scope globals
 -/
 #guard_msgs in
-#eval testRejectsGlobalConstant true
+#eval testRejectsGlobalConstant true <|
 #strata
 program Laurel;
 var g: int := 0
@@ -638,7 +638,7 @@ procedure wrapperOutput($global_g: int)
 };
 -/
 #guard_msgs in
-#eval testConstrainedGlobalShadowing
+#eval testConstrainedGlobalShadowing <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -659,7 +659,7 @@ info: translationErrors: 0
 coreProduced: true
 -/
 #guard_msgs in
-#eval testMetadataTranslation
+#eval testMetadataTranslation <|
 #strata
 program Laurel;
 composite MetadataCell {
@@ -687,7 +687,7 @@ info: translationErrors: 0
 coreProduced: true
 -/
 #guard_msgs in
-#eval testDecreasesMetadata
+#eval testDecreasesMetadata <|
 #strata
 program Laurel;
 composite DecreasesCell {
@@ -705,7 +705,7 @@ info: translationErrors: 0
 coreProduced: true
 -/
 #guard_msgs in
-#eval testConstrainedInvokeOnMetadata
+#eval testConstrainedInvokeOnMetadata <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0

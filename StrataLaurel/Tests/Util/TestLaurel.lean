@@ -133,12 +133,12 @@ private def runLaurelPipelineRaw (program : StrataDDM.Program)
 
 /-! ## Concrete-interpretation path
 
-Alongside the verifier, `testLaurelExecution { skipCoreInterpreter := false }` drives a
-Laurel program through the `laurelInterpret` pipeline — Laurel → Core → concretely
-execute the procedures the producer marked `entry` — and checks the *runtime*
-assertion failures against the very same inline `// ^^^` annotations the verifier is
-checked against. (With the default `paths` the interpreter is off and only
-verification runs, never taking this path.)
+Alongside the verifier, `testLaurelExecution` drives a Laurel program through the
+`laurelInterpret` pipeline — Laurel → Core → concretely execute the procedures the
+producer marked `entry` — and checks the *runtime* assertion failures against the
+very same inline `// ^^^` annotations the verifier is checked against. This runs by
+default, so a block marks a parameterless procedure `entry` or opts out with
+`skipCoreInterpreter := true`; having neither is an error rather than a silent skip.
 
 This shares its implementation with `laurelInterpretCommand` in `StrataMainLib`:
 translate to Core and type-check here, then hand off to
@@ -153,8 +153,8 @@ a loop invariant that "could not be proved", a symbolic division-by-zero check)
 do not fire when the single concrete path happens to satisfy them. Because
 `testLaurelExecution` holds the interpreter to the *same* annotations as the
 verifier (every annotation must fire in both modes), a block carrying such
-verifier-only negatives must leave `skipCoreInterpreter` on (the default `paths`):
-only blocks where the two modes agree should set `skipCoreInterpreter := false`.
+verifier-only negatives must turn the interpreter off with
+`skipCoreInterpreter := true`.
 
 **`assume` semantics under interpretation:** Laurel's `assume <E>` is a no-op
 during concrete execution — a false assume does not stop execution and following
@@ -164,7 +164,7 @@ constrains the verifier's symbolic state but has no runtime effect. Consequently
 `ignoreAssumes := true` to implement this; the verifier treats the same assume as
 a hypothesis that makes the assert pass. A test whose annotations rely on the
 assume constraining the interpreter (e.g. expecting zero failures because the
-assume makes the assert unreachable) must leave `skipCoreInterpreter` on. -/
+assume makes the assert unreachable) must set `skipCoreInterpreter := true`. -/
 
 /-- Run the interpret path on a translated, type-checked Core program: execute
     every `entry` procedure from a fresh environment and return the runtime
@@ -475,7 +475,7 @@ private def formatAnnotation (block : SourcedProgram) (a : DiagnosticAnnotation)
         this, so the two modes are held to the same annotations. A block whose
         negatives are verifier-only (they cannot reproduce on the single
         concrete path the interpreter walks) therefore must not run through the
-        interpreter — leave `skipCoreInterpreter` on (verification only).
+        interpreter — set `skipCoreInterpreter := true` (verification only).
       * `false` — the actuals may be a subset of the annotations (no annotation
         is required to fire). Currently unused; retained for callers that want
         an under-approximation check.
@@ -577,10 +577,13 @@ private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOption
       verify). `false` by default (verification runs); this is what every block
       wants unless it is exercising the interpreter in isolation.
     - `skipCoreInterpreter` — skip the concrete interpret path (Laurel → Core →
-      `Core.Program.interpretEntries`). `true` by default (interpreter off). Set
-      it `false` to run the interpreter; that requires the program to mark a
-      parameterless procedure `entry` (see `isInterpretEntry`), and enabling it
-      without any `entry` procedure is a mis-setup and throws.
+      `Core.Program.interpretEntries`). `false` by default, so a block is
+      interpreted as well as verified and the two modes are checked against each
+      other without the block having to ask. That makes marking a parameterless
+      procedure `entry` (see `isInterpretEntry`) mandatory: a block with none has
+      nothing to interpret and says so rather than passing quietly. Set this `true`
+      on a block that cannot be interpreted — its annotations are ones the
+      interpreter cannot reproduce (see below), or its program never reaches Core.
     - `skipLaurelInterpreter` — skip the standalone Laurel interpreter path
       (`Strata.Laurel.Interpreter.evalProgram`, driven directly on the
       Laurel program without going through Core). `true` by default (off),
@@ -590,7 +593,7 @@ private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOption
       annotations. -/
 structure MultiplePathTestOptions where
   skipVerification : Bool := false
-  skipCoreInterpreter : Bool := true
+  skipCoreInterpreter : Bool := false
   skipLaurelInterpreter : Bool := true
   deriving Inhabited
 
@@ -601,11 +604,10 @@ structure MultiplePathTestOptions where
 
     This is the **verification-only** entry point — it never runs the concrete
     interpreter, even when the program marks a procedure `entry`; use
-    `testLaurelExecution { skipCoreInterpreter := false }` for that. Keeping
-    verification standalone lets a test carry verifier-only annotations (a
-    precondition or invariant that "does not hold"/"could not be proved" over all
-    inputs, a symbolic division-by-zero check) without reproducing them under
-    concrete execution.
+    `testLaurelExecution` for that. Keeping verification standalone lets a test
+    carry verifier-only annotations (a precondition or invariant that "does not
+    hold"/"could not be proved" over all inputs, a symbolic division-by-zero
+    check) without reproducing them under concrete execution.
 
     `options`, `showLocations`, `showSnippet`, and `debug` behave as in
     `testLaurelExecution`. -/
@@ -621,26 +623,22 @@ def testLaurelVerification (block : SourcedProgram)
     `// ^^^ kind: message` annotations: with annotations, assert an exact match;
     without them, expect no diagnostics.
 
-    With the default `paths` (`skipVerification := false`, interpreters off) this
-    is the **verification-only** entry point: it never runs the concrete
-    interpreter, so a test can carry verifier-only annotations (a precondition or
-    invariant that "does not hold"/"could not be proved" over all inputs, a
-    symbolic division-by-zero check) without having to reproduce them under
-    concrete execution.
-
-    Set `skipCoreInterpreter := false` to *also* run the concrete interpreter and
-    hold it to the *same* annotations as the verifier — an exact match: every
-    annotation must fire in both modes, so the interpreter is not allowed to
-    report fewer diagnostics than the annotations expect. Running one set of
-    annotations through both keeps the two honest against each other — a
+    With the default `paths` this runs **two** modes: the verifier, and — when the
+    program marks a parameterless procedure `entry` — the concrete Core
+    interpreter, held to the *same* annotations as the verifier. That is an exact
+    match: every annotation must fire in both modes, so the interpreter is not
+    allowed to report fewer diagnostics than the annotations expect. Running one
+    set of annotations through both keeps the two honest against each other — a
     deterministic `assert`/postcondition failure must surface identically whether
     proved false by SMT or hit at runtime.
 
     Because the interpreter is strict, a block whose negative cases are
     verifier-only (they cannot reproduce on the single concrete path the
-    interpreter walks) must leave `skipCoreInterpreter` on: mixing verifier-only
-    annotations into an interpreter run would make the interpret path fail on the
-    un-fired annotations.
+    interpreter walks) must set `skipCoreInterpreter := true`: mixing
+    verifier-only annotations into an interpreter run would make the interpret
+    path fail on the un-fired annotations. Typical cases are a precondition or
+    invariant that "does not hold"/"could not be proved" over all inputs and a
+    symbolic division-by-zero check.
 
     **Known limitation — wording must agree across both paths.** An annotation's
     message is matched as a substring against *both* paths' diagnostics, but the
@@ -650,18 +648,18 @@ def testLaurelVerification (block : SourcedProgram)
     always renders a concretely-failed assert as "{summary} does not hold". So an
     assert that the verifier reports as "could not be proved" (e.g. one reachable
     only through a loop head with a weak invariant) cannot be annotated to match
-    both paths at once. For now such a case simply leaves `skipCoreInterpreter`
-    on (its default) — keep it verification-only. (Unifying the two wordings
-    in the matcher is possible but deliberately not done here.)
+    both paths at once. For now such a case sets `skipCoreInterpreter := true` —
+    keep it verification-only. (Unifying the two wordings in the matcher is
+    possible but deliberately not done here.)
 
     Multiple preconditions at a single call site are each reported independently,
     matching the verifier: `mkPreChecks` emits one `Assert` per precondition at
     the *same* call-site source position, and each failure carries its own
     metadata.
 
-    If `skipCoreInterpreter := false` but the program marks no `entry`, there is
-    nothing for the interpreter to run, which is a mis-use and is reported as an
-    error.
+    If the program marks no `entry` the interpreter has nothing to run, which is an
+    error: mark one, or opt out with `skipCoreInterpreter := true`. A silent skip
+    would let a block lose its interpreter coverage without anything noticing.
 
     Set `skipLaurelInterpreter := false` to *also* run the standalone Laurel
     interpreter (`Evaluator.evalProgram`, driven directly on the Laurel program
@@ -695,7 +693,8 @@ def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : Sourced
     runVerifyPath block options annotations showLocations showSnippet debug
   if !paths.skipCoreInterpreter then
     -- Drive the interpret path. The runner returns `none` when nothing is marked
-    -- `entry`; with the interpreter explicitly requested that is a mis-setup.
+    -- `entry`, which is a mis-setup: this path is on by default, so a block that
+    -- cannot be interpreted has to say so with `skipCoreInterpreter := true`.
     match ← runLaurelInterpretRaw block.program with
     | some dms =>
       let actual := renderSnippetLocal block.basePos block.source dms
@@ -709,8 +708,9 @@ def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : Sourced
         (showLocations := showLocations) (showSnippet := showSnippet)
     | none =>
       throw <| IO.userError
-        "testLaurelExecution: skipCoreInterpreter is false but no `entry` procedure \
-         is marked, so the interpreter has nothing to run."
+        "testLaurelExecution: no `entry` procedure is marked, so the interpreter has \
+         nothing to run. Mark a parameterless procedure `entry`, or say \
+         `skipCoreInterpreter := true` if this block cannot be interpreted."
   if !paths.skipLaurelInterpreter then
     -- Standalone Laurel interpreter path, checked against the same annotations.
     -- Like the Core path above, `none` means nothing is marked `entry`; with

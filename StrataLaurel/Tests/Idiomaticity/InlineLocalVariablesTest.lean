@@ -47,7 +47,7 @@ info: procedure letChain()
 };
 -/
 #guard_msgs in
-#eval printInlined
+#eval printInlined <|
 #strata
 program Laurel;
 procedure letChain() returns (r: int) {
@@ -69,7 +69,7 @@ info: procedure keepsAssert()
 };
 -/
 #guard_msgs in
-#eval printInlined
+#eval printInlined <|
 #strata
 program Laurel;
 procedure keepsAssert() returns (r: int) {
@@ -92,7 +92,7 @@ info: procedure duplicates(a: int, b: int)
 };
 -/
 #guard_msgs in
-#eval printInlined
+#eval printInlined <|
 #strata
 program Laurel;
 procedure duplicates(a: int, b: int) returns (r: int) {
@@ -111,7 +111,7 @@ info: procedure shadowing()
 };
 -/
 #guard_msgs in
-#eval printInlined
+#eval printInlined <|
 #strata
 program Laurel;
 procedure shadowing() returns (r: bool) {
@@ -138,7 +138,7 @@ info: procedure innerShadow()
 };
 -/
 #guard_msgs in
-#eval printInlined
+#eval printInlined <|
 #strata
 program Laurel;
 procedure innerShadow() returns (r: int) {

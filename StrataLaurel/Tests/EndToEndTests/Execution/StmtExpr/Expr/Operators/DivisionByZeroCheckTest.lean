@@ -19,7 +19,7 @@ preconditions, so an unconstrained divisor surfaces as a failed precondition.
 
 /-! ### Safe paths verify cleanly -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure safeDivision()
@@ -55,7 +55,7 @@ procedure callPureDivSafe()
 -- Verify-only: `x` is an unconstrained parameter and nothing marks an `entry`,
 -- so there is no concrete path for the interpreter to walk. The failure is
 -- inherently symbolic — it says the precondition cannot be proved for *all* `x`.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -78,8 +78,8 @@ procedure unsafeDivision(x: int)
 -- not: to the verifier `pureDiv` is correct, since its own `requires y != 0`
 -- discharges `$div`'s. Only the unsatisfied precondition at the *call site* is
 -- common to both. Per `TestLaurelExecution`'s rule, a block whose negatives are
--- phase-asymmetric stays verification-only (default `paths`).
-#eval testLaurelExecution {} <|
+-- phase-asymmetric stays verification-only.
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure pureDiv(x: int, y: int): int

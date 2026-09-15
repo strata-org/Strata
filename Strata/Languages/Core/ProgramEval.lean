@@ -139,26 +139,105 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
   let E := { E with exprEnv }
   Statement.Command.runCall lhs proc.header.name.name [] fuel E
 
-/-- Mark every bodied, non-recursive function in the program with
-    `inlineIfAllCanonical`, so the concrete interpreter unfolds it once all of
-    its arguments are concrete values. Verification keeps these functions
-    uninterpreted and discharges them via SMT, but concrete execution needs the
-    body inlined to reduce e.g. `int32$constraint(5)` to a boolean. (Recursive
-    functions are left alone to avoid non-termination; the fuel bound also
-    protects against runaway unfolding.)
+/-- Mark every bodied, non-recursive function in the program `inline`, so the
+    concrete interpreter unfolds it at every call. Verification keeps these
+    functions uninterpreted and discharges them via SMT, but concrete execution
+    needs the body inlined to reduce e.g. `int32$constraint(5)` to a boolean.
+    (Recursive functions are left alone to avoid non-termination; the fuel bound
+    also protects against runaway unfolding.)
+
+    `inline` rather than `inlineIfAllCanonical`, because the latter unfolds a body
+    only once *every* argument is a canonical value and a `Map` argument never is:
+    a map value is a stack of `update`s over a `mapConst`, a saturated call of an
+    uninterpreted function rather than a constructor application, which
+    `isCanonicalValue` rejects. That gate blocks every call taking a map, such as
+    Laurel's `readField(heap, obj, field)`. Unfolding unconditionally is safe here
+    because these functions are non-recursive, so the chain of unfoldings is
+    bounded by the call graph.
 
     Shared by the `laurelInterpret` CLI command and the Laurel E2E execute tests. -/
 def inlineBodiedFunctions (prog : Program) : Program :=
   let addInline (f : Core.Function) : Core.Function :=
     if f.body.isSome && !f.isRecursive
         && !f.attr.contains .inlineIfAllCanonical && !f.attr.contains .inline
-    then { f with attr := f.attr.push .inlineIfAllCanonical }
+    then { f with attr := f.attr.push .inline }
     else f
   { prog with decls := prog.decls.map fun d =>
       match d with
       | .func f md => .func (addInline f) md
       | .recFuncBlock fs md => .recFuncBlock (fs.map addInline) md
       | other => other }
+
+/-! ### Interpreting `Map` operations
+
+`mapConst`, `update` and `select` are uninterpreted in `Core.Factory`: the
+verifier discharges them through the axioms attached to `mapConstFunc` and
+`mapUpdateFunc`, so a `select` never reduces during symbolic evaluation.
+Concrete execution has to reduce one — a Laurel field read lowers to
+`select(select(Heap..data!(heap), obj), field)`, so without this every program
+that touches a field gets stuck on the first read.
+
+So the interpreter runs those same axioms as a rewrite, by giving `select` a
+`concreteEval` in its *own* copy of the factory. Verification keeps the
+uninterpreted `select` and its axioms untouched. -/
+
+private def mapConstName : String := Core.mapConstFunc.func.name.name
+private def mapUpdateName : String := Core.mapUpdateFunc.func.name.name
+private def mapSelectName : String := Core.mapSelectFunc.func.name.name
+
+/-- Select key `i` out of the map term `m`.
+
+    A map value is a stack of `update`s over some base, so a selection is decided by
+    walking the stack from the top: `update m' k v` answers `v` at `k` and defers to
+    `m'` elsewhere (`mapUpdateFunc`'s `updateSelect` / `updatePreserve`), and a
+    `mapConst d` base answers `d` (`mapConstFunc`'s axiom). A base that is neither --
+    the heap's initial hole, a symbolic map parameter -- leaves a residual `select`,
+    which is only reached for a key no `update` in the stack covers.
+
+    Key comparisons are emitted as `ite`s rather than decided here, because
+    equality of map keys (datatype constructor applications) needs factory
+    knowledge this function does not have.
+
+    Returns `none` when `m` is not a stack at all, leaving the call unreduced. -/
+private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :=
+  match m with
+  | .app _ (.op _ n _) d =>
+    if n.name == mapConstName then some d else none
+  | .app _ (.app _ (.app _ (.op _ n _) m') k) v =>
+    if n.name == mapUpdateName then
+      -- The base need not reduce: `select(m', i)` is left as a term, and the `ite`
+      -- discards it whenever `i == k` decides true.
+      let rest := (selectFromMapTerm m' i).getD
+        (.app () (.app () Core.mapSelectOp m') i)
+      some (.ite () (.eq () i k) v rest)
+    else none
+  | _ => none
+
+/-- `Core.Factory`'s uninterpreted `select`, with `selectFromMapTerm` attached.
+
+    `evalIfCanonical 1` is what turns it on: the map argument (index 0) is an
+    `update`/`mapConst` application, which is not a canonical value, so the
+    evaluator's default "all arguments are concrete" gate would never fire. The
+    key (index 1) is the argument that has to be concrete for the walk to decide
+    anything. -/
+private def interpretSelect (f : Lambda.LFunc CoreLParams) : Lambda.LFunc CoreLParams :=
+  if f.name.name == mapSelectName then
+    { f with
+      concreteEval := some (fun _ args =>
+        match args with
+        | [m, i] => selectFromMapTerm m i
+        | _ => none)
+      attr := f.attr.push (.evalIfCanonical 1) }
+  else f
+
+/-- `F` with its `select` interpreted, so the concrete interpreter can read and
+    write `Map`s. -/
+def interpretMapsInFactory (F : Lambda.Factory CoreLParams) : Lambda.Factory CoreLParams :=
+  Lambda.Factory.ofArray (F.toArray.map interpretSelect)
+
+/-- Lift `interpretMapsInFactory` into the environment's factory. -/
+def withInterpretedMaps (E : Env) : Env :=
+  { E with exprEnv := E.exprEnv.setFactory (interpretMapsInFactory E.exprEnv.config.factory) }
 
 /--
 All procedures the producer marked as concrete-interpretation entry points,
@@ -227,7 +306,8 @@ def interpretEntries (prog : Program) (entries : List Procedure) (fuel : Nat)
     : Except Message InterpretOutcome := do
   let prog := inlineBodiedFunctions prog
   let E ← prog.run
-  let E := { E with collectAllAssertFailures := true, ignoreAssumes := true }
+  let E := withInterpretedMaps
+    { E with collectAllAssertFailures := true, ignoreAssumes := true }
   let mut diagnostics : Array Strata.Message := #[]
   let mut seen : Std.HashSet Strata.Message := {}
   let mut unmapped : Array (String × String) := #[]

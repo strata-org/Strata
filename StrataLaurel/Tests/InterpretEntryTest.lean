@@ -7,8 +7,10 @@
 import StrataLaurel.Implementation
 import Strata.Languages.Core.ProgramEval
 import StrataDDM.Integration.Lean.HashCommands
+import StrataLaurel.Tests.Util.TestLaurel
 
 open Strata
+open StrataTest.Util
 open Std (ToFormat Format format)
 
 /-! ## Entry-point marker for concrete interpretation (`laurelInterpret`)
@@ -173,6 +175,37 @@ no entry marked
 -/
 #guard_msgs in
 #eval do runMarkedEntries (← parse unmarkedPgm)
+
+/-! ### No marker is an error for `testLaurelExecution`
+
+`testLaurelExecution` runs the concrete interpreter by default, so a block that marks
+no `entry` has nothing to interpret and says so rather than passing quietly. A block
+that genuinely cannot be interpreted opts out with `skipCoreInterpreter := true`. -/
+
+/-- error: testLaurelExecution: no `entry` procedure is marked, so the interpreter has nothing to run. Mark a parameterless procedure `entry`, or say `skipCoreInterpreter := true` if this block cannot be interpreted.
+-/
+#guard_msgs in
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure noEntryMarked()
+  opaque
+{
+  assert 1 + 1 == 2
+};
+#end
+
+-- Opting out is how a block with no `entry` stays silent.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure noEntryOptedOut()
+  opaque
+{
+  assert 1 + 1 == 2
+};
+#end
 
 /-! ### Transparent body with no assertions still survives as an entry
 

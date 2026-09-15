@@ -20,7 +20,7 @@ only after BODY, an invariant must hold of the *pre-body* state. For
 `do { x := x+1 } while(x<3)` the loop exits at x==3, but the head invariant sees
 the pre-increment value, so the bound is `x <= 2` (not `x <= 3`). -/
 
-#eval testLaurelExecution { skipCoreInterpreter := false }
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure basic()
@@ -97,7 +97,7 @@ procedure noInvariant()
 Confirms the `while(true)` desugar isn't vacuous: the body's effect reaches the
 assertion, so an unprovable assert is reported (not discharged vacuously). -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure falsePostRejected()
@@ -123,7 +123,7 @@ invariant's own source range. -/
 
 /-! ### The initial invariant fails on entry -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure doWhileBadInitialInvariant()
@@ -140,7 +140,7 @@ procedure doWhileBadInitialInvariant()
 
 /-! ### A later invariant fails while earlier ones hold -/
 
-#eval testLaurelExecution {}
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 procedure doWhileSecondInvFails()

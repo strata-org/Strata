@@ -48,7 +48,7 @@ both ways instead; see `Throw.lean`.
 /-! ## A normal `ensures` under `throws` -/
 -- Good-path `ensures` is checked on exit: `safeInc` establishes `r > x` on the
 -- (only, non-throwing) path, so the guarded postcondition discharges.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -79,6 +79,7 @@ procedure produce()
 };
 procedure consume()
   returns (out: int)
+  entry
   opaque
 {
   try {
@@ -92,7 +93,7 @@ procedure consume()
 
 -- Negative: the good-path `ensures` does not hold — `badInc` returns `x - 1`,
 -- which is not `> x` — so the guarded postcondition fails on the Good path.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -123,7 +124,7 @@ statements following the call. -/
 
 -- A callee's exception propagates through a procedure that only declares `throws`,
 -- and is caught by its caller.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -158,7 +159,7 @@ procedure catchesPropagated(x: int) returns (out: int)
 -- After a throwing call, the statements that follow run only on the `Good` path, so
 -- the callee's normal postcondition is available to them unconditionally. If a `Bad`
 -- result could fall through, `r >= 0` would not hold here.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -202,7 +203,7 @@ then the throwing-call combinations are covered with an opaque callee, in
 -- because a transparent body becomes a function and throwing is not expressible as
 -- an expression. Reported by `EliminateExceptions` before it rewrites the body to
 -- return `Result`, so the user sees this rather than a downstream type mismatch.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -253,7 +254,7 @@ before any `Result` exists to be `Good` or `Bad`. So the ordinary contract appli
 body may assume it, and each call site must establish it. -/
 
 -- Positive: the body assumes the precondition, and a caller that satisfies it verifies.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -278,7 +279,7 @@ procedure callsWithGoodInput()
 
 -- Negative: a caller that violates it is reported at the call site, in the author's
 -- words rather than the default phrasing.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -309,7 +310,7 @@ By the time the exceptional channel is lowered there is no value riding on the
 `return` for the `Result` assembly to lose — which is why that ordering is a declared
 dependency of the pass rather than a comment. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -360,7 +361,7 @@ which builds the AST directly and so does not go through that check. -/
 
 -- Short form, with a `throwsOn` case and an `ensures` so the contract rewriting has
 -- to reach the postconditions and not just the body.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -380,7 +381,7 @@ procedure shortFormOrThrows(x: int): int
 
 -- The explicit form with the output named `$result` by hand: the same program as far
 -- as this pass is concerned, since `: T` desugars to exactly this.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -402,7 +403,7 @@ procedure explicitDollarResult(x: int)
 -- legal only as a procedure's sole output, so this is rejected outright rather
 -- than reaching the carrier freshening.
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -443,7 +444,7 @@ lowered and its frame gets guarded by a `Result..isGood` that resolution then
 rejects, surfacing as an internal error from a pass that did nothing wrong. It
 must verify cleanly. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Cell {
@@ -466,7 +467,7 @@ procedure baitForCarrierInference(c: Cell)
 -- Control: the identical procedure with an ordinary output name and type. Pinning
 -- both means a regression to name- or type-inference fails the bait case while this
 -- one still passes, pointing straight at the cause.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite Cell {
