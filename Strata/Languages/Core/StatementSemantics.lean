@@ -291,6 +291,28 @@ inductive EvalCommand (π : String → Option Procedure) (φ : Expression.Factor
 
 end
 
+/-- Event-producing Core command semantics.
+
+Base Imperative commands use `EvalCmdE`, so assertions and assumptions emit
+captured events. Calls currently reuse the existing Core call transition and
+emit no events; this preserves execution behavior but does not yet expose
+callee or contract obligations in the caller's trace. -/
+@[expose] def EvalCommandE
+    (π : String → Option Procedure)
+    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    EvalCmdParamE Expression Command (Event Expression) :=
+  fun factory store command store' emitted =>
+    match command with
+    | .cmd cmd => EvalCmdE (P := Expression) factory store cmd store' emitted
+    | .call _ _ _ =>
+        emitted = [] ∧ ∃ failed, EvalCommand π φ factory store command store' failed
+
+/-- Core-level event-producing single-step relation. -/
+@[expose] abbrev CoreStepE
+    (π : String → Option Procedure)
+    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
+  Imperative.StepStmtE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+
 /-- Core-level single-step relation. -/
 @[expose] abbrev CoreStep
     (π : String → Option Procedure)

@@ -712,7 +712,7 @@ theorem denote_intConst
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
   rw [denote_const]; simp [denoteConst]
 
-theorem denote_boolConst
+public theorem denote_boolConst
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -804,7 +804,7 @@ theorem denote_abs
   exact (Denotes_denote hd_abs).symm
 
 /-- Unfolding lemma for `denote` of `eq` when operands are equal. -/
-theorem denote_eq_true
+public theorem denote_eq_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -876,7 +876,7 @@ theorem denote_ite
     exact (Denotes_denote hd_ite).symm
 
 /-- Unfolding lemma for `denote` of `quant .all` when the body is true for all values. -/
-theorem denote_quant_all_true
+public theorem denote_quant_all_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}

@@ -5,11 +5,9 @@
 -/
 module
 
-public import Strata.DL.Imperative.StmtSemantics
-public import Strata.DL.Imperative.Logic.LangDef
-import all Strata.DL.Imperative.CmdSemantics
-import all Strata.DL.Imperative.CmdSemanticsProps
-import all Strata.DL.Imperative.StmtSemanticsProps
+public import Strata.DL.Imperative.Logic.Termination
+public import Strata.DL.Imperative.Logic.TraceInterpProps
+public import Strata.DL.Imperative.StmtSemanticsProps
 
 /-! # A Hoare-logic template for the Imperative dialect
 
@@ -18,25 +16,21 @@ command type and no evaluator, so nothing here can be applied to a program.  A l
 instantiates it — see `Strata.Languages.Core.Logic.Hoare` — to obtain usable rules.
 
 A self-contained partial-correctness Hoare logic, depending only on the Imperative dialect
-itself (`Stmt`, `Cmd`, their small-step semantics, and the `Strata.Logic.Lang` bundle).  It
-does not mention the reachability-based half of the soundness-specification framework
-(`AssertValidWhen`, `Sound`, the `Overapproximates` family); the bridges to that live on
-its side, in `Strata.Transform.SpecHoareConnection`.
+itself (`Stmt`, `Cmd`, their event-trace small-step semantics, and the
+`Strata.Logic.EventLang` bundle). It does not mention the transformation-soundness
+framework (`AssertValidOnTracesWhen`, `Sound`, or the `Overapproximates` family); the event-trace transport bridge lives on its side, in
+`Strata.Transform.SpecHoareConnection`.
 
 `Strata.Logic.Hoare.Triple` is language-agnostic — stated over an arbitrary
-`Strata.Logic.Lang P`, which is what lets a triple be transported from a target language
-back to the source.  Everything else lives in `Imperative.Logic.Hoare`.
+`Strata.Logic.EventLang P (Event P)`, which is what lets a triple be transported from a
+target language back to the source.  Conditions use `EvaluatorBasedInterp P` throughout.
+Everything else lives in `Imperative.Logic.Hoare`.
 
 ## Contents
 
-`Strata.Logic.Hoare.Triple` and `PostWF`, with the rules `false_pre`, `consequence`,
-`skip_block`, `cmd`, `seq_append`, `exit_cons`, `block`, `singleton`, `skip`, `ite` and
-`while_rule`.
-
-There is a *single* triple judgement.  Statements and statement lists are covered by
-instantiating it at two `Lang` packs — `Lang.imperative` and `Lang.imperativeBlock` —
-rather than by two definitions (see `Triple` for why the exiting final configuration it
-admits lets one judgement cover both).  `block` and `singleton` move between the two.
+`Strata.Logic.Hoare.Triple` and `PostWF`, with the rules `false_pre`,
+`consequence`, `skip_block`, `cmd`, `seq_append`, `exit_cons`, `block`,
+`singleton`, `skip`, `ite`, and `while_rule`.
 
 ## Why the rules read as verbosely as they do
 
@@ -53,7 +47,7 @@ module: they *are* the logic, not properties of it.
 
 public section
 
-/-! ## The `Lang`-generic triple -/
+/-! ## The `EventLang`-generic triple -/
 
 namespace Strata.Logic.Hoare
 
@@ -61,20 +55,21 @@ open Imperative
 
 section
 
-variable {P : PureExpr}
-variable (L : Lang P)
+variable {P : PureExpr} [HasBool P]
+variable (L : EventLang P (Event P))
+
+local notation "I" => EvaluatorBasedInterp P
 
 /-- Partial-correctness Hoare triple: for every initial environment satisfying
-    `Pre` that the language's own `initEnvWF` admits and that carries no prior
-    failure, if `s` runs to completion at `ρ'` then `Post ρ'` holds and no
-    assertion failed along the way (`ρ'.hasFailure = false`).
+    `Pre` that the language's own `initEnvWF` admits, if `s` runs to completion
+    at `ρ'` along `trace`, then every assertion in `trace` is valid.
 
     `L.initEnvWF params` is the initial-environment well-formedness condition: the
     triple only constrains runs started from an environment the condition admits, and it
     is *antimonotone* in that condition — a triple proved under a weaker one holds under
     any stronger one.
 
-    A run may end **terminal or exiting**: `s` may be a statement list whose
+    A run may end terminal or exiting (`L.TerminatesAt`): `s` may be a statement list whose
     `exit` escapes, or a statement that is itself an `exit`, and in either case an
     enclosing block would catch it and continue — so the postcondition has to hold
     there too.  Constraining only terminal runs would make `{Pre} exit l {Post}`
@@ -82,26 +77,40 @@ variable (L : Lang P)
 
     "All asserts in `s` are valid" is strictly stronger than this triple:
     `{True} (assert false; loop_forever) {anything}` holds vacuously because the
-    program never terminates, even though the `assert` fails.
+    program never completes, even though the `assert` fails.
 
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation. -/
+@[expose] def TripleWith (conditionInterp : ConditionInterp P)
+    (params : L.InitEnvWFParamsTy)
+    (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
+  ∀ (ρ₀ ρ' : Env P) (trace : Trace P),
+    Pre ρ₀ → L.initEnvWF params s ρ₀ →
+    L.TerminatesAt s ρ₀ trace ρ' →
+    Trace.AssertionsValid P conditionInterp trace ∧
+      (Trace.Reachable P conditionInterp trace → Post ρ')
+
+/-- `TripleWith` specialized to the interpreter which uses the evaluator
+registered at PureExpr.
+
+TODO: rewrite the Hoare rules in this file to use `TripleWith`, and remove
+`Triple` below.
+This will help users of HoareTemplate not accidentally use the evaluator-based
+interpreter. It will have to be included in a patch that fully switches Core's
+Hoare.Triple to use the LExpr.denote function.
+-/
 @[expose] def Triple
     (params : L.InitEnvWFParamsTy)
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
-  ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → L.initEnvWF params s ρ₀ → ρ₀.hasFailure = false →
-    (L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') ∨
-     ∃ lbl, L.star (L.stmtCfg s ρ₀) (L.exitingCfg lbl ρ')) →
-    Post ρ' ∧ ρ'.hasFailure = false
-
+  TripleWith L I params Pre s Post
 
 /-! ## Rules that do not inspect the statement -/
 
 /-- False precondition proves anything. -/
 theorem false_pre (params : L.InitEnvWFParamsTy) (s : L.StmtT) (Post : Env P → Prop) :
     Triple L params (fun _ => False) s Post := by
-  intro _ _ hpre; exact absurd hpre id
+  intro _ _ _ hpre
+  exact absurd hpre id
 
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence (params : L.InitEnvWFParamsTy)
@@ -109,14 +118,13 @@ theorem consequence (params : L.InitEnvWFParamsTy)
     (h : Triple L params Pre s Post)
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
     Triple L params Pre' s Post' := by
-  intro ρ₀ ρ' hpre' hinit hf₀ hstar
-  have ⟨hp, hf⟩ := h ρ₀ ρ' (hpre ρ₀ hpre') hinit hf₀ hstar
-  exact ⟨hpost ρ' hp, hf⟩
+  intro ρ₀ ρ' trace hpre' hinit hrun
+  have ⟨hvalid, hp⟩ := h ρ₀ ρ' trace (hpre ρ₀ hpre') hinit hrun
+  exact ⟨hvalid, fun hsatisfiable => hpost ρ' (hp hsatisfiable)⟩
 
 end
 
 end Strata.Logic.Hoare
-
 
 namespace Imperative.Logic.Hoare
 
@@ -145,149 +153,188 @@ theorem postWF_of_definedVars_nil {P : PureExpr} {CmdT : Type} [HasVarsImp P Cmd
   rw [hdrop]
   exact hpost
 
-
 /-! ## Structural rules (Structured Imperative-specific) -/
 
 section StmtRules
 
 variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
-    [HasSubstFvar P] [HasInt P] [HasIntOps P] [HasIdent P] [DecidableEq P.Ident]
-variable {CmdT : Type} [HasVarsImp P CmdT]
-variable (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
-variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
-variable {ParamsTy : Type} (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop)
+    [HasSubstFvar P] [HasInt P] [HasIntOps P]
+variable {CmdT : Type}
+local notation "I" => EvaluatorBasedInterp P
+variable (evalCmd : EvalCmdParamE P CmdT (Event P))
+variable (extendFactory : ExtendFactory P)
+variable {ParamsTy : Type}
+variable (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop)
 variable {BParamsTy : Type}
-    (blockInitEnvWF : BParamsTy → List (Stmt P CmdT) → Env P → Prop) (bparams : BParamsTy)
+variable (blockInitEnvWF : BParamsTy → List (Stmt P CmdT) → Env P → Prop)
+variable (bparams : BParamsTy)
 
-omit [DecidableEq P.Ident] in
 /-- Empty statement list is skip.  Holds at every block condition: the empty list
     cannot step anywhere but its own terminal. -/
 theorem skip_block (Pre : Env P → Prop) :
-    Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [] Pre := by
-  intro ρ₀ ρ' hpre _ hf₀ hstar
-  match hstar with
-  | .inl hterm =>
-    cases hterm with
-    | step _ _ _ h1 r1 => cases h1 with
-      | step_stmts_nil => cases r1 with
-        | refl => exact ⟨hpre, hf₀⟩
-        | step _ _ _ h _ => exact nomatch h
-  | .inr ⟨_, hexit⟩ =>
-    cases hexit with
-    | step _ _ _ h _ => cases h with
-      | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [] Pre := by
+  intro ρ₀ ρ' trace hpre _ hrun
+  rcases hrun with hterm | ⟨label, hexit⟩
+  · obtain ⟨htrace, hcfg⟩ := stmts_nil_runE evalCmd extendFactory hterm
+    subst htrace
+    refine ⟨True.intro, fun _ => ?_⟩
+    rcases hcfg with hcfg | hcfg
+    · simp at hcfg
+    · injection hcfg with hρ
+      subst hρ
+      exact hpre
+  · obtain ⟨_, hcfg⟩ := stmts_nil_runE evalCmd extendFactory hexit
+    rcases hcfg with hcfg | hcfg <;> simp at hcfg
 
-/-- Helper for `while_rule`: the invariant survives arbitrarily many iterations.  By
-    strong induction on derivation length. -/
-private theorem while_gen
+section
+variable [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
+
+/-- Helper for `while_rule`: the invariant survives arbitrarily many iterations, and
+    the completed trace is assertion-valid.  By strong induction on derivation length. -/
+private theorem while_genE
     {guard : P.Expr} {measure : Option P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P CmdT)} {md : MetaData P}
     {Inv : Env P → Prop} (params : ParamsTy)
-    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
-      evalCmd f σ c σ' hf → σ y = none →
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
+      evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (hnofd : Block.noFuncDecl (P := P) (C := CmdT) body = true)
     (hbodyDefs : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) body true, ρ.store x = none)
     (hloopBodyWF : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       blockInitEnvWF bparams body ρ)
-    (hloopWF : ∀ ρ ρ_inner, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
-      StepStmtStar P evalCmd extendFactory (.stmts body ρ) (.terminal ρ_inner) →
+    (hloopWF : ∀ ρ ρ_inner tr, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
+      StepStmtStarE P evalCmd extendFactory (.stmts body ρ) tr (.terminal ρ_inner) →
       initEnvWF params (.loop (.det guard) measure inv body md)
         { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory })
-    (hbody : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams
+    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv)
-    (ρ₀ ρ' : Env P) (n : Nat)
+    (ρ₀ ρ' : Env P) (trace : Trace P) (n : Nat)
     (hInv : Inv ρ₀)
     (hwf : initEnvWF params (.loop (.det guard) measure inv body md) ρ₀)
-    (hf₀ : ρ₀.hasFailure = false)
-    (hstarT : ReflTransT (StepStmt P evalCmd extendFactory)
-      (.stmt (.loop (.det guard) measure inv body md) ρ₀) (.terminal ρ'))
-    (hlen : hstarT.len ≤ n) :
-    (Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some HasBool.ff) ∧ ρ'.hasFailure = false := by
-  induction n generalizing ρ₀ ρ' with
+    (hrunT : ReflTransTraceT (StepStmtE P evalCmd extendFactory)
+      (.stmt (.loop (.det guard) measure inv body md) ρ₀) trace (.terminal ρ'))
+    (hlen : hrunT.len ≤ n) :
+    Trace.AssertionsValid P I trace ∧
+      (Trace.Reachable P I trace →
+        Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some HasBool.ff) := by
+  induction n generalizing ρ₀ ρ' trace with
   | zero =>
-    -- A run from a loop statement to a terminal must take at least one step.
-    match hstarT, hlen with
-    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
+    -- A run from a loop statement to a terminal takes at least one step.
+    match hrunT, hlen with
+    | .step _ _ _ _ _ _ _, hlen => simp only [ReflTransTraceT.len] at hlen; omega
   | succ n ih =>
-    match hstarT, hlen with
-    | .step _ _ _ (StepStmt.step_loop_exit hg _) hrest, hlen =>
-      match hrest with
-      | .refl _ => exact ⟨⟨hInv, hg⟩, hf₀⟩
-      | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (StepStmt.step_loop_enter hg _) hrest, hlen =>
-      have ⟨ρ_mid, h_block_term, h_loop_rest, hlen_seq⟩ := seqT_reaches_terminal hrest
-      have h_noescape := block_exitsCoveredByBlocks_noEscape P evalCmd extendFactory body hcov ρ₀
-      have ⟨ρ_inner, h_inner_term, heq_ρ_mid, hlen_inner⟩ :=
-        blockT_reaches_terminal_noExit h_block_term h_noescape
-      have ⟨hInv_inner, hf_inner⟩ :=
-        hbody ρ₀ ρ_inner ⟨hInv, hg⟩ (hloopBodyWF ρ₀ hwf) hf₀
-          (.inl (reflTransT_to_prop h_inner_term))
+    match hrunT, hlen with
+    | .step _ _ _ restTr _ (.step_admin (.step_loop_exit hg _)) hrest, hlen =>
+      -- guard false: the loop terminates immediately, emitting nothing.
+      obtain ⟨hc, hnil⟩ := Imperative.stepStmtStarE_from_terminal (reflTransTraceT_to_prop hrest)
+      subst hnil
+      injection hc with hρ
+      subst hρ
+      exact ⟨True.intro, fun _ => ⟨hInv, hg⟩⟩
+    | .step _ _ _ restTr _ (.step_admin (.step_loop_enter hg _)) hrest, hlen =>
+      -- one iteration: the body's block, then the loop again.
+      simp only [List.nil_append]
+      obtain ⟨ρ_mid, tr₁, tr₂, htr, h_block_term, h_loop_rest, hlen_seq⟩ :=
+        seqT_reaches_terminalE hrest
+      -- the body block reaches terminal; `hcov` rules out an escaping body.
+      obtain ⟨ρ_inner, hbody_disj, heq_ρ_mid⟩ :=
+        block_reaches_doneE (.inl (reflTransTraceT_to_prop h_block_term))
+      have hbody_run : StepStmtStarE P evalCmd extendFactory (.stmts body ρ₀) tr₁ (.terminal ρ_inner) := by
+        rcases hbody_disj with hterm | ⟨lbl, hexit⟩
+        · exact hterm
+        · exact absurd hexit (stmts_exitsCoveredByBlocks_noEscapeE evalCmd extendFactory
+            body hcov ρ₀ lbl ρ_inner)
+      -- the loop tail `[loop]` reaches terminal; its `[]` continuation pins ρ' and tr.
+      obtain ⟨ρ_x, tr_l, tr_nil, htr2, h_loop_head, h_nil, hlen_cons⟩ :=
+        stmtsT_cons_terminalE h_loop_rest
+      obtain ⟨htail_nil, htail_cfg⟩ := stmts_nil_runE evalCmd extendFactory
+        (reflTransTraceT_to_prop h_nil)
+      subst htail_nil
+      have hρx : ρ_x = ρ' := by
+        rcases htail_cfg with hcfg | hcfg
+        · exact absurd hcfg (by simp)
+        · injection hcfg with hρ; exact hρ.symm
+      subst ρ_x
+      simp only [List.append_nil] at htr2
+      rw [htr2] at htr
+      rw [htr]
+      -- reusable facts for lifting `Inv` across the body block's projection.
+      have hbodyTriple := hbody ρ₀ ρ_inner tr₁ ⟨hInv, hg⟩ (hloopBodyWF ρ₀ hwf) (.inl hbody_run)
       have hfac : ρ_inner.factory = ρ₀.factory :=
-        noFuncDecl_preserves_factory P evalCmd extendFactory _ _
-          (show Config.noFuncDecl (.stmts body ρ₀) from hnofd)
-          (reflTransT_to_prop h_inner_term)
+        block_noFuncDecl_preserves_factoryE body ρ₀ ρ_inner hnofd (.inl hbody_run)
       have hproj : projectStore ρ₀.store ρ_inner.store
           = dropVars (Block.definedVars (P := P) (C := CmdT) body true) ρ_inner.store :=
-        projectStore_eq_dropVars (evalCmd := evalCmd) (extendFactory := extendFactory)
-          h_cmd (hbodyDefs ρ₀ hwf) (.inl (reflTransT_to_prop h_inner_term))
-      have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) body true) ρ_inner.store } := by
+        projectStore_eq_dropVarsE h_cmd (hbodyDefs ρ₀ hwf) (.inl hbody_run)
+      have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P)
+          = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) body true) ρ_inner.store } := by
         rw [hproj, ← hfac]
-      have hInv_mid : Inv ρ_mid := by
-        rw [heq_ρ_mid, hrec]; exact hInv_proj ρ_inner hInv_inner
-      have hf_mid : ρ_mid.hasFailure = false := by rw [heq_ρ_mid]; exact hf_inner
-      have ⟨ρ_x, h_loop_T, h_nil, hlen_cons⟩ := stmtsT_cons_terminal h_loop_rest
-      have hρx : ρ_x = ρ' := by
-        match h_nil with
-        | .step _ _ _ StepStmt.step_stmts_nil hr =>
-          match hr with
-          | .refl _ => rfl
-          | .step _ _ _ h _ => exact nomatch h
-      subst hρx
       have hwf_mid : initEnvWF params (.loop (.det guard) measure inv body md) ρ_mid := by
-        rw [heq_ρ_mid]
-        exact hloopWF ρ₀ ρ_inner hwf (reflTransT_to_prop h_inner_term)
-      -- Recurse: the loop-tail derivation is strictly shorter.
-      exact ih ρ_mid ρ_x hInv_mid hwf_mid hf_mid h_loop_T
-        (by simp [ReflTransT.len] at hlen; omega)
+        rw [heq_ρ_mid]; exact hloopWF ρ₀ ρ_inner tr₁ hwf hbody_run
+      -- the tail is proved only when the body prefix is reachable
+      -- (so `Inv ρ_mid` holds).
+      have hIH : Trace.Reachable P I tr₁ →
+          Trace.AssertionsValid P I tr_l ∧
+            (Trace.Reachable P I tr_l →
+              Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some HasBool.ff) := by
+        intro hs
+        have hInv_mid : Inv ρ_mid := by
+          rw [heq_ρ_mid, hrec]; exact hInv_proj ρ_inner (hbodyTriple.2 hs)
+        exact ih ρ_mid ρ' tr_l hInv_mid hwf_mid h_loop_head
+          (by simp only [ReflTransTraceT.len] at hlen; omega)
+      refine ⟨Trace.AssertionsValid.append_of_reachable_left I hbodyTriple.1
+        (fun hs => (hIH hs).1), fun hfull => ?_⟩
+      exact (hIH (Trace.Reachable.left_of_append I hfull)).2
+        (Trace.Reachable.right_of_append I hfull)
 
+end
 
-omit [HasIdent P] [HasVarsImp P CmdT] [DecidableEq P.Ident] in
 /-- **A single command.**  Whatever the command's own semantics establishes about the
-    resulting store is the postcondition, provided it raises no failure.
+    resulting store is the postcondition, provided its emitted assertions are valid and
+    its emitted trace is reachable.
 
     `h` is that obligation: for every way the command can step from a `Pre`-environment
-    the language admits, the postcondition holds of the resulting store and the failure
-    flag comes back false.  It receives the language's well-formedness condition
-    unchanged, which is where an evaluator-based semantics finds what it needs to step
-    at all. -/
-theorem cmd (params : ParamsTy) (c : CmdT) (Pre Post : Env P → Prop)
-    (h : ∀ ρ₀ σ' f, Pre ρ₀ → initEnvWF params (.cmd c) ρ₀ →
-      evalCmd ρ₀.factory ρ₀.store c σ' f →
-      Post { ρ₀ with store := σ', hasFailure := f } ∧ f = false) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Pre (.cmd c) Post := by
-  intro ρ₀ ρ' hpre hinit hf₀ hdone
-  match hdone with
-  | .inl hstar =>
-    cases hstar with
-    | step _ _ _ h1 r1 => cases h1 with
+    the language admits, its trace is assertion-valid and, when reachable, the
+    postcondition holds of the resulting store.  It receives the
+    language's well-formedness condition unchanged, which is where an evaluator-based
+    semantics finds what it needs to step at all. -/
+theorem cmd (params : ParamsTy) (c : CmdT)
+    (Pre Post : Env P → Prop)
+    (h : ∀ ρ₀ σ' emitted,
+      Pre ρ₀ → initEnvWF params (.cmd c) ρ₀ →
+      evalCmd ρ₀.factory ρ₀.store c σ' emitted →
+      Trace.AssertionsValid P I emitted ∧
+        (Trace.Reachable P I emitted → Post { ρ₀ with store := σ' })) :
+    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Pre (.cmd c) Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
+  rcases hrun with hterm | ⟨label, hexit⟩
+  · cases hterm with
+    | step _ emitted _ rest _ hstep htail =>
+      cases hstep with
       | step_cmd hcmd =>
-        cases r1 with
-        | refl =>
-          have ⟨hp, hfeq⟩ := h ρ₀ _ _ hpre hinit hcmd
-          simp [hf₀] at hp ⊢; exact ⟨hp, hfeq⟩
-        | step _ _ _ h _ => exact nomatch h
-  | .inr ⟨_, hexit⟩ =>
-    -- A command steps straight to `.terminal`, so it can never reach `.exiting`.
-    cases hexit with
-    | step _ _ _ h1 r1 => cases h1 with
-      | step_cmd _ => cases r1 with | step _ _ _ h _ => exact nomatch h
+        obtain ⟨hcfg, hrest⟩ := Imperative.stepStmtStarE_from_terminal htail
+        injection hcfg with hρ
+        subst hρ
+        subst hrest
+        simpa using h ρ₀ _ emitted hpre hinit hcmd
+      | step_admin hadmin =>
+        cases hadmin with
+        | step_cmd hfalse => exact hfalse.elim
+  · cases hexit with
+    | step _ emitted _ rest _ hstep htail =>
+      cases hstep with
+      | step_cmd _ =>
+        obtain ⟨hcfg, _⟩ := Imperative.stepStmtStarE_from_terminal htail
+        cases hcfg
+      | step_admin hadmin =>
+        cases hadmin with
+        | step_cmd hfalse => exact hfalse.elim
 
-omit [DecidableEq P.Ident] in
 /-- Sequencing: two triples over statement lists compose into one about their
     concatenation, provided the prefix does not escape.  This is the only rule that
     chains derivations.
@@ -296,24 +343,37 @@ omit [DecidableEq P.Ident] in
 theorem seq_append
     {ss₁ ss₂ : List (Stmt P CmdT)}
     {Pre Mid Post : Env P → Prop}
-    (hheadWF : ∀ ρ, blockInitEnvWF bparams (ss₁ ++ ss₂) ρ → blockInitEnvWF bparams ss₁ ρ)
-    (htailWF : ∀ ρ ρ', blockInitEnvWF bparams (ss₁ ++ ss₂) ρ →
-      StepStmtStar P evalCmd extendFactory (.stmts ss₁ ρ) (.terminal ρ') →
+    (hheadWF : ∀ ρ, blockInitEnvWF bparams (ss₁ ++ ss₂) ρ →
+      blockInitEnvWF bparams ss₁ ρ)
+    (htailWF : ∀ ρ ρ' tr, blockInitEnvWF bparams (ss₁ ++ ss₂) ρ →
+      StepStmtStarE P evalCmd extendFactory (.stmts ss₁ ρ) tr (.terminal ρ') →
       blockInitEnvWF bparams ss₂ ρ')
-    (h₁ : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss₁ Mid)
-    (h₂ : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Mid ss₂ Post)
+    (h₁ : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss₁ Mid)
+    (h₂ : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Mid ss₂ Post)
     (hSs1NoExit : Block.exitsCoveredByBlocks [] ss₁) :
-    Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (ss₁ ++ ss₂) Post := by
-  intro ρ₀ ρ' hpre hinit hf₀ hdone
-  match stmts_append_done P evalCmd extendFactory ss₁ ss₂ ρ₀ ρ' hdone with
-  | .inl ⟨lbl, hexit₁⟩ =>
-    exact absurd hexit₁
-      (block_exitsCoveredByBlocks_noEscape P evalCmd extendFactory ss₁ hSs1NoExit ρ₀ lbl ρ')
-  | .inr ⟨ρ₁, hterm₁, hfin₂⟩ =>
-    have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre (hheadWF ρ₀ hinit) hf₀ (.inl hterm₁)
-    exact h₂ ρ₁ ρ' hmid (htailWF ρ₀ ρ₁ hinit hterm₁) hf₁ hfin₂
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (ss₁ ++ ss₂) Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
+  rcases stmts_append_doneE evalCmd extendFactory ss₁ ss₂ ρ₀ ρ' hrun with
+    ⟨lbl, hexit₁⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm₁, htail⟩
+  · -- the prefix cannot escape, so this case is impossible
+    exact (stmts_exitsCoveredByBlocks_noEscapeE evalCmd extendFactory ss₁ hSs1NoExit
+      ρ₀ lbl ρ' hexit₁).elim
+  · subst htr
+    obtain ⟨hvalid₁, hmid⟩ := h₁ ρ₀ ρ₁ tr₁ hpre (hheadWF ρ₀ hinit) (.inl hterm₁)
+    have htail2WF := htailWF ρ₀ ρ₁ tr₁ hinit hterm₁
+    refine ⟨?_, ?_⟩
+    · -- assertion validity of the whole trace
+      refine Trace.AssertionsValid.append_of_reachable_left I hvalid₁ (fun hs => ?_)
+      exact (h₂ ρ₁ ρ' tr₂ (hmid hs) htail2WF htail).1
+    · -- postcondition when the whole trace is reachable
+      intro hfull
+      have hpost := (h₂ ρ₁ ρ' tr₂
+        (hmid (Trace.Reachable.left_of_append I hfull)) htail2WF htail).2
+      exact hpost (Trace.Reachable.right_of_append I hfull)
 
-omit [DecidableEq P.Ident] in
 /-- **Exit.**  An `exit` ends the statement list where it stands: the statements after
     it never run, and the environment is unchanged, so whatever held before the `exit`
     still holds at the exiting configuration.
@@ -323,37 +383,52 @@ omit [DecidableEq P.Ident] in
     catches the exit and continues from the projected environment. -/
 theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
     {Pre : Env P → Prop} :
-    Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (.exit lbl md :: ss) Pre := by
-  intro ρ₀ ρ' hpre _hinit hf₀ hdone
-  match hdone with
-  | .inl hterm =>
-    cases hterm with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        -- The head can only reach `.exiting`, so the list cannot terminate.
-        have ⟨_, hinner, _⟩ := seq_reaches_terminal P evalCmd extendFactory hrest
-        cases hinner with
-        | step _ _ _ h r => cases h with
-          | step_exit => cases r with | step _ _ _ h' _ => exact nomatch h'
-  | .inr ⟨_, hexit⟩ =>
-    cases hexit with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        match seq_reaches_exiting P evalCmd extendFactory hrest with
-        | .inl hinner =>
-          cases hinner with
-          | step _ _ _ h r => cases h with
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (.exit lbl md :: ss) Pre := by
+  intro ρ₀ ρ' trace hpre _hinit hrun
+  rcases hrun with hterm | ⟨elbl, hexit⟩
+  · rcases stmts_cons_headE evalCmd extendFactory hterm with hinitial | hseq
+    · simp at hinitial
+    · obtain ⟨ρ₁, tr₁, tr₂, _, hhead, _⟩ :=
+        seq_reaches_terminalE evalCmd extendFactory hseq
+      -- the head is an `exit`, so it reaches `.exiting`, never `.terminal`
+      cases hhead with
+      | step _ _ _ _ _ hstep hrest =>
+        cases hstep with
+        | step_admin hadmin => cases hadmin with
+          | step_exit =>
+            obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
+            simp at hc
+  · rcases stmts_cons_headE evalCmd extendFactory hexit with hinitial | hseq
+    · simp at hinitial
+    · rcases seq_reaches_exitingE evalCmd extendFactory hseq with
+        hhead | ⟨ρ₁, tr₁, tr₂, _, hterm_head, _⟩
+      · -- the head exited: the label and environment are those of the `exit`
+        cases hhead with
+        | step _ _ _ _ _ hstep hrest =>
+          cases hstep with
+          | step_admin hadmin => cases hadmin with
             | step_exit =>
-              cases r with
-              | refl => exact ⟨hpre, hf₀⟩
-              | step _ _ _ h' _ => exact nomatch h'
-        | .inr ⟨_, hterm_inner, _⟩ =>
-          cases hterm_inner with
-          | step _ _ _ h r => cases h with
-            | step_exit => cases r with | step _ _ _ h' _ => exact nomatch h'
+              obtain ⟨hc, htr0⟩ := stepStmtStarE_from_exiting hrest
+              subst htr0
+              injection hc with _ hρ
+              subst hρ
+              exact ⟨True.intro, fun _ => hpre⟩
+      · -- the head cannot terminate before exiting
+        cases hterm_head with
+        | step _ _ _ _ _ hstep hrest =>
+          cases hstep with
+          | step_admin hadmin => cases hadmin with
+            | step_exit =>
+              obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
+              simp at hc
+
+section StructuredRules
+
+variable [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
 
 /-- **Block introduction.**  Wrap a statement list in a block: a triple at
-    `Lang.imperativeBlock` about `ss` becomes one at `Lang.imperative` about
+    `EventLang.imperativeBlockE` about `ss` becomes one at `EventLang.imperativeE` about
     `.block l ss md`.
     `Post` must not mention the names the body scopes (`PostWF`).
 
@@ -364,107 +439,81 @@ theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
 theorem block (params : ParamsTy)
     {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
-      evalCmd f σ c σ' hf → σ y = none →
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
+      evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (hnofd : Block.noFuncDecl (P := P) (C := CmdT) ss = true)
     (hbodyWF : ∀ ρ, initEnvWF params (.block l ss md) ρ → blockInitEnvWF bparams ss ρ)
     (hbodyDefs : ∀ ρ, initEnvWF params (.block l ss md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ.store x = none)
-    (h : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss Post)
+    (h : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss Post)
     (hpost_proj : PostWF ss Post) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Pre (.block l ss md) Post := by
-  intro ρ₀ ρ' hpre hinit hf₀ hdone
-  -- Step into the block, then invert: however the block finished, its body ran to a
-  -- terminal-or-exiting config and the block projected that env.
-  have hinner : ∃ ρ_inner,
-      (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ_inner) ∨
-       ∃ lbl, StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.exiting lbl ρ_inner)) ∧
-      ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } := by
-    match hdone with
-    | .inl hterm =>
-      cases hterm with
-      | step _ _ _ hstep hrest => cases hstep with
-        | step_block => exact block_reaches_done P evalCmd extendFactory (.inl hrest)
-    | .inr ⟨lbl, hexit⟩ =>
-      cases hexit with
-      | step _ _ _ hstep hrest => cases hstep with
-        | step_block => exact block_reaches_done P evalCmd extendFactory (.inr ⟨lbl, hrest⟩)
-  obtain ⟨ρ_inner, hrun, heq⟩ := hinner
-  have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre (hbodyWF ρ₀ hinit) hf₀ hrun
-  have hfac : ρ_inner.factory = ρ₀.factory := by
-    match hrun with
-    | .inl hterm =>
-      exact noFuncDecl_preserves_factory P evalCmd extendFactory _ _
-        (show Config.noFuncDecl (.stmts ss ρ₀) from hnofd) hterm
-    | .inr ⟨_, hexit⟩ =>
-      exact noFuncDecl_preserves_factory P evalCmd extendFactory _ _
-        (show Config.noFuncDecl (.stmts ss ρ₀) from hnofd) hexit
+    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Pre (.block l ss md) Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
+  obtain ⟨ρ_inner, hrun_inner, heq⟩ := stmt_block_reaches_doneE hrun
+  have ⟨hvalid, hpost⟩ := h ρ₀ ρ_inner trace hpre (hbodyWF ρ₀ hinit) hrun_inner
+  have hfac : ρ_inner.factory = ρ₀.factory :=
+    block_noFuncDecl_preserves_factoryE ss ρ₀ ρ_inner hnofd hrun_inner
   have hproj : projectStore ρ₀.store ρ_inner.store
       = dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ_inner.store :=
-    projectStore_eq_dropVars (evalCmd := evalCmd) (extendFactory := extendFactory)
-      h_cmd (hbodyDefs ρ₀ hinit) hrun
+    projectStore_eq_dropVarsE h_cmd (hbodyDefs ρ₀ hinit) hrun_inner
   subst heq
-  refine ⟨?_, hf⟩
+  refine ⟨hvalid, fun hf => ?_⟩
   have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ_inner.store } := by
     rw [hproj, ← hfac]
   rw [hrec]
-  exact hpost_proj ρ_inner hpost
+  exact hpost_proj ρ_inner (hpost hf)
 
-omit [DecidableEq P.Ident] in
+omit [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT] in
 /-- **Singleton list.**  The converse of `block` for a one-element list: a triple at
-    `Lang.imperative` about `s` becomes one at `Lang.imperativeBlock` about `[s]`.
-    Every statement-shaped rule reaches the list judgement through this.
+    `EventLang.imperativeE` about `s` becomes one at `EventLang.imperativeBlockE` about
+    `[s]`.  Every statement-shaped rule reaches the list judgement through this.
 
     `hstmtWF` lowers the block condition on `[s]` to the statement condition on `s`. -/
 theorem singleton (params : ParamsTy)
     {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
     (hstmtWF : ∀ ρ, blockInitEnvWF bparams [s] ρ → initEnvWF params s ρ)
-    (h : Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Pre s Post) :
-    Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [s] Post := by
-  intro ρ₀ ρ' hpre hinit hf₀ hdone
-  match hdone with
-  | .inl hterm =>
-    cases hterm with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        have ⟨ρ₁, hterm_s, hrest_nil⟩ := seq_reaches_terminal P evalCmd extendFactory hrest
-        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre (hstmtWF ρ₀ hinit) hf₀ (.inl hterm_s)
-        cases hrest_nil with
-        | step _ _ _ h1 r1 => cases h1 with
-          | step_stmts_nil => cases r1 with
-            | refl => exact ⟨hp, hf⟩
-            | step _ _ _ h _ => exact nomatch h
-  | .inr ⟨lbl, hexit⟩ =>
-    cases hexit with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        match seq_reaches_exiting P evalCmd extendFactory hrest with
-        | .inl hexit_s =>
-          -- `s` itself escaped.  The merged triple constrains that run too, so no
-          -- escape-coverage side condition is needed here.
-          exact h ρ₀ ρ' hpre (hstmtWF ρ₀ hinit) hf₀ (.inr ⟨lbl, hexit_s⟩)
-        | .inr ⟨ρ₁, hterm_s, hexit_nil⟩ =>
-          cases hexit_nil with
-          | step _ _ _ h _ => cases h with
-            | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
+    (h : Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Pre s Post) :
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [s] Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
+  rcases hrun with hterm | ⟨label, hexit⟩
+  · rcases stmts_cons_headE evalCmd extendFactory hterm with hinitial | hseq
+    · simp at hinitial
+    · obtain ⟨ρ₁, headTrace, tailTrace, htrace, hhead, htail⟩ :=
+        seq_reaches_terminalE evalCmd extendFactory hseq
+      obtain ⟨htailTrace, htailCfg⟩ := stmts_nil_runE evalCmd extendFactory htail
+      subst htailTrace
+      rcases htailCfg with hcfg | hcfg
+      · simp at hcfg
+      · cases hcfg
+        rw [htrace, List.append_nil]
+        exact h ρ₀ ρ' headTrace hpre (hstmtWF ρ₀ hinit) (.inl hhead)
+  · rcases stmts_cons_headE evalCmd extendFactory hexit with hinitial | hseq
+    · simp at hinitial
+    · rcases seq_reaches_exitingE evalCmd extendFactory hseq with hhead | htail
+      · exact h ρ₀ ρ' trace hpre (hstmtWF ρ₀ hinit) (.inr ⟨label, hhead⟩)
+      · obtain ⟨ρ₁, headTrace, tailTrace, htrace, hhead, htailRun⟩ := htail
+        obtain ⟨_, htailCfg⟩ := stmts_nil_runE evalCmd extendFactory htailRun
+        rcases htailCfg with hcfg | hcfg <;> simp at hcfg
 
 /-- Empty block is skip.  No well-formedness side condition: `skip_block` holds
     at *every* block condition, so this instantiates it at the trivial one. -/
 theorem skip (params : ParamsTy)
-    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
-      evalCmd f σ c σ' hf → σ y = none →
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
+      evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (l : String) (md : MetaData P) (Pre : Env P → Prop) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Pre (.block l [] md) Pre :=
-  block evalCmd extendFactory isAtAssertFn initEnvWF
-    (fun (_ : Unit) _ _ => True) () params h_cmd (by simp [Block.noFuncDecl]) (fun _ _ => trivial)
+    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Pre (.block l [] md) Pre :=
+  block evalCmd extendFactory initEnvWF (fun (_ : Unit) _ _ => True) () params
+    h_cmd (by simp [Block.noFuncDecl]) (fun _ _ => trivial)
     (fun _ _ x hx => absurd hx (by simp))
-    (skip_block evalCmd extendFactory isAtAssertFn (fun (_ : Unit) _ _ => True) () Pre)
+    (skip_block evalCmd extendFactory (fun (_ : Unit) _ _ => True) () Pre)
     (postWF_of_definedVars_nil Pre (by simp))
 
 /-- If-then-else rule.  `hthenWF`/`helseWF` lower the statement condition on the
@@ -472,79 +521,80 @@ theorem skip (params : ParamsTy)
 theorem ite (params : ParamsTy)
     {cond : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
-      evalCmd f σ c σ' hf → σ y = none →
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
+      evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (hnofd : Stmt.noFuncDecl (P := P) (C := CmdT) (.ite (.det cond) tss ess md) = true)
-    (hthenWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ → blockInitEnvWF bparams tss ρ)
-    (helseWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ → blockInitEnvWF bparams ess ρ)
+    (hthenWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
+      blockInitEnvWF bparams tss ρ)
+    (helseWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
+      blockInitEnvWF bparams ess ρ)
     (hthenDefs : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) tss true, ρ.store x = none)
     (helseDefs : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ess true, ρ.store x = none)
-    (ht : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams
+    (ht : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.tt) tss Post)
-    (he : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams
+    (he : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.ff) ess Post)
     (hthen_proj : PostWF tss Post) (helse_proj : PostWF ess Post) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Pre (.ite (.det cond) tss ess md) Post := by
-  intro ρ₀ ρ' hpre hinit hf₀ hdone
+    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Pre (.ite (.det cond) tss ess md) Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
   have hnofd' : Block.noFuncDecl (P := P) (C := CmdT) tss = true ∧
       Block.noFuncDecl (P := P) (C := CmdT) ess = true := by
     simpa only [Stmt.noFuncDecl, Bool.and_eq_true] using hnofd
-  -- Both branches, and both ways the `ite`'s block can finish, reduce to the same
-  -- shape: the taken branch ran to terminal-or-exiting and the block projected its
-  -- env.  `hbranch` does that once, given the branch's own triple.
-  have hbranch : ∀ (bss : List (Stmt P CmdT)) (Pre' : Env P → Prop),
+  -- Both branches, and both ways the `ite`'s block finishes, reduce to the same
+  -- shape: the taken branch ran to terminal-or-exiting and the block projected.
+  have hbranch : ∀ (bss : List (Stmt P CmdT)) (Pre' : Env P → Prop) (tr : Trace P),
       Pre' ρ₀ → blockInitEnvWF bparams bss ρ₀ →
       Block.noFuncDecl (P := P) (C := CmdT) bss = true →
       (∀ x ∈ Block.definedVars (P := P) (C := CmdT) bss true, ρ₀.store x = none) →
       PostWF bss Post →
-      Strata.Logic.Hoare.Triple
-        (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩)
-        bparams Pre' bss Post →
-      (StepStmtStar P evalCmd extendFactory
-          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) (.terminal ρ') ∨
-       ∃ lbl, StepStmtStar P evalCmd extendFactory
-          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) (.exiting lbl ρ')) →
-      Post ρ' ∧ ρ'.hasFailure = false := by
-    intro bss Pre' hpre' hbwf hbnofd hbdefs hbproj hb hdone_b
-    obtain ⟨ρ_inner, hrun, heq⟩ := block_reaches_done P evalCmd extendFactory hdone_b
-    have ⟨hpost, hf⟩ := hb ρ₀ ρ_inner hpre' hbwf hf₀ hrun
-    have hfac : ρ_inner.factory = ρ₀.factory := by
-      match hrun with
-      | .inl ht' =>
-        exact noFuncDecl_preserves_factory P evalCmd extendFactory _ _
-          (show Config.noFuncDecl (.stmts bss ρ₀) from hbnofd) ht'
-      | .inr ⟨_, he'⟩ =>
-        exact noFuncDecl_preserves_factory P evalCmd extendFactory _ _
-          (show Config.noFuncDecl (.stmts bss ρ₀) from hbnofd) he'
+      Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+        ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre' bss Post →
+      (StepStmtStarE P evalCmd extendFactory
+          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) tr (.terminal ρ') ∨
+       ∃ lbl, StepStmtStarE P evalCmd extendFactory
+          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) tr (.exiting lbl ρ')) →
+      Trace.AssertionsValid P I tr ∧ (Trace.Reachable P I tr → Post ρ') := by
+    intro bss Pre' tr hpre' hbwf hbnofd hbdefs hbproj hb hdone_b
+    obtain ⟨ρ_inner, hrun_inner, heq⟩ := block_reaches_doneE hdone_b
+    have ⟨hvalid, hpost⟩ := hb ρ₀ ρ_inner tr hpre' hbwf hrun_inner
+    have hfac : ρ_inner.factory = ρ₀.factory :=
+      block_noFuncDecl_preserves_factoryE bss ρ₀ ρ_inner hbnofd hrun_inner
     have hproj : projectStore ρ₀.store ρ_inner.store
         = dropVars (Block.definedVars (P := P) (C := CmdT) bss true) ρ_inner.store :=
-      projectStore_eq_dropVars (evalCmd := evalCmd) (extendFactory := extendFactory)
-        h_cmd hbdefs hrun
+      projectStore_eq_dropVarsE h_cmd hbdefs hrun_inner
     subst heq
-    refine ⟨?_, hf⟩
+    refine ⟨hvalid, fun hf => ?_⟩
     have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) bss true) ρ_inner.store } := by
       rw [hproj, ← hfac]
     rw [hrec]
-    exact hbproj ρ_inner hpost
-  match hdone with
-  | .inl hterm =>
-    cases hterm with
-    | step _ _ _ h1 r1 => cases h1 with
-      | step_ite_true hc _ =>
-        exact hbranch tss _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1 (hthenDefs ρ₀ hinit) hthen_proj ht (.inl r1)
-      | step_ite_false hc _ =>
-        exact hbranch ess _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2 (helseDefs ρ₀ hinit) helse_proj he (.inl r1)
-  | .inr ⟨lbl, hexit⟩ =>
-    cases hexit with
-    | step _ _ _ h1 r1 => cases h1 with
-      | step_ite_true hc _ =>
-        exact hbranch tss _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1 (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, r1⟩)
-      | step_ite_false hc _ =>
-        exact hbranch ess _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2 (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, r1⟩)
+    exact hbproj ρ_inner (hpost hf)
+  rcases hrun with hterm | ⟨lbl, hexit⟩
+  · cases hterm with
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_admin hadmin => cases hadmin with
+        | step_ite_true hc _ =>
+          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1
+            (hthenDefs ρ₀ hinit) hthen_proj ht (.inl (by simpa using hrest))
+        | step_ite_false hc _ =>
+          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2
+            (helseDefs ρ₀ hinit) helse_proj he (.inl (by simpa using hrest))
+  · cases hexit with
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_admin hadmin => cases hadmin with
+        | step_ite_true hc _ =>
+          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1
+            (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, by simpa using hrest⟩)
+        | step_ite_false hc _ =>
+          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2
+            (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, by simpa using hrest⟩)
 
 /-- **While rule.**  An invariant that the body re-establishes on every iteration
     holds when the loop finishes, however many iterations it took.
@@ -557,43 +607,42 @@ theorem ite (params : ParamsTy)
     the body and re-establish it after an iteration.
 
     The conclusion is the invariant *together with a false guard* — the loop only
-    finishes by failing its guard.  Partial correctness, so a loop that never terminates
-    satisfies any conclusion. -/
+    finishes by failing its guard.  Every completed trace also has valid assertions.
+    Partial correctness, so a loop that never terminates satisfies any conclusion. -/
 theorem while_rule (params : ParamsTy)
     {guard : P.Expr} {measure : Option P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P CmdT)} {md : MetaData P}
     {Inv : Env P → Prop}
-    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
-      evalCmd f σ c σ' hf → σ y = none →
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
+      evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (hnofd : Block.noFuncDecl (P := P) (C := CmdT) body = true)
     (hbodyDefs : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) body true, ρ.store x = none)
     (hloopBodyWF : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       blockInitEnvWF bparams body ρ)
-    (hloopWF : ∀ ρ ρ_inner, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
-      StepStmtStar P evalCmd extendFactory (.stmts body ρ) (.terminal ρ_inner) →
+    (hloopWF : ∀ ρ ρ_inner tr, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
+      StepStmtStarE P evalCmd extendFactory (.stmts body ρ) tr (.terminal ρ_inner) →
       initEnvWF params (.loop (.det guard) measure inv body md)
         { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory })
-    (hbody : Strata.Logic.Hoare.Triple (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn ⟨BParamsTy, blockInitEnvWF⟩) bparams
+    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn ParamsTy initEnvWF)
-      params Inv (.loop (.det guard) measure inv body md)
+    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+      ParamsTy initEnvWF) params Inv (.loop (.det guard) measure inv body md)
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.ff) := by
-  intro ρ₀ ρ' hInv hinit hf₀ hdone
-  match hdone with
-  | .inl hstar =>
-    exact while_gen evalCmd extendFactory isAtAssertFn initEnvWF blockInitEnvWF bparams params
+  intro ρ₀ ρ' trace hInv hinit hrun
+  rcases hrun with hterm | ⟨lbl, hexit⟩
+  · exact while_genE evalCmd extendFactory initEnvWF blockInitEnvWF bparams params
       h_cmd hnofd hbodyDefs hloopBodyWF hloopWF hbody hcov hInv_proj
-      ρ₀ ρ' _ hInv hinit hf₀ (reflTrans_to_T hstar) (Nat.le_refl _)
-  | .inr ⟨lbl, hexit⟩ =>
-    -- `hcov` says the body catches its own exits, and a loop's only exits are its
-    -- body's, so the loop itself can never reach an exiting configuration.
-    exact absurd hexit
-      (exitsCoveredByBlocks_noEscape P evalCmd extendFactory
-        (.loop (.det guard) measure inv body md) hcov ρ₀ lbl ρ')
+      ρ₀ ρ' trace _ hInv hinit (reflTransTrace_to_T hterm) (Nat.le_refl _)
+  · -- a loop's only exits are its body's, which `hcov` catches, so it never exits.
+    exact absurd hexit (exitsCoveredByBlocks_noEscapeE evalCmd extendFactory
+      (.loop (.det guard) measure inv body md) hcov ρ₀ lbl ρ')
+
+end StructuredRules
 
 end StmtRules
 

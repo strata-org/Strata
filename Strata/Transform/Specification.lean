@@ -23,59 +23,59 @@ Imperative constructors `Imperative.Logic.Lang.imperative` /
 are all defined in `Strata.DL.Imperative.Logic.LangDef`, which this module opens rather
 than re-exporting from.
 
-## Two definitions of assertion validity
+## Assertion validity and satisfiability
 
-An `assert label expr` command is *valid* when its expression evaluates to
-true in every reachable configuration where the assert is about to execute.
-The primary predicate is **`AssertValidWhen Pre s a`**, which restricts
-attention to initial environments satisfying `Pre`.  `AssertValid` is the
-special case `AssertValidWhen (fun _ => True)`.
+An `assert label expr` command is valid when its expression holds at every
+relevant occurrence, and satisfiable when it holds at some occurrence. A
+`...When` predicate restricts the initial environments considered through a
+precondition `Pre`; its unqualified counterpart uses `fun _ => True`.
 
-This module provides two equivalent formulations:
+This module provides three related formulations:
 
-1. **`AssertValidWhen` / `AssertValid` (reachability-based)** — for every
-   initial environment `ρ₀` (satisfying `Pre`) and every configuration `cfg`
-   reachable from `s`, if `cfg` is at the assert (detected by `isAtAssert`),
-   then `P.eval (cfg.getEnv).factory (cfg.getEnv).store a.expr = some HasBool.tt`.  This is a
-   direct, semantic definition: walk the execution graph and check each
-   assert site.
+1. **Configuration-head predicates.** `AssertValidWhen` checks every reachable
+   configuration identified by `isAtAssert`, while `AssertSatisfiableWhen`
+   existentially selects one such configuration where `P.eval` returns true.
+   `AssertValid` and `AssertSatisfiable` remove the initial-state restriction;
+   `AllAssertsValidWhen` / `AllAssertsValid` quantify validity over assertion
+   identifiers.
 
-2. **`Hoare.Triple` (Hoare-triple-based)** — a partial-correctness triple
-   `{Pre} s {Post}` holds when, for every `ρ₀` satisfying `Pre` with a
-   well-formed evaluator and no prior failure, if `s` terminates at `ρ'`
-   then `Post ρ'` holds and `hasFailure` is still false.  Since assert
-   failure is recorded in `hasFailure`, the postcondition
-   `ρ'.hasFailure = false` captures that all asserts passed.
+2. **Event-trace predicates.** `AssertValidOnTracesWhen` requires every matching
+   assertion occurrence in every reachable finite trace to hold under its
+   preceding assumptions. `AssertSatisfiableOnTracesWhen` existentially selects
+   a reachable trace and a matching occurrence whose condition and preceding
+   assumptions hold in one shared `ConditionInterp` world. Their
+   `AssertValidOnTraces` and `AssertSatisfiableOnTraces` variants remove the
+   initial-state restriction; `AllAssertsValidOnTracesWhen` /
+   `AllAssertsValidOnTraces` cover whole-trace validity.
+
+3. **`Hoare.Triple`.** A partial-correctness triple `{Pre} s {Post}` requires
+   every terminating or exiting `EventLang` run to emit an assertion-valid
+   trace, and requires `Post` whenever that trace is `Trace.Reachable`.
+   Conditions are interpreted by `EvaluatorBasedInterp P`.
 
 The Hoare-triple definitions and structural rules live in
-`Strata.DL.Imperative.Logic.HoareTemplate`.  The two formulations are shown equivalent
-in `Strata.Transform.SpecHoareConnection` by `hoareTriple_implies_assertValid`
-and `allAssertsValid_implies_hoareTriple`. Their precise relation is slightly
-subtle, and `Hoare.Triple`'s doc string has more info.
+`Strata.DL.Imperative.Logic.HoareTemplate`. A triple validates completed traces;
+`AllAssertsValidOnTracesWhen` quantifies over every finite prefix, so the two
+notions are intentionally distinct without an additional progress or extension
+hypothesis.
 
 ## Two ways to specify transformation soundness
 
-There are two predicates for describing the correctness of a program
-transformation `T : L₁.StmtT → Option L₂.StmtT`:
+There are two complementary ways to describe correctness of a transformation:
 
-1. **`Sound`** — directly states that `T` preserves assertion validity:
-   if every assert is valid in the transformed program (`AssertValid L₂`),
-   then every assert is valid in the original (`AssertValid L₁`).
+1. **`Sound`** directly preserves `AssertValidOnTracesWhen` for each assertion
+   identifier between two `EventLang` values under a shared
+   `ConditionInterp`.
 
-2. **`Overapproximates`** — states that the set of reachable terminal/exiting
-   environments in the source is a subset of those reachable in the target.
-   This is a semantic simulation condition.
+2. **Operational overapproximation** simulates source behavior in the target.
+   The `Overapproximates` family relates terminal/exiting states for `Lang`;
+   `OverapproximatesTraces` additionally relates every finite trace prefix for
+   `EventLang`.
 
-Both predicates are *bilingual*: they relate two (possibly different) `Lang P`
-values, so they can express cross-language transformations such as
-deterministic-to-nondeterministic.
-
-It is proven that both specifications imply `AssertValid` of the input program:
-- `Sound` does so directly by definition (`sound_assertValid`, `sound_allAsserts`).
-- `Overapproximates` does so via Hoare triples: `overapproximates_triple` shows
-  that overapproximation preserves `Hoare.Triple`, which is equivalent to
-  `AssertValid` by the bidirectional theorems `hoareTriple_implies_assertValid`
-  and `allAssertsValid_implies_hoareTriple`.
+Both styles are bilingual and can relate different source and target languages.
+Trace overapproximation with equality traces also preserves `Hoare.Triple`
+through `overapproximatesTraces_triple`, because the simulated target run has
+the same trace and final environment as the source run.
 
 ## Key shared definitions for unstructured Imperative
 
@@ -168,6 +168,18 @@ valid under the assumptions preceding that occurrence. -/
     EL.traceStar (EL.stmtCfg s ρ₀) trace cfg →
     Trace.AssertionsValid P I trace
 
+/-- Assertion `a` is satisfiable on traces under `Pre` when some permitted
+initial environment produces a finite trace containing a matching assertion
+occurrence satisfiable with its preceding assumptions. -/
+@[expose] def AssertSatisfiableOnTracesWhen
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P)
+    (Pre : Env P → Prop) (s : EL.StmtT) (a : AssertId P) : Prop :=
+  ∃ (ρ₀ : Env P) (cfg : EL.CfgT) (trace : Trace P),
+    Pre ρ₀ ∧
+    EL.traceStar (EL.stmtCfg s ρ₀) trace cfg ∧
+    Trace.AssertionSatisfiable P I a trace
+
 /-- Trace-native assertion validity with no initial-state restriction. -/
 @[expose] def AssertValidOnTraces
     (EL : EventLang P (Event P))
@@ -180,20 +192,23 @@ valid under the assumptions preceding that occurrence. -/
     (I : ConditionInterp P) (s : EL.StmtT) : Prop :=
   AllAssertsValidOnTracesWhen EL I (fun _ => True) s
 
+/-- Trace-native assertion satisfiability with no initial-state restriction. -/
+@[expose] def AssertSatisfiableOnTraces
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P) (s : EL.StmtT) (a : AssertId P) : Prop :=
+  AssertSatisfiableOnTracesWhen EL I (fun _ => True) s a
 
-/-! ## Style B — Hoare-triple assertion validity
 
-The whole Hoare-logic layer lives in `Strata.DL.Imperative.Logic.HoareTemplate`, which
-does not depend on this module: the language-agnostic `Strata.Logic.Hoare.Triple`
-— the form `overapproximates_triple` needs in order to transport a triple from a
-target language (possibly the unstructured `Lang.cfg`) back to the source — plus
-the Imperative-specific `Imperative.Logic.Hoare` layer: the structural rules and
-`PostWF`.
+/-! ## Style B — Hoare logic
 
-The bridges *into* this module's reachability-based half —
-`hoareTriple_implies_assertValid`, `allAssertsValid_implies_hoareTriple`, and the
-`Overapproximates`-family results `overapproximates_triple` /
-`overapproximatesWhen_triple` — live in `Strata.Transform.SpecHoareConnection`. -/
+The Hoare-logic layer lives in `Strata.DL.Imperative.Logic.HoareTemplate` and does
+not depend on this module.  Its language-agnostic `Strata.Logic.Hoare.Triple` is
+stated over `EventLang`; the Imperative-specific `Imperative.Logic.Hoare` layer
+supplies structural rules and `PostWF`.
+
+`Strata.Transform.SpecHoareConnection` proves that
+`OverapproximatesTraces(When)` with trace equality transports such a triple from
+a transformed target back to its source. -/
 
 namespace Transform
 
@@ -252,14 +267,16 @@ any particular trace property or condition interpretation. -/
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
   OverapproximatesTracesWhen Rtrace L₁ L₂ T (fun _ => True) params₁ params₂
 
-/-- A transformation is *sound* if it preserves assertion validity.
-    Bilingual: source and target may live in different languages. -/
-@[expose] def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+/-- A transformation is *sound* when it preserves validity of each
+assertion identifier. Source and target may use different event languages but
+share one condition interpretation. -/
+@[expose] def Sound (I : ConditionInterp P)
+    (L₁ L₂ : EventLang P (Event P)) (T : L₁.StmtT → Option L₂.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
-    T s = some s'
-    → AssertValidWhen L₂ (L₂.initEnvWF params₂ s') s' a
-    → AssertValidWhen L₁ (L₁.initEnvWF params₁ s) s a
+    T s = some s' →
+    AssertValidOnTracesWhen L₂ I (L₂.initEnvWF params₂ s') s' a →
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s) s a
 
 /-! ## A family of Overapproximate predicates
 

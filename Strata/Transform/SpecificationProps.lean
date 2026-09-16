@@ -25,10 +25,11 @@ overall structure of the soundness-specification framework.
 
 Connecting the two assertion-validity formulations and the transform specs.
 The Hoare-logic definitions and structural rules themselves live in
-`Strata.DL.Imperative.Logic.HoareTemplate`, and the bridges from them to the
-reachability-based side are in `Strata.Transform.SpecHoareConnection`:
+`Strata.DL.Imperative.Logic.HoareTemplate`; event-trace Hoare transport across
+trace overapproximations lives in `Strata.Transform.SpecHoareConnection`:
 
-- `sound_assertValid` / `sound_allAsserts` — `Sound` implies `AssertValid`.
+- `sound_assertValid` / `sound_allAsserts` — `Sound` transports
+  `AssertValidOnTracesWhen` and `AllAssertsValidOnTracesWhen`.
 
 Canonical event-trace overapproximation properties:
 
@@ -97,40 +98,64 @@ variable (L : Lang P)
 
 namespace Transform
 
-/-! ## Connection between Sound, AssertValid and AllAssertsValid -/
+/-! ## Connection between `Sound` and trace-native assertion validity -/
 
 section Connection
-omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+omit [HasOps P] [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
-theorem sound_comp (L₁ L₂ L₃ : Lang P)
+/-- Composing two sound transformations yields a sound composite under the same
+condition interpretation. -/
+theorem sound_comp (I : ConditionInterp P)
+    (L₁ L₂ L₃ : EventLang P (Event P))
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
-    (h₁ : Sound L₁ L₂ T₁ params₁ params₂) (h₂ : Sound L₂ L₃ T₂ params₂ params₃) :
-    Sound L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+    (h₁ : Sound I L₁ L₂ T₁ params₁ params₂)
+    (h₂ : Sound I L₂ L₃ T₂ params₂ params₃) :
+    Sound I L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro s s'' a hrun hvalid
   simp [bind, Option.bind] at hrun
   match h1 : T₁ s with
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-theorem sound_assertValid (L₁ L₂ : Lang P)
+/-- If `T` maps `s` to `s'`, soundness transports trace-native validity of an
+assertion identifier from `s'` back to `s`. -/
+theorem sound_assertValid (I : ConditionInterp P)
+    (L₁ L₂ : EventLang P (Event P))
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT)
-    (ht : T s = some s') (hsound : Sound L₁ L₂ T params₁ params₂)
-    (hvalid : AssertValidWhen L₂ (L₂.initEnvWF params₂ s') s' a) :
-    AssertValidWhen L₁ (L₁.initEnvWF params₁ s) s a := hsound s s' a ht hvalid
+    (ht : T s = some s') (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (hvalid : AssertValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ s') s' a) :
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s) s a :=
+  hsound s s' a ht hvalid
 
-theorem sound_allAsserts (L₁ L₂ : Lang P)
+/-- A sound transformation transports whole-trace validity of every assertion
+from the target statement back to the source statement. -/
+theorem sound_allAsserts (I : ConditionInterp P)
+    (L₁ L₂ : EventLang P (Event P))
     (T : L₁.StmtT → Option L₂.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
-    (hsound : Sound L₁ L₂ T params₁ params₂)
-    (hvalid : AllAssertsValidWhen L₂ (L₂.initEnvWF params₂ s') s') :
-    AllAssertsValidWhen L₁ (L₁.initEnvWF params₁ s) s := fun a => hsound s s' a ht (hvalid a)
+    (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (hvalid : AllAssertsValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ s') s') :
+    AllAssertsValidOnTracesWhen L₁ I
+      (L₁.initEnvWF params₁ s) s := by
+  intro ρ₀ cfg trace hinit htrace
+  apply Trace.AssertionsValid.of_all_assertionValid I
+  intro aid
+  have ha := hsound s s' aid ht (fun ρ₀' cfg' trace' hinit' htrace' =>
+    Trace.AssertionValid.of_assertionsValid I aid
+      (hvalid ρ₀' cfg' trace' hinit' htrace'))
+  exact ha ρ₀ cfg trace hinit htrace
 
-theorem sound_id (params : L.InitEnvWFParamsTy) : Sound L L some params params := by
+/-- The identity transformation is sound for every event language and condition
+interpretation. -/
+theorem sound_id (I : ConditionInterp P) (L : EventLang P (Event P))
+    (params : L.InitEnvWFParamsTy) : Sound I L L some params params := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
 end Connection

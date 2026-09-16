@@ -9,10 +9,11 @@ public import Strata.DL.Imperative.CmdTrace
 
 /-! # Deductive trace interpretation
 
-Defines semantic neutrality, assumption satisfaction, assertion validity, and
-cover satisfiability over interpreted command events. The `*From` definitions
-are recursive workers carrying assumptions accumulated before the remaining
-trace.
+Defines semantic neutrality, assumption satisfaction, trace reachability,
+assertion validity and satisfiability, and cover satisfiability over interpreted
+command events.
+The `*From` definitions are recursive workers carrying assumptions accumulated
+before the remaining trace.
 -/
 
 namespace Imperative
@@ -49,6 +50,11 @@ namespace Trace
     (world : I.World) (trace : Trace P) : Prop :=
   ∀ condition, Event.assume condition ∈ trace → I.holds world condition
 
+/-- Given a trace, the program state after execution of the trace is reachable
+  when its assumptions are jointly satisfiable in one shared semantic world. -/
+@[expose] def Reachable (I : ConditionInterp P) (trace : Trace P) : Prop :=
+  ∃ world, AssumptionsHold P I world trace
+
 /-- Worker for assertion validity parameterized by the assertion conditions to
 keep. The first trace contains assumptions accumulated before the remaining
 trace. -/
@@ -77,6 +83,31 @@ assertion. -/
 @[expose] def AssertionsValid (I : ConditionInterp P)
     (trace : Trace P) : Prop :=
   AssertionsValidFrom P I [] trace
+
+/-- Worker for satisfiability of one assertion identifier with assumptions
+accumulated before the remaining trace. It succeeds when some matching assertion
+occurrence has a world satisfying both its preceding assumptions and captured
+condition. -/
+@[expose] def AssertionSatisfiableFrom
+    (I : ConditionInterp P) (aid : AssertId P) : Trace P → Trace P → Prop
+  | _, [] => False
+  | assumptions, Event.assume condition :: rest =>
+      AssertionSatisfiableFrom I aid
+        (assumptions ++ [Event.assume condition]) rest
+  | assumptions, Event.assert condition :: rest =>
+      ((condition.label = aid.label ∧ condition.expr = aid.expr ∧
+        ∃ world, AssumptionsHold P I world assumptions ∧
+          I.holds world condition) ∨
+        AssertionSatisfiableFrom I aid assumptions rest)
+  | assumptions, Event.cover _ :: rest =>
+      AssertionSatisfiableFrom I aid assumptions rest
+
+/-- An assertion identifier is satisfiable in a trace when at least one matching
+occurrence and all assumptions preceding it hold in one shared world. The
+predicate is false when the identifier does not occur in the trace. -/
+@[expose] def AssertionSatisfiable
+    (I : ConditionInterp P) (aid : AssertId P) (trace : Trace P) : Prop :=
+  AssertionSatisfiableFrom P I aid [] trace
 
 /-- Worker for satisfiability of one cover identifier with assumptions
 accumulated before the remaining trace. It succeeds when some matching cover
