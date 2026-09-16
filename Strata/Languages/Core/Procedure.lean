@@ -454,7 +454,7 @@ def Procedure.stripMetaData (p : Procedure) : Procedure :=
     | .cfg c => .cfg c.stripMetaData
   { p with body := body' }
 
-/-- Transitive variable lookup for procedures.
+/-- IsTransitive variable lookup for procedures.
     This is a version that looks into the body,
     but does not transitively search all variables occuring in the body.
     Transitively searching procedure bodies being called is possible,

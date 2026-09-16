@@ -1470,7 +1470,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                   | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
                   | .varDecl _ _ .nondet => []
                   | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
-            (consequentFns ++ antecedentFns).dedup
+            (consequentFns ++ antecedentFns).uniq
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
           IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache relevantFns

@@ -145,7 +145,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
 trace relation. -/
 theorem OverapproximatesTraces.id
     {EventT : Type}
-    (Rtrace : Relation (List EventT)) (hrefl : Reflexive Rtrace)
+    (Rtrace : Relation (List EventT)) (hrefl : IsReflexive Rtrace)
     (L : EventLang P EventT) (params : L.InitEnvWFParamsTy) :
     OverapproximatesTraces Rtrace L L some params params := by
   intro st st' ht _ ρ₀ ρ₀' heq hinit
@@ -256,7 +256,7 @@ different trace relations and a transitive outcome relation. -/
 theorem OverapproximatesTracesUptoWhen.comp_trans_eq
     {EventT : Type}
     (Rtrace₁ Rtrace₂ : Relation (List EventT)) (Rout : Relation (Env P))
-    (houtTrans : Transitive Rout)
+    (houtTrans : IsTransitive Rout)
     (L₁ L₂ L₃ : EventLang P EventT)
     (T₁ : L₁.StmtT → Option L₂.StmtT)
     (T₂ : L₂.StmtT → Option L₃.StmtT)
@@ -381,7 +381,7 @@ theorem OverapproximatesUptoWhen.mono_out (L₁ L₂ : Lang P)
 
     Combined with `RComp`, this is the input-side dual of the transitivity collapse
     that `mono_out` supports: a *dense* input relation (`Rin ⊆ RComp Rin Rin`, see
-    `Dense`) can be re-expressed as the two-step `RComp Rin Rin` that a composed
+    `IsDense`) can be re-expressed as the two-step `RComp Rin Rin` that a composed
     transform's input relation carries. -/
 theorem OverapproximatesUptoWhen.mono_in (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
@@ -469,19 +469,19 @@ theorem OverapproximatesUptoWhen.comp (L₁ L₂ L₃ : Lang P)
 /-- **Compositionality** (fixed-relation, dense-input transitive-output form):
     composing two transforms that share a *dense* input relation `Rin` and a
     *transitive* output relation `Rout` yields a transform with the same `Rin` and
-    `Rout`.  This is the `Dense`/`mono_in` consumer: `comp` produces `RComp Rin Rin`
+    `Rout`.  This is the `IsDense`/`mono_in` consumer: `comp` produces `RComp Rin Rin`
     on the input and `RComp Rout Rout` on the output; `mono_out` collapses the
     composed output back to `Rout` via transitivity (`RComp.collapse`), and
     `mono_in` re-expresses a single `Rin`-relatedness as the two-step `RComp Rin Rin`
-    the composed input carries via density (`Dense`).  `comp_trans_eq` is the
-    `Rin := (· = ·)` instance (equality is dense by `Reflexive.dense`). -/
+    the composed input carries via density (`IsDense`).  `comp_trans_eq` is the
+    `Rin := (· = ·)` instance (equality is dense by `IsReflexive.dense`). -/
 theorem OverapproximatesUptoWhen.comp_dense_trans (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
     {Rin Rout : Relation (Env P)}
-    (hdense : Dense Rin) (htrans : Transitive Rout)
+    (hdense : IsDense Rin) (htrans : IsTransitive Rout)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesUptoWhen Rin Rout L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesUptoWhen Rin Rout L₂ L₃ T₂ pre₂ params₂ params₃) :
@@ -501,7 +501,7 @@ theorem OverapproximatesUptoWhen.comp_dense_trans (L₁ L₂ L₃ : Lang P)
     next pass's source `initEnvWF` at that env, no per-environment precondition is
     needed; transitivity collapses the `RComp`-composed output relation back to
     `R`.  The `Rin := (· = ·)` instance of `comp_dense_trans`: equality is dense
-    (`Reflexive.dense`).  Only transitivity of `R` is consumed (no reflexivity of
+    (`IsReflexive.dense`).  Only transitivity of `R` is consumed (no reflexivity of
     the *output*), so an irreflexive-but-transitive `R` — e.g. agreement modulo
     frame — composes here. -/
 theorem OverapproximatesUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lang P)
@@ -510,13 +510,13 @@ theorem OverapproximatesUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lang P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
     {R : Relation (Env P)}
-    (htrans : Transitive R)
+    (htrans : IsTransitive R)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesUptoWhen (· = ·) R L₁ L₂ T₁ pre₁ params₁ params₂)
     (h₂ : OverapproximatesUptoWhen (· = ·) R L₂ L₃ T₂ pre₂ params₂ params₃) :
     OverapproximatesUptoWhen (· = ·) R L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
   OverapproximatesUptoWhen.comp_dense_trans L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃
-    (Reflexive.dense (fun _ => rfl)) htrans hpre h₁ h₂
+    (IsReflexive.dense (fun _ => rfl)) htrans hpre h₁ h₂
 
 /-- Composition of two overapproximations. -/
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
@@ -719,7 +719,7 @@ theorem OverapproximatesAggressivelyUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lan
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
     {R : Relation (Env P)}
-    (htrans : Transitive R)
+    (htrans : IsTransitive R)
     (hRfail : ∀ a b, R a b → a.hasFailure = false → b.hasFailure = false)
     (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
     (h₁ : OverapproximatesAggressivelyUptoWhen (· = ·) R L₁ L₂ T₁ pre₁ params₁ params₂)
