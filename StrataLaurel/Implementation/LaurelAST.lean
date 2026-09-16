@@ -171,6 +171,28 @@ name per operator while the externals they call do not.
   | "$strConcat" => some .StrConcat
   | _ => none
 
+/-- `Operation.ofProcName?` tolerating the `$ov<digits>$` prefix that
+    `UniqueOverloadNames` puts on an overloaded wrapper: both `$le` and
+    `$ov104$$le` give `.Leq`. Any other prefix is not stripped. -/
+def Operation.ofWrapperName? (name : String) : Option Operation :=
+  match Operation.ofProcName? name with
+  | some op => some op
+  | none =>
+    if name.startsWith "$ov" then
+      match (name.drop 3).toString.splitOn "$" with
+      | digits :: rest =>
+        if !digits.isEmpty && digits.toNat?.isSome
+        then Operation.ofProcName? ("$".intercalate rest)
+        else none
+      | [] => none
+    else none
+
+/-- How many operands the operator's Laurel syntax takes: `Not` and `Neg` are
+    prefix (one operand), every other operator is infix (two). -/
+def Operation.arity : Operation → Nat
+  | .Not | .Neg => 1
+  | _ => 2
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in

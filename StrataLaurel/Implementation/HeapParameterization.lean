@@ -207,10 +207,10 @@ def writesHeap (name : Identifier) : TransformM Bool := do
   let uid ← Identifier.getUniqueId name
   return (← get).heapWriters.contains uid
 
-private def freshVarName : TransformM Identifier := do
+private def freshVarName (namePrefix : String) : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
-  return s!"$tmp{s.freshCounter}"
+  return s!"{namePrefix}{s.freshCounter}"
 
 /-- Helper to wrap a StmtExpr into StmtExprMd with the given source -/
 private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
@@ -270,7 +270,7 @@ private def lowerAsTypeNode (target' : StmtExprMd) (ty : HighTypeMd) (source : F
     let (prelude, ref) ← match context with
       | .specification => pure ([], target')
       | .executable =>
-        let result ← freshVarName
+        let result ← freshVarName "$castOperand"
         let capture : StmtExprMd := ⟨.Assign [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
         pure ([capture], ⟨.Var (.Local result), source⟩)
     let check : StmtExprMd := ⟨.Assert ⟨.IsType ref ty, source⟩ none, source⟩
@@ -371,11 +371,11 @@ where
                 -- model (retarget to a throwaway local; emit no updateField) — an untracked field write is
                 -- unobservable in the heap abstraction.
                 | do
-                  let discardVar ← freshVarName
+                  let discardVar ← freshVarName "$droppedWrite"
                   return (accTargets ++ [mkVarMd (.Declare ⟨discardVar, some ⟨.Unknown, source⟩⟩) source], accStmts)
               let valTy := (model.get fieldName).getType
               recordBoxConstructor model valTy.val
-              let freshVar ← freshVarName
+              let freshVar ← freshVarName "$writeValue"
               let target' ← recurseOne target
               let boxedVal := mkMd (.StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar)) source] []) source
               let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar) source]

@@ -592,7 +592,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       -- loop-varying operand at its pre-loop value — silently changing what the
       -- invariant says rather than just making it harder to prove.
       --
-      -- Anything the contract pass left inside an invariant (e.g. the `var $cp_… :=`
+      -- Anything the contract pass left inside an invariant (e.g. the `var $inputCopy… :=`
       -- argument temporaries of a call to a `requires`-bearing procedure such as the
       -- `$div` wrapper behind `/`) therefore stays in place, where it is evaluated per
       -- iteration and still means what was written. `InlineLocalVariables` folds those

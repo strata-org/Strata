@@ -225,12 +225,12 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
     generating fresh temporary variable names. -/
 private abbrev ContractM := StateM Nat
 
-/-- Allocate a fresh temporary name with the `$cp_` prefix.  The global counter
-    guarantees uniqueness across the entire pass. -/
+/-- Allocate a fresh temporary name with the `$inputCopy` prefix.  The global
+    counter guarantees uniqueness across the entire pass. -/
 private def freshTemp : ContractM String := do
   let n ← get
   set (n + 1)
-  return s!"$cp_{n}"
+  return s!"$inputCopy{n}"
 
 /-- Generate temporary variable assignments for input arguments at a call site.
     Returns (temp declarations+assignments, temp variable references).
@@ -484,7 +484,7 @@ private def rewriteCallSitesInProc (model : SemanticModel) (contractInfoMap : St
     sites inside the contract expressions so they carry the callee's precondition
     obligations.
 
-    Runs inside `ContractM` so `$cp_N` temporaries share a counter with body
+    Runs inside `ContractM` so `$inputCopyN` temporaries share a counter with body
     rewriting; a separate counter would hand the same name to both, which Core rejects
     ("already in context").
 
