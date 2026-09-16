@@ -1604,26 +1604,15 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
     type checking, symbolic evaluation, and common subexpression elim.
     CSE runs after symbolic evaluation to extract common
     subexpressions introduced by partial evaluation inlining; it is
-    model-preserving (skipping it via `options.disableCSE` is sound,
+    model-preserving (a pipeline that omits it is still sound,
     though solver outcomes may differ on individual obligations). -/
 def corePipelinePhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  let csePhases := if options.disableCSE then [] else [commonSubexprElimPhase]
-  -- Inlining runs first: a substituted function body can expose a bound the unroller resolves.
-  let inlinePhases :=
-    if options.functionInlining then [Core.functionInliningPipelinePhase] else []
-  -- Beta reduction precedes unrolling: the eligibility matchers read a guard
-  -- syntactically, so a guard left under a redex states no range they recognize.
-  let unrollPhases :=
-    if options.unrollBoundedQuantifiers then
-      [betaReducePipelinePhase, Core.unrollBoundedQuantifiersPipelinePhase]
-    else []
   transformPipelinePhases options
     ++ preSymbolicEvalPipelinePhases options moreFns
     ++ [symbolicEvalPipelinePhase options moreFns]
-    ++ inlinePhases ++ unrollPhases
-    ++ [betaReducePipelinePhase] ++ csePhases
+    ++ [betaReducePipelinePhase, commonSubexprElimPhase]
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is
@@ -1659,7 +1648,7 @@ def coreValidatedPipeline
 
     Must be called with the same `options` as the corresponding
     `corePipelinePhases` run: the phase list's membership is
-    options-dependent (`disableCSE`, `proceduresToVerify`), so a list computed
+    options-dependent (`proceduresToVerify`), so a list computed
     with different options describes phases that did not actually run. -/
 def coreAbstractedPhases
     (options : VerifyOptions := VerifyOptions.default)

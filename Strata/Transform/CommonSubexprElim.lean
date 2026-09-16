@@ -393,9 +393,9 @@ end Core.CSE
 /-- CSE pipeline phase: extracts common subexpressions into fresh
     variable declarations. Model-preserving because it only introduces
     definitional equalities without changing program semantics.
-    Skipping it (`VerifyOptions.disableCSE`) is therefore sound, though it
-    changes the SMT encoding's shape and can affect whether the solver
-    reaches a conclusive result. -/
+    A pipeline that omits it is therefore sound, though the SMT encoding then
+    has a different shape, which can affect whether the solver reaches a
+    conclusive result. -/
 def Core.commonSubexprElimPhase : Core.PipelinePhase :=
   -- Naming a shared subexpression replaces it with a variable, which puts no
   -- abstraction in a function position, so `noBetaRedexes` survives the last

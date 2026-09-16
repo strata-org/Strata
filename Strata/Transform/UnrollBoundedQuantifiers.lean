@@ -740,10 +740,14 @@ public section
 def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "unrollBoundedQuantifiers"
     (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment])
+    -- `noBetaRedexes` survives because an instance is the body with a *constant* index
+    -- substituted for the bound variable, which cannot put an abstraction in an
+    -- application's head; the fold builds applications of operators; and the per-instance
+    -- reduction only contracts redexes.
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
-                         .noNondetGuards, .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noInternalFuncDecl,
+                         .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       let baseF ← Core.Transform.getFactory
       let blocks := prog.decls.filterMap fun d =>
