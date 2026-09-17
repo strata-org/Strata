@@ -77,6 +77,7 @@ import Strata.Languages.B3
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet
