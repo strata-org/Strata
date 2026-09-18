@@ -31,12 +31,184 @@ declares fails `PostWF`.
 **These tests use `native_decide`** for the steps that inspect a concrete translated
 AST, because kernel reduction over one is impractically slow.  A step that can be
 discharged without it should be.
+
+This file also opens with focused *event-trace* and *rule-API* tests — assertion
+validity, assumption satisfiability, and every `Core.Logic.Hoare` rule at its
+expected type — before the contract scenarios below.  Under the event semantics the
+triple is read over `StepStmtStarE`; the negative tests instantiate it at a concrete
+completed run whose empty trace has satisfiable assumptions, so a refuted
+postcondition is a genuine violation rather than a vacuous one.
 -/
 
+open Imperative
 open StrataDDM (Program)
 open Lambda.LExpr.SyntaxMono
 
 namespace Strata
+
+abbrev I : ConditionInterp Core.Expression := EvaluatorBasedInterp Core.Expression
+
+private def trueCondition : EventArg Core.Expression :=
+  { factory := Core.Factory
+    store := fun _ => none
+    label := "true"
+    expr := HasBool.tt
+    metadata := #[] }
+
+private def falseCondition : EventArg Core.Expression :=
+  { factory := Core.Factory
+    store := fun _ => none
+    label := "false"
+    expr := HasBool.ff
+    metadata := #[] }
+
+private theorem true_holds (world : I.World) : I.holds world trueCondition := by
+  show Core.Expression.eval trueCondition.factory trueCondition.store trueCondition.expr =
+    some HasBool.tt
+  native_decide
+
+private theorem false_not_holds (world : I.World) : ¬ I.holds world falseCondition := by
+  show ¬ (Core.Expression.eval falseCondition.factory falseCondition.store
+    falseCondition.expr = some HasBool.tt)
+  native_decide
+
+/-- An assumption can discharge a later assertion. -/
+example : Trace.AssertionsValid Core.Expression I
+    [.assume falseCondition, .assert falseCondition] :=
+  ⟨fun _ _ hassumptions => hassumptions falseCondition (by simp), True.intro⟩
+
+/-- A later assumption cannot discharge an earlier assertion. -/
+example : ¬ Trace.AssertionsValid Core.Expression I
+    [.assert falseCondition, .assume falseCondition] := by
+  intro h
+  exact false_not_holds () (h.1 True.intro () (by intro condition hmem; simp at hmem))
+
+/-- Empty Core blocks satisfy the skip triple using the real `StepStmtStarE`
+semantics underlying `EventLang.coreBlock`. -/
+example (π : String → Option Core.Procedure)
+    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+    (params : Core.Logic.InitEnvWFParams) (Pre : Env Core.Expression → Prop) :
+    Core.Logic.Hoare.Triple π φ params Pre [] Pre :=
+  Imperative.Logic.Hoare.skip_block (Core.EvalCommandE π φ)
+    (Core.EvalPureFunc φ) Core.Logic.BlockInitEnvWF params Pre
+
+/-- The Core wrapper exposes false-precondition and consequence rules. -/
+example (π : String → Option Core.Procedure)
+    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+    (params : Core.Logic.InitEnvWFParams) (ss : Core.Statements)
+    (Post : Env Core.Expression → Prop) :
+    Core.Logic.Hoare.Triple π φ params (fun _ => False) ss Post :=
+  Core.Logic.Hoare.false_pre π φ params ss Post
+
+/-! ## Rule API coverage -/
+
+section RuleCoverage
+
+variable (π : String → Option Core.Procedure)
+variable (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+variable (params : Core.Logic.InitEnvWFParams)
+
+example {Pre Pre' Post Post' : Env Core.Expression → Prop} {ss : Core.Statements}
+    (h : Core.Logic.Hoare.Triple π φ params Pre ss Post)
+    (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
+    Core.Logic.Hoare.Triple π φ params Pre' ss Post' :=
+  Core.Logic.Hoare.consequence π φ params h hpre hpost
+
+example (command : Core.Command) (Pre Post : Env Core.Expression → Prop)
+    (h : ∀ ρ₀ σ' emitted,
+      Pre ρ₀ → Core.Logic.InitEnvWF params (.cmd command) ρ₀ →
+      Core.EvalCommandE π φ ρ₀.factory ρ₀.store command σ' emitted →
+      Trace.AssertionsValid Core.Expression I emitted ∧
+        (Trace.Reachable Core.Expression I emitted →
+          Post { ρ₀ with store := σ' })) :
+    Core.Logic.Hoare.Triple π φ params Pre [.cmd command] Post :=
+  Core.Logic.Hoare.cmd π φ params command Pre Post h
+
+example (x : Core.Expression.Ident) (e : Core.Expression.Expr)
+    (md : MetaData Core.Expression) (Pre Post : Env Core.Expression → Prop)
+    (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
+      (v : Core.Expression.Expr), Pre ρ₀ →
+      Core.Expression.eval ρ₀.factory ρ₀.store e = some v →
+      UpdateState Core.Expression ρ₀.store x v σ' → Post { ρ₀ with store := σ' }) :
+    Core.Logic.Hoare.Triple π φ params Pre [Core.Statement.set x e md] Post :=
+  Core.Logic.Hoare.set π φ params x e md Pre Post hpost
+
+example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (e : Core.Expression.Expr) (md : MetaData Core.Expression)
+    (Pre Post : Env Core.Expression → Prop)
+    (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
+      (v : Core.Expression.Expr), Pre ρ₀ →
+      Core.Expression.eval ρ₀.factory ρ₀.store e = some v →
+      InitState Core.Expression ρ₀.store x v σ' → Post { ρ₀ with store := σ' }) :
+    Core.Logic.Hoare.Triple π φ params Pre
+      [Core.Statement.init x ty (.det e) md] Post :=
+  Core.Logic.Hoare.init π φ params x ty e md Pre Post hpost
+
+example {ss : Core.Statements} {label : String} {md : MetaData Core.Expression}
+    {Pre Post : Env Core.Expression → Prop}
+    (hnofd : Block.noFuncDecl (P := Core.Expression) (C := Core.Command) ss = true)
+    (h : Core.Logic.Hoare.Triple π φ params Pre ss Post)
+    (hpost : Imperative.Logic.Hoare.PostWF ss Post) :
+    Core.Logic.Hoare.Triple π φ params Pre [.block label ss md] Post :=
+  Core.Logic.Hoare.block π φ params hnofd h hpost
+
+example (label : String) (md : MetaData Core.Expression)
+    (Pre : Env Core.Expression → Prop) :
+    Core.Logic.Hoare.Triple π φ params Pre [.block label [] md] Pre :=
+  Core.Logic.Hoare.skip π φ params label md Pre
+
+example {condition : Core.Expression.Expr} {thenStmts elseStmts : Core.Statements}
+    {md : MetaData Core.Expression} {Pre Post : Env Core.Expression → Prop}
+    (hnofd : Stmt.noFuncDecl (P := Core.Expression) (C := Core.Command)
+      (.ite (.det condition) thenStmts elseStmts md) = true)
+    (hthen : Core.Logic.Hoare.Triple π φ params
+      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some HasBool.tt)
+      thenStmts Post)
+    (helse : Core.Logic.Hoare.Triple π φ params
+      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some HasBool.ff)
+      elseStmts Post)
+    (hthenWF : Imperative.Logic.Hoare.PostWF thenStmts Post)
+    (helseWF : Imperative.Logic.Hoare.PostWF elseStmts Post) :
+    Core.Logic.Hoare.Triple π φ params Pre
+      [.ite (.det condition) thenStmts elseStmts md] Post :=
+  Core.Logic.Hoare.ite π φ params hnofd hthen helse hthenWF helseWF
+
+example {label : String} {md : MetaData Core.Expression} {ss : Core.Statements}
+    (Pre : Env Core.Expression → Prop) :
+    Core.Logic.Hoare.Triple π φ params Pre (.exit label md :: ss) Pre :=
+  Core.Logic.Hoare.exit_cons π φ params Pre
+
+example {pfx sfx : Core.Statements} {Pre Mid Post : Env Core.Expression → Prop}
+    (hnofd : Block.noFuncDecl (P := Core.Expression) (C := Core.Command) pfx = true)
+    (hpfx : Core.Logic.Hoare.Triple π φ params Pre pfx Mid)
+    (hsfx : Core.Logic.Hoare.Triple π φ params Mid sfx Post)
+    (hnoesc : Block.exitsCoveredByBlocks
+      (P := Core.Expression) (CmdT := Core.Command) [] pfx) :
+    Core.Logic.Hoare.Triple π φ params Pre (pfx ++ sfx) Post :=
+  Core.Logic.Hoare.seq π φ params hnofd hpfx hsfx hnoesc
+
+end RuleCoverage
+
+/-- An empty-bodied loop exercises `while_rule` over the real event semantics.
+The trivial invariant is preserved, the body emits no events, and loop exit
+requires the guard to evaluate to false. -/
+example (π : String → Option Core.Procedure)
+    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+    (params : Core.Logic.InitEnvWFParams) (guard : Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression) :
+    Core.Logic.Hoare.Triple π φ params (fun _ => True)
+      [.loop (.det guard) none [] [] md]
+      (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some HasBool.ff) :=
+  Core.Logic.Hoare.while_rule π φ params
+    (by simp [Imperative.Block.noFuncDecl])
+    (Core.Logic.Hoare.consequence π φ params
+      (Imperative.Logic.Hoare.skip_block (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+        Core.Logic.BlockInitEnvWF params
+        (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some HasBool.tt))
+      (fun _ h => h) (fun _ _ => trivial))
+    trivial
+    (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by simp [Imperative.Block.definedVars]))
+
 
 /-! ## Shared setup
 
@@ -44,7 +216,11 @@ The reusable helpers below take the procedure environment as a parameter, since 
 hold for *every* one — none of these bodies makes a call or declares a function, so
 neither the callee map nor the factory extension can affect the outcome.  The contract
 theorems name their program instead, so the environment a call would resolve against is
-that program's own `findProcByString?`. -/
+that program's own `findProcByString?`.
+
+Along the event step relation an empty-body run emits no events, and
+`reachable_nil` below packages the fact that the empty trace's assumptions
+are satisfiable — the premise the negative tests feed to the triple. -/
 
 variable (φ : Core.Expression.Factory → Imperative.PureFunc Core.Expression →
   Core.Expression.Factory)
@@ -101,26 +277,26 @@ private theorem blockWF_nil (ρ : Imperative.Env Core.Expression)
 
 /-- An empty body, wrapped as the procedure block a body actually runs in, returns to
     its own environment: entering and leaving the block projects the store through
-    itself. -/
+    itself.  Stated over the *event* step relation, the run emits no events. -/
 private theorem run_procBlock_nil (π : String → Option Core.Procedure)
     (ρ : Imperative.Env Core.Expression) (l : String)
     (md : Imperative.MetaData Core.Expression) :
-    Imperative.StepStmtStar Core.Expression (Core.EvalCommand π φ) (Core.EvalPureFunc φ)
-      (.stmts [Imperative.Stmt.block l [] md] ρ) (.terminal ρ) := by
-  have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store, factory := ρ.factory } : Imperative.Env Core.Expression) = ρ := by
+    Imperative.StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      (.stmts [Imperative.Stmt.block l [] md] ρ) [] (.terminal ρ) := by
+  have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store, factory := ρ.factory }
+      : Imperative.Env Core.Expression) = ρ := by
     simp [Imperative.projectStore_self]
-  have hhead : Imperative.StepStmtStar Core.Expression (Core.EvalCommand π φ)
-      (Core.EvalPureFunc φ) (.stmt (Imperative.Stmt.block l [] md) ρ) (.terminal ρ) := by
-    refine .step _ _ _ .step_block ?_
-    refine .step _ _ _ (.step_block_body .step_stmts_nil) ?_
-    refine .step _ _ _ .step_block_done ?_
-    rw [heq]
-    exact .refl _
-  exact ReflTrans_Transitive _ _ _ _
-    (Imperative.stmts_cons_step Core.Expression (Core.EvalCommand π φ)
-      (Core.EvalPureFunc φ) _ [] ρ ρ hhead)
-    (Imperative.evalStmtsSmallNil Core.Expression (Core.EvalCommand π φ)
-      (Core.EvalPureFunc φ) ρ)
+  refine .step _ [] _ [] _ (.step_admin .step_stmts_cons) ?_
+  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block)) ?_
+  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner (.step_block_body .step_stmts_nil))) ?_
+  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block_done)) ?_
+  refine .step _ [] _ [] _ (.step_admin .step_seq_done) ?_
+  rw [heq]
+  exact .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _)
+
+/-- The empty trace is reachable. -/
+private theorem reachable_nil : Trace.Reachable Core.Expression I [] :=
+  ⟨(), fun _ hc => absurd hc (by simp)⟩
 
 
 /-! ## A procedure that meets its contract
@@ -261,7 +437,8 @@ private def noReqProc : Core.Procedure :=
 
 /-- **Invalid.**  A procedure with no `requires` but an `ensures x == 2` does not meet
     its contract: nothing is assumed on entry and the empty body changes nothing, so at
-    `xIs1Env` — where `x` holds `1` — the postcondition is refuted. -/
+    `xIs1Env` — where `x` holds `1` — the postcondition is refuted on a run whose empty
+    trace has satisfiable assumptions. -/
 theorem noReq_violates_contract :
     ¬ Core.Logic.Hoare.Procedure.contractTriple φ noReqPgmAST testParams "NoReq" := by
   intro h
@@ -271,10 +448,11 @@ theorem noReq_violates_contract :
   have hb : bss = [] := by
     injection hbody.symm.trans (show noReqProc.body = .structured [] by native_decide)
   subst hb
-  have ⟨hpost, _⟩ := htb xIs1Env xIs1Env
+  have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
     ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl⟩
-    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined) rfl
+    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
     (.inl (run_procBlock_nil φ _ xIs1Env "" #[]))
+  have hpost := hpostF reachable_nil
   exact Core.Logic.Hoare.Procedure.not_postAsPredicate_of_postRefutedAt
     (by native_decide) hpost
 
@@ -319,10 +497,11 @@ theorem offByOne_violates_contract :
   have hb : bss = [] := by
     injection hbody.symm.trans (show offByOneProc.body = .structured [] by native_decide)
   subst hb
-  have ⟨hpost, _⟩ := htb xIs1Env xIs1Env
+  have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
     ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl⟩
-    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined) rfl
+    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
     (.inl (run_procBlock_nil φ _ xIs1Env "" #[]))
+  have hpost := hpostF reachable_nil
   exact Core.Logic.Hoare.Procedure.not_postAsPredicate_of_postRefutedAt
     (by native_decide) hpost
 
@@ -355,7 +534,7 @@ private theorem set_const (π : String → Option Core.Procedure)
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
       σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
-      Post { ρ₀ with store := σ', hasFailure := Bool.false }) :
+      Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π φ params Pre
       [Core.Statement.set x (Lambda.LExpr.const () κ) md] Post :=
   Core.Logic.Hoare.set π φ params x _ md Pre Post
@@ -374,7 +553,7 @@ private theorem init_const (π : String → Option Core.Procedure)
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
       σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
-      Post { ρ₀ with store := σ', hasFailure := Bool.false }) :
+      Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π φ params Pre
       [Core.Statement.init x ty (.det (Lambda.LExpr.const () κ)) md] Post :=
   Core.Logic.Hoare.init π φ params x ty _ md Pre Post
@@ -396,7 +575,7 @@ private theorem set_fvar (π : String → Option Core.Procedure)
     (hsrc : ∀ ρ₀, Pre ρ₀ → ρ₀.store src = some (Lambda.LExpr.const () κ))
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
       σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
-      Post { ρ₀ with store := σ', hasFailure := Bool.false }) :
+      Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π φ params Pre
       [Core.Statement.set x (Lambda.LExpr.fvar () src ty) md] Post :=
   Core.Logic.Hoare.set π φ params x _ md Pre Post
@@ -414,7 +593,7 @@ private def intTy : Option Lambda.LMonoTy := some (Lambda.LMonoTy.tcons "int" []
 /-- Metadata of a statement list that is a single assignment. -/
 private def branchMd (ss : Core.Statements) : Imperative.MetaData Core.Expression :=
   match ss with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
   | _ => #[]
 
 /-- Decidable check that every non-`free` `ensures` of `proc` is `x == κ` for some
@@ -528,7 +707,7 @@ private def set1Proc : Core.Procedure :=
     is projected back out of the AST rather than written down here. -/
 private def set1Md : Imperative.MetaData Core.Expression :=
   match set1Proc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
   | _ => #[]
 
 /-- The assigned variable. -/
@@ -613,7 +792,7 @@ private def set2Md (i : Nat) : Imperative.MetaData Core.Expression :=
   match set2Proc.body with
   | .structured ss =>
     match ss[i]? with
-    | some (Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))) => md
+    | some (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))) => md
     | _ => #[]
   | _ => #[]
 
@@ -711,8 +890,8 @@ private def initVarParts :
     Core.Expression.Ty × Imperative.MetaData Core.Expression ×
       Option Lambda.LMonoTy × Imperative.MetaData Core.Expression :=
   match initVarProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.init _ ty _ md0)),
-                 Imperative.Stmt.cmd (Core.CmdExt.cmd
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.init _ ty _ md0)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd
                    (Imperative.Cmd.set _ (.det (Lambda.LExpr.fvar _ _ sty)) md1))] =>
       (ty, md0, sty, md1)
   | _ => default
@@ -1005,9 +1184,9 @@ private def exitBlkInnerParts :
     Imperative.MetaData Core.Expression × String × Imperative.MetaData Core.Expression ×
       Imperative.MetaData Core.Expression :=
   match exitBlkParts.2.1 with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
      Imperative.Stmt.exit l md1,
-     Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md2))] => (md0, l, md1, md2)
+     Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md2))] => (md0, l, md1, md2)
   | _ => default
 
 private def exitBlkInnerBody : Core.Statements :=
@@ -1056,39 +1235,41 @@ theorem exitBlk_meets_contract :
 `procedure Chk(x : int) spec { ensures x == 1; } { assume [a]: x == 1; assert [b]: x == 1; }`
 
 The first test whose body is neither an assignment nor a control construct.  Both commands
-leave the store alone, so nothing here is a store fact: the intermediate assertion is the
-*evaluation* fact `x == 1 ⇓ true`, which the `assume` supplies (its rule has no step
-otherwise) and which rules out `EvalCmd.eval_assert_fail`, so the `assert` cannot fail. -/
+leave the store alone, so nothing here is a store fact.  Under the event semantics the
+`assume` does not evaluate its condition but *emits* it, and the `assert` re-emits it:
+`AssertionsValid` for the `assert` follows from the preceding `assume` on the same
+expression (same store), and the postcondition `ensures x == 1` is required only when the
+emitted assumptions are satisfiable — which is exactly `x == 1`, so the obligation
+collapses to what the `assume` provides. -/
 
-/-- `assume e` leaves the store alone and makes `e ⇓ true` available afterwards: the
-    semantics has no step for an assumption that does not hold. -/
-private theorem assume_eval (π : String → Option Core.Procedure)
+/-- `assume l e` emits `e` and yields "`e` holds" when the emitted assumptions are
+    satisfiable. -/
+private theorem assume_emit (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams) (l : String) (e : Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression)
     (Pre : Imperative.Env Core.Expression → Prop) :
     Core.Logic.Hoare.Triple π φ params Pre [Core.Statement.assume l e md]
       (fun ρ => Core.Expression.eval ρ.factory ρ.store e = some Imperative.HasBool.tt) := by
-  refine Core.Logic.Hoare.cmd π φ params _ Pre _ (fun _ρ₀ _σ' _f _hpre _hwf hstep => ?_)
+  refine Core.Logic.Hoare.cmd π φ params _ Pre _ (fun ρ₀ σ' emitted _hpre _hwf hstep => ?_)
+  simp only [Core.EvalCommandE] at hstep
   cases hstep with
-  | cmd_sem hcmd =>
-    cases hcmd with
-    | eval_assume hev _hwfb => exact ⟨hev, rfl⟩
+  | eval_assume =>
+    refine ⟨True.intro, fun hsatisfiable => ?_⟩
+    obtain ⟨_world, hassum⟩ := hsatisfiable
+    exact hassum _ (List.mem_cons_self)
 
-/-- A passing `assert`: from `e ⇓ true` the failing rule cannot fire, and the store is
-    untouched, so the fact survives. -/
-private theorem assert_eval (π : String → Option Core.Procedure)
+/-- `assert l e` from `e` holding: the assertion is valid and the fact survives. -/
+private theorem assert_check (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams) (l : String) (e : Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression) :
     Core.Logic.Hoare.Triple π φ params
       (fun ρ => Core.Expression.eval ρ.factory ρ.store e = some Imperative.HasBool.tt)
       [Core.Statement.assert l e md]
       (fun ρ => Core.Expression.eval ρ.factory ρ.store e = some Imperative.HasBool.tt) := by
-  refine Core.Logic.Hoare.cmd π φ params _ _ _ (fun _ρ₀ _σ' _f hpre _hwf hstep => ?_)
+  refine Core.Logic.Hoare.cmd π φ params _ _ _ (fun ρ₀ σ' emitted hpre _hwf hstep => ?_)
+  simp only [Core.EvalCommandE] at hstep
   cases hstep with
-  | cmd_sem hcmd =>
-    cases hcmd with
-    | eval_assert_pass hev _hwfb => exact ⟨hev, rfl⟩
-    | eval_assert_fail hff _hwfb => exact absurd (hpre.symm.trans hff) (by native_decide)
+  | eval_assert => exact ⟨⟨fun _ _world _ => hpre, True.intro⟩, fun _ => hpre⟩
 
 private def chkPgm : Program :=
 #strata
@@ -1113,8 +1294,8 @@ private def chkProc : Core.Procedure :=
 private def chkParts : Core.Expression.Expr × Imperative.MetaData Core.Expression ×
     Imperative.MetaData Core.Expression :=
   match chkProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assume _ e md0)),
-                 Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] =>
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assume _ e md0)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] =>
       (e, md0, md1)
   | _ => default
 
@@ -1126,7 +1307,8 @@ private def chkBody : Core.Statements :=
 private theorem chk_body_eq : chkProc.body = .structured chkBody := by native_decide
 
 /-- **Valid, and fully proved.**  The `assume` supplies the very fact the `ensures`
-    asserts, and the `assert` on the same expression cannot fail. -/
+    asserts, and the `assert` on the same expression is valid because that fact
+    precedes it. -/
 theorem chk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple φ chkPgmAST testParams "Chk" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of φ chkPgmAST testParams
@@ -1139,8 +1321,8 @@ theorem chk_meets_contract :
       (Mid := fun ρ =>
         Core.Expression.eval ρ.factory ρ.store chkParts.1 = some Imperative.HasBool.tt)
       (by native_decide)
-      (assume_eval φ chkPgmAST.findProcByString? testParams "a" chkParts.1 chkParts.2.1 _)
-      (assert_eval φ chkPgmAST.findProcByString? testParams "b" chkParts.1 chkParts.2.2)
+      (assume_emit φ chkPgmAST.findProcByString? testParams "a" chkParts.1 chkParts.2.1 _)
+      (assert_check φ chkPgmAST.findProcByString? testParams "b" chkParts.1 chkParts.2.2)
       ⟨trivial, trivial⟩)
     (fun _ h => h)
     (fun ρ h label check hmem _hattr => ?_)
@@ -1202,7 +1384,7 @@ private def loopTermParts :
       Option Core.Expression.Expr × List (String × Core.Expression.Expr) ×
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopTermProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
                  Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
   | _ => default
 
@@ -1223,7 +1405,7 @@ private theorem loopTerm_body_eq : loopTermProc.body = .structured loopTermBody 
 private def loopTermInnerParts :
     Core.Expression.Expr × Imperative.MetaData Core.Expression :=
   match loopTermParts.2.2.2.2.1 with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ (.det e) md))] => (e, md)
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) md))] => (e, md)
   | _ => default
 
 /-- The loop body really is the single assignment `y := y + 1`. -/
@@ -1401,7 +1583,7 @@ private def loopForeverParts :
       Option Core.Expression.Expr × List (String × Core.Expression.Expr) ×
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopForeverProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
                  Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
   | _ => default
 

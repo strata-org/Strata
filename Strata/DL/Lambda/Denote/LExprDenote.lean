@@ -5,12 +5,12 @@
 -/
 module
 
-import Strata.DL.Lambda.Denote.LExprAnnotated
-import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.Denote.LExprAnnotated
+public import Strata.DL.Lambda.Factory
 meta import Init.Grind.Cases
 import Std.Tactic.BVDecide.Normalize.BitVec
 import Std.Tactic.BVDecide.Normalize.Prop
-import Strata.Util.HListProps
+public import Strata.Util.HListProps
 
 /-!
 ## Core Denotational Semantics
@@ -118,7 +118,7 @@ instance : DecidableEq LSort := fun a b =>
 
 /-- Substitute all free type variables in a monomorphic type, producing a
 ground sort. -/
-def LMonoTy.substTyVars (ρ : TyIdentifier → LSort) : LMonoTy → LSort
+@[expose] public def LMonoTy.substTyVars (ρ : TyIdentifier → LSort) : LMonoTy → LSort
   | LMonoTy.ftvar name      => ρ name
   | LMonoTy.bitvec n        => .bitvec n
   | LMonoTy.tcons name args => .tcons name (map args)
@@ -146,7 +146,7 @@ kinds of type constructors may be encountered:
 /-- Every type produced by a `TyConstrInterp` is inhabited. This holds for
 inductive datatypes defined in Core because `adt_inhab` ensures the existence
 of an inhabited constructor. -/
-class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
+public class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
   inhabited : ∀ name args, Inhabited (tcInterp name args)
 
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
@@ -166,7 +166,7 @@ Every sort denotes an inhabited type, given that the type constructor
 interpretation produces inhabited types.
 -/
 @[reducible]
-def SortDenote.inhabited (tcInterp : TyConstrInterp)
+public def SortDenote.inhabited (tcInterp : TyConstrInterp)
     (h : ∀ name args, Inhabited (tcInterp name args))
     (s : LSort) : Inhabited (SortDenote tcInterp s) := by
   induction s using LSort.rec' with
@@ -182,17 +182,17 @@ def SortDenote.inhabited (tcInterp : TyConstrInterp)
     · exact h _ _
   | hbitvec n => exact ⟨(0 : BitVec n)⟩
 
-instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
+public instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
     (s : LSort) : Inhabited (SortDenote tcInterp s) :=
   SortDenote.inhabited tcInterp TyConstrInterp.AllInhabited.inhabited s
 
 /-- Type-variable valuation: maps each type variable to a sort. This is a total
 function; type variables that do not appear in the term's type may be assigned
 any sort (e.g. `int`) since their value will never be used. -/
-def TyVarVal := TyIdentifier → LSort
+@[expose] public def TyVarVal := TyIdentifier → LSort
 
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
-abbrev TyDenote (tcInterp : TyConstrInterp)
+public abbrev TyDenote (tcInterp : TyConstrInterp)
     (ρ : TyVarVal) (ty : LMonoTy) : Type :=
   SortDenote tcInterp (LMonoTy.substTyVars ρ ty)
 
@@ -200,7 +200,7 @@ abbrev TyDenote (tcInterp : TyConstrInterp)
 
 /-- Bound variable valuation: an `HList` of semantic values indexed by the
 typing context. -/
-abbrev BVarVal (tcInterp : TyConstrInterp)
+public abbrev BVarVal (tcInterp : TyConstrInterp)
     (ρ : TyVarVal) (Δ : List LMonoTy) :=
   HList (TyDenote tcInterp ρ) Δ
 
@@ -209,7 +209,7 @@ abbrev BVarVal (tcInterp : TyConstrInterp)
 /-- Maps each identifier and sort to a semantic value of that sort.
 Used for both operator interpretations (`OpInterp`) and free-variable
 valuations (`FreeVarVal`). -/
-def IdentInterp (T : LExprParams)
+@[expose] public def IdentInterp (T : LExprParams)
     (tcInterp : TyConstrInterp) :=
   Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s
 
@@ -217,11 +217,11 @@ def IdentInterp (T : LExprParams)
 Takes the string name (not the full identifier with metadata) so that
 the semantics is independent of metadata.
 Need because Factory lookup only depends on the name -/
-def OpInterp
+@[expose] public def OpInterp
     (tcInterp : TyConstrInterp) :=
   String → (s : LSort) → SortDenote tcInterp s
 /-- Free-variable valuation: maps each free variable to its value. -/
-abbrev FreeVarVal := IdentInterp
+public abbrev FreeVarVal := IdentInterp
 
 /-- Update an identifier interpretation so that the names in `bindings` map to
 the corresponding values from `vals`. Names not in `bindings` keep their
@@ -261,7 +261,7 @@ cleanly separates interpretations (fixed for a theory) from valuations
 
 Noncomputable due to `Classical.propDecidable` in the `eq` and `quant`
 cases; used only for reasoning, not computation. -/
-noncomputable def LExpr.denote
+public noncomputable def LExpr.denote
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -712,7 +712,7 @@ theorem denote_intConst
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
   rw [denote_const]; simp [denoteConst]
 
-theorem denote_boolConst
+public theorem denote_boolConst
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -804,7 +804,7 @@ theorem denote_abs
   exact (Denotes_denote hd_abs).symm
 
 /-- Unfolding lemma for `denote` of `eq` when operands are equal. -/
-theorem denote_eq_true
+public theorem denote_eq_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -876,7 +876,7 @@ theorem denote_ite
     exact (Denotes_denote hd_ite).symm
 
 /-- Unfolding lemma for `denote` of `quant .all` when the body is true for all values. -/
-theorem denote_quant_all_true
+public theorem denote_quant_all_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -966,7 +966,7 @@ variable (opInterp : OpInterp tcInterp)
 
 /-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
 of argument values. -/
-def SortDenote.applyArgs
+public def SortDenote.applyArgs
     : {args : List LSort} → {ret : LSort} →
       SortDenote tcInterp (LSort.mkArrow ret args) →
       HList (SortDenote tcInterp) args →
@@ -978,7 +978,7 @@ def SortDenote.applyArgs
 `body`: for every choice of argument values, the interpretation of the op
 applied to those arguments equals the denotation of the body under the
 valuation that maps the formal parameters to those arguments. -/
-def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
+public def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
     (f : LFunc T) (body : LExpr T.mono) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp),
@@ -1011,7 +1011,7 @@ a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
 all expressions are well-typed at the instantiated types (via a type
 substitution `tySubst`), the denotation of the result equals the
 interpretation of the op applied to the denotations of the arguments. -/
-def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
+public def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp)
@@ -1042,7 +1042,7 @@ variable (opInterp : OpInterp tcInterp)
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
 `InterpConsistentEval`. -/
-def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+public def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   (∀ (f : String), (hf : f ∈ F) → ∀ body, (F[f]).body = some body →
     LFunc.InterpConsistentBody tcInterp opInterp (F[f]) body) ∧
   (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
@@ -1077,7 +1077,7 @@ and a demonstration of how one could provide models for the axioms.
 
 /-- ADT interpretation consistency: the semantic interpretation of constructors
 satisfies disjointness and injectivity.-/
-structure ConstrInterpConsistent
+public structure ConstrInterpConsistent
     (F : @Factory T) : Prop where
   /-- Constructor disjointness (global): two constructor functions with
   different names, when fully applied, produce different values, provided
@@ -1132,7 +1132,7 @@ are defined over consistent interpretations. -/
 /-- A consistent interpretation of a factory: bundles `tcInterp` and
 `opInterp` with proofs that the interpretation is inhabited, consistent
 with function definitions, and respects ADT axioms. -/
-structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
+public structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
   tcInterp : TyConstrInterp
   opInterp : OpInterp tcInterp
   allInhabited : TyConstrInterp.AllInhabited tcInterp

@@ -13,7 +13,7 @@ import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 -- Imported for their pass metadata only, to declare this pass's ordering
--- constraints (see `comesBefore`/`comesAfter` on `eliminateExceptionsPass`).
+-- constraints (derived from the node kinds declared on `eliminateExceptionsPass`).
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.EliminateReturnStatements
 import StrataLaurel.Implementation.ContractPass
@@ -111,27 +111,25 @@ private def exitPendingVar (label : String) : String := s!"$exiting_{label}"
 private def exnResultVar : String := resultOutputName
 
 /-- The identifiers `proc` binds where a carrier collision could bite: inputs,
-    outputs, and every name bound in its body and postconditions — declarations,
-    `.Assign` targets, `catch` bindings, and quantifier binders. Binders open
-    nested scopes, but the carrier is referenced from postconditions that a
-    substitution may land inside (an authored `forall($result: …)` would capture
-    a carrier spelled `$result`), so scoping is ignored rather than modelled:
-    every bound name is treated as taken. Used to choose a carrier name that
-    collides with nothing it collects. -/
+    outputs, and every name `boundNamesOfNode` reports in its body and
+    postconditions. Binders open nested scopes, but the carrier is referenced
+    from postconditions that a substitution may land inside (an authored
+    `forall($result: …)` would capture a carrier spelled `$result`), so scoping
+    is ignored rather than modelled: every bound name is treated as taken. Used
+    to choose a carrier name that collides with nothing it collects. -/
 private def usedNames (proc : Procedure) : Std.HashSet String :=
   let fromBody (b : StmtExprMd) (acc : Std.HashSet String) : Std.HashSet String :=
     foldStmtExpr (fun n acc =>
+      let acc := (boundNamesOfNode n).foldl (fun acc name => acc.insert name.text) acc
+      -- Assigning to an existing `.Local` binds nothing, so `boundNamesOfNode` does not
+      -- report it; a carrier must avoid it anyway, since the target may be a file-scope
+      -- global rather than a local this procedure declares.
       match n.val with
-      | .Var (.Declare p) => acc.insert p.name.text
       | .Assign targets _ =>
         targets.foldl (fun acc t =>
           match t.val with
-          | .Declare p => acc.insert p.name.text
           | .Local id => acc.insert id.text
-          | .Field _ _ => acc) acc
-      | .Try _ catches _ =>
-        catches.foldl (fun acc c => acc.insert c.binding.text) acc
-      | .Quantifier _ param _ _ => acc.insert param.name.text
+          | .Declare _ | .Field _ _ => acc) acc
       | _ => acc) acc b
   let acc := (proc.inputs ++ proc.outputs).foldl
     (fun (acc : Std.HashSet String) p => acc.insert p.name.text) {}
@@ -1231,22 +1229,31 @@ end -- public section
 /-- Pipeline pass: eliminate exceptions. -/
 public def eliminateExceptionsPass : LoweringPass where
   name := "EliminateExceptions"
+  creates := [
+      NodeKind.StmtExpr.Block,
+      NodeKind.StmtExpr.Exit,
+      NodeKind.TypeDefinition.Datatype,
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Assign,
+      NodeKind.StmtExpr.IfThenElse,
+      NodeKind.Body.postconditions.cons,
+      NodeKind.Procedure.throwsOn.cons
+    ]
+  removes := [
+      NodeKind.StmtExpr.Throw,
+      NodeKind.StmtExpr.Try,
+      NodeKind.StmtExpr.Try.finally?.some,
+      NodeKind.Procedure.throwsType.some
+    ]
+  unsupported := [NodeKind.StmtExpr.Return.value.some]
   needsResolves := true
   documentation := "Lowers the exceptional channel (throw, try/catch/finally, throws/throwsOn) into ordinary Laurel: labeled blocks, exits, and Result datatype construction. A `throws T` procedure returns a single `Result<Val, T>`; the in-flight exception rides in $thrown and a per-try `$exc_<i>` typed at that try's least-common-ancestor exception type, and the result is assembled after the body. Exception contracts become ordinary postconditions over $result. After this pass no Throw/Try remains and the throws type and the cases' postconditions are gone (each case's guard and frame targets are left for ModifiesClauses, which builds the per-case frames and the exhaustiveness claim)."
-  -- The two `return`-related constraints and the `contractPass` one are declared
-  -- rather than left to the pipeline comment because violating them fails *silently*:
-  -- a `return` that this pass never intercepted would skip its `finally` arm, and an
-  -- exceptional contract lowered after `contractPass` would be dropped, making every
-  -- `throwsOn` case pass vacuously. Neither trips the post-pass re-resolve gate, so
-  -- `orderingRespected` is the only thing that can catch a reordering.
-  comesBefore := [⟨heapParameterizationPass.meta,
-    "types `$exc_<i>` at each try's least-common-ancestor exception type, which heap parameterization erases to `Composite`; so it must run first"⟩,
-    ⟨eliminateReturnStatementsPass.meta,
-    "intercepts `return` to run the enclosing `finally` arms before leaving the procedure; once returns are eliminated there is no `return` left to intercept, and the arm would be skipped silently"⟩,
-    ⟨contractPass.meta,
-    "rewrites the exceptional contract into ordinary postconditions over `$result`, which `contractPass` then lowers; running after it would drop those postconditions and make every `throwsOn` case vacuous"⟩]
-  comesAfter := [⟨eliminateValueInReturnsPass.meta,
-    "assembles the single `Result` output from the named value output, so `return <value>` payloads must already have been rewritten into assignments"⟩]
+  -- The `return`-related and `contractPass` orderings matter because violating them
+  -- fails *silently*: a `return` this pass never intercepted would skip its `finally`
+  -- arm, and an exceptional contract lowered after `contractPass` would be dropped,
+  -- making every `throwsOn` case pass vacuously. Neither trips the post-pass
+  -- re-resolve gate, so `orderingRespected` is the only thing that catches a
+  -- reordering.
   run := fun _ p m =>
     let (p', diags) := eliminateExceptionsTransform m p
     (p', diags, {})

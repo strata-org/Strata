@@ -115,6 +115,15 @@ private def appliedBoxTag (ty : HighType) : Option String :=
   -- tag `.UserDefined`, `.Applied` datatypes, and `.TMap`/`.TSet`); `none` on TVar/TVoid.
   instTagCommon (fun _ => none) ty
 
+/-- Heap box constructor name for value-kind `tag`. -/
+def boxCtorName (tag : String) : Identifier := s!"Box${tag}"
+
+/-- The `$Box` variant's field leaf for `tag` (shared by the constructor field and destructor). -/
+def boxFieldLeaf (tag : String) : String := s!"{tag}Val"
+
+/-- Unsafe selector (destructor) on `$Box` for the box variant of `tag`. -/
+def boxDestructorForTag (tag : String) : Identifier := s!"$Box..{boxFieldLeaf tag}!"
+
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "$Box..<datatypeName>Val!";
     for Composite types, uses "$Box..compositeVal!".
@@ -131,7 +140,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "$Box..realVal!"
   | .TString => "$Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name || isOpaque model name then s!"$Box..{name.text}Val!"
+      if isDatatype model name || isOpaque model name then boxDestructorForTag name.text
       else "$Box..compositeVal!"
   | .TBv n => s!"$Box..bv{n}Val!"
   -- Generic datatype instantiation `Bx<int>` + built-in `TotalMap`: one box variant per
@@ -139,13 +148,12 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   -- only `totalMapType`, no Set production — kept for symmetry with `.TMap`.)
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
-    | some tag => s!"$Box..{tag}Val!"
+    | some tag => boxDestructorForTag tag
     | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
-/-- Get the Box constructor name for a given Laurel HighType.
-    For UserDefined datatypes, uses "Box..<datatypeName>";
-    for Composite types, uses "BoxComposite". -/
+/-- Get the Box constructor name for a given Laurel HighType. For datatype/opaque/generic-inst
+    types uses `boxCtorName` (`Box$<tag>`); scalars are `BoxInt`/…; composites `BoxComposite`. -/
 def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "BoxInt"
@@ -154,13 +162,13 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "BoxReal"
   | .TString => "BoxString"
   | .UserDefined name =>
-      if isDatatype model name || isOpaque model name then s!"Box..{name.text}"
+      if isDatatype model name || isOpaque model name then boxCtorName name.text
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   -- Generic datatype instantiation `Bx<int>`, and built-in collections `TotalMap`/`Set`.
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
-    | some tag => s!"Box..{tag}"
+    | some tag => boxCtorName tag
     | none => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
@@ -178,7 +186,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, syntheticSource⟩ }] }
   | .UserDefined name =>
       if isDatatype model name || isOpaque model name then
-        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, syntheticSource⟩ }] }
+        some { name := boxCtorName name.text, args := [{ name := boxFieldLeaf name.text, type := ⟨.UserDefined name, syntheticSource⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", syntheticSource⟩ }] }
   | .TBv n =>
@@ -188,7 +196,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   -- datatype, `Core.mapTy k v` for Map) — keeping distinct instantiations in distinct boxes.
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
-    | some tag => some { name := s!"Box..{tag}", args := [{ name := s!"{tag}Val", type := ⟨ty, syntheticSource⟩ }] }
+    | some tag => some { name := boxCtorName tag, args := [{ name := boxFieldLeaf tag, type := ⟨ty, syntheticSource⟩ }] }
     | none => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
@@ -874,16 +882,37 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
+  creates := [
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.Procedure.inputs.cons,
+      NodeKind.Pseudo.totalMap,
+      NodeKind.Pseudo.box,
+      NodeKind.Pseudo.heapVar,
+      NodeKind.Pseudo.oldExpr,
+      NodeKind.Pseudo.generatedReturn,
+      NodeKind.Pseudo.statementExpression,
+      NodeKind.Program.staticFields.cons
+    ]
+  removes := [
+      NodeKind.Pseudo.implicitHeap,
+      NodeKind.StmtExpr.Var.var.Field,
+      NodeKind.StmtExpr.PureFieldUpdate,
+      NodeKind.StmtExpr.Snapshot,
+      NodeKind.StmtExpr.Old.label?.some
+    ]
+  unsupported := [
+      NodeKind.CompositeType.typeArgs.cons,
+      NodeKind.TypeDefinition.Constrained,
+      NodeKind.StmtExpr.Throw,
+      NodeKind.StmtExpr.Try,
+      NodeKind.StmtExpr.Return.value.some
+    ]
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `TotalMap Composite (TotalMap Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with
     | .ok p' => (p', [], {})
     | .error e => (p, [Message.fromString s!"Internal error in HeapParameterization: {e}" .strataBug], {})
-  comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
-  comesBefore := [
-    ⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩,
-    ⟨ eliminateReturnStatementsPass.meta, "the heap parameterization pass introduces helper procedures that use return statements. This dependency could be eliminated if those helpers would assign to the output parameter directly."⟩]
 
 end Strata.Laurel
 

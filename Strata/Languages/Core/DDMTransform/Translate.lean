@@ -1672,7 +1672,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let f ← translateIdent String fa
     let .seq _ .comma rawArgs := callArgsa
       | TransM.error s!"Expected comma-separated call args: {repr callArgsa}"
-    let mut callArgs : List (Core.CallArg Core.Expression) := []
+    let mut callArgs : List (Imperative.CallArg Core.Expression) := []
     for a in rawArgs do
       let .op aop := a
         | TransM.error s!"translateCallArg expects an op: {repr a}"

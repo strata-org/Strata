@@ -57,13 +57,21 @@ instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
   eq_of_beq h := (ExprOrNondet.beq_eq _ _).mp h
   rfl := (ExprOrNondet.beq_eq _ _).mpr rfl
 
-/-! ## Assertion Identity -/
+/-! ## Assertion and cover identity -/
 
 /-- An assertion identifier: the label + expression attached to an
     `assert` command. -/
 structure AssertId (P : PureExpr) where
   label : String
   expr  : P.Expr
+
+/-- A cover identifier: the source label and metadata attached to a `cover`
+command. Metadata distinguishes occurrences even when labels are reused.
+
+TODO: Update AssertId to have the identical definition, because labels can
+overlap, and expr may easily change after transformations.
+-/
+@[expose] abbrev CoverId (P : PureExpr) := String × MetaData P
 
 /-! ## Commands
 
@@ -157,6 +165,124 @@ class HasInit (P : PureExpr) (CmdT : Type) where
 
 instance : HasInit P (Cmd P) where
   init x ty e md := .init x ty e md
+
+---------------------------------------------------------------------
+
+/--
+A call argument is either an input expression, an in-out variable, or an
+output variable.
+-/
+inductive CallArg (P : PureExpr) where
+  /-- An input argument: a by-value expression. -/
+  | inArg (e : P.Expr)
+  /-- An input-output argument: a mutable variable passed by reference. -/
+  | inoutArg (id : P.Ident)
+  /-- An output-only argument: a variable whose final value is returned to the caller. -/
+  | outArg (id : P.Ident)
+
+@[grind] def CallArg.beq [BEq P.Expr] [BEq P.Ident] (a b : CallArg P) : Bool :=
+  match a, b with
+  | .inArg e1, .inArg e2 => e1 == e2
+  | .inoutArg id1, .inoutArg id2 => id1 == id2
+  | .outArg id1, .outArg id2 => id1 == id2
+  | _, _ => false
+
+instance [BEq P.Expr] [BEq P.Ident] : BEq (CallArg P) where
+  beq := CallArg.beq
+
+theorem CallArg.beq_eq {P : PureExpr} [DecidableEq P.Expr] [DecidableEq P.Ident]
+    (a b : CallArg P) : CallArg.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : DecidableEq (CallArg P) :=
+  beq_eq_DecidableEq CallArg.beq CallArg.beq_eq
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) where
+  eq_of_beq h := (CallArg.beq_eq _ _).mp h
+  rfl := (CallArg.beq_eq _ _).mpr rfl
+
+namespace CallArg
+
+def getInArgs (args : List (CallArg P)) : List P.Expr :=
+  args.filterMap fun | .inArg e => some e | _ => none
+
+def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id => some id | _ => none
+
+def getOutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .outArg id => some id | _ => none
+
+def getLhs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
+
+def getOutOnly (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .outArg id => some id | _ => none
+
+def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
+  go args newExprs
+where
+  go : List (CallArg P) → List P.Expr → List (CallArg P)
+  | [], _ => []
+  | .inArg _ :: rest, e :: es => .inArg e :: go rest es
+  | .inArg e :: rest, [] => .inArg e :: go rest []
+  -- `getInputExprs` emits a slot for each `inoutArg` too; consume it (keeping
+  -- the id) so the cursor stays aligned with the `inArg` positions.
+  | .inoutArg id :: rest, _ :: es => .inoutArg id :: go rest es
+  | a :: rest, es => a :: go rest es
+
+theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
+    (replaceInArgs args newExprs).length = args.length := by
+  simp [replaceInArgs]
+  suffices h : ∀ es, (replaceInArgs.go args es).length = args.length from h newExprs
+  induction args with
+  | nil => simp [replaceInArgs.go]
+  | cons a rest ih =>
+    intro es
+    match a, es with
+    | .inArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inArg _, [] => simp [replaceInArgs.go, ih]
+    | .inoutArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, [] => simp [replaceInArgs.go, ih]
+    | .outArg _, es => simp [replaceInArgs.go, ih]
+
+end CallArg
+
+/--
+Extend Imperative's commands by adding a procedure call.
+-/
+inductive CmdExt (P : PureExpr) where
+  /-- A standard imperative command. -/
+  | cmd (c : Cmd P)
+  /-- A procedure call with the given name and arguments. -/
+  | call (procName : String) (args : List (CallArg P))
+         (md : MetaData P)
+
+@[grind] def CmdExt.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : CmdExt P) : Bool :=
+  match a, b with
+  | .cmd c1, .cmd c2 => c1 == c2
+  | .call n1 args1 md1, .call n2 args2 md2 => n1 == n2 && args1 == args2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (CmdExt P) where
+  beq := CmdExt.beq
+
+theorem CmdExt.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : CmdExt P) : CmdExt.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (CmdExt P) :=
+  beq_eq_DecidableEq CmdExt.beq CmdExt.beq_eq
+
+instance : HasPassiveCmds P (CmdExt P) where
+  assert l e md := .cmd (.assert l e md)
+  assume l e md := .cmd (.assume l e md)
+
+instance : HasHavoc P (CmdExt P) where
+  havoc x md := .cmd (.set x .nondet md)
+
+instance : HasInit P (CmdExt P) where
+  init x ty e md := .cmd (.init x ty e md)
 
 ---------------------------------------------------------------------
 

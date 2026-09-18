@@ -25,10 +25,25 @@ overall structure of the soundness-specification framework.
 
 Connecting the two assertion-validity formulations and the transform specs.
 The Hoare-logic definitions and structural rules themselves live in
-`Strata.DL.Imperative.Logic.HoareTemplate`, and the bridges from them to the
-reachability-based side are in `Strata.Transform.SpecHoareConnection`:
+`Strata.DL.Imperative.Logic.HoareTemplate`; event-trace Hoare transport across
+trace overapproximations lives in `Strata.Transform.SpecHoareConnection`:
 
-- `sound_assertValid` / `sound_allAsserts` — `Sound` implies `AssertValid`.
+- `sound_assertValid` / `sound_allAsserts` — `Sound` transports
+  `AssertValidOnTracesWhen` and `AllAssertsValidOnTracesWhen`.
+
+Canonical event-trace overapproximation properties:
+
+- `OverapproximatesTraces.id` — identity transformation for a reflexive trace
+  relation.
+- `OverapproximatesTraces.rel_comp` — compose stages with different trace
+  relations, producing their relational composition `RComp`.
+- `overapproximatesTraces_assertValid` / `overapproximatesTraces_allAsserts` —
+  transport per-identifier or whole-trace assertion validity when the trace
+  relation reflects the corresponding predicate.
+- `OverapproximatesTracesUptoWhen.comp_trans_eq` — shared-start composition with
+  stage-specific trace relations and a transitive output-state relation.
+- `overapproximatesTraces_stmts` — lift per-statement trace overapproximation to
+  statement lists when the trace relation relates `[]` and respects append.
 
 Properties of the `Overapproximates` family (monotonicity and composition):
 
@@ -83,44 +98,227 @@ variable (L : Lang P)
 
 namespace Transform
 
-/-! ## Connection between Sound, AssertValid and AllAssertsValid -/
+/-! ## Connection between `Sound` and trace-native assertion validity -/
 
 section Connection
-omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+omit [HasOps P] [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
-theorem sound_comp (L₁ L₂ L₃ : Lang P)
+/-- Composing two sound transformations yields a sound composite under the same
+condition interpretation. -/
+theorem sound_comp (I : ConditionInterp P)
+    (L₁ L₂ L₃ : EventLang P (Event P))
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (params₃ : L₃.InitEnvWFParamsTy)
-    (h₁ : Sound L₁ L₂ T₁ params₁ params₂) (h₂ : Sound L₂ L₃ T₂ params₂ params₃) :
-    Sound L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+    (h₁ : Sound I L₁ L₂ T₁ params₁ params₂)
+    (h₂ : Sound I L₂ L₃ T₂ params₂ params₃) :
+    Sound I L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro s s'' a hrun hvalid
   simp [bind, Option.bind] at hrun
   match h1 : T₁ s with
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-theorem sound_assertValid (L₁ L₂ : Lang P)
+/-- If `T` maps `s` to `s'`, soundness transports trace-native validity of an
+assertion identifier from `s'` back to `s`. -/
+theorem sound_assertValid (I : ConditionInterp P)
+    (L₁ L₂ : EventLang P (Event P))
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT)
-    (ht : T s = some s') (hsound : Sound L₁ L₂ T params₁ params₂)
-    (hvalid : AssertValidWhen L₂ (L₂.initEnvWF params₂ s') s' a) :
-    AssertValidWhen L₁ (L₁.initEnvWF params₁ s) s a := hsound s s' a ht hvalid
+    (ht : T s = some s') (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (hvalid : AssertValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ s') s' a) :
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ s) s a :=
+  hsound s s' a ht hvalid
 
-theorem sound_allAsserts (L₁ L₂ : Lang P)
+/-- A sound transformation transports whole-trace validity of every assertion
+from the target statement back to the source statement. -/
+theorem sound_allAsserts (I : ConditionInterp P)
+    (L₁ L₂ : EventLang P (Event P))
     (T : L₁.StmtT → Option L₂.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
-    (hsound : Sound L₁ L₂ T params₁ params₂)
-    (hvalid : AllAssertsValidWhen L₂ (L₂.initEnvWF params₂ s') s') :
-    AllAssertsValidWhen L₁ (L₁.initEnvWF params₁ s) s := fun a => hsound s s' a ht (hvalid a)
+    (hsound : Sound I L₁ L₂ T params₁ params₂)
+    (hvalid : AllAssertsValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ s') s') :
+    AllAssertsValidOnTracesWhen L₁ I
+      (L₁.initEnvWF params₁ s) s := by
+  intro ρ₀ cfg trace hinit htrace
+  apply Trace.AssertionsValid.of_all_assertionValid I
+  intro aid
+  have ha := hsound s s' aid ht (fun ρ₀' cfg' trace' hinit' htrace' =>
+    Trace.AssertionValid.of_assertionsValid I aid
+      (hvalid ρ₀' cfg' trace' hinit' htrace'))
+  exact ha ρ₀ cfg trace hinit htrace
 
-theorem sound_id (params : L.InitEnvWFParamsTy) : Sound L L some params params := by
+/-- The identity transformation is sound for every event language and condition
+interpretation. -/
+theorem sound_id (I : ConditionInterp P) (L : EventLang P (Event P))
+    (params : L.InitEnvWFParamsTy) : Sound I L L some params params := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
 end Connection
 
+
+
+/-! ## Properties of the trace-overapproximation family -/
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Identity transformation trace-overapproximates itself for any reflexive
+trace relation. -/
+theorem OverapproximatesTraces.id
+    {EventT : Type}
+    (Rtrace : Relation (List EventT)) (hrefl : Reflexive Rtrace)
+    (L : EventLang P EventT) (params : L.InitEnvWFParamsTy) :
+    OverapproximatesTraces Rtrace L L some params params := by
+  intro st st' ht _ ρ₀ ρ₀' heq hinit
+  simp at ht
+  subst ht
+  subst heq
+  refine ⟨?_, ?_, ?_, hinit⟩
+  · intro cfg trace htrace
+    exact ⟨cfg, trace, htrace, hrefl trace⟩
+  · intro ρ' trace htrace
+    exact ⟨ρ', trace, htrace, rfl, hrefl trace⟩
+  · intro lbl ρ' trace htrace
+    exact ⟨ρ', trace, htrace, rfl, hrefl trace⟩
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Explicit trace-relation overapproximations compose by relational
+composition of their trace relations. -/
+theorem OverapproximatesTraces.rel_comp
+    {EventT : Type}
+    (R₁ R₂ : Relation (List EventT))
+    (L₁ L₂ L₃ : EventLang P EventT)
+    (T₁ : L₁.StmtT → Option L₂.StmtT)
+    (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy)
+    (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (h₁ : OverapproximatesTraces R₁ L₁ L₂ T₁ params₁ params₂)
+    (h₂ : OverapproximatesTraces R₂ L₂ L₃ T₂ params₂ params₃) :
+    OverapproximatesTraces (RComp R₁ R₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+  intro st st'' ht _ ρ₀ ρ₀' heq hinit
+  subst heq
+  simp [bind, Option.bind] at ht
+  match hmid : T₁ st with
+  | none => simp [hmid] at ht
+  | some st' =>
+    rw [hmid] at ht
+    have hr₁ := h₁ st st' hmid trivial ρ₀ ρ₀ rfl hinit
+    have hr₂ := h₂ st' st'' ht trivial ρ₀ ρ₀ rfl hr₁.2.2.2
+    refine ⟨?_, ?_, ?_, hr₂.2.2.2⟩
+    · intro cfg trace htrace
+      obtain ⟨cfg₁, trace₁, htrace₁, hrel₁⟩ := hr₁.1 cfg trace htrace
+      obtain ⟨cfg₂, trace₂, htrace₂, hrel₂⟩ := hr₂.1 cfg₁ trace₁ htrace₁
+      exact ⟨cfg₂, trace₂, htrace₂, ⟨trace₁, hrel₁, hrel₂⟩⟩
+    · intro ρ' trace htrace
+      obtain ⟨ρ₁, trace₁, htrace₁, henv₁, hrel₁⟩ := hr₁.2.1 ρ' trace htrace
+      obtain ⟨ρ₂, trace₂, htrace₂, henv₂, hrel₂⟩ := hr₂.2.1 ρ₁ trace₁ htrace₁
+      exact ⟨ρ₂, trace₂, htrace₂, henv₁.trans henv₂,
+        ⟨trace₁, hrel₁, hrel₂⟩⟩
+    · intro lbl ρ' trace htrace
+      obtain ⟨ρ₁, trace₁, htrace₁, henv₁, hrel₁⟩ := hr₁.2.2.1 lbl ρ' trace htrace
+      obtain ⟨ρ₂, trace₂, htrace₂, henv₂, hrel₂⟩ := hr₂.2.2.1 lbl ρ₁ trace₁ htrace₁
+      exact ⟨ρ₂, trace₂, htrace₂, henv₁.trans henv₂,
+        ⟨trace₁, hrel₁, hrel₂⟩⟩
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A trace overapproximation transports validity of one assertion identifier
+when its trace relation reflects that validity. -/
+theorem overapproximatesTraces_assertValid
+    (I : ConditionInterp P) (Rtrace : Relation (Trace P))
+    (L₁ L₂ : EventLang P (Event P)) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (hreflect : ∀ trace trace', Rtrace trace trace' → ∀ aid,
+      Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace)
+    (hover : OverapproximatesTracesWhen Rtrace L₁ L₂ T pre params₁ params₂)
+    {st : L₁.StmtT} {st' : L₂.StmtT} {aid : AssertId P}
+    (ht : T st = some st') (hpre : pre st)
+    (hvalid : AssertValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ st') st' aid) :
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ st) st aid := by
+  intro ρ₀ cfg trace hinit htrace
+  have hr := hover st st' ht hpre ρ₀ ρ₀ rfl hinit
+  obtain ⟨cfg', trace', htrace', hrel⟩ := hr.1 cfg trace htrace
+  exact hreflect trace trace' hrel aid
+    (hvalid ρ₀ cfg' trace' hr.2.2.2 htrace')
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A trace overapproximation transports all-assert validity when its trace
+relation reflects `Trace.AssertionsValid`. -/
+theorem overapproximatesTraces_allAsserts
+    (I : ConditionInterp P) (Rtrace : Relation (Trace P))
+    (L₁ L₂ : EventLang P (Event P)) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (hreflect : ∀ trace trace', Rtrace trace trace' →
+      Trace.AssertionsValid P I trace' → Trace.AssertionsValid P I trace)
+    (hover : OverapproximatesTracesWhen Rtrace L₁ L₂ T pre params₁ params₂)
+    {st : L₁.StmtT} {st' : L₂.StmtT}
+    (ht : T st = some st') (hpre : pre st)
+    (hvalid : AllAssertsValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ st') st') :
+    AllAssertsValidOnTracesWhen L₁ I
+      (L₁.initEnvWF params₁ st) st := by
+  intro ρ₀ cfg trace hinit htrace
+  have hr := hover st st' ht hpre ρ₀ ρ₀ rfl hinit
+  obtain ⟨cfg', trace', htrace', hrel⟩ := hr.1 cfg trace htrace
+  exact hreflect trace trace' hrel
+    (hvalid ρ₀ cfg' trace' hr.2.2.2 htrace')
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Shared-start composition for trace overapproximations with potentially
+different trace relations and a transitive outcome relation. -/
+theorem OverapproximatesTracesUptoWhen.comp_trans_eq
+    {EventT : Type}
+    (Rtrace₁ Rtrace₂ : Relation (List EventT)) (Rout : Relation (Env P))
+    (houtTrans : Transitive Rout)
+    (L₁ L₂ L₃ : EventLang P EventT)
+    (T₁ : L₁.StmtT → Option L₂.StmtT)
+    (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesTracesUptoWhen Rtrace₁ (· = ·) Rout
+      L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesTracesUptoWhen Rtrace₂ (· = ·) Rout
+      L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesTracesUptoWhen (RComp Rtrace₁ Rtrace₂) (· = ·) Rout
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ := by
+  intro st st'' ht hpre₁ ρ₀ ρ₀' heq hinit
+  subst ρ₀'
+  simp only [bind, Option.bind] at ht
+  match hT₁ : T₁ st with
+  | none => rw [hT₁] at ht; exact absurd ht (by nofun)
+  | some st' =>
+    rw [hT₁] at ht
+    have hr₁ := h₁ st st' hT₁ hpre₁ ρ₀ ρ₀ rfl hinit
+    have hr₂ := h₂ st' st'' ht (hpre st st' hT₁ hpre₁) ρ₀ ρ₀ rfl hr₁.2.2.2
+    refine ⟨?_, ?_, ?_, hr₂.2.2.2⟩
+    · intro cfg trace hrun
+      obtain ⟨cfg₁, trace₁, hrun₁, hrel₁⟩ := hr₁.1 cfg trace hrun
+      obtain ⟨cfg₂, trace₂, hrun₂, hrel₂⟩ := hr₂.1 cfg₁ trace₁ hrun₁
+      exact ⟨cfg₂, trace₂, hrun₂, ⟨trace₁, hrel₁, hrel₂⟩⟩
+    · intro ρ' trace hrun
+      obtain ⟨ρ₁, trace₁, hrun₁, hout₁, hrel₁⟩ := hr₁.2.1 ρ' trace hrun
+      obtain ⟨ρ₂, trace₂, hrun₂, hout₂, hrel₂⟩ := hr₂.2.1 ρ₁ trace₁ hrun₁
+      exact ⟨ρ₂, trace₂, hrun₂, houtTrans _ _ _ hout₁ hout₂,
+        ⟨trace₁, hrel₁, hrel₂⟩⟩
+    · intro lbl ρ' trace hrun
+      obtain ⟨ρ₁, trace₁, hrun₁, hout₁, hrel₁⟩ := hr₁.2.2.1 lbl ρ' trace hrun
+      obtain ⟨ρ₂, trace₂, hrun₂, hout₂, hrel₂⟩ := hr₂.2.2.1 lbl ρ₁ trace₁ hrun₁
+      exact ⟨ρ₂, trace₂, hrun₂, houtTrans _ _ _ hout₁ hout₂,
+        ⟨trace₁, hrel₁, hrel₂⟩⟩
 
 
 
@@ -1488,6 +1686,246 @@ theorem overapproximatesAggressively_stmts [HasIdent P] [HasVarsImp P CmdT]
       ⟨cfg, hfcfg, hstar⟩
 
 end StructuredStmts
+
+
+/-! ## Event-trace statement-list overapproximation
+
+`overapproximatesTraces_stmts` is the event-trace analogue of
+`overapproximates_stmts`: it lifts a per-statement `OverapproximatesTraces` on
+`EventLang.imperativeE` to a block-level one on `EventLang.imperativeBlockE`.
+Unlike the failure-flag version it simulates arbitrary finite prefixes (for
+safety properties) in addition to terminal and exiting runs, and carries no
+`CanFail` obligation since trace reachability is failure-flag independent.
+
+The lift is stated against explicit, minimal laws on the trace relation
+`Rtrace`: it must relate empty traces (`hnil`) and be compatible with
+chronological concatenation (`happend`). Both hold for equality `(· = ·)`. The
+administrative overlap in `StepStmtE` (a `.seq` step derivable natively or
+through `step_admin`) is handled soundly by the traced `seq`/`stmts`
+inversions, which unify both derivations to the same emitted trace. -/
+
+section TracedStructuredStmts
+
+variable {CmdT : Type} {EventT : Type}
+    (evalCmdE : EvalCmdParamE P CmdT EventT) (extendFactory : ExtendFactory P)
+
+omit [HasOps P] in
+/-- Simulates completed runs after mapping a transform over a statement list.
+Assuming `Rtrace` relates empty traces and is closed under chronological
+concatenation, `Inv` holds initially and is preserved by every terminating
+source statement, and `Inv` establishes the source well-formedness gate used by
+the per-statement overapproximation, every terminal or exiting run of `ss` has
+a run of the transformed list with the same environment and exit label and an
+`Rtrace`-related trace. -/
+private theorem overapproximatesTraces_stmts_aux
+    (Rtrace : Relation (List EventT))
+    (hnil : Rtrace [] [])
+    (happend : ∀ a a' b b', Rtrace a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}, Inv ρ →
+       StepStmtStarE P evalCmdE extendFactory (.stmt s ρ) tr (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesTraces Rtrace
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf)
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf) T sp₁ sp₂)
+    (ss : List (Stmt P CmdT)) :
+    ∀ (ss' : List (Stmt P CmdT)), ss.mapM T = some ss' →
+      ∀ (ρ₀ ρ' : Env P) (tr : List EventT), Inv ρ₀ →
+        (StepStmtStarE P evalCmdE extendFactory (.stmts ss ρ₀) tr (.terminal ρ') →
+          ∃ tr', StepStmtStarE P evalCmdE extendFactory (.stmts ss' ρ₀) tr' (.terminal ρ') ∧
+            Rtrace tr tr')
+        ∧
+        (∀ lbl, StepStmtStarE P evalCmdE extendFactory (.stmts ss ρ₀) tr (.exiting lbl ρ') →
+          ∃ tr', StepStmtStarE P evalCmdE extendFactory (.stmts ss' ρ₀) tr' (.exiting lbl ρ') ∧
+            Rtrace tr tr') := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ ρ' tr _
+    have hss' : ss' = [] := by simpa [List.mapM_nil] using hmap
+    subst hss'
+    refine ⟨?_, ?_⟩
+    · intro hstar
+      obtain ⟨htr, hcfg⟩ := stmts_nil_runE evalCmdE extendFactory hstar
+      subst htr
+      cases hcfg with
+      | inl h => simp at h
+      | inr h =>
+        injection h with hρ; subst hρ
+        refine ⟨[], ?_, hnil⟩
+        exact ReflTransTrace.step (r := StepStmtE P evalCmdE extendFactory) _ _ _ _ _
+          (.step_admin .step_stmts_nil) (.refl _)
+    · intro lbl hstar
+      obtain ⟨_, hcfg⟩ := stmts_nil_runE evalCmdE extendFactory hstar
+      cases hcfg with
+      | inl h => simp at h
+      | inr h => simp at h
+  | cons s rest ih =>
+    intro ss' hmap ρ₀ ρ' tr hwf
+    obtain ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    subst hss'
+    have hsem_s := hsem s s' hs trivial ρ₀ ρ₀ rfl (hGate hwf)
+    refine ⟨?_, ?_⟩
+    · intro hstar
+      rcases stmts_cons_headE evalCmdE extendFactory hstar with ⟨hcfg, _⟩ | hseq
+      · simp at hcfg
+      · obtain ⟨ρ₁, tr₁, tr₂, htr, hterm_s, hterm_rest⟩ :=
+          seq_reaches_terminalE evalCmdE extendFactory hseq
+        obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.1 ρ₁ tr₁ hterm_s
+        subst heqρ
+        have hwf₁ := hPres hwf hterm_s
+        obtain ⟨trt, hrun_rest', hrelt⟩ := (ih rest' hrm ρ₁ ρ' tr₂ hwf₁).1 hterm_rest
+        refine ⟨trh ++ trt, ?_, ?_⟩
+        · exact ReflTransTrace.trans _
+            (stmts_cons_stepE evalCmdE extendFactory s' rest' ρ₀ ρ₁ hrun_s') hrun_rest'
+        · rw [htr]; exact happend tr₁ trh tr₂ trt hrelh hrelt
+    · intro lbl hstar
+      rcases stmts_cons_headE evalCmdE extendFactory hstar with ⟨hcfg, _⟩ | hseq
+      · simp at hcfg
+      · rcases seq_reaches_exitingE evalCmdE extendFactory hseq with
+          hexit_s | ⟨ρ₁, tr₁, tr₂, htr, hterm_s, hexit_rest⟩
+        · obtain ⟨ρ'', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.2.1 lbl ρ' tr hexit_s
+          subst heqρ
+          refine ⟨trh, ?_, hrelh⟩
+          have hchain :
+            StepStmtStarE P evalCmdE extendFactory (.stmts (s' :: rest') ρ₀)
+              (([] ++ trh) ++ ([] ++ [])) (.exiting lbl ρ') :=
+            ReflTransTrace.trans _
+              (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+                (seq_inner_starE evalCmdE extendFactory hrun_s'))
+              (ReflTransTrace.step (r := StepStmtE P evalCmdE extendFactory) _ _ _ _ _ (.step_admin .step_seq_exit) (.refl _))
+          simpa using hchain
+        · obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.1 ρ₁ tr₁ hterm_s
+          subst heqρ
+          have hwf₁ := hPres hwf hterm_s
+          obtain ⟨trt, hrun_rest', hrelt⟩ := (ih rest' hrm ρ₁ ρ' tr₂ hwf₁).2 lbl hexit_rest
+          refine ⟨trh ++ trt, ?_, ?_⟩
+          · exact ReflTransTrace.trans _
+              (stmts_cons_stepE evalCmdE extendFactory s' rest' ρ₀ ρ₁ hrun_s') hrun_rest'
+          · rw [htr]; exact happend tr₁ trh tr₂ trt hrelh hrelt
+
+omit [HasOps P] in
+/-- Simulates every finite prefix after mapping a transform over a statement
+list. Assuming `Rtrace` relates empty traces and respects chronological
+concatenation, `Inv` holds initially and is preserved by terminating source
+statements, and `Inv` supplies the source well-formedness required by the
+per-statement overapproximation, each prefix run from `ss` has a transformed
+prefix run to some target configuration with an `Rtrace`-related trace. -/
+private theorem overapproximatesTraces_stmts_prefix
+    (Rtrace : Relation (List EventT))
+    (hnil : Rtrace [] [])
+    (happend : ∀ a a' b b', Rtrace a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (Inv : Env P → Prop)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}, Inv ρ →
+       StepStmtStarE P evalCmdE extendFactory (.stmt s ρ) tr (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hsem : OverapproximatesTraces Rtrace
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf)
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf) T sp₁ sp₂)
+    (ss : List (Stmt P CmdT)) :
+    ∀ (ss' : List (Stmt P CmdT)), ss.mapM T = some ss' →
+      ∀ (ρ₀ : Env P) (cfg : Config P CmdT) (tr : List EventT), Inv ρ₀ →
+        StepStmtStarE P evalCmdE extendFactory (.stmts ss ρ₀) tr cfg →
+        ∃ cfg' tr', StepStmtStarE P evalCmdE extendFactory (.stmts ss' ρ₀) tr' cfg' ∧
+          Rtrace tr tr' := by
+  induction ss with
+  | nil =>
+    intro ss' hmap ρ₀ cfg tr _ hstar
+    have hss' : ss' = [] := by simpa [List.mapM_nil] using hmap
+    subst hss'
+    obtain ⟨htr, _⟩ := stmts_nil_runE evalCmdE extendFactory hstar
+    subst htr
+    exact ⟨_, [], .refl _, hnil⟩
+  | cons s rest ih =>
+    intro ss' hmap ρ₀ cfg tr hwf hstar
+    obtain ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
+    subst hss'
+    have hsem_s := hsem s s' hs trivial ρ₀ ρ₀ rfl (hGate hwf)
+    rcases stmts_cons_headE evalCmdE extendFactory hstar with ⟨_, htr⟩ | hseq
+    · subst htr; exact ⟨_, [], .refl _, hnil⟩
+    · rcases seq_run_decomposeE evalCmdE extendFactory hseq with
+        ⟨inner', _, hrun_head⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm_s, hrun_tail⟩ | ⟨lbl, ρ₁, _, hexit_s⟩
+      · obtain ⟨c', trh, hrun_s', hrelh⟩ := hsem_s.1 inner' tr hrun_head
+        refine ⟨.seq c' rest', trh, ?_, hrelh⟩
+        exact ReflTransTrace.step (r := StepStmtE P evalCmdE extendFactory) _ _ _ _ _
+          (.step_admin .step_stmts_cons)
+          (seq_inner_starE evalCmdE extendFactory hrun_s')
+      · obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.1 ρ₁ tr₁ hterm_s
+        subst heqρ
+        have hwf₁ := hPres hwf hterm_s
+        obtain ⟨cfg', trt, hrun_tail', hrelt⟩ := ih rest' hrm ρ₁ cfg tr₂ hwf₁ hrun_tail
+        refine ⟨cfg', trh ++ trt, ?_, ?_⟩
+        · exact ReflTransTrace.trans _
+            (stmts_cons_stepE evalCmdE extendFactory s' rest' ρ₀ ρ₁ hrun_s') hrun_tail'
+        · rw [htr]; exact happend tr₁ trh tr₂ trt hrelh hrelt
+      · obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.2.1 lbl ρ₁ tr hexit_s
+        subst heqρ
+        refine ⟨.exiting lbl ρ₁, trh, ?_, hrelh⟩
+        have hchain :
+          StepStmtStarE P evalCmdE extendFactory (.stmts (s' :: rest') ρ₀)
+            (([] ++ trh) ++ ([] ++ [])) (.exiting lbl ρ₁) :=
+          ReflTransTrace.trans _
+            (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+              (seq_inner_starE evalCmdE extendFactory hrun_s'))
+            (ReflTransTrace.step (r := StepStmtE P evalCmdE extendFactory) _ _ _ _ _ (.step_admin .step_seq_exit) (.refl _))
+        simpa using hchain
+
+omit [HasOps P] in
+/-- Event-trace analogue of `overapproximates_stmts`: lift a per-statement trace
+overapproximation to whole statement lists.  It simulates every finite source
+prefix and every terminal/exiting run.  As with `overapproximates_stmts`, the
+lift is mediated by an environment invariant `Inv` established at block entry
+(`hGround`), preserved across each statement's terminal run (`hPres`), and
+implying the per-statement source gate (`hGate`).  `Rtrace` need only satisfy the
+empty-trace law `hnil` and the append-compatibility law `happend`. -/
+theorem overapproximatesTraces_stmts
+    (Rtrace : Relation (List EventT))
+    (hnil : Rtrace [] [])
+    (happend : ∀ a a' b b', Rtrace a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
+    {Params : Type}
+    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : Params)
+    {SParams : Type}
+    (swf : SParams → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : SParams)
+    (T : Stmt P CmdT → Option (Stmt P CmdT))
+    (Inv : Env P → Prop)
+    (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
+    (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}, Inv ρ →
+       StepStmtStarE P evalCmdE extendFactory (.stmt s ρ) tr (.terminal ρ') → Inv ρ')
+    (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
+    (hWF : ∀ ss ss' ρ, ss.mapM T = some ss' → wf p₁ ss ρ → wf p₂ ss' ρ)
+    (hsem : OverapproximatesTraces Rtrace
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf)
+      (EventLang.imperativeE P CmdT evalCmdE extendFactory SParams swf) T sp₁ sp₂) :
+    OverapproximatesTraces Rtrace
+      (EventLang.imperativeBlockE P CmdT evalCmdE extendFactory ⟨Params, wf⟩)
+      (EventLang.imperativeBlockE P CmdT evalCmdE extendFactory ⟨Params, wf⟩)
+      (fun ss => ss.mapM T) p₁ p₂ := by
+  intro ss ss' hmap _ ρ₀ ρ₀' heq hwf
+  subst heq
+  have hInv0 := hGround ss ρ₀ hwf
+  refine ⟨?_, ?_, ?_, hWF ss ss' ρ₀ hmap hwf⟩
+  · intro cfg trace hrun
+    exact overapproximatesTraces_stmts_prefix evalCmdE extendFactory Rtrace hnil happend T
+      swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ cfg trace hInv0 hrun
+  · intro ρ' trace hrun
+    obtain ⟨tr', hrun', hrel⟩ := (overapproximatesTraces_stmts_aux evalCmdE extendFactory
+      Rtrace hnil happend T swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ' trace hInv0).1 hrun
+    exact ⟨ρ', tr', hrun', rfl, hrel⟩
+  · intro lbl ρ' trace hrun
+    obtain ⟨tr', hrun', hrel⟩ := (overapproximatesTraces_stmts_aux evalCmdE extendFactory
+      Rtrace hnil happend T swf sp₁ sp₂ Inv hPres hGate hsem ss ss' hmap ρ₀ ρ' trace hInv0).2 lbl hrun
+    exact ⟨ρ', tr', hrun', rfl, hrel⟩
+
+end TracedStructuredStmts
 
 end Transform
 end Specification

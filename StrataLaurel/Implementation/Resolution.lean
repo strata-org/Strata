@@ -3266,7 +3266,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       -- real body at `Base$m$impl`), so for `b : Base` holding a `Sub` that overrides `m`,
       -- `b#m` binds Base.m's contract but the Sub override actually RUNS. This is sound
       -- because `CheckOverrideRefinement` (the Liskov pass, gated on the same
-      -- `isVirtualDispatchMethod` predicate as dispatcher generation) proves every override
+      -- `virtualDispatchFamilies` enumerator as dispatcher generation) proves every override
       -- refines its parent's contract (Parent.pre ⇒ Child.pre, Child.post ⇒ Parent.post), so
       -- the parent contract bound here holds for whatever override dispatch selects. (jverify
       -- enforces its own monomorphism check on its side.)
@@ -4362,14 +4362,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- `GlobalParameterization` both identify globals by id, not by text.
     let readsGlobals' ← proc.readsGlobals.mapM (resolveRef ·)
     let writesGlobals' ← proc.writesGlobals.mapM (resolveRef ·)
-    return { name := procName', typeArgs := typeArgs',
-             inputs := inputs', outputs := outputs',
-             preconditions := pres',
+    -- `{ proc with … }` so a `Procedure` field added later survives a re-resolve instead of
+    -- silently defaulting.
+    return { proc with
+             name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
+             preconditions := pres', decreases := dec',
              contracts := proc.contracts.withClauses relies' guarantees' yields' resumes',
-             decreases := dec',
-             invokeOn := invokeOn',
-             isInterpretEntry := proc.isInterpretEntry,
-             axioms := axioms',
+             invokeOn := invokeOn', axioms := axioms',
              throwsType := throwsType', throwsBinding := throwsBinding',
              throwsOn := throwsOn',
              readsGlobals := readsGlobals', writesGlobals := writesGlobals',
@@ -4391,7 +4390,7 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   -- field's own name should stay unqualified.
   let name' := { field.name with uniqueId := resolved.uniqueId }
   let init' ← field.initializer.mapM (Check.resolveStmtExpr · ty')
-  return { name := name', isMutable := field.isMutable, type := ty', initializer := init' }
+  return { field with name := name', type := ty', initializer := init' }
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
@@ -4428,11 +4427,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- `GlobalParameterization` both identify globals by id, not by text.
     let readsGlobals' ← proc.readsGlobals.mapM (resolveRef ·)
     let writesGlobals' ← proc.writesGlobals.mapM (resolveRef ·)
-    return { name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
+    -- No `contracts` here, unlike the static case: an instance procedure's contracts are always
+    -- `.Regular` — a coroutine cannot be a method — so the value inherited from `proc` is correct.
+    return { proc with
+             name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
-             invokeOn := invokeOn',
-             isInterpretEntry := proc.isInterpretEntry,
-             axioms := axioms',
+             invokeOn := invokeOn', axioms := axioms',
              throwsType := throwsType', throwsBinding := throwsBinding',
              throwsOn := throwsOn',
              readsGlobals := readsGlobals', writesGlobals := writesGlobals',
@@ -4479,8 +4479,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
       let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
       pure (extending', fields', instProcs')
-    return .Composite { name := ctName', typeArgs := ct.typeArgs, extending := extending',
-                        fields := fields', instanceProcedures := instProcs' }
+    return .Composite { ct with name := ctName', extending := extending',
+                                fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
     let ctName' ← resolveRef ct.name
     let base' ← resolveHighType ct.base
@@ -4491,8 +4491,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
       let (constraint', _) ← Synth.resolveStmtExpr ct.constraint
       let (witness', _) ← Synth.resolveStmtExpr ct.witness
       return (valueName', constraint', witness')
-    return .Constrained { name := ctName', base := base', valueName := valueName',
-                          constraint := constraint', witness := witness' }
+    return .Constrained { ct with name := ctName', base := base', valueName := valueName',
+                                  constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
     let typeParamNames := dt.typeArgs.map (·.text)
@@ -4531,15 +4531,15 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         let testerName' := { ctor.testerName with
           text := testerResolved.text
           uniqueId := testerResolved.uniqueId }
-        return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
-    return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
+        return { ctor with name := ctorName', args := args', testerName := testerName' }
+    return .Datatype { dt with name := dtName', constructors := ctors' }
   | .Alias ta =>
     -- Scope the alias's type params; `TypeAliasElim`/`unfold` later binds them to the instantiation args.
     let target' ← withScope do
       let _ ← scopeTypeParams ta.typeArgs
       resolveHighType ta.target
     let taName' ← resolveRef ta.name
-    return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
+    return .Alias { ta with name := taName', target := target' }
   | .Opaque ot =>
     -- An opaque type has no constructors and no target, so there is nothing inside it to
     -- resolve — only the name to bind. The params are still scoped, in a scope discarded
@@ -4548,14 +4548,14 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- repeated type variable and hand Core a `declare-sort` with a duplicated parameter.
     let _ ← withScope do scopeTypeParams ot.typeArgs
     let otName' ← resolveRef ot.name
-    return .Opaque { name := otName', typeArgs := ot.typeArgs }
+    return .Opaque { ot with name := otName' }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
   let init' ← c.initializer.mapM (Check.resolveStmtExpr · ty')
   let name' ← resolveRef c.name
-  return { name := name', type := ty', initializer := init' }
+  return { c with name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/
 
@@ -6272,6 +6272,9 @@ private def firstInitializerEffectSource (model : SemanticModel)
     | .New _ => true
     | .StaticCall callee _ | .InstanceCall _ callee _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
+    -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
+    -- arm here.
+    | .Var (.Field ..) => true
     | _ => false
   (foldStmtExprM (m := StateM (Option FileRange)) (fun node => do
     if (← get).isNone && isEffect node then
@@ -6293,7 +6296,7 @@ private def validateGlobalInitializers (model : SemanticModel)
         | none => []) ++
       (match firstInitializerEffectSource model initializer with
         | some source => [diagnosticFromSource source
-            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, no allocation with 'new', and no calls to heap-reading or heap-writing procedures)"
+            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, no allocation with 'new', no field reads, and no calls to heap-reading or heap-writing procedures)"
             MessageKind.userError]
         | none => [])
 
@@ -6684,8 +6687,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField "$static")
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-    return { staticProcedures := staticProcs', staticFields := staticFields',
-             types := types', constants := constants' }
+    return { program with staticProcedures := staticProcs', staticFields := staticFields',
+                          types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
     gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
@@ -6895,9 +6898,9 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     let functions' ← uc.functions.mapM resolveProcedure
     let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
 
-    return { functions := functions', coreProcedures := coreProcedures',
-             datatypes := datatypes', opaqueTypes := opaqueTypes', aliases := uc.aliases,
-             constants := constants' }
+    return { uc with functions := functions', coreProcedures := coreProcedures',
+                     datatypes := datatypes', opaqueTypes := opaqueTypes',
+                     constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the

@@ -21,6 +21,12 @@ An `Env` bundles the store, expression evaluator, and a cumulative failure
 flag into a single record.  The `hasFailure` flag is OR-ed with the
 per-command failure flag returned by `EvalCmdParam` at each `cmd_sem`,
 so it monotonically accumulates assertion failures along an execution path.
+
+The `hasFailure` flag is legacy: it belongs to the failure-flag semantics
+(`StepStmt`/`EvalCmd`) that the event-trace semantics (`StepStmtE`/`EvalCmdE`,
+which records assertion failures as trace events instead) is migrating away
+from.  It is planned for removal once the event-trace small-step semantics is
+adopted as the primary semantics.
 -/
 
 /-- Execution environment: store and cumulative failure flag. -/
@@ -155,6 +161,25 @@ variable {P : PureExpr} {CmdT : Type}
 /-- Extract the store from a configuration. -/
 @[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
   := cfg.getEnv.store
+
+/-- Replace the active environment's cumulative failure flag, preserving the
+configuration's control shape, stores, and factories. -/
+@[expose] def Config.withFailure (hasFailure : Bool) : Config P CmdT → Config P CmdT
+  | .stmt statement ρ => .stmt statement { ρ with hasFailure := hasFailure }
+  | .stmts statements ρ => .stmts statements { ρ with hasFailure := hasFailure }
+  | .terminal ρ => .terminal { ρ with hasFailure := hasFailure }
+  | .exiting label ρ => .exiting label { ρ with hasFailure := hasFailure }
+  | .block label parentStore parentFactory inner =>
+      .block label parentStore parentFactory (inner.withFailure hasFailure)
+  | .seq inner statements => .seq (inner.withFailure hasFailure) statements
+
+/-- Events emitted by the active base command in the next statement step.
+Administrative configurations and non-command statements are silent. -/
+@[expose] def Config.emittedEvents : Config P (Cmd P) → Trace P
+  | .stmt (.cmd command) ρ => Cmd.emittedEvents P command ρ.factory ρ.store
+  | .block _ _ _ inner => inner.emittedEvents
+  | .seq inner _ => inner.emittedEvents
+  | _ => []
 
 /-- The terminal-or-exiting configuration selected by an `Option String`:
 `none` denotes the terminal outcome `.terminal ρ`, `some lbl` the exiting outcome
@@ -544,6 +569,67 @@ inductive StepStmt
     StepStmt EvalCmd extendFactory
       (.block label σ_parent f_parent (.exiting l ρ'))
       (.exiting l { ρ' with store := projectStore σ_parent ρ'.store, factory := f_parent })
+
+
+/-- Command relation with no possible command step, used to reuse the existing
+administrative control-flow rules without inheriting failure-flag command
+behavior. -/
+@[expose] def noCommandEvalE (P : PureExpr) (CmdT : Type) : EvalCmdParam P CmdT :=
+  fun _ _ _ _ _ => False
+
+/-- Event-labeled statement step. Command steps use `EvalCmdParamE`; existing
+administrative control-flow steps are reused through `noCommandEvalE`.
+
+A `StepStmtE` derivation describes one operational step and carries one event
+list; it never concatenates traces. Sequence and block rules propagate the
+inner step's events unchanged. Administrative wrapper steps can have duplicate
+derivations—either lifted as a whole by `step_admin` or through
+`step_seq_inner`/`step_block_body`—but those derivations have the same empty
+trace and target, so they add no observable nondeterminism. Intended choices,
+such as nondeterministic conditionals and loops, remain nondeterministic. -/
+inductive StepStmtE
+    {EventT : Type}
+    (EvalCmd : EvalCmdParamE P CmdT EventT)
+    (extendFactory : ExtendFactory P) :
+    Config P CmdT → List EventT → Config P CmdT → Prop where
+  /-- Execute one command and expose exactly the event list produced by its
+  command semantics. -/
+  | step_cmd :
+      EvalCmd ρ.factory ρ.store cmd σ' emitted →
+      StepStmtE EvalCmd extendFactory
+        (.stmt (.cmd cmd) ρ) emitted
+        (.terminal { ρ with store := σ' })
+
+  /-- Reuse a command-free administrative `StepStmt`; administrative steps
+  emit no events. This may overlap with the explicit wrapper constructors, but
+  only as an alternative derivation of the same transition. -/
+  | step_admin :
+      StepStmt P (noCommandEvalE P CmdT) extendFactory c c' →
+      StepStmtE EvalCmd extendFactory c [] c'
+
+  /-- Lift one inner sequence step. -/
+  | step_seq_inner :
+      StepStmtE EvalCmd extendFactory inner emitted inner' →
+      StepStmtE EvalCmd extendFactory
+        (.seq inner ss) emitted (.seq inner' ss)
+
+  /-- Lift one inner block step. -/
+  | step_block_body :
+      StepStmtE EvalCmd extendFactory inner emitted inner' →
+      StepStmtE EvalCmd extendFactory
+        (.block label σ_parent f_parent inner) emitted
+        (.block label σ_parent f_parent inner')
+
+/-- Structured multi-step execution with a chronological event trace.
+`ReflTransTrace` concatenates the event list from each successive step as
+`emitted ++ rest`; this closure, not `StepStmtE`, performs trace
+concatenation. -/
+@[expose] abbrev StepStmtStarE
+    {EventT : Type}
+    (EvalCmd : EvalCmdParamE P CmdT EventT)
+    (extendFactory : ExtendFactory P) :
+    Config P CmdT → List EventT → Config P CmdT → Prop :=
+  ReflTransTrace (StepStmtE P EvalCmd extendFactory)
 
 end
 

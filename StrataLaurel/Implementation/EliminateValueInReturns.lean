@@ -83,6 +83,9 @@ end -- public section
 /-- Pipeline pass: eliminate value returns. -/
 public def eliminateValueInReturnsPass : LoweringPass where
   name := "EliminateValueInReturns"
+  creates := [NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.Block, NodeKind.StmtExpr.Return]
+  removes := [NodeKind.StmtExpr.Return.value.some]
+  unsupported := [NodeKind.CompositeType.instanceProcedures.cons]
   documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
   run := fun _ p _m => (eliminateValueInReturnsTransform p, [], {})
 

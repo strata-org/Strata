@@ -683,6 +683,22 @@ def coroutineRelyHeap (program : Program) : Program × List Message :=
     not supported currently - this will be implemented in the next step. -/
 public def yieldElimPass : LoweringPass where
   name := "YieldElim"
+  creates := [
+      NodeKind.StmtExpr.Assert,
+      NodeKind.StmtExpr.Assume,
+      NodeKind.StmtExpr.Snapshot,
+      NodeKind.StmtExpr.Old.label?.some,
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Block,
+      -- Laurel's operators are calls to overloaded wrapper procedures
+      -- (`Operation.Eq.procName` is `$eq`, `And` is `$and`, …), so emitting one
+      -- re-establishes the condition `UniqueOverloadNames` exists to remove: a call site
+      -- naming an overloaded procedure. This pass declares no new overloads itself.
+      -- Emitting one after the rename would name a wrapper that no longer exists.
+      NodeKind.Pseudo.overload
+    ]
+  removes := [NodeKind.StmtExpr.Yield, NodeKind.StmtExpr.OldGuarantee, NodeKind.StmtExpr.OldRelies]
+  unsupported := [NodeKind.StmtExpr.InstanceCall]
   documentation := "Lowers coroutine old-semantics. Body path (verifyCoroutine only): replaces every `yield` with an inline `assert ⋀guarantees; Snapshot $old_heap; havocHeap(); assume ⋀relies; Snapshot $old_heap` block. Caller path (always): threads the per-instance $h_rely_old (H1) snapshot heap through resume procedures and callers. Both lower `oldGuarantee`/`oldRelies` to labeled `Old` / `Snapshot` for HeapParameterization to consume (declaring the snapshot locals and threading $heap); resolution is disabled after this pass."
   needsResolves := false
   run := fun options p _ =>
@@ -691,8 +707,6 @@ public def yieldElimPass : LoweringPass where
     let (p, bodyDiags) := if options.verifyCoroutine then runYieldElimBody p else (p, [])
     let (p, callerDiags) := coroutineRelyHeap p
     (p, bodyDiags ++ callerDiags, {})
-  comesAfter := [⟨ liftInstanceProceduresPass.meta, "caller-path resume calls must already be lifted static calls `<resume>(co, …)` before threading H1." ⟩]
-  comesBefore := [⟨ heapParameterizationPass.meta, "Emits Snapshot/labeled-Old/havocHeap() that HeapParameterization lowers (declaring the snapshot locals and threading $heap)." ⟩]
 
 end Strata.Laurel
 end

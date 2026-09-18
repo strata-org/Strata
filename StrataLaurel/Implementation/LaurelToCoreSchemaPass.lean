@@ -879,8 +879,6 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let model := (← get).model
   let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
   let ty ← translateType (computeExprType model expr)
-  -- The empty type-variable list is valid because Laurel does not currently
-  -- support polymorphism. If polymorphism is added, this will need updating.
   let coreType := LTy.forAll [] ty
   return [Core.Statement.init ident coreType (.det coreExpr) md]
 
@@ -899,7 +897,7 @@ an inout argument is not a variable reference.
 -/
 private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression)
-    : TranslateM (List (Core.CallArg Core.Expression) × List Parameter × List String) := do
+    : TranslateM (List (Imperative.CallArg Core.Expression) × List Parameter × List String) := do
   let s ← get
   let (calleeInputs, calleeOutputs) := match s.model.get calleeId with
     | .staticProcedure proc => (proc.inputs, proc.outputs)
@@ -910,7 +908,7 @@ private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expressi
   let calleeInoutNames := calleeInputNames.filter (calleeOutputNames.contains ·)
   let inoutInputIndices := calleeInputNames.zipIdx.filterMap fun (name, i) =>
     if calleeInoutNames.contains name then some i else none
-  let mut callArgs : List (Core.CallArg Core.Expression) := []
+  let mut callArgs : List (Imperative.CallArg Core.Expression) := []
   for (arg, i) in coreArgs.zipIdx do
     if inoutInputIndices.contains i then
       match arg with
@@ -1007,7 +1005,7 @@ def translateStmt (stmt : StmtExprMd)
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
         let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
-        let outArgs : List (Core.CallArg Core.Expression) :=
+        let outArgs : List (Imperative.CallArg Core.Expression) :=
           (lhs.zip calleeOutputs).filterMap fun (target, output) =>
             if calleeInoutNames.contains output.name.text then none else some (.outArg target)
         return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
@@ -1072,7 +1070,7 @@ def translateStmt (stmt : StmtExprMd)
         let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
         -- Generate throwaway LHS for output-only params so Core arity checking passes.
         let mut inits : List Core.Statement := []
-        let mut outArgs : List (Core.CallArg Core.Expression) := []
+        let mut outArgs : List (Imperative.CallArg Core.Expression) := []
         for out in calleeOutputs do
           if calleeInoutNames.contains out.name.text then continue
           let id ← freshId
@@ -1390,7 +1388,33 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
 
 public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
   name := "LaurelToCoreSchema"
-  comesBefore := []
+  creates := [NodeKind.Pseudo.core]
+  removes := [NodeKind.Pseudo.orderedDeclarations]
+  unsupported := [
+      NodeKind.StmtExpr.While.postTest.true,
+      NodeKind.StmtExpr.IncrDecr,
+      NodeKind.StmtExpr.CompoundAssign,
+      NodeKind.StmtExpr.Var.var.Field,
+      NodeKind.StmtExpr.PureFieldUpdate,
+      NodeKind.StmtExpr.IsType,
+      NodeKind.StmtExpr.AsType,
+      NodeKind.StmtExpr.New,
+      NodeKind.StmtExpr.Old.label?.some,
+      NodeKind.Pseudo.oldExpr,
+      NodeKind.StmtExpr.Throw,
+      NodeKind.StmtExpr.Try,
+      NodeKind.StmtExpr.Yield,
+      NodeKind.StmtExpr.Resume,
+      NodeKind.StmtExpr.HasNext,
+      NodeKind.StmtExpr.Hole.deterministic.true,
+      NodeKind.CompositeType.typeArgs.cons,
+      NodeKind.Pseudo.statementExpression,
+      NodeKind.Pseudo.unorderedDeclarations,
+      NodeKind.Pseudo.letExpr,
+      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.CompositeType.instanceProcedures.cons,
+      NodeKind.StmtExpr.This
+    ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
   - Laurel parameter definitions are translated to Core ones.

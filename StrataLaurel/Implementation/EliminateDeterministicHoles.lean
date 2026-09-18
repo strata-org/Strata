@@ -91,6 +91,9 @@ end -- public section
 /-- Pipeline pass: eliminate deterministic holes. -/
 public def eliminateDeterministicHolesPass : LoweringPass where
   name := "EliminateDeterministicHoles"
+  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  removes := [NodeKind.StmtExpr.Hole.deterministic.true]
+  unsupported := [NodeKind.StmtExpr.Hole.type.none]
   documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
   needsResolves := true
   run := fun _ p _m =>

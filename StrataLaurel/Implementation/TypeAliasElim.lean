@@ -80,6 +80,7 @@ public def typeAliasElim (_model : SemanticModel) (program : Program) : Program 
 /-- Pipeline pass: type alias elimination. -/
 public def typeAliasElimPass : LoweringPass where
   name := "TypeAliasElim"
+  removes := [NodeKind.TypeDefinition.Alias]
   documentation := "Eliminates type aliases by replacing all UserDefined references to alias names with their resolved target types. Chained aliases are resolved transitively. Alias entries are removed from the type list."
   needsResolves := true
   run := fun _ p m => (typeAliasElim m p, [], {})

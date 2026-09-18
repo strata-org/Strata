@@ -550,8 +550,14 @@ def lowerContracts (model : SemanticModel) (program : Program) : Program :=
 
 public def contractPass : LoweringPass where
   name := "Contracts"
+  creates := [NodeKind.StmtExpr.Assert, NodeKind.StmtExpr.Assume]
+  removes := [NodeKind.Procedure.preconditions.cons, NodeKind.Body.postconditions.cons]
+  unsupported := [
+      NodeKind.StmtExpr.Return,
+      NodeKind.Program.staticFields.cons,
+      NodeKind.Pseudo.overload
+    ]
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
-  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute even if we return in the body."⟩ ]
   needsResolves := true
   run := fun _ p m =>
     (lowerContracts m p, [], {})

@@ -70,11 +70,16 @@ def eliminateReturnStatements (program : Program) : Program :=
 
 public def eliminateReturnStatementsPass : LoweringPass where
   name := "EliminateReturnStatements"
+  creates := [NodeKind.StmtExpr.Exit, NodeKind.StmtExpr.Block]
+  unsupported := [NodeKind.StmtExpr.Try.finally?.some]
+  removes := [
+      NodeKind.StmtExpr.Return,
+      NodeKind.Pseudo.generatedReturn
+    ]
   documentation := "Lower return statements to exit statements. Wrap each procedure body with a 'return' block"
   run := fun _ p _m =>
     let p' := eliminateReturnStatements p
     (p', [], {})
-  -- comesBefore := [contractPass]
 
 end -- public section
 

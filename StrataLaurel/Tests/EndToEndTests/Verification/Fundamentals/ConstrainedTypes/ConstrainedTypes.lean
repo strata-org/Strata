@@ -201,3 +201,46 @@ procedure captureTest(y: haslarger)
 //^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
+
+-- A constrained type's base can be a generic composite instantiation: `Box<int>` is
+-- monomorphized and the base names the monomorph, so a read through a `CB` parameter is
+-- modelled — a correct postcondition is provable and a false one is caught.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+constrained CB = v: Box<int> where true witness <??>
+
+procedure readsBaseField(c: CB) returns (r: int)
+  opaque
+  ensures r == c#v
+{
+  r := c#v
+};
+
+procedure falsePostconditionIsCaught(c: CB) returns (r: int)
+  opaque
+  ensures r == c#v + 1
+//        ^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := c#v
+};
+#end
+
+-- The constraint and the witness are type positions too. Each names a different instantiation
+-- here, so each slot is reachable through exactly one of them.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+constrained CW = x: int
+  where (forall(b: Box<int>) => true)
+  witness (if (forall(c: Box<bool>) => true) then 0 else 1)
+
+procedure readsConstrainedValue(c: CW) returns (r: int)
+  opaque
+  ensures r == c
+{
+  r := c
+};
+#end

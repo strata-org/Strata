@@ -83,5 +83,45 @@ noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
   | .step _ _ _ _ rest => 1 + rest.len
 
 
+/-! ## Trace-producing reflexive transitive closure -/
+
+/-- Reflexive-transitive closure of a relation whose steps emit a list of
+observations. The accumulated trace is chronological: a step's output precedes
+the trace emitted by the remaining execution. -/
+inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
+    A → List E → A → Prop where
+  /-- Reflexive execution emits the empty trace. -/
+  | refl : ∀ x, ReflTransTrace r x [] x
+  /-- Prepend one labeled step to a traced execution, concatenating its events
+  before the remaining trace. -/
+  | step : ∀ x emitted y rest z,
+      r x emitted y →
+      ReflTransTrace r y rest z →
+      ReflTransTrace r x (emitted ++ rest) z
+
+
+/-! ## Type-valued trace-producing reflexive transitive closure
+
+The `Type`-valued analogue of `ReflTransTrace`, standing to it as `ReflTransT`
+does to `ReflTrans`.  Living in `Type` permits structural recursion on a traced
+derivation to produce data — in particular a step count via
+`ReflTransTraceT.len` — which is what lets a loop-simulation argument recurse on
+the strictly shrinking length of the remaining execution while still tracking
+the chronological trace it emits. -/
+
+inductive ReflTransTraceT {A E : Type} (r : A → List E → A → Prop) :
+    A → List E → A → Type where
+  | refl : ∀ x, ReflTransTraceT r x [] x
+  | step : ∀ x emitted y rest z,
+      r x emitted y →
+      ReflTransTraceT r y rest z →
+      ReflTransTraceT r x (emitted ++ rest) z
+
+@[expose, simp] def ReflTransTraceT.len {A E : Type} {r : A → List E → A → Prop} :
+    ∀ {a tr b}, ReflTransTraceT r a tr b → Nat
+  | _, _, _, .refl _ => 0
+  | _, _, _, .step _ _ _ _ _ _ rest => 1 + rest.len
+
+
 end Relation
 end

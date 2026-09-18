@@ -98,19 +98,19 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assume label (.true ())
+                  (Statement.assume label (.true ())
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)
                                   (.expr check.expr)).pushElem
                                   (.label label)
                                   (.msg "FreePostCondition")))
-                | _ => (.assert label check.expr check.md))
+                | _ => (Statement.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
     List.map (fun (label, check) =>
       /- the assumptions from preconditions are set to have empty metadata  -/
-      (.assume label check.expr check.md))
+      (Statement.assume label check.expr check.md))
       p.spec.preconditions
   match p.body with
   | .structured bodyStmts =>

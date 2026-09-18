@@ -85,8 +85,7 @@ theorem Procedure.contractTriple_nil (p : Core.Program) (params : InitEnvWFParam
         (label', check') ∈ proc.spec.preconditions.toList ∧ check'.expr = check.expr) :
     Procedure.contractTriple φ p params procName := by
   refine Procedure.contractTriple_of φ p params procName proc [] hproc hbody ?_
-  refine Strata.Logic.Hoare.consequence (Lang.coreBlock p.findProcByString? φ)
-    params
+  refine Core.Logic.Hoare.consequence p.findProcByString? φ params
     (Core.Logic.Hoare.skip p.findProcByString? φ params "" #[]
       (Procedure.preAsPredicate proc))
     (fun _ h => h) (fun ρ hpre label check hmem hattr => ?_)
@@ -138,11 +137,12 @@ theorem Procedure.contractTriple_singleton_cmd (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (hproc : p.findProcByString? procName = some proc) (c : Command)
     (hbody : proc.body = .structured [Stmt.cmd c])
-    (hsem : ∀ ρ₀ σ' f, Procedure.preAsPredicate proc ρ₀ →
+    (hsem : ∀ ρ₀ σ' emitted, Procedure.preAsPredicate proc ρ₀ →
       InitEnvWF params (Stmt.cmd c) ρ₀ →
-      EvalCommand p.findProcByString? φ ρ₀.factory ρ₀.store c σ' f →
-      Procedure.postAsPredicate proc { ρ₀ with store := σ', hasFailure := f } ∧
-        f = Bool.false)
+      EvalCommandE p.findProcByString? φ ρ₀.factory ρ₀.store c σ' emitted →
+      Trace.AssertionsValid Expression (EvaluatorBasedInterp Expression) emitted ∧
+        (Trace.Reachable Expression (EvaluatorBasedInterp Expression) emitted →
+          Procedure.postAsPredicate proc { ρ₀ with store := σ' }))
     (hpost_proj : Imperative.Logic.Hoare.PostWF [Imperative.Stmt.cmd c]
       (Procedure.postAsPredicate proc)) :
     Procedure.contractTriple φ p params procName :=

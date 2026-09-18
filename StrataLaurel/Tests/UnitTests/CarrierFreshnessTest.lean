@@ -13,7 +13,8 @@ tests (`ThrowsClause.lean`) cover the signature arms (an *output* named
 arms instead — a bare declaration, an `.Assign` declare-target, an `.Assign`
 local-target, a `.Try` catch binding, a quantifier binder, and a `throwsOn`
 case postcondition — so a mutation dropping any single fold arm flips exactly
-one line below.
+one line below. All but the local-target arm live in
+`MapStmtExpr.boundNamesOfNode`, so these cases guard its other callers too.
 
 The quantifier arm is the load-bearing one: a `forall($result: int)` authored
 in a case postcondition is exactly where the carrier substitution lands, so

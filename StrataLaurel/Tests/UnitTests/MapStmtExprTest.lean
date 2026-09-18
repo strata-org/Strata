@@ -274,4 +274,62 @@ private def flattenProveByProofIsIgnored : Bool :=
 
 end ResultUseCoverage
 
+/-! ## `boundNamesOfNode`
+
+The one enumeration of the `StmtExpr` forms that bind a name, shared by `EliminateExceptions`'s
+carrier freshening and `GlobalParameterization`'s global aliasing. A missing arm costs both
+callers, so the arms are pinned here rather than only in whichever consumer happens to have a
+fixture for them — and the `.IncrDecr` / `.CompoundAssign` arms have no such consumer at all,
+since `LaurelAST` rules a `Declare` target out in those positions.
+
+One node per handled form, reported by name. A form that stops being handled drops out of this
+list; a form that is added should join it. -/
+
+private def bDecl (n : String) : VariableMd :=
+  ⟨.Declare { name := mkId n, type := some (taggedType "T") }, default⟩
+
+private def bindingForms : List (String × StmtExprMd) := [
+  ("Assign",          testMd (.Assign [bDecl "a"] (testMd (.LiteralInt 0)))),
+  -- Two targets, so the fold over `.Assign`'s target list is exercised rather than assumed.
+  ("Assign/multi",    testMd (.Assign [bDecl "a1", bDecl "a2"] (testMd (.LiteralInt 0)))),
+  ("IncrDecr",        testMd (.IncrDecr .Post .Incr (bDecl "i"))),
+  ("CompoundAssign",  testMd (.CompoundAssign .Add (bDecl "c") (testMd (.LiteralInt 0)))),
+  ("Var",             testMd (.Var (.Declare { name := mkId "v", type := some (taggedType "T") }))),
+  ("Quantifier",      testMd (.Quantifier .Forall { name := mkId "q", type := taggedType "T" } none
+                                (testMd (.LiteralBool true)))),
+  ("Try/catch",       testMd (.Try (testMd (.LiteralBool true))
+                                [{ binding := mkId "e", body := testMd (.LiteralBool true) }] none)),
+  -- Two clauses, so the map over `.Try`'s clause list is exercised, as for `.Assign`'s targets.
+  ("Try/catch/multi", testMd (.Try (testMd (.LiteralBool true))
+                                [{ binding := mkId "e1", body := testMd (.LiteralBool true) },
+                                 { binding := mkId "e2", body := testMd (.LiteralBool true) }] none)),
+  -- A `.Declare` with no type annotation still binds its name: a scope query counts it, so
+  -- rebuilding this on an enumeration that reports only *typed* bindings would narrow the answer
+  -- and stop a shadowing untyped local from forcing a global rename.
+  ("Assign/no-type",  testMd (.Assign [⟨.Declare { name := mkId "u", type := none }, default⟩]
+                                (testMd (.LiteralInt 0)))),
+  -- Assigning to an existing local binds nothing, which is the distinction `usedNames` restates
+  -- for itself; and a form that binds nothing at all must stay silent.
+  ("Assign/local",    testMd (.Assign [⟨.Local (mkId "l"), default⟩] (testMd (.LiteralInt 0)))),
+  ("StaticCall",      testMd (.StaticCall (mkId "f") []))
+]
+
+/--
+info: Assign: a
+Assign/multi: a1, a2
+IncrDecr: i
+CompoundAssign: c
+Var: v
+Quantifier: q
+Try/catch: e
+Try/catch/multi: e1, e2
+Assign/no-type: u
+Assign/local: -
+StaticCall: -
+-/
+#guard_msgs in
+#eval bindingForms.forM fun (label, node) => do
+  let ns := (boundNamesOfNode node).map (fun (n : Identifier) => n.text)
+  IO.println s!"{label}: {if ns.isEmpty then "-" else ", ".intercalate ns}"
+
 end Strata.Laurel

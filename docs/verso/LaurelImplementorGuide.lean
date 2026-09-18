@@ -24,55 +24,57 @@ open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
-/-- Markdown documentation for all Laurel passes, including their
-    `comesBefore`/`comesAfter` ordering rationales. Note: pass
-    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
+/-- Markdown documentation for all Laurel passes, including the `NodeKind`
+    shapes each one creates, removes, and cannot handle. Note: pass
+    `documentation` strings are rendered as Markdown, so avoid raw
     `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
     converter); use backticks for inline code instead. -/
 def laurelPipelineDocsMarkdown : String :=
+  let renderKinds (label : String) (ks : List NodeKind) : List String :=
+    if ks.isEmpty then []
+    else [s!"  - {label}: " ++ ", ".intercalate (ks.map fun k => s!"`{k}`")]
   let entries := allPasses.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
-    let beforeDeps := pass.comesBefore.map fun cb =>
-      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
-    let afterDeps := pass.comesAfter.map fun ca =>
-      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
-    let deps := beforeDeps ++ afterDeps
-    if deps.isEmpty then base
-    else base ++ "\n" ++ "\n".intercalate deps
+    let decls :=
+      renderKinds "Creates" pass.creates
+        ++ renderKinds "Removes" pass.removes
+        ++ renderKinds "Unsupported" pass.unsupported
+    if decls.isEmpty then base
+    else base ++ "\n" ++ "\n".intercalate decls
   "\n".intercalate entries.toList
 
-/-- Markdown dependency graph for the Laurel passes, derived from the
-    `comesBefore`/`comesAfter` properties. -/
+/-- Markdown dependency graph for the Laurel passes, observed by folding the live shape set
+    over the pipeline (`passDependencies`). Nothing here is hand-written: each edge names the
+    shape and says whether the later pass depends on it being present or absent. -/
 def laurelPipelineDependencyGraphMarkdown : String := Id.run do
-  -- Collect all edges: (source, target, reason) where source comesBefore target
-  let mut edges : List (String × String × String) := []
-  for pass in allPasses do
-    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
-    for cb in pass.comesBefore do
-      edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
-    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
-    for ca in pass.comesAfter do
-      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
+  -- Group the observed edges by (source, target), collecting every kind/reason that
+  -- justifies the pair — an edge is often implied by several kinds at once.
+  let mut edges : List (String × String × List String) := []
+  for c in passDependencies do
+    let why := s!"`{c.kind}` ({c.reason})"
+    match edges.findIdx? (fun e => e.1 == c.earlier && e.2.1 == c.later) with
+    | some i =>
+      edges := edges.set i
+        (match edges[i]? with
+         | some e => (e.1, e.2.1, if e.2.2.contains why then e.2.2 else e.2.2 ++ [why])
+         | none => (c.earlier, c.later, [why]))
+    | none => edges := edges ++ [(c.earlier, c.later, [why])]
 
-  -- Deduplicate edges with the same (source, target), keeping the first reason.
-  edges := edges.foldl (init := []) fun acc e =>
-    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
-
-  -- Build the graph as a markdown list showing dependencies
-  let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
+  let mut md := "**Dependency edges** (A → B means A must run before B). \
+Every edge is derived from the passes' declared node kinds:\n\n"
   if edges.isEmpty then
-    md := md ++ "*No ordering constraints declared.*\n"
+    md := md ++ "*No ordering constraints derived.*\n"
   else
-    for (src, tgt, reason) in edges do
-      md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
+    for (src, tgt, whys) in edges do
+      md := md ++ s!"- **{src}** → **{tgt}**\n  - via {", ".intercalate whys}\n"
 
   -- Add a textual rendering of the pipeline order with dependency annotations
   md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
   md := md ++ "```\n"
   let mut idx := 1
   for pass in allPasses do
-    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
-    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
+    let beforeDeps := (edges.filter (·.1 == pass.name)).map fun e => s!" → {e.2.1}"
+    let afterDeps := (edges.filter (·.2.1 == pass.name)).map fun e => s!" ← {e.1}"
     let deps := beforeDeps ++ afterDeps
     let depStr := if deps.isEmpty then "" else String.join deps
     md := md ++ s!"{idx}. {pass.name}{depStr}\n"
@@ -91,7 +93,7 @@ def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
   `(Verso.Doc.Block.concat #[$blocks,*])
 
 /-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` and `comesAfter` properties.
+    derived from the passes' declared node kinds.
     Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
 @[block_command]
 def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
@@ -242,13 +244,61 @@ And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
 ## Passes
 
-The following passes make up the compilation of Laurel to Core:
+The following passes make up the compilation of Laurel to Core.
+
+Each pass declares how it affects the *shapes* present in the program, using the
+vocabulary of `NodeKind`. A shape is usually an AST constructor, but it can be finer: a
+constructor together with a condition on one of its fields. `StmtExpr.While.postTest.true`
+is a `While` whose `postTest` field is `true` — a `do … while` loop — and is a shape
+distinct from a pre-test `While`. Names read as a path, `Owner.field.Leaf`, and are
+qualified by their owner because the same field name occurs on several structures.
+
+Three declarations describe a pass:
+
+: `creates`
+
+  Shapes the pass *might* introduce — it does not always emit one. `EliminateDoWhile` creates
+  `StmtExpr.Exit`, because the loop it emits leaves through a labelled exit, but a program
+  with no `do … while` gets none.
+
+: `removes`
+
+  Shapes that are gone once the pass has run. `EliminateDoWhile` removes
+  `StmtExpr.While.postTest.true`: afterwards every loop is pre-test.
+
+: `unsupported`
+
+  Shapes the pass cannot handle, and which must therefore already be gone.
+  `LaurelToCoreSchema` declares `StmtExpr.While.postTest.true` unsupported, matching the
+  diagnostic it raises if one reaches it.
+
+These declarations are what constrains the pipeline order, and they are checked on every
+build. The check folds the set of live shapes over the passes, starting from the shapes an
+authored program can contain and applying `(live ∖ removes) ∪ creates` at each step. Before
+a pass runs, nothing in its `unsupported` list may be live. A violation fails the build,
+naming the pass and the shape.
+
+`creates` earns its keep through that same check: if a pass re-creates a shape after another
+has removed it, and a later pass declares it `unsupported`, the shape is live again when that
+pass runs and the build fails. So a `creates` declaration is what forces a pass emitting a
+shape to precede the pass that eliminates it.
+
+Two limits are worth knowing. The declarations are *not* verified against the passes
+themselves — a `removes` claim is documentation, and several are known to hold only of
+procedure bodies rather than of a whole program. And shapes named `Pseudo.*` are not AST
+constructors at all: they are labels for things like a generated `$heap` global or the
+relation between two overloaded procedures, which no traversal can look for. They exist to
+carry an ordering constraint, and the intent is to remove them as the AST grows the
+structure to express them directly.
 
 {laurelPipelineDocs}
 
 ## Pass Dependency Graph
 
-The following graph shows the ordering constraints between passes.
+The ordering constraints between passes, derived from the declarations above rather than
+written by hand. Each edge names the shape that ties the two passes together, and whether
+the later pass cannot handle that shape, and which pass removed it
+(`removes → unsupported`).
 
 {laurelPipelineDependencyGraph}
 

@@ -23,7 +23,7 @@ Two conventions, picked by what the test program does rather than by which folde
 Two consequences worth stating, because both have been got wrong before:
 
 - Prefer folding a case into the file that owns its feature over adding a file. More files than there are combinations is a smell, and so is a grab-bag name like `Scenarios` that admits the file has no single subject.
-- A test whose subject is a *pipeline* property rather than a language one does not belong here at all. Pass ordering is declared on the pass itself with `comesBefore`/`comesAfter` and checked by `orderingRespected`, which is cheaper and harder to bypass than an end-to-end test standing in for it.
+- A test whose subject is a *pipeline* property rather than a language one does not belong here at all. Pass ordering is declared on each pass via `creates`/`removes`/`unsupported` over `NodeKind` shapes, and checked at `initialize` by `orderingRespected`, which folds the live shape set through the pipeline and rejects any pass whose `unsupported` shapes are still live. That is cheaper and harder to bypass than an end-to-end test standing in for it.
 
 ## Debugging
 

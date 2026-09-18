@@ -137,6 +137,26 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
     (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
     (wfPkg := ⟨InitEnvWFParams, BlockInitEnvWF⟩)
 
+/-! ## Core event-trace language bundles -/
+
+/-- Core event language for single statements, gated by `InitEnvWF`. -/
+@[expose] def EventLang.core
+    (π : String → Option Procedure)
+    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    Strata.Logic.EventLang Expression (Event Expression) :=
+  Imperative.Logic.EventLang.imperativeE
+    Expression Command (EvalCommandE π φ) (EvalPureFunc φ)
+    InitEnvWFParams InitEnvWF
+
+/-- Core event language for statement lists, gated by `BlockInitEnvWF`. -/
+@[expose] def EventLang.coreBlock
+    (π : String → Option Procedure)
+    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    Strata.Logic.EventLang Expression (Event Expression) :=
+  Imperative.Logic.EventLang.imperativeBlockE
+    Expression Command (EvalCommandE π φ) (EvalPureFunc φ)
+    ⟨InitEnvWFParams, BlockInitEnvWF⟩
+
 end Core.Logic
 
 end -- public section
