@@ -265,12 +265,20 @@ end -- public section
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def modifiesClausesTransformPass : LoweringPass where
   name := "ModifiesClausesTransform"
+  creates := [
+      NodeKind.Body.postconditions.cons,
+      NodeKind.Pseudo.oldExpr,
+      -- Laurel's operators are calls to overloaded wrapper procedures
+      -- (`Operation.Eq.procName` is `$eq`, `And` is `$and`, …), so emitting one
+      -- re-establishes the condition `UniqueOverloadNames` exists to remove: a call site
+      -- naming an overloaded procedure. This pass declares no new overloads itself.
+      -- Emitting one after the rename would name a wrapper that no longer exists.
+      NodeKind.Pseudo.overload
+    ]
+  unsupported := [NodeKind.Pseudo.implicitHeap]
+  removes := [NodeKind.Body.modifies.cons, NodeKind.Procedure.throwsOn.cons]
   documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
-  comesBefore := [
-    ⟨ contractPass.meta, "The modifies pass creates new postconditions"⟩,
-    ⟨ pushOldInwardPass.meta, "The modifies clauses pass uses old already in 'inward' positions, so right now it does not actually need the push inward pass to come after. However, if the implementation of old changes then it's safer if the pass that handles old comes after the modifies pass since it does introduce old."⟩]
-  comesAfter := [⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩]
   run := fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})

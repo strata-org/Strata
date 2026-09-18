@@ -385,11 +385,11 @@ end -- public section
 /-- Pipeline pass: infer hole types. -/
 public def inferHoleTypesPass : LoweringPass where
   name := "InferHoleTypes"
+  creates := [NodeKind.StmtExpr.Hole.type.some]
+  removes := [NodeKind.StmtExpr.Hole.type.none]
   documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values. TODO: this pass should be removed by improving `Resolution` to assign a concrete type to every hole during type checking (see the module doc for the type-variable approach), making this pass obsolete."
   run := fun _ p m =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
-  comesBefore := [
-      ⟨ eliminateDeterministicHolesPass.meta, "eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel

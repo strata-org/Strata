@@ -184,6 +184,14 @@ structure AstNode (t : Type) : Type where
   source : FileRange
   deriving Repr
 
+-- Placed beside `AstNode`, not with the other size lemmas further down: `ast_recursion_decreasing`
+-- resolves it by name at the use site, so a structural recursion declared above it silently gets
+-- no size hypothesis at all.
+/-- Recursing into an `AstNode` child shrinks the `sizeOf` measure: a node is strictly larger than
+    the value it wraps. -/
+theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
+  cases e; grind
+
 /--
 The type system for Laurel programs (each constructor is documented
 individually below). Two constructors are internal, not surface types:
@@ -980,9 +988,33 @@ partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → H
       | .Applied base args => .Applied (go base) (args.map go)
       | .Intersection ts => .Intersection (ts.map go)
       | .MultiValuedExpr ts => .MultiValuedExpr (ts.map go)
-      | other => other
+      -- Leaves enumerated rather than a `| other => other` wildcard, for the reason given at
+      -- `anyHighType`; the silent failure here would be a subtree returned untouched.
+      | e@.TVoid | e@.TBool | e@.TInt | e@.TFloat64 | e@.TReal | e@.TString
+      | e@(.TBv _) | e@.Unknown => e
     { val := v, source := ty.source }
   go ty
+
+/-- Does `p` hold at any node of `ty` — the node itself, or anything nested inside a generic
+    application, collection or intersection?
+
+    The `.attach` on the list arms exposes the `a ∈ args` hypothesis to the termination proof:
+    `List.flatMap` gets that from Lean's `wf_preprocess` set automatically, but `List.any` does not. -/
+def anyHighType (p : HighType → Bool) (ty : HighType) : Bool :=
+  p ty ||
+  match ty with
+  | .Applied b args =>
+    anyHighType p b.val || args.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
+  | .TMap k v => anyHighType p k.val || anyHighType p v.val
+  | .TSet e => anyHighType p e.val
+  | .Intersection ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
+  | .MultiValuedExpr ts => ts.attach.any (fun ⟨x, _⟩ => anyHighType p x.val)
+  -- Leaves enumerated rather than a `| _ => false` wildcard, so a NEW compound constructor is a
+  -- compile error here instead of a silent non-descent in every predicate built on this.
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
+  | .UserDefined _ | .TVar _ | .TBv _ | .Unknown => false
+  termination_by ty
+  decreasing_by all_goals ast_recursion_decreasing
 
 /-- Does a `HighType` mention a type variable (`.TVar`) anywhere — bare, or nested
     inside a generic application / collection / intersection (`Box<T>`, `TotalMap T int`,
@@ -991,14 +1023,11 @@ partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → H
     the poly-`throws` escape deferral in `Resolution.exceptionEscapes`, and
     `ContractPass`'s polymorphic-callee detection. Single definition so those callers
     can't drift apart. -/
-partial def mentionsTVar : HighType → Bool
-  | .TVar _ => true
-  | .Applied b args => mentionsTVar b.val || args.any (mentionsTVar ·.val)
-  | .TMap k v => mentionsTVar k.val || mentionsTVar v.val
-  | .TSet e => mentionsTVar e.val
-  | .Intersection ts => ts.any (mentionsTVar ·.val)
-  | .MultiValuedExpr ts => ts.any (mentionsTVar ·.val)
-  | _ => false
+def mentionsTVar (ty : HighType) : Bool := anyHighType (· matches .TVar _) ty
+
+/-- Does `ty` contain `.Unknown` anywhere? A nested one (`Sequence<Unknown>`) is as untranslatable
+    as a bare one, so a head-only test under-reports. -/
+def mentionsUnknown (ty : HighType) : Bool := anyHighType (· matches .Unknown) ty
 
 /-- Substitute type variables (by name) throughout a `HighType`. A parameter may appear as
     `.TVar name` (when resolution scoped it) or `.UserDefined name` (if it didn't); either
@@ -1023,9 +1052,6 @@ def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target :
       (params.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
     some (substTypeVars subst target)
   else none
-
-theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
-  cases e; grind
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
   cases c; grind

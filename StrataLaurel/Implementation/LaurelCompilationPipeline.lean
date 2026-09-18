@@ -112,13 +112,11 @@ def laurelPipeline : Array LoweringPass := #[
   -- Coroutine elaboration emits instance procedures, so it must precede instance lifting.
   coroutineElaborationPass,
   -- Behavioral-subtyping (Liskov) check for method overrides: purely additive (appends
-  -- checker procedures), and the soundness prerequisite for dynamic dispatch. Its two
-  -- ordering constraints matter for soundness, not just tidiness, so they are pinned via
-  -- `comesBefore`/`comesAfter` below (machine-checked by `orderingRespected` at `initialize`)
-  -- rather than left to a comment — see those strings for the rationale.
-  { checkOverrideRefinementPass with
-      comesAfter := [⟨coroutineElaborationPass.meta, "coroutine elaboration emits overrides (from resume/has_next bodies) that must themselves be Liskov-checked, so the checker must see the post-elaboration program."⟩]
-      comesBefore := [⟨liftInstanceProceduresPass.meta, "the Liskov checker reads the still-intact `extending` chain and composite-attached methods; LiftInstanceProcedures flattens methods to top-level procs and clears the override relation, so a checker running afterward would emit zero checkers and silently accept a Liskov-violating override (covariance is guarded by the checker alone)."⟩] },
+  -- checker procedures), and the soundness prerequisite for dynamic dispatch. Its ordering
+  -- matters for soundness, not just tidiness: a checker running after the methods are
+  -- flattened off their composites would emit zero checkers and silently accept a
+  -- Liskov-violating override, since covariance is guarded by the checker alone.
+  checkOverrideRefinementPass,
   -- Polymorphism: lift instance procedures, then monomorphize (the lift must precede
   -- monomorphization).
   liftInstanceProceduresPass,
@@ -126,9 +124,12 @@ def laurelPipeline : Array LoweringPass := #[
   -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
   -- to `Box<int>` so the monomorphizer sees the real `.Applied` and rewrites it to `Box$a1$int`.
   -- Mono is alias-agnostic (no `.Alias` refs); alias-elim only needs the first resolve, which
-  -- precedes the whole pipeline. No `comesBefore` pins their relative order.
+  -- precedes the whole pipeline. Nothing pins their relative order.
   typeAliasElimPass,
-  { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass.meta, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
+  -- Monomorphization must run before heap parameterization: HeapParam boxes composite fields
+  -- into the non-parametric Box datatype, so any generic composite still un-monomorphized at
+  -- that point would be boxed with no concrete instantiation and reach Core un-lowered.
+  monomorphizeCompositesPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
   constrainedTypeElimPass,
@@ -604,27 +605,80 @@ public def allPasses: Array PassMeta := laurelPipeline.map (fun p => p.meta) ++
   unorderedCorePipeline.map (fun p => p.meta) ++
   [orderingPass.meta, laurelToCoreSchemaPass.meta]
 
-/-- Every `comesBefore` and `comesAfter` constraint is respected by the
-    pipeline order. A `comesBefore` dependency requires this pass to appear
-    earlier than its target; a `comesAfter` dependency requires it to appear
-    later. -/
-def orderingRespected : Bool :=
-  let names := allPasses.map (·.name)
-  (List.range allPasses.size).zip allPasses.toList |>.all fun (i, p) =>
-    (p.comesBefore.all fun cb =>
-      match names.findIdx? (· == cb.pass.name) with
-      | some j => i < j
-      | none   => false)  -- target not in allPasses
-    &&
-    (p.comesAfter.all fun ca =>
-      match names.findIdx? (· == ca.pass.name) with
-      | some j => j < i
-      | none   => false)  -- target not in allPasses
+/-- A pass whose declarations are not satisfied by the pipeline order. -/
+public structure OrderingFailure where
+  pass : String
+  kind : NodeKind
+  /-- What went wrong, for the failure message. -/
+  reason : String
+  deriving Repr
+
+/-- A dependency between two passes, as the fold observed it: `later` names `kind` in its
+    `unsupported`, and `earlier` is the pass that last removed it. -/
+public structure PassDependency where
+  earlier : String
+  later : String
+  kind : NodeKind
+  reason : String
+  deriving Repr
+
+/-- The result of folding the live shape set over the pipeline: the failures, and the
+    dependencies observed on the way.
+
+    The live set starts at `NodeKind.inSource` — the shapes an authored program can
+    contain — and each pass updates it to `(live \ removes) ∪ creates`. Before a pass runs,
+    nothing in its `unsupported` list may be live: every shape it cannot handle must already
+    have been removed on this path. Delete the pass that removes a shape and the pass
+    declaring it `unsupported` fails.
+
+    `NodeKind.inSource` is therefore load-bearing. Misclassifying a source shape as
+    pipeline-generated weakens this check silently — see the note there.
+
+    Re-creating a shape after it has been removed is allowed, so long as nothing downstream
+    declares it `unsupported`. -/
+public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.run do
+  let mut live : NodeKind → Bool := NodeKind.inSource
+  -- The pass that last removed each shape, for dependency provenance.
+  let mut lastRemover : Std.HashMap NodeKind String := {}
+  let mut failures : List OrderingFailure := []
+  let mut deps : List PassDependency := []
+  for p in allPasses do
+    for k in p.unsupported do
+      if live k then
+        failures := failures ++
+          [{ pass := p.name, kind := k, reason := "declared unsupported but still live here" }]
+      else if let some earlier := lastRemover[k]? then
+        deps := deps ++
+          [{ earlier, later := p.name, kind := k, reason := "removes → unsupported" }]
+    -- Bind the declarations before updating `live`, so the closure does not capture it.
+    let (removes, creates, name) := (p.removes, p.creates, p.name)
+    for k in removes do lastRemover := lastRemover.insert k name
+    -- `creates` wins a contradictory declaration: the shape stays live, so a downstream
+    -- `unsupported` on it fails loudly rather than passing in silence.
+    live := fun k =>
+      if creates.contains k then true
+      else if removes.contains k then false
+      else live k
+  return (failures, deps)
+
+/-- Passes whose declarations the pipeline order does not satisfy. Empty when the order is
+    valid with respect to the declarations. -/
+public def orderingFailures : List OrderingFailure := orderingAnalysis.fst
+
+/-- The pass dependencies the fold observed, for documentation generation. -/
+public def passDependencies : List PassDependency := orderingAnalysis.snd
+
+/-- The pipeline order satisfies every pass's `unsupported` declarations. -/
+public def orderingRespected : Bool := orderingFailures.isEmpty
 
 -- Use `initialize` to check at load time instead of `#guard` which requires
 -- interpreter IR that is not available for passes defined in `module` files.
 initialize do
   unless orderingRespected do
-    throw <| .userError "laurelPipeline: comesBefore/comesAfter ordering constraints violated"
+    let rendered := orderingFailures.map fun f =>
+      s!"  {f.pass}: {f.kind} {f.reason}"
+    throw <| .userError
+      ("laurelPipeline: pass declarations are not satisfied by the pipeline order:\n"
+        ++ "\n".intercalate rendered)
 
 end Laurel

@@ -220,7 +220,8 @@ where
 
 public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
   name := "Ordering"
-  comesBefore := []
+  creates := [NodeKind.Pseudo.orderedDeclarations]
+  removes := [NodeKind.Pseudo.unorderedDeclarations]
   documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
 computing a combined ordering of functions and proofs using the call graph,
 then collecting datatypes and constants.

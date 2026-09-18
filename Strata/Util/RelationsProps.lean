@@ -17,6 +17,10 @@ import all Strata.Util.Relations
 * `Reflexive.dense` — every reflexive relation is dense
 * `ReflTrans_Reflexive`, `ReflTrans_Transitive` — `ReflTrans` is reflexive and transitive
 * `reflTransT_to_prop` — the `Type`-valued closure implies the `Prop`-valued one
+* `ReflTransTrace.trans` — traced executions compose by chronological trace
+  concatenation
+* `ReflTransTrace.toReflTrans` — erasing each step's emitted events recovers an
+  ordinary reflexive-transitive execution
 -/
 
 public section
@@ -68,6 +72,31 @@ theorem reflTransT_to_prop {A : Type} {r : A → A → Prop} {a b : A} :
   intro h; induction h with
   | refl => exact .refl _
   | step _ _ _ hstep _ ih => exact .step _ _ _ hstep ih
+
+
+/-- Traced executions compose by concatenating their chronological traces. -/
+theorem ReflTransTrace.trans {A E : Type} (r : A → List E → A → Prop)
+    {a b c : A} {trace₁ trace₂ : List E}
+    (h₁ : ReflTransTrace r a trace₁ b)
+    (h₂ : ReflTransTrace r b trace₂ c) :
+    ReflTransTrace r a (trace₁ ++ trace₂) c := by
+  induction h₁ with
+  | refl => simpa using h₂
+  | step x emitted y rest z hstep _ ih =>
+    simpa [List.append_assoc] using
+      (ReflTransTrace.step x emitted y (rest ++ trace₂) c hstep (ih h₂))
+
+/-- Forgetting labels from every step of a traced execution yields an ordinary
+reflexive-transitive execution. -/
+theorem ReflTransTrace.toReflTrans {A E : Type}
+    {r : A → List E → A → Prop} {u : A → A → Prop}
+    (hforget : ∀ a emitted b, r a emitted b → u a b)
+    {a b : A} {trace : List E}
+    (h : ReflTransTrace r a trace b) : ReflTrans u a b := by
+  induction h with
+  | refl => exact .refl _
+  | step x emitted y _ z hstep _ ih =>
+    exact .step x y z (hforget x emitted y hstep) ih
 
 end Relation
 end

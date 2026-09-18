@@ -47,7 +47,7 @@ to be addressed before it can fully replace the direct path:
   side channel), and this module would need to emit them as named
   sub-expressions on the backward-edge GOTO, mirroring the logic in the
   `.loop` case of `Stmt.toGotoInstructions` in `ToCProverGOTO.lean`.
-- **`Core.CmdExt.call`**: This translation handles `Imperative.Cmd` only.
+- **`Imperative.CmdExt.call`**: This translation handles `Imperative.Cmd` only.
   Core procedure calls (`CmdExt.call`) would need a command translator
   analogous to `coreStmtsToGoto` in `CoreToGOTOPipeline.lean`.
 -/
@@ -105,7 +105,7 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
     let srcLoc : SourceLocation := { SourceLocation.nil with function := functionName }
     trans := emitLabel label srcLoc trans
     -- Translate each command via the existing Cmd-to-GOTO mapping.
-    -- NOTE: This only handles `Imperative.Cmd`. To support `Core.CmdExt.call`,
+    -- NOTE: This only handles `Imperative.Cmd`. To support `Imperative.CmdExt.call`,
     -- either:
     --   (a) generalize this function over the command type and accept a
     --       command translator as a parameter, or

@@ -8,6 +8,7 @@ module
 
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.BasicBlock
+public import Strata.DL.Imperative.Procedure
 public import Strata.Languages.Core.Statement
 
 ---------------------------------------------------------------------
@@ -204,56 +205,21 @@ instance : ToFormat Procedure.Header where
     f!"procedure {p.name} : {typeArgs} ({Signature.format p.inputs}) → \
       ({Signature.format p.outputs})"
 
-/--
-Attribute controlling whether a specification clause is checked or free.
+/-- The check/free attribute of a specification clause. -/
+abbrev Procedure.CheckAttr := Imperative.CheckAttr
 
-- `Default`: The clause is checked (asserted at call sites for preconditions,
-  checked on exit for postconditions).
-- `Free`: The clause is assumed but not checked. A free precondition is assumed
-  by the implementation but not asserted at call sites. A free postcondition is
-  assumed upon return from calls but not checked on exit from implementations.
+@[match_pattern] abbrev Procedure.CheckAttr.Free := Imperative.CheckAttr.Free
+@[match_pattern] abbrev Procedure.CheckAttr.Default := Imperative.CheckAttr.Default
 
-See Section 8.1 of "This is Boogie 2" for motivation.
--/
-inductive Procedure.CheckAttr where
-  /-- The clause is free: assumed but not checked. -/
-  | Free
-  /-- The clause is checked (default behavior). -/
-  | Default
-  deriving Repr, DecidableEq
-
-/-- A single specification clause: a boolean expression with an optional `Free` attribute
-and optional metadata. -/
-structure Procedure.Check where
-  /-- The boolean expression of this specification clause. -/
-  expr : Expression.Expr
-  /-- Whether this clause is checked (`Default`) or free (`Free`). -/
-  attr : CheckAttr := .Default
-  /-- Optional metadata (e.g., source location). -/
-  md : Imperative.MetaData Expression := #[]
-  deriving Repr, DecidableEq
-
-instance : Inhabited Procedure.Check where
-  default := { expr := Inhabited.default }
+/-- A single specification clause over Core expressions. -/
+abbrev Procedure.Check := Imperative.Check Expression
 
 def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
   { c with expr := c.expr.eraseTypes }
 
-/--
-The specification (contract) of a procedure.
-
-- `preconditions`: Labeled boolean expressions that must hold before the procedure
-  executes. Checked (asserted) at call sites unless marked `Free`.
-- `postconditions`: Labeled boolean expressions that must hold when the procedure
-  returns. May reference `old v` for pre-state values. Assumed at call sites
-  unless the implementation is being verified.
--/
-structure Procedure.Spec where
-  /-- Labeled preconditions (`requires` clauses). -/
-  preconditions  : ListMap CoreLabel Procedure.Check
-  /-- Labeled postconditions (`ensures` clauses). -/
-  postconditions : ListMap CoreLabel Procedure.Check
-  deriving Inhabited, Repr, DecidableEq
+/-- A procedure's specification (contract) over Core expressions.
+    Postconditions may reference `old v` for pre-state values. -/
+abbrev Procedure.Spec := Imperative.Spec Expression
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
   s.preconditions.keys
@@ -263,8 +229,8 @@ def Procedure.Spec.postconditionNames (s : Procedure.Spec) : List CoreLabel :=
 
 def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
   { s with
-    preconditions := s.preconditions.map (fun (l, c) => (l, c.eraseTypes)),
-    postconditions := s.postconditions.map (fun (l, c) => (l, c.eraseTypes))
+    preconditions := s.preconditions.map (fun (l, c) => (l, Procedure.Check.eraseTypes c)),
+    postconditions := s.postconditions.map (fun (l, c) => (l, Procedure.Check.eraseTypes c))
   }
 
 def Procedure.Spec.getCheckExprs (conds : ListMap CoreLabel Procedure.Check) :
@@ -284,103 +250,20 @@ def Procedure.Spec.updateCheckExprs
     { c with expr := e } :: go erest crest
 
 /-- A deterministic control-flow graph over Core commands and expressions. -/
-@[expose] abbrev DetCFG := Imperative.CFG String (Imperative.DetBlock String Command Expression)
+@[expose] abbrev DetCFG := Imperative.DetCFG Expression Command
 
-/-- The body of a Core procedure: either structured (a list of statements) or
-unstructured (a control-flow graph of basic blocks). An empty structured body
-(`structured []`) represents an abstract/bodyless procedure. -/
-inductive Procedure.Body where
-  /-- A structured body: a sequential list of statements. -/
-  | structured : List Statement → Procedure.Body
-  /-- An unstructured body: a control-flow graph of deterministic basic blocks.
-      Labels are strings; each block contains Core commands and ends with a
-      deterministic transfer (conditional goto or finish). -/
-  | cfg : DetCFG → Procedure.Body
-  deriving Inhabited, DecidableEq
+/-- The body of a Core procedure. An empty structured body (`structured []`)
+    represents an abstract/bodyless procedure. -/
+abbrev Procedure.Body := Imperative.Body Expression Command
 
-/-- Extract the structured statements, or error if the body is a CFG. -/
-@[simp, expose]
-def Procedure.Body.getStructured : Procedure.Body → Except String (List Statement)
-  | .structured ss => .ok ss
-  | .cfg _ => .error "expected structured body, got CFG"
+@[match_pattern] abbrev Procedure.Body.structured := @Imperative.Body.structured Expression Command
+@[match_pattern] abbrev Procedure.Body.cfg := @Imperative.Body.cfg Expression Command
 
-/-- Extract the CFG, or error if the body is structured. -/
-@[simp]
-def Procedure.Body.getCfg : Procedure.Body → Except String DetCFG
-  | .cfg c => .ok c
-  | .structured _ => .error "expected CFG body, got structured"
-
-/-- Variables read (referenced in expressions) by a CFG body. -/
-@[simp]
-def DetCFG.getVars (cfg : DetCFG) : List Expression.Ident :=
-  cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Imperative.HasVarsImp.readVars ++
-    (match blk.transfer with
-      | .condGoto p _ _ _ => Imperative.HasFvars.getFvars p
-      | .finish _ => [])
-
-/-- Get variables referenced in the body. For a CFG body, this includes the
-variables read by the guard of each conditional transfer (`condGoto`), mirroring
-how the structured form collects the condition variables of `if`/`while`. -/
-@[simp]
-def Procedure.Body.getVars : Procedure.Body → List Expression.Ident
-  | .structured ss => ss.flatMap Imperative.HasVarsImp.readVars
-  | .cfg c => DetCFG.getVars c
-
-/-- Is this body abstract (no implementation)? Only empty structured bodies
-    are abstract. CFG bodies always have an implementation. -/
-@[simp]
-def Procedure.Body.isAbstract : Procedure.Body → Bool
-  | .structured ss => ss.isEmpty
-  | .cfg _ => false
-
-/-- Does this body have a structured implementation? -/
-@[simp]
-def Procedure.Body.isStructured : Procedure.Body → Bool
-  | .structured _ => true
-  | .cfg _ => false
-
-/-- The statements of a body. A CFG block's commands come back `.cmd`-wrapped,
-    which is what lets a property of statements — `noCalls`, say — see a CFG
-    body too, while a property of a statement form that cannot occur in a
-    block, such as a `loop`, holds there vacuously. -/
-@[expose] def Procedure.Body.statements : Procedure.Body → Statements
-  | .structured ss => ss
-  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.map .cmd
-
-@[expose] def Procedure.Body.allStatements (f : Statements → Bool)
-    (body : Procedure.Body) : Bool :=
-  f body.statements
-
-/-- Does this body have a CFG implementation? -/
-@[simp]
-def Procedure.Body.isCfg : Procedure.Body → Bool
-  | .structured _ => false
-  | .cfg _ => true
-
-def Procedure.Body.structuredLength : Procedure.Body → Nat
-  | .structured ss => ss.length
-  | .cfg _ => 0
-
-/--
-A Strata Core procedure: the main verification unit.
-
-A procedure consists of a header (name, type parameters, input/output signatures),
-a specification (contract), and an optional body (list of statements or a CFG).
-If the body is empty, the procedure is abstract and can only be reasoned about
-via its contract. If the body is present, it is verified against the specification.
--/
-structure Procedure where
-  /-- The procedure header: name, type parameters, and parameter signatures. -/
-  header : Procedure.Header
-  /-- The procedure's contract: preconditions and postconditions. There is no
-      modifies clause: a body may write only its outputs and locals, enforced by
-      the modification-rights check (`checkModificationRights`) during type
-      checking. -/
-  spec   : Procedure.Spec
-  /-- The procedure body. -/
-  body   : Procedure.Body := .structured []
-  deriving Inhabited, DecidableEq
+/-- A Strata Core procedure: the main verification unit. A procedure is a header
+    (name, type parameters, input/output signatures), a specification (contract),
+    and an optional body. An empty body makes the procedure abstract, reasoned
+    about only via its contract. -/
+abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
 
 /-- Apply `f` to every expression of a procedure: the specification's
     pre/postcondition checks and the structured body. CFG bodies are left
@@ -400,31 +283,10 @@ structure Procedure where
 
 open Imperative
 
-def Procedure.getVars (p : Procedure) : List Expression.Ident :=
-  (p.spec.postconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
-  (p.spec.preconditions.values.map Procedure.Check.expr).flatMap HasFvars.getFvars ++
-  p.body.getVars |> List.filter (not $ Membership.mem p.header.inputs.keys ·)
-
-instance : HasVarsImp Expression DetCFG where
-  definedVars cfg _ := cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Command.definedVars
-  modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap Command.modifiedVars
-  readVars := DetCFG.getVars
-
-instance : HasVarsImp Expression Procedure.Body where
-  definedVars b excludeScoped := match b with
-    | .structured ss => HasVarsImp.definedVars ss excludeScoped
-    | .cfg cfgBody => HasVarsImp.definedVars cfgBody excludeScoped
-  modifiedVars b := match b with
-    | .structured ss => HasVarsImp.modifiedVars ss
-    | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
-  readVars := Procedure.Body.getVars
-
-instance : HasVarsImp Expression Procedure where
-  definedVars _ _ := []
-  modifiedVars p := p.header.outputs.keys
-  readVars := Procedure.getVars
+instance : Imperative.ProcedureHeader Expression Procedure.Header where
+  name h         := h.name
+  inputParams  h := h.inputs.keys
+  outputParams h := h.outputs.keys
 
 def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
@@ -445,47 +307,14 @@ def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   let body' := match p.body with
     | .structured ss => .structured (Statements.eraseTypes ss)
-    | .cfg c => .cfg c.eraseTypes
+    | .cfg c => .cfg (DetCFG.eraseTypes c)
   { p with body := body', spec := p.spec }
 
 def Procedure.stripMetaData (p : Procedure) : Procedure :=
   let body' := match p.body with
     | .structured ss => .structured (Imperative.Block.stripMetaData ss)
-    | .cfg c => .cfg c.stripMetaData
+    | .cfg c => .cfg (DetCFG.stripMetaData c)
   { p with body := body' }
-
-/-- Transitive variable lookup for procedures.
-    This is a version that looks into the body,
-    but does not transitively search all variables occuring in the body.
-    Transitively searching procedure bodies being called is possible,
-    but the termination argument needs to be provided.
-    One possible implementation is to store _a list of procedures_ in each procedure structure,
-    and use the decreasing list size as a termination metric,
-    as one traverses through recursively called procedure bodies.
--/
-def Procedure.modifiedVarsTrans
-  (_ : String → Option Procedure)
-  (p: Procedure) : List Expression.Ident :=
-  HasVarsImp.modifiedVars p ++
-  HasVarsImp.modifiedVars p.body
-
-/-- As `Procedure.modifiedVarsTrans`,
-    this function is also non-transitive in terms of nested procedure calls.
-    But it should be possible to implement one that is transtiive.
--/
-def Procedure.getVarsTrans
-  (_ : String → Option Procedure)
-  (p: Procedure) : List Expression.Ident :=
-  HasVarsImp.readVars p ++
-  HasVarsImp.readVars p.body
-
-instance : HasVarsProcTrans Expression Procedure where
-  modifiedVarsTrans := Procedure.modifiedVarsTrans
-  getVarsTrans := Procedure.getVarsTrans
-  definedVarsTrans := λ _ _ ↦ [] -- procedures cannot define global variables
-  modifiedOrDefinedVarsTrans := Procedure.modifiedVarsTrans
-  allVarsTrans :=
-    λ π p ↦ Procedure.getVarsTrans π p ++ Procedure.modifiedVarsTrans π p
 
 -- NOTE : simply discarding the procedure lookup function for now
 instance : HasVarsTrans Expression Statement Procedure where

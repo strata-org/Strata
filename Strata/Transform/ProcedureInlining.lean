@@ -18,6 +18,7 @@ namespace ProcedureInlining
 
 open Transform
 open Strata.Util (HMap)
+open Imperative
 
 /-- Statistics keys tracked by the procedure inlining transformation. -/
 inductive Stats where

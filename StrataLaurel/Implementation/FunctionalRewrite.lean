@@ -782,7 +782,9 @@ private def functionalRewrite (uc : UnorderedCoreWithLaurelTypes) (model : Seman
 public def functionalRewritePass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
   name := "FunctionalRewritePass"
   documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter, an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and the output parameter — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to an input parameter, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
-  comesAfter := [⟨transparencyPass.meta, "Functions are created by the transparency pass"⟩]
+  -- Operates on the unordered-core functions, so it cannot run on a Laurel program;
+  -- TransparencyPass is what leaves that representation behind.
+  unsupported := [NodeKind.Pseudo.laurelProgram]
   -- The rewrite introduces declarations and strips their ids, so resolution must
   -- run afterwards to mint fresh, unique ones.
   needsResolves := true

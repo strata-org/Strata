@@ -135,20 +135,17 @@ Rewrite a type so that every reference to a composite type (a name in
 hierarchy pass all composite values are represented by `Composite` references,
 so their *static* types must follow suit; otherwise re-resolution sees a
 `Pixel`-typed value flowing into a `Composite`-typed slot (`readField`,
-`Composite..ref!`, an allocation `new C`, …). Recurses through compound types. -/
+`Composite..ref!`, an allocation `new C`, …).
+
+Recursion into structural type formers is handled by the generic `HighType.mapType`,
+so this only needs to patch the `UserDefined` leaf — a nested reference (the `C` in
+`Box<C>`) is flattened rather than falling through a catch-all. -/
 def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
-  match _h : ty.val with
-  | .UserDefined name =>
-    if composites.contains name.text then { ty with val := .UserDefined "Composite" } else ty
-  | .TSet et => { ty with val := .TSet (compositeRefToComposite composites et) }
-  | .TMap kt vt =>
-    { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
-  | .Applied base args =>
-    { ty with val := .Applied (compositeRefToComposite composites base) (args.attach.map (fun ⟨a, _⟩ => compositeRefToComposite composites a)) }
-  | .Intersection tys => { ty with val := .Intersection (tys.attach.map (fun ⟨t, _⟩ => compositeRefToComposite composites t)) }
-  | _ => ty
-  termination_by ty
-  decreasing_by ast_recursion_decreasing
+  { ty with val := ty.val.mapType fun t =>
+      match t with
+      | .UserDefined name =>
+        if composites.contains name.text then .UserDefined "Composite" else t
+      | _ => t }
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).
@@ -212,9 +209,15 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
 /-- Pipeline pass: type hierarchy transform. -/
 public def typeHierarchyTransformPass : LoweringPass where
   name := "TypeHierarchyTransform"
+  creates := [NodeKind.StmtExpr.StaticCall, NodeKind.StmtExpr.IfThenElse, NodeKind.Pseudo.typeTag]
+  unsupported := [NodeKind.Pseudo.implicitHeap]
+  removes := [
+      NodeKind.StmtExpr.IsType,
+      NodeKind.StmtExpr.AsType,
+      NodeKind.StmtExpr.New
+    ]
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
-  comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
   run := fun _ p m =>
     match typeHierarchyTransform m p with
     | .ok p' => (p', [], {})

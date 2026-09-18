@@ -76,16 +76,7 @@ private def collectBoundNames (proc : Procedure) : Std.HashSet String :=
   let initial := (proc.inputs ++ proc.outputs).foldl
     (fun names param => names.insert param.name.text) {}
   let collectExpr (expr : StmtExprMd) : StateM (Std.HashSet String) StmtExprMd := do
-    foldStmtExprM (fun node => do
-      match node.val with
-      | .Assign targets _ =>
-          for target in targets do
-            match target.val with
-            | .Declare param => modify (·.insert param.name.text)
-            | _ => pure ()
-      | .Var (.Declare param) => modify (·.insert param.name.text)
-      | .Quantifier _ param _ _ => modify (·.insert param.name.text)
-      | _ => pure ()) expr
+    modify (·.insertMany (boundNamesInStmtExpr expr))
     return expr
   (mapProcedureM collectExpr proc |>.run initial).2
 
@@ -439,27 +430,26 @@ private def globalParameterization (model : SemanticModel) (program : Program)
 
 public def globalParameterizationPass : LoweringPass where
   name := "GlobalParameterization"
+  creates := [
+      NodeKind.StmtExpr.Var,
+      NodeKind.StmtExpr.Assign,
+      NodeKind.Procedure.inputs.cons,
+      NodeKind.Pseudo.statementExpression
+    ]
+  removes := [
+      NodeKind.Program.staticFields.cons,
+      NodeKind.Pseudo.heapVar
+    ]
+  unsupported := [
+      NodeKind.CompositeType.instanceProcedures.cons,
+      NodeKind.StmtExpr.Return.value.some,
+      NodeKind.Procedure.throwsType.some
+    ]
   documentation := "Threads file-scope globals through procedure inputs and writer outputs (entry procedures instead declare them as body-prologue locals initialized from the declaration initializers), then clears staticFields."
   needsResolves := true
   run := fun _ program model =>
     let (program', diagnostics) := globalParameterization model program
     (program', diagnostics, {})
-  comesAfter :=
-    [⟨ eliminateExceptionsPass.meta,
-       "a throwing procedure is first normalized to its single Result output, and only then receives its hidden global outputs." ⟩,
-     ⟨ eliminateValueInReturnsPass.meta,
-       "eliminate value in returns must precede any pass that changes the number of output parameters." ⟩,
-     ⟨ liftInstanceProceduresPass.meta,
-       "operate on the flat staticProcedures list, after instance procedures are lifted into it." ⟩,
-     ⟨ heapParameterizationPass.meta,
-       "the heap is modeled as one file-scope global: heap parameterization declares `$heap` and rewrites field access against it, and this pass then threads it through signatures and call sites like any other global." ⟩,
-     ⟨ modifiesClausesTransformPass.meta,
-       "the modifies pass builds heap frames over `$heap` and needs it still in scope as a global; it also ends the heap trio's shared re-resolve, which binds `$heap` references as `$static` fields so this pass can recognize them." ⟩]
-  comesBefore :=
-    [⟨ liftImperativeExpressionsPass.meta,
-       "the global parameterization pass introduces assignments (threading globals) that need to be lifted." ⟩,
-     ⟨ contractPass.meta,
-       "the contract pass builds its postcondition helpers from the signature, so a global must already be threaded as an ordinary inout by then: its existing `$out`/`old` machinery then handles `$heap` with no knowledge of globals." ⟩]
 
 end Strata.Laurel
 

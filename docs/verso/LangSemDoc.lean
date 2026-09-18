@@ -7,9 +7,12 @@
 import VersoManual
 
 import Strata.DL.Imperative.Cmd
+import Strata.DL.Imperative.CmdTrace
 import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Imperative.CmdSemanticsProps
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemantics
+import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Imperative.KleeneStmt
 import Strata.DL.Imperative.KleeneStmtSemantics
 import Strata.DL.Imperative.CFGSemantics
@@ -29,6 +32,8 @@ import Strata.Languages.Core.FunctionTypeSpec
 import Strata.Languages.Core.ProcedureTypeSpec
 import Strata.Languages.Core.ProgramTypeSpec
 import Strata.DL.Imperative.Logic.LangDef
+import Strata.DL.Imperative.Logic.TraceInterp
+import Strata.DL.Imperative.Logic.TraceInterpProps
 import Strata.Transform.Specification
 import Strata.Transform.CoreSpecification
 import Strata.Transform.SpecHoareConnection
@@ -192,7 +197,7 @@ the checker can be given a well-defined denotation.
 Also, `Step.type_preserved` proves the type preservation of `Step` with respect
 to `HasTypeA`.
 
-# Formal Semanatics of Imperative
+# Formal Semantics of Imperative
 
 ## Command Semantics
 
@@ -215,6 +220,40 @@ a standard way.
 
 {docstring Imperative.EvalCmd}
 
+### Event-Producing Command Semantics
+
+The legacy command relation reports one cumulative failure bit. The alternative
+{name Imperative.EvalCmdE}`EvalCmdE` relation instead emits a chronological list
+of observations. Each assertion, assumption, or cover captures its condition and
+the semantic snapshot where the command was encountered.
+
+{docstring Imperative.EventArg}
+
+{docstring Imperative.Event}
+
+{docstring Imperative.Trace}
+
+The event payload type is a parameter of the command-evaluator interface, so a
+custom command language may use its own observation type. The base Imperative
+commands instantiate it with {name Imperative.Event}`Event P`.
+
+{docstring Imperative.EvalCmdParamE}
+
+For the base commands, the emitted trace is a deterministic function of the
+command, factory, and input store.
+
+{docstring Imperative.Cmd.emittedEvents}
+
+{docstring Imperative.EvalCmdE}
+
+The event-producing relation agrees with that deterministic trace, and every
+legacy command execution has a corresponding event execution with the same
+resulting store.
+
+{docstring Imperative.EvalCmdE.emitted_eq}
+
+{docstring Imperative.EvalCmd.toEvalCmdE}
+
 ## Structured Statement Semantics
 
 The semantics of the {name Stmt}`Stmt` type is defined in terms of
@@ -235,6 +274,36 @@ the reflexive, transitive closure of the {name StepStmt}`Imperative.StepStmt`
 relation.
 
 {docstring Imperative.StepStmtStar}
+
+### Event-Producing Statement Semantics
+
+{name Imperative.StepStmtE}`StepStmtE` labels each statement transition with the
+events emitted by its active command. Administrative control-flow transitions
+are reused from `StepStmt` with a command evaluator that cannot step; they emit
+the empty event list. Sequence and block frames propagate the active inner
+step's events unchanged.
+
+{docstring Imperative.noCommandEvalE}
+
+{docstring Imperative.StepStmtE}
+
+The traced reflexive-transitive closure concatenates each step's event list in
+execution order.
+
+{docstring ReflTransTrace}
+
+{docstring Imperative.StepStmtStarE}
+
+For base Imperative commands, the active configuration also determines its next
+event list. The compatibility theorem normalizes only the legacy target's
+cumulative failure flag because event semantics records assertion observations
+in the trace instead of updating that bit.
+
+{docstring Imperative.Config.emittedEvents}
+
+{docstring Imperative.Config.withFailure}
+
+{docstring Imperative.StepStmt.toStepStmtE}
 
 ## Control-Flow Graph Semantics
 
@@ -395,6 +464,21 @@ statements), {name Imperative.Logic.Lang.imperativeBlock}`Lang.imperativeBlock`
 (block bodies), and {name Imperative.Logic.Lang.cfg}`Lang.cfg` (unstructured
 control-flow graphs).
 
+### The Event Language Bundle
+
+Event-trace reasoning uses {name Strata.Logic.EventLang}`EventLang P EventT`.
+It replaces unlabeled reachability and syntactic assertion-head detection with a
+trace-producing closure whose event alphabet is explicit in the type.
+
+{docstring Strata.Logic.EventLang}
+
+The structured Imperative constructors package `StepStmtStarE` for individual
+statements and statement lists. Their command evaluator determines `EventT`.
+
+{docstring Imperative.Logic.EventLang.imperativeE}
+
+{docstring Imperative.Logic.EventLang.imperativeBlockE}
+
 Strata Core instantiates `Lang.imperative` as well as `Lang.imperativeBlock`, and
 defines {name Core.Logic.Lang.core}`Lang.core` /
 {name Core.Logic.Lang.coreBlock}`Lang.coreBlock`. The Core's language bundle uses
@@ -404,6 +488,59 @@ its own initial-environment well-formedness predicate
 Core's logic and analysis judgements are mostly all over `Lang.coreBlock` because
 it is more convenient than `Lang.core` which is about a single statement
 (but still can have nested sub-statements).
+
+## Interpreting Event Traces
+
+Operational semantics records snapshots but does not itself decide whether the
+captured conditions hold. A {name Imperative.ConditionInterp}`ConditionInterp`
+provides a semantic world shared by the conditions in a trace and a predicate
+for interpreting each captured `EventArg` in that world.
+
+{docstring Imperative.ConditionInterp}
+
+The initial implementation delegates condition interpretation to the partial
+`PureExpr.eval` evaluator. A denotational interpretation can replace it without
+changing the operational transition relation or trace representation.
+
+{docstring Imperative.EvaluatorBasedInterp}
+
+{docstring Imperative.Event.neutral}
+
+Only assumption events constrain the worlds considered later in a trace.
+
+{docstring Imperative.Trace.AssumptionsHold}
+
+Assertion validity is a partial-correctness property. Each assertion occurrence
+must hold in every world satisfying the assumptions that precede that occurrence;
+later assumptions cannot discharge an earlier assertion. The per-identifier
+version restricts this check to matching assertion occurrences.
+
+{docstring Imperative.Trace.AssertionsValidFromP}
+
+{docstring Imperative.Trace.AssertionsValidFrom}
+
+{docstring Imperative.Trace.AssertionsValid}
+
+{docstring Imperative.Trace.AssertionValidFrom}
+
+{docstring Imperative.Trace.AssertionValid}
+
+Cover satisfiability is existential rather than universal. For one `CoverId`, a
+single trace satisfies the property only if it contains a matching cover
+occurrence whose condition is satisfiable with the assumptions preceding that
+occurrence. A language-level analysis can account for nondeterministic execution
+by existentially selecting a reachable trace and then applying this predicate.
+
+{docstring Imperative.Trace.CoverSatisfiableFrom}
+
+{docstring Imperative.Trace.CoverSatisfiable}
+
+The metatheory includes monotonicity results for changing accumulated
+assumptions.
+
+{docstring Imperative.Trace.AssertionValidFrom.mono_assumptions}
+
+{docstring Imperative.Trace.CoverSatisfiableFrom.mono_assumptions}
 
 ## Hoare Logic
 
@@ -442,6 +579,14 @@ execute. {name Imperative.Specification.AllAssertsValid}`AllAssertsValid` lifts
 this to all assertions of a statement. Dually, an assertion is satisfiable
 ({name Imperative.Specification.AssertSatisfiable}`AssertSatisfiable`) when some
 reachable run makes it hold.
+
+The event-trace formulation quantifies directly over traces produced by an
+`EventLang`. Assertion validity remains universal over all reachable finite
+traces, while cover satisfiability is existential over a reachable trace.
+
+{docstring Imperative.Specification.AssertValidOnTracesWhen}
+
+{docstring Imperative.Specification.AllAssertsValidOnTracesWhen}
 
 The validity notion coincides with the Hoare triple. The two are bridged in
 [`SpecHoareConnection.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/SpecHoareConnection.lean)
@@ -498,6 +643,17 @@ This is more heavily used as specifications for program transformations.
 - {name Imperative.Specification.Transform.SemanticallyEquivalent}`SemanticallyEquivalent` is their conjunction: source and target reach exactly
   the same terminal/exiting states and fail on exactly the same initial states.
 
+For `EventLang`, the `OverapproximatesTraces` family additionally relates the
+chronological event lists produced by source and target executions. The most
+general member carries separate input/output environment relations and simulates
+all finite prefixes as well as terminal and exiting runs.
+
+{docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen}
+
+{docstring Imperative.Specification.Transform.OverapproximatesTracesWhen}
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces}
+
 Overapproximation is the workhorse that connects back to the logic. The bridge is
 {name Imperative.Specification.Transform.overapproximates_triple}`overapproximates_triple`
 (in `SpecHoareConnection.lean`): if `T` overapproximates and a Hoare triple holds
@@ -516,6 +672,15 @@ relation composition (`RComp`); and
 {name Imperative.Specification.Transform.overapproximatesAggressively_comp}`overapproximatesAggressively_comp`
 composes the assertion-failure-relaxed variant.
 
+Trace overapproximations compose their trace relations explicitly. The general
+composition theorem produces relational composition, while the shared-start
+up-to theorem accepts stage-specific trace relations and a transitive output
+state relation.
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces.rel_comp}
+
+{docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq}
+
 Composition across a statement list (horizontal composition):
 {name Imperative.Specification.Transform.overapproximates_stmts}`overapproximates_stmts`
 and {name Imperative.Specification.Transform.overapproximatesUpto_stmts}`overapproximatesUpto_stmts`
@@ -525,3 +690,7 @@ lift needs an environment invariant that holds at block entry, is preserved as
 each statement runs, and implies the per-statement source well-formedness. When no
 such statement-independent invariant exists, the block-level result has to be
 proved directly instead.
+
+The trace-aware counterpart, {name Imperative.Specification.Transform.overapproximatesTraces_stmts}`overapproximatesTraces_stmts`, additionally requires the trace relation to relate empty traces and respect chronological append. It simulates arbitrary finite prefixes as well as terminal and exiting runs.
+
+{docstring Imperative.Specification.Transform.overapproximatesTraces_stmts}

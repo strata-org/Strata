@@ -25,6 +25,7 @@ namespace Statement
 
 open Std (ToFormat Format format)
 open Lambda
+open Imperative
 
 ---------------------------------------------------------------------
 
@@ -165,7 +166,7 @@ def Command.inlineCallContract (E : Env)
     -- Generate precondition proof obligations.
     let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
     let preconditions := preconditions.map
-        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
+        (fun (l, e) => (l, Imperative.Check.mk (E.exprEval e.expr) e.attr e.md))
     let deferred_pre := ProofObligations.createAssertions E.pathConditions.consume preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 

@@ -16,6 +16,7 @@ namespace Core
 namespace CallElim
 
 open Core.Transform
+open Imperative
 
 /-- Statistics keys tracked by the call elimination transformation. -/
 inductive Stats where
@@ -83,7 +84,7 @@ def callElimCmd (s : Statement)
         -- and are referenced via "old" in postconditions. (Safe to scan the
         -- uninstantiated exprs: instantiation rewrites only type annotations —
         -- `replaceUserProvidedType` — so free term variables are unchanged.)
-        let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
+        let postExprs := proc.spec.postconditions.values.map Imperative.Check.expr
         let inputNames := instantiatedInputs.keys
         let outputNames := instantiatedOutputs.keys
         -- Inout params referenced via "old" in a postcondition, paired as

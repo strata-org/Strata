@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import StrataLaurel.Implementation.SemanticModel
+public import StrataLaurel.Implementation.LaurelNodeKind
 public import Strata.Util.Statistics
 public import Strata.Languages.Core.Options
 
@@ -76,14 +77,17 @@ structure LaurelTranslateOptions where
 instance : Inhabited LaurelTranslateOptions where
   default := {}
 
-mutual
-
 /-- The parameter-free metadata of a pass, independent of the `Input`/`Output`
     types it operates on. `LaurelPass` extends this so that passes with
     different parameterizations (e.g. `LaurelPass Program Program` and
     `LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes`)
     share a common, type-parameter-free view that can be collected into a
-    single homogeneous list. -/
+    single homogeneous list.
+
+    The four `NodeKind` lists describe the pass's effect on the shapes present
+    in the program. Pipeline ordering is *derived* from them rather than declared
+    pass-by-pass: `LaurelCompilationPipeline.orderingFailures` folds the live shape set
+    over the pipeline and checks each pass's `unsupported` list against it. -/
 structure PassMeta where
   /-- Human-readable name, used for profiling and file emission. -/
   name : String
@@ -91,15 +95,13 @@ structure PassMeta where
   needsResolves : Bool := false
   /-- A description of what this pass does, used for documentation generation. -/
   documentation : String
-  /-- Passes that must run before this one. -/
-  comesBefore : List PassDependency := []
-  /-- Passes that must run after this one. -/
-  comesAfter : List PassDependency := []
-
-structure PassDependency where
-  pass : PassMeta
-  reason: String
-end
+  /-- Shapes this pass introduces into the program. -/
+  creates : List NodeKind := []
+  /-- Shapes that are gone from the program after this pass has run. -/
+  removes : List NodeKind := []
+  /-- Shapes this pass cannot handle, and which must therefore already have been
+      removed by the time it runs. -/
+  unsupported : List NodeKind := []
 
 /-- A single Laurel-to-Laurel pass. Each pass receives the current program and
     semantic model and returns the (possibly modified) program, accumulated

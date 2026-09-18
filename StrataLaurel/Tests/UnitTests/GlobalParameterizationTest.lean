@@ -485,6 +485,33 @@ procedure collides(g: int) opaque {
 };
 #end
 
+/-! A quantifier binder counts too, and nothing else here notices: the pass splices the alias
+    into the binder's scope, so drop that arm and `$global_g_1` below is `$global_g` -- the
+    read is of the bound variable, not the global. -/
+
+/--
+info: staticFields: 0
+procedure readsUnderBinder($global_g_1: int)
+  returns (r: bool)
+  opaque
+{
+  r := forall($global_g: int) => $global_g_1 > 0;
+  var g: int := 1;
+  assert g == 1
+};
+-/
+#guard_msgs in
+#eval testGlobalParam
+#strata
+program Laurel;
+var g: int := 0
+procedure readsUnderBinder() returns (r: bool) opaque {
+  r := forall($global_g: int) => g > 0;
+  var g: int := 1;
+  assert g == 1
+};
+#end
+
 /-! Generated argument temporaries retry around source-local names. -/
 
 /--

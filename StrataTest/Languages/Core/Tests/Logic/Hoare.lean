@@ -414,7 +414,7 @@ private def intTy : Option Lambda.LMonoTy := some (Lambda.LMonoTy.tcons "int" []
 /-- Metadata of a statement list that is a single assignment. -/
 private def branchMd (ss : Core.Statements) : Imperative.MetaData Core.Expression :=
   match ss with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
   | _ => #[]
 
 /-- Decidable check that every non-`free` `ensures` of `proc` is `x == κ` for some
@@ -528,7 +528,7 @@ private def set1Proc : Core.Procedure :=
     is projected back out of the AST rather than written down here. -/
 private def set1Md : Imperative.MetaData Core.Expression :=
   match set1Proc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))] => md
   | _ => #[]
 
 /-- The assigned variable. -/
@@ -613,7 +613,7 @@ private def set2Md (i : Nat) : Imperative.MetaData Core.Expression :=
   match set2Proc.body with
   | .structured ss =>
     match ss[i]? with
-    | some (Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md))) => md
+    | some (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md))) => md
     | _ => #[]
   | _ => #[]
 
@@ -711,8 +711,8 @@ private def initVarParts :
     Core.Expression.Ty × Imperative.MetaData Core.Expression ×
       Option Lambda.LMonoTy × Imperative.MetaData Core.Expression :=
   match initVarProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.init _ ty _ md0)),
-                 Imperative.Stmt.cmd (Core.CmdExt.cmd
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.init _ ty _ md0)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd
                    (Imperative.Cmd.set _ (.det (Lambda.LExpr.fvar _ _ sty)) md1))] =>
       (ty, md0, sty, md1)
   | _ => default
@@ -1005,9 +1005,9 @@ private def exitBlkInnerParts :
     Imperative.MetaData Core.Expression × String × Imperative.MetaData Core.Expression ×
       Imperative.MetaData Core.Expression :=
   match exitBlkParts.2.1 with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
      Imperative.Stmt.exit l md1,
-     Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md2))] => (md0, l, md1, md2)
+     Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md2))] => (md0, l, md1, md2)
   | _ => default
 
 private def exitBlkInnerBody : Core.Statements :=
@@ -1113,8 +1113,8 @@ private def chkProc : Core.Procedure :=
 private def chkParts : Core.Expression.Expr × Imperative.MetaData Core.Expression ×
     Imperative.MetaData Core.Expression :=
   match chkProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assume _ e md0)),
-                 Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] =>
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assume _ e md0)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.assert _ _ md1))] =>
       (e, md0, md1)
   | _ => default
 
@@ -1202,7 +1202,7 @@ private def loopTermParts :
       Option Core.Expression.Expr × List (String × Core.Expression.Expr) ×
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopTermProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
                  Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
   | _ => default
 
@@ -1223,7 +1223,7 @@ private theorem loopTerm_body_eq : loopTermProc.body = .structured loopTermBody 
 private def loopTermInnerParts :
     Core.Expression.Expr × Imperative.MetaData Core.Expression :=
   match loopTermParts.2.2.2.2.1 with
-  | [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ (.det e) md))] => (e, md)
+  | [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) md))] => (e, md)
   | _ => default
 
 /-- The loop body really is the single assignment `y := y + 1`. -/
@@ -1401,7 +1401,7 @@ private def loopForeverParts :
       Option Core.Expression.Expr × List (String × Core.Expression.Expr) ×
       Core.Statements × Imperative.MetaData Core.Expression :=
   match loopForeverProc.body with
-  | .structured [Imperative.Stmt.cmd (Core.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ _ md0)),
                  Imperative.Stmt.loop (.det g) m inv body md1] => (md0, g, m, inv, body, md1)
   | _ => default
 

@@ -337,13 +337,12 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
 /-- Pipeline pass: constrained type elimination. -/
 public def constrainedTypeElimPass : LoweringPass where
   name := "ConstrainedTypeElim"
+  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  removes := [NodeKind.TypeDefinition.Constrained]
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. Type tests against constrained types are rewritten to call the generated constraint procedure."
   needsResolves := true
   run := fun _ p m =>
     let (p', diags) := constrainedTypeElim m p
     (p', diags, {})
-  comesBefore :=
-    [⟨ heapParameterizationPass.meta,
-       "constrained types must be reduced to their base types before heap values are boxed." ⟩]
 
 end Strata.Laurel

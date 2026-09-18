@@ -1200,6 +1200,20 @@ private def elaborateForVerification (_ : SemanticModel) (p : Program)
 
 public def coroutineElaborationPass : LoweringPass where
   name := "CoroutineElaboration"
+  creates := [
+      NodeKind.TypeDefinition.Composite,
+      NodeKind.CompositeType.instanceProcedures.cons,
+      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.Pseudo.coroutineOverride
+    ]
+  removes := [
+      NodeKind.Procedure.contracts.Coroutine,
+      NodeKind.StmtExpr.Resume,
+      NodeKind.StmtExpr.HasNext
+    ]
+  -- `StmtExpr.Yield` is deliberately absent: under `verifyCoroutine` this pass runs
+  -- `elaborateForVerification`, which keeps the original body and its yields for
+  -- `YieldElim` to lower. `Resume`/`HasNext` go on both paths via the caller rewrite.
   documentation := "Replaces each `coroutine` declaration with a generated state-machine composite (with `resume` and `has_next` instance procedures) and a spawn constructor, and rewrites callers (`resume(co[, v])` → `co#resume([v])`, `has_next(co)` → `co#has_next()`, type annotations `co: c` → `co: cState`). Must run before LiftInstanceProcedures so the generated instance calls are lifted. Under `verifyCoroutine`, elaborates instead for the rely/guarantee verification path (see `YieldElim`)."
   needsResolves := true
   run := fun options p m =>
@@ -1207,7 +1221,6 @@ public def coroutineElaborationPass : LoweringPass where
       let (p', diags) := elaborateForVerification m p
       (p', diags, {})
     else (elaborateCoroutines m p, [], {})
-  comesBefore := [⟨ liftInstanceProceduresPass.meta, "Coroutine elaboration emits `resume`/`has_next` InstanceCalls that LiftInstanceProcedures must lift to static procedures." ⟩]
 
 end Strata.Laurel
 end

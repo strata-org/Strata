@@ -8,6 +8,7 @@ module
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.Logic.LangDef
+public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.Util.RelationsProps
 import all Strata.DL.Imperative.CmdSemantics
 
@@ -139,6 +140,47 @@ def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
   AssertSatisfiableWhen L (fun _ => True) s a
 
 
+/-! ### Event-trace assertion validity
+
+These trace-native definitions inspect every finite event trace produced by
+`EventLang.traceStar`. They coexist with the configuration-head formulation so
+existing users of `Lang` and failure-flag semantics remain unchanged.
+-/
+
+/-- Every occurrence of assertion `a` in every reachable finite event trace is
+valid under the assumptions preceding that occurrence. -/
+@[expose] def AssertValidOnTracesWhen
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P)
+    (Pre : Env P → Prop) (s : EL.StmtT) (a : AssertId P) : Prop :=
+  ∀ (ρ₀ : Env P) (cfg : EL.CfgT) (trace : Trace P),
+    Pre ρ₀ →
+    EL.traceStar (EL.stmtCfg s ρ₀) trace cfg →
+    Trace.AssertionValid P I a trace
+
+/-- Every assertion event in every reachable finite trace is valid. -/
+@[expose] def AllAssertsValidOnTracesWhen
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P)
+    (Pre : Env P → Prop) (s : EL.StmtT) : Prop :=
+  ∀ (ρ₀ : Env P) (cfg : EL.CfgT) (trace : Trace P),
+    Pre ρ₀ →
+    EL.traceStar (EL.stmtCfg s ρ₀) trace cfg →
+    Trace.AssertionsValid P I trace
+
+/-- Trace-native assertion validity with no initial-state restriction. -/
+@[expose] def AssertValidOnTraces
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P) (s : EL.StmtT) (a : AssertId P) : Prop :=
+  AssertValidOnTracesWhen EL I (fun _ => True) s a
+
+/-- Trace-native validity of all assertions with no initial-state restriction. -/
+@[expose] def AllAssertsValidOnTraces
+    (EL : EventLang P (Event P))
+    (I : ConditionInterp P) (s : EL.StmtT) : Prop :=
+  AllAssertsValidOnTracesWhen EL I (fun _ => True) s
+
+
 /-! ## Style B — Hoare-triple assertion validity
 
 The whole Hoare-logic layer lives in `Strata.DL.Imperative.Logic.HoareTemplate`, which
@@ -154,6 +196,61 @@ The bridges *into* this module's reachability-based half —
 `overapproximatesWhen_triple` — live in `Strata.Transform.SpecHoareConnection`. -/
 
 namespace Transform
+
+/-! ## Trace-based transformation overapproximation -/
+
+/-- Trace-based overapproximation up to explicit trace and state relations.
+It simulates every finite prefix (for safety properties) and terminal/exiting
+runs (for partial-correctness postconditions). The definition is independent of
+any particular trace property or condition interpretation. -/
+@[expose] def OverapproximatesTracesUptoWhen
+    {EventT : Type}
+    (Rtrace : Relation (List EventT))
+    (Rin Rout : Relation (Env P))
+    (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' → pre st →
+    ∀ (ρ₀ ρ₀' : Env P),
+      Rin ρ₀ ρ₀' → L₁.initEnvWF params₁ st ρ₀ →
+      -- Every finite source prefix has a related target trace prefix.
+      (∀ cfg trace,
+        L₁.traceStar (L₁.stmtCfg st ρ₀) trace cfg →
+        ∃ cfg' trace',
+          L₂.traceStar (L₂.stmtCfg st' ρ₀') trace' cfg' ∧
+          Rtrace trace trace') ∧
+      -- Terminal traces preserve outcome shape.
+      (∀ ρ' trace,
+        L₁.traceStar (L₁.stmtCfg st ρ₀) trace (L₁.terminalCfg ρ') →
+        ∃ ρ'' trace',
+          L₂.traceStar (L₂.stmtCfg st' ρ₀') trace' (L₂.terminalCfg ρ'') ∧
+          Rout ρ' ρ'' ∧ Rtrace trace trace') ∧
+      -- Exiting traces preserve the exit label and outcome shape.
+      (∀ lbl ρ' trace,
+        L₁.traceStar (L₁.stmtCfg st ρ₀) trace (L₁.exitingCfg lbl ρ') →
+        ∃ ρ'' trace',
+          L₂.traceStar (L₂.stmtCfg st' ρ₀') trace' (L₂.exitingCfg lbl ρ'') ∧
+          Rout ρ' ρ'' ∧ Rtrace trace trace') ∧
+      L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Equality-state trace overapproximation under a statement precondition. -/
+@[expose] def OverapproximatesTracesWhen
+    {EventT : Type}
+    (Rtrace : Relation (List EventT))
+    (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesTracesUptoWhen Rtrace (· = ·) (· = ·)
+    L₁ L₂ T pre params₁ params₂
+
+/-- Trace overapproximation with equality states and no statement restriction. -/
+@[expose] def OverapproximatesTraces
+    {EventT : Type}
+    (Rtrace : Relation (List EventT))
+    (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesTracesWhen Rtrace L₁ L₂ T (fun _ => True) params₁ params₂
 
 /-- A transformation is *sound* if it preserves assertion validity.
     Bilingual: source and target may live in different languages. -/

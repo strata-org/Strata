@@ -75,6 +75,19 @@ def eliminateDoWhile (program : Program) : Program :=
 /-- Pipeline pass: eliminate post-test (`do … while`) loops. -/
 public def eliminateDoWhilePass : LoweringPass where
   name := "EliminateDoWhile"
+  creates := [
+      NodeKind.StmtExpr.While,
+      NodeKind.StmtExpr.Block,
+      NodeKind.StmtExpr.Exit,
+      NodeKind.StmtExpr.IfThenElse,
+      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.LiteralBool
+    ]
+  -- Holds of every *procedure*, which is all this pass traverses (`mapProgramProceduresM`,
+  -- not `mapProgramStmtExprM`). A post-test loop in a non-procedure position — a constant or
+  -- static-field initializer, a constrained type's constraint or witness — survives, but is
+  -- rejected downstream: `translateExpr` refuses *any* loop in an expression position.
+  removes := [NodeKind.StmtExpr.While.postTest.true]
   documentation := "Lowers post-test `While` loops (the `do … while` form) into the pre-test loop `{ while(true) invariant I { BODY; if (!COND) exit L } } L`, with a fresh `$`-prefixed exit label `L`. Runs early so no later pass observes a post-test loop; the invariant is checked at the loop head, matching `while`."
   run := fun _ p _m => (eliminateDoWhile p, [], {})
 
