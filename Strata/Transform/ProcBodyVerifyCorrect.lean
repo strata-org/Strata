@@ -673,9 +673,10 @@ private theorem ensuresToAsserts_mem_is_assert
 
 /-! ## Main Theorem -/
 
-/-- If all asserts are valid in the verification statement produced by
-    `procToVerifyStmt` (for initial environments satisfying `ProcEnvWF`),
-    then `ProcedureAssertsValid` holds for the procedure. -/
+/-- If all ordinary assertions are valid in the verification statement produced
+    by `procToVerifyStmt` for initial environments satisfying `ProcEnvWF`, and
+    every atomic call reports success under the failure-flag semantics, then
+    `ProcedureAssertsValid` holds for the procedure. -/
 theorem procBodyVerify_procedureCorrect
     (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (procName : String) (proc : Procedure) (p : Program)
@@ -689,9 +690,17 @@ theorem procBodyVerify_procedureCorrect
     (h_name : proc.header.name.name = procName)
     -- `h_transform`: procToVerifyStmt returned successfully.
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
-    -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
+    -- `h_correct`: all ordinary asserts in `verifyStmt` are valid for all initial states.
     (h_correct : Specification.AllAssertsValid
       (Core.Logic.Lang.core p.findProcByString? φ) verifyStmt)
+    -- The failure-flag logic cannot observe obligations nested inside an atomic
+    -- call: a callee's contract is evaluated in the callee frame, while the
+    -- corresponding failure witness must be visible in the caller store. Since
+    -- `p` declares only `proc`, this assumption covers the sole resolvable
+    -- callee.
+    (h_self_calls_succeed : ∀ {fac σ args callMd σ' failed},
+      EvalCommand p.findProcByString? φ fac σ (.call procName args callMd) σ' failed →
+      failed = false)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
     (h_wf_ext : Imperative.WFFactoryExtension Expression (Core.EvalPureFunc φ))
     -- `h_wf_proc`: the procedure is well-formed
@@ -708,6 +717,24 @@ theorem procBodyVerify_procedureCorrect
     simp [Core.Program.findProcByString?, Core.Program.find?, h_p_singleton,
       Core.Program.find?.go, Core.Decl.kind, Core.Decl.name, Core.Decl.getProc?,
       h_pname]
+  -- Any other callee name fails to resolve, so its `call_sem` has no derivation
+  -- and the scoped obligation on `procName` covers every call command.
+  have h_lookup_none : ∀ n, n ≠ procName → π n = none := by
+    intro n hn
+    show p.findProcByString? n = none
+    simp [Core.Program.findProcByString?, Core.Program.find?, h_p_singleton,
+      Core.Program.find?.go, Core.Decl.kind, Core.Decl.name, Core.Decl.getProc?,
+      h_pname]
+    exact fun h => hn h.symm
+  have h_calls_succeed : ∀ {fac σ n args callMd σ' failed},
+      EvalCommand π φ fac σ (.call n args callMd) σ' failed → failed = false := by
+    intro fac σ n args callMd σ' failed hcall
+    by_cases hn : n = procName
+    · subst hn; exact h_self_calls_succeed hcall
+    · cases hcall with
+      | call_sem hlk _ _ _ _ _ =>
+        rw [h_lookup_none n hn] at hlk
+        exact absurd hlk (by simp)
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
   obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
     procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
@@ -884,7 +911,8 @@ theorem procBodyVerify_procedureCorrect
     -- hasFailure = false on the inner env, hence on ρ' too.
     have h_nf_inner : ρ_inner.hasFailure = Bool.false :=
       Core.core_noFailure_preserved π φ
-        (.stmts ss ρ₀) (.terminal ρ_inner) h_valid h_wf.noFailure h_term_inner
+        (.stmts ss ρ₀) (.terminal ρ_inner) h_valid h_calls_succeed
+        h_wf.noFailure h_term_inner
     have h_nf' : ρ'.hasFailure = Bool.false := by
       rw [h_ρ'_eq]; exact h_nf_inner
     -- wfBool preservation

@@ -46,7 +46,8 @@ Key results for `StepStmtE` / `StepStmtStarE`:
 - `StepStmt.toStepStmtE` embeds failure-flag steps into event semantics while
   preserving their deterministic event trace.
 - `seq_run_decomposeE`, `seq_reaches_terminalE`, and
-  `seq_reaches_exitingE` split traced sequence runs chronologically.
+  `seq_reaches_exitingE` split traced sequence runs chronologically;
+  `stmtRun_to_singletonE` lifts a completed statement run to its singleton-list run.
 - `stepStmtStarE_from_terminal` / `stepStmtStarE_from_exiting`,
   `block_reaches_doneE`, and `stmt_block_reaches_doneE` characterize completed
   traced runs.
@@ -3673,6 +3674,18 @@ theorem stmts_cons_stepE
     (ReflTransTrace.step (r := StepStmtE P EvalCmd extendFactory)
       _ _ _ _ _ (.step_admin .step_seq_done) (.refl _))
   simpa using hchain
+
+/-- A single statement whose event run terminates gives a terminating event run of the
+one-element statement list wrapping it, with the same trace. -/
+theorem stmtRun_to_singletonE
+    {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd extendFactory (.stmt s ρ) tr (.terminal ρ')) :
+    StepStmtStarE P EvalCmd extendFactory (.stmts [s] ρ) tr (.terminal ρ') := by
+  have hcons := stmts_cons_stepE EvalCmd extendFactory s [] ρ ρ' h
+  have hnil : StepStmtStarE P EvalCmd extendFactory
+      (.stmts [] ρ') [] (.terminal ρ') :=
+    .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _)
+  simpa using ReflTransTrace.trans _ hcons hnil
 
 /-- Decompose a traced `.seq inner ss` run to an arbitrary target: still inside
 the head, the head terminated and the tail continues, or the head exited. The

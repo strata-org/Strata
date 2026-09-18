@@ -410,21 +410,25 @@ Core extends the `Imperative` commands with a procedure `call`. A call is
 executed by descending into the callee's body
 ({name EvalCommand.call_sem}`EvalCommand.call_sem`).
 
-1. Evaluate the argument expressions `e₁, ..., eₙ`.
-2. Assert each (non-free) precondition, substituting actuals for formals.
-3. Havoc the output variables `y₁, ..., yₘ`.
-4. Run the body of the callee procedure, with the actuals substituted for
-   formals and binding `old v` to the value of `v` immediately before the call.
-5. Assert each (non-free) postcondition, substituting actuals for formals.
-6. Update the caller's state with the new values of the output variables.
+1. Evaluate the input and inout argument expressions, and read the current values
+   of caller-side `out` actuals.
+2. Initialize a fresh callee frame: bind input and inout formals to the evaluated
+   argument values, copy the `out` values into output-only formals, and snapshot
+   each inout formal as `old g`.
+3. Assert each non-free precondition unchanged in the initialized callee frame.
+4. Run the callee body in that frame. The `old g` snapshots continue to hold the
+   values that the inout formals had immediately before the call.
+5. Assert each non-free postcondition unchanged in the final callee frame.
+6. Update the caller's state with the final values of the callee output formals.
 
 Concrete execution of the body of procedure is necessary to make the procedure
 inlining transform exactly semantics-preserving.
 A contract version of call semantics is also defined at
-{name EvalCommandContract.call_sem}`EvalCommandContract.call_sem`.
-In this semantics, procedure inlining becomes an underapproximating transform
-because it replaces the values of havoc'ed output variables with concrete
-values.
+{name EvalCommandContract.call_sem}`EvalCommandContract.call_sem`. It does not
+execute the body: after checking preconditions, it havocs all initialized callee
+output formals, including inouts, and assumes the postconditions. In this semantics, procedure
+inlining becomes an underapproximating transform because it replaces the values
+of havoc'ed output variables with concrete values.
 
 ## Procedures
 

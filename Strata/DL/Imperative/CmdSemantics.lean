@@ -16,13 +16,15 @@ namespace Imperative
 
 public section
 
+/-- A semantic store with no bindings. -/
+@[expose] def emptyStore {P : PureExpr} : SemanticStore P := fun _ => none
+
 section
 
 variable (P : PureExpr)
 
 @[expose] abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
 @[expose] abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
-
 /--
 Evaluation relation of an Imperative command `Cmd`.
 Commands do not modify the evaluator - only `funcDecl` statements do.
