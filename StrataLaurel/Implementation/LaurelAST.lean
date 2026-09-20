@@ -1706,6 +1706,10 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    - `MultiValuedExpr` is a transient tuple of independent procedure-output
      values matched against multi-assignment targets, so per-element consistency
      (letting an `Unknown` output flow into one slot) is correct, not unsound.
+     `coerce` additionally admits a SUBTYPE per position: destructured at the
+     assignment rather than stored, the tuple has no aliasing for invariance to
+     protect. That covariance is `coerce`-only; a tuple reaching `isConsistent` or
+     `isSubtype` stays invariant.
    - `Applied` (generics) recurses element-wise in `isConsistent` so a concrete
      `Box<int>` argument can satisfy a `Box<T>` parameter (the inner `int`/`.TVar T`
      pairing reaches the `.TVar` wildcard). The args stay INVARIANT between two
@@ -1828,31 +1832,43 @@ private def TypeLattice.isDynamicBoxable (ctx : TypeLattice) (t : HighType) : Bo
 
 /-- PROOF-RELEVANT consistent subtyping: the ONE subtyping judgment. Returns the
     abstract `Coercion` verdict witnessing `sub ≤ sup`, or `none` when unrelated.
-    Its `.isSome` matches the old boolean `isConsistentSubtype` (`isConsistent ∨
-    isSubtype`) EXCEPT for numeric widening (int → real/float64), which is now gated
-    on `realizeCoercion.isSome`: native Laurel (no realizer) rejects int in a real
-    slot exactly as before, while a frontend that supplies a realizer accepts and
-    realizes it. A check-mode site that rebuilds the term can obtain the witness and
-    realize it. GENERIC: the verdict names the KIND of coercion
+    `isConsistentSubtype` is its `.isSome`.
+
+    That decision follows `isConsistent ∨ isSubtype` arm for arm, with two exceptions. A
+    proc-output tuple admits a SUBTYPE at each position where those two admit only a
+    consistent one. Numeric widening (int → real/float64) is an exception only once a
+    frontend installs `realizeCoercion` to insert the conversion: native Laurel installs
+    none and rejects int in a real slot as before. A check-mode site that rebuilds the term
+    can obtain the witness and realize it. GENERIC: the verdict names the KIND of coercion
     (inject/project/upcast/widen/refl), never a runtime function; the frontend's
     `realizeCoercion` turns it into a concrete term.
 
     The gradual cases split by WHICH gradual: only the boxable dynamic type (`Any`)
     yields a runtime `inject`/`project`; a bare wildcard (`Unknown`) yields
-    `refl` (it flows with no coercion). The DECISION (`.isSome`) is unchanged either
-    way — both are `some` — so `isConsistentSubtype` matches the old boolean exactly.
+    `refl` (it flows with no coercion). Both are `some`, so the DECISION does not
+    distinguish them and the gradual split adds no third exception.
 
-    Case-for-case (mirrors `isConsistent ∨ isSubtype` for the decision):
-    - `MultiValuedExpr` (proc-output tuples): delegate to `isConsistent`; `refl`.
+    Case-for-case:
+    - `MultiValuedExpr` (proc-output tuples): per position, covariantly; `refl`.
     - equal after unfold → `refl`.
     - `sup` is `Any`, `sub` concrete → `inject sub'` (box into the dynamic type).
     - `sub` is `Any`, `sup` concrete → `project sup'` (unbox/downcast out of it).
     - either side a bare wildcard (`Unknown`) → `refl` (gradual, no runtime op).
+    - `int` into `real`/`float64` → `widen`, but only with `realizeCoercion` installed.
     - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal). -/
 def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
   match sub.val, sup.val with
-  | .MultiValuedExpr _, .MultiValuedExpr _ =>
-    if isConsistent ctx sub sup then some .refl else none
+  | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
+    -- Per-position verdicts are DISCARDED: carrying one would need a tuple `Coercion` constructor,
+    -- which does not exist. What `isSubtype` adds is representation-preserving (nominal `upcast`,
+    -- generic ancestor match), so discarding it costs nothing; a gradual position's
+    -- `inject`/`project` is dropped either way. Recursing into `coerce` instead would admit the
+    -- realizer-gated `int`→`real` and lose the `int_to_real` the `.TInt, .TReal` arms below
+    -- insert — and filtering its verdicts to `{refl, upcast}` to avoid that rejects a
+    -- registered gradual.
+    if ts1.length == ts2.length &&
+       (ts1.zip ts2).all (fun (t1, t2) => isConsistent ctx t1 t2 || isSubtype ctx t1 t2)
+    then some .refl else none
   | _, _ =>
     let sub' := ctx.unfold sub
     let sup' := ctx.unfold sup
