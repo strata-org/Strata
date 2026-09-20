@@ -76,28 +76,20 @@ structure TransformState where
 /-- The `Heap` type as a `HighTypeMd`, at the given source. -/
 private def heapType (source : FileRange) : HighTypeMd := ⟨.UserDefined heapTypeName, source⟩
 
-/-- Check whether a UserDefined type name refers to a Datatype (vs Composite) in the model -/
-private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
-  match model.get name with
-  | .datatypeDefinition _ => true
-  | _ => false
+/-- Check whether a UserDefined type name refers to a value type — a datatype or an
+    `opaque` type. Unlike a composite, such a value is not a heap reference: it needs its own box
+    variant carrying its own sort, and it must not attract `Composite..ref!` clauses. -/
+private def isValueTypeName (model : SemanticModel) (name : Identifier) : Bool :=
+  (model.get name).isValueType
 
 /-- Check whether a UserDefined type name refers to a composite (heap object)
-    type in the model. Unlike `!isDatatype`, this is `false` for a type
+    type in the model. Unlike `!isValueTypeName`, this is `false` for a type
     *parameter* (e.g. the `Val` of `Result<Val, Err>`, the field type reported
     for `Result..value!`) or any name not resolved to a composite, so reference
     equality is only applied to genuine heap references. -/
 private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
   match model.get name with
   | .compositeType _ => true
-  | _ => false
-
-/-- Check whether a UserDefined type name refers to an opaque type. Like a datatype value
-    and unlike a composite, an opaque value is not a heap reference: it needs its own box
-    variant carrying its own sort, and it must not attract `Composite..ref!` clauses. -/
-private def isOpaque (model : SemanticModel) (name : Identifier) : Bool :=
-  match model.get name with
-  | .opaqueType _ => true
   | _ => false
 
 /-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation,
@@ -137,7 +129,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "$Box..realVal!"
   | .TString => "$Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name || isOpaque model name then boxDestructorForTag name.text
+      if isValueTypeName model name then boxDestructorForTag name.text
       else "$Box..compositeVal!"
   | .TBv n => s!"$Box..bv{n}Val!"
   -- Generic datatype instantiation `Bx<int>` + built-in `TotalMap`: one box variant per
@@ -159,7 +151,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TReal => "BoxReal"
   | .TString => "BoxString"
   | .UserDefined name =>
-      if isDatatype model name || isOpaque model name then boxCtorName name.text
+      if isValueTypeName model name then boxCtorName name.text
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   -- Generic datatype instantiation `Bx<int>`, and built-in collections `TotalMap`/`Set`.
@@ -182,7 +174,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
   | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, syntheticSource⟩ }] }
   | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, syntheticSource⟩ }] }
   | .UserDefined name =>
-      if isDatatype model name || isOpaque model name then
+      if isValueTypeName model name then
         some { name := boxCtorName name.text, args := [{ name := boxFieldLeaf name.text, type := ⟨.UserDefined name, syntheticSource⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined compositeTypeName, syntheticSource⟩ }] }
@@ -318,7 +310,7 @@ where
         -- neither is overloaded, so `UniqueOverloadNames` leaves the names alone
         -- and matching on the text is safe.
         --
-        -- The guard is `isComposite`, not `!isDatatype`. `.UserDefined` covers three
+        -- The guard is `isComposite`, not `!isValueTypeName`. `.UserDefined` covers three
         -- things, not two: composites (heap references, where `ref!` is right),
         -- datatype values (where it is wrong), and type *parameters* — the `Val` of
         -- `Result<Val, Err>`, which is the type reported for `Result..value!(…)` and

@@ -239,7 +239,10 @@ procedure mayThrowCall(b: int)
 };
 #end
 
-/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. -/
+/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. The modifies gate
+runs before the `old(...)`-globals validation, which sees only surviving targets, so a
+non-composite entry is reported as unframeable instead. Exempting `old(...)` from the gate would
+put `modifies old(<opaque>)` on the compiler-bug path. -/
 
 #guard_msgs in
 #eval testLaurelResolution <|
@@ -252,10 +255,35 @@ procedure mayThrowModifiesOld(b: int)
   opaque
   throwsOn b == 0 {
     modifies old(g)
-//               ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+//           ^^^^^^ error: modifies clause entry has non-composite type 'int'; only a heap object can be framed
   }
 {
   g := g
+};
+#end
+
+/-! The gate keeps only composites, and a composite target still reaches the rule above from a
+frame — so that position keeps its coverage. A composite-typed global has to be initialized with
+a hole: `new` is not effect-free, and omitting the initializer is rejected outright. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Holder {
+  var v: int
+}
+composite Exception {}
+var gh: Holder := <??>
+procedure mayThrowModifiesOldComposite(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    modifies old(gh)
+//               ^^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+{
+  b := b
 };
 #end
 

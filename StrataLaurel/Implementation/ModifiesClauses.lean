@@ -65,10 +65,11 @@ inductive ModifiesEntry where
 /--
 Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
 non-heap-relevant types. Delegates to `classifyModifiesHighType` for the
-type classification.
+type classification, with `model` deciding value-vs-reference for a nominal head.
 -/
-def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEntry :=
-  match classifyModifiesHighType ty with
+def classifyModifiesType (model : SemanticModel) (expr : StmtExprMd) (ty : HighType) :
+    Option ModifiesEntry :=
+  match classifyModifiesHighType (fun n => (model.get n).isValueType) ty with
   | some .composite    => some (.single expr)
   | some .compositeSet => some (.set expr)
   | none               => none
@@ -85,7 +86,7 @@ def extractModifiesEntries (model: SemanticModel)
     | .Var (.Field objExpr fieldName) =>
       (resolveQualifiedFieldName model fieldName).map fun qualifiedName =>
         .field objExpr (mkMd (.StaticCall qualifiedName []) expr.source)
-    | _ => classifyModifiesType expr (computeExprType model expr).val
+    | _ => classifyModifiesType model expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`

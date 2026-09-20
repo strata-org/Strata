@@ -527,22 +527,11 @@ private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
 
-/-- The declared type-parameter count of `name` when it resolves to a datatype
-    definition; `none` when `name` is not a datatype (so the type-application /
-    bare-reference checks below do not apply to it). -/
-private def datatypeTypeArgArity (name : String) : ResolveM (Option Nat) := do
-  match (← get).scope.get? name with
-  | some (_, .datatypeDefinition dt) => pure (some dt.typeArgs.length)
-  | _ => pure none
+private def valueTypeArity? (scope : Scope) (name : String) : Option (String × Nat) :=
+  (scope.get? name).bind fun (_, node) => node.valueTypeArity?
 
-/-- The declared type-parameter count of `name` when it resolves to an opaque type
-    definition; `none` otherwise. Opaque types are generic in exactly the same way
-    datatypes are (nominal, arity-fixed, no monomorphization), so they get the same
-    bare-reference and arity checks — see `datatypeTypeArgArity`. -/
-private def opaqueTypeArgArity (name : String) : ResolveM (Option Nat) := do
-  match (← get).scope.get? name with
-  | some (_, .opaqueType ot) => pure (some ot.typeArgs.length)
-  | _ => pure none
+private def isValueTypeName (scope : Scope) (name : Identifier) : Bool :=
+  (valueTypeArity? scope name.text).isSome
 
 /-- The declared type-parameter *names* of `name` when it resolves to a datatype
     definition; `[]` otherwise. Used to tell an erased (polymorphic) slot from a
@@ -552,35 +541,32 @@ private def datatypeTypeParamNames (name : String) : ResolveM (List String) := d
   | some (_, .datatypeDefinition dt) => pure (dt.typeArgs.map (·.text))
   | _ => pure []
 
-/-- Reject a bare (unapplied) reference to a *generic* datatype in a user type
-    position (e.g. `var w: Option` where `Option<T>` is declared). Left unapplied
-    its type arguments would be inferred by first use elsewhere in the program —
-    order-dependent and surprising — so we require the arguments to be written
-    explicitly (`Option<int>`). A non-generic datatype, composite, alias, or
-    constrained type is unaffected. (The erased constructor-result-type reference,
-    e.g. `Nothing() : Option`, is produced internally via `getCallInfo` and never
-    reaches here.) -/
-private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : ResolveM Unit := do
-  match ← datatypeTypeArgArity name.text with
-  | some n =>
-    if n > 0 then
-      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
-        s!"generic datatype '{name.text}' must be applied to {n} type argument(s)") }
-  | none =>
-    -- Same rule for a generic opaque type (`opaque Set<T>;` written bare as `Set`):
-    -- leaving the argument implicit would let first use elsewhere fix it.
-    match ← opaqueTypeArgArity name.text with
-    | some n =>
-      if n > 0 then
-        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
-          s!"generic opaque type '{name.text}' must be applied to {n} type argument(s)") }
-    | none => pure ()
+/-- Reject a bare (unapplied) reference to a *generic* value type in a user type
+    position (e.g. `var w: Option` where `Option<T>` is declared, or `Set` for
+    `opaque Set<T>`). Left unapplied its type arguments would be inferred by first
+    use elsewhere in the program — order-dependent and surprising — so we require the
+    arguments to be written explicitly (`Option<int>`). A non-generic value type,
+    composite, alias, or constrained type is unaffected. (The erased
+    constructor-result-type reference, e.g. `Nothing() : Option`, is produced
+    internally via `getCallInfo` and never reaches here.)
+
+    Reports `true` when it rejected the reference, so the caller can collapse the type
+    to `Unknown` instead of letting a type it just refused go on to be used. -/
+private def checkBareGenericValueType (name : Identifier) (source : FileRange) :
+    ResolveM Bool := do
+  match valueTypeArity? (← get).scope name.text with
+  | some (noun, n) =>
+    if n == 0 then return false
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+      s!"generic {noun} '{name.text}' must be applied to {n} type argument(s)") }
+    return true
+  | none => return false
 
 /-- Validate the base of a generic type application `base<args>`, keyed off what
     `base` resolves to:
     - a type *parameter* cannot be applied to arguments (`T<int>`);
-    - a datatype must be applied at its declared arity — a non-generic datatype
-      applied to arguments (`Plain<int>`) or an arity mismatch
+    - a value type (datatype or `opaque`) must be applied at its declared arity —
+      a non-generic one applied to arguments (`Plain<int>`) or an arity mismatch
       (`Option<int, string>`) is rejected here rather than deferred to Core;
     - a composite, constrained (subset), or alias type is not generic, so
       applying it to arguments (`C<int>`) is rejected here too — otherwise it
@@ -588,28 +574,20 @@ private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : 
       `strata-bug` instead of a clean *type 'X' is not generic* diagnostic.
     An unresolved base is left alone (`resolveRef` already reported it). -/
 private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : FileRange) : ResolveM Unit := do
+  -- A datatype and an `opaque` type are both arity-fixed, so they get one check rather than
+  -- letting a wrong-arity `declare-sort` or datatype application reach Core.
+  if let some (noun, n) := valueTypeArity? (← get).scope base.text then
+    if n != numArgs then
+      let msg := if n == 0 then
+          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
+        else
+          s!"generic {noun} '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+    return
   match (← get).scope.get? base.text with
   | some (_, .typeParameter _) =>
     modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
       s!"type parameter '{base.text}' cannot be applied to type arguments") }
-  | some (_, .datatypeDefinition dt) =>
-    let n := dt.typeArgs.length
-    if n != numArgs then
-      let msg := if n == 0 then
-          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
-        else
-          s!"generic datatype '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
-      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
-  | some (_, .opaqueType ot) =>
-    -- An opaque type is arity-fixed like a datatype, so check it the same way rather
-    -- than letting a wrong-arity `declare-sort` reach Core.
-    let n := ot.typeArgs.length
-    if n != numArgs then
-      let msg := if n == 0 then
-          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
-        else
-          s!"generic opaque type '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
-      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
   | some (_, .constrainedType _) =>
     -- A constrained type is never generic: applying it to type arguments is
     -- rejected here so the user gets a clean diagnostic rather than a downstream
@@ -653,9 +631,10 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     --   (a) `.typeParameter` → reclassify to `HighType.TVar` (#1394 polymorphism
     --       substrate).
     --   (b) composite/datatype/alias/constrained/coroutine, or still-`.unresolved` → keep
-    --       `UserDefined` (real subtype checking applies downstream — #1121). A
-    --       bare reference to a generic DATATYPE is additionally rejected
-    --       (`checkBareGenericDatatype`): its type arguments must be explicit.
+    --       `UserDefined` (real subtype checking applies downstream — #1121). A bare
+    --       reference to a GENERIC value type is additionally rejected
+    --       (`checkBareGenericValueType`): its type arguments must be explicit, and a
+    --       rejected reference joins case (c) rather than staying `UserDefined`.
     --   (c) anything else (a value name used as a type, etc.) → collapse to
     --       `Unknown` so later uses aren't type-checked against a phantom type;
     --       the "is not defined"/"wrong kind" diagnostic was already emitted by
@@ -668,8 +647,11 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
       let ref' ← resolveRef ref ty.source
         (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias,
           .opaqueType, .coroutineType])
-      checkBareGenericDatatype ref ty.source
-      let kindOk : Bool := match nodeKind? with
+      -- A rejected bare generic reference collapses to `Unknown` like any other refused name;
+      -- keeping it would let every later use report against a type already refused, burying the
+      -- one diagnostic that says what to fix.
+      let bareGenericRejected ← checkBareGenericValueType ref ty.source
+      let kindOk : Bool := !bareGenericRejected && match nodeKind? with
         | some k => k == .unresolved ||
             (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition,
               .typeAlias, .opaqueType, .coroutineType].contains k)
@@ -4131,6 +4113,19 @@ open Resolution
 private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
   let (e', _) ← Synth.resolveStmtExpr e; pure e'
 
+/-- Whether `ty` may appear in a modifies clause. Uses `scope` to tell a value type from a
+    heap reference. -/
+private def isHeapRelevantModifiesTarget (scope : Scope) (ty : HighType) : Bool :=
+  (classifyModifiesHighType (isValueTypeName scope) ty).isSome
+
+/-- Report that a modifies entry was dropped — unless part of its type failed to resolve, in which
+    case resolution already reported the real error and naming the type again only buries it. Any
+    depth counts: `Sequence<Unknown>` is as unresolved as a bare `Unknown`. -/
+private def reportDroppedModifies (ty : HighType) (source : FileRange) (msg : String) :
+    ResolveM Unit := do
+  if mentionsUnknown ty then return
+  modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+
 /-- Resolve a single modifies-clause entry, dropping it (with a diagnostic) when
     its type is not heap-relevant — the frame only applies to heap objects. For a
     field target `o#f` the *owner* must be heap-relevant; `*` (`.All`) is always
@@ -4138,7 +4133,8 @@ private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
     types are classified by their underlying type. Replaces the former
     `FilterNonCompositeModifies` pass. -/
 private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd) := do
-  let ctx := (← get).typeLattice
+  let st ← get
+  let ctx := st.typeLattice
   match e.val with
   | .All =>
     -- `modifies *` wildcard: kept regardless of type.
@@ -4150,24 +4146,22 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     let fieldName' ← resolveFieldRef target' fieldName e.source
     let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
     let ownerTy' := (ctx.unfold ownerTy).val
-    if isHeapRelevantType ownerTy' then
+    if isHeapRelevantModifiesTarget st.scope ownerTy' then
       return some e'
     else
-      let diag := diagnosticFromSource e.source
+      reportDroppedModifies ownerTy' e.source
         s!"modifies clause field target has non-composite owner type \
-           '{formatHighTypeVal ownerTy'}' and will be ignored"
-      modify fun s => { s with errors := s.errors.push diag }
+           '{formatHighTypeVal ownerTy'}'; only a heap object can be framed"
       return none
   | _ =>
     let (e', ty) ← Synth.resolveStmtExpr e
     let ty' := (ctx.unfold ty).val
-    if isHeapRelevantType ty' then
+    if isHeapRelevantModifiesTarget st.scope ty' then
       return some e'
     else
-      let diag := diagnosticFromSource e.source
+      reportDroppedModifies ty' e.source
         s!"modifies clause entry has non-composite type \
-           '{formatHighTypeVal ty'}' and will be ignored"
-      modify fun s => { s with errors := s.errors.push diag }
+           '{formatHighTypeVal ty'}'; only a heap object can be framed"
       return none
 
 /-- Resolve the modifies entries of an `Opaque` body, dropping the
@@ -4280,9 +4274,10 @@ def resolveExceptionalContract (proc : Procedure)
       | none =>
         blk.postconditions.mapM (·.mapM fun p =>
           Check.resolveStmtExpr p { val := .TBool, source := p.source })
-    -- A case's frame: resolve each target like an ordinary (body) modifies
-    -- reference — a Composite reference in scope.
-    let modifies' ← blk.modifies.mapM resolveStmtExpr
+    -- A case's frame goes through the same modifies gate as a normal-path frame. Resolve it as a
+    -- plain expression instead and an unframeable target reaches `EliminateExceptions`, whose
+    -- re-resolve reports the gate's own message as a compiler bug.
+    let modifies' ← resolveModifiesTargets blk.modifies
     pure ({ guard := guard', postconditions := postconditions',
             modifies := modifies' } : ThrowsOnBlock)
   pure (throwsType', proc.throwsBinding, throwsOn')
