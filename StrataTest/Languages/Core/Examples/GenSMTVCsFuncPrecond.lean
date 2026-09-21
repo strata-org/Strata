@@ -21,8 +21,13 @@ which factors each such call into a well-formedness obligation.
 `Core.genVCs` (the reflection path behind `gen_smt_vcs`) used to skip that
 phase, so `extractObligations` rejected the program ("function ... still
 carries a precondition") and the tactic reported "Failed to generate VCs".
-This test pins the fix: the goals below include the well-formedness check
-for `safeDiv`'s precondition, and every goal closes.
+
+The proof closes each obligation *by name* rather than with `all_goals`, so it
+pins the set of obligations in both directions: a dropped one fails with
+"Case tag ... not found", an unexpected one with "unsolved goals". `all_goals`
+alone would not notice a dropped one — it closes whatever happens to be there.
+`set_r_calls_safeDiv_0` is the obligation `precondElim` contributes: the check
+that `safeDiv`'s `requires` holds at the call site in `halve`.
 -/
 
 namespace Strata
@@ -48,7 +53,9 @@ spec {
 
 theorem halveCorrect : smtVCsCorrect funcPrecondPgm := by
   gen_smt_vcs
-  all_goals grind
+  case safeDiv_body_calls_Int.SafeDiv_0 => grind
+  case set_r_calls_safeDiv_0 => grind
+  case halve_ensures_1 => grind
 
 end Strata
 
