@@ -509,7 +509,7 @@ constrained nat = x: int where x >= 0 witness 0
 procedure u() opaque { var n: nat := 5 as nat; assert n == 5 };"},
 
   -- A bare type parameter `T` is not a composite, so `x as T` / `x is T` in a generic
-  -- procedure is rejected as a single clean `.userError` — exercises `castTargetIsNonComposite`'s
+  -- procedure is rejected as a single clean `.userError` — exercises `castTargetRejection?`'s
   -- `.TVar` arm (the other cases here cover `.UserDefined` datatype, `.TInt` primitive, and a
   -- constrained target).
   { name := "as_tvar_target_rejected", outcome := .rejectedExactly .userError,

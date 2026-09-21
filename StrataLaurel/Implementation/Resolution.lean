@@ -3875,7 +3875,9 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     else { val := HighType.Applied { val := .UserDefined ref', source := source } typeArgs', source := source }
   pure (.New ref' typeArgs', ty)
 
-/-- Is the target type of an `is`/`as` a NON-composite (so the cast is unsupported)?
+/-- The user-facing reason the target type of an `is`/`as` cannot be accepted, or `none` if it can
+    be. Shared by both operators, so their wording cannot drift and the reason is worded by the
+    same match that decides the rejection.
     `is`/`as` are only implemented for composite types — lowering keys off a runtime type tag
     only composites carry (`TypeHierarchy`), and only a composite target has a `downcast$T` helper
     (`HeapParameterization`). A non-composite target that slips through reaches lowering and fails
@@ -3883,11 +3885,14 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     here turns that into a clean diagnostic. Rejected shapes:
     - datatype / primitive / collection: no type tag, no `downcast$T`.
     - `.TVar`: Laurel type parameters are unconstrained (no `<T extends C>`), so `x as T` can never
-      be statically known to target a composite. Rejecting up front also pre-empts the case where
-      monomorphization concretizes `T` to a non-composite and trips this check *after* resolution,
-      where the user error would surface as a compiler bug.
+      be statically known to target a composite — which is why that arm's message names the missing
+      bound rather than claiming the target is not a composite. Rejecting up front also pre-empts
+      the case where monomorphization concretizes `T` to a non-composite and trips this check
+      *after* resolution, where the user error would surface as a compiler bug.
     `unfold` first, so an alias/constrained type is judged by its base (an alias OF a composite is
-    fine); `.Unknown` (a prior error) passes through, stacking no cascading diagnostic.
+    fine). That is why the type-parameter wording says the target *resolves to* one: `type I<T> = T`
+    makes `x as I<T>` take that arm, and `I<T>` is an alias, not a type parameter.
+    `.Unknown` (a prior error) passes through, stacking no cascading diagnostic.
     A gradual dynamic-top `.UserDefined` (e.g. Python's `Any`, registered in `gradualTypes`) is
     deliberately NOT exempted here: it IS rejected as a non-composite target. `coerce` would accept
     it at resolution (it is a boxable wildcard), but there is no downstream lowering for `as`/`is`
@@ -3898,13 +3903,16 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     Reachability is nil today (no frontend builds `as`/`is` nodes against a gradual name), so this
     is defensive; if such lowering is ever added, give the gradual top a real lowering
     (`as Any` ↦ identity, `is Any` ↦ `true`) rather than relaxing this guard. -/
-def castTargetIsNonComposite (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
+def castTargetRejection? (op : String) (ctx : TypeLattice) (ty : HighTypeMd) : Option String :=
+  let rule := s!"'{op}' is only supported for composite (class) types"
   match (ctx.unfold ty).val with
-  | .Unknown => false
-  | .TVar _ => true
-  | u => match highBaseName? u with
-         | some name => ! ctx.parentExprMap.contains name.text
-         | none => true
+  | .Unknown => none
+  | .TVar _ =>
+    some s!"{rule}; '{formatType ty}' resolves to a type parameter, which has no declared bound \
+            and so may be instantiated at a non-composite type"
+  | u =>
+    if (highBaseName? u).any (fun name => ctx.parentExprMap.contains name.text) then none
+    else some s!"{rule}; '{formatType ty}' is not a composite type"
 
 /-- (AsType)
     ```
@@ -3924,7 +3932,7 @@ def castTargetIsNonComposite (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
     relation check passes.
 
     `is`/`as` are supported only for COMPOSITE targets (see
-    `castTargetIsNonComposite`); a non-composite target is rejected up front. -/
+    `castTargetRejection?`); a target not known to be one is rejected up front. -/
 def Synth.asType (exprMd : StmtExprMd)
     (target : StmtExprMd) (ty : HighTypeMd)
     (h : exprMd.val = .AsType target ty) :
@@ -3932,9 +3940,8 @@ def Synth.asType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  if castTargetIsNonComposite ctx ty' then
-    let diag := diagnosticFromSource ty.source
-      s!"'as' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+  if let some msg := castTargetRejection? "as" ctx ty' then
+    let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
   else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
@@ -3965,9 +3972,8 @@ def Synth.isType (exprMd : StmtExprMd)
   let (target', targetTy) ← Synth.resolveStmtExpr target
   let ty' ← resolveHighType ty
   let ctx := (← get).typeLattice
-  if castTargetIsNonComposite ctx ty' then
-    let diag := diagnosticFromSource ty.source
-      s!"'is' is only supported for composite (class) types; '{formatType ty'}' is not a composite type"
+  if let some msg := castTargetRejection? "is" ctx ty' then
+    let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
   else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
     let diag := diagnosticFromSource target.source
