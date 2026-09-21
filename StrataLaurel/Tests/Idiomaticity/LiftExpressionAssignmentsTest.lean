@@ -15,6 +15,14 @@ by comparing the lifted Laurel against expected output.
 The lifter takes a list of "root" names (procedures known to be impure /
 multi-output) that drive which calls get hoisted; both `[]` and a populated
 list are exercised below.
+
+This test does NOT use the shared `runPassForIdiomaticity` driver: the driver
+runs a pass object's `run`, but the behaviour under test is the
+`liftExpressionAssignments` FUNCTION, whose `roots` argument the corresponding
+`liftImperativeExpressionsPass` object does not expose — most cases below pass a
+non-empty `roots`, which the pass could not reproduce. Two cases also feed a
+deliberately UNRESOLVED program to exercise a precondition-violation error path,
+the opposite of the driver's resolve-first flow.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel

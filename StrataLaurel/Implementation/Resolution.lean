@@ -6284,7 +6284,7 @@ private def validateGlobalNames (program : Program) : List Message :=
   -- the literal `$heap` that `ModifiesClauses` writes into its frames would bind to the
   -- user's variable instead. Runs only on the initial resolve of user source, so the
   -- synthesized `$heap` parameters added later are unaffected. Pinned by
-  -- GenericCompositeTest's `user_heap_output_rejected`.
+  -- the `$heap` output case in EndToEndTests/Resolution/DollarNamesRejected.
   -- Instance procedures are inspected alongside the static list, as the sibling
   -- validators in this file do: an instance procedure's parameters are just as capable
   -- of colliding with `$heap`.

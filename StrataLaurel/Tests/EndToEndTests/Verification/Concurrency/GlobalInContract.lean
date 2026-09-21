@@ -5,7 +5,7 @@
 -/
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-!
 Regression: a coroutine whose `relies` / `guarantees` reference a file-scope
@@ -49,4 +49,4 @@ coroutine tick()
 
 #end
 
-#eval testCoroutine <| prog
+#eval testLaurelVerification (options := coroutineOptions) <| prog

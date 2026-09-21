@@ -23,11 +23,11 @@ Allocation vs. the per-yield environment havoc.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## Positive: fresh allocation after a yield cannot alias pre-yield state. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -47,7 +47,7 @@ coroutine freshAfterYield(s: Cell)
 
 /-! ## Negative: a pre-yield private allocation is havoced at the yield. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

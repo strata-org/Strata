@@ -348,7 +348,12 @@ procedure runAll() entry
     No call, because the check is discharged at DEFINITION time — adding a dispatcher would only
     couple the case to dispatcher behaviour. -/
 
-#eval testLaurelVerification <|
+-- No interpreters: the annotated failure is a definition-time Liskov check, which a concrete
+-- run cannot produce — and with no call there is nothing for an entry to reach. Marking the
+-- `go` stub `entry` was tried: the interpreter runs and reports nothing, so the annotation
+-- never fires.
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite B9 {

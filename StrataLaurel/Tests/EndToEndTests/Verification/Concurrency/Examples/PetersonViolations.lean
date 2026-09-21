@@ -18,9 +18,9 @@ must reject programs that violate the declared rely/guarantee.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -48,7 +48,7 @@ coroutine petersonGuaranteeBad(s: Shared, me: int)
 };
 #end
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

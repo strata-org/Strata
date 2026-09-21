@@ -19,10 +19,10 @@ compared against the pinned expectation, so a regression fails the test.
 
 ## How this runs the pass
 
-`runPass` resolves the surface program and runs *only* the
-`EliminateExceptions` pass on it (`resolve` + `eliminateExceptionsTransform`),
-not the full pipeline. This isolates the pass's own rewrite — the same reason the
-`Transform/*` tests run a single transform on a hand-written program.
+`runExc` calls the shared idiomaticity driver `runPassForIdiomaticity`, which
+resolves the surface program and runs *only* the `EliminateExceptions` pass on
+it, not the full pipeline. This isolates the pass's own rewrite — the same reason
+the `Transform/*` tests run a single transform on a hand-written program.
 
 Note this input is exactly what the pass sees in the real pipeline: elimination
 runs *before* heap parameterization (so `$exc_<i>` can be typed at each `try`'s
@@ -36,49 +36,17 @@ parameterization threading the inout `$heap` through a throwing call,
 `ModifiesClauses` building the `isGood`/`isBad`-guarded frames, and
 `TypeHierarchy` lowering the `is`-guards. Those are covered by the full-pipeline
 verifying tests (`ThrowsOnClause`, `TryCatchThrow`, `TryFinallyThrow`, …).
-Output is trimmed to the procedures (the shared prelude/datatype declarations are
-unchanged by the pass).
+The prelude is dropped from the output; the `Result` datatype the pass injects
+for a program that uses exceptions is kept, so it heads each golden.
 -/
 
-/-- Strip trailing spaces from a line (the pretty-printer emits e.g. `return `
-    with a trailing space; keeping it would break the golden and trip the repo's
-    trailing-whitespace lint). -/
-private def rstrip (l : String) : String :=
-  String.ofList (l.toList.reverse.dropWhile (· == ' ')).reverse
-
-/-- Format a program, keeping only the procedures (dropping the unchanged
-    prelude/datatype preamble), right-trimming lines and trailing blanks. -/
-private def fmtProcs (p : Program) : Std.Format :=
-  -- Drop every always-on prelude procedure, keeping only the ones the snippet
-  -- declares, so the golden stays focused on what this pass rewrites. Filtering by
-  -- name rather than by `isExternal`: the built-in operator wrappers (`$add`,
-  -- `$implies`, …) are *transparent* procedures delegating to type-specific
-  -- externals, so they are not external themselves.
-  let builtinNames := coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
-  let p := { p with staticProcedures :=
-    p.staticProcedures.filter (fun proc => !builtinNames.contains proc.name.text) }
-  let s := (Std.format p).pretty
-  let kept := ((s.splitOn "\n").dropWhile (fun l => !l.startsWith "procedure ")).map rstrip
-  Std.format ("\n".intercalate (kept.reverse.dropWhile (·.isEmpty)).reverse)
-
-/-- Parse a `#strata` program into a Laurel program (pure; panics on a parse
-    error, which cannot happen for the well-formed literals below). -/
-private def parseLaurel (t : StrataDDM.Program) : Program :=
-  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram t) with
-  | .ok p => p
-  | .error e => panic! s!"parse failed: {e}" -- nopanic:ok
-
-/-- Resolve the surface program (with the always-on prelude prepended, as the
-    pipeline does) and run *only* the `EliminateExceptions` pass on it. The
-    `Result` datatype is not part of that prelude — the pass injects it itself for
-    programs that use exceptions — so it does not need prepending here. -/
-private def runPass (b : StrataDDM.SourcedProgram) : Program :=
-  let program := parseLaurel b.program
-  let program := { program with
-    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
-    types := coreDefinitionsForLaurel.types ++ program.types }
-  let result := resolve program
-  (eliminateExceptionsTransform result.model result.program).1
+/-- Parse, resolve (prelude prepended, as the pipeline does), run *only* the
+    `EliminateExceptions` pass, and print the result. The prelude is dropped from
+    the printout; the `Result` datatype the pass INJECTS is kept (it is not a
+    prelude declaration), so the golden shows it alongside the rewritten
+    procedures. -/
+private def runExc (b : StrataDDM.SourcedProgram) : IO Unit :=
+  runPassForIdiomaticity eliminateExceptionsPass b.program
 
 /-! ### 1. A `throwsOn` case on a bodiless (contract-only) thrower
 
@@ -105,7 +73,9 @@ procedure parsePositive(input: int)
 #end
 
 /--
-info: procedure parsePositive(input: int): (Result<int, NegativeInputException>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite NegativeInputException { }
+procedure parsePositive(input: int): (Result<int, NegativeInputException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NegativeInputException
   free ensures input < 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
@@ -113,7 +83,7 @@ info: procedure parsePositive(input: int): (Result<int, NegativeInputException>)
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass throwsOnContract))
+#eval runExc throwsOnContract
 
 /-! ### 2. A `throwsOn` case with a postcondition (bodiless)
 
@@ -136,7 +106,9 @@ procedure divide(a: int, b: int)
 #end
 
 /--
-info: procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite ArithmeticException { }
+procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is ArithmeticException
   free ensures b == 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
@@ -145,7 +117,7 @@ info: procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass throwsOnCaseSplit))
+#eval runExc throwsOnCaseSplit
 
 /-! ### 3. A call to a throwing procedure inside `try`/`catch`
 
@@ -169,10 +141,11 @@ procedure loadUser(id: int)
 #end
 
 /--
-info: procedure fetchRecord(id: int): (Result<int, NotFoundException>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite NotFoundException { }
+procedure fetchRecord(id: int): (Result<int, NotFoundException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NotFoundException;
-
 procedure loadUser(id: int)
   returns (result: int)
   opaque
@@ -220,7 +193,7 @@ procedure loadUser(id: int)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass callAndCatch))
+#eval runExc callAndCatch
 
 /-! ### 4. `finally` runs on `return`
 
@@ -244,7 +217,8 @@ procedure closeAndReturn()
 #end
 
 /--
-info: procedure closeAndReturn()
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+procedure closeAndReturn()
   returns (status: int)
   opaque
 {
@@ -286,7 +260,7 @@ info: procedure closeAndReturn()
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass finallyOnReturn))
+#eval runExc finallyOnReturn
 
 /-! ### 5. Re-throw from inside a `catch`, with `finally` (the two-label case)
 
@@ -320,10 +294,11 @@ procedure retry(x: int)
 #end
 
 /--
-info: procedure attempt(x: int): (Result<int, NetworkError>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite NetworkError { }
+procedure attempt(x: int): (Result<int, NetworkError>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NetworkError;
-
 procedure retry(x: int): (Result<int, NetworkError>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is NetworkError
@@ -392,7 +367,7 @@ procedure retry(x: int): (Result<int, NetworkError>)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass rethrowFromCatch))
+#eval runExc rethrowFromCatch
 
 /-! ### 6. Nested `try`/`finally`
 
@@ -420,7 +395,8 @@ procedure nested()
 #end
 
 /--
-info: procedure nested()
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+procedure nested()
   returns (log: int)
   opaque
 {
@@ -487,7 +463,7 @@ info: procedure nested()
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass nestedFinally))
+#eval runExc nestedFinally
 
 /-! ### 7. Multi-clause `catch` + `finally`
 
@@ -518,10 +494,13 @@ procedure parseDocument(input: int)
 #end
 
 /--
-info: procedure parseStrict(input: int): (Result<int, ParseError>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite ParseError { }
+composite SyntaxError extends ParseError { }
+composite IoError extends ParseError { }
+procedure parseStrict(input: int): (Result<int, ParseError>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is ParseError;
-
 procedure parseDocument(input: int)
   returns (result: int)
   opaque
@@ -587,7 +566,7 @@ procedure parseDocument(input: int)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass multiCatch))
+#eval runExc multiCatch
 
 /-! ### 9. An `exit` that leaves a `try`/`finally`
 
@@ -619,7 +598,8 @@ procedure releaseAndBreak()
 #end
 
 /--
-info: procedure releaseAndBreak()
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+procedure releaseAndBreak()
   returns (r: int)
   opaque
 {
@@ -672,7 +652,7 @@ info: procedure releaseAndBreak()
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass exitCrossesFinally))
+#eval runExc exitCrossesFinally
 
 /-! ### 10. A void-returning throwing procedure
 
@@ -702,7 +682,9 @@ procedure doOrThrow(fail: bool)
 #end
 
 /--
-info: procedure doOrThrow(fail: bool): (Result<bool, Err>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Err { }
+procedure doOrThrow(fail: bool): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
   modifies  when Result..isGood($result)
@@ -733,7 +715,7 @@ info: procedure doOrThrow(fail: bool): (Result<bool, Err>)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass voidThrows))
+#eval runExc voidThrows
 
 /-! ### 11. Propagating out of a `try` whose LCA is wider than the enclosing `$exc`
 
@@ -772,7 +754,11 @@ procedure propagateNarrow(pick: bool)
 #end
 
 /--
-info: procedure propagateNarrow(pick: bool): (Result<bool, ParseError>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Exception { }
+composite ParseError extends Exception { }
+composite OtherError extends Exception { }
+procedure propagateNarrow(pick: bool): (Result<bool, ParseError>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is ParseError
   modifies  when Result..isGood($result)
@@ -835,7 +821,7 @@ info: procedure propagateNarrow(pick: bool): (Result<bool, ParseError>)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass widenedPropagation))
+#eval runExc widenedPropagation
 
 /-! ### 12. A handler whose only use of its binding is under a shadowing binder
 
@@ -860,7 +846,9 @@ procedure catchBindingFullyShadowed()
 #end
 
 /--
-info: procedure catchBindingFullyShadowed(): (Result<bool, Err>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Err { }
+procedure catchBindingFullyShadowed(): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
   modifies  when Result..isGood($result)
@@ -908,7 +896,7 @@ info: procedure catchBindingFullyShadowed(): (Result<bool, Err>)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass fullyShadowedBinding))
+#eval runExc fullyShadowedBinding
 
 /-! ### 13. A `throwsOn` binder reusing an input's name
 
@@ -933,7 +921,9 @@ procedure binderShadowsInput(e: int)
 #end
 
 /--
-info: procedure binderShadowsInput(e: int): (Result<bool, Err>)
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Err { var code: int }
+procedure binderShadowsInput(e: int): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
   ensures true ==> Result..isBad($result)( summary "throwsOn case forces a throw")
@@ -963,7 +953,7 @@ info: procedure binderShadowsInput(e: int): (Result<bool, Err>)
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass binderShadowsInputPin))
+#eval runExc binderShadowsInputPin
 
 /-! ### 14. The short return form whose value output is `$result`
 
@@ -989,7 +979,9 @@ procedure shortFormThrows(): int
 #end
 
 /--
-info: procedure shortFormThrows()
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Err { var code: int }
+procedure shortFormThrows()
   returns ($result_1: (Result<int, Err>))
   opaque
   ensures Result..isGood($result_1) ==> Result..value($result_1) > 0
@@ -1022,4 +1014,4 @@ info: procedure shortFormThrows()
 };
 -/
 #guard_msgs in
-#eval (fmtProcs (runPass shortFormThrowsPin))
+#eval runExc shortFormThrowsPin

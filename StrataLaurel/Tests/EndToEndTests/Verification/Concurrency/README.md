@@ -3,8 +3,9 @@
 Verification tests for Laurel's `coroutine` feature: `yield`, the
 `yields`/`resumes` value channels, per-yield `relies`/`guarantees`,
 `oldGuarantee`/`oldRelies`, and the caller-side view of `resume`. Every test here
-goes through `CoroutineTest.lean`'s `testCoroutine` helper (`testLaurelExecution {}` plus
-`verifyCoroutine := true`), i.e. the YieldElim verification path.
+calls `testLaurelVerification` with `CoroutineTest.lean`'s `coroutineOptions`
+(the test defaults plus `verifyCoroutine := true`), i.e. the YieldElim
+verification path.
 
 Coverage of the same feature outside verification:
 
@@ -31,7 +32,7 @@ the feature regressed.
 | `CallerPath.lean` | Caller-side reasoning: `relies` → `requires` and `guarantees` → two-state `ensures` on the generated opaque `resume` |
 | `GlobalInContract.lean` | Regression: a rely/guarantee that references a file-scope global still verifies after `GlobalParameterization` |
 
-`CoroutineTest.lean` is the shared helper, not a test.
+`CoroutineTest.lean` is the shared options value, not a test.
 
 ## `Examples/` — algorithm case studies
 

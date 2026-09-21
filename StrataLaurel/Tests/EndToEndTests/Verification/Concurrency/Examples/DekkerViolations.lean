@@ -17,9 +17,9 @@ Negative sanity tests for Dekker under the YieldElim rely/guarantee pass.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -50,7 +50,7 @@ coroutine dekkerGuaranteeBad(s: Shared, me: int)
 };
 #end
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

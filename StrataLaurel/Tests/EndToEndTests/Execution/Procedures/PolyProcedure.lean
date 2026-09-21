@@ -10,11 +10,9 @@ open Strata
 
 /-! # Polymorphic procedures through the full pipeline
 
-`UnitTests/PolyProcedureTest.lean` drives polymorphic procedures through the corpus
-harness, which runs the VERIFIER only and asserts four counters
-(`translated`/`numVCs`/`numFailures`/`numErrorOutcomes`). These tests run them through
-the *entire* pipeline with `testLaurelExecution {}` — translate + all lowering passes +
-verify + **interpret** — checking both modes against the same inline annotations.
+Most cases here run through the *entire* pipeline with `testLaurelExecution {}` —
+translate + all lowering passes + verify + **interpret** — checking both modes against
+the same inline annotations.
 
 That second mode is the point. Polymorphic procedures ride per-call-site type-variable
 freshening in `CallElim`, which rewrites each call's contract before Core sees it; nothing
@@ -23,15 +21,18 @@ polymorphic call actually computes. A freshening bug that produced a *consistent
 instantiation could satisfy the verifier's own obligations and still execute the wrong
 value.
 
-Scope: value-`T` procedures only, i.e. no generic composites. The interpreter does not
-model the heap, and a generic composite is a heap reference, so the composite cases stay
-verifier-only (`Types/Composites/GenericComposite.lean`). Bodies are TRANSPARENT unless a case
-needs a contract: an `opaque ensures` on a polymorphic procedure emits that procedure's own
-body VC.  With `MonomorphizeFunctions` inserted after `typeCheckPhase` (see
+Bodies are TRANSPARENT unless a case needs a contract: an `opaque ensures` on a
+polymorphic procedure emits that procedure's own body VC. With `MonomorphizeFunctions`
+inserted after `typeCheckPhase` (see
 `Strata/Transform/MonomorphizeFunctions.lean`), each such body is specialized at the
 ground instantiations reached from its call sites before SMT encoding, so both value
 assertions and the dual-mode interpreter/verifier check succeed for every case in this
 file.
+
+A `T` instantiated at a *reference* type works in both modes too, as long as the entry
+declares `modifies *` (an entry's heap is a body local, so no narrower frame can be stated
+about it). Generic composites — `T` as a composite's own field type, which needs
+monomorphization rather than freshening — live in `Types/Composites/GenericComposite.lean`.
 -/
 
 -- Multi-instantiation in one caller: the same `idp` at `int` and at `bool`. Per-call-site
@@ -361,4 +362,230 @@ procedure g<T>(ss: Sequence<Sequence<T>>, s: Sequence<T>) returns (x: Sequence<T
 procedure callerTypeVarSpelledLikeCallee() opaque {
   var a: Sequence<int> := g(seqEmpty(), seqEmpty())
 };
+#end
+
+/-! ## `T` instantiated at a REFERENCE type
+
+A polymorphic procedure applied to a composite argument needs no separate erasure pass:
+every composite lowers to the single `tcons "Composite"` type, and Core's HM unifies
+`ftvar T` with it exactly as it does with `int`. So the pass-through path is
+*kind-agnostic*, and this pins that — a reference `T` reaching machinery that assumed a
+value type would show up as a translation failure rather than a wrong answer.
+
+Both blocks mark an `entry` (and so declare `modifies *`, which an entry that touches the
+heap must), so the composite really is allocated, passed through `idc` and read back by two
+interpreters as well as proved. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Cir { var r: int }
+
+procedure idc<T>(x: T): T { return x };
+
+procedure referenceTypeArg()
+  entry
+  opaque
+  modifies *
+{
+  var c: Cir := new Cir;
+  c#r := 7;
+  var d: Cir := idc(c);
+  assert d#r == 7
+};
+#end
+
+-- SOUNDNESS twin: the returned reference really is `c`, so a FALSE claim about the field
+-- read through it must fail. Without this, `referenceTypeArg` would also pass if `idc`
+-- returned an unconstrained reference.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Cir { var r: int }
+
+procedure idc<T>(x: T): T { return x };
+
+procedure referenceTypeArgFalse()
+  entry
+  opaque
+  modifies *
+{
+  var c: Cir := new Cir;
+  c#r := 7;
+  var d: Cir := idc(c);
+  assert d#r == 8
+//^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+
+/-! ## Freshening COUPLES the input and output slots
+
+`ensures r == x` ties the output's type to the input's at every call site. The same fresh
+substitution has to reach the input types, the output types AND the contract expressions — if
+one slot freshened to a different instantiation, the coupled obligation would be either
+ill-formed or, worse, vacuous. Vacuous is the dangerous direction: it is invisible to the type
+checker, so a twin per slot is the guardrail. Both instantiations appear in one body, and the
+two twins each falsify one slot. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+
+procedure crossSlotCoupling()
+  entry
+  opaque
+{
+  var gi: int := idp(7);
+  var gb: bool := idp(true);
+  assert gi == 7 && gb == true
+};
+#end
+
+-- Twin falsifying the INT slot.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+
+procedure crossSlotWrongInt()
+  entry
+  opaque
+{
+  var gi: int := idp(7);
+  var gb: bool := idp(true);
+  assert gi == 8 && gb == true
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- Twin falsifying the BOOL slot — the other half of the coupling.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+
+procedure crossSlotWrongBool()
+  entry
+  opaque
+{
+  var gi: int := idp(7);
+  var gb: bool := idp(true);
+  assert gi == 7 && gb == false
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ## A poison instantiation must not abort whole-program checking
+
+If a multi-instantiation call that the pipeline struggles with aborted the run, every OTHER
+procedure's obligations would silently go unchecked — a green build hiding real bugs. So
+`realBug`'s plain `assert 1 == 2` sits beside a two-instantiation body, and it is the failure
+being pinned: it proves checking reached the rest of the program. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
+
+procedure realBug()
+  entry
+  opaque
+{
+  assert 1 == 2
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure poison()
+  opaque
+{
+  var a: int := idp(5);
+  assert a == 5;
+  var b: bool := idp(true);
+  assert b == true
+};
+#end
+
+-- A false claim about the THIRD instantiation in one body. Per-site freshening must not drift
+-- across many sites, and no site's assumed postcondition may become vacuous — either failure
+-- mode would let this false assert pass.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
+
+procedure falseAmongManyInstantiations()
+  entry
+  opaque
+{
+  var a: int := idp(5);
+  var b: bool := idp(true);
+  var c: int := idp(9);
+  assert a == 5;
+  assert b == true;
+  assert c == 99
+//^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ## A freshened PRECONDITION still gates
+
+`pos` requires `x > 0` and is called with `-3`. Freshening rewrites the contract at the call
+site, so the risk is that the precondition is rewritten into something trivially true rather
+than merely retyped. The failure is reported at the CALL, which is where the obligation
+lives. -/
+
+-- The Core interpreter runs this and reproduces the precondition failure at the annotated
+-- range. The STANDALONE Laurel interpreter is skipped because it localizes the same failure
+-- differently: it reports the call expression `pos(-3, 9)` (snippet cols 16-26) where the
+-- verifier and the Core interpreter both report the whole declaration statement (cols 2-26),
+-- and one annotation cannot pin both ranges.
+#eval testLaurelExecution { skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure pos<T>(x: int, t: T) returns (y: T) requires x > 0 opaque ensures y == t { y := t };
+
+procedure freshenedPreconditionGates()
+  entry
+  opaque
+{
+  var g: int := pos(-3, 9);
+//^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+  assert 1 == 1
+};
+#end
+
+/-! ## An UNCALLED polymorphic procedure is still checked
+
+With no call site there is no instantiation to freshen at, so a naive implementation would
+emit nothing and the contract would go unchecked — silently, since there is no diagnostic to
+notice. `GenOpaqueTypeParams` substitutes an opaque type for the type variable so the body
+VC encodes anyway. The pair below is what makes that visible: a true contract verifies and a
+false one fails, both with the procedure never called.
+
+The true half marks its `uncalledTrueContract` stub `entry`, so both interpreters at least
+run the program that carries the uncalled declaration. The false half cannot: the failure it
+pins is `bad`'s own body VC, and with no call site a concrete run never enters that body, so
+the annotation would have nothing to fire on. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+procedure uncalledTrueContract() entry opaque { assert 1 == 1 };
+#end
+
+-- Verification-only: the annotated `postcondition does not hold` is `bad`'s own body VC, and
+-- `bad` is never called, so no entry point can reach it — an interpreter run reports nothing
+-- and the annotation would never fire.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure bad<T>(x: T, z: T) returns (r: T)
+  opaque
+  ensures r == z
+//        ^^^^^^ error: postcondition does not hold
+{ r := x };
+procedure uncalledFalseContract() opaque { assert 1 == 1 };
 #end
