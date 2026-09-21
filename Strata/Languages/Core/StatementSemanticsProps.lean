@@ -30,7 +30,7 @@ public section
 Metatheory of Core's own statement semantics (`EvalCommand`, `CoreStepStar`).  Key
 results, beyond the `InitStates`/`UpdateStates`/`HavocVars` plumbing:
 
-- Store-domain characterisation of a run: `evalCommand_preserves_none_of_not_def`
+- Store-domain characterization of a run: `evalCommand_preserves_none_of_not_def`
   and `evalCommand_preserves_isSome` at the command level, lifted to
   `core_stmt_run_terminal_preserves_none_of_not_definedVars_true`,
   `core_block_run_terminal_preserves_none_of_not_definedVars` and
@@ -40,6 +40,12 @@ results, beyond the `InitStates`/`UpdateStates`/`HavocVars` plumbing:
   `defUseWellFormed` uses its definedness predicate in both directions.
 - `evalCommand_storeWellDefined`: a command leaves a store that holds only values,
   given that it started from one.
+- Event-trace store-domain results:
+  `evalCommandE_preserves_none_of_not_def`, `evalCommandE_preserves_isSome`,
+  `evalCommandE_storeWellDefined`, `core_stmts_preserves_isSomeE`,
+  `core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE`, and
+  `core_stmt_run_terminal_store_isSome_eqE` provide the corresponding
+  guarantees for `EvalCommandE` / `StepStmtStarE` runs.
 - `CoreStepStar_to_StepStmtStar` / `StepStmtStar_to_CoreStepStar`: `CoreStepStar` is
   a separate mutual inductive, so results stated over the generic `StepStmtStar`
   transfer only through these.
@@ -2325,6 +2331,27 @@ theorem evalCommand_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem => exact updateStates_preserves_none (by assumption) y h_none
 
+/-- Event-trace analogue of `evalCommand_preserves_none_of_not_def`: an
+    `EvalCommandE` step preserves a `none` slot it does not declare.  Base
+    commands go through `evalCmdE_preserves_none_of_not_def`; a `call` declares
+    nothing and reuses the failure-flag result on its underlying `EvalCommand`. -/
+theorem evalCommandE_preserves_none_of_not_def
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π φ f σ c σ' emitted)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ HasVarsImp.definedVars (P := Expression) c false) :
+    σ' y = none := by
+  cases c with
+  | cmd cmd =>
+    simp only [EvalCommandE] at h_eval
+    exact Imperative.evalCmdE_preserves_none_of_not_def h_eval h_none
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+  | call a b d =>
+    simp only [EvalCommandE] at h_eval
+    obtain ⟨_, failed, h⟩ := h_eval
+    exact evalCommand_preserves_none_of_not_def π φ h h_none h_not_def
+
 /-- An `EvalCommand` step never undefines a store slot. -/
 theorem evalCommand_preserves_isSome
     {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
@@ -2463,6 +2490,143 @@ theorem core_stmt_run_terminal_store_isSome_eq
         | some v => rw [h] at hs; simp at hs
       rw [hnone] at hs
       rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π φ hd hnone h_run,
+        hnone]
+
+/-! ### Event-trace store-domain characterization
+
+Event-trace (`StepStmtStarE` / `EvalCommandE`) analogues of the store-domain
+lemmas above, needed to re-establish `BlockInitEnvWF` on the tail of a statement
+list after an event-native run.  `EvalCommandE` base commands are the
+event-native `EvalCmdE`; a `call` emits `[]` and reuses the failure-flag
+`EvalCommand`, so the call cases delegate to the failure-flag results. -/
+
+/-- An `EvalCommandE` step never undefines a store slot that was already
+defined. -/
+theorem evalCommandE_preserves_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π φ f σ c σ' emitted)
+    (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases c with
+  | cmd cmd =>
+    simp only [EvalCommandE] at h_eval
+    exact Imperative.evalCmdE_preserves_isSome h_eval h_some
+  | call a b d =>
+    simp only [EvalCommandE] at h_eval
+    obtain ⟨_, _, h⟩ := h_eval
+    exact evalCommand_preserves_isSome π φ h h_some
+
+/-- An `EvalCommandE` step preserves the property that every store binding is
+a value. -/
+theorem evalCommandE_storeWellDefined
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Command}
+    {emitted : Imperative.Trace Expression}
+    (h : EvalCommandE π φ fac σ c σ' emitted)
+    (hsv : Imperative.WellFormedStore σ fac) :
+    Imperative.WellFormedStore σ' fac := by
+  cases c with
+  | cmd cmd =>
+    simp only [EvalCommandE] at h
+    exact Imperative.evalCmdE_storeWellDefined
+      (coreEvaluator_WellFormedSemanticEvalVal fac) h hsv
+  | call a b d =>
+    simp only [EvalCommandE] at h
+    obtain ⟨_, _, hc⟩ := h
+    exact evalCommand_storeWellDefined π φ hc hsv
+
+/-- Event analogue of `evalCommand_definedVars_isSome`: a `call` declares
+nothing, so that case is vacuous. -/
+private theorem evalCommandE_definedVars_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π φ f σ c σ' emitted)
+    (h_def : y ∈ HasVarsImp.definedVars (P := Expression) c true) :
+    (σ' y).isSome = true := by
+  cases c with
+  | cmd cmd =>
+    simp only [EvalCommandE] at h_eval
+    exact Imperative.evalCmdE_definedVars_isSome h_eval
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
+  | call a b d => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+
+/-- A store slot defined at the start of a terminating event-native `.stmt`
+run remains defined at the end. -/
+private theorem core_stmt_preserves_isSomeE
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_run : StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+      (.stmt s ρ) tr (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π φ he hs)
+    h_run
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Event analogue of `core_stmts_preserves_isSome`: a slot defined at the start
+of a terminating event-native `.stmts` run is still defined at the end. -/
+theorem core_stmts_preserves_isSomeE
+    {y : Expression.Ident} {ss : Statements} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_run : StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+      (.stmts ss ρ) tr (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π φ he hs)
+    h_run
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- A store slot that starts undefined and is not defined by the statement
+remains undefined after a terminating event-native `.stmt` run. -/
+theorem core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_y_not_def : y ∉ Stmt.definedVars (P := Expression) (C := Command) s true)
+    (h_none : ρ.store y = none)
+    (h_run : StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+      (.stmt s ρ) tr (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedScoped_star_ofE
+    (fun he hn hnd => evalCommandE_preserves_none_of_not_def π φ he hn hnd)
+    h_run
+    (by rintro z rfl; exact ⟨h_none, h_y_not_def⟩) y rfl
+
+/-- After a terminating event-native `.stmt` run, a store slot is defined
+exactly when it was defined initially or the statement defines it. -/
+theorem core_stmt_run_terminal_store_isSome_eqE
+    {s : Statement} {ρ ρ' : Env Expression} {tr : Imperative.Trace Expression}
+    (h_run : StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+      (.stmt s ρ) tr (.terminal ρ')) (n : Expression.Ident) :
+    (ρ'.store n).isSome
+      = ((ρ.store n).isSome ||
+          decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
+  by_cases hd : n ∈ Stmt.definedVars (P := Expression) (C := Command) s true
+  · simp only [hd, decide_true, Bool.or_true]
+    match s with
+    | .cmd c =>
+      cases h_run with
+      | step _ _ _ _ _ hstep hrest =>
+        cases hstep with
+        | step_cmd h_eval =>
+          obtain ⟨hcfg, _⟩ := Imperative.stepStmtStarE_from_terminal hrest
+          injection hcfg with hρ
+          subst hρ
+          simp only [Stmt.definedVars] at hd
+          exact evalCommandE_definedVars_isSome π φ h_eval hd
+        | step_admin hadmin => cases hadmin with | step_cmd hfalse => exact hfalse.elim
+    | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl .. | .typeDecl .. =>
+      simp [Stmt.definedVars] at hd
+  · simp only [hd, decide_false, Bool.or_false]
+    by_cases hs : (ρ.store n).isSome = true
+    · rw [hs, core_stmt_preserves_isSomeE π φ h_run hs]
+    · have hnone : ρ.store n = none := by
+        cases h : ρ.store n with
+        | none => rfl
+        | some v => rw [h] at hs; simp at hs
+      rw [hnone] at hs
+      rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π φ hd hnone h_run,
         hnone]
 
 /-! ## projectStore and expression evaluation -/

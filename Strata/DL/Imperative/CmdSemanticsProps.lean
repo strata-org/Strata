@@ -35,6 +35,10 @@ evaluation relation `EvalCmd`. Key results:
 - `evalCmd_storeWellDefined`: a command leaves a store that holds only values,
   given that it started from one.  The command-level half of
   `Imperative.Config.storeWellDefined_star_of`.
+- Event-trace store preservation: `evalCmdE_preserves_none_of_not_def`,
+  `evalCmdE_preserves_isSome`, `evalCmdE_definedVars_isSome`, and
+  `evalCmdE_storeWellDefined` provide the corresponding domain and value
+  guarantees for `EvalCmdE`.
 - `EvalCmdE.emitted_eq`: event-producing command evaluation emits exactly the
   trace determined by the command and input snapshot.
 - `EvalCmd.toEvalCmdE`: every failure-flag command execution has an
@@ -569,6 +573,90 @@ theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
   | eval_assume _ _ => exact h_none
   | eval_cover _ => exact h_none
 
+/-- Event-trace analogue of `evalCmd_preserves_none_of_not_def`: an `EvalCmdE`
+step preserves a `none` slot `y` it does not `init`/`set`.  `assert`/`assume`/
+`cover` leave the store unchanged; `init`/`set` change only their target. -/
+theorem evalCmdE_preserves_none_of_not_def {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
+    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ Cmd.definedVars c) :
+    σ' y = none := by
+  simp only [Cmd.definedVars] at h_not_def
+  cases h_eval with
+  | eval_init _ h_is _ =>
+    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
+    exact h_none
+  | eval_init_unconstrained h_is _ _ =>
+    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
+    exact h_none
+  | eval_set _ h_us _ => exact UpdateState_preserves_none h_us h_none
+  | eval_set_nondet h_us _ _ => exact UpdateState_preserves_none h_us h_none
+  | eval_assert => exact h_none
+  | eval_assume => exact h_none
+  | eval_cover => exact h_none
+
+/-- `InitState` never undefines a slot: its target becomes `some`, others are
+unchanged. -/
+theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h : InitState P σ x v σ') (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h with
+  | init _ h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_xv]; rfl
+    · rw [h_other y hxy]; exact h_some
+
+/-- `UpdateState` never undefines a slot. -/
+theorem UpdateState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h : UpdateState P σ x v σ') (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h with
+  | update _ h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_xv]; rfl
+    · rw [h_other y hxy]; exact h_some
+
+/-- Event-trace analogue of `EvalCmd_preserves_isSome`: an `EvalCmdE` step never
+undefines a slot.  `init`/`set` only assign `some`; `assert`/`assume`/`cover`
+keep the store. -/
+theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
+    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | eval_init _ hinit _ => exact InitState_preserves_isSome hinit h_some
+  | eval_init_unconstrained hinit _ _ => exact InitState_preserves_isSome hinit h_some
+  | eval_set _ hupd _ => exact UpdateState_preserves_isSome hupd h_some
+  | eval_set_nondet hupd _ _ => exact UpdateState_preserves_isSome hupd h_some
+  | eval_assert => exact h_some
+  | eval_assume => exact h_some
+  | eval_cover => exact h_some
+
+/-- Event-trace analogue of `evalCmd_definedVars_isSome`: a command that declares
+`y` leaves it defined.  Only `init` declares variables. -/
+theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
+    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_def : y ∈ Cmd.definedVars c) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | eval_init _ h_init _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at h_def
+    subst h_def; exact initState_isSome h_init
+  | eval_init_unconstrained h_init _ _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at h_def
+    subst h_def; exact initState_isSome h_init
+  | eval_set _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_set_nondet _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_assert => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_assume => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+  | eval_cover => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
+
 /-- **A command leaves the store holding only values.**  Every writing rule supplies
     value-hood for what it writes, and the rest do not touch the store. -/
 theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
@@ -602,6 +690,36 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
   | eval_assume _ _ => exact hsv
   | eval_cover _ => exact hsv
 
+/-- Event-trace analogue of `evalCmd_storeWellDefined`: an `EvalCmdE` step leaves
+a store that holds only values.  `assert`/`assume`/`cover` keep the store;
+`init`/`set` write a value. -/
+theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
+    (hval : WellFormedSemanticEvalVal (P := P) f)
+    (h : EvalCmdE (P := P) f σ c σ' emitted) (hsv : WellFormedStore σ f) :
+    WellFormedStore σ' f := by
+  have hwrite : ∀ (x : P.Ident) (v : P.Expr), HasVal.value f v →
+      σ' x = some v → (∀ y, x ≠ y → σ' y = σ y) → WellFormedStore σ' f := by
+    intro x v hv hx hoth z w hz
+    by_cases hzx : x = z
+    · subst hzx; rw [hx] at hz; cases hz; exact hv
+    · rw [hoth z hzx] at hz; exact hsv z w hz
+  cases h with
+  | eval_init heval hinit _ =>
+    cases hinit with
+    | init _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
+  | eval_init_unconstrained hinit hv _ =>
+    cases hinit with
+    | init _ hx hoth => exact hwrite _ _ hv hx hoth
+  | eval_set heval hup _ =>
+    cases hup with
+    | update _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
+  | eval_set_nondet hup hv _ =>
+    cases hup with
+    | update _ hx hoth => exact hwrite _ _ hv hx hoth
+  | eval_assert => exact hsv
+  | eval_assume => exact hsv
+  | eval_cover => exact hsv
 /-- Event-producing command evaluation emits exactly the trace selected by the
 command and its input snapshot. -/
 theorem EvalCmdE.emitted_eq {P : PureExpr} [HasFvar P] [HasBool P]

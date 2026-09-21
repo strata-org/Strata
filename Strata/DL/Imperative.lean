@@ -20,6 +20,9 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.DL.Imperative.Logic.TraceInterpProps
+public import Strata.DL.Imperative.Logic.Termination
+public import Strata.DL.Imperative.Logic.TerminationProps
+public import Strata.DL.Imperative.Logic.HoareTemplate
 
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics

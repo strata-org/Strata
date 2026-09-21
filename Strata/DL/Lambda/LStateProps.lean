@@ -5,7 +5,9 @@
 -/
 module
 
+public import Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 
 /-!
@@ -84,7 +86,7 @@ theorem LExpr.substFvarsFromEnv_eraseMetadata_congr
     exact congr (congr (congrArg _ (ihc c₂ hc')) (iht t₂ ht')) (ihf f₂ hf')
 
 /-- `substFvarsFromEnv` is the identity on closed expressions (no free variables). -/
-theorem LExpr.substFvarsFromEnv_closed_identity
+public theorem LExpr.substFvarsFromEnv_closed_identity
     {T : LExprParams} [DecidableEq T.IDMeta]
     (env : Env T) (e : LExpr T.mono)
     (h : LExpr.freeVars e = []) :

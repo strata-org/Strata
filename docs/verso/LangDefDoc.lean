@@ -632,17 +632,18 @@ axiom [label]: expression;
 
 ## Commands and Statements
 
-Strata Core extends the generic `Imperative` commands with a procedure call
-command. A {name CmdExt}`CmdExt` is either a standard `Imperative.Cmd` or
-a `call` to a named procedure with a list of arguments.
+`Imperative` extends its own commands with a procedure call command. A
+{name CmdExt}`CmdExt` is either a standard `Imperative.Cmd` or a `call` to a
+named procedure with a list of arguments. Strata Core's `Command` is `CmdExt`
+instantiated at Core's expression type.
 
-{docstring Core.CmdExt}
+{docstring Imperative.CmdExt}
 
 Each call argument specifies whether the corresponding parameter is passed by
 value (input), by mutable reference (input-output), or as an output-only
 variable.
 
-{docstring Core.CallArg}
+{docstring Imperative.CallArg}
 
 A Strata Core `Statement` is an `Imperative.Stmt` parameterized by Core's
 expression type and extended command type. Strata provides convenience

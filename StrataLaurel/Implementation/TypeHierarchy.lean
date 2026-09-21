@@ -179,10 +179,14 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
              decreases := none,
              body := .Transparent pRef }
     | _ => none
-  let (procs', _) := ((program.staticProcedures ++ downcastHelpers).mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
+  -- Program-wide, because the composite-flattening sweep at the end of this pass is too: a
+  -- position this missed would keep its `.IsType` node while losing the annotation that node
+  -- needs, which the re-resolution after the pass reports as a `strata-bug`.
+  let withHelpers := { program with staticProcedures := program.staticProcedures ++ downcastHelpers }
+  let (lowered, _) := (mapProgramStmtExprM rewriteTypeHierarchyNode withHelpers).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", syntheticSource⟩
-  let remainingTypes := program.types.map fun td =>
+  let remainingTypes := lowered.types.map fun td =>
     match td with
     | .Datatype dt =>
       if dt.name.text == "Composite" then
@@ -193,10 +197,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
       else td
     | _ => td
   let transformed : Program :=
-    { program with
-      staticProcedures := procs',
+    { lowered with
       types := [typeTagDatatype] ++ remainingTypes,
-      constants := program.constants ++ typeHierarchyConstants }
+      constants := lowered.constants ++ typeHierarchyConstants }
   -- Now that `New`/`IsType` have been lowered (they needed the original
   -- composite names), flatten every remaining composite reference type to the
   -- `Composite` datatype so the program re-resolves consistently. The

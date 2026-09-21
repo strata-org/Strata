@@ -6272,6 +6272,9 @@ private def firstInitializerEffectSource (model : SemanticModel)
     | .New _ => true
     | .StaticCall callee _ | .InstanceCall _ callee _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
+    -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
+    -- arm here.
+    | .Var (.Field ..) => true
     | _ => false
   (foldStmtExprM (m := StateM (Option FileRange)) (fun node => do
     if (← get).isNone && isEffect node then
@@ -6293,7 +6296,7 @@ private def validateGlobalInitializers (model : SemanticModel)
         | none => []) ++
       (match firstInitializerEffectSource model initializer with
         | some source => [diagnosticFromSource source
-            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, no allocation with 'new', and no calls to heap-reading or heap-writing procedures)"
+            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, no allocation with 'new', no field reads, and no calls to heap-reading or heap-writing procedures)"
             MessageKind.userError]
         | none => [])
 

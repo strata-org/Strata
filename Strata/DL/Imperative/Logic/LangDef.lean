@@ -72,29 +72,40 @@ structure Lang (P : PureExpr) where
       parameters are passed via `InitEnvWFParamsTy`. -/
   initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
 
-/-- Language interface for event-trace semantics. Reachability is expressed
-through chronological event traces and is independent of `hasFailure`. This is
-kept separate from `Lang` so existing language instances remain source
-compatible during migration. -/
+/-- Language interface for event-trace semantics. It exposes one-step
+transitions so clients can reason about progress and must-termination;
+`EventLang.traceStar` derives chronological traced reachability. Terminal and
+exiting configurations have no outgoing steps. Unlike `Lang`, assertion
+observations are carried by `EventT` rather than detected from configurations. -/
 structure EventLang (P : PureExpr) (EventT : Type) where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
   CfgT : Type
-  /-- Multi-step relation with emitted events in chronological order. -/
-  traceStar : CfgT → List EventT → CfgT → Prop
+  /-- One operational step and the events it emits. -/
+  step : CfgT → List EventT → CfgT → Prop
   /-- Embed a statement and initial environment into a configuration. -/
   stmtCfg : StmtT → Env P → CfgT
   /-- Terminal configuration. -/
   terminalCfg : Env P → CfgT
   /-- Exiting configuration. -/
   exitingCfg : String → Env P → CfgT
+  /-- Terminal configurations have no outgoing operational steps. -/
+  terminal_no_step : ∀ ρ emitted cfg', ¬ step (terminalCfg ρ) emitted cfg'
+  /-- Exiting configurations have no outgoing operational steps. -/
+  exiting_no_step : ∀ label ρ emitted cfg', ¬ step (exitingCfg label ρ) emitted cfg'
   /-- Extract an environment from a configuration. -/
   getEnv : CfgT → Env P
   /-- Parameters threaded into `initEnvWF`. -/
   InitEnvWFParamsTy : Type
   /-- Language-specific initial-environment well-formedness. -/
   initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
+
+/-- Reflexive-transitive execution with emitted events in chronological order. -/
+@[expose] abbrev EventLang.traceStar
+    {P : PureExpr} {EventT : Type} (EL : EventLang P EventT) :
+    EL.CfgT → List EventT → EL.CfgT → Prop :=
+  ReflTransTrace EL.step
 
 end Strata.Logic
 
@@ -108,8 +119,8 @@ namespace Logic
 open Strata.Logic
 
 /-- Build an event-trace language from `Imperative.Stmt`/`Config` with a given
-command event evaluator. Kept separate from `Lang.imperative` so clients can
-migrate without changing the existing failure-flag semantics. -/
+command event evaluator. The resulting bundle exposes `StepStmtE` as its
+one-step relation. -/
 abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
@@ -119,10 +130,18 @@ abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     EventLang P EventT where
   StmtT := Stmt P CmdT
   CfgT := Config P CmdT
-  traceStar := StepStmtStarE P evalCmd extendFactory
+  step := StepStmtE P evalCmd extendFactory
   stmtCfg := .stmt
   terminalCfg := .terminal
   exitingCfg := .exiting
+  terminal_no_step := by
+    intro ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  exiting_no_step := by
+    intro label ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
   getEnv := Config.getEnv
   InitEnvWFParamsTy := ParamsTy
   initEnvWF := initEnvWF
@@ -139,10 +158,18 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     EventLang P EventT where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
-  traceStar := StepStmtStarE P evalCmd extendFactory
+  step := StepStmtE P evalCmd extendFactory
   stmtCfg := .stmts
   terminalCfg := .terminal
   exitingCfg := .exiting
+  terminal_no_step := by
+    intro ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  exiting_no_step := by
+    intro label ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
   getEnv := Config.getEnv
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2

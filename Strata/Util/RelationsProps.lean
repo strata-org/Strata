@@ -17,6 +17,9 @@ import all Strata.Util.Relations
 * `Reflexive.dense` — every reflexive relation is dense
 * `ReflTrans_Reflexive`, `ReflTrans_Transitive` — `ReflTrans` is reflexive and transitive
 * `reflTransT_to_prop` — the `Type`-valued closure implies the `Prop`-valued one
+* `reflTransTraceT_to_prop`, `reflTransTrace_nonempty_T`, and
+  `reflTransTrace_to_T` — convert between the `Type`- and `Prop`-valued traced
+  closures
 * `ReflTransTrace.trans` — traced executions compose by chronological trace
   concatenation
 * `ReflTransTrace.toReflTrans` — erasing each step's emitted events recovers an
@@ -97,6 +100,31 @@ theorem ReflTransTrace.toReflTrans {A E : Type}
   | refl => exact .refl _
   | step x emitted y _ z hstep _ ih =>
     exact .step x y z (hforget x emitted y hstep) ih
+
+/-- The `Type`-valued traced closure implies the `Prop`-valued one: forget the
+step-count structure. -/
+theorem reflTransTraceT_to_prop {A E : Type} {r : A → List E → A → Prop}
+    {a b : A} {trace : List E} :
+    ReflTransTraceT r a trace b → ReflTransTrace r a trace b := by
+  intro h; induction h with
+  | refl => exact .refl _
+  | step _ _ _ _ _ hstep _ ih => exact .step _ _ _ _ _ hstep ih
+
+/-- Every `Prop`-valued traced derivation has a `Type`-valued witness with the
+same endpoints and trace (its step count is not observable through `Prop`). -/
+theorem reflTransTrace_nonempty_T {A E : Type} {r : A → List E → A → Prop}
+    {a b : A} {trace : List E} :
+    ReflTransTrace r a trace b → Nonempty (ReflTransTraceT r a trace b) := by
+  intro h; induction h with
+  | refl => exact ⟨.refl _⟩
+  | step _ _ _ _ _ hstep _ ih => exact ih.elim fun rest => ⟨.step _ _ _ _ _ hstep rest⟩
+
+/-- Recover a `Type`-valued traced derivation from a `Prop`-valued one via choice.
+`noncomputable`; harmless when the enclosing result is again a `Prop`. -/
+noncomputable def reflTransTrace_to_T {A E : Type} {r : A → List E → A → Prop}
+    {a b : A} {trace : List E} :
+    ReflTransTrace r a trace b → ReflTransTraceT r a trace b :=
+  fun h => Classical.choice (reflTransTrace_nonempty_T h)
 
 end Relation
 end
