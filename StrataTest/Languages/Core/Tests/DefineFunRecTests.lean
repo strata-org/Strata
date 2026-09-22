@@ -88,8 +88,9 @@ procedure test_sum_counterexample (a : nat, b : nat) spec {
 #end
 
 ---------------------------------------------------------------------
--- Default encoding: the false obligation is reported as `unknown` —
--- sound, but with no counterexample.
+-- Default encoding: the false obligation is reported as `unknown` — sound,
+-- but not a counterexample: the candidate model shown (`a = 2`, `b = 3`)
+-- violates the `requires`.
 ---------------------------------------------------------------------
 
 /-- info:
