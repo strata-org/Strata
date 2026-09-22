@@ -369,6 +369,7 @@ private def mockSolver : AbstractSolver String String MockM where
   declareNew name _ := pure name
   declareFun name _ _ := do modify (· ++ [name]); pure name
   defineFun name _ _ _ := modify (· ++ [name])
+  defineFunRec name _ _ _ := modify (· ++ [name])
   declareSort name _ := pure name
   declareDatatype name _ _ := pure { sort := name, constructors := [] }
   declareDatatypes headers _ := pure (headers.map fun (n, _) => { sort := n, constructors := [] })

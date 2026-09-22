@@ -283,6 +283,9 @@ Model:
   (options := { Core.VerifyOptions.quiet with
                   verbose := .models,
                   recursiveFnsAsDefineFunRec := true,
-                  solverOptions := #[("fmf-fun", "true")] })
+                  solverOptions := #[("fmf-fun", "true")],
+                  -- well within budget standalone; generous so the pin is
+                  -- stable when the suite runs solver processes in parallel
+                  solverTimeout := 60 })
 
 end Strata.DefineFunRecTest
