@@ -11,8 +11,8 @@ section Relation
 
 @[expose] def Relation (A: Type) := A → A → Prop
 
-@[expose] def Reflexive (r: Relation A) : Prop := ∀ x, r x x
-abbrev Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
+@[expose] def IsReflexive (r: Relation A) : Prop := ∀ x, r x x
+abbrev IsTransitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
 
 
 /-- Composition of two relations: `RComp R₁ R₂ a c` holds when some intermediate
@@ -85,12 +85,12 @@ noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
 
 /-! ## Trace-producing reflexive transitive closure -/
 
-/-- Reflexive-transitive closure of a relation whose steps emit a list of
+/-- IsReflexive-transitive closure of a relation whose steps emit a list of
 observations. The accumulated trace is chronological: a step's output precedes
 the trace emitted by the remaining execution. -/
 inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
     A → List E → A → Prop where
-  /-- Reflexive execution emits the empty trace. -/
+  /-- IsReflexive execution emits the empty trace. -/
   | refl : ∀ x, ReflTransTrace r x [] x
   /-- Prepend one labeled step to a traced execution, concatenating its events
   before the remaining trace. -/

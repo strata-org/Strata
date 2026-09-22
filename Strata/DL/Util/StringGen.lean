@@ -19,12 +19,12 @@ public section
   Also see `LabelGen.lean` for the generic type class for a unique label generator.
 -/
 
-/-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
+/-- `s.IsSuffixOf t` checks if the string `s` is a suffix of the string `t`.
 from mathlib https://github.com/leanprover-community/mathlib4/blob/f3c56c29d5c787d62f66c207e097a159ff66318a/Mathlib/Data/String/Defs.lean#L37-L39
 -/
-abbrev String.IsSuffix (s1 s2 : String) : Prop := List.IsSuffix s1.toList s2.toList
+abbrev String.IsSuffixOf (s1 s2 : String) : Prop := List.IsSuffix s1.toList s2.toList
 
-local infixl:50 " <:+ " => String.IsSuffix
+local infixl:50 " <:+ " => String.IsSuffixOf
 
 /-- Wrapper around CounterState to allow a prefix -/
 structure StringGenState where
@@ -54,7 +54,7 @@ def StringGenState.WF (σ : StringGenState)
     σ.cs.generated = σ.generated.unzip.fst ∧
     σ.generated.unzip.snd.Nodup ∧
     ∀ c s, (c,s) ∈ σ.generated →
-      String.IsSuffix ("_" ++ toString c) s
+      String.IsSuffixOf ("_" ++ toString c) s
 
 theorem String.append_eq_suffix (as bs bs' : String):
   (as ++ bs = as ++ bs') → bs = bs' := by
@@ -66,7 +66,7 @@ theorem String.append_eq_prefix (as as' bs : String):
   intros Heq
   by_cases as = as' <;> simp_all
 
-theorem List.reverse_injective :
+theorem List.reverse_injective' :
   List.reverse l₁ = List.reverse l₂ → l₁ = l₂ := List.reverse_inj.mp
 
 theorem StringGenState.contains :
@@ -232,11 +232,11 @@ theorem Nat_eq_of_toString_eq {x y: Nat}: (toString x) = (toString y) → x = y 
 
 private theorem under_toList : "_".toList = ['_'] := rfl
 
-theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s ++ "_" ++ toString y) → x = y := by
+theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffixOf (s ++ "_" ++ toString y) → x = y := by
   intro Hsuf
   apply Nat_eq_of_toString_eq
   if x_lt : (toString x).length < (toString y).length then
-    simp only [String.IsSuffix, String.toList_append, under_toList] at Hsuf
+    simp only [String.IsSuffixOf, String.toList_append, under_toList] at Hsuf
     have Hsuf': (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList :=
       List.suffix_append_of_suffix (List.suffix_refl _)
     have ⟨t, h⟩ : ['_'] ++ (toString x).toList <:+ (toString y).toList :=
@@ -289,7 +289,7 @@ theorem StringGenState.WFMono :
   intro c s H
   cases H
   · rename_i H
-    simp only [H.right, H.left, String.IsSuffix, String.toList_append, List.append_assoc]
+    simp only [H.right, H.left, String.IsSuffixOf, String.toList_append, List.append_assoc]
     apply List.suffix_append
   · apply Hwf.right.right.right <;> assumption
 
@@ -377,7 +377,7 @@ theorem StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
   simp only [StringGenState.stringGens, List.unzip_snd, List.mem_map] at hs
   obtain ⟨⟨c, s'⟩, h_mem, h_eq⟩ := hs
   subst h_eq
-  have hsuf : ("_" ++ toString c).IsSuffix s' := hwf.2.2.2 c s' h_mem
+  have hsuf : ("_" ++ toString c).IsSuffixOf s' := hwf.2.2.2 c s' h_mem
   obtain ⟨t_chars, h_t⟩ := hsuf
   refine ⟨String.ofList t_chars, c, ?_⟩
   apply String.toList_inj.mp

@@ -428,11 +428,11 @@ private theorem processDecl_noFuncDecl
         -- If the guard triggers, `throw` fires and we reach `throw ... = .ok`, contradiction.
         -- Otherwise, `pure PUnit.unit` is bound and we continue.
         -- We peel each guard via a case-split on `X.isEmpty`.
-        by_cases hrec : ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).dedup = []
+        by_cases hrec : ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).uniq = []
         · by_cases hdup : ((lfs.map (·.decl.name.name)).filter
-              (fun n => (lfs.map (·.decl.name.name)).count n > 1)).dedup = []
+              (fun n => (lfs.map (·.decl.name.name)).count n > 1)).uniq = []
           · by_cases hcl : ((lfs.map (·.decl.name.name)).filter
-                topLevelFuncNames.contains).dedup = []
+                topLevelFuncNames.contains).uniq = []
             · by_cases hlt : Imperative.Block.hasLocalTypeDecl ss = false
               · -- All guards' conditions are empty, so all `!X.isEmpty` are false;
                 -- each guard reduces to `pure PUnit.unit`.  What remains, after
@@ -465,7 +465,7 @@ private theorem processDecl_noFuncDecl
                 obtain ⟨_, _, hthrow, _⟩ := bind_ok_inv _ _ hk
                 rw [throw_apply] at hthrow; injection hthrow with he _; nomatch he
             · exfalso
-              have hcl_ne : ((lfs.map (·.decl.name.name)).filter topLevelFuncNames.contains).dedup.isEmpty = false :=
+              have hcl_ne : ((lfs.map (·.decl.name.name)).filter topLevelFuncNames.contains).uniq.isEmpty = false :=
                 List.isEmpty_eq_false_iff.mpr hcl
               simp only [hrec, hdup, hcl_ne, List.isEmpty_nil, Bool.not_true, Bool.not_false,
                          Bool.false_eq_true, if_false, if_true] at hk
@@ -475,7 +475,7 @@ private theorem processDecl_noFuncDecl
               rw [throw_apply] at hthrow; injection hthrow with he _; nomatch he
           · exfalso
             have hdup_ne : ((lfs.map (·.decl.name.name)).filter
-                (fun n => (lfs.map (·.decl.name.name)).count n > 1)).dedup.isEmpty = false :=
+                (fun n => (lfs.map (·.decl.name.name)).count n > 1)).uniq.isEmpty = false :=
               List.isEmpty_eq_false_iff.mpr hdup
             simp only [hrec, hdup_ne, List.isEmpty_nil, Bool.not_true, Bool.not_false,
                        Bool.false_eq_true, if_false, if_true] at hk
@@ -483,7 +483,7 @@ private theorem processDecl_noFuncDecl
             obtain ⟨_, _, hthrow, _⟩ := bind_ok_inv _ _ hk
             rw [throw_apply] at hthrow; injection hthrow with he _; nomatch he
         · exfalso
-          have hrec_ne : ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).dedup.isEmpty = false :=
+          have hrec_ne : ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).uniq.isEmpty = false :=
             List.isEmpty_eq_false_iff.mpr hrec
           simp only [hrec_ne, Bool.not_false, if_true] at hk
           obtain ⟨_, _, hthrow, _⟩ := bind_ok_inv _ _ hk

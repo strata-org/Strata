@@ -40,7 +40,7 @@ def run (prog : Program) (targetProcs : List String)
   let cg := match (← get).cachedAnalyses.callGraph with
     | .some cg => cg
     | .none => prog.toProcedureCG
-  let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).dedup
+  let allNeededProcs := (targetProcs ++ cg.getAllCalleesClosure targetProcs).uniq
   let neededProcsSet := allNeededProcs.toArray.qsort (· < ·)
   let isNeededProc (procName : String) :=
     neededProcsSet.binSearch procName (· < ·) |>.isSome

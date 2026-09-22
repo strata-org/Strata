@@ -212,7 +212,7 @@ place `EvalCommand` in a non-strictly-positive position.
 
 mutual
 
-/-- Reflexive-transitive closure of `StepStmt` for the Core language,
+/-- IsReflexive-transitive closure of `StepStmt` for the Core language,
     defined mutually with `EvalCommand` to satisfy strict positivity. -/
 inductive CoreStepStar
     (π : String → Option Procedure)

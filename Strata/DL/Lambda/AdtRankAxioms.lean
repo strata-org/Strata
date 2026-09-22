@@ -49,14 +49,14 @@ def mkAdtRankPerConstrAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited
   dt.constrs.flatMap fun c =>
     let numFields := c.args.length
     let constrTy := LMonoTy.mkArrow' dtTy (c.args.map (·.2))
-    let constrApp := c.args.foldlIdx (fun acc i _ =>
+    let constrApp := c.args.foldlIdxVal (fun acc i _ =>
       .app m acc (.bvar m (numFields - 1 - i))
     ) (.op m c.name (.some constrTy))
     let adtRankTy := .arrow dtTy .int
     let adtRankConstr : LExpr T.mono :=
       .app m (.op m (adtRankFuncName dt.name) (.some adtRankTy)) constrApp
     let fields := (c.args.map (fun (id, ty) => (id.name, ty))).reverse
-    (c.args.foldlIdx (init := []) fun acc i (_, fieldTy) =>
+    (c.args.foldlIdxVal (init := []) fun acc i (_, fieldTy) =>
       match block.find? (fun d => fieldTy == dataDefault d) with
       | none => acc
       | some fieldDt =>
