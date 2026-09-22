@@ -333,6 +333,23 @@ def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : Term
   let bodyStr ← termToSMTString body
   defineFun id args retTy bodyStr
 
+/-- Define a recursive function (`define-fun-rec`) with a raw SMT-LIB string
+    body that may refer to `id` itself. -/
+def defineFunRec (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : String) : SolverM Unit := do
+  let typedArgs ← args.mapM fun (name, ty) => do
+    let tyStr ← typeToSMTString ty
+    return s!"({Symbol.toSMTString name} {tyStr})"
+  let inline := String.intercalate " " typedArgs
+  let retStr ← typeToSMTString retTy
+  emitln s!"(define-fun-rec {Symbol.toSMTString id} ({inline}) {retStr} {body})"
+
+/-- `defineFunRec` with the body given as a `Term`. -/
+def defineFunRecTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : Term) : SolverM Unit := do
+  let bodyStr ← termToSMTString body
+  defineFunRec id args retTy bodyStr
+
 /-! ## Solver control -/
 
 private def readlnD (dflt : String) : SolverM String := do

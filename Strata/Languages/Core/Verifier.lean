@@ -268,6 +268,15 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncod
     let s ← liftM (termTypeToSort solver v.ty)
     return (v.id, s)
   let outSort ← liftM (termTypeToSort solver uf.out)
+  if f.isRec then
+    -- Register the name before encoding the body, so the self-call inside it
+    -- encodes to `id` instead of lazily declaring an uninterpreted twin.
+    modify fun state => { state with
+      base.functions := state.base.functions.insert uf id
+      base.isFunUninterp := state.base.isFunUninterp.insert uf false }
+    let bodyEnc ← encodeTerm solver f.body
+    liftM (solver.defineFunRec id argPairs outSort bodyEnc)
+    return id
   let bodyEnc ← encodeTerm solver f.body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
   modifyGet fun state => (id, { state with
@@ -808,8 +817,10 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Pre-compute per-constructor axioms for recursive `@[cases]` functions so
   -- the SMT encoder can consume them directly (via `func.axioms`) instead of
   -- regenerating them on the fly with an expression evaluator.
-  let evalFuncs ← evalFuncs.mapM
-    (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
+  -- With `recursiveFnsAsDefineFunRec` the definition itself is emitted, so
+  -- the per-constructor axioms are not generated.
+  let evalFuncs ← if options.recursiveFnsAsDefineFunRec then pure evalFuncs else
+    evalFuncs.mapM (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
   -- `.toFunc` drops only `concreteEval`; all other data survives into the
   -- obligation program and the SMT factory built by `buildEnv`.
   let funcDecls := evalFuncs.map fun func => Decl.func func.toFunc .empty
@@ -1964,7 +1975,8 @@ def verifySingleEnv (oblProgram : Program)
   -- next.
   let smtCtx := { SMT.Context.default with
     datatypes,
-    useArrayTheory := options.useArrayTheory }
+    useArrayTheory := options.useArrayTheory,
+    recFnsAsDefineFunRec := options.recursiveFnsAsDefineFunRec }
   let mut encState : SMTEncodeState := .init { ctx := smtCtx }
   -- Pointer-memoized snapshot assembly, threaded like `encState`
   -- (see `Strata.PtrCache`).

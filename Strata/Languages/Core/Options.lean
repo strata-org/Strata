@@ -231,6 +231,15 @@ structure VerifyOptions where
       `<dir>/<baseName>` so all intermediate files land inside the directory.
       Threaded automatically into `Core.verify`; see `Cli/VerifyOptions.lean`. -/
   keepAllFilesPrefix : Option String := none
+  /-- Emit recursive functions as SMT-LIB `define-fun-rec` definitions instead
+      of uninterpreted functions with per-constructor axioms.  Opt-in: the
+      axiom form (with its patterns) is the better encoding for proving; the
+      recursive definition is what lets cvc5 find models for recursively
+      defined functions (`--fmf-fun`, via `solverOptions`), e.g. to produce a
+      counterexample whose value must be computed through the function.
+      Self-recursive functions only: a body reaching another recursive
+      function that is not yet emitted (mutual recursion) is an error. -/
+  recursiveFnsAsDefineFunRec : Bool := false
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -255,6 +264,7 @@ def VerifyOptions.default : VerifyOptions := {
   parallelWorkers := 1
   keepAllFilesPrefix := none
   disableCSE := false
+  recursiveFnsAsDefineFunRec := false
 }
 
 instance : Inhabited VerifyOptions where

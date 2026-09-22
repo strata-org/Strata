@@ -54,6 +54,8 @@ structure SMT.EncodedFnDef where
   out : TermType
   body? : Option Term
   axioms : List Term
+  /-- `body?` is a recursive definition to be emitted as `define-fun-rec`. -/
+  isRec : Bool := false
 deriving Repr, Inhabited
 
 /--
@@ -112,6 +114,11 @@ structure SMT.Context where
       (`select`/`store`) instead of an uninterpreted `Map` sort.
       Invariant during translation. -/
   useArrayTheory : Bool := false
+  /-- When true, a recursive function with a body is encoded as a
+      `define-fun-rec` definition instead of an uninterpreted function with
+      per-constructor axioms (`VerifyOptions.recursiveFnsAsDefineFunRec`).
+      Invariant during translation. -/
+  recFnsAsDefineFunRec : Bool := false
 deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -122,8 +129,9 @@ def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Co
 def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
   { ctx with ufs := ctx.ufs.insert fn }
 
-def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term) : SMT.Context :=
-  { ctx with ifs := ctx.ifs.insert { id, args, out, body } }
+def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term)
+    (isRec : Bool := false) : SMT.Context :=
+  { ctx with ifs := ctx.ifs.insert { id, args, out, body, isRec } }
 
 def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
   { ctx with axms := ctx.axms.insert axm }
@@ -133,7 +141,7 @@ def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
 def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) : SMT.Context :=
   let ctx := match rdef.body? with
     | some body =>
-      ctx.addIF rdef.id rdef.args rdef.out body
+      ctx.addIF rdef.id rdef.args rdef.out body rdef.isRec
     | none =>
       let uf : UF := { id := rdef.id, args := rdef.args.map (·.ty), out := rdef.out }
       ctx.addUF uf
@@ -913,9 +921,13 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
   -- Encode arg types (needed for both interpreted and uninterpreted paths).
   let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
   let args := formalStrs.zip smt_intys |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
-  -- Encode the body (interpreted functions) or leave it uninterpreted.
+  -- Encode the body (interpreted functions) or leave it uninterpreted.  A
+  -- recursive function stays uninterpreted (its per-constructor axioms carry
+  -- the definition) unless `recFnsAsDefineFunRec` is on, in which case its
+  -- body is encoded like any other and emitted as `define-fun-rec`.
+  let recAsDef := func.isRecursive && ctx.recFnsAsDefineFunRec && func.body.isSome
   let (body?, ctx, pending) ←
-    if func.isRecursive then
+    if func.isRecursive && !recAsDef then
       .ok (none, ctx, ({} : SMT.PendingFnQueue))
     else match func.body with
     | none => .ok (none, ctx, ({} : SMT.PendingFnQueue))
@@ -928,6 +940,16 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
       let (term, ctx, pending) ← toSMTTerm factory bvs body ctx {}
       .ok (some term, ctx, pending)
 
+  -- A `define-fun-rec` may refer to itself and to functions emitted before it.
+  -- A body reaching *another* recursive function that is not yet committed
+  -- would need `define-funs-rec` (mutual recursion), which is not supported:
+  -- fail rather than emit an ill-formed query.
+  if recAsDef then
+    if let some d := pending.toList.find? (fun d =>
+        d.uf != p.uf && !ctx.committedFn d.uf
+        && (factory[d.fn.name]?.map (·.isRecursive)).getD false) then
+      throw f!"recursiveFnsAsDefineFunRec: '{p.fn}' calls the recursive function \
+               '{d.fn}'; mutual recursion is not supported as define-fun-rec."
   -- Encode the function's axioms (recursive-function axioms are pre-computed by
   -- `Core.generateRecursiveAxioms` and carried in `func.axioms`).  All types
   -- are monomorphic post-`MonomorphizeFunctions`, so no type-variable
@@ -937,7 +959,8 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
     (fun (axs, ctx, pending) (ax : LExpr CoreLParams.mono) => do
       let (axiom_term, ctx, pending) ← toSMTTerm factory [] ax ctx pending
       .ok (axiom_term :: axs, ctx, pending))
-  .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
+  .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse,
+         isRec := recAsDef },
        ctx, pending.toList)
 
 /--

@@ -271,6 +271,15 @@ def encodeFunctionDef (f : IF) : EncoderM String := do
   let id ← uniquify baseName
   comment uf.id
   let argPairs := f.args.map (fun v => (v.id, v.ty))
+  if f.isRec then
+    -- Register the name before encoding the body, so the self-call inside it
+    -- encodes to `id` instead of lazily declaring an uninterpreted twin.
+    modify λ state => {state with
+      functions := state.functions.insert uf id
+      isFunUninterp := state.isFunUninterp.insert uf false}
+    let bodyEnc ← encodeTerm f.body
+    Solver.defineFunRecTerm id argPairs uf.out bodyEnc
+    return id
   let bodyEnc ← encodeTerm f.body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with
