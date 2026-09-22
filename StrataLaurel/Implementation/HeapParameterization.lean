@@ -73,9 +73,6 @@ structure TransformState where
 
 @[expose] abbrev TransformM := ExceptT String (StateM TransformState)
 
-/-- The name of the heap-model datatype this pass introduces (`Heap`). -/
-def heapTypeName : Identifier := "Heap"
-
 /-- The `Heap` type as a `HighTypeMd`, at the given source. -/
 private def heapType (source : FileRange) : HighTypeMd := ⟨.UserDefined heapTypeName, source⟩
 
@@ -188,7 +185,7 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
       if isDatatype model name || isOpaque model name then
         some { name := boxCtorName name.text, args := [{ name := boxFieldLeaf name.text, type := ⟨.UserDefined name, syntheticSource⟩ }] }
       else
-        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", syntheticSource⟩ }] }
+        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined compositeTypeName, syntheticSource⟩ }] }
   | .TBv n =>
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, syntheticSource⟩ }] }
   -- `.Applied` generic datatypes + built-in `.TMap`/`.TSet`: the box variant carries the
@@ -310,7 +307,7 @@ where
 
         let valTy := (model.get fieldName).getType
         let selectTarget' ← recurseOne selectTarget
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)) source, selectTarget', mkMd (.StaticCall qualifiedName []) source], source ⟩
+        let readExpr := ⟨ .StaticCall readFieldName [mkMd (.Var (.Local heapVar)) source, selectTarget', mkMd (.StaticCall qualifiedName []) source], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd (.StaticCall (boxDestructorName model valTy.val) [readExpr]) source]
@@ -335,8 +332,8 @@ where
             match (computeExprType model e1).val with
             | .UserDefined name =>
               if isComposite model name then
-                let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
-                let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
+                let ref1 := mkMd (.StaticCall compositeRefAccessor [a1]) source
+                let ref2 := mkMd (.StaticCall compositeRefAccessor [a2]) source
                 return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
               return [⟨ .StaticCall callee args', source ⟩]
             | _ => return [⟨ .StaticCall callee args', source ⟩]
@@ -390,7 +387,7 @@ where
               let target' ← recurseOne target
               let boxedVal := mkMd (.StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar)) source]) source
               let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar) source]
-                (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)) source, target', mkMd (.StaticCall qualifiedName []) source, boxedVal]) source), source ⟩
+                (mkMd (.StaticCall updateFieldName [mkMd (.Var (.Local heapVar)) source, target', mkMd (.StaticCall qualifiedName []) source, boxedVal]) source), source ⟩
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, some valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
@@ -509,9 +506,9 @@ private def heapWellFormednessPreconds (model : SemanticModel)
     if isCompositeParam model p then
       let src := p.name.source
       let pRead := { val := .Var (.Local p.name), source := src }
-      let pRef := { val := .StaticCall "Composite..ref!" [pRead], source := src }
+      let pRef := { val := .StaticCall compositeRefAccessor [pRead], source := src }
       let heapRead := { val := .Var (.Local heapVar), source := src }
-      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      let counter := { val := .StaticCall heapNextReferenceAccessor [heapRead], source := src }
       let allocated := { val := .StaticCall "$intLt" [pRef, counter], source := src }
       some { condition := allocated, summary := some "input is allocated on the heap", mode := .Assume }
     else none
@@ -522,7 +519,7 @@ private def heapWellFormednessPreconds (model : SemanticModel)
 private def heapMonotonicityPostcond (source : FileRange)
     (heapVar : Identifier) : Condition :=
   let heapRead := { val := .Var (.Local heapVar), source }
-  let nextRef := { val := .StaticCall "Heap..nextReference!" [heapRead], source }
+  let nextRef := { val := .StaticCall heapNextReferenceAccessor [heapRead], source }
   let inCounter := { val := .Old nextRef, source }
   let outCounter := nextRef
   { condition := { val := .StaticCall "$intLe" [inCounter, outCounter], source },
@@ -537,9 +534,9 @@ private def heapOutputAllocationPostconds (model : SemanticModel)
     if isCompositeParam model o then
       let src := o.name.source
       let oRead := { val := .Var (.Local o.name), source := src }
-      let oRef := { val := .StaticCall "Composite..ref!" [oRead], source := src }
+      let oRef := { val := .StaticCall compositeRefAccessor [oRead], source := src }
       let heapRead := { val := .Var (.Local heapOutVar), source := src }
-      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      let counter := { val := .StaticCall heapNextReferenceAccessor [heapRead], source := src }
       some { condition := { val := .StaticCall "$intLt" [oRef, counter], source := src },
              summary := some "output is allocated on the heap", mode := .Assume }
     else none
@@ -809,16 +806,16 @@ private def emptyHeapInitializer : StmtExprMd :=
   let src := syntheticSource
   let boxTy : HighTypeMd := ⟨.UserDefined "$Box", src⟩
   let innerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined "Field", src⟩ boxTy, src⟩
-  let outerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined "Composite", src⟩ innerTy, src⟩
+  let outerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined compositeTypeName, src⟩ innerTy, src⟩
   let mapHole : StmtExprMd := ⟨.Hole (deterministic := false) (type := some outerTy), src⟩
-  mkMd (.StaticCall "MkHeap" [mapHole, mkMd (.LiteralInt 0) src]) src
+  mkMd (.StaticCall heapCtorName [mapHole, mkMd (.LiteralInt 0) src]) src
 
 /-- `$heap` as a file-scope global, threaded through signatures and call sites by
     `GlobalParameterization` like any other global. -/
 private def heapGlobalField : Field :=
   { name := heapVarName
     isMutable := true
-    type := ⟨.UserDefined "Heap", syntheticSource⟩
+    type := ⟨.UserDefined heapTypeName, syntheticSource⟩
     initializer := some emptyHeapInitializer }
 
 def heapParameterization (model: SemanticModel) (program : Program) : Except String Program := do

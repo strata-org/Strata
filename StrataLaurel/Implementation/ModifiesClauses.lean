@@ -130,8 +130,8 @@ def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let fldName : Identifier := "$modifies_fld"
   let obj := mkMd (.Var (.Local objName)) src
   let fld := mkMd (.Var (.Local fldName)) src
-  let heapCounter := mkMd (.StaticCall "Heap..nextReference!" [heapIn]) src
-  let objRef := mkMd (.StaticCall "Composite..ref!" [obj]) src
+  let heapCounter := mkMd (.StaticCall heapNextReferenceAccessor [heapIn]) src
+  let objRef := mkMd (.StaticCall compositeRefAccessor [obj]) src
   let objAllocated := mkMd (.StaticCall (mkId Operation.Lt.procName) [objRef, heapCounter]) src
   let antecedent := if entries.isEmpty
     then objAllocated
@@ -140,20 +140,20 @@ def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
       -- Combine: $obj < old($heap).nextReference && notModified($obj, $fld)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj fld · src)) src
       mkMd (.StaticCall (mkId Operation.And.procName) [objAllocated, notModified]) src
-  let readIn := mkMd (.StaticCall "readField" [heapIn, obj, fld]) src
-  let readOut := mkMd (.StaticCall "readField" [heapOut, obj, fld]) src
+  let readIn := mkMd (.StaticCall readFieldName [heapIn, obj, fld]) src
+  let readOut := mkMd (.StaticCall readFieldName [heapOut, obj, fld]) src
   let heapUnchanged := mkMd (.StaticCall (mkId Operation.Eq.procName) [readIn, readOut]) src
   let implBody := mkMd (.StaticCall (mkId Operation.Implies.procName) [antecedent, heapUnchanged]) src
   let innerForall := mkMd (.Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := src } ⟩ none implBody) src
-  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := src } ⟩ none innerForall, source := src }
+  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined compositeTypeName, source := src } ⟩ none innerForall, source := src }
 
 /-- Quantifier-free frame: output `data` equals input with only the named rows
 overwritten, and `nextReference` is monotone. -/
 def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
     (heapIn heapOut : StmtExprMd) : StmtExprMd :=
   let src := proc.name.source
-  let data h := mkMd (.StaticCall "Heap..data!" [h]) src
-  let nextRef h := mkMd (.StaticCall "Heap..nextReference!" [h]) src
+  let data h := mkMd (.StaticCall heapDataAccessor [h]) src
+  let nextRef h := mkMd (.StaticCall heapNextReferenceAccessor [h]) src
   let dataOut := data heapOut
   let modifiedRefs := entries.filterMap fun e => match e with | .single r => some r | _ => none
   let framedData := modifiedRefs.foldr

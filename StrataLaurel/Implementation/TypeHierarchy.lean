@@ -113,11 +113,11 @@ Lower `New name` to a block that:
 def lowerNew (name : Identifier) (source : FileRange) : THM StmtExprMd := do
   let heapVar := heapVarName
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar)) source]) source
+  let getCounter := mkMd (.StaticCall heapNextReferenceAccessor [mkMd (.Var (.Local heapVar)) source]) source
   let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, some ⟨.TInt, source⟩⟩) source] getCounter) source
-  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar)) source]) source
+  let newHeap := mkMd (.StaticCall incrementName [mkMd (.Var (.Local heapVar)) source]) source
   let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar) source] newHeap) source
-  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)) source, mkMd (.StaticCall (name.text ++ "_TypeTag") []) source]) source
+  let compositeResult := mkMd (.StaticCall compositeCtorName [mkMd (.Var (.Local freshVar)) source, mkMd (.StaticCall (name.text ++ "_TypeTag") []) source]) source
   return { val := .Block [saveCounter, updateHeap, compositeResult] none, source := source }
 
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
@@ -144,7 +144,7 @@ def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) 
   { ty with val := ty.val.mapType fun t =>
       match t with
       | .UserDefined name =>
-        if composites.contains name.text then .UserDefined "Composite" else t
+        if composites.contains name.text then .UserDefined compositeTypeName else t
       | _ => t }
 
 /--
@@ -189,9 +189,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
   let remainingTypes := lowered.types.map fun td =>
     match td with
     | .Datatype dt =>
-      if dt.name.text == "Composite" then
+      if dt.name.text == compositeTypeName.text then
         .Datatype { dt with constructors := dt.constructors.map fun c =>
-          if c.name.text == "MkComposite" then
+          if c.name.text == compositeCtorName then
             { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
       else td
