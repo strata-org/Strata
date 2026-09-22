@@ -77,4 +77,15 @@ def hexVal (c : Char) : Nat :=
 def isHexDigit (c : Char) : Bool :=
   ('0' ≤ c && c ≤ '9') || ('A' ≤ c && c ≤ 'F')
 
+/-- The `w` hex digits naming `n`, most significant first. Fixed width, so a
+    reader knows where the digits end without a terminator. -/
+def hexDigits : Nat → Nat → List Char
+  | 0, _ => []
+  | w + 1, n => hexDigits w (n / 16) ++ [hexDigit (n % 16)]
+
+/-- The value a list of hex digits names, most significant first. Inverts
+    `hexDigits` on a value the width can name. -/
+def hexValue (ds : List Char) : Nat :=
+  ds.foldl (fun acc d => acc * 16 + hexVal d) 0
+
 end
