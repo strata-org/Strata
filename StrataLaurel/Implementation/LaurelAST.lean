@@ -46,7 +46,7 @@ instance : ToString Identifier where
 instance : Coe String Identifier where
   coe s := { text := s }
 
-def mkId (name: String): Identifier := { text := name }
+@[expose] def mkId (name: String): Identifier := { text := name }
 
 /-- Extract the unique ID, or fail with a descriptive message when unresolved. -/
 def Identifier.getUniqueId (id : Identifier) : Except String Nat :=
@@ -141,7 +141,7 @@ lowers to the corresponding Core operator. Overload resolution picks the
 wrapper matching the argument types, which is why the wrappers must share one
 name per operator while the externals they call do not.
 -/
-def Operation.procName : Operation → String
+@[expose] def Operation.procName : Operation → String
   | .Eq => "$eq"                | .Neq => "$neq"
   | .And => "$and"              | .Or => "$or"
   | .Not => "$not"              | .Implies => "$implies"
@@ -157,7 +157,7 @@ def Operation.procName : Operation → String
 /-- Inverse of `Operation.procName`: recognize a built-in operator wrapper by
     name. Used by the pretty-printer to print `$add(x, y)` back as `x + y`, so
     that a parsed program round-trips. -/
-def Operation.ofProcName? : String → Option Operation
+@[expose] def Operation.ofProcName? : String → Option Operation
   | "$eq" => some .Eq                | "$neq" => some .Neq
   | "$and" => some .And              | "$or" => some .Or
   | "$not" => some .Not              | "$implies" => some .Implies
@@ -2052,33 +2052,33 @@ def hasModifiesWildcard (modifiesExprs : List StmtExprMd) : Bool :=
   modifiesExprs.any StmtExprMd.isWildcard
 
 /-- The per-yield `relies` clauses; `[]` for a regular procedure. -/
-def CoroutineContracts.relies : CoroutineContracts → List Condition
+@[expose] def CoroutineContracts.relies : CoroutineContracts → List Condition
   | .Regular => []
   | .Coroutine r _ _ _ => r
 
 /-- The per-yield `guarantees` clauses; `[]` for a regular procedure. -/
-def CoroutineContracts.guarantees : CoroutineContracts → List Condition
+@[expose] def CoroutineContracts.guarantees : CoroutineContracts → List Condition
   | .Regular => []
   | .Coroutine _ g _ _ => g
 
 /-- The outgoing-channel `yields` bindings; `[]` for a regular procedure. -/
-def CoroutineContracts.yields : CoroutineContracts → List Parameter
+@[expose] def CoroutineContracts.yields : CoroutineContracts → List Parameter
   | .Regular => []
   | .Coroutine _ _ y _ => y
 
 /-- The incoming-channel `resumes` bindings; `[]` for a regular procedure. -/
-def CoroutineContracts.resumes : CoroutineContracts → List Parameter
+@[expose] def CoroutineContracts.resumes : CoroutineContracts → List Parameter
   | .Regular => []
   | .Coroutine _ _ _ rs => rs
 
 /-- The `ProcedureKind` implied by which contract bundle is present. -/
-def CoroutineContracts.kind : CoroutineContracts → ProcedureKind
+@[expose] def CoroutineContracts.kind : CoroutineContracts → ProcedureKind
   | .Regular => .Regular
   | .Coroutine .. => .Coroutine
 
 /-- Replace the clause lists of a `Coroutine` bundle, keeping it a coroutine.
     A no-op on `Regular` (a regular procedure has no clauses to carry). -/
-def CoroutineContracts.withClauses (c : CoroutineContracts)
+@[expose] def CoroutineContracts.withClauses (c : CoroutineContracts)
     (relies : List Condition := c.relies) (guarantees : List Condition := c.guarantees)
     (yields : List Parameter := c.yields) (resumes : List Parameter := c.resumes)
     : CoroutineContracts :=
@@ -2095,19 +2095,19 @@ def CoroutineContracts.mapConditions (c : CoroutineContracts)
 
 /-- Kind of the procedure, either a regular procedure or a coroutine.
     Recovered from `contracts`. -/
-def Procedure.kind (p : Procedure) : ProcedureKind := p.contracts.kind
+@[expose] def Procedure.kind (p : Procedure) : ProcedureKind := p.contracts.kind
 
 /-- The coroutine's per-yield `relies` clauses; `[]` for a regular procedure. -/
-def Procedure.relies (p : Procedure) : List Condition := p.contracts.relies
+@[expose] def Procedure.relies (p : Procedure) : List Condition := p.contracts.relies
 
 /-- The coroutine's per-yield `guarantees` clauses; `[]` for a regular procedure. -/
-def Procedure.guarantees (p : Procedure) : List Condition := p.contracts.guarantees
+@[expose] def Procedure.guarantees (p : Procedure) : List Condition := p.contracts.guarantees
 
 /-- The coroutine's outgoing-channel `yields` bindings; `[]` for a regular procedure. -/
-def Procedure.yields (p : Procedure) : List Parameter := p.contracts.yields
+@[expose] def Procedure.yields (p : Procedure) : List Parameter := p.contracts.yields
 
 /-- The coroutine's incoming-channel `resumes` bindings; `[]` for a regular procedure. -/
-def Procedure.resumes (p : Procedure) : List Parameter := p.contracts.resumes
+@[expose] def Procedure.resumes (p : Procedure) : List Parameter := p.contracts.resumes
 
 def Procedure.is_coroutine (p : Procedure) : Bool :=
   match p.kind with | .Coroutine => true | _ => false

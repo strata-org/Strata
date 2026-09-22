@@ -52,6 +52,12 @@ namespace Strata.Laurel
 
 public section
 
+namespace EliminateIncrDecr
+
+-- The lowering steps are public rather than private because
+-- `EliminateIncrDecrAndCompoundAssignProps` proves the pass's `NodeKind`
+-- specification against them, and needs to unfold them (hence `@[expose]`).
+
 /-- Reconstruct the read-side `StmtExprMd` for a `Variable`.
 
     A `.Field` target duplicates the object subtree into the read operand (the lowering
@@ -59,7 +65,7 @@ public section
     risk — because a field read lowers to the pure, obligation-free `readField` lookup,
     so both copies read the same `$heap` at the same point. (Revisit if field reads ever
     gain a precondition.) -/
-private def targetAsRead (target : VariableMd) : StmtExprMd :=
+@[expose] public def targetAsRead (target : VariableMd) : StmtExprMd :=
   let source := target.source
   match target.val with
   | .Local name => ⟨.Var (.Local name), source⟩
@@ -71,7 +77,7 @@ private def targetAsRead (target : VariableMd) : StmtExprMd :=
     RHS). The operator becomes a call to its built-in wrapper, exactly as a
     hand-written `x := x / e` would, so `/=`/`%=` carry the same
     division-by-zero obligation. -/
-private def lowerOpAssign (primOp : Operation) (target : VariableMd)
+@[expose] public def lowerOpAssign (primOp : Operation) (target : VariableMd)
     (rhs : StmtExprMd) (source : FileRange) : StmtExprMd :=
   let read := targetAsRead target
   let updated : StmtExprMd := ⟨.StaticCall (mkId primOp.procName) [read, rhs], source⟩
@@ -79,7 +85,7 @@ private def lowerOpAssign (primOp : Operation) (target : VariableMd)
 
 /-- Build `.Assign [target] (target ⊕ 1)` where `⊕` is `Add` for `Incr` and
     `Sub` for `Decr`. The resulting assignment expression yields the new value. -/
-private def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
+@[expose] public def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
     (source : FileRange) : StmtExprMd :=
   let primOp : Operation := match op with
     | .Incr => .Add
@@ -88,7 +94,7 @@ private def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
 
 /-- Lower a single `.IncrDecr` node to the expression form that yields the
     correct value for the given `mode` (Pre or Post). -/
-private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
+@[expose] public def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
     (target : VariableMd) (source : FileRange) : StmtExprMd :=
   let assign := lowerToAssign op target source
   match mode with
@@ -110,22 +116,28 @@ private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
     shared lowering, one fewer traversal. Prefix `++x` is exactly that
     assignment; only postfix `x++` adds an inverse-op wrapper to recover the
     old value. -/
-private def rewriteNode (node : StmtExprMd) : StmtExprMd :=
+@[expose] public def rewriteNode (node : StmtExprMd) : StmtExprMd :=
   match node.val with
   | .IncrDecr mode op target => lowerIncrDecr mode op target node.source
   | .CompoundAssign op target rhs => lowerOpAssign op target rhs node.source
   | _ => node
 
-/-- Apply the rewrite to a procedure (body, preconditions, decreases, invokeOn). -/
-private def lowerProcedure (proc : Procedure) : Procedure :=
-  mapProcedureM (m := Id) (mapStmtExpr rewriteNode) proc
+end EliminateIncrDecr
 
 /--
 Eliminate every `.IncrDecr` and `.CompoundAssign` node in a Laurel program by
 lowering it to existing constructs. After this pass, neither node remains.
+
+The walk is `mapProgramStmtExpr`, which reaches every expression position in a
+program, not only the procedures: a constant's initializer, a constrained type's
+constraint and a coroutine's `relies`/`guarantees` are lowered too.
+`EliminateIncrDecrAndCompoundAssignProps` proves the `removes` declaration below
+against this walk, which needs the walk to be total. No source program puts an
+`x++` in one of the extra positions: each is required to be effect-free, and
+resolution rejects a destructive assignment there.
 -/
 def eliminateIncrDecrAndCompoundAssign (program : Program) : Program :=
-  mapProgramProcedures lowerProcedure program
+  mapProgramStmtExpr EliminateIncrDecr.rewriteNode program
 
 /-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
 public def eliminateIncrDecrAndCompoundAssignPass : LoweringPass where
@@ -133,8 +145,9 @@ public def eliminateIncrDecrAndCompoundAssignPass : LoweringPass where
   creates := [
       NodeKind.StmtExpr.Assign,
       NodeKind.StmtExpr.StaticCall,
-      NodeKind.StmtExpr.Block,
-      NodeKind.StmtExpr.Var
+      NodeKind.StmtExpr.Var,
+      -- a field target's read side is `o#f`, a `Var.var.Field`
+      NodeKind.StmtExpr.Var.var.Field
     ]
   removes := [NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign]
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."

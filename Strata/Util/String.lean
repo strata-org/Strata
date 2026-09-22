@@ -50,5 +50,31 @@ def digitLoop : Nat → Nat → List Char → List Char
     let n' := n / 10
     if n' = 0 then d :: ds else digitLoop fuel n' (d :: ds)
 
+/-! ### Characters: control characters and hex digits -/
+
+/-- A C0 control character or `DEL`. Neither is printable, so a format that admits
+    only printable and whitespace characters excludes them. -/
+def isControlChar (c : Char) : Bool := c.toNat < 0x20 || c.toNat == 0x7F
+
+/-- The hex digit for `n < 16`, as an uppercase character. -/
+def hexDigit (n : Nat) : Char :=
+  match n with
+  | 0 => '0' | 1 => '1' | 2 => '2' | 3 => '3'
+  | 4 => '4' | 5 => '5' | 6 => '6' | 7 => '7'
+  | 8 => '8' | 9 => '9' | 10 => 'A' | 11 => 'B'
+  | 12 => 'C' | 13 => 'D' | 14 => 'E' | _ => 'F'
+
+/-- Inverse of `hexDigit` on its range; anything else reads as `0`. -/
+def hexVal (c : Char) : Nat :=
+  match c with
+  | '0' => 0 | '1' => 1 | '2' => 2 | '3' => 3
+  | '4' => 4 | '5' => 5 | '6' => 6 | '7' => 7
+  | '8' => 8 | '9' => 9 | 'A' => 10 | 'B' => 11
+  | 'C' => 12 | 'D' => 13 | 'E' => 14 | 'F' => 15
+  | _ => 0
+
+/-- The characters `hexDigit` produces, and the only ones `hexVal` decodes. -/
+def isHexDigit (c : Char) : Bool :=
+  ('0' ≤ c && c ≤ '9') || ('A' ≤ c && c ≤ 'F')
 
 end

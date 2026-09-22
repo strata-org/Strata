@@ -10,6 +10,12 @@ public import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 import StrataLaurel.Implementation.DesugarShortCircuit
 import StrataLaurel.Implementation.EliminateReturnStatements
 import StrataLaurel.Implementation.EliminateDoWhile
+-- The passes' `NodeKind` declarations, proven against the pass bodies. Imported
+-- here so the pipeline's build checks them: `orderingRespected` below derives the
+-- pass order from declarations that these proofs tie to what the passes do.
+import StrataLaurel.Implementation.EliminateDoWhileProps
+import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
+import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
@@ -635,7 +641,14 @@ public structure PassDependency where
     pipeline-generated weakens this check silently — see the note there.
 
     Re-creating a shape after it has been removed is allowed, so long as nothing downstream
-    declares it `unsupported`. -/
+    declares it `unsupported`. A *single* pass declaring the same shape twice is not: a shape
+    in both `creates` and `removes`, or in both `creates` and `unsupported`, is rejected here
+    rather than resolved. Such a declaration carries no information — the live-set update
+    treats a shape in `creates` and `removes` exactly as it treats one in neither — while
+    reading as though the shape is gone, and a pass's `Contains` specification cannot
+    contradict it: `(s \ removes) ∪ creates` holds the shape either way. The way to say
+    "the source form is gone, mine remains" is to declare the two forms as separate refined
+    kinds, as `EliminateDoWhile` does with `While` and `While.postTest.true`. -/
 public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.run do
   let mut live : NodeKind → Bool := NodeKind.inSource
   -- The pass that last removed each shape, for dependency provenance.
@@ -643,6 +656,13 @@ public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.
   let mut failures : List OrderingFailure := []
   let mut deps : List PassDependency := []
   for p in allPasses do
+    for k in p.creates do
+      if p.removes.contains k then
+        failures := failures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and removes" }]
+      if p.unsupported.contains k then
+        failures := failures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and unsupported" }]
     for k in p.unsupported do
       if live k then
         failures := failures ++
@@ -653,8 +673,8 @@ public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.
     -- Bind the declarations before updating `live`, so the closure does not capture it.
     let (removes, creates, name) := (p.removes, p.creates, p.name)
     for k in removes do lastRemover := lastRemover.insert k name
-    -- `creates` wins a contradictory declaration: the shape stays live, so a downstream
-    -- `unsupported` on it fails loudly rather than passing in silence.
+    -- `creates` wins, which the check above has already rejected as a declaration: the shape
+    -- stays live, so a downstream `unsupported` on it fails loudly rather than in silence.
     live := fun k =>
       if creates.contains k then true
       else if removes.contains k then false

@@ -816,11 +816,19 @@ def mapProcedureSpecificationsWithCoroutineM' [Monad m] (f : StmtExprMd → m St
     (proc : Procedure) : m Procedure :=
   mapProcedureSpecificationsWithCoroutineM f f proc
 
-/-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
-    (body, preconditions, decreases, invokeOn, and axioms). -/
+/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure:
+    the body, the specification fields (preconditions, decreases, invokeOn,
+    axioms, `throwsOn` cases) and a coroutine's `relies`/`guarantees` clauses.
+
+    The coroutine clauses are included so that this is *every* expression a
+    procedure holds, which is what lets a claim about the node kinds of a whole
+    program be proved of a pass built on this walk. It is not a reachable
+    behaviour change: a clause is a contract, so resolution already rejects an
+    `x++` there as a destructive assignment, and a `do … while` there is a `void`
+    where a `bool` is expected. -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
-  mapProcedureSpecificationsM f proc
+  mapProcedureSpecificationsWithCoroutineM' f proc
 
 /-- Apply a monadic transformation to every procedure in a program — both
     top-level static procedures and the instance procedures of composite types.
@@ -850,14 +858,17 @@ def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
 
 /-- Apply `f` to every `StmtExprMd` node appearing *anywhere* in a program: every
     procedure (top-level static procedures and composite instance procedures, via
-    `mapProcedureM` — bodies, preconditions, decreases, invokeOn, and axioms), the
-    constraint and witness of constrained types, and constant initializers. `f` is
-    applied per node in a bottom-up traversal (see `mapStmtExprM`).
+    `mapProcedureM` — body, specification fields and coroutine clauses), the
+    constraint and witness of constrained types, a composite's field
+    initializers, constant initializers, and file-scope globals' initializers.
+    `f` is applied per node in a bottom-up traversal (see `mapStmtExprM`).
 
     This is the expression analogue of `mapProgramHighTypesM`: the single place
     that knows where expressions live in a `Program`, so passes that rewrite call
     sites (or any other node) don't each re-enumerate procedures, constrained
-    types, and constants — and silently miss one. -/
+    types, and constants — and silently miss one. The list is exhaustive, which is
+    what makes a `removes` declaration provable: a pass can only be shown to
+    remove a node kind from the positions its walk reaches. -/
 def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
   let mapExpr := mapStmtExprM f
   let program ← mapProgramProceduresM (mapProcedureM mapExpr) program
@@ -865,6 +876,16 @@ def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : P
     match td with
     | .Constrained ct =>
       pure (.Constrained { ct with constraint := ← mapExpr ct.constraint, witness := ← mapExpr ct.witness })
+    -- A composite's field initializers are ordinary expressions too; the
+    -- instance procedures were already rewritten by `mapProgramProceduresM`.
+    -- No source program reaches this arm today: a field declaration is a name
+    -- and a type, with no initializer syntax. It is here so this walk really is
+    -- every expression a `Program` holds, which the `NodeKind` specifications
+    -- depend on.
+    | .Composite ct =>
+      let fields ← ct.fields.mapM fun fld => do
+        pure { fld with initializer := ← fld.initializer.mapM mapExpr }
+      pure (.Composite { ct with fields })
     | other => pure other
   let constants ← program.constants.mapM fun c => do
     pure { c with initializer := ← c.initializer.mapM mapExpr }

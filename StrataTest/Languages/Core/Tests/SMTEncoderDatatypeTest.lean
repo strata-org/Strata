@@ -23,6 +23,15 @@ meta section
 
 /-!
 This file contains unit tests for SMT datatype encoding.
+
+These tests render commands to a buffer and compare strings; no solver runs
+behind them. So an expectation here is only as good as its agreement with what
+a solver accepts — check any change against `cvc5` and `z3` rather than against
+the encoder's current output.
+
+The type-parameter lists read `par (|α|)`: `α` is not an ASCII letter, so it is
+not a legal SMT-LIB simple symbol, and both solvers reject the unquoted
+spelling outright.
 -/
 
 namespace Core
@@ -112,7 +121,7 @@ def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDa
 
 -- Test 1: Simple datatype (Option) - zero-argument constructor
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -125,7 +134,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 2: Recursive datatype (List) - using List type
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -138,7 +147,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
 /--
-info: (declare-datatype TestTree (par (α) (
+info: (declare-datatype TestTree (par (|α|) (
   (Leaf)
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; tree
@@ -151,7 +160,7 @@ info: (declare-datatype TestTree (par (α) (
 
 -- Test 4: Parametric datatype instantiation - List Int
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; intList
@@ -164,7 +173,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; boolList
@@ -177,7 +186,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
 /--
-info: (declare-datatype TestTree (par (α) (
+info: (declare-datatype TestTree (par (|α|) (
   (Leaf)
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; intTree
@@ -190,10 +199,10 @@ info: (declare-datatype TestTree (par (α) (
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
-(declare-datatype TestList (par (α) (
+(declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; listOfOption
@@ -208,7 +217,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 8: None constructor (zero-argument)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 -/
@@ -219,7 +228,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 9: Some constructor (single-argument)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 -/
@@ -230,7 +239,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 10: Cons constructor (multi-argument)
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 -/
@@ -246,7 +255,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 11: isNone tester
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -260,7 +269,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 12: isCons tester
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -276,7 +285,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 13: Some value destructor
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -290,7 +299,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 14: Cons head destructor
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -304,7 +313,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 15: Cons tail destructor
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -409,8 +418,8 @@ def forestDatatype : LDatatype Unit :=
 
 /--
 info: (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
+  ((par (|α|) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (|α|) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; tree
 (declare-const tree (RoseTree Int))
 -/
@@ -422,12 +431,12 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 -- Test 19: Mix of mutual and non-mutual datatypes
 -- TestOption (non-mutual), then RoseTree/Forest (mutual)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
+  ((par (|α|) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (|α|) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; optionTree
 (declare-const optionTree (TestOption (RoseTree Int)))
 -/

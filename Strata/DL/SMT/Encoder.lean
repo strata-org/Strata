@@ -137,15 +137,6 @@ def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
 
 namespace Encoder
 
-/-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
-    reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
-    names with `$` to make them valid simple symbols. -/
-def sanitizeSmtName (name : String) : String :=
-  if name.isEmpty then name
-  else
-    let first := name.front
-    if first == '@' || first == '.' then "$" ++ name else name
-
 /-- Base name for internally generated UF identifiers. Correctness is enforced
     by the `usedNames` registry which disambiguates via `@N` suffixes on
     collision. -/
@@ -188,7 +179,7 @@ def seedManagedName (estate : EncoderState) (uf : UF) : EncoderState :=
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).functions.get? uf then return enc
-  let baseName := sanitizeSmtName uf.id
+  let baseName := uf.id
   let id ← uniquify baseName
   comment uf.id
   Solver.declareFun id uf.args uf.out

@@ -37,17 +37,24 @@ eliminated before their enclosing ones.
 
 namespace Strata.Laurel
 
+namespace EliminateDoWhile
+
+-- The state, the label generator and `rewriteNode` are public rather than
+-- private because `EliminateDoWhileProps` states and proves the pass's
+-- `NodeKind` specification against `rewriteNode` directly, and needs to unfold
+-- it (hence `@[expose]`).
+
 /-- Monotonic counter feeding fresh exit labels (scheme described in the module header). -/
-private structure ElimState where
+public structure ElimState where
   freshCounter : Nat := 0
 
-private abbrev ElimM := StateM ElimState
+public abbrev ElimM := StateM ElimState
 
-private def freshExitLabel : ElimM String :=
+public def freshExitLabel : ElimM String :=
   modifyGet fun s => (s!"$dowhile_exit_{s.freshCounter}", { s with freshCounter := s.freshCounter + 1 })
 
 /-- Rewrites a post-test `While` to its pre-test desugaring; all other nodes pass through. -/
-private def rewriteNode (node : StmtExprMd) : ElimM StmtExprMd := do
+@[expose] public def rewriteNode (node : StmtExprMd) : ElimM StmtExprMd := do
   match node.val with
   | .While cond invs dec body true =>
     let source := node.source
@@ -65,12 +72,23 @@ private def rewriteNode (node : StmtExprMd) : ElimM StmtExprMd := do
     pure ⟨.Block [whileStmt] (some exitLabel), source⟩
   | _ => pure node
 
+end EliminateDoWhile
+
 public section
 
-/-- Eliminate every post-test `While` in a Laurel program; afterward every `While` has `postTest = false`. -/
+/-- Eliminate every post-test `While` in a Laurel program; afterward every `While`
+    has `postTest = false`.
+
+    The walk is `mapProgramStmtExprM`, which reaches *every* expression position
+    in a program — not just procedure bodies and specifications, but also
+    a constrained type's constraint and witness, field and constant
+    initializers, and a coroutine's `relies`/`guarantees`.
+    `EliminateDoWhileProps.eliminateDoWhile_spec` proves the `removes`
+    declaration below against this walk, which needs the walk to be total. No
+    source program puts a loop in one of the extra positions: each expects a
+    value and a loop is `void`. -/
 def eliminateDoWhile (program : Program) : Program :=
-  let rewrite : Procedure → ElimM Procedure := mapProcedureM (mapStmtExprM rewriteNode)
-  (mapProgramProceduresM rewrite program |>.run {}).fst
+  (mapProgramStmtExprM EliminateDoWhile.rewriteNode program |>.run {}).fst
 
 /-- Pipeline pass: eliminate post-test (`do … while`) loops. -/
 public def eliminateDoWhilePass : LoweringPass where
@@ -83,10 +101,6 @@ public def eliminateDoWhilePass : LoweringPass where
       NodeKind.StmtExpr.StaticCall,
       NodeKind.StmtExpr.LiteralBool
     ]
-  -- Holds of every *procedure*, which is all this pass traverses (`mapProgramProceduresM`,
-  -- not `mapProgramStmtExprM`). A post-test loop in a non-procedure position — a constant or
-  -- static-field initializer, a constrained type's constraint or witness — survives, but is
-  -- rejected downstream: `translateExpr` refuses *any* loop in an expression position.
   removes := [NodeKind.StmtExpr.While.postTest.true]
   documentation := "Lowers post-test `While` loops (the `do … while` form) into the pre-test loop `{ while(true) invariant I { BODY; if (!COND) exit L } } L`, with a fresh `$`-prefixed exit label `L`. Runs early so no later pass observes a post-test loop; the invariant is checked at the loop head, matching `while`."
   run := fun _ p _m => (eliminateDoWhile p, [], {})
