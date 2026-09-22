@@ -164,7 +164,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants ← generateTypeHierarchyDecls model program
   -- One downcast helper per composite — `function downcast$C(p: C): C requires (p is C) { p }`
-  -- — called by the `AsType` arms in `HeapParameterization` so an `x as C` cast works in a
+  -- — called by `HeapParameterization`'s cast lowering so an `x as C` cast works in a
   -- contract formula (the `is C` guard is a pure term; PrecondElim discharges it as a
   -- well-definedness obligation). `C` flattens to `Composite` below, so `{ p }` type-checks.
   let downcastHelpers : List Procedure := program.types.filterMap fun td =>
@@ -216,7 +216,6 @@ public def typeHierarchyTransformPass : LoweringPass where
   unsupported := [NodeKind.Pseudo.implicitHeap]
   removes := [
       NodeKind.StmtExpr.IsType,
-      NodeKind.StmtExpr.AsType,
       NodeKind.StmtExpr.New
     ]
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."

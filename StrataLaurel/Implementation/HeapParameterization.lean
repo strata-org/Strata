@@ -827,9 +827,21 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
   let heapReaders ← computeReadsHeap program.staticProcedures
   let heapWriters ← computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
-  let (result, state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run.run initState
+  let (result, state0) := (program.staticProcedures.mapM (heapTransformProcedure model)).run.run initState
   let procs' ← match result with
     | .ok ps => pure ps
+    | .error e => .error s!"heapParameterization: {e}"
+  -- A file-scope global's initializer holds an `as` cast no procedure walk reaches, and it must be
+  -- lowered before `TypeHierarchy` flattens the cast's target type to `Composite`, or the residual
+  -- `.AsType` reaches Core un-lowered. The procedures are blanked out of this walk and spliced back
+  -- from `procs'` below, rather than lowered here too: lowering a cast BEFORE the heap transform
+  -- stops `==` on a cast operand from taking the `Composite..ref!` rewrite, which changes what such
+  -- a program proves.
+  let lowerRest : TransformM Program :=
+    mapProgramStmtExprM (lowerAsTypeNodesOnly .specification) { program with staticProcedures := [] }
+  let (restResult, state1) := lowerRest.run.run state0
+  let program ← match restResult with
+    | .ok p => pure p
     | .error e => .error s!"heapParameterization: {e}"
   -- No `Snapshot` or labeled `Old` may survive: both lower only in the
   -- writes-heap branch, so a residual node means a snapshot reached a non-writer.
@@ -898,7 +910,8 @@ public def heapParameterizationPass : LoweringPass where
       NodeKind.StmtExpr.Var.var.Field,
       NodeKind.StmtExpr.PureFieldUpdate,
       NodeKind.StmtExpr.Snapshot,
-      NodeKind.StmtExpr.Old.label?.some
+      NodeKind.StmtExpr.Old.label?.some,
+      NodeKind.StmtExpr.AsType
     ]
   unsupported := [
       NodeKind.CompositeType.typeArgs.cons,
