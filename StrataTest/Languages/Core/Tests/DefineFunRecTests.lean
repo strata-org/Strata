@@ -289,4 +289,26 @@ Model:
                   -- stable when the suite runs solver processes in parallel
                   solverTimeout := 60 })
 
+---------------------------------------------------------------------
+-- `obligationsToVerify`: re-query just the obligation that was `unknown`.
+-- This is the intended client pattern: primary pass with the default
+-- encoding, then only the unknown obligations again with `define-fun-rec`
+-- + `fmf-fun`, so the weaker proving mode never touches the others.
+---------------------------------------------------------------------
+
+/-- info:
+Obligation: b_is_zero
+Property: assert
+Result: ❌ fail
+Model:
+(x@1, 0) (b@1, Npos(xI(xI(xI(xI(xI(xI(xH)))))))) (p@1, xH) (a@1, Npos(xI(xO(xO(xI(xO(xO(xH)))))))) (p@2, xH)-/
+#guard_msgs in
+#eval Core.verify natSumPgm
+  (options := { Core.VerifyOptions.quiet with
+                  verbose := .models,
+                  recursiveFnsAsDefineFunRec := true,
+                  solverOptions := #[("fmf-fun", "true")],
+                  solverTimeout := 60,
+                  obligationsToVerify := some ["b_is_zero"] })
+
 end Strata.DefineFunRecTest

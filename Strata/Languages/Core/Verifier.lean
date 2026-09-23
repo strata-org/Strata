@@ -1993,6 +1993,9 @@ def verifySingleEnv (oblProgram : Program)
     else pure none
   let mut emState := emStateInit
   for obligation in obligations do
+    -- `obligationsToVerify`: obligations not listed are skipped entirely.
+    if let some labels := options.obligationsToVerify then
+      if !labels.contains obligation.label then continue
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
       if Imperative.MetaData.hasFullCheck obligation.metadata then

@@ -225,6 +225,11 @@ structure VerifyOptions where
       phases restrict the program to them and to the obligation procedures
       generated for them. An empty list verifies nothing. -/
   proceduresToVerify : Option (List String) := none
+  /-- When set, discharge only the obligations with these labels; the others
+      are skipped (no solver call, no result).  Lets a client re-query a subset
+      of obligations, e.g. those a first pass left `unknown`, under different
+      options. -/
+  obligationsToVerify : Option (List String) := none
   /-- When set, the program state after each pipeline phase is written to
       `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
       `--keep-all-files <dir>`, where the CLI derives the prefix as
@@ -265,6 +270,7 @@ def VerifyOptions.default : VerifyOptions := {
   keepAllFilesPrefix := none
   disableCSE := false
   recursiveFnsAsDefineFunRec := false
+  obligationsToVerify := none
 }
 
 instance : Inhabited VerifyOptions where
