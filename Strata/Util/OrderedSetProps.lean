@@ -203,7 +203,7 @@ theorem contains_ofArray_of_mem [EquivBEq κ] [LawfulHashable κ]
 
 /-! ### Ordered-list recovery for distinct-keyed inputs
 
-When inserting the input, if their projected keys are pairwise distinct, no dedup fires and
+When inserting the input, if their projected keys are pairwise distinct, no uniq fires and
 the input array is recovered verbatim. -/
 
 /-- Folding `insert` over a key-distinct list into a set that shares none of its

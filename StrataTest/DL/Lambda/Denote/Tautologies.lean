@@ -180,7 +180,7 @@ private theorem bool_and_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (p && q))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
@@ -221,7 +221,7 @@ private theorem bool_implies_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (!p || q))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
@@ -262,7 +262,7 @@ private theorem bool_or_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (p || q))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
@@ -303,7 +303,7 @@ private theorem bool_not_interp (I : Interp F) :
       [.boolConst () p]
       (.boolConst () (!p))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p]
       [.tcons "bool" []] :=
     .cons .const .nil

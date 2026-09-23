@@ -1558,8 +1558,8 @@ end
 
 Property lemmas over the `namesFreshInExprs`, `namesFreshInRhsExprs`, and
 `exprsShapeFree` predicate families (defined in `Strata.DL.Imperative.Stmt`).
-Each leaf freshness condition is a `List.Disjoint`, so many lemmas reduce to the
-`List.Disjoint` API. -/
+Each leaf freshness condition is a `List.Disj`, so many lemmas reduce to the
+`List.Disj` API. -/
 
 mutual
 
@@ -1707,8 +1707,8 @@ end
 
 mutual
 /-- `namesFreshInRhsExprs` over a `cons` name list splits as the head-singleton
-freshness and the tail freshness (each leaf `List.Disjoint (hd :: tl) vars`
-splits as `hd ∉ vars ∧ List.Disjoint tl vars`). -/
+freshness and the tail freshness (each leaf `List.Disj (hd :: tl) vars`
+splits as `hd ∉ vars ∧ List.Disj tl vars`). -/
 theorem Stmt.namesFreshInRhsExprs_cons_names {P : PureExpr}
     [HasFvars P] (hd : P.Ident) (tl : List P.Ident) (s : Stmt P (Cmd P))
     (h_hd : Stmt.namesFreshInRhsExprs (P := P) [hd] s)
@@ -1784,7 +1784,7 @@ theorem Stmt.namesFreshInRhsExprs_cmd_havoc {P : PureExpr}
   intro z _ hz; simp only [List.not_mem_nil] at hz
 
 /-- The empty name list is fresh in every statement's expressions:
-`namesFreshInExprs` is `List.Disjoint [] _`, which holds vacuously. -/
+`namesFreshInExprs` is `List.Disj [] _`, which holds vacuously. -/
 theorem Stmt.namesFreshInExprs_nil {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     Stmt.namesFreshInExprs (P := P) [] s :=
   List.Disjoint_nil_left _
@@ -1799,7 +1799,7 @@ private theorem disjoint_of_shapefree_leaf {P : PureExpr} [HasIdent P]
     {Q : String → Prop} {names : List P.Ident} {vars : List P.Ident}
     (h_names_suffix : ∀ z ∈ names, ∃ str : String, z = HasIdent.ident str ∧ Q str)
     (h_sf : ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ vars) :
-    List.Disjoint names vars := by
+    List.Disj names vars := by
   intro z hz hzv
   obtain ⟨str, h_eq, h_suf⟩ := h_names_suffix z hz
   exact (h_eq ▸ h_sf str h_suf) hzv
@@ -1809,13 +1809,13 @@ private theorem disjoint_of_shapefree_leaf {P : PureExpr} [HasIdent P]
 private theorem Stmt.namesFreshInExprs_of_disjoint_getVars {P : PureExpr}
     [HasIdent P] [HasFvars P] {names : List P.Ident}
     (s : Stmt P (Cmd P))
-    (h : List.Disjoint names (Stmt.getVars s)) :
+    (h : List.Disj names (Stmt.getVars s)) :
     Stmt.namesFreshInExprs names s := h
 
 private theorem Block.namesFreshInExprs_of_disjoint_getVars {P : PureExpr}
     [HasIdent P] [HasFvars P] {names : List P.Ident}
     (ss : List (Stmt P (Cmd P)))
-    (h : List.Disjoint names (Block.getVars ss)) :
+    (h : List.Disj names (Block.getVars ss)) :
     Block.namesFreshInExprs names ss := h
 
 /-- `exprsShapeFree s` plus "every `names` element is a `Q`-kind ident"
