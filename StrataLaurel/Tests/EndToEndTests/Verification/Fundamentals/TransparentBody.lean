@@ -515,7 +515,7 @@ program Laurel;
 procedure updateInputParameter(a: int) returns (r: int)
 {
   a := a + 1;
-//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
   return a
 };
 #end
