@@ -4379,10 +4379,9 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
   -- No `.Applied` field-type guard here: a generic COMPOSITE field (`Box<int>`) is monomorphized
   -- away by `MonomorphizeComposites` before HeapParam, and a generic DATATYPE field (`Bx<int>`) is
-  -- boxed by HeapParam's `.Applied` arm per instantiation (#1394). A generic-typed file-scope
-  -- GLOBAL — which monomorphization does not reach through its initializer — is rejected in the
-  -- globals validation layer (`validateGlobalTypes`), not here, keeping this function (and its
-  -- `resolveField_clean` proof) identical to upstream.
+  -- boxed by HeapParam's `.Applied` arm per instantiation (#1394). A file-scope GLOBAL needs no
+  -- guard either: the lowering passes traverse a global's initializer alongside its type, so a
+  -- generic-typed global is monomorphized like any other field.
   let qualifiedName := ownerName.text ++ "." ++ field.name.text
   let resolved ← resolveRef qualifiedName
   -- Keep the original field name text; only take the uniqueId from resolution.
@@ -5752,21 +5751,6 @@ def validateNoDollarNames (program : Program) : List Message :=
       s!"{kind} name '{name}' may not start with '$': that namespace is reserved for compiler-generated names"
       MessageKind.userError)
 
-/-- Reject a file-scope global with a generic (`.Applied`) type. A generic composite/datatype
-    FIELD is supported by #1394 (monomorphization for composites, HeapParam `.Applied` boxing for
-    datatypes), but monomorphization does not reach a global's initializer, so a generic-typed
-    global would reach Core un-monomorphized. This lives in the globals validation layer (not in
-    the shared `resolveField`) so `resolveField` stays identical to upstream. -/
-private def validateGlobalTypes (program : Program) : List Message :=
-  program.staticFields.filterMap fun field =>
-    match field.type.val with
-    | .Applied base _ =>
-      let baseName := match base.val with | .UserDefined n => n.text | _ => "?"
-      some (diagnosticFromSource field.type.source
-        s!"a generic datatype instantiation ('{baseName}<…>') is not yet supported as a file-scope global type"
-        MessageKind.userError)
-    | _ => none
-
 private def globalEffectIdsFor (effects : Std.HashMap Nat (Std.HashSet Nat))
     (field : Field) : Std.HashSet Nat :=
   match field.name.uniqueId with
@@ -6285,10 +6269,11 @@ private def firstInitializerEffectSource (model : SemanticModel)
     match node.val with
     | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _
     | .Var (.Declare _) => true
-    -- Allocation is a heap effect: `new` expands to a heap-mutating block, and a
-    -- file-scope initializer has no heap to mutate yet. A composite-valued global is
-    -- still declarable as `var c: C := <??>`.
-    | .New _ => true
+    -- `TypeHierarchy` expands `new` into a block that reads and increments `$heap`, and a
+    -- file-scope initializer has no heap in scope. A composite-valued global is still declarable
+    -- as `var c: C := <??>`. `..`, not `_`: `typeArgs` is a defaulted field, so `.New _` means
+    -- `.New _ []` and would match `new C` alone, letting `new Box<int>` through.
+    | .New .. => true
     | .StaticCall callee _ | .InstanceCall _ callee _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
     -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
@@ -6751,8 +6736,6 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     else []
   let globalNameErrors :=
     if existingModel.isNone then validateGlobalNames program' else []
-  let globalTypeErrors :=
-    if existingModel.isNone then validateGlobalTypes program' else []
   let constrainedGlobalErrors :=
     initialAnalysis.map (validateConstrainedTypeGlobalUse semanticModel program') |>.getD []
   let constantGlobalErrors :=
@@ -6835,7 +6818,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
-      globalNameErrors ++ globalTypeErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
+      globalNameErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++
       entryGlobalErrors ++ invokeOnErrors ++

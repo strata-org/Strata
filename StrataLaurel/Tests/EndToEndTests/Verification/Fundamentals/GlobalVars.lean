@@ -867,9 +867,10 @@ flattening at the end of the type-hierarchy pass rewrites the field's declared t
 to `Composite` while the initializer still says `new C`, and nothing objects until
 something re-resolves the program.
 
-The initializer is optional, so a composite-valued global is still declarable as
-`var cell: DiagCell` -- an arbitrary reference, which is what a verification root
-quantifies over anyway (see the composite-valued global cases above). -/
+An initializer is REQUIRED — omitting it reports "file-scope global 'diagCell' must declare an
+initializer" — so the way to get a composite-valued global is `var cell: DiagCell := <??>`, an
+arbitrary reference, which is what a verification root quantifies over anyway (see the
+composite-valued global cases above). -/
 
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
@@ -972,5 +973,278 @@ procedure e2()
 {
   assert parentIsChild
 //^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! ## An `opaque` or generic `datatype` global is reasoned about in Core, not just accepted.
+
+Resolution admits them, but correctness depends on their Core encoding, which resolution does
+not check — so these tests check it directly. Each must-fail variant shows the global is not
+encoded as an unconstrained value. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var s: Set<int> := setEmpty()
+procedure insertThenContains()
+  opaque
+  ensures setContains(s, 1)
+{
+  s := setInsert(s, 1)
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var s: Set<int> := setEmpty()
+procedure containsWithoutInsert()
+  opaque
+  ensures setContains(s, 1)
+//        ^^^^^^^^^^^^^^^^^ error: postcondition does not hold
+{
+  assert 1 == 1
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Pair<A, B> {
+  MkPair(fst: A, snd: B)
+}
+var p: Pair<int, bool> := MkPair(1, true)
+procedure readFst() returns (r: int)
+  opaque
+  ensures r == Pair..fst(p)
+{
+  r := Pair..fst(p)
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Pair<A, B> {
+  MkPair(fst: A, snd: B)
+}
+var p: Pair<int, bool> := MkPair(1, true)
+procedure wrongFst() returns (r: int)
+  opaque
+  ensures r == Pair..fst(p) + 1
+//        ^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := Pair..fst(p)
+};
+#end
+
+/-! ## A generic COMPOSITE global is monomorphized and reasoned about.
+
+The lowering passes traverse a global's initializer alongside its type, so a generic-typed global
+is monomorphized like any other field. The must-fail twin shows the field read is really
+constrained by the global, not havocked. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+var g: Box<int> := mkBox()
+procedure readsV() returns (r: int)
+  opaque
+  ensures r == g#v
+{
+  r := g#v
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+var g: Box<int> := mkBox()
+procedure readsVWrong() returns (r: int)
+  opaque
+  ensures r == g#v + 1
+//        ^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := g#v
+};
+#end
+
+/-! The initializer may CALL a polymorphic procedure whose signature mentions a generic composite.
+Such a procedure is dropped in favour of one clone per instantiation, so the call is renamed to
+`wrap$a1$int` — and that clone exists only because this call site was seeded. A seeding walk that
+skipped the initializer would leave the rename pointing at nothing. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure wrap<T>(x: T) returns (r: Box<T>) external;
+var g: Box<int> := wrap(1)
+procedure readsWrapped() returns (r: int)
+  opaque
+  ensures r == g#v
+{
+  r := g#v
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure wrap<T>(x: T) returns (r: Box<T>) external;
+var g: Box<int> := wrap(1)
+procedure readsWrappedWrong() returns (r: int)
+  opaque
+  ensures r == g#v + 1
+//        ^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := g#v
+};
+#end
+
+/-! A generic instantiation named inside an INITIALIZER is lowered too, not just the global's own
+type. One global per type slot an effect-free initializer can reach: quantifier binder, `is`, `as`,
+and typed hole. The four other slots `mapNodeHighTypesM` carries are all declarations or
+assignments, which the effect-free rule rejects outright.
+
+Both roots must be VERIFICATION roots: an un-lowered instantiation surfaces only as a `strata-bug`
+from the post-pass re-resolution, which the full pipeline alone reaches.
+
+The reader is `entry`, where a global carries its initializer's value, so the assert pins the
+QUANTIFIER slot's answer and not merely that the program lowers: `forall(x: Box<int>) => true` holds
+over the monomorph. The twin below is what makes it non-vacuous. The other three slots carry no
+assertable value — `mkBox` is `external`, so its result's tag is open, and `<??>` is unconstrained —
+so for them reaching Core is the check.
+
+The `as` slot is a DOWNCAST (`Base` → `Box<int>`) on purpose, and must stay one. A reflexive cast is
+statically decided, and `DischargeStaticTypeTests` erases a decided cast program-wide — including in
+an initializer — by replacing it with its operand, so `mkBox() as Box<int>` would leave nothing for
+`HeapParameterization` to lower and this slot would silently stop testing anything. A downcast is not
+statically decided, so it survives. `mkBase`'s `ensures r is Box<int>` is what discharges the
+`requires` on the synthesized `downcast$…` helper; without it the slot would report a failed
+obligation instead of exercising the lowering. The `is` slot needs no such care: its operand is a
+CALL, which erasure refuses to drop, since dropping one would lose the callee's obligations. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Base { }
+composite Box<T> extends Base { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+procedure mkBase() returns (r: Base)
+  opaque
+  ensures r is Box<int>;
+var quant: bool := forall(x: Box<int>) => true
+var isNode: bool := mkBox() is Box<int>
+var asNode: Box<int> := mkBase() as Box<int>
+var hole: Box<int> := <??>
+procedure e()
+  entry
+  opaque
+{
+  assert quant
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Base { }
+composite Box<T> extends Base { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+procedure mkBase() returns (r: Base)
+  opaque
+  ensures r is Box<int>;
+var quant: bool := forall(x: Box<int>) => true
+var isNode: bool := mkBox() is Box<int>
+var asNode: Box<int> := mkBase() as Box<int>
+var hole: Box<int> := <??>
+procedure e2()
+  entry
+  opaque
+{
+  assert !quant
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! The same through a generic ALIAS: `TypeAliasElim` unfolds it before monomorphization. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+type B<T> = Box<T>
+procedure mkB() returns (r: B<int>) external;
+var g: B<int> := mkB()
+procedure readsV() returns (r: int)
+  opaque
+  ensures r == g#v
+{
+  r := g#v
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+type B<T> = Box<T>
+procedure mkB() returns (r: B<int>) external;
+var g: B<int> := mkB()
+procedure readsVWrong() returns (r: int)
+  opaque
+  ensures r == g#v + 1
+//        ^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := g#v
+};
+#end
+
+/-! A generic COMPOSITE reaches Core as a type ARGUMENT under a collection head. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+var s: Set<Box<int>> := setEmpty()
+procedure insertThenContainsBox(b: Box<int>)
+  opaque
+  ensures setContains(s, b)
+{
+  s := setInsert(s, b)
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+var s: Set<Box<int>> := setEmpty()
+procedure containsBoxWithoutInsert(b: Box<int>)
+  opaque
+  ensures setContains(s, b)
+//        ^^^^^^^^^^^^^^^^^ error: postcondition does not hold
+{
+  assert 1 == 1
 };
 #end
