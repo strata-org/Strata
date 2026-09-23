@@ -80,17 +80,17 @@ private theorem state_map_forall₂_hasTypeA
     (hEnvTy : Env.Typed env)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
       env x = some v → LExpr.lcAt 0 v = true)
-    : List.Forall₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
+    : List.Rel₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
         (entries.map (fun (k, _) =>
           match Map.find? hEnvTy.tyMap k with
           | some ty => ty
           | none => .bool)) := by
   induction entries with
-  | nil => exact List.Forall₂.nil
+  | nil => exact List.Rel₂.nil
   | cons p rest ih =>
     obtain ⟨k, v⟩ := p
     simp only [List.map_cons]
-    apply List.Forall₂.cons
+    apply List.Rel₂.cons
     · have h_mem_head : (k, v) ∈ (k, v) :: rest := List.mem_cons_self ..
       have h_env_kv := h_in_env k v h_mem_head
       obtain ⟨ty, h_envTys_k⟩ := hEnvTy.cover k v h_env_kv
@@ -587,7 +587,7 @@ theorem Step.denote_preserved
       simp [List.length_zip, h_keys_len, bindings_vt']; grind
     have h_tys_len : argTys.length = (fn.inputs.keys.zip args).length := by
       rw [List.length_zip, h_keys_len, Nat.min_self]; grind
-    have h_wt : List.Forall₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
+    have h_wt : List.Rel₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
       rw [h_zip_snd]; exact h_args
     have h_denotes : HList.cast h_sorts_eq da = HList.cast h_sorts_eq.symm.symm
         (denoteArgs tcInterp opInterp fvarVal vt .nil ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt) := by
@@ -773,8 +773,8 @@ theorem Step.type_preserved
       zip_map_fst_eq _ _ h_keys_len
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
       zip_map_snd_eq _ _ h_keys_len
-    -- Forall₂ for bindings
-    have h_wt_bindings : List.Forall₂ (LExpr.HasTypeA [])
+    -- Rel₂ for bindings
+    have h_wt_bindings : List.Rel₂ (LExpr.HasTypeA [])
         ((fn.inputs.keys.zip args).map Prod.snd)
         (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
       rw [h_zip_snd]; exact h_args

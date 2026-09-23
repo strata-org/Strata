@@ -352,7 +352,7 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
 
 /-- Deduplicate a procedure's body by extracting common subexpressions into
     `var` declarations prepended to the body. Returns the modified body and
-    the next available dedup index. -/
+    the next available uniq index. -/
 def stmtRunCSE (body : Statements) (startIdx : Nat) : Statements × Nat :=
   -- For performance, maximize structural sharing of subexpressions up front, so
   -- the pointer-address hash cache hashes each distinct subterm exactly once

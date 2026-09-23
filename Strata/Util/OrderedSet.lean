@@ -67,7 +67,7 @@ public def containsKey (s : OrderedKeyedSet key) (k : κ) : Bool := s.setIdx.con
 /-- O(1) membership test on an element, via its key. -/
 public def contains (s : OrderedKeyedSet key) (a : α) : Bool := s.setIdx.contains (key a)
 
-/-- Append `a` unless an element with the same key is already present (O(1) dedup). -/
+/-- Append `a` unless an element with the same key is already present (O(1) uniq). -/
 public def insert (s : OrderedKeyedSet key) (a : α) : OrderedKeyedSet key :=
   let (contained, setIdx) := s.setIdx.containsThenInsert (key a)
   if contained then s
@@ -107,7 +107,7 @@ public def empty : OrderedSet α := OrderedKeyedSet.empty
 /-- O(1) membership test on an element. -/
 public def contains (s : OrderedSet α) (a : α) : Bool := OrderedKeyedSet.contains s a
 
-/-- Append `a` unless it is already present (O(1) dedup). -/
+/-- Append `a` unless it is already present (O(1) uniq). -/
 public def insert (s : OrderedSet α) (a : α) : OrderedSet α := OrderedKeyedSet.insert s a
 
 /-- Elements in insertion order. -/

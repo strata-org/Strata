@@ -11,14 +11,14 @@ import all Strata.Util.ListUtils
 /-!
 # Properties of list utilities
 
-Miscellaneous list lemmas: `Forall`/`Forall₂`, `Disjoint`, `Subset`,
-`removeAll`/`replaceAll`, `dedup`, and `zip`/`map` results.
+Miscellaneous list lemmas: `Forall`/`Rel₂`, `Disj`, `Subset`,
+`removeAll`/`replaceAll`, `uniq`, and `zip`/`map` results.
 
 ## Key theorems
 
 * `List.Forall_mem_iff`, `List.Forall_append`, `List.Forall_flatMap`
 * `List.Disjoint_app`, `List.Disjoint_Nodup_iff`
-* `List.nodup_dedup`, `List.length_dedup_of_subset_le`
+* `List.nodup_uniq`, `List.length_dedup_of_subset_le`
 * `List.length_eq_of_nodup_of_mem_iff`, `List.inj_implies_nodup`, `List.sum_size_le`
 -/
 
@@ -56,13 +56,13 @@ theorem List.Forall_append : Forall P (a ++ b) ↔ Forall P a ∧ Forall P b := 
 
 
 /-- The empty list is disjoint from anything. -/
-theorem List.Disjoint_nil_left (l : List α) : List.Disjoint [] l := by
+theorem List.Disjoint_nil_left (l : List α) : List.Disj [] l := by
   intro a ha _; simp at ha
 
 
 /-- A singleton is disjoint from `l` iff its element is not in `l`. -/
 theorem List.Disjoint_singleton_left {a : α} {l : List α} :
-    List.Disjoint [a] l ↔ a ∉ l := by
+    List.Disj [a] l ↔ a ∉ l := by
   constructor
   · intro h hmem; exact h (by simp) hmem
   · intro h b hb hbl
@@ -71,7 +71,7 @@ theorem List.Disjoint_singleton_left {a : α} {l : List α} :
 
 /-- Disjointness on a `cons` splits into head-membership and tail-disjointness. -/
 theorem List.Disjoint_cons_left {a : α} {l₁ l₂ : List α} :
-    List.Disjoint (a :: l₁) l₂ ↔ a ∉ l₂ ∧ List.Disjoint l₁ l₂ := by
+    List.Disj (a :: l₁) l₂ ↔ a ∉ l₂ ∧ List.Disj l₁ l₂ := by
   constructor
   · intro h
     refine ⟨fun hmem => h (List.mem_cons_self ..) hmem, ?_⟩
@@ -92,25 +92,25 @@ theorem List.removeAll_Sublist [BEq α] {xs ys : List α}:
 
 
 theorem List.removeAll_Disjoint  [BEq α] [LawfulBEq α] {xs ys : List α}:
-  (xs.removeAll ys).Disjoint ys := by
-  induction xs <;> simp [removeAll, Disjoint] at *
+  (xs.removeAll ys).Disj ys := by
+  induction xs <;> simp [removeAll, Disj] at *
 
 
-theorem List.Disjoint.mono (h₁ : a.Sublist b) (h₂ : c.Sublist d) :
-  Disjoint b d → Disjoint a c := λ Hdis _ Hin1 Hin2 ↦
+theorem List.Disj.mono (h₁ : a.Sublist b) (h₂ : c.Sublist d) :
+  Disj b d → Disj a c := λ Hdis _ Hin1 Hin2 ↦
   Hdis (Sublist.mem Hin1 h₁) (Sublist.mem Hin2 h₂)
 
 
-theorem List.Disjoint.mono_left (h : a.Sublist b) :
-  Disjoint b c → Disjoint a c := λ Hdis ↦ mono h (Sublist.refl c) Hdis
+theorem List.Disj.mono_left (h : a.Sublist b) :
+  Disj b c → Disj a c := λ Hdis ↦ mono h (Sublist.refl c) Hdis
 
 
-theorem List.Disjoint.mono_right (h : c.Sublist d) :
-  Disjoint a d → Disjoint a c := λ Hdis ↦ mono (Sublist.refl a) h Hdis
+theorem List.Disj.mono_right (h : c.Sublist d) :
+  Disj a d → Disj a c := λ Hdis ↦ mono (Sublist.refl a) h Hdis
 
 
-theorem List.Disjoint.removeAll [BEq α] [LawfulBEq α ] {xs ys zs: List α} :
-  Disjoint xs ys → Disjoint (zs ++ xs) (ys.removeAll zs) := by
+theorem List.Disj.removeAll [BEq α] [LawfulBEq α ] {xs ys zs: List α} :
+  Disj xs ys → Disj (zs ++ xs) (ys.removeAll zs) := by
   intros Hdisj a Hin1 Hin2
   simp_all only [mem_append]
   apply @Hdisj a
@@ -124,23 +124,23 @@ theorem List.Disjoint.removeAll [BEq α] [LawfulBEq α ] {xs ys zs: List α} :
     exact Sublist.mem Hin2 Hsub
 
 
-theorem List.Disjoint_cons_head : (h :: t).Disjoint l → ¬h ∈ l := by
+theorem List.Disjoint_cons_head : (h :: t).Disj l → ¬h ∈ l := by
   intros Hdis Hin
-  simp [Disjoint] at Hdis
+  simp [Disj] at Hdis
   exact Hdis.1 Hin
 
 
-theorem List.Disjoint_cons_tail : (h :: t).Disjoint l → t.Disjoint l := by
+theorem List.Disjoint_cons_tail : (h :: t).Disj l → t.Disj l := by
   intros Hdis Hin
-  simp [Disjoint] at Hdis
+  simp [Disj] at Hdis
   exact Hdis.2 Hin
 
 
 theorem List.Disjoint_app :
-  List.Disjoint l1 l ∧ l2.Disjoint l ↔ (l1 ++ l2).Disjoint l := by
+  List.Disj l1 l ∧ l2.Disj l ↔ (l1 ++ l2).Disj l := by
   apply Iff.intro
   . induction l1
-    case nil => simp [Disjoint]
+    case nil => simp [Disj]
     case cons h t ih =>
     intros Hnin x Hin1 Hin2
     specialize ih ⟨List.Disjoint_cons_tail Hnin.1, Hnin.2⟩
@@ -157,7 +157,7 @@ theorem List.Disjoint_app :
     | inr Hin =>
       exact Hnin.2 Hin Hin2
   . induction l1
-    case nil => simp [Disjoint]
+    case nil => simp [Disj]
     case cons h t ih =>
     intros Hnin
     refine ⟨?_, ?_⟩
@@ -169,7 +169,7 @@ theorem List.Disjoint_app :
 
 
 theorem List.Disjoint_Nodup_iff :
-List.Nodup a ∧ b.Nodup ∧ a.Disjoint b ↔ (a ++ b).Nodup := by
+List.Nodup a ∧ b.Nodup ∧ a.Disj b ↔ (a ++ b).Nodup := by
 apply Iff.intro
 . intros H
   refine nodup_append.mpr ?_
@@ -193,47 +193,47 @@ theorem List.Subset.empty : [].Subset s := by
 /-- From Mathlib4
     https://github.com/leanprover-community/mathlib4/blob/ccca47289b3f94a9572a38975e0876c139690a21/Mathlib/Data/List/Lattice.lean#L39-L40
     -/
-theorem List.Disjoint.symm : Disjoint a b → Disjoint b a := fun H _ Hin1 Hin2 => H Hin2 Hin1
+theorem List.Disj.symm : Disj a b → Disj b a := fun H _ Hin1 Hin2 => H Hin2 Hin1
 
 
-theorem List.Disjoint.symm_app (d : Disjoint l (l₁ ++ l₂))
-  : Disjoint l (l₂ ++ l₁) := fun _ Hin1 Hin2 => d Hin1
+theorem List.Disj.symm_app (d : Disj l (l₁ ++ l₂))
+  : Disj l (l₂ ++ l₁) := fun _ Hin1 Hin2 => d Hin1
         (mem_append.mpr $ Or.symm (mem_append.mp Hin2))
 
 
-theorem List.Disjoint_Subset_right : Disjoint vs ks → ks'.Subset ks → vs.Disjoint ks' := by
+theorem List.Disjoint_Subset_right : Disj vs ks → ks'.Subset ks → vs.Disj ks' := by
   intros Hdis Hsub
-  simp [Disjoint, List.Subset] at *
+  simp [Disj, List.Subset] at *
   intros a Hin1 Hin2
   specialize Hdis Hin1
   simp_all
 
 
-theorem List.Disjoint_Subset_left : Disjoint vs ks → List.Subset vs' vs → vs'.Disjoint ks := by
+theorem List.Disjoint_Subset_left : Disj vs ks → List.Subset vs' vs → vs'.Disj ks := by
   intros Hdis Hsub
-  apply List.Disjoint.symm
-  apply Disjoint_Subset_right (Disjoint.symm Hdis) Hsub
+  apply List.Disj.symm
+  apply Disjoint_Subset_right (Disj.symm Hdis) Hsub
 
 
-theorem List.Disjoint_Subsets : Disjoint vs ks → List.Subset vs' vs → List.Subset ks' ks → vs'.Disjoint ks' := by
+theorem List.Disjoint_Subsets : Disj vs ks → List.Subset vs' vs → List.Subset ks' ks → vs'.Disj ks' := by
   intros Hdis Hsub1 Hsub2
   exact List.Disjoint_Subset_left (Disjoint_Subset_right Hdis Hsub2) Hsub1
 
 
-theorem List.DisjointAppLeft' :
-  Disjoint vs (ks ++ ks') → Disjoint vs ks' := by
+theorem List.DisjAppLeft' :
+  Disj vs (ks ++ ks') → Disj vs ks' := by
   intros Hdist h
-  simp [Disjoint] at *
+  simp [Disj] at *
   intros Hin1 Hin2
   specialize Hdist Hin1
   simp_all
 
 
-theorem List.DisjointAppRight' :
-  List.Disjoint vs (ks ++ ks') → List.Disjoint vs ks := by
+theorem List.DisjAppRight' :
+  List.Disj vs (ks ++ ks') → List.Disj vs ks := by
   intros Hdist
-  have Hdist' := List.Disjoint.symm_app Hdist
-  exact List.DisjointAppLeft' Hdist'
+  have Hdist' := List.Disj.symm_app Hdist
+  exact List.DisjAppLeft' Hdist'
 
 
 theorem List.Subset.subset_app_of_or_2 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 → l ⊆ l1 ++ l2  := by
@@ -482,7 +482,7 @@ theorem List.PredDisjoint_Disjoint :
   Forall P as →
   Forall Q bs →
   PredDisjoint P Q →
-  Disjoint as bs := by
+  Disj as bs := by
 intros H1 H2 Hdis x Hin1 Hin2
 apply Hdis x
 . exact (List.Forall_mem_iff.mp H1) x Hin1
@@ -597,12 +597,12 @@ theorem mem_map_snd_zip {α β} (l₁ : List α) (l₂ : List β) (v : β)
 /--
 A deduplicated list satisfies `Nodup`.
 -/
-theorem nodup_dedup {α : Type} [DecidableEq α] (l : List α) :
-  l.dedup.Nodup := by
+theorem nodup_uniq {α : Type} [DecidableEq α] (l : List α) :
+  l.uniq.Nodup := by
   induction l with
-  | nil => simp [dedup]
+  | nil => simp [uniq]
   | cons a as ih =>
-    simp [dedup]
+    simp [uniq]
     split
     · exact ih
     · rename_i h; constructor
@@ -615,11 +615,11 @@ The upper bound of the length of a deduplicated list is the length of the
 original list.
 -/
 theorem length_dedup_le {α : Type} [DecidableEq α] (l : List α) :
-  l.dedup.length ≤ l.length := by
+  l.uniq.length ≤ l.length := by
   induction l with
-  | nil => simp [dedup]
+  | nil => simp [uniq]
   | cons a as ih =>
-    simp [dedup]
+    simp [uniq]
     split
     · exact Nat.le_succ_of_le ih
     · simp; exact ih
@@ -630,26 +630,26 @@ The lower bound of the length of a deduplicated list with an element consed onto
 it (i.e., `(a :: l)`) is the length of the deduplicated list `l`.
 -/
 theorem length_dedup_cons_le {α : Type} [DecidableEq α] (a : α) (l : List α) :
-  l.dedup.length ≤ (a :: l).dedup.length := by
+  l.uniq.length ≤ (a :: l).uniq.length := by
   induction l with
-  | nil => simp [dedup]
+  | nil => simp [uniq]
   | cons a as ih =>
-    simp [dedup]
+    simp [uniq]
     split
     · exact ih
     · rename_i a' h
       simp_all
       by_cases a' = a
       · simp_all
-      · by_cases a' ∈ as.dedup <;> simp_all
+      · by_cases a' ∈ as.uniq <;> simp_all
 
 
 theorem mem_dedup_of_mem {α : Type} [DecidableEq α]
-  (l : List α) (a : α) : a ∈ l.dedup → a ∈ l := by
+  (l : List α) (a : α) : a ∈ l.uniq → a ∈ l := by
   induction l with
-  | nil => simp [dedup]
+  | nil => simp [uniq]
   | cons b bs ih =>
-    simp [dedup]
+    simp [uniq]
     split
     · intro h
       exact Or.symm (Or.intro_left (a = b) (ih h))
@@ -660,15 +660,15 @@ theorem mem_dedup_of_mem {α : Type} [DecidableEq α]
 
 
 theorem mem_of_mem_dedup {α : Type} [DecidableEq α]
-  (l : List α) (a : α) : a ∈ l → a ∈ l.dedup := by
+  (l : List α) (a : α) : a ∈ l → a ∈ l.uniq := by
   induction l with
-  | nil => simp [dedup]
+  | nil => simp [uniq]
   | cons b bs ih =>
-    simp [dedup]
+    simp [uniq]
     intro h; cases h
     · subst a
-      by_cases b ∈ bs.dedup <;> simp_all
-    · by_cases b ∈ bs.dedup <;> simp_all
+      by_cases b ∈ bs.uniq <;> simp_all
+    · by_cases b ∈ bs.uniq <;> simp_all
 
 
 /--
@@ -676,48 +676,48 @@ An element `a` is in a list `l` iff it is in the deduplicated version
 of `l`.
 -/
 theorem mem_of_dedup {α : Type} [DecidableEq α]
-  (l : List α) (a : α) : a ∈ l ↔ a ∈ l.dedup := by
+  (l : List α) (a : α) : a ∈ l ↔ a ∈ l.uniq := by
   apply Iff.intro
   exact fun h => mem_of_mem_dedup l a h
   exact fun h => mem_dedup_of_mem l a h
 
 
-theorem dedupTR.go_eq {α : Type} [DecidableEq α]
+theorem uniqTR.go_eq {α : Type} [DecidableEq α]
     (l acc : List α) :
-    dedupTR.go l acc = acc.reverse ++ l.dedup := by
+    uniqTR.go l acc = acc.reverse ++ l.uniq := by
   induction l generalizing acc with
-  | nil => simp [dedupTR.go, dedup]
+  | nil => simp [uniqTR.go, uniq]
   | cons a as ih =>
-    simp only [dedupTR.go, dedup]
+    simp only [uniqTR.go, uniq]
     by_cases h : a ∈ as
-    · have h' : a ∈ as.dedup := mem_of_mem_dedup as a h
+    · have h' : a ∈ as.uniq := mem_of_mem_dedup as a h
       simp [h, h', ih]
-    · have h' : a ∉ as.dedup := by
+    · have h' : a ∉ as.uniq := by
         intro hc; exact h (mem_dedup_of_mem as a hc)
       simp [h, h', ih]
 
 
 /--
-`List.dedup` is equivalent to `dedupTR` at compile time.
+`List.uniq` is equivalent to `uniqTR` at compile time.
 -/
-@[csimp] theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
+@[csimp] theorem dedup_eq_dedupTR : @List.uniq = @uniqTR := by
   funext α _ l
-  simp [dedupTR, dedupTR.go_eq]
+  simp [uniqTR, uniqTR.go_eq]
 
 
 theorem length_dedup_cons_of_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
-  (h : a ∈ l) : (a :: l).dedup.length = l.dedup.length := by
-  simp [dedup]
-  have : a ∈ l.dedup := mem_of_mem_dedup l a h
+  (h : a ∈ l) : (a :: l).uniq.length = l.uniq.length := by
+  simp [uniq]
+  have : a ∈ l.uniq := mem_of_mem_dedup l a h
   simp [this]
 
 
 theorem length_dedup_cons_of_not_mem {α : Type} [DecidableEq α] (a : α) (l : List α)
-  (h : a ∉ l) : (a :: l).dedup.length = 1 + l.dedup.length := by
+  (h : a ∉ l) : (a :: l).uniq.length = 1 + l.uniq.length := by
   induction l
-  · simp_all [dedup]
+  · simp_all [uniq]
   · rename_i head tail ih
-    simp_all [dedup]
+    simp_all [uniq]
     obtain ⟨h1, h2⟩ := h
     split
     · have := @mem_dedup_of_mem _ _ tail a
@@ -729,7 +729,7 @@ theorem length_dedup_cons_of_not_mem {α : Type} [DecidableEq α] (a : α) (l : 
 
 
 theorem mem_append_left_of_mem_dedup {α : Type} [DecidableEq α] (a : α) (l₁ l₂ : List α)
-  (h1 : ¬a ∈ l₂.dedup) (h2 : a ∈ (l₁ ++ l₂).dedup) :
+  (h1 : ¬a ∈ l₂.uniq) (h2 : a ∈ (l₁ ++ l₂).uniq) :
   a ∈ l₁ := by
   have := @mem_dedup_of_mem _ _ (l₁ ++ l₂) a (by assumption)
   have := @mem_dedup_of_mem _ _ l₂ a
@@ -740,7 +740,7 @@ theorem mem_append_left_of_mem_dedup {α : Type} [DecidableEq α] (a : α) (l₁
 
 
 theorem mem_append_right_of_mem_dedup {α : Type} [DecidableEq α] (a : α) (l₁ l₂ : List α)
-  (h1 : ¬a ∈ l₁.dedup) (h2 : a ∈ (l₁ ++ l₂).dedup) :
+  (h1 : ¬a ∈ l₁.uniq) (h2 : a ∈ (l₁ ++ l₂).uniq) :
   a ∈ l₂ := by
   have := @mem_dedup_of_mem _ _ (l₁ ++ l₂) a (by assumption)
   have := @mem_dedup_of_mem _ _ l₁ a
@@ -751,27 +751,27 @@ theorem mem_append_right_of_mem_dedup {α : Type} [DecidableEq α] (a : α) (l�
 
 
 theorem length_dedup_append_le_sum {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
-  (l₁ ++ l₂).dedup.length ≤ l₁.dedup.length + l₂.dedup.length := by
+  (l₁ ++ l₂).uniq.length ≤ l₁.uniq.length + l₂.uniq.length := by
   induction l₁ generalizing l₂
   · simp_all
   · rename_i head tail ih
-    simp [dedup]
-    by_cases h1 : head ∈ tail.dedup
-    · have : head ∈ (tail ++ l₂).dedup := by
+    simp [uniq]
+    by_cases h1 : head ∈ tail.uniq
+    · have : head ∈ (tail ++ l₂).uniq := by
         have := @mem_dedup_of_mem _ _ tail head h1
         have := @mem_of_mem_dedup _ _ (tail ++ l₂) head
         simp_all
       simp_all
     · simp_all
-      by_cases h2 : head ∈ l₂.dedup
-      · have : head ∈ (tail ++ l₂).dedup := by
+      by_cases h2 : head ∈ l₂.uniq
+      · have : head ∈ (tail ++ l₂).uniq := by
           have := @mem_dedup_of_mem _ _ l₂ head  h2
           have := @mem_of_mem_dedup _ _ (tail ++ l₂) head
           simp_all
         simp_all
         have := ih l₂
         omega
-      · have : head ∉ (tail ++ l₂).dedup := by
+      · have : head ∉ (tail ++ l₂).uniq := by
           have := @mem_dedup_of_mem _ _ (tail ++ l₂) head
           intro h
           simp_all
@@ -794,11 +794,11 @@ theorem removeAll_of_cons {α : Type} [DecidableEq α] (x : α) (xs ys : List α
 
 theorem length_dedup_of_removeAll {α : Type} [DecidableEq α] (a : α) (l : List α)
   (h : a ∈ l) :
-  l.dedup.length = 1 + (l.removeAll [a]).dedup.length := by
+  l.uniq.length = 1 + (l.removeAll [a]).uniq.length := by
   induction l
   case nil => simp_all
   case cons x xs ih =>
-    simp [dedup]
+    simp [uniq]
     simp at h
     by_cases h : a = x
     case pos =>
@@ -850,19 +850,19 @@ theorem length_dedup_of_removeAll {α : Type} [DecidableEq α] (a : α) (l : Lis
 
 
 theorem length_dedup_append_le_left {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
-  l₁.dedup.length ≤ (l₁ ++ l₂).dedup.length := by
+  l₁.uniq.length ≤ (l₁ ++ l₂).uniq.length := by
   induction l₁ generalizing l₂
-  case nil => simp [dedup]
+  case nil => simp [uniq]
   case cons a as ih =>
-    simp [dedup]
+    simp [uniq]
     split
     · rename_i h
       have : a ∈ as := by exact (mem_of_dedup as a).mpr h
-      have : a ∈ (as ++ l₂).dedup := by
+      have : a ∈ (as ++ l₂).uniq := by
         have : a ∈ as ++ l₂ := by simp_all
         exact (mem_of_dedup (as ++ l₂) a).mp this
       simp_all
-    · by_cases ha : a ∈ (as ++ l₂).dedup
+    · by_cases ha : a ∈ (as ++ l₂).uniq
       case pos =>
         rename_i h_a_as
         simp_all
@@ -893,7 +893,7 @@ theorem length_dedup_append_le_left {α : Type} [DecidableEq α] (l₁ l₂ : Li
 
 theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁.all (fun e => e ∈ l₂)) :
-  (l₁ ++ l₂).dedup.length = l₂.dedup.length := by
+  (l₁ ++ l₂).uniq.length = l₂.uniq.length := by
   induction l₁
   · simp_all
   · rename_i head tail ih
@@ -903,9 +903,9 @@ theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂
     simp [@length_dedup_cons_of_mem _ _ head (tail ++ l₂) h1']
     induction tail <;> try simp
     rename_i x xrest ih
-    simp_all [dedup]
+    simp_all [uniq]
     have : x ∈ (xrest ++ l₂) := by simp_all
-    have : x ∈ (xrest ++ l₂).dedup := by
+    have : x ∈ (xrest ++ l₂).uniq := by
       exact @mem_of_mem_dedup _ _ (xrest ++ l₂) x (by assumption)
     simp_all
     done
@@ -913,13 +913,13 @@ theorem length_dedup_append_all_in_right {α : Type} [DecidableEq α] (l₁ l₂
 
 theorem length_dedup_append_subset_right {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₁ ⊆ l₂) :
-  (l₁ ++ l₂).dedup.length = l₂.dedup.length := by
+  (l₁ ++ l₂).uniq.length = l₂.uniq.length := by
   exact @length_dedup_append_all_in_right _ _ l₁ l₂ (by grind)
 
 
 theorem length_dedup_append_all_in_left {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h : l₂.all (fun e => e ∈ l₁)) :
-  (l₁ ++ l₂).dedup.length = l₁.dedup.length := by
+  (l₁ ++ l₂).uniq.length = l₁.uniq.length := by
   induction l₂ generalizing l₁
   case nil => simp_all
   case cons x xs ih =>
@@ -938,7 +938,7 @@ theorem length_dedup_append_all_in_left {α : Type} [DecidableEq α] (l₁ l₂ 
 theorem length_dedup_all_in_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h1 : l₁.all (fun e => e ∈ l₂))
   (h2 : l₂.all (fun e => e ∈ l₁)) :
-  l₁.dedup.length = l₂.dedup.length := by
+  l₁.uniq.length = l₂.uniq.length := by
   have h_1 := @length_dedup_append_all_in_right _ _ l₁ l₂ h1
   have h_2 := @length_dedup_append_all_in_left _ _ l₁ l₂ h2
   simp_all
@@ -946,13 +946,13 @@ theorem length_dedup_all_in_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α
 
 theorem length_dedup_subset_eq {α : Type} [DecidableEq α] (l₁ l₂ : List α)
   (h1 : l₁ ⊆ l₂) (h2 : l₂ ⊆ l₁) :
-  l₁.dedup.length = l₂.dedup.length := by
+  l₁.uniq.length = l₂.uniq.length := by
   have := @length_dedup_all_in_eq _ _ l₁ l₂
   grind
 
 
 theorem length_dedup_append_le_right {α : Type} [DecidableEq α] (l₁ l₂ : List α) :
-  l₂.dedup.length ≤ (l₁ ++ l₂).dedup.length := by
+  l₂.uniq.length ≤ (l₁ ++ l₂).uniq.length := by
   have h_left := @length_dedup_append_le_left _ _ l₂ l₁
   have := @length_dedup_all_in_eq _ _ (l₁ ++ l₂) (l₂ ++ l₁)
   simp_all
@@ -960,17 +960,17 @@ theorem length_dedup_append_le_right {α : Type} [DecidableEq α] (l₁ l₂ : L
 
 theorem length_dedup_of_all_in_not_mem_lt {α : Type} [DecidableEq α] (l₁ l₂ : List α) (a : α)
   (h1 : l₁.all (fun e => e ∈ l₂)) (h2 : a ∉ l₁) (h3 : a ∈ l₂) :
-  l₁.dedup.length < l₂.dedup.length := by
+  l₁.uniq.length < l₂.uniq.length := by
   induction l₁ generalizing l₂ with
   | nil =>
-    simp_all [dedup]
-    have : a ∈ l₂.dedup := by
+    simp_all [uniq]
+    have : a ∈ l₂.uniq := by
       have := @mem_of_dedup _ _ l₂ a
       simp_all
     exact length_pos_of_mem this
   | cons head tail ih =>
     simp at h1 ih
-    simp [dedup]
+    simp [uniq]
     obtain ⟨h1_head_l2, h1⟩ := h1
     split
     · rename_i h_head_tail
@@ -998,15 +998,15 @@ theorem length_dedup_of_all_in_not_mem_lt {α : Type} [DecidableEq α] (l₁ l�
 
 theorem length_dedup_of_subset_not_mem_lt {α : Type} [DecidableEq α] (l₁ l₂ : List α) (a : α)
   (h1 : l₁ ⊆ l₂) (h2 : a ∉ l₁) (h3 : a ∈ l₂) :
-  l₁.dedup.length < l₂.dedup.length := by
+  l₁.uniq.length < l₂.uniq.length := by
   have := @length_dedup_of_all_in_not_mem_lt _ _ l₁ l₂ a
   grind
 
 
 theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List α)
-  (h : l₁ ⊆ l₂) : l₁.dedup.length ≤ l₂.dedup.length := by
+  (h : l₁ ⊆ l₂) : l₁.uniq.length ≤ l₂.uniq.length := by
   induction l₁ with
-  | nil => simp_all [dedup]
+  | nil => simp_all [uniq]
   | cons head tail ih =>
     have h_tail_l2 : tail ⊆ l₂ := by simp_all
     have ih' := @ih h_tail_l2
@@ -1017,10 +1017,10 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
     case neg =>
       simp_all
       have := @length_dedup_of_subset_not_mem_lt _ _ tail l₂ head h_tail_l2 h_head h
-      have h_head_dedup : head ∉ tail.dedup := by
+      have h_head_dedup : head ∉ tail.uniq := by
         have := @mem_of_dedup _ _ tail head
         simp_all
-      simp_all [dedup]
+      simp_all [uniq]
       omega
 
 
@@ -1037,7 +1037,7 @@ theorem subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s
 
 
 theorem occurrences_len_eq_dedup {α} [DecidableEq α]:
-  ∀ (l : List α), l.dedup.length = l.occurrences.length := by
+  ∀ (l : List α), l.uniq.length = l.occurrences.length := by
   intros l
   unfold occurrences
   grind
@@ -1047,8 +1047,8 @@ theorem occurrences_find {α} [DecidableEq α] (l : List α) (x : α)
   (hx : x ∈ l)
   : l.occurrences.find? (fun ⟨k, _⟩ => k == x) = .some (x, l.count x) := by
   simp only [occurrences, find?_map, Option.map_eq_some_iff, Prod.mk.injEq]
-  have : x ∈ l.dedup := by induction l <;> grind [dedup]
-  generalize l.dedup = ld at *
+  have : x ∈ l.uniq := by induction l <;> grind [uniq]
+  generalize l.uniq = ld at *
   induction ld <;> simp [List.find?, Function.comp_apply] <;>
     (first | grind | split <;> grind)
 
@@ -1239,23 +1239,23 @@ theorem lookup_of_mem_nodup
 
 end List
 
-theorem List.Forall₂.head {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : R a b := by
+theorem List.Rel₂.head {R : α → β → Prop} (h : Rel₂ R (a :: as) (b :: bs)) : R a b := by
   cases h; assumption
 
 
-theorem List.Forall₂.tail {R : α → β → Prop} (h : Forall₂ R (a :: as) (b :: bs)) : Forall₂ R as bs := by
+theorem List.Rel₂.tail {R : α → β → Prop} (h : Rel₂ R (a :: as) (b :: bs)) : Rel₂ R as bs := by
   cases h; assumption
 
 
-theorem List.Forall₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
-    (h : Forall₂ R as bs) : as.length = bs.length := by
+theorem List.Rel₂.length_eq {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Rel₂ R as bs) : as.length = bs.length := by
   induction h with
   | nil => rfl
   | cons _ _ ih => simp [ih]
 
 
-theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
-    (h : Forall₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
+theorem List.Rel₂.get? {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : Rel₂ R as bs) (i : Nat) (ha : as[i]? = some a) (hb : bs[i]? = some b)
     : R a b := by
   induction h generalizing i with
   | nil => simp at ha
@@ -1265,11 +1265,11 @@ theorem List.Forall₂.get? {R : α → β → Prop} {as : List α} {bs : List �
     | succ n => simp at ha hb; exact ih n ha hb
 
 
-/-- If `Forall₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
+/-- If `Rel₂ R l1 l2` and `l1[i]? = some a`, then there exists `b` with
 `l2[i]? = some b` and `R a b`. -/
-theorem List.Forall₂.getElem?_some {R : α → β → Prop}
+theorem List.Rel₂.getElem?_some {R : α → β → Prop}
     {l1 : List α} {l2 : List β}
-    (h : List.Forall₂ R l1 l2) {i : Nat} {a : α}
+    (h : List.Rel₂ R l1 l2) {i : Nat} {a : α}
     (ha : l1[i]? = some a)
     : ∃ b, l2[i]? = some b ∧ R a b := by
   induction h generalizing i with

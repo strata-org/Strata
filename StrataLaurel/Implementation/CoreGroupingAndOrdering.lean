@@ -208,9 +208,9 @@ where
     let n := laurelDatatypes.length
     if n == 0 then [] else
     let nameToIdx : Std.HashMap String Nat :=
-      laurelDatatypes.foldlIdx (fun m i dt => m.insert dt.name.text i) {}
+      laurelDatatypes.foldlIdxVal (fun m i dt => m.insert dt.name.text i) {}
     let edges : List (Nat × Nat) :=
-      laurelDatatypes.foldlIdx (fun acc i dt =>
+      laurelDatatypes.foldlIdxVal (fun acc i dt =>
         (datatypeRefs dt).filterMap nameToIdx.get? |>.foldl (fun acc j => (j, i) :: acc) acc) []
     let g := OutGraph.ofEdges! n edges
     let dtsArr := laurelDatatypes.toArray

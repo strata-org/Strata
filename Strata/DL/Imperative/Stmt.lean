@@ -1128,7 +1128,7 @@ list = weaker requirement). It checks freshness at every expression
 position — command RHS, loop/ite guard, invariant, and measure.
 
 Each leaf freshness condition "`names` avoids `vars`" is expressed as
-`List.Disjoint names vars` (i.e. `∀ z ∈ names, z ∉ vars`). -/
+`List.Disj names vars` (i.e. `∀ z ∈ names, z ∉ vars`). -/
 
 /-- "names is fresh in s": no name `z ∈ names` appears in any read position
 (cmd expression, loop guard, invariant, or measure) at any depth in `s`.  This is
@@ -1137,12 +1137,12 @@ this now checks the body free-vars too, whereas the passes run under `noFuncDecl
 so the added leaf is vacuous.) -/
 @[expose] def Stmt.namesFreshInExprs {P : PureExpr} [HasFvars P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
-  List.Disjoint names (Stmt.getVars s)
+  List.Disj names (Stmt.getVars s)
 
 /-- "names is fresh in ss": disjointness from the block's read-var set. -/
 @[expose] def Block.namesFreshInExprs {P : PureExpr} [HasFvars P]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Prop :=
-  List.Disjoint names (Block.getVars ss)
+  List.Disj names (Block.getVars ss)
 
 /-! ## RHS-only freshness predicate `namesFreshInRhsExprs`
 
@@ -1164,11 +1164,11 @@ guard/invariant/measure read positions are NOT checked). -/
 @[expose] def Stmt.namesFreshInRhsExprs {P : PureExpr} [HasFvars P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
   match s with
-  | .cmd (.init _ _ rhs _) => List.Disjoint names (ExprOrNondet.getVars rhs)
-  | .cmd (.set _ rhs _) => List.Disjoint names (ExprOrNondet.getVars rhs)
-  | .cmd (.assert _ e _) => List.Disjoint names (HasFvars.getFvars e)
-  | .cmd (.assume _ e _) => List.Disjoint names (HasFvars.getFvars e)
-  | .cmd (.cover _ e _) => List.Disjoint names (HasFvars.getFvars e)
+  | .cmd (.init _ _ rhs _) => List.Disj names (ExprOrNondet.getVars rhs)
+  | .cmd (.set _ rhs _) => List.Disj names (ExprOrNondet.getVars rhs)
+  | .cmd (.assert _ e _) => List.Disj names (HasFvars.getFvars e)
+  | .cmd (.assume _ e _) => List.Disj names (HasFvars.getFvars e)
+  | .cmd (.cover _ e _) => List.Disj names (HasFvars.getFvars e)
   | .block _ bss _ => Block.namesFreshInRhsExprs names bss
   | .ite _ tss ess _ =>
     Block.namesFreshInRhsExprs names tss ∧ Block.namesFreshInRhsExprs names ess

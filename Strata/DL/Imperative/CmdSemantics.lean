@@ -254,7 +254,7 @@ def invStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
   substStores σ₁ σ₂ $ vs.zip vs
 
 def invStoresExcept {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
-  : Prop := ∀ (vs' : List P.Ident), vs'.Disjoint vs → invStores σ₁ σ₂ vs'
+  : Prop := ∀ (vs' : List P.Ident), vs'.Disj vs → invStores σ₁ σ₂ vs'
 
 def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
   : List (P.Ident × P.Ident) := substs.map Prod.swap

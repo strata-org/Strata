@@ -122,7 +122,7 @@ def capturedVars (decl : PureFunc Expression) :
   let precFvs := decl.preconditions.flatMap (fun p => Lambda.LExpr.freeVars p.expr)
   let mesFvs := (decl.measure.map Lambda.LExpr.freeVars).getD []
   let nonFormal := (bodyFvs ++ axFvs ++ precFvs ++ mesFvs).filter (fun (id, _) => !formals.contains id)
-  let names := (nonFormal.map (·.1)).dedup
+  let names := (nonFormal.map (·.1)).uniq
   names.mapM fun id => do
     -- Every occurrence of a captured variable must carry the same, non-`none`
     -- type annotation.  (Type inference guarantees this for surface programs;
@@ -259,7 +259,7 @@ def buildLiftedDecls (proc : Procedure) (md : MetaData Expression)
       lf.decl.inputs.flatMap (fun (_, ty) => (Lambda.LTy.toMonoTypeUnsafe ty).freeVars)
         ++ (Lambda.LTy.toMonoTypeUnsafe lf.decl.output).freeVars
     let extraTypeArgs :=
-      ((extCap.flatMap (fun (_, _, mty) => mty.freeVars)) ++ ownTyVars).dedup.filter
+      ((extCap.flatMap (fun (_, _, mty) => mty.freeVars)) ++ ownTyVars).uniq.filter
         (fun tv => tv ∉ lf.decl.typeArgs)
     let f := toFunction rewritten newName extraInputs extraTypeArgs
     Decl.func f .empty
@@ -294,7 +294,7 @@ private def hoistProcedure (proc : Procedure) (md : MetaData Expression)
       ++ d.axioms.flatMap Lambda.LExpr.getOps
       ++ d.preconditions.flatMap (fun p => Lambda.LExpr.getOps p.expr)
       ++ (d.measure.map Lambda.LExpr.getOps).getD []
-    ((ops.map (·.name)).filter siblingNames.contains).dedup
+    ((ops.map (·.name)).filter siblingNames.contains).uniq
   let dedupBySnapshot (cs : List (CoreIdent × CoreIdent × LMonoTy)) :
       List (CoreIdent × CoreIdent × LMonoTy) :=
     let (out, _) := cs.foldl
@@ -339,7 +339,7 @@ def processDecl (topLevelFuncNames : Std.HashSet String) (decl : Decl) :
         pure [decl]
       else
         -- Reject recursive internal function declarations.
-        let recNames := ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).dedup
+        let recNames := ((lfs.filter (·.decl.isRecursive)).map (·.decl.name.name)).uniq
         if !recNames.isEmpty then
           let names := String.intercalate ", " (recNames.map (fun n => s!"'{n}'"))
           throw <| Strata.Message.fromFormat
@@ -351,7 +351,7 @@ def processDecl (topLevelFuncNames : Std.HashSet String) (decl : Decl) :
         -- function declarations with identical name rename them to have
         -- unique names.
         let allNames := lfs.map (·.decl.name.name)
-        let dupNames := (allNames.filter (fun n => allNames.count n > 1)).dedup
+        let dupNames := (allNames.filter (fun n => allNames.count n > 1)).uniq
         if !dupNames.isEmpty then
           let names := String.intercalate ", " (dupNames.map (fun n => s!"'{n}'"))
           throw <| Strata.Message.fromFormat
@@ -360,7 +360,7 @@ def processDecl (topLevelFuncNames : Std.HashSet String) (decl : Decl) :
                internal function declarations must have distinct names"
         -- Reject internal function names that clash with a top-level `Decl.func` as well.
         let clashesWithTopLevel :=
-          (allNames.filter topLevelFuncNames.contains).dedup
+          (allNames.filter topLevelFuncNames.contains).uniq
         if !clashesWithTopLevel.isEmpty then
           let names := String.intercalate ", " (clashesWithTopLevel.map (fun n => s!"'{n}'"))
           throw <| Strata.Message.fromFormat
@@ -376,7 +376,7 @@ def processDecl (topLevelFuncNames : Std.HashSet String) (decl : Decl) :
         -- Fast (linear, short-circuiting) presence check; on failure we then
         -- collect the actual names once for the diagnostic.
         if Imperative.Block.hasLocalTypeDecl ss then
-          let localTypes := (ss.flatMap Imperative.Stmt.localTypeDecls |>.map (·.name)).dedup
+          let localTypes := (ss.flatMap Imperative.Stmt.localTypeDecls |>.map (·.name)).uniq
           let names := String.intercalate ", " (localTypes.map (fun n => s!"'{n}'"))
           throw <| Strata.Message.fromFormat
             f!"LiftInternalFuncDecls: procedure '{proc.header.name.name}' combines local type \

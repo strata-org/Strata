@@ -118,7 +118,7 @@ private def genOpaqueTypeName (procName tyVar : String) : CoreGenM CoreIdent :=
     type parameters is returned unchanged. -/
 def monomorphizeProc (proc : Procedure) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
-  let tyVars := proc.header.typeArgs.dedup
+  let tyVars := proc.header.typeArgs.uniq
   if tyVars.isEmpty then
     return [Decl.proc proc md]
   else
