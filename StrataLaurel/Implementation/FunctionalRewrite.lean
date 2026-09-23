@@ -593,16 +593,25 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
     | ⟨.Return (some value), _⟩ => .ok value
     | ⟨.Return none, _⟩ => .ok retExpr
     | ⟨.Assign [⟨.Local name, targetSource⟩] value, _⟩ =>
-      -- Assigning to an input parameter is a destructive assignment the Core
-      -- translator must keep rejecting. Turning it into a shadowing declaration
-      -- would silently accept the program.
+      -- A plain input cannot be mutated anywhere: an `opaque` body writing to its own
+      -- input is rejected by Core's type checker, with a far worse message. An *inout*
+      -- can be, but only in an opaque body — a function has one result and no slot to
+      -- thread the new value out, so a transparent body cannot mutate either kind.
+      -- This check keeps both rejections alive through the functional rewrite, which
+      -- would otherwise turn the assignment into a shadowing declaration and silently
+      -- accept it.
+      --
+      -- The author may not have written an assignment at all: a `modifies` callee or a
+      -- global write is threaded through the signature as an inout, so calling one from
+      -- a transparent body arrives here as an assignment to `$heap` or to the global.
       --
       -- Compared by `uniqueId`, not by text: a local that shadows an input has the
       -- same name but a different binding, and assigning to *it* is the ordinary
       -- destructive-update case that this pass handles.
       if name.uniqueId.any inputUids.contains then
         unsupported s.source
-          "destructive assignments are not supported in transparent bodies or contracts"
+          s!"a transparent body or contract cannot YET mutate any of its inputs, \
+             and this mutates '{name.text}'"
       else do
         let value ← match value with
           | ⟨.Block valueStmts _, _⟩ =>
