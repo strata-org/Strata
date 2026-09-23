@@ -751,46 +751,11 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
-/-- Every expression-bearing specification field outside the procedure body, in
-    declaration order: preconditions, coroutine relies/guarantees, decreases,
-    invoke-on trigger, axioms, then the `throwsOn` behavior cases. The coroutine
-    clauses (`relies`/`guarantees`, empty for a regular procedure) are included
-    so generic traversals such as heap-effect analysis see them without a
-    coroutine-specific special case.
-
-    A `throwsOn` case contributes all three of its expression-bearing parts — its
-    guard, its postconditions, and its frame targets — because a pass that walked
-    only some of them would silently miss the rest: `FilterPrelude` would delete a
-    prelude name reachable only from the part it skipped. -/
-def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
-  proc.preconditions.map (·.condition) ++
-    proc.relies.map (·.condition) ++ proc.guarantees.map (·.condition) ++
-    proc.decreases.toList ++ proc.invokeOn.toList ++ proc.axioms ++
-    proc.throwsOn.flatMap (fun blk =>
-      blk.guard :: blk.postconditions.map (·.condition) ++ blk.modifies)
-
-/-- Visit every expression node in a procedure in deterministic pre-order.
-    Body expressions come first, followed by preconditions, decreases, invoke-on,
-    and axioms. Opaque bodies visit postconditions, implementation, then modifies
-    entries; abstract bodies visit their postconditions. -/
-def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure) : m Unit := do
-  let visit := foldStmtExprM f
-  match proc.body with
-  | .Transparent body => visit body
-  | .Opaque postconditions implementation modifies =>
-    postconditions.forM (visit ·.condition)
-    implementation.forM visit
-    modifies.forM fun g => do
-      g.targets.forM visit
-      g.guard.forM visit
-  | .Abstract postconditions => postconditions.forM (visit ·.condition)
-  | .External => pure ()
-  procedureSpecificationExprs proc |>.forM visit
-
 /-- Map procedure specification fields with separate transformations for
-    proposition-valued fields (`preconditions`, `axioms`, and a `throwsOn` case's
-    `ensures`) and unconstrained value fields (`decreases`, `invokeOn`, and a case's
-    guard and frame targets). The body is intentionally excluded.
+    proposition-valued fields (`preconditions`, a coroutine's `relies`/`guarantees`,
+    `axioms`, and a `throwsOn` case's `ensures`) and unconstrained value fields
+    (`decreases`, `invokeOn`, and a case's guard and frame targets). The body is
+    intentionally excluded.
 
     A case's guard takes `mapValue` rather than `mapCondition` even though it is
     boolean: it is evaluated on entry, in the same position as a `decreases`, so a
@@ -801,6 +766,9 @@ def mapProcedureSpecificationsWithM [Monad m]
     (proc : Procedure) : m Procedure := do
   return { proc with
     preconditions := ← proc.preconditions.mapM (·.mapM mapCondition)
+    contracts := proc.contracts.withClauses
+      (relies := ← proc.relies.mapM (·.mapM mapCondition))
+      (guarantees := ← proc.guarantees.mapM (·.mapM mapCondition))
     decreases := ← proc.decreases.mapM mapValue
     invokeOn := ← proc.invokeOn.mapM mapValue
     axioms := ← proc.axioms.mapM mapCondition
@@ -810,44 +778,31 @@ def mapProcedureSpecificationsWithM [Monad m]
         postconditions := ← blk.postconditions.mapM (·.mapM mapCondition)
         modifies := ← blk.modifies.mapM mapValue }) }
 
-/-- Like `mapProcedureSpecificationsWithM`, but also maps the coroutine
-    `relies`/`guarantees` clauses (empty for a regular procedure) with
-    `mapCondition`. Kept separate so the plain version's bind shape — which
-    proofs in `ResolutionProps` mirror — is unchanged. -/
-def mapProcedureSpecificationsWithCoroutineM [Monad m]
-    (mapCondition mapValue : StmtExprMd → m StmtExprMd)
-    (proc : Procedure) : m Procedure := do
-  let proc ← mapProcedureSpecificationsWithM mapCondition mapValue proc
-  let relies' ← proc.relies.mapM (·.mapM mapCondition)
-  let guarantees' ← proc.guarantees.mapM (·.mapM mapCondition)
-  return { proc with
-    contracts := proc.contracts.withClauses (relies := relies') (guarantees := guarantees') }
-
 /-- Apply one monadic transformation to every expression-bearing specification
     field outside the procedure body. -/
 def mapProcedureSpecificationsM [Monad m] (f : StmtExprMd → m StmtExprMd)
     (proc : Procedure) : m Procedure :=
   mapProcedureSpecificationsWithM f f proc
 
-/-- `mapProcedureSpecificationsM` that also maps the coroutine
-    `relies`/`guarantees` clauses. -/
-def mapProcedureSpecificationsWithCoroutineM' [Monad m] (f : StmtExprMd → m StmtExprMd)
-    (proc : Procedure) : m Procedure :=
-  mapProcedureSpecificationsWithCoroutineM f f proc
+/-- Every expression-bearing specification field outside the procedure body, in the
+    order `mapProcedureSpecificationsWithM` visits them. Collected by running that
+    traversal, so what a pass reads of a specification is what one rewrites. -/
+def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
+  let collect (e : StmtExprMd) : StateM (List StmtExprMd) StmtExprMd := do
+    modify (e :: ·)
+    pure e
+  ((mapProcedureSpecificationsM collect proc).run []).2.reverse
 
-/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure:
-    the body, the specification fields (preconditions, decreases, invokeOn,
-    axioms, `throwsOn` cases) and a coroutine's `relies`/`guarantees` clauses.
-
-    The coroutine clauses are included so that this is *every* expression a
-    procedure holds, which is what lets a claim about the node kinds of a whole
-    program be proved of a pass built on this walk. It is not a reachable
-    behaviour change: a clause is a contract, so resolution already rejects an
-    `x++` there as a destructive assignment, and a `do … while` there is a `void`
-    where a `bool` is expected. -/
+/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure: the body
+    and every specification field. -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
-  mapProcedureSpecificationsWithCoroutineM' f proc
+  mapProcedureSpecificationsM f proc
+
+/-- Visit every expression node in a procedure, the expressions in `mapProcedureM`'s
+    order and each in pre-order. -/
+def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure) : m Unit := do
+  let _ ← mapProcedureM (fun e => do foldStmtExprM f e; pure e) proc
 
 /-- Apply a monadic transformation to every procedure in a program — the
     top-level static procedures and static functions, and the instance procedures
@@ -1003,7 +958,7 @@ def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : P
     throwsType := ← proc.throwsType.mapM f
     contracts := proc.contracts.withClauses
       (yields := ← proc.yields.mapM mapParam) (resumes := ← proc.resumes.mapM mapParam) }
-  mapProcedureSpecificationsWithCoroutineM' mapExpr proc
+  mapProcedureSpecificationsM mapExpr proc
 
 def mapDatatypeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (dt : DatatypeDefinition) :
     m DatatypeDefinition := do

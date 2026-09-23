@@ -842,20 +842,6 @@ theorem bodiesM_spec_fields (proc : Procedure) :
       | exact postS_pure ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
       | (apply postS_bind_any; intro _)
 
-/-- `mapProcedureSpecificationsWithM` does not touch the coroutine clauses;
-    `mapProcedureM` walks them in a phase of its own afterwards. -/
-theorem specsM_contracts (proc : Procedure) :
-    PostS (δ := Message)
-      (mapProcedureSpecificationsWithM (m := StateM (List Message))
-        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
-        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
-        proc)
-      (fun p2 => p2.contracts = proc.contracts) := by
-  unfold mapProcedureSpecificationsWithM
-  repeat' first
-    | exact postS_pure rfl
-    | (apply postS_bind_any; intro _)
-
 open CollectEmits in
 /-- The validator's visitor keeps the state exactly when the tree is Clean. -/
 theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
@@ -875,8 +861,7 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       (mapProcedureM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) proc) := by
     unfold mapProcedureM mapProcedureBodiesM
-    -- Body first (mapProcedureBodiesM), then the five spec fields, then the
-    -- coroutine clauses.
+    -- Body first (mapProcedureBodiesM), then every specification field.
     apply keeps_bind_post (Q := fun p1 => p1.preconditions = proc.preconditions ∧
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
@@ -911,12 +896,19 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       · exact keeps_pure _
     · intro proc1 hfields
       obtain ⟨hf1, hf2, hf3, hf4, hf5, hf6⟩ := hfields
-      unfold mapProcedureSpecificationsWithCoroutineM' mapProcedureSpecificationsWithCoroutineM
-      apply keeps_bind_post (Q := fun p2 => p2.contracts = proc1.contracts)
-        (hq := specsM_contracts proc1)
+      unfold mapProcedureSpecificationsM mapProcedureSpecificationsWithM
       apply keeps_bind (keeps_mapM _ _ (fun c hc =>
         keeps_condition_mapM c _ (keeps_visitor _ (hpre c (hf1 ▸ hc)))))
       intro pres'
+      -- The coroutine clauses; `hf6` carries their membership across the body walk.
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hrel c (by
+          simpa [Procedure.relies, hf6] using hc)))))
+      intro relies'
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hguar c (by
+          simpa [Procedure.guarantees, hf6] using hc)))))
+      intro guarantees'
       apply keeps_bind (keeps_option_mapM _ _ (fun e he =>
         keeps_visitor _ (hdec e (hf2 ▸ he))))
       intro dec'
@@ -939,20 +931,6 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       intro posts'
       apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hm e he)))
       intro mods'
-      exact keeps_pure _
-      -- Second goal of the inner `keeps_bind_post`: the coroutine clauses, which
-      -- `mapProcedureM` walks after the plain specification fields.
-      intro proc2 hcon
-      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
-        keeps_condition_mapM c _ (keeps_visitor _ (hrel c (by
-          simp only [Procedure.relies, hcon, hf6] at hc
-          simpa [Procedure.relies] using hc)))))
-      intro relies'
-      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
-        keeps_condition_mapM c _ (keeps_visitor _ (hguar c (by
-          simp only [Procedure.guarantees, hcon, hf6] at hc
-          simpa [Procedure.guarantees] using hc)))))
-      intro guarantees'
       exact keeps_pure _
   have := hwalk []
   unfold procWalk

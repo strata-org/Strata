@@ -6311,10 +6311,11 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
       pure (some n)
     | _ => pure none
   -- Body and specification fields only: deliberately *not* a coroutine's
-  -- `relies`/`guarantees` (which `mapProcedureM` walks). In those clauses `old`
-  -- denotes the state at the previous suspension, which the caller may have
-  -- changed between yields, so "the enclosing procedure does not modify the heap"
-  -- is not a reason for it to have no effect.
+  -- `relies`/`guarantees`. In those clauses `old` denotes the state at the previous
+  -- suspension, which the caller may have changed between yields, so "the enclosing
+  -- procedure does not modify the heap" is not a reason for it to have no effect. Nor
+  -- is "no heap reads": without `verifyCoroutine` the coroutine's inputs and `yields`
+  -- bindings are fields of its state, so an `old` over one reads that state.
   ((do
     -- Only the implementation is an in-body position; an opaque body's
     -- postconditions and modifies groups are specifications, even though
@@ -6332,7 +6333,9 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
           let _ ← mapStmtExprPrePostM (visit false) pure gd
     | _ => pure ()
     mapProcedureSpecificationsM (m := StateM (List Message))
-      (fun e => mapStmtExprPrePostM (visit false) pure e) proc) |>.run []).2
+      (fun e => mapStmtExprPrePostM (visit false) pure e)
+      { proc with contracts := proc.contracts.withClauses (relies := []) (guarantees := []) })
+    |>.run []).2
 
 /-- Diagnose no-op `old(...)` usage across a program. This is a property of the
     user's *source* program (it does not depend on the heap-parameterized form),
@@ -6482,14 +6485,10 @@ def declaredNames (program : LaurelProgram) : List (String × String × FileRang
     | .Block _ (some label) => [("block label", label, e.source)]
     | _ => []
   let inExprs (e : StmtExprMd) := collectStmtExprList inExpr e
-  -- The `WithCoroutine` variant matters here: plain `mapProcedureM` skips a
-  -- coroutine's `relies`/`guarantees`, leaving a binder there unchecked.
   let procExprNames (proc : Procedure) : List (String × String × FileRange) :=
     let collect : StmtExprMd → StateM (List (String × String × FileRange)) StmtExprMd :=
       fun e => do modify (· ++ inExprs e); pure e
-    let walk : StateM (List (String × String × FileRange)) Procedure := do
-      mapProcedureSpecificationsWithCoroutineM' collect (← mapProcedureBodiesM collect proc)
-    (walk.run []).2
+    ((mapProcedureM collect proc).run []).2
   let ofProc (proc : Procedure) : List (String × String × FileRange) :=
     -- See `resultOutputName` for why a sole output may be spelled `$result`.
     let soleResult := proc.outputs.length == 1

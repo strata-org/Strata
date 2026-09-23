@@ -143,6 +143,11 @@ private def specificationFixture : Procedure :=
     decreases := some (testMd (.LiteralInt 2))
     invokeOn := some (testMd (.LiteralInt 3))
     axioms := [testMd (.LiteralInt 4)]
+    contracts := .Coroutine [{ condition := testMd (.LiteralInt 6) }]
+      [{ condition := testMd (.LiteralInt 7) }] [] []
+    throwsOn := [{ guard := testMd (.LiteralInt 8)
+                   postconditions := [{ condition := testMd (.LiteralInt 9) }]
+                   modifies := [testMd (.LiteralInt 10)] }]
     body := .Transparent (testMd (.LiteralInt 5)) }
 
 private def literalIntValue (expr : StmtExprMd) : Option Int :=
@@ -151,7 +156,7 @@ private def literalIntValue (expr : StmtExprMd) : Option Int :=
   | _ => none
 
 #guard (procedureSpecificationExprs specificationFixture).map literalIntValue ==
-  [some 1, some 2, some 3, some 4]
+  [some 1, some 6, some 7, some 2, some 3, some 4, some 8, some 9, some 10]
 
 private def incrementLiteral (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
@@ -162,7 +167,7 @@ private def mappedSpecificationFixture : Procedure :=
   mapProcedureSpecificationsM (m := Id) incrementLiteral specificationFixture
 
 #guard (procedureSpecificationExprs mappedSpecificationFixture).map literalIntValue ==
-  [some 11, some 12, some 13, some 14]
+  [some 11, some 16, some 17, some 12, some 13, some 14, some 18, some 19, some 20]
 #guard match mappedSpecificationFixture.body with
   | .Transparent body => literalIntValue body == some 5
   | _ => false
@@ -229,8 +234,8 @@ private def visitTagged (type : HighTypeMd) : StateM (List String) HighTypeMd :=
   pure type
 
 #guard ((mapProcedureHighTypesM visitTagged highTypeOrderFixture).run [] |>.2) ==
-  ["body", "new", "bareNew", "input", "output", "throws", "yields", "resumes", "pre", "decreases",
-   "invokeOn", "axiom", "relies", "guarantees"]
+  ["body", "new", "bareNew", "input", "output", "throws", "yields", "resumes", "pre", "relies",
+   "guarantees", "decreases", "invokeOn", "axiom"]
 
 private def compositeOrderFixture : TypeDefinition :=
   .Composite
