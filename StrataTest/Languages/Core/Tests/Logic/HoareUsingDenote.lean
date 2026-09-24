@@ -240,9 +240,10 @@ private theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_cmd hcmd =>
-        simp only [Core.EvalCommandE] at hcmd
         cases hcmd with
-        | eval_assert =>
+        | cmd_sem hbase =>
+          cases hbase with
+          | eval_assert =>
           obtain ⟨_, hnil⟩ := stepStmtStarE_from_terminal hrest
           subst hnil; rfl
       | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
@@ -250,9 +251,10 @@ private theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_cmd hcmd =>
-        simp only [Core.EvalCommandE] at hcmd
         cases hcmd with
-        | eval_assert =>
+        | cmd_sem hbase =>
+          cases hbase with
+          | eval_assert =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
       | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
@@ -272,9 +274,10 @@ private theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_cmd hcmd =>
-        simp only [Core.EvalCommandE] at hcmd
         cases hcmd with
-        | eval_assume =>
+        | cmd_sem hbase =>
+          cases hbase with
+          | eval_assume =>
           obtain ⟨hcfg, hnil⟩ := stepStmtStarE_from_terminal hrest
           subst hnil
           injection hcfg with hρ
@@ -285,9 +288,10 @@ private theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_cmd hcmd =>
-        simp only [Core.EvalCommandE] at hcmd
         cases hcmd with
-        | eval_assume =>
+        | cmd_sem hbase =>
+          cases hbase with
+          | eval_assume =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
       | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
@@ -474,7 +478,7 @@ private theorem xFalseEnv_run (π : String → Option Core.Procedure)
       (.terminal xFalseEnv) := by
     refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
     refine .step _ [Event.assert ⟨xFalseEnv.factory, xFalseEnv.store, "f", ff0, #[]⟩] _ _ _
-      (.step_seq_inner (.step_cmd Imperative.EvalCmdE.eval_assert)) ?_
+      (.step_seq_inner (.step_cmd (.cmd_sem Imperative.EvalCmdE.eval_assert))) ?_
     refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
     exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
   -- lift through the anonymous block wrapper and take `step_block_done`
