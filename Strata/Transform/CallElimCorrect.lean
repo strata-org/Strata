@@ -361,10 +361,11 @@ theorem ReadValueUpdatedStates :
     simp [updatedState]
     simp_all
 
+/-- Updating a key outside `ks` preserves reading `ks` and its values. -/
 theorem ReadValuesUpdatedState :
   ¬ k ∈ ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedState σ k v) ks vs := by
+  ReadValues f σ ks vs →
+  ReadValues f (updatedState σ k v) ks vs := by
   intros Hin Hrd
   induction Hrd
   case read_none =>
@@ -375,11 +376,12 @@ theorem ReadValuesUpdatedState :
     apply Ne.symm Hin.1
     apply Hrd2 <;> simp_all
 
+/-- Updating a key list disjoint from `ks` preserves reading `ks` and its values. -/
 theorem ReadValuesUpdatedStates :
   ks'.length = vs'.length →
   ks'.Disj ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedStates σ ks' vs') ks vs := by
+  ReadValues f σ ks vs →
+  ReadValues f (updatedStates σ ks' vs') ks vs := by
   intros Hlen Hin Hrd
   induction ks generalizing vs
   case nil =>
@@ -426,10 +428,11 @@ theorem ReadValueUpdatedStates' :
     specialize ih Hne.2 Hsome Hlen
     exact ReadValueUpdatedState' Hne.1 ih
 
+/-- A read unaffected by one updated key also holds in the source store. -/
 theorem ReadValuesUpdatedState' :
   ¬ k ∈ ks →
-  ReadValues (updatedState σ k v) ks vs →
-  ReadValues σ ks vs := by
+  ReadValues f (updatedState σ k v) ks vs →
+  ReadValues f σ ks vs := by
   intros Hin Hrd
   induction Hrd
   case read_none =>
@@ -441,11 +444,12 @@ theorem ReadValuesUpdatedState' :
     . apply Hrd2
       exact List.not_mem_of_not_mem_cons Hin
 
+/-- A read unaffected by disjoint updated keys also holds in the source store. -/
 theorem ReadValuesUpdatedStates' :
   ks'.length = vs'.length →
   ks'.Disj ks →
-  ReadValues (updatedStates σ ks' vs') ks vs →
-  ReadValues σ ks vs := by
+  ReadValues f (updatedStates σ ks' vs') ks vs →
+  ReadValues f σ ks vs := by
   intros Hlen Hin Hrd
   induction ks generalizing vs
   case nil =>
@@ -466,10 +470,12 @@ theorem ReadValuesUpdatedStates' :
         apply List.Disj.mono_right _ Hin
         simp_all
 
+/-- Updating distinct keys with matching values makes those values readable at the
+same keys. -/
 theorem ReadValuesUpdatedStatesSame :
   ks.length = vs.length →
   ks.Nodup →
-  ReadValues (updatedStates σ ks vs) ks vs := by
+  ReadValues f (updatedStates σ ks vs) ks vs := by
   intros Hlen Hnd
   induction ks generalizing σ vs
   case nil =>
@@ -514,11 +520,13 @@ theorem EvalStatementContractInitVar :
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars]
 
+/-- Initializing generated old-variable slots from values read in the source store
+produces the expected contract-statement execution. -/
 theorem EvalStatementsContractInitVars :
   Imperative.WellFormedSemanticEvalVar δ →
   -- the generated old variable names shouldn't overlap with original variables
   List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
-  ReadValues σ (trips.unzip.snd) vvs →
+  ReadValues f σ (trips.unzip.snd) vvs →
   Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
   EvalStatementsContract π φ δ σ
     (createInitVars trips)
@@ -589,7 +597,6 @@ theorem EvalStatementsContractInits :
   trips.unzip.1.unzip.1.Disj (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression)) trips.unzip.2) →
   List.Nodup (trips.unzip.1.unzip.1) →
   EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
-  -- ReadValues σ (trips.unzip.2) vvs →
   Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
   EvalStatementsContract π φ δ σ
     (createInits trips)
@@ -648,9 +655,10 @@ theorem EvalStatementContractHavocUpdated :
           Imperative.Cmd.modifiedVars, Option.isSome]
     split <;> simp_all
 
+/-- A store defining every requested key admits a read of their values. -/
 theorem ReadValuesSome :
   Imperative.isDefined σ ks →
-  ∃ vs, ReadValues σ ks vs := by
+  ∃ vs, ReadValues f σ ks vs := by
   intros H
   induction ks
   case nil =>
@@ -675,12 +683,15 @@ createHavocs (vs₁ ++ vs₂) =
 createHavocs vs₁ ++ createHavocs vs₂ := by
 cases vs₁ <;> simp [createHavocs]
 
+/-- Under equally sized, defined store substitutions and a well-formed evaluator,
+generated free variables evaluate to the canonical values read at their
+corresponding substituted keys. -/
 theorem createFvarsSubstStores :
   ks1.length = ks2.length →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.substDefined σ σA (ks1.zip ks2) →
   Imperative.substStores σ σA (ks1.zip ks2) →
-  ReadValues σA ks2 argVals →
+  ReadValues f σA ks2 argVals →
   EvalExpressions (P:=Core.Expression) δ σ (createFvars ks1) argVals := by
     intros Hlen Hwfv Hdef Hsubst Hrd
     simp [createFvars]
@@ -1465,7 +1476,7 @@ theorem createAssertsCorrect :
     ks'.Disj (Imperative.HasFvars.getFvars (P:=Expression) pre) ∧
     δ σA pre = some Imperative.HasBool.tt) →
   EvalExpressions δ σ (createFvars ks') vals →
-  ReadValues σA ks vals →
+  ReadValues f σA ks vals →
   Imperative.substStores σ' σA (ks'.zip ks) →
   EvalStatementsContract π φ δ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' δ := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
@@ -1600,120 +1611,6 @@ theorem createOldStoreSubstEq :
   induction oldTrips <;> simp [createOldStoreSubst, createOldStoreSubst.go] at *
   case cons h t ih => exact ih
 
-theorem substOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  --Imperative.invStores σ₀ σ
-  --  ((OldExpressions.extractOldExprVars e).removeAll [fro]) →
-  Imperative.substDefined σ₀ σ [(fro, to)] →
-  Imperative.substStores σ₀ σ [(fro, to)] →
-  -- substitute the store and the expression simultaneously
-  δ σ e = δ σ (OldExpressions.substOld fro (createFvar to) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hdef Hsubst
-  induction e <;> simp [OldExpressions.substOld] at *
-  case abs m ty e ih  =>
-    cases Hnorm with
-    | abs Hnorm =>
-      apply Hwfc.1
-      apply ih Hnorm
-  case quant m k ty tr e trih eih =>
-    cases Hnorm with
-    | quant Ht He =>
-      specialize eih He
-      specialize trih Ht
-      apply Hwfc.quantcongr <;> grind
-  case app m c fn fih eih =>
-    cases Hnorm with
-    | app Hc Hfn Hwf =>
-    specialize fih Hc
-    specialize eih Hfn
-    split
-    . -- is an old var
-      split
-      . -- is an old var that is substituted
-        next x ty eq =>
-        simp [eq] at *
-        simp [WellFormedCoreEvalTwoState] at Hwf2
-        cases Hwf2.1 with
-        | intro vs Hwf2' =>
-        cases Hwf2' with
-        | intro vs' Hwf2' =>
-        cases Hwf2' with
-        | intro σ₁ Hwf2' =>
-        by_cases Hin : fro ∈ vs
-        case pos =>
-        -- old var is modified
-          have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-          simp [OldExpressions.oldVar,
-                OldExpressions.oldExpr,
-                CoreIdent.unres, Hin] at HH
-          rw [HH]
-          simp [createFvar]
-          simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-          rw [Hwfvr (v:=to)]
-          apply Hsubst
-          exact List.mem_singleton.mpr rfl
-          simp [Imperative.HasFvar.getFvar]
-        case neg =>
-        -- old var is not modified
-          have Hup := HavocVarsUpdateStates Hwf2'.1
-          cases Hup with
-          | intro as Hup =>
-          have Hinit := InitVarsInitStates Hwf2'.2
-          cases Hinit with
-          | intro bs Hinit =>
-          have Hsubst' := substStoresUpdatesInv' ?_ Hsubst Hup
-          have Hsubst'' := substStoresInitsInv' ?_ Hsubst' Hinit
-          . have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-            simp [OldExpressions.oldVar,
-                  OldExpressions.oldExpr,
-                  CoreIdent.unres, Hin] at HH
-            simp [createFvar]
-            simp [HH]
-            simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-            rw [Hwfvr (v:=to)]
-            . simp [Imperative.substStores] at Hsubst''
-              exact Hsubst''
-            . simp [Imperative.HasFvar.getFvar]
-          . simp [Imperative.substDefined] at *
-            have Hdef' : Imperative.isDefined σ₀ [fro] := by
-              simp [Imperative.isDefined]
-              exact Hdef.1
-            have Hdef'' := UpdateStatesDefMonotone Hdef' Hup
-            simp [Imperative.isDefined] at Hdef''
-            refine ⟨Hdef'', Hdef.2⟩
-          . simp [List.Disj]
-            intros a Hin Heq
-            simp [Heq] at *
-            contradiction
-      . -- is an old var that is not substituted, use congruence
-        rename_i e1 e2 mOp ty0 mVar x ty1 h
-        simp at m mOp ty0 mVar x ty1
-        apply Hwfc.appcongr <;> grind
-    . -- is not an old var, use congruence
-      apply Hwfc.appcongr <;> grind
-  case ite m c t e cih tih eih =>
-    cases Hnorm with
-    | ite Hc Ht He =>
-      specialize cih Hc
-      specialize tih Ht
-      specialize eih He
-      apply Hwfc.itecongr <;> grind
-  case eq m e1 e2 e1ih e2ih =>
-    cases Hnorm with
-    | eq He1 He2 =>
-    specialize e2ih He2
-    apply Hwfc.eqcongr <;> grind
-
-
--- Needed from refinement theorem
--- UpdateState P✝ σ id v✝ σ'✝
--- Ht : TouchVars σ'✝ l₂ σ''
--- ⊢ TouchVars σ l₂ σ''
-
 theorem UpdateStatesUpdatedId :
 k ∈ vs →
 UpdateStates σ₀ vs vs' σ₁ →
@@ -1835,63 +1732,6 @@ case cons h t ih =>
       exact fun a => Hne (Eq.symm a)
     simp_all
 
-theorem updatedStateOldWellFormedCoreEvalTwoState :
-  σ k = some v →
-  WellFormedCoreEvalTwoState δ σ₀ σ →
-  WellFormedCoreEvalTwoState δ (updatedState σ₀ k v) σ := by
-  intros Hsome Hwf2
-  simp [WellFormedCoreEvalTwoState] at *
-  refine ⟨?_, Hwf2.2⟩
-  cases Hwf2.1 with
-  | intro vs Hwf2 =>
-  cases Hwf2 with
-  | intro vs' Hwf =>
-  cases Hwf with
-  | intro σ₁ Hwf =>
-  by_cases Hin : k ∈ vs
-  -- k is already in vs, use the mod/init lists as is
-  case pos =>
-    refine ⟨vs,vs',σ₁,?_,Hwf.2⟩
-    have Hup := HavocVarsUpdateStates Hwf.1
-    cases Hup with
-    | intro vs' Hup =>
-    apply UpdateStatesHavocVars (modvals:=vs')
-    exact UpdateStatesUpdatedId Hin Hup
-  -- k is not in vs, add k to vs
-  case neg =>
-    by_cases Hin' : k ∈ vs'
-    -- k not in vs, but is in vs'.
-    -- This is the case that k is a newly created variable
-    -- Since we are updating/initializing k in σ₀, we remove k from vs'
-    case pos =>
-      refine ⟨vs,vs'.removeAll [k],(updatedState σ₁ k v),?_,?_⟩
-      . refine HavocVarsUpdatedDist Hin ?_
-        exact Hwf.1
-      . apply InitVarsRemoveAll <;> simp_all
-    -- k is not in vs'
-    case neg =>
-      have Hup := HavocVarsUpdateStates Hwf.1
-      cases Hup with
-      | intro es' Hup =>
-      refine ⟨k :: vs,vs',σ₁,?_,Hwf.2⟩
-      have Hdef1 : Imperative.isDefined σ₁ [k] := by
-        apply InitVarsDefMonotone' (σ':=σ) (vs':=vs') <;> simp_all
-        . simp_all [List.Disj]
-        . simp [Imperative.isDefined, Option.isSome]
-          split <;> simp_all
-      have Hdef0 : Imperative.isDefined σ₀ [k] := by
-        exact HavocVarsDefMonotone' (vs':=vs) Hdef1 Hwf.1
-      simp [Imperative.isDefined, Option.isSome] at Hdef0
-      split at Hdef0 <;> simp_all
-      next x val heq =>
-      apply UpdateStatesHavocVars (modvals:=val :: es')
-      refine UpdateStatesUpdatedId ?_ ?_
-      . exact List.mem_cons_self
-      . apply UpdateStates.update_some (σ':=updatedState σ₀ k val)
-        apply updatedStateUpdate <;> assumption
-        rw [updatedStateId] <;> simp_all
-
-open OldExpressions in
 theorem substOld_create_replace :
 NormalizedOldExpr e →
 (extractOldExprVars (substOld h (createFvar h') e)) =
@@ -2008,49 +1848,6 @@ theorem substOldExpr_cons:
   any_goals simp_all [createOldVarsSubst]
   any_goals rw [OldExpressions.substOldExpr_nil]
   simp [createFvar]; rw [OldExpressions.substOldExpr_nil]
-
-theorem substsOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  Imperative.substStores σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substDefined σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substNodup (createOldStoreSubst oldTrips) →
-  oldTrips.unzip.1.unzip.1.Disj (OldExpressions.extractOldExprVars e) →
-  δ σ e = δ σ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hsubst Hdef Hnd Hdisj
-  induction oldTrips generalizing e
-  case nil =>
-    simp [createOldVarsSubst] at *; rw[OldExpressions.substOldExpr_nil]
-  case cons h t ih =>
-  have : OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
-          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
-    apply substOldExpr_cons Hnd
-  rw[this, ← ih]
-  apply substOldCorrect <;> try assumption
-  intro k1 k2 Hin
-  simp [Imperative.substDefined] at Hdef
-  apply Hdef; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  apply OldExpressions.substOldNormalizedMono
-  intro H; cases H; assumption;
-  constructor
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  exact substDefined_tail Hdef
-  simp [createOldStoreSubst] at *
-  exact substNodup_tail Hnd
-  simp at Hdisj
-  rw [substOld_create_replace] <;> try assumption
-  have H:= List.Disj.removeAll (zs:=[h.snd]) Hdisj
-  rw[← List.Disjoint_app] at H;
-  simp
-  exact List.Disjoint_cons_tail H.right
 
 theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
@@ -3595,10 +3392,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
             . simp [List.append_assoc]
               apply EvalStatementsContractApp
               . -- asserts
-                have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
+                have Hrdin : ReadValues f σAO (ListMap.keys proc.header.inputs) argVals := by
                   apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
                   exact InitStatesReadValues Hinitin
-                have Hrdinout : ReadValues σAO
+                have Hrdinout : ReadValues f σAO
                       (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
                       (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
                 have Hlen : (ListMap.keys proc.header.inputs).length =

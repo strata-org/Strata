@@ -38,9 +38,9 @@ Key results (organized roughly in the order they appear below):
   then `evalFully = some v`.  This is the closure that discharges the
   reverse direction of `coreEvaluator_WellFormedSemanticEvalBool` without
   needing an external assumption.
-- `evalFully_const` / `evalFully_fvar_of_value` / `evalFully_eq_of_evalFully` —
-  point-wise laws for individual expression forms (Part V), including the `==`
-  law that `Imperative.WellFormedSemanticEval` does not supply.
+- `evalFully_const` / `evalFully_fvar_of_value` / `evalFully_eq_of_evalFully` /
+  `eql_true_of_evalFully_eq_true` — point-wise laws for individual expression
+  forms (Part V), including both directions needed to reason about `==`.
 -/
 
 namespace Lambda
@@ -3579,6 +3579,55 @@ theorem evalFully_eq_of_evalFully (F : @Factory Tbase) (env : Env Tbase)
   refine evalFully_of_value_true F env _ (max n1 n2 + 1) _ ?_
   rw [eval_succ_eq]
   simp only [LExpr.evalEq, h1n, h2n, heql, LExpr.EvalResult.isValueTrue, Bool.and_self]
+
+/-- If a fully evaluated equality is `true`, `eql` decides the fully evaluated
+operands equal. -/
+theorem eql_true_of_evalFully_eq_true
+    (F : @Factory Tbase) (env : Env Tbase) (m : Tbase.Metadata)
+    (e1 e2 v1 v2 : LExpr Tbase.mono)
+    (h1 : LExpr.evalFully F env e1 = some v1)
+    (h2 : LExpr.evalFully F env e2 = some v2)
+    (heq : LExpr.evalFully F env (LExpr.eq m e1 e2) =
+      some (LExpr.const m (LConst.boolConst true))) :
+    LExpr.eql F v1 v2 = some true := by
+  obtain ⟨n, hn, _⟩ := evalFully_some_exists F env (LExpr.eq m e1 e2) _ heq
+  cases n with
+  | zero =>
+    simp [LExpr.eval] at hn
+  | succ n =>
+    rw [eval_succ_eq] at hn
+    simp only [LExpr.evalEq] at hn
+    split at hn
+    · rename_i q heql
+      have hq : q = true := by
+        have hfst := congrArg Prod.fst hn
+        simp only at hfst
+        injection hfst with _ hc
+        exact LConst.boolConst.inj hc
+      have hsnd : (LExpr.eval n F env e1).snd.isValueTrue = true ∧
+          (LExpr.eval n F env e2).snd.isValueTrue = true := by
+        have hs := congrArg Prod.snd hn
+        simp only at hs
+        injection hs with hs'
+        rw [Bool.and_eq_true] at hs'
+        exact hs'
+      have he1n : LExpr.eval n F env e1 =
+          ((LExpr.eval n F env e1).fst, .value true) :=
+        Prod.ext rfl ((isValueTrue_eq_true_iff _).mp hsnd.1)
+      have he2n : LExpr.eval n F env e2 =
+          ((LExpr.eval n F env e2).fst, .value true) :=
+        Prod.ext rfl ((isValueTrue_eq_true_iff _).mp hsnd.2)
+      have hf1 := evalFully_of_value_true F env e1 n _ he1n
+      have hf2 := evalFully_of_value_true F env e2 n _ he2n
+      have hu1 : (LExpr.eval n F env e1).fst = v1 := by
+        rw [h1] at hf1
+        exact (Option.some.inj hf1).symm
+      have hu2 : (LExpr.eval n F env e2).fst = v2 := by
+        rw [h2] at hf2
+        exact (Option.some.inj hf2).symm
+      simpa [hq, hu1, hu2] using heql
+    · have hs := congrArg Prod.snd hn
+      simp at hs
 
 /-- Both sides reduce to the *same* value, so the equality holds.  This is the form
     a postcondition `x == e` takes once `x`'s binding is known. -/

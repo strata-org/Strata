@@ -25,8 +25,9 @@ judgement, `Triple`, conditioned on `Core.Logic.BlockInitEnvWF`.
 
 As in `Strata.DL.Imperative.Logic.HoareTemplate`: the rules below *are* the logic rather than
 properties of it, so they stay with the judgements they introduce.  What does live
-separately is the *contract reading* — `Strata.Languages.Core.Logic.ContractToHoareTriple`
-for its definitions, and `…ContractToHoareTripleProps` for the ways to discharge them.
+separately is the contract integration: `ContractToHoareTriple` defines the
+contract reading, `ContractToHoareTripleProps` discharges it, and `HoareCall`
+provides the rule for procedure calls.
 -/
 
 public section
@@ -107,11 +108,11 @@ theorem set (params : InitEnvWFParams)
       Post { ρ₀ with store := σ' }) :
     Triple π φ params Pre [Statement.set x e md] Post := by
   refine cmd π φ params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
-  change EvalCmdE (P := Expression) ρ₀.factory ρ₀.store
-    (.set x (.det e) md) σ' emitted at hstep
   cases hstep with
-  | eval_set heval hupdate _ =>
-      exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hupdate⟩
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_set heval hupdate _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hupdate⟩
 
 /-- Declaration.  `InitState` differs from `UpdateState` only in requiring the slot to
     have been undefined beforehand, which the postcondition never inspects. -/
@@ -125,11 +126,11 @@ theorem init (params : InitEnvWFParams)
       Post { ρ₀ with store := σ' }) :
     Triple π φ params Pre [Statement.init x ty (.det e) md] Post := by
   refine cmd π φ params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
-  change EvalCmdE (P := Expression) ρ₀.factory ρ₀.store
-    (.init x ty (.det e) md) σ' emitted at hstep
   cases hstep with
-  | eval_init heval hinit _ =>
-      exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hinit⟩
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_init heval hinit _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hinit⟩
 
 /-! ## Structural rules -/
 

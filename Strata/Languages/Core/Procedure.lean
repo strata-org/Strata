@@ -238,6 +238,12 @@ def Procedure.Spec.getCheckExprs (conds : ListMap CoreLabel Procedure.Check) :
   let checks := conds.values
   checks.map (fun c => c.expr)
 
+/-- Expressions of checks that are obligations rather than `free` assumptions. -/
+def Procedure.Spec.getDefaultCheckExprs
+    (conds : ListMap CoreLabel Procedure.Check) : List Expression.Expr :=
+  conds.values.filterMap fun c =>
+    if c.attr = .Default then some c.expr else none
+
 def Procedure.Spec.updateCheckExprs
   (es : List Expression.Expr) (conds : ListMap CoreLabel Procedure.Check) :
   ListMap CoreLabel Procedure.Check :=
@@ -315,21 +321,6 @@ def Procedure.stripMetaData (p : Procedure) : Procedure :=
     | .structured ss => .structured (Imperative.Block.stripMetaData ss)
     | .cfg c => .cfg (DetCFG.stripMetaData c)
   { p with body := body' }
-
--- NOTE : simply discarding the procedure lookup function for now
-instance : HasVarsTrans Expression Statement Procedure where
-  modifiedVarsTrans := Statement.modifiedVarsTrans
-  getVarsTrans := Statement.getVarsTrans
-  definedVarsTrans := Statement.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statement.modifiedOrDefinedVarsTrans
-  allVarsTrans := Statement.allVarsTrans
-
-instance : HasVarsTrans Expression (List Statement) Procedure where
-  modifiedVarsTrans := Statements.modifiedVarsTrans
-  getVarsTrans := Statements.getVarsTrans
-  definedVarsTrans := Statements.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statements.modifiedOrDefinedVarsTrans
-  allVarsTrans := Statements.allVarsTrans
 
 end
 end Core

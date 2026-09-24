@@ -209,14 +209,11 @@ def getInArgs (args : List (CallArg P)) : List P.Expr :=
 def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id => some id | _ => none
 
-def getOutArgs (args : List (CallArg P)) : List P.Ident :=
+@[expose] def getOutArgs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .outArg id => some id | _ => none
 
-def getLhs (args : List (CallArg P)) : List P.Ident :=
+@[expose] def getLhs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
-
-def getOutOnly (args : List (CallArg P)) : List P.Ident :=
-  args.filterMap fun | .outArg id => some id | _ => none
 
 def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
   go args newExprs
