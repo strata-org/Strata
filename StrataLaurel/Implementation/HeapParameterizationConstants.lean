@@ -25,14 +25,15 @@ in Laurel syntax via the `#strata program Laurel` macro and parsed into
 a `Laurel.Program` at compile time.
 
 The heap model uses:
-- `Composite` - datatype with a reference (int) and a runtime type tag
+- `Composite` - datatype with a reference (int); `TypeHierarchy` adds the runtime type tag
 - `Field` - abstract type for field names (zero-constructor datatype)
 - `TypeTag` - abstract type for type tags (zero-constructor datatype)
 - `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` / `increment` - heap access functions
 
-Note: The `$Box` datatype is generated dynamically by `heapParameterization`
-based on which field types are actually used in the program.
+Note: `Field`, `TypeTag` and `$Box` are referenced here but declared by the passes --
+`heapParameterization` and `typeHierarchyTransform` inject them, `$Box` with one variant per
+field type the program actually uses.
 -/
 
 private def laurelPreludeDDM :=
@@ -73,6 +74,37 @@ def heapConstants : Program :=
       (Laurel.parseProgram laurelPreludeDDM) (synthesized := true) with
   | .ok program => program
   | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
+
+/-! ### The names the prelude declares
+
+`HeapParameterization`, `ModifiesClauses` and `TypeHierarchy` spell these names to build and to
+recognise the heap model. The prelude above is what declares them, so a rename is one edit here. -/
+
+/-- `readField(heap, obj, field)`, the field read. -/
+def readFieldName : String := "readField"
+
+/-- `updateField(heap, obj, field, val)`, the field write the heap model is built on. -/
+def updateFieldName : String := "updateField"
+
+/-- `increment(heap)`, allocation: raises `nextReference` and preserves `data`. -/
+def incrementName : String := "increment"
+
+/-- The heap-model datatype, threaded through every procedure that touches a field. -/
+def heapTypeName : Identifier := "Heap"
+
+def heapCtorName : String := "MkHeap"
+
+/-- Core's unsafe destructor for `Heap`'s `data` field. -/
+def heapDataAccessor : String := "Heap..data!"
+
+def heapNextReferenceAccessor : String := "Heap..nextReference!"
+
+/-- The datatype every composite (object) reference is flattened to by `TypeHierarchy`. -/
+def compositeTypeName : Identifier := "Composite"
+
+def compositeCtorName : String := "MkComposite"
+
+def compositeRefAccessor : String := "Composite..ref!"
 
 end -- public section
 
