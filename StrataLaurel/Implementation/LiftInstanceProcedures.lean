@@ -290,7 +290,8 @@ def outputSignatureCompatible (model : SemanticModel) (baseM ovM : Procedure) : 
     * OUTPUT-SIGNATURE — an overrider that shares the base's non-`self` INPUT signature (so
       it IS a family member) but has an incompatible OUTPUT signature: a different number of
       outputs, or a return that is neither the same type as nor a subtype of the base's
-      (`outputSignatureCompatible` rejects both; a covariant subtype return IS admitted). The
+      (`outputSignatureCompatible` rejects both; a covariant subtype return IS admitted, at
+      any output position — so a widening family needs no lowering of its own). The
       dispatcher's branch call `O$m$impl(self as O, rest…)` assigns the base method's output
       list, so a mismatched arity or a non-covariant return yields a re-resolution
       `.strataBug`. (An INPUT-signature difference is not checked here: it makes the two

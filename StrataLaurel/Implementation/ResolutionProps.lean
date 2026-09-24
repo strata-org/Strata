@@ -534,7 +534,7 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
   · -- .Var (.Field target f) arm
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     refine postM_bind_any fun fieldName' => ?_
-    by_cases hheap : isHeapRelevantType (ctx.typeLattice.unfold tp.snd).val
+    by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold tp.snd).val
     · simp only [hheap, if_true]
       exact postM_pure (by
         intro x hx
@@ -547,7 +547,7 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     obtain ⟨e', ty⟩ := tp
     simp only [] at htp ⊢
-    by_cases hheap : isHeapRelevantType (ctx.typeLattice.unfold ty).val
+    by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold ty).val
     · simp only [hheap, if_true]
       exact postM_pure (by
         intro x hx
@@ -648,9 +648,10 @@ def CleanProcFields (proc : Procedure) : Prop :=
   (∀ c ∈ proc.guarantees, Clean c.condition)
 
 include masterSynth masterCheck in
-/-- The exceptional contract resolves to clean cases. A case's guard and each of its
-    postconditions are *checked* against `bool`, and each frame target is
-    synthesized, so all three come back Clean by the same argument as the
+/-- The exceptional contract resolves to cases that declare no unannotated local (`Clean`). A
+    case's guard and each of its postconditions are *checked* against `bool`, and its frame goes
+    through the same modifies gate as a normal-path frame (so a target that cannot be framed is
+    already dropped, and every survivor is Clean), giving all three the same argument as the
     normal-path clauses. The declared `throws` type is a type rather than an
     expression, so it carries no cleanliness obligation. -/
 theorem resolveExceptionalContract_clean (proc : Procedure) :
@@ -671,8 +672,7 @@ theorem resolveExceptionalContract_clean (proc : Procedure) :
         condition_mapM_clean c _ (fun e => masterCheck e _))
     · exact postM_mapM _ _ (fun c _ =>
         condition_mapM_clean c _ (fun e => masterCheck e _))
-  refine postM_bind (postM_mapM _ _ (fun e _ => resolveStmtExpr_clean masterSynth e))
-    fun mods' hmods => ?_
+  refine postM_bind (resolveModifiesTargets_clean masterSynth _) fun mods' hmods => ?_
   exact postM_pure ⟨hguard, hposts, hmods⟩
 
 include masterSynth masterCheck in

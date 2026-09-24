@@ -291,3 +291,31 @@ procedure go()
   assert x == 7
 };
 #end
+
+/-! ## 9. WHERE a Liskov violation is reported, which nothing else pins: on `C9.m`, the method
+    the user has to change, not on B9's `ensures r >= 0`, whose contract is the one broken.
+    No call, because the check is discharged at DEFINITION time — adding a dispatcher would only
+    couple the case to dispatcher behaviour. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite B9 {
+  procedure m(self: B9) returns (r: int)
+    opaque
+    ensures r >= 0
+  {
+    return 4
+  };
+}
+composite C9 extends B9 {
+  procedure m(self: C9) returns (r: int)
+//          ^ error: override postcondition no weaker than 'r >= 0' from 'B9.m' could not be proved
+    opaque
+    ensures r == -5
+  {
+    return -5
+  };
+}
+procedure go() opaque { assert 1 == 1 };
+#end
