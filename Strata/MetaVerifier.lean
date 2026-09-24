@@ -346,10 +346,18 @@ def datatypeNamespace : CoreM Name :=
 
     * `inductive ns.<d>` with the constructors and their fields;
     * a tester `is_<c> : ns.<d> → Prop` per constructor and a selector
-      `<field> : ns.<d> → σ` per field, both by `casesOn`.  A selector applied
-      to another constructor returns a fixed default element of σ (SMT-LIB
-      leaves such an application unspecified); for a datatype that element is
-      its first constructor whose fields all have one. -/
+      `<field> : ns.<d> → σ` per field, both by `casesOn`.
+
+    SMT-LIB leaves a selector applied to another constructor unspecified, so a
+    verification condition is valid only if it holds whatever that value is.
+    Each selector therefore falls back to an `opaque` constant of its own: a
+    proof can say nothing about it, and two selectors do not collapse onto the
+    same value.  The witness such a declaration needs is the datatype's first
+    constructor whose fields all have one.
+
+    Strata also generates an eliminator for a datatype, encoding its induction
+    principle.  That is not translated; only constructors, testers and
+    selectors are. -/
 def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM Unit := do
   let mut witnesses : Std.HashMap Lean.Name Lean.Expr := {}
   for dt in dts do
@@ -413,13 +421,22 @@ def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM
     for c in dt.constrs do
       for ((sel, σt), k) in c.fields.toList.zip (List.range c.fields.size) do
         let σ ← sortExpr σt
-        let some d ← dflt witnesses σ
-          | throwError m!"gen_smt_vcs: no default element for the type of selector '{sel}'"
+        let selName := SanitizedDatatype.selectorName ns dt.name sel
+        -- The witness is only what an `opaque` declaration needs to exist; it
+        -- is invisible to a proof, which is the point.
+        let some wσ ← dflt witnesses σ
+          | throwError m!"gen_smt_vcs: no element to witness the unspecified result \
+                          of selector '{sel}'"
+        let unspecName := selName ++ `unspec
+        unless (← getEnv).contains unspecName do
+          addDecl <| .opaqueDecl { name := unspecName, levelParams := [], type := σ,
+                                   value := wσ, isUnsafe := false, all := [unspecName] }
+        let d : Lean.Expr := .const unspecName []
         let minors ← dt.constrs.mapM fun c' => minorFor c' fun fvars =>
           pure (if c'.name == c.name then fvars[k]! else d)
         let value ← Meta.withLocalDeclD `x dtTy fun x => do
           Meta.mkLambdaFVars #[x] (casesOn (.succ .zero) (.lam `_ dtTy σ .default) x minors)
-        addDefn (SanitizedDatatype.selectorName ns dt.name sel) (.forallE `x dtTy σ .default) value
+        addDefn selName (.forallE `x dtTy σ .default) value
 
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
   let ns ← datatypeNamespace

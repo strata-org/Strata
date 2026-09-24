@@ -24,6 +24,15 @@ program Core;
 datatype Option () { None(), Some(val: int) };
 datatype IntList () { Nil(), Cons(head: int, tail: IntList) };
 datatype Wrap () { W(inner: Option) };
+datatype MyNat () { Zero(), Succ(pred: MyNat) };
+
+// A recursive function over a datatype: its termination and selector
+// well-formedness VCs become goals about the inductive itself.
+rec function depth(@[cases] n : MyNat) : int
+  decreases n
+{
+  if MyNat..isZero(n) then 0 else int.add(1, depth(MyNat..pred(n)))
+};
 
 procedure Test(o : Option, l : IntList, out y : int)
 spec {
@@ -41,6 +50,14 @@ spec {
 // `Option` is already declared by the goals of `Test` when this procedure's
 // goal is created; the selector `inner : Wrap → Option` still needs a default
 // element of `Option`.
+procedure Depth(n : MyNat, out d : int)
+spec {
+  ensures [ens]: d == depth(n);
+}
+{
+  d := depth(n);
+};
+
 procedure Unwrap(w : Wrap, out y : int)
 spec {
   requires [pre]: Option..isSome(Wrap..inner(w));
@@ -51,13 +68,24 @@ spec {
 };
 #end
 
+/-- The goals are ordinary statements about the generated inductives.  For the
+    recursive function the two are that the constructors are exhaustive and that
+    a selector's result ranks below the constructor it came from; elsewhere a
+    hypothesis already carries the tester a selector needs, or a constructor's
+    own selector round-trips. -/
 theorem dtPgm_correct : smtVCsCorrect dtPgm := by
   gen_smt_vcs
+  case «depth_body_calls_MyNat..pred_0» =>
+    intro n; intros
+    cases n <;> simp_all [dtPgm_correct.DT.MyNat.is_Zero, dtPgm_correct.DT.MyNat.is_Succ]
+  case depth_terminates_0 =>
+    intro n; intros
+    cases n <;> simp_all [dtPgm_correct.DT.MyNat.is_Zero, dtPgm_correct.DT.MyNat.pred]
   case roundtrip =>
-    intro l o h
+    intro _ o; intros
     cases o with
-    | None => simp [dtPgm_correct.DT.Option.is_Some] at h
+    | None => simp_all [dtPgm_correct.DT.Option.is_Some]
     | Some v => rfl
-  all_goals (intros; trivial)
+  all_goals (intros; simp_all [dtPgm_correct.DT.Option.is_Some, dtPgm_correct.DT.IntList.is_Cons])
 
 end Strata
