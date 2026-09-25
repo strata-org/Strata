@@ -386,7 +386,12 @@ private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (arg
         | _ => []
       pure (callWithOutputs, assume, retVal)
     else
-      pure (⟨.StaticCall callee tempRefs, src⟩, [], [])
+      -- No output temps to bind, so the call stands on its own. A callee with no
+      -- outputs still has postconditions worth assuming — its `$post_i` helper
+      -- takes only the inputs, so `outputArgs` is simply empty. Without this a
+      -- lemma-style `procedure p(x) ensures ...`, called purely for its proof
+      -- effect, would contribute nothing at its call site.
+      pure (⟨.StaticCall callee tempRefs, src⟩, mkPostAssumes info tempRefs [] src, [])
   return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
 
 private def rewriteAssignedCall (model : SemanticModel) (info : ContractInfo) (targets : List VariableMd)

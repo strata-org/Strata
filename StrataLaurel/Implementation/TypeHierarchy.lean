@@ -113,11 +113,11 @@ Lower `New name` to a block that:
 def lowerNew (name : Identifier) (source : FileRange) : THM StmtExprMd := do
   let heapVar := heapVarName
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar)) source]) source
+  let getCounter := mkMd (.StaticCall heapNextReferenceAccessor [mkMd (.Var (.Local heapVar)) source]) source
   let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, some ⟨.TInt, source⟩⟩) source] getCounter) source
-  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar)) source]) source
+  let newHeap := mkMd (.StaticCall incrementName [mkMd (.Var (.Local heapVar)) source]) source
   let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar) source] newHeap) source
-  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)) source, mkMd (.StaticCall (name.text ++ "_TypeTag") []) source]) source
+  let compositeResult := mkMd (.StaticCall compositeCtorName [mkMd (.Var (.Local freshVar)) source, mkMd (.StaticCall (name.text ++ "_TypeTag") []) source]) source
   return { val := .Block [saveCounter, updateHeap, compositeResult] none, source := source }
 
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
@@ -144,7 +144,7 @@ def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) 
   { ty with val := ty.val.mapType fun t =>
       match t with
       | .UserDefined name =>
-        if composites.contains name.text then .UserDefined "Composite" else t
+        if composites.contains name.text then .UserDefined compositeTypeName else t
       | _ => t }
 
 /--
@@ -164,7 +164,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants ← generateTypeHierarchyDecls model program
   -- One downcast helper per composite — `function downcast$C(p: C): C requires (p is C) { p }`
-  -- — called by the `AsType` arms in `HeapParameterization` so an `x as C` cast works in a
+  -- — called by `HeapParameterization`'s cast lowering so an `x as C` cast works in a
   -- contract formula (the `is C` guard is a pure term; PrecondElim discharges it as a
   -- well-definedness obligation). `C` flattens to `Composite` below, so `{ p }` type-checks.
   let downcastHelpers : List Procedure := program.types.filterMap fun td =>
@@ -189,9 +189,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
   let remainingTypes := lowered.types.map fun td =>
     match td with
     | .Datatype dt =>
-      if dt.name.text == "Composite" then
+      if dt.name.text == compositeTypeName.text then
         .Datatype { dt with constructors := dt.constructors.map fun c =>
-          if c.name.text == "MkComposite" then
+          if c.name.text == compositeCtorName then
             { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
       else td
@@ -216,7 +216,6 @@ public def typeHierarchyTransformPass : LoweringPass where
   unsupported := [NodeKind.Pseudo.implicitHeap]
   removes := [
       NodeKind.StmtExpr.IsType,
-      NodeKind.StmtExpr.AsType,
       NodeKind.StmtExpr.New
     ]
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."

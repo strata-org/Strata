@@ -321,6 +321,156 @@ procedure resultIsSupertypeSupertypeFirst() opaque {
 };
 #end
 
+/-! ### Argument order does not decide the inferred type argument
+
+`mk(<?>)` has type `Box<?>`, which cannot be written directly. So each call offers `Box<?>` and
+`Box<int>`, and both orders must report the same inferred `Box<int>`.
+
+The slot is a third instantiation on purpose: a `Box<int>` slot accepts either inferred type, so the
+test would pass whichever one was chosen. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mk<T>(v: T) returns (r: Box<T>) opaque;
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure gradualCandidateEitherOrder() opaque {
+  var bi: Box<int> := new Box<int>;
+  var y: Box<bool> := pick(mk(<?>), bi);
+//                    ^^^^^^^^^^^^^^^^^ error: expected 'Box<bool>', got 'Box<int>'
+  var z: Box<bool> := pick(bi, mk(<?>))
+//                    ^^^^^^^^^^^^^^^^^ error: expected 'Box<bool>', got 'Box<int>'
+};
+#end
+
+/-! ### The same again, with no hole in sight
+
+`new Box` supplies no type argument, so each call offers a bare `Box` and a `Box<int>`, and the
+inferred type is `Box<int>` from either position. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure bareNameLosesToInstantiation() opaque {
+  var bi: Box<int> := new Box<int>;
+  var w: Box<bool> := pick(new Box, bi);
+//                    ^^^^^^^^^^^^^^^^^ error: expected 'Box<bool>', got 'Box<int>'
+  var x: Box<bool> := pick(bi, new Box)
+//                    ^^^^^^^^^^^^^^^^^ error: expected 'Box<bool>', got 'Box<int>'
+};
+#end
+
+/-! A self-referential alias is accepted, so inference has to cope with one. That a diagnostic comes
+out at all is the assertion here; its wording is incidental. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+type A = Box<A>
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure selfReferentialAlias(a: A, b: A) opaque {
+  var w: bool := pick(a, b)
+//               ^^^^^^^^^^ error: expected 'bool', got 'Box<A>'
+};
+#end
+
+/-! ### A procedure-output tuple behaves the same way
+
+`mk2(<?>)` comes back as `(int, ?)` and `two()` as `(int, int)`, so the concrete tuple is the
+inferred type whichever argument supplies it. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure mk2<T>(v: T) returns (a: int, b: T) opaque;
+procedure two() returns (a: int, b: int) opaque;
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure tupleArgument() opaque {
+  var y: bool := pick(mk2(<?>), two())
+//               ^^^^^^^^^^^^^^^^^^^^^ error: expected 'bool', got '(int, int)'
+};
+#end
+
+/-! ### An alias counts as the type it names, and keeps its own spelling
+
+`BI` and `Box<Box<?>>` are compared through the alias, so `BI` is the more precise of the two; the
+inferred type is reported as `BI` rather than expanded. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+type BI = Box<int>
+procedure mk<T>(v: T) returns (r: Box<T>) opaque;
+procedure pickB<T>(a: Box<T>, b: Box<T>) returns (r: T) opaque;
+procedure aliasKeepsItsSpelling() opaque {
+  var bbi: Box<BI> := new Box<BI>;
+  var z: bool := pickB(bbi, mk(mk(<?>)))
+//               ^^^^^^^^^^^^^^^^^^^^^^^ error: expected 'bool', got 'BI'
+};
+#end
+
+/-! ### Equally precise arguments: the first one decides
+
+`TotalMap int ?` and `TotalMap ? int` are each more precise in one component, so neither is
+preferred and the first argument's type is inferred. The one place argument order still decides. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure mkMap<K,V>(k: K, v: V) returns (m: TotalMap K V) opaque;
+procedure pick<T>(a: T, b: T) returns (r: T) opaque;
+procedure equallyPrecise() opaque {
+  var y: bool := pick(mkMap(1, <?>), mkMap(<?>, 1))
+//               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: expected 'bool', got 'TotalMap int Unknown'
+};
+#end
+
+/-! ### A gradual type registered by a frontend does not become the inferred type
+
+The two sections below are the only ones that need `gradualTypes`; a Laurel program cannot register a
+type itself. `Any` is consistent with everything, so inferring it would leave the `Dog`/`Cat`
+disagreement unreported. -/
+
+#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "Any") <|
+#strata
+program Laurel;
+composite Any { }
+composite Animal { }
+composite Dog extends Animal { }
+composite Cat extends Animal { }
+procedure both3<T>(a: T, b: T, c: T) opaque;
+procedure gradualHidesNothing() opaque {
+  var g: Any := new Any;
+  var d: Dog := new Dog;
+  var k: Cat := new Cat;
+  both3(g, d, k)
+//^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'both3': 'Dog' and 'Cat' disagree
+};
+#end
+
+/-! ### The same when the registered type is reached through an alias
+
+`G` names `Any`, so this is the case above with the gradual type one step away. The `int`/`bool`
+disagreement must still be the one reported. -/
+
+#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "Any") <|
+#strata
+program Laurel;
+composite Any { }
+composite Box<T> { var v: T }
+type G = Any
+procedure both3B<T>(a: Box<T>, b: Box<T>, c: Box<T>) opaque;
+procedure gradualBehindAnAlias(bg: Box<G>, bi: Box<int>, bb: Box<bool>) opaque {
+  both3B(bg, bi, bb)
+//^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'both3B': 'int' and 'bool' disagree
+};
+#end
+
 /-! A consequence for `==`, whose operands share one `T` via `$eq<T>(x: T, y: T)`: comparing
 values of related composite types resolves. Reference equality between a subtype and its
 supertype is meaningful, so this is the intended reading; unrelated types (`1 == true`,

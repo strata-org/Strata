@@ -162,6 +162,19 @@ structure SemanticModel where
   conflictingOverloads: Std.HashSet Nat := {}
   deriving Repr
 
+/-- The diagnostic noun and declared type-parameter count when this node declares a value type
+    (a datatype or an `opaque` type); `none` for anything else. The noun is paired with the
+    arity so a diagnostic about the arity can name the kind of type it is talking about. Not
+    `ResolvedNodeKind.name`: its "datatype definition" reads wrong inside "generic … 'X' must be
+    applied to N type argument(s)". -/
+def ResolvedNode.valueTypeArity? : ResolvedNode → Option (String × Nat)
+  | .datatypeDefinition dt => some ("datatype", dt.typeArgs.length)
+  | .opaqueType ot => some ("opaque type", ot.typeArgs.length)
+  | _ => none
+
+def ResolvedNode.isValueType (node : ResolvedNode) : Bool :=
+  node.valueTypeArity?.isSome
+
 /-- Look up the resolved node for an identifier, returning `none` if the identifier
     has no `uniqueId` or is not in the model. -/
 def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option ResolvedNode :=

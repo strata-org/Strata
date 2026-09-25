@@ -120,6 +120,10 @@ private abbrev ProcInst := String × List HighType
 
 private def procInstKey (p : ProcInst) : String := monoName p.1 p.2
 
+/-- Composite instantiations keyed by `instKey`, procedure instantiations keyed by `procInstKey`,
+    and the diagnostics inferring the latter produced. -/
+private abbrev Seeds := Std.HashMap String Inst × Std.HashMap String ProcInst × List Message
+
 /-- The SINGLE source of truth for the instantiation an explicit `new C<τ…>`
     denotes. Returns `some (C, args)` exactly when the `new` carries explicit type
     args, `C` is a generic composite, and the args are taggable (else `none` →
@@ -781,15 +785,15 @@ private def indexGenerics (program : Program) (model : SemanticModel)
   return (genComposites, genDefs, polyProcDefs)
 
 /-- Collect the SEED instantiations to start the worklist from: every COMPOSITE
-    instantiation in a type position (composite fields, datatype ctor args, constants,
-    static fields, proc params/outputs, and body+contract statement types), keyed by
-    `instKey`; plus every PROCEDURE instantiation at a call site to an indexed poly proc,
-    inferred from the arg types via `inferProcInst`, keyed by `procInstKey`. -/
+    instantiation in a DECLARATION's type (composite fields, datatype ctor args, constants,
+    static fields, proc params/outputs and throws); then, in one walk over every EXPRESSION
+    in the program, both the composite instantiations its type slots name and the PROCEDURE
+    instantiation of each call to an indexed poly proc, inferred from the arg types via
+    `inferProcInst`. -/
 private def collectSeeds (program : Program) (model : SemanticModel)
     (genComposites : Std.HashMap String (List Identifier))
     (ctx : TypeLattice)
-    (polyProcDefs : Std.HashMap String Procedure)
-    : Std.HashMap String Inst × Std.HashMap String ProcInst × List Message := Id.run do
+    (polyProcDefs : Std.HashMap String Procedure) : Seeds := Id.run do
   let mut insts : Std.HashMap String Inst := {}
   let recordInsts (is : List Inst) (m : Std.HashMap String Inst) : Std.HashMap String Inst :=
     is.foldl (fun m i => m.insert (instKey i) i) m
@@ -807,40 +811,26 @@ private def collectSeeds (program : Program) (model : SemanticModel)
     for p in proc.inputs do insts := recordInsts (collectInTy genComposites p.type) insts
     for p in proc.outputs do insts := recordInsts (collectInTy genComposites p.type) insts
     for t in proc.throwsType.toList do insts := recordInsts (collectInTy genComposites t) insts
-  -- body + contract statements: `mapProcedureM` covers the body AND
-  -- preconditions/decreases/invokeOn (so a generic in a contract is seeded too); it
-  -- applies its function to each statement ROOT, so wrap in `mapStmtExprM` to recurse
-  -- into every node (the var-decl `Assign`/`Declare` lives inside the body Block).
-  for proc in program.staticProcedures do
-    let (_, insts') := (mapProcedureM (m := StateM (Std.HashMap String Inst))
-      (fun root => mapStmtExprM
-        (fun e => do modify (recordInsts (collectInStmt genComposites e)); pure e) root) proc).run insts
-    insts := insts'
-  -- procedure instantiations from call sites to an indexed poly procedure.
-  let mut procInsts : Std.HashMap String ProcInst := {}
-  let mut seedDiags : List Message := []
-  for proc in program.staticProcedures do
-    -- `mapProcedureM` (not body-only `mapProcedureBodiesM`): a poly-proc call can appear in a
-    -- precondition/decreases/invokeOn too, and the final rewrite renames such calls to their
-    -- monomorph — so they must be seeded for cloning here, else that rename dangles.
-    -- State: (seeded ProcInsts, ambiguous-diamond diagnostics).
-    let (_, (pi', ds)) := (mapProcedureM (m := StateM (Std.HashMap String ProcInst × List Message))
-      (fun root => mapStmtExprM
-        (fun e => do
-          match e.val with
-          | .StaticCall callee args =>
-            match polyProcDefs.get? callee.text with
-            | some pproc =>
-              match inferProcInst ctx pproc (args.map (computeExprType model)) with
-              | .ok (some pinst) => modify (fun (m, d) => (m.insert (procInstKey pinst) pinst, d))
-              | .ok none => pure ()
-              | .error diag => modify (fun (m, d) => (m, d ++ [diag]))
-            | none => pure ()
-          | _ => pure ()
-          pure e) root) proc).run (procInsts, seedDiags)
-    procInsts := pi'
-    seedDiags := ds
-  return (insts, procInsts, seedDiags)
+  -- The same walk the final rewrite folds over, so the two cannot disagree about where to look. A
+  -- position missed here is not benign: the rewrite renames a type or a callee whose monomorph the
+  -- worklist never emitted, and re-resolution reports the dangling name as a `strata-bug`.
+  let (_, (insts', procInsts, seedDiags)) := (mapProgramStmtExprM (m := StateM Seeds)
+    (fun e => do
+      modify (fun (i, p, d) => (recordInsts (collectInStmt genComposites e) i, p, d))
+      match e.val with
+      | .StaticCall callee args =>
+        match polyProcDefs.get? callee.text with
+        | some pproc =>
+          match inferProcInst ctx pproc (args.map (computeExprType model)) with
+          | .ok (some pinst) => modify (fun (i, p, d) => (i, p.insert (procInstKey pinst) pinst, d))
+          -- `.ok none`: a call inside a poly procedure's own body, whose type args are not concrete
+          -- until that procedure is cloned. `discoverRewritePolyCalls` seeds it from the clone.
+          | .ok none => pure ()
+          | .error diag => modify (fun (i, p, d) => (i, p, d ++ [diag]))
+        | none => pure ()
+      | _ => pure ()
+      pure e) program).run (insts, {}, [])
+  return (insts', procInsts, seedDiags)
 
 /-- The monomorphization transform over a whole program. Returns the rewritten
     program plus any diagnostics (e.g. a divergent recursive generic that exceeds
@@ -995,12 +985,25 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
       | none => e
     | _ => e
   let stmtRewrite (e : StmtExprMd) : StmtExprMd := rewriteCall (rewriteStmt genComposites e)
-  -- Rewrite via `mapProcedureM` (not `mapProgram`/`mapProcedureBodiesM`) so the rewrite
-  -- reaches preconditions/decreases/invokeOn too — a generic in a contract (e.g. a
-  -- quantifier binder type in a precondition) would otherwise survive un-lowered to Core.
-  let program' := { program with
-    staticProcedures := program.staticProcedures.map
-      (fun proc => mapProcedureM (m := Id) (fun root => mapStmtExpr stmtRewrite root) proc) }
+  -- Recording each renamed callee makes "seeding is as wide as the rewrite" a property this pass
+  -- CHECKS rather than one maintained by hand: without it, a rename with no clone behind it surfaces
+  -- one pass later as a re-resolution `strata-bug` naming an undefined procedure, which says nothing
+  -- about which walk was too narrow.
+  let (program', renamed) := (mapProgramStmtExprM (m := StateM (List (String × FileRange)))
+    (fun e => do
+      let e' := stmtRewrite e
+      match e.val, e'.val with
+      | .StaticCall before _, .StaticCall after _ =>
+        if before.text != after.text then modify ((after.text, e.source) :: ·)
+      | _, _ => pure ()
+      pure e') program).run []
+  let emittedProcs : Std.HashSet String :=
+    staticProcs'.foldl (fun s p => s.insert p.name.text) {}
+  diags := diags ++ (renamed.filter (!emittedProcs.contains ·.1)).map (fun (n, source) =>
+    diagnosticFromSource source
+      s!"a call was renamed to '{n}', but no clone of that instantiation was emitted: the seeding \
+         walk in 'collectSeeds' did not reach a call site the rewrite did"
+      MessageKind.strataBug)
   return (program', diags)
 
 /-- Pipeline pass: monomorphize generic composites. -/

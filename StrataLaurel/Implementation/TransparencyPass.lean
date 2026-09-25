@@ -85,14 +85,22 @@ private def adjustSafeOperatorName (name : Identifier) : Identifier :=
 
     There is also no `Block` arm, so an emptied or single-statement block is left exactly
     as it was and this cannot drop a block's label or hoist a declaration out of its
-    scope. -/
-private def functionalize (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
+    scope.
+
+    A call whose result is unused is deleted too, which is what lets a *lemma* be invoked.
+    The `assert <lemma>$pre_i(…)` / `assume <lemma>$post_i(…)` statements `ContractPass`
+    wrapped it in live on in the *procedural* twin, so deleting the call here loses no
+    obligation. `resultUsed` keeps this to statement position; in value position the
+    application is the value and is kept. -/
+private def functionalize (asFunctionNames : Std.HashSet String)
+    (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExprFlattenM (m := Id) (fun _ _ => none)
-    (fun _ e =>
+    (fun resultUsed e =>
       match e.val with
       | .Assert .. | .Assume _ => []
       | .StaticCall callee args =>
-        if asFunctionNames.contains callee.text then
+        if !resultUsed then []
+        else if asFunctionNames.contains callee.text then
           let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
           [⟨.StaticCall funcCallee args, e.source⟩]
         else
