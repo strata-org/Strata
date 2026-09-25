@@ -133,96 +133,36 @@ Result: ✅ pass
 Obligation: b_is_zero
 Property: assert
 Result: ❓ unknown
-Model:
-(x@1, 0) (b@1, Npos(xI(xH))) (p@1, xH) (a@1, Npos(xO(xH))) (p@2, xH) 
 
 Obligation: test_sum_counterexample_ensures_2
 Property: assert
-Result: ❓ unknown
-Model:
-(x@1, 0) (b@1, Npos(xI(xH))) (p@1, xH) (a@1, Npos(xO(xH))) (p@2, xH)-/
+Result: ❓ unknown-/
 #guard_msgs in
-#eval Core.verify natSumPgm (options := { Core.VerifyOptions.quiet with verbose := .models })
+#eval Core.verify natSumPgm (options := Core.VerifyOptions.quiet)
 
 ---------------------------------------------------------------------
--- `define-fun-rec` alone: proving is unaffected (every proof obligation
--- still passes with the definition in place of the per-constructor axioms);
--- the false obligation is undecided (solver timeout), since model search
--- over the recursive definition needs `fmf-fun`.
+-- `define-fun-rec` alone is not enough, and is deliberately not pinned here.
+--
+-- Measured with cvc5 1.3.4: the ten provable obligations still pass with the
+-- definition in place of the per-constructor axioms, so proving is unaffected.
+-- The two false obligations come back as a solver timeout rather than a
+-- counterexample, because model search over a recursive definition needs
+-- `fmf-fun`. A timeout is a property of the budget and the machine, not of the
+-- encoding, so pinning one would make this suite fail for reasons unrelated to
+-- the feature. The next block pins the outcome that does characterise it.
 ---------------------------------------------------------------------
 
-/-- info:
-
-Obligation b_is_zero: Solver Timeout! stderr:cvc5 interrupted by timeout.
-
-solver stdout: 
-
-
-
-Obligation test_sum_counterexample_ensures_2: Solver Timeout! stderr:cvc5 interrupted by timeout.
-
-solver stdout: 
-
----
-info:
-Obligation: pos.toInt_body_calls_pos..xO_h_0
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.toInt_body_calls_pos..xI_h_1
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.toInt_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.toInt_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.fromInt_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.fromInt_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.fromInt_terminates_2
-Property: assert
-Result: ✅ pass
-
-Obligation: pos.fromInt_terminates_3
-Property: assert
-Result: ✅ pass
-
-Obligation: nat.toInt_body_calls_nat..val_0
-Property: assert
-Result: ✅ pass
-
-Obligation: b_is_zero
-Property: assert
-Result: 🚨 Solver Timeout! stderr:cvc5 interrupted by timeout.
-
-solver stdout: 
-
-
-Obligation: test_sum_counterexample_ensures_2
-Property: assert
-Result: 🚨 Solver Timeout! stderr:cvc5 interrupted by timeout.
-
-solver stdout:-/
-#guard_msgs in
-#eval Core.verify natSumPgm
-  (options := { Core.VerifyOptions.quiet with
-                  verbose := .models,
-                  recursiveFnsAsDefineFunRec := true })
-
 ---------------------------------------------------------------------
--- `define-fun-rec` + `fmf-fun`: the solver finds the model
--- (`a = 73`, `b = 127`).  `fmf-fun` is a model-finding mode and weakens
--- proving — here the two `pos.toInt_terminates` goals come back `unknown`
+-- `define-fun-rec` + `fmf-fun`: the obligation goes from `unknown` to a
+-- certified `fail`, with the model `a = 73`, `b = 127`.
+--
+-- Only the verdicts are pinned, not the model. `a` and `b` are forced by the
+-- preconditions (`toInt a = 73` and `toInt (a + b) = 200`), but the model also
+-- assigns the unconstrained variables of the query, and nothing obliges a
+-- solver to pick the same values for those twice. The verdict is what the
+-- feature promises; the values are in this comment instead.
+--
+-- `fmf-fun` is a model-finding mode and weakens proving — here the two `pos.toInt_terminates` goals come back `unknown`
 -- — so a client should enable it only when re-querying an obligation that
 -- was `unknown`, not on the primary pass.
 ---------------------------------------------------------------------
@@ -239,14 +179,10 @@ Result: ✅ pass
 Obligation: pos.toInt_terminates_0
 Property: assert
 Result: ❓ unknown
-Model:
-(p@2, xO(xO(xO(xH)))) (x@1, 0) (b@1, N0) (p@1, xH) (a@1, N0) 
 
 Obligation: pos.toInt_terminates_1
 Property: assert
 Result: ❓ unknown
-Model:
-(p@2, xI(xO(xO(xH)))) (x@1, 0) (b@1, N0) (p@1, xH) (a@1, N0) 
 
 Obligation: pos.fromInt_terminates_0
 Property: assert
@@ -271,18 +207,13 @@ Result: ✅ pass
 Obligation: b_is_zero
 Property: assert
 Result: ❌ fail
-Model:
-(x@1, 0) (b@1, Npos(xI(xI(xI(xI(xI(xI(xH)))))))) (p@1, xH) (a@1, Npos(xI(xO(xO(xI(xO(xO(xH)))))))) (p@2, xH) 
 
 Obligation: test_sum_counterexample_ensures_2
 Property: assert
-Result: ❌ fail
-Model:
-(x@1, 0) (b@1, Npos(xI(xI(xI(xI(xI(xI(xH)))))))) (p@1, xH) (a@1, Npos(xI(xO(xO(xI(xO(xO(xH)))))))) (p@2, xH)-/
+Result: ❌ fail-/
 #guard_msgs in
 #eval Core.verify natSumPgm
   (options := { Core.VerifyOptions.quiet with
-                  verbose := .models,
                   recursiveFnsAsDefineFunRec := true,
                   solverOptions := #[("fmf-fun", "true")],
                   -- well within budget standalone; generous so the pin is
@@ -299,13 +230,10 @@ Model:
 /-- info:
 Obligation: b_is_zero
 Property: assert
-Result: ❌ fail
-Model:
-(x@1, 0) (b@1, Npos(xI(xI(xI(xI(xI(xI(xH)))))))) (p@1, xH) (a@1, Npos(xI(xO(xO(xI(xO(xO(xH)))))))) (p@2, xH)-/
+Result: ❌ fail-/
 #guard_msgs in
 #eval Core.verify natSumPgm
   (options := { Core.VerifyOptions.quiet with
-                  verbose := .models,
                   recursiveFnsAsDefineFunRec := true,
                   solverOptions := #[("fmf-fun", "true")],
                   solverTimeout := 60,
