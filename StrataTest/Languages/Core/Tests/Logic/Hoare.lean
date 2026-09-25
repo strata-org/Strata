@@ -4,27 +4,25 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core
-import Strata.Languages.Core.Logic.Hoare
-import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.LExprEvalProps
 import StrataDDM.Integration.Lean.HashCommands
 
 /-! # Reading a Core procedure's contract as a Hoare triple
 
-Each test below writes a one-procedure Core program in DDM syntax, translates it to
+Each test below writes a Core program in DDM syntax, translates it to
 the Core AST, and then reads the procedure's `requires`/`ensures` as the
 pre/postcondition of a `Core.Logic.Hoare` triple via
-`Procedure.contractTriple`.  Eleven procedures are *proved* to meet their contracts and
+`Procedure.contractTriple`. Eleven procedures are *proved* to meet their contracts and
 two are *disproved*.  The bodies range from empty — where the triple is settled
 structurally, with no reasoning about individual statements — up to `assume`/`assert`,
 if-then-else, a labelled block, a block left by an `exit`, a `while` loop that terminates
 (a counting loop `while (int.le(y, 9)) { y := int.add(y, 1) }`, verified to its result
 `y == 10` using the concrete `Core.Factory` arithmetic the precondition pins), and a
 `while` loop that diverges (a `true` guard) and so meets `ensures false`
-vacuously under partial correctness.  A final example shows why the contract is read over
+vacuously under partial correctness. Another example shows why the contract is read over
 the body *wrapped in its procedure block*: a postcondition naming a variable the body
 declares fails `PostWF`.
 
@@ -265,6 +263,20 @@ private theorem xIs1Env_storeWellDefined :
     simp [Lambda.LExpr.isCanonicalValue]
   · exact absurd hn (by simp)
 
+/-- `xIs1Env` supplies the integer value required by a procedure whose only input
+is `x : int`. -/
+private theorem inputAsPredicate_xIs1 (proc : Core.Procedure)
+    (hinputs : proc.header.inputs.toList =
+      [(⟨"x", ()⟩, Lambda.LMonoTy.tcons "int" [])]) :
+    Core.Logic.Hoare.Procedure.inputAsPredicate proc xIs1Env := by
+  intro id ty hmem
+  rw [hinputs] at hmem
+  simp only [List.mem_singleton, Prod.mk.injEq] at hmem
+  obtain ⟨rfl, rfl⟩ := hmem
+  refine ⟨Lambda.LExpr.const () (.intConst 1), ?_, ?_⟩
+  · simp [xIs1Env]
+  · rfl
+
 /-- The block condition is immediate for an empty body: every clause that mentions
     the statements is vacuous, `Core.Factory` is well-formed, and the store holds
     only values. -/
@@ -297,6 +309,14 @@ private theorem run_procBlock_nil (π : String → Option Core.Procedure)
 /-- The empty trace is reachable. -/
 private theorem reachable_nil : Trace.Reachable Core.Expression I [] :=
   ⟨(), fun _ hc => absurd hc (by simp)⟩
+
+/-- A procedure with no inout parameters satisfies `oldInoutAsPredicate` vacuously — its
+    `getInoutParams` keys are empty, so there is no `old`/current pair to relate. -/
+private theorem oldInoutAsPredicate_of_no_inout (proc : Core.Procedure)
+    (ρ : Imperative.Env Core.Expression)
+    (h : ListMap.keys proc.header.getInoutParams = []) :
+    Core.Logic.Hoare.Procedure.oldInoutAsPredicate proc ρ := by
+  intro id hid; rw [h] at hid; simp at hid
 
 
 /-! ## A procedure that meets its contract
@@ -449,7 +469,9 @@ theorem noReq_violates_contract :
     injection hbody.symm.trans (show noReqProc.body = .structured [] by native_decide)
   subst hb
   have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
-    ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl⟩
+    ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl,
+      oldInoutAsPredicate_of_no_inout noReqProc xIs1Env (by native_decide),
+      inputAsPredicate_xIs1 noReqProc (by native_decide)⟩
     (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
     (.inl (run_procBlock_nil φ _ xIs1Env "" #[]))
   have hpost := hpostF reachable_nil
@@ -498,7 +520,9 @@ theorem offByOne_violates_contract :
     injection hbody.symm.trans (show offByOneProc.body = .structured [] by native_decide)
   subst hb
   have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
-    ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl⟩
+    ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl,
+      oldInoutAsPredicate_of_no_inout offByOneProc xIs1Env (by native_decide),
+      inputAsPredicate_xIs1 offByOneProc (by native_decide)⟩
     (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
     (.inl (run_procBlock_nil φ _ xIs1Env "" #[]))
   have hpost := hpostF reachable_nil
@@ -1251,12 +1275,13 @@ private theorem assume_emit (π : String → Option Core.Procedure)
     Core.Logic.Hoare.Triple π φ params Pre [Core.Statement.assume l e md]
       (fun ρ => Core.Expression.eval ρ.factory ρ.store e = some Imperative.HasBool.tt) := by
   refine Core.Logic.Hoare.cmd π φ params _ Pre _ (fun ρ₀ σ' emitted _hpre _hwf hstep => ?_)
-  simp only [Core.EvalCommandE] at hstep
   cases hstep with
-  | eval_assume =>
-    refine ⟨True.intro, fun hsatisfiable => ?_⟩
-    obtain ⟨_world, hassum⟩ := hsatisfiable
-    exact hassum _ (List.mem_cons_self)
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_assume =>
+      refine ⟨True.intro, fun hsatisfiable => ?_⟩
+      obtain ⟨_world, hassum⟩ := hsatisfiable
+      exact hassum _ (List.mem_cons_self)
 
 /-- `assert l e` from `e` holding: the assertion is valid and the fact survives. -/
 private theorem assert_check (π : String → Option Core.Procedure)
@@ -1267,9 +1292,10 @@ private theorem assert_check (π : String → Option Core.Procedure)
       [Core.Statement.assert l e md]
       (fun ρ => Core.Expression.eval ρ.factory ρ.store e = some Imperative.HasBool.tt) := by
   refine Core.Logic.Hoare.cmd π φ params _ _ _ (fun ρ₀ σ' emitted hpre _hwf hstep => ?_)
-  simp only [Core.EvalCommandE] at hstep
   cases hstep with
-  | eval_assert => exact ⟨⟨fun _ _world _ => hpre, True.intro⟩, fun _ => hpre⟩
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_assert => exact ⟨⟨fun _ _world _ => hpre, True.intro⟩, fun _ => hpre⟩
 
 private def chkPgm : Program :=
 #strata
@@ -1471,7 +1497,7 @@ theorem loopTerm_meets_contract :
   · -- `y := 0` establishes `0 ≤ y ≤ 10` (and carries the factory through).
     exact set_const φ loopTermPgmAST.findProcByString? testParams loopTermY (.intConst 0)
       loopTermParts.1 _ _
-      (fun _ρ₀ _σ' hpre hnew _hoth => ⟨⟨0, hnew, by decide, by decide⟩, hpre.2⟩)
+      (fun _ρ₀ _σ' hpre hnew _hoth => ⟨⟨0, hnew, by decide, by decide⟩, hpre.2.1⟩)
   · -- The loop preserves `0 ≤ y ≤ 10`; the exit's `¬ (y ≤ 9)` then forces `y = 10`.
     refine Core.Logic.Hoare.consequence loopTermPgmAST.findProcByString? φ testParams
       (Core.Logic.Hoare.while_rule loopTermPgmAST.findProcByString? φ testParams
@@ -1677,4 +1703,3 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
 
 
 end Strata
-

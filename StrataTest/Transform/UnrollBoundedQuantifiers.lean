@@ -13,15 +13,23 @@ import StrataDDM.Integration.Lean.HashCommands
 meta section
 namespace Strata
 
-/-- Options with the phase off. CSE is off so `unrolled` prints the program the
-    solver is given, inlining on so a goal over the program's own functions arrives
-    as their bodies. -/
+/-- Options for the runs below. CSE is off so `unrolled` prints the program the solver is
+    given; inlining is a phase these lists name, so a goal over the program's own functions
+    arrives as their bodies. -/
 private def noUnrolling : Core.VerifyOptions :=
-  { Core.VerifyOptions.quiet with functionInlining := true, disableCSE := true }
+  Core.VerifyOptions.quiet
 
-/-- `noUnrolling` with the phase on, differing in that flag alone. -/
-private def unrolling : Core.VerifyOptions :=
-  { noUnrolling with unrollBoundedQuantifiers := true }
+/-- `noUnrolling`'s phases followed by this pass, which is in no default order and so is
+    named after a reduction: the eligibility matchers read a guard syntactically. -/
+private def unrollingPhases : List Core.PipelinePhase :=
+  ((Core.corePipelinePhases (options := noUnrolling)).filter
+      fun p => p.phase.name != "commonSubexprElim")
+    ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers]
+
+/-- Those phases validated, for the runs below. `none` would silently verify with the
+    default order, so a failure to compose has to surface as one. -/
+private def unrollingPipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  (Core.ValidatedPipeline.ofList unrollingPhases).toOption
 
 private def toCore (pgm : StrataDDM.Program) : Core.Program :=
   TransM.run Inhabited.default (translateProgram pgm) |>.fst
@@ -43,7 +51,7 @@ private def initState : Core.Transform.CoreTransformState :=
 
 /-- The counters the pass recorded, then the program it produced. -/
 private def unrolled (pgm : StrataDDM.Program) : IO Unit := do
-  match Core.coreValidatedPipeline (options := unrolling) with
+  match Core.ValidatedPipeline.ofList unrollingPhases with
   | .error e => IO.println s!"pipeline assembly failed: {e}"
   | .ok vp =>
     match ← (Core.runTransforms (toCore pgm) (upToUnrolling vp.phases)
@@ -109,7 +117,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify concretePgm (options := unrolling)
+#eval Core.verify concretePgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A pinned length with symbolic elements -/
 
@@ -156,7 +164,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify symbolicPgm (options := unrolling)
+#eval Core.verify symbolicPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### One element pinned, the rest symbolic -/
 
@@ -205,7 +213,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify mixedElementsPgm (options := unrolling)
+#eval Core.verify mixedElementsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An unpinned length leaves the quantifier standing -/
 
@@ -250,7 +258,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify unpinnedPgm (options := unrolling)
+#eval Core.verify unpinnedPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An existential unrolls to a disjunction -/
 
@@ -299,7 +307,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify existentialPgm (options := unrolling)
+#eval Core.verify existentialPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### The length stated by a top-level axiom -/
 
@@ -347,7 +355,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify axiomFactPgm (options := unrolling)
+#eval Core.verify axiomFactPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### The length stated by the path condition reaching the goal -/
 
@@ -397,7 +405,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify pathConditionPgm (options := unrolling)
+#eval Core.verify pathConditionPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A length stated in one branch is out of scope after it -/
 
@@ -452,7 +460,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify factUnderIfPgm (options := unrolling)
+#eval Core.verify factUnderIfPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### One procedure's assumptions are out of scope in another's goal
 
@@ -524,7 +532,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify twoProceduresPgm (options := unrolling)
+#eval Core.verify twoProceduresPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### Two goals of one procedure are each folded in the scope reaching them -/
 
@@ -591,7 +599,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify twoObligationsPgm (options := unrolling)
+#eval Core.verify twoObligationsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A fact stated between two goals reaches only the later one -/
 
@@ -652,7 +660,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify factBetweenGoalsPgm (options := unrolling)
+#eval Core.verify factBetweenGoalsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An axiom for the length and an assume for an element -/
 
@@ -702,7 +710,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify mixedLocationsPgm (options := unrolling)
+#eval Core.verify mixedLocationsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### The length stated by a procedure precondition -/
 
@@ -751,7 +759,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify preconditionPgm (options := unrolling)
+#eval Core.verify preconditionPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A goal whose body comes from two inlined functions -/
 
@@ -808,7 +816,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify inlinedFunctionsPgm (options := unrolling)
+#eval Core.verify inlinedFunctionsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A polymorphic function applied to each element -/
 
@@ -861,7 +869,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify polymorphicPgm (options := unrolling)
+#eval Core.verify polymorphicPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A nested quantifier whose own length is pinned unrolls in turn -/
 
@@ -912,7 +920,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify nestedBothPinnedPgm (options := unrolling)
+#eval Core.verify nestedBothPinnedPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A surviving inner quantifier restores the whole obligation -/
 
@@ -962,7 +970,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify nestedInnerUnpinnedPgm (options := unrolling)
+#eval Core.verify nestedInnerUnpinnedPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### Unrolling beneath a kept outer quantifier -/
 
@@ -1010,7 +1018,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify underOuterQuantifierPgm (options := unrolling)
+#eval Core.verify underOuterQuantifierPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### Instances that refer to the kept outer binder
 
@@ -1102,7 +1110,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify keptBinderInstancesPgm (options := unrolling)
+#eval Core.verify keptBinderInstancesPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A negative lower bound states no range the pass accepts
 
@@ -1152,7 +1160,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify negativeLowerBoundPgm (options := unrolling)
+#eval Core.verify negativeLowerBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A disjunctive guard states no range the pass accepts -/
 
@@ -1201,7 +1209,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify disjunctiveGuardPgm (options := unrolling)
+#eval Core.verify disjunctiveGuardPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A count past the per-quantifier cap leaves the quantifier standing -/
 
@@ -1248,7 +1256,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify binderCapPgm (options := unrolling)
+#eval Core.verify binderCapPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### Nested counts whose product passes the cap leave the quantifiers standing -/
 
@@ -1304,7 +1312,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify productCapPgm (options := unrolling)
+#eval Core.verify productCapPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ## Decidable goals
 
@@ -1356,7 +1364,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify scalarRefutedPgm (options := unrolling)
+#eval Core.verify scalarRefutedPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A refuted goal over sequence elements
 
@@ -1412,7 +1420,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify refutedElementsPgm (options := unrolling)
+#eval Core.verify refutedElementsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A non-strict upper bound includes its endpoint -/
 
@@ -1459,7 +1467,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify leUpperBoundPgm (options := unrolling)
+#eval Core.verify leUpperBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A count of one -/
 
@@ -1506,7 +1514,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify countOnePgm (options := unrolling)
+#eval Core.verify countOnePgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An empty range leaves the unit of the connective -/
 
@@ -1553,7 +1561,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify emptyRangePgm (options := unrolling)
+#eval Core.verify emptyRangePgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A strict lower bound, written either way round -/
 
@@ -1600,7 +1608,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify strictLowerBoundPgm (options := unrolling)
+#eval Core.verify strictLowerBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A strict lower bound with the binder on the left -/
 
@@ -1647,7 +1655,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify strictLowerBoundGtPgm (options := unrolling)
+#eval Core.verify strictLowerBoundGtPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An element fact with the selector on the right -/
 
@@ -1698,7 +1706,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify selectOnRightPgm (options := unrolling)
+#eval Core.verify selectOnRightPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A guard behind a redex states no range the matchers can read -/
 
@@ -1746,7 +1754,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify guardBehindRedexPgm (options := unrolling)
+#eval Core.verify guardBehindRedexPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A strict bound at `-1` admits exactly the indices the fold covers -/
 
@@ -1793,7 +1801,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify negativeOneStrictPgm (options := unrolling)
+#eval Core.verify negativeOneStrictPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A strict bound below `-1` admits indices the fold would miss -/
 
@@ -1840,7 +1848,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify negativeTwoStrictPgm (options := unrolling)
+#eval Core.verify negativeTwoStrictPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A fact pinning a negative value is not recorded -/
 
@@ -1887,7 +1895,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify negativeFactPgm (options := unrolling)
+#eval Core.verify negativeFactPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A literal bound needs no fact -/
 
@@ -1929,7 +1937,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify literalBoundPgm (options := unrolling)
+#eval Core.verify literalBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A lower bound written the other way round -/
 
@@ -1976,7 +1984,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify geLowerBoundPgm (options := unrolling)
+#eval Core.verify geLowerBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A fact with the literal on the left -/
 
@@ -2023,7 +2031,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify literalOnLeftPgm (options := unrolling)
+#eval Core.verify literalOnLeftPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A fact stated in a nested block -/
 
@@ -2072,7 +2080,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify nestedBlockPgm (options := unrolling)
+#eval Core.verify nestedBlockPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ## Facts, guards and commands the pass reads -/
 
@@ -2123,7 +2131,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify disagreeingFactsPgm (options := unrolling)
+#eval Core.verify disagreeingFactsPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A binder that is not an integer is passed over -/
 
@@ -2165,7 +2173,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify boolBinderPgm (options := unrolling)
+#eval Core.verify boolBinderPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### Two resolvable quantifiers in one goal are both folded -/
 
@@ -2216,7 +2224,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify twoResolvableQuantifiersPgm (options := unrolling)
+#eval Core.verify twoResolvableQuantifiersPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### One unresolvable sibling reverts the obligation both quantifiers sit in -/
 
@@ -2266,7 +2274,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify siblingQuantifiersPgm (options := unrolling)
+#eval Core.verify siblingQuantifiersPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A cover unrolls to a disjunction -/
 
@@ -2313,7 +2321,7 @@ Property: cover
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify coverPgm (options := unrolling)
+#eval Core.verify coverPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A quantifier in an assume is left alone -/
 
@@ -2362,7 +2370,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify quantifierInAssumePgm (options := unrolling)
+#eval Core.verify quantifierInAssumePgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### An element fact stated with the checked selector
 
@@ -2441,7 +2449,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify selectNoBangPgm (options := unrolling)
+#eval Core.verify selectNoBangPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A bound that names its value only after normalization
 
@@ -2508,7 +2516,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify normalizedBoundPgm (options := unrolling)
+#eval Core.verify normalizedBoundPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A length reached through a sequence constructor
 
@@ -2553,7 +2561,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify emptySeqLengthPgm (options := unrolling)
+#eval Core.verify emptySeqLengthPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### A count equal to `unrollBinderCap` still unrolls
 
@@ -2598,7 +2606,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify binderCapExactPgm (options := unrolling)
+#eval Core.verify binderCapExactPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 /-! ### One instance past the per-quantifier cap -/
 
@@ -2640,6 +2648,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify binderCapBoundaryPgm (options := unrolling)
+#eval Core.verify binderCapBoundaryPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
 end Strata

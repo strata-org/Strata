@@ -24,6 +24,8 @@ import Strata.Util.Sarif
 import Strata.Util.Worklist
 
 /- Strata Languages -/
+import Strata.Languages.Core.BitVecEvalProps
+import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
@@ -60,6 +62,7 @@ import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.Languages.Core.Logic.LangDefProps
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.Hoare
+import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 

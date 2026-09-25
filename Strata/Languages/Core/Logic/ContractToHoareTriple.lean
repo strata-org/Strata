@@ -34,6 +34,10 @@ pair.  Kept separate because none of it is part of the logic proper.
 
 - `Procedure.preAsPredicate` / `Procedure.postAsPredicate` — the two halves of the
   reading; the latter drops `free` clauses.
+- `Procedure.oldInoutAsPredicate` — the entry relation between each inout formal and its
+  `old` snapshot, carried in `contractTriple`'s precondition.
+- `Procedure.valueHasType` / `Procedure.inputAsPredicate` — connect runtime input
+  values to the types declared by the procedure signature.
 - `Procedure.contractTriple` — "the procedure named `procName` in `p` meets its
   contract", as a single judgement.  It names the procedure rather than taking it, so
   the environment a `call` resolves against is `p`'s own `findProcByString?` by
@@ -43,7 +47,8 @@ pair.  Kept separate because none of it is part of the logic proper.
   decision procedures for the clause-list conditions above.
 
 Ways to *establish* a `contractTriple`, and the lemmas relating the `Bool` checks back
-to the propositions, are in `Strata.Languages.Core.Logic.ContractToHoareTripleProps`.
+to the propositions, are in `ContractToHoareTripleProps`. The call rule that
+consumes one is in `HoareCall`.
 -/
 
 public section
@@ -72,6 +77,28 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
     check.attr = Procedure.CheckAttr.Default →
     Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
 
+/-- The `old`-snapshot relation a procedure's inout parameters carry into its body:
+    for every id among the keys of `proc.header.getInoutParams`, `old id` holds the
+    same value as `id` itself. -/
+@[expose] def Procedure.oldInoutAsPredicate (proc : Procedure)
+    (ρ : Imperative.Env Expression) : Prop :=
+  ∀ id ∈ ListMap.keys proc.header.getInoutParams,
+    ρ.store (CoreIdent.mkOld id.name) = ρ.store id
+
+/-- Runtime values matching a declared Core type. Bitvectors are represented by
+width-matching literals; other values use their syntactically recoverable type. -/
+@[expose] def Procedure.valueHasType (ty : Lambda.LMonoTy)
+    (v : Expression.Expr) : Prop :=
+  match ty with
+  | .bitvec n => ∃ b : BitVec n, v = Lambda.LExpr.bitvecConst () n b
+  | _ => Lambda.LExpr.typeOf v = some ty
+
+/-- Every input and inout formal is bound to a value matching its declared type. -/
+@[expose] def Procedure.inputAsPredicate (proc : Procedure)
+    (ρ : Imperative.Env Expression) : Prop :=
+  ∀ id ty, (id, ty) ∈ proc.header.inputs.toList →
+    ∃ v, ρ.store id = some v ∧ Procedure.valueHasType ty v
+
 /-- **The Hoare triple a procedure's contract asserts about its body.**
 
     `{ requires } body { ensures }` as a `Triple` over the body wrapped in its procedure
@@ -83,14 +110,18 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
 
     The precondition pins the initial environment to `Core.Factory`, so a body proof may
     use the concrete evaluator's operator semantics; over an arbitrary well-formed factory
-    those value laws are unspecified.  Discharge with `contractTriple_of` (factory
-    discarded) or `contractTriple_of_core` (factory assumption kept). -/
+    those value laws are unspecified. It carries `oldInoutAsPredicate` for each inout
+    formal's entry snapshot and `inputAsPredicate` so every input value matches the type
+    declared by the procedure signature. Discharge with `contractTriple_of` (all extra
+    assumptions discarded), `contractTriple_of_core` (factory and old relation kept), or
+    `contractTriple_of_core_typed` (all assumptions kept). -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
   ∃ proc bss, p.findProcByString? procName = some proc ∧
     proc.body = .structured bss ∧
     Triple p.findProcByString? φ params
-      (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory)
+      (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
+        Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)
 
 /-! ### Decidable bridges to a procedure's contract
