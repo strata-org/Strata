@@ -419,8 +419,10 @@ private def assertsThroughPrecondElim (phases : List Core.PipelinePhase) : Std.F
   | (.ok q, _) => assertsOf q
   | (.error e, _) => Std.Format.text s!"pipeline failed: {e}"
 
-private def inliningOnly : Core.VerifyOptions :=
-  { Core.VerifyOptions.default with functionInlining := true }
+/-- The default order with function inlining after it, so a goal carries the bodies it
+    substitutes. -/
+private def inliningAtEnd : List Core.PipelinePhase :=
+  Core.corePipelinePhases ++ [Core.functionInliningPipelinePhase]
 
 /-- The default order with function inlining spliced directly after the entry
     assertion, which is the earliest a caller can place it. -/
@@ -438,7 +440,7 @@ info: assert_a1_calls_bump_0: int.gt(b, 100)
 a1: int.ge(bump(a, b), 0)
 -/
 #guard_msgs in
-#eval assertsThroughPrecondElim (Core.corePipelinePhases (options := inliningOnly))
+#eval assertsThroughPrecondElim inliningAtEnd
 
 /-! Spliced in ahead of `precondElim` instead, the call is gone before the
 obligation can be raised. -/

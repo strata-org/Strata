@@ -15,6 +15,16 @@ import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
+import Strata.Transform.LiftInternalFuncDecls
+import Strata.Transform.TerminationCheck
+import Strata.Transform.UnrollBoundedQuantifiers
+import Strata.Transform.FunctionInlining
+import Strata.Transform.PrecondElim
+import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.MonomorphizeFunctions
+import Strata.Transform.NondetElim
+import Strata.Transform.BetaReduce
+import Strata.Transform.CommonSubexprElim
 
 /-! ## Strata Core Transform & Verification API
 
@@ -177,6 +187,80 @@ def Core.passFilterProcedures (procs : List String) : Core.PipelinePhase :=
 def Core.passRemoveIrrelevantAxioms (funcs : List String) : Core.PipelinePhase :=
   Core.irrelevantAxiomsPipelinePhase funcs
 
+/-! ### The phases of the default order
+
+A pipeline other than the default order is written as a list of phases, so every phase
+the default order runs is named here. A phase absent from this surface cannot be named
+by a caller, which is what makes adding one a deliberate act. -/
+
+/-- Lift preconditions factored out of internal function declarations. -/
+def Core.passLiftInternalFuncDecls : Core.PipelinePhase :=
+  _root_.Core.liftInternalFuncDeclsPipelinePhase
+
+/-- Emit the termination obligations of recursive functions. -/
+def Core.passTermCheck : Core.PipelinePhase :=
+  _root_.Core.termCheckPipelinePhase
+
+/-- Emit the obligations that a function's preconditions hold at each use. -/
+def Core.passPrecondElim : Core.PipelinePhase :=
+  _root_.Core.precondElimPipelinePhase
+
+/-- Replace polymorphic procedures with instances at the types used. -/
+def Core.passMonomorphizeProcedures : Core.PipelinePhase :=
+  _root_.Core.monomorphizeProceduresPipelinePhase
+
+/-- Replace polymorphic functions with instances at the types used. -/
+def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
+  _root_.Core.monomorphizeFunctionsPipelinePhase
+
+/-- Replace non-deterministic guards with havoc and assumption. -/
+def Core.passNondetElim : Core.PipelinePhase :=
+  _root_.Core.nondetElimPipelinePhase
+
+/-- Reduce beta redexes, leaving terms in normal form. -/
+def Core.passBetaReduce : Core.PipelinePhase :=
+  _root_.Core.betaReducePipelinePhase
+
+/-- Type check the program, annotating expressions with their types. -/
+def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.default) :
+    Core.PipelinePhase :=
+  _root_.Core.typeCheckPipelinePhase options
+
+/-- Partially evaluate the program into the passive form obligation extraction consumes. -/
+def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.symbolicEvalPipelinePhase options moreFns
+
+/-- Extract common subexpressions introduced by partial evaluation. -/
+def Core.passCommonSubexprElim : Core.PipelinePhase :=
+  _root_.Core.commonSubexprElimPhase
+
+/-- Replace calls to the program's own non-recursive functions with their bodies, so a term
+    carries the definition rather than an uninterpreted application. -/
+def Core.passFunctionInlining : Core.PipelinePhase :=
+  _root_.Core.functionInliningPipelinePhase
+
+/-- Replace a bounded index quantifier whose instance count is known with the conjunction or
+    disjunction of its instances. In no default order: a pipeline that wants it names it, after
+    `passBetaReduce`, because the eligibility matchers read a guard syntactically and a guard
+    left under a redex states no range they recognize. -/
+def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
+  _root_.Core.unrollBoundedQuantifiersPipelinePhase
+
+/-- Every phase a caller may name: the default order, plus the phases outside it that a caller
+    may still ask for. A vocabulary rather than an order, so where a phase sits here says
+    nothing about where it runs — procedure inlining is last in this list and belongs early in
+    a pipeline.
+
+    Pass the options of the run being resolved. Type checking and symbolic evaluation are built
+    from them, and resolution hands back the phase values this list holds, so a vocabulary
+    built from the defaults would run those two under the defaults. -/
+def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
+    List Core.PipelinePhase :=
+  Core.corePipelinePhases options
+    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining]
+
 /-! ### Standard Core verification pipeline phases
 
 The verification pipeline performs a sequence of program-to-program transforms
@@ -279,31 +363,58 @@ def Core.assertPhaseFor (phaseName : String) : Option Core.PipelinePhase :=
                 s!"❌ Expected {f.name}, but the program does not satisfy it." h)
       else none
 
+/-- The phase that checks `f` on the program and passes it through. A fact with no
+    executable check has no such phase, and `by decide` refuses it where it is written:
+    `assertPhase .typeAnnotated` does not compile, since confirming annotations are
+    present would not establish that they are right. -/
+def Core.assertPhase (f : Core.ProgramFact) (hc : f.check?.isSome = true := by decide) :
+    Core.PipelinePhase :=
+  Core.assertFactPhase (Core.assertPhaseName f) f
+    s!"❌ Expected {f.name}, but the program does not satisfy it." hc
+
+/-- The flag names a command offers for working with phases. The command supplies them
+    because this package's help text refers to them and only the command knows how it
+    spells them. -/
+structure Core.PhaseFlagNames where
+  /-- The flag taking a phase list, `--phases` for the tools in this repository. -/
+  select : String
+  /-- The flag printing each phase's contract, `--display-phase-contracts` for those tools. -/
+  displayContracts : String
+
+/-- The phase list as its dependency table: a numbered row per phase in run order, a column
+    per fact, and the back end as the final requirements-only row, so a caller assembling a
+    list sees where each fact is established, required, preserved or dropped. -/
+def Core.displayPhaseContractsText (phases : List Core.PipelinePhase) : String :=
+  Core.phaseTable phases
+    (consumer := some ("the verification back end", Core.backEndRequiredFacts))
+
 /-- Resolve a list of phase names against the phases `available`, also accepting
     `assert<Fact>` forms. A caller decides what is nameable: the option-derived
     pipeline, plus any phase outside it that it is willing to run. An unknown name
     is a user error. -/
-def Core.resolvePhases (available : List Core.PipelinePhase) (requested : List String) :
-    Except String (List Core.PipelinePhase) :=
+def Core.resolvePhases (available : List Core.PipelinePhase) (requested : List String)
+    (hint : String := "") : Except String (List Core.PipelinePhase) :=
   requested.mapM fun nm =>
     match available.find? (fun p => Core.phaseName p == nm) with
     | some p => .ok p
     | none =>
       match Core.assertPhaseFor nm with
       | some p => .ok p
-      | none => .error s!"Unknown phase name '{nm}'. \
-                          Use --display-phases to see the available phases."
+      | none =>
+        .error <| s!"Unknown phase name '{nm}'."
+          ++ (if hint.isEmpty then "" else " " ++ hint)
 
 /-- The text describing the available phases: the default order as a pasteable
     `--phases` argument, and the phases available but not in that order. -/
-def Core.displayPhasesText (defaultPhases : List Core.PipelinePhase)
+def Core.displayPhasesText (flags : Core.PhaseFlagNames)
+    (defaultPhases : List Core.PipelinePhase)
     (extras : List Core.PipelinePhase := []) : String :=
   let names := ",".intercalate (defaultPhases.map Core.phaseName)
   let base :=
-    s!"To run the phases in the default order:\n\n  --phases {names}\n\n\
-       You can change this order. Give it back to --phases with no input file and\n\
-       Strata reports whether it composes without verifying anything.\n\
-       To see the declared dependencies between phases, use --display-phase-contracts."
+    s!"To run the phases in the default order:\n\n  {flags.select} {names}\n\n"
+      ++ s!"You can change this order. Give it back to {flags.select} with no input file "
+      ++ "and\nStrata reports whether it composes without verifying anything."
+      ++ s!"\nTo see what each phase requires and delivers, use {flags.displayContracts}."
   match extras.map Core.phaseName with
   | [] => base
   | extraNames =>

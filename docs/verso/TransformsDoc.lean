@@ -71,6 +71,65 @@ Additional internal transforms (e.g., `PrecondElim`, `DetToKleene`,
 `StructuredToUnstructured`) are used by the analysis pipelines but are not
 currently exposed via the CLI.
 
+# Configuring the Pipeline
+
+The transforms above run as a *pipeline*: an ordered list of phases, each declaring
+what it requires of the program it receives, what it establishes, and what it leaves
+standing. A list composes when every phase's requirements are met by the phases before
+it, and the back end accepts it when the list also delivers what obligation extraction
+needs. Both are checked before anything runs, so an unworkable order is reported rather
+than attempted.
+
+`strata verify --display-phases` prints the default order as a pasteable argument, along
+with the phases available outside it, and `--display-phase-contracts` prints what each
+phase requires, delivers and preserves. Those two commands are the vocabulary: this
+document deliberately does not list the phases, because the tool's output cannot fall out
+of date and prose can.
+
+`--phases <list>` runs a list of your own. With no file to verify it reports whether the
+list composes, which is the cheapest way to try an order out. Order matters and the
+checks will tell you so: naming a phase before the one that establishes what it requires
+is refused, with the phase that would have established it named in the message.
+
+`--phases` is also refused for inputs whose verifier cannot honour it, `.csimp.st` and the
+B3 files, because those are verified through their own translation rather than the Core
+pipeline.
+
+A phase list may assert a fact instead of establishing it. For every fact with an
+executable check there is an `assert<Fact>` phase — `assertNoLoops` and the like — which
+checks the fact on the program and passes it through. That is how a list can stand where
+another order runs a transform: if the input already has the property, checking it is
+cheaper than rewriting the program to produce it.
+
+A tool that keeps a registry of pipelines gates this further. `stratainternal` accepts
+`--pipeline <name>` to run a registered pipeline, and refuses a `--phases` list that no
+entry holds, answering with the three ways forward: enable unregistered pipelines in a
+development build, run an existing pipeline by name if your package already uses that
+exact list, or register the list by adding the entry the refusal prints. Where
+unregistered pipelines are enabled the list runs and the run says so. Registration is what
+lets a change to the phase vocabulary be carried to the packages that depend on one,
+rather than silently changing what they verify.
+
+A registered entry may also state facts it assumes of its input, and those are where the
+assert forms earn their place: a command line cannot prove anything, so `--pipeline` puts
+an `assert<Fact>` phase in front for each assumed fact and reports which ones it added.
+The entry's own phases are unchanged; the checks are the price of arriving without a proof.
+
+From Lean there is a second route. A front end that proves facts of the program it emits
+can assume them instead, through the validating entry points that take those facts and the
+proof that they hold, and then omit the phases that would have established them. A command
+line has no way to supply such a proof, which is why the flags offer nothing equivalent.
+
+`--no-cse`, `--function-inlining` and `--unroll-bounded-quantifiers` are unknown options: a
+pipeline names the phases it runs, so no option reshapes it. To run those phases, name them
+with `--phases` (`--display-phases` prints the default order to start from).
+
+Migrating is mechanical but not a drop-in: a script or CI job still passing one of these
+exits with an unknown-option error, and `--phases` names the whole order rather than toggling
+one phase. Start from `--display-phases` and edit that list. On `stratainternal` an
+unregistered `--phases` list is refused, so a caller of a registered pipeline uses
+`--pipeline <name>` instead.
+
 # Analysis Modes
 
 Strata supports three analysis modes, selected via `--check-mode`. These modes
