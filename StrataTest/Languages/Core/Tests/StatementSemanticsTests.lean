@@ -291,11 +291,52 @@ private theorem intVal_value (fac : Expression.Factory) (n : Int) :
   show Lambda.LExpr.isCanonicalValue fac (intVal n) = true from
     Lambda.isCanonicalValue_const_true fac () (Lambda.LConst.intConst n)
 
+/-- An integer literal has Core's monomorphic integer type. -/
+private theorem intVal_valueOfTy (fac : Expression.Factory) (n : Int) :
+    HasVal.valueOfTy fac (intVal n) (Lambda.LTy.forAll [] .int) :=
+  ⟨.int, intVal_value fac n, rfl, rfl⟩
+
+/-- Boolean `true` is not a Core integer value. -/
+private theorem true_not_int (fac : Expression.Factory) :
+    ¬ HasVal.valueOfTy fac Core.true (Lambda.LTy.forAll [] .int) := by
+  simp [HasVal.valueOfTy, Core.true, Lambda.LExpr.boolConst,
+    Lambda.LExpr.isCanonicalValue, Lambda.LExpr.typeCheck, Lambda.LTy.toMonoType?,
+    Lambda.LConst.ty, Lambda.LMonoTy.bool, Lambda.LMonoTy.int]
+
 /-- The current inout formal keeps its incoming value in the snapshotted frame. -/
 private theorem inoutFrame_current :
     inoutFrame (intVal 7) calleeY = some (intVal 7) := by
   simp [inoutFrame, withOldSnapshots, calleeFrame, updatedState,
     calleeY, CoreIdent.mkOld, CoreIdent.oldStr]
+
+/-- Havocing the integer inout slot preserves its integer type. -/
+private theorem havocVars_inout_int_typed (fac : Expression.Factory) {σ' : CoreStore}
+    (h : HavocVars fac (inoutFrame (intVal 7)) [calleeY] σ') :
+    ∃ v, σ' calleeY = some v ∧
+      HasVal.valueOfTy fac v (Lambda.LTy.forAll [] .int) := by
+  cases h with
+  | update_some hup hstored htail =>
+    cases htail
+    obtain ⟨previous, ty, hprevious, hpTy, hvTy⟩ := hstored
+    have hprev : previous = intVal 7 :=
+      Option.some.inj (hprevious.symm.trans inoutFrame_current)
+    subst previous
+    have hvInt := LawfulHasVal.valueOfTy_congr fac (intVal 7) _
+      (Lambda.LTy.forAll [] .int) ty (intVal_valueOfTy fac 7) hpTy hvTy
+    cases hup with
+    | update _ hx _ => exact ⟨_, hx, hvInt⟩
+
+/-- Havocing an integer slot cannot replace it with Boolean `true`. -/
+private theorem havocVars_inout_not_true (fac : Expression.Factory) :
+    ¬ HavocVars fac (inoutFrame (intVal 7)) [calleeY]
+      (updatedState (inoutFrame (intVal 7)) calleeY Core.true) := by
+  intro h
+  obtain ⟨v, hv, hvTy⟩ := havocVars_inout_int_typed fac h
+  have htrue : updatedState (inoutFrame (intVal 7)) calleeY Core.true calleeY =
+      some Core.true := by simp [updatedState]
+  have : v = Core.true := Option.some.inj (hv.symm.trans htrue)
+  subst v
+  exact true_not_int fac hvTy
 
 /-- The old identifier reads the inout formal's incoming value. -/
 private theorem inoutFrame_old :
@@ -649,7 +690,10 @@ example
   have hupd : UpdateState Expression (inoutFrame (intVal 7)) calleeY
       (intVal 9) σO := updatedStateUpdate inoutFrame_current
   have hhavoc : HavocVars fac (inoutFrame (intVal 7)) [calleeY] σO :=
-    .update_some hupd (intVal_value fac 9) .update_none
+    .update_some hupd
+      ⟨intVal 7, Lambda.LTy.forAll [] .int, inoutFrame_current,
+        intVal_valueOfTy fac 7, intVal_valueOfTy fac 9⟩
+      .update_none
   have hcurrentO : σO calleeY = some (intVal 9) := by
     cases hupd with | update _ h _ => exact h
   have holdO : σO oldCalleeY = some (intVal 7) := by
@@ -756,7 +800,10 @@ example
       (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) := updatedStateUpdate hframeLk
   have hhavoc : HavocVars fac (calleeFrame (intVal 7)) [calleeY]
       (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) :=
-    .update_some hupd (intVal_value fac 9) .update_none
+    .update_some hupd
+      ⟨intVal 7, Lambda.LTy.forAll [] .int, hframeLk,
+        intVal_valueOfTy fac 7, intVal_valueOfTy fac 9⟩
+      .update_none
   have hσO : (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) calleeY = some (intVal 9) := by
     cases hupd with | update _ hsome _ => exact hsome
   have hcontractResult : ReadValues fac (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9))

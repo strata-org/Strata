@@ -532,6 +532,10 @@ private theorem xFalseEnv_blockWF :
         Stmt.defUseWellFormed, Command.definedVars, Imperative.HasVarsImp.definedVars,
         Imperative.Cmd.definedVars])
     (by intro s hs; simp [testParams])
+    (by
+      simp [Block.InitTypesInhabited, pNoAssumeBody_eq, iteStmt,
+        assertTrueStmt, assertFalseStmt, Block.initTypes, Stmt.initTypes,
+        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
 
 /-- Arbitrary valuation in a model over `Core.Factory`. -/
 private def someValuation (model : Lambda.Interp Core.Factory) :

@@ -32,7 +32,7 @@ Equational theory for the boolean shape walkers defined in
   families), plus the two non-structural results `exitsCoveredByBlocks_weaken`
   (label-list monotonicity) and `all_cmd_exitsCoveredByBlocks`.
 - Distribution of the block-level walkers over `++`
-  (`initVars`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
+  (`initVars`/`initTypes`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
 - `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
   the expressions in a statement or block never introduces or removes a
@@ -636,6 +636,14 @@ These syntactic lemmas distribute the structural walkers (`initVars`,
 `noNondetGuards`, `loopHasNoInvariants`, `modifiedVars`, `noInitsAnywhere`,
 `loopBodyNoInits`) over list concatenation. They are consumed by the
 transform correctness proofs, which all import this base module. -/
+
+/-- `Block.initTypes` distributes over list append. -/
+theorem Block.initTypes_append [HasInitTypesImp P C] (as bs : Block P C) :
+    Block.initTypes (as ++ bs) = Block.initTypes as ++ Block.initTypes bs := by
+  induction as with
+  | nil => rfl
+  | cons a rest ih =>
+    simp only [List.cons_append, Block.initTypes, ih, List.append_assoc]
 
 /-- Concatenation distributes over `Block.initVars`. -/
 theorem Block.initVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :

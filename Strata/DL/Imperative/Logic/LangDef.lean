@@ -202,19 +202,21 @@ instantiating Imperative, so an Imperative-level default is not the right thing 
 have. -/
 structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     (Q : String → Prop) (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
     extends WellFormedSemanticEval (P := P) ρ.factory where
   /-- Every variable the block defines starts undefined in `ρ`. -/
   defsUndefined : ∀ x ∈ Block.definedVars ss false, ρ.store x = none
   /-- No name satisfying `Q` is defined in the initial store. -/
   definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+  /-- Every init-type the block declares has a value witness in `ρ`'s factory. -/
+  initTypesInhabited : Block.InitTypesInhabited (P := P) (C := CmdT) ρ.factory ss
 
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
 abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
     [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (isAtAssertFn : Config P CmdT → AssertId P → Prop)
     -- Default: `BlockInitEnvWF`, which is slated for removal (see its doc comment).

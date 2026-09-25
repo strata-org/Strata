@@ -518,7 +518,7 @@ private def loop_sim_kleene
 /-! ## Core simulation by strong induction on statement/block size -/
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
-private theorem simulation
+private theorem simulation [LawfulHasVal P]
     (extendFactory : ExtendFactory P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
       st.sizeOf ≤ sz → StmtToKleeneStmt st = some ns →
@@ -757,7 +757,7 @@ private theorem simulation
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- If det stmt reaches terminal, Kleene transform reaches terminal. -/
-theorem stmtToKleene_terminal
+theorem stmtToKleene_terminal [LawfulHasVal P]
     (extendFactory : ExtendFactory P)
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt st = some ns)
@@ -770,7 +770,7 @@ theorem stmtToKleene_terminal
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- If det block reaches terminal, Kleene transform reaches terminal. -/
-theorem blockToKleene_terminal
+theorem blockToKleene_terminal [LawfulHasVal P]
     (extendFactory : ExtendFactory P)
     (bss : List (Stmt P (Cmd P))) (ns : KleeneStmt P (Cmd P))
     (ht : BlockToKleeneStmt bss = some ns)
@@ -992,7 +992,7 @@ private noncomputable def loop_canfail_sim_kleene
 /-! ## CanFail simulation: mutual induction -/
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
-private theorem canfail_simulation
+private theorem canfail_simulation [LawfulHasVal P]
     (extendFactory : ExtendFactory P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
       st.sizeOf ≤ sz → StmtToKleeneStmt st = some ns →
@@ -1187,7 +1187,7 @@ omit [HasOps P] in
     provided the evaluator is well-formed.
     The exiting case is ruled out since the transform returns `none` for
     `.exit` sub-statements. -/
-theorem detToKleene_overapproximates
+theorem detToKleene_overapproximates [LawfulHasVal P]
     (extendFactory : ExtendFactory P) :
     Transform.Overapproximates (Lang.det extendFactory) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) () () := by

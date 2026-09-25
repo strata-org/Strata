@@ -40,5 +40,15 @@ parallel to `HasOps` for expressions. -/
 class HasOpsImp (P : PureExpr) (α : Type) where
   getOps : α → List P.Ident
 
+/-! # Init-Type Lookup over Commands : HasInitTypesImp
+
+`HasInitTypesImp` collects the declared types of the variable-initialization
+(`init`) commands a construct contains, parallel to `HasVarsImp` for the
+variables themselves. -/
+
+class HasInitTypesImp (P : PureExpr) (α : Type) where
+  /-- The declared types of the `init` commands contained in the construct. -/
+  initTypes : α → List P.Ty
+
 end -- public section
 end Imperative
