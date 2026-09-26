@@ -6673,6 +6673,34 @@ private def validateInvokeOnGlobalWrites (program : Program)
         MessageKind.userError)
     else none
 
+/-- Reject direct writes to outer locals and parameters in assertions. -/
+private def validateAssertionWrites (model : SemanticModel) (program : Program) : Array Message :=
+  let visit (node : StmtExprMd) : StateM (Array Message) (Option StmtExprMd) := do
+    match node.val with
+    | .Assert condition _ =>
+      let locals : Std.HashSet Nat := foldStmtExpr (fun e ids =>
+        (boundNamesOfNode e).foldl (fun ids name =>
+          match name.uniqueId with
+          | some id => ids.insert id
+          | none => ids) ids) {} condition
+      foldStmtExprM (fun e => do
+        let targets := match e.val with
+          | .Assign targets _ => targets
+          | .IncrDecr _ _ target | .CompoundAssign _ target _ => [target]
+          | _ => []
+        for target in targets do
+          if let .Local ref := target.val then
+            if let some id := ref.uniqueId then
+              unless locals.contains id || isGlobalTarget model target do
+                modify fun errors => errors.push (diagnosticFromSource target.source
+                  s!"assertion cannot modify variable '{ref.text}' \
+                    declared outside its ghost context" MessageKind.userError)) condition
+      -- Nested assertions were already checked with this region's locals.
+      return some node
+    | _ => return none
+  let check := mapStmtExprPrePostM visit pure
+  ((mapProgramProceduresM (mapProcedureM check) program).run #[]).2
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
@@ -6771,6 +6799,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     if existingModel.isNone then
       validateMultiOutputCallContexts semanticModel program'
     else []
+  let assertionWriteErrors :=
+    if existingModel.isNone then validateAssertionWrites semanticModel program' else #[]
   -- Every declaration must leave resolution annotated (see
   -- `validateFullyAnnotated`). Unconditional: re-resolutions check that
   -- lowering passes preserve the invariant too.
@@ -6817,7 +6847,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++
       entryGlobalErrors ++ invokeOnErrors ++
-      coroutineErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
+      coroutineErrors ++ multiOutputCallErrors ++ assertionWriteErrors ++
+      exceptionErrors ++ annotationBugs
   }
 
 -- `resolve` establishes the invariant that every `Declare` in its output is
