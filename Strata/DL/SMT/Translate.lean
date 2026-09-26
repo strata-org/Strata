@@ -22,9 +22,39 @@ inductive Translate.Var where
   | is : DL.SMT.Sort → Translate.Var
 deriving BEq, Hashable, Repr
 
+/-- A datatype as the SMT query declared it, in the form the VC→Lean
+    translation needs: constructor names and, per field, the SMT selector
+    symbol and its sort.  Non-parametric datatypes only. -/
+structure SanitizedConstr where
+  name : String
+  fields : Array (String × TermType)
+deriving Repr, Inhabited, DecidableEq
+
+structure SanitizedDatatype where
+  name : String
+  constrs : Array SanitizedConstr
+deriving Repr, Inhabited, DecidableEq
+
+-- Lean constants generated for a datatype (see `MetaVerifier.ensureDatatypeDecls`),
+-- all under a namespace `ns` chosen by the caller: the type `ns.<dt>`,
+-- constructors `ns.<dt>.<c>`, testers `ns.<dt>.is_<c>` (Prop-valued) and
+-- selectors `ns.<dt>.<field>`.
+namespace SanitizedDatatype
+def typeName (ns : Name) (dt : String) : Name := ns ++ Name.mkSimple dt
+def ctorName (ns : Name) (dt c : String) : Name := typeName ns dt ++ Name.mkSimple c
+def testerName (ns : Name) (dt c : String) : Name := typeName ns dt ++ Name.mkSimple ("is_" ++ c)
+/-- SMT selector symbols are `<dt>..<field>`; the Lean name keeps `<field>`. -/
+def selectorName (ns : Name) (dt sel : String) : Name :=
+  let field := match sel.splitOn ".." with | [_, f] => f | _ => sel
+  typeName ns dt ++ Name.mkSimple field
+end SanitizedDatatype
+
 structure Translate.State where
   /-- Current de Bruijn level. -/
   level : Nat := 0
+  /-- SMT datatype symbols → generated Lean constants: the sort name, and
+      `ctor:<c>`, `is-<c>`, `sel:<selector>` for the functions. -/
+  dts : Std.HashMap String Name := {}
   /-- A mapping from variable names to their corresponding type and de Bruijn
       level (not index). So, the variables are indexed from the bottom of the
       stack rather than from the top (i.e., the order in which the symbols are
@@ -299,9 +329,14 @@ def translateSort (ty : TermType) : TranslateM Expr := do
     let β ← translateSort β
     return mkApp2 (.const ``SmtArray [0, 0]) α β
   | .constr n as =>
-    let (_, t) ← findVar (.us { name := n, arity := as.length })
-    let as ← as.mapM translateSort
-    return mkAppN t as.toArray
+    match (← get).dts[n]? with
+    | some c =>
+      let as ← as.mapM translateSort
+      return mkAppN (.const c []) as.toArray
+    | none =>
+      let (_, t) ← findVar (.us { name := n, arity := as.length })
+      let as ← as.mapM translateSort
+      return mkAppN t as.toArray
 
 /--
 Translate an SMT term to a Lean expression, together with its Lean type.
@@ -319,12 +354,27 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (_, f) ← findVar (.uf uf)
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
     return (← translateSort ty, mkAppN f as.toArray)
+  | .app (.datatype_op .constructor c) as ty =>
+    let some f := (← get).dts["ctor:" ++ c]?
+      | throw m!"Error: datatype constructor '{c}' not found in context"
+    let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
+    return (← translateSort ty, mkAppN (.const f []) as.toArray)
+  | .app (.datatype_op .tester c) [a] _ =>
+    let some f := (← get).dts["is-" ++ c]?
+      | throw m!"Error: datatype tester '{c}' not found in context"
+    let (_, a) ← translateTerm a
+    return (mkProp, .app (.const f []) a)
+  | .app (.datatype_op .selector s) [a] ty =>
+    let some f := (← get).dts["sel:" ++ s]?
+      | throw m!"Error: datatype selector '{s}' not found in context"
+    let (_, a) ← translateTerm a
+    return (← translateSort ty, .app (.const f []) a)
   | .quant q ns _ b =>
     let state ← get
     let translateBinder := fun v => do
       let n := symbolToName v.id
       let t ← translateSort v.ty
-      modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
+      modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
       return (n, t)
     let ns ← ns.mapM translateBinder
     let (_, b) ← translateTerm b
@@ -623,12 +673,12 @@ where
   translateTypeDecl (us : DL.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
     let n := symbolToName us.name
     let t := us.arity.repeatTR (.forallE .anonymous (.sort 1) · .default) (.sort 1)
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
     let hn := `inst
     let xs := (Array.range us.arity).map Expr.bvar
     let nonempty := .app (.const ``Nonempty [1]) (mkAppN (.bvar us.arity) xs.reverse)
     let ht := us.arity.repeatTR (.forallE `α (.sort 1) · .default) nonempty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.is us) (ht, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.is us) (ht, s.level) }
     return #[(n, t, .default), (hn, ht, .instImplicit)]
 
 /--
@@ -648,7 +698,7 @@ where
     let n := symbolToName is.fst
     let t := .sort 1
     let v ← translateSort is.snd
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us { name := is.fst, arity := 0 }) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.us { name := is.fst, arity := 0 }) (t, s.level) }
     return (n, t, v)
 
 /--
@@ -670,7 +720,7 @@ where
       return (.anonymous, t)
     let s ← translateSort uf.out
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) : Translate.State }
+    set { state with level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) }
     return (n, t)
 
 /--
@@ -695,13 +745,30 @@ where
     let n := symbolToName f.id
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     let v := ps.foldr (fun (n, t) b => .lam n t b .default) b
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) : Translate.State }
+    set { state with level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) }
     return (n, t, v)
   translateParam (v : TermVar) : TranslateM (Name × Expr) := do
     let n := symbolToName v.id
     let t ← translateSort v.ty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
+    modify fun s => { s with level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
+
+/-- Register the generated Lean constants of `dts` under namespace `ns` (their
+    declarations are created by `MetaVerifier.ensureDatatypeDecls` before
+    translation). -/
+def withDatatypes (ns : Name) (dts : Array SanitizedDatatype) (k : TranslateM Expr) : TranslateM Expr := do
+  let state ← get
+  for dt in dts do
+    modify fun s => { s with dts := s.dts.insert dt.name (SanitizedDatatype.typeName ns dt.name) }
+    for c in dt.constrs do
+      modify fun s => { s with
+        dts := (s.dts.insert ("ctor:" ++ c.name) (SanitizedDatatype.ctorName ns dt.name c.name))
+                 |>.insert ("is-" ++ c.name) (SanitizedDatatype.testerName ns dt.name c.name) }
+      for (sel, _) in c.fields do
+        modify fun s => { s with dts := s.dts.insert ("sel:" ++ sel) (SanitizedDatatype.selectorName ns dt.name sel) }
+  let r ← k
+  set state
+  return r
 
 /--
 Build the full translation scope for an SMT context:
@@ -730,13 +797,16 @@ Translate an SMT query under `ctx` by first introducing context symbols and
 axioms (`withCtx`), then building the assumption-to-conclusion implication
 shape (`mkPropArrowN`).
 -/
-def translateQuery (ctx : Core.SMT.Context) (assums : Array SMT.Term) (conc : SMT.Term) : TranslateM Expr := do
-  withCtx ctx (mkPropArrowN assums conc)
+def translateQuery (ctx : Core.SMT.Context) (assums : Array SMT.Term) (conc : SMT.Term)
+    (dts : Array SanitizedDatatype := #[]) (dtNs : Name := `Strata.SMT.DT) : TranslateM Expr := do
+  withDatatypes dtNs dts <| withCtx ctx (mkPropArrowN assums conc)
 
 end Translate
 
-def translateQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : Except MessageData Expr :=
-  (Translate.translateQuery ctx assums.toArray conc).run' {}
+def translateQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term)
+    (dts : Array SanitizedDatatype := #[]) (dtNs : Name := `Strata.SMT.DT) : Except MessageData Expr :=
+  (Translate.translateQuery ctx assums.toArray conc dts dtNs).run' {}
 
-def translateQueryMeta (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term) : MetaM Expr := do
-  Lean.ofExcept (translateQuery ctx assums conc)
+def translateQueryMeta (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term)
+    (dts : Array SanitizedDatatype := #[]) (dtNs : Name := `Strata.SMT.DT) : MetaM Expr := do
+  Lean.ofExcept (translateQuery ctx assums conc dts dtNs)
