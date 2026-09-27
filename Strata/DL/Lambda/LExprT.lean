@@ -29,7 +29,7 @@ public section
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
 
-@[expose] abbrev LExprT (T : LExprParamsT) :=
+abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
 
 partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExprT T) : Std.Format :=

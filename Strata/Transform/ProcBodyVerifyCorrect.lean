@@ -435,9 +435,6 @@ private theorem mkOld_name_injective {a b : Expression.Ident}
     (h : CoreIdent.mkOld a.name = CoreIdent.mkOld b.name) : a = b := by
   have h1 := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h1
-  have h2 := congrArg String.toList h1
-  simp at h2
-  have h3 := String.ext h2
   cases a; cases b; simp_all
 
 /-- If the original ids are Nodup, so are their mkOld images (since mkOld is injective). -/

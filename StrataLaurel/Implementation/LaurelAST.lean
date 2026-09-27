@@ -836,9 +836,9 @@ def StmtExpr.constrName : StmtExpr → String
   | .HasNext ..          => "has_next"
   | .Snapshot ..         => "snapshot"
 
-@[expose] abbrev HighTypeMd := AstNode HighType
-@[expose] abbrev StmtExprMd := AstNode StmtExpr
-@[expose] abbrev VariableMd := AstNode Variable
+abbrev HighTypeMd := AstNode HighType
+abbrev StmtExprMd := AstNode StmtExpr
+abbrev VariableMd := AstNode Variable
 
 /-! The two degenerate `ModifiesGroup` forms every frontend emits, named so the
     load-bearing distinction is spelled once: an empty-target group means

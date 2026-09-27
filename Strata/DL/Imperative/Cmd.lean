@@ -71,7 +71,7 @@ command. Metadata distinguishes occurrences even when labels are reused.
 TODO: Update AssertId to have the identical definition, because labels can
 overlap, and expr may easily change after transformations.
 -/
-@[expose] abbrev CoverId (P : PureExpr) := String × MetaData P
+abbrev CoverId (P : PureExpr) := String × MetaData P
 
 /-! ## Commands
 
@@ -105,7 +105,7 @@ inductive Cmd (P : PureExpr) : Type where
   -/
   | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
-@[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
+abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .set default .nondet default

@@ -21,9 +21,8 @@ public section
 
 open Imperative
 
-@[expose] abbrev ExpressionMetadata := Unit
+abbrev ExpressionMetadata := Unit
 
-@[expose]
 abbrev Expression : PureExpr :=
    { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -76,9 +75,9 @@ instance : LawfulHasFvar Core.Expression where
 
 instance : LawfulHasFvars Core.Expression where
   mkFvar_getFvars := fun _ => by
-    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+    simp [HasFvars.getFvars, HasFvar.mkFvar, Lambda.LExpr.LExpr.getVars]
   mkTypedFvar_getFvars := fun _ _ => by
-    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+    simp [HasFvars.getFvars, HasFvar.mkTypedFvar, Lambda.LExpr.LExpr.getVars]
 
 instance : LawfulHasIdent Core.Expression where
   ident_inj := by

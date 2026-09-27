@@ -29,7 +29,7 @@ structure TransState where
   synthesized : Bool := false
   errors : Array String
 
-@[expose] abbrev TransM := StateT TransState (Except String)
+abbrev TransM := StateT TransState (Except String)
 
 def TransM.run (uri : Uri) (m : TransM α) (synthesized : Bool := false) : Except String α :=
   match StateT.run m { uri := uri, synthesized := synthesized, errors := #[] } with

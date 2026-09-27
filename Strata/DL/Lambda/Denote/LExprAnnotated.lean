@@ -435,43 +435,17 @@ then-branch, and else-branch. -/
 @[expose]
 def HasTypeA.ite_inv {T : LExprParams} {Δ : List LMonoTy} {m c t e τ}
     (h : @LExpr.HasTypeA T Δ (.ite m c t e) τ)
-    : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ :=
-  let tcC := LExpr.typeCheck Δ c
-  let tcT := LExpr.typeCheck Δ t
-  let tcE := LExpr.typeCheck Δ e
-  match h_c : tcC, h_t : tcT, h_e : tcE with
-  | some cty, some tty, some ety =>
-    if h_cb : cty == .bool then
-      if h_te : tty == ety then
-        have h' := LExpr.HasTypeA_to_typeCheck h
-        have hcb : cty = .bool := by grind
-        have hte : tty = ety := by grind
-        have hτ : tty = τ := by
-          subst_vars
-          unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard] at h'
-          exact h'
-        ⟨hcb ▸ LExpr.typeCheck_to_HasTypeA h_c,
-         hτ ▸ LExpr.typeCheck_to_HasTypeA h_t,
-         (Eq.trans (hte.symm) hτ) ▸ LExpr.typeCheck_to_HasTypeA h_e⟩
-      else absurd (LExpr.HasTypeA_to_typeCheck h)
-        (by unfold tcC tcT tcE at *
-            have h_ne : ¬ tty = ety := by grind
-            simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard, h_ne]
-            grind)
-    else absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          have h_nb : ¬ cty = .bool := by grind
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard, h_nb])
-  | some _, some _, none => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind])
-  | some _, none, _ => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, Option.bind])
-  | none, _, _ => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, Option.bind])
+    : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ := by
+  have r := LExpr.HasTypeA_to_typeCheck h
+  simp [LExpr.typeCheck, Option.bind_eq_some_iff, guard] at r
+  have ⟨cty, ⟨(h_c : typeCheck Δ c = some cty), r⟩⟩ := r
+  have ⟨tty, ⟨(h_t : typeCheck Δ t = some tty), r⟩⟩ := r
+  have ⟨ety, ⟨(h_e : typeCheck Δ e = some ety), r⟩⟩ := r
+  have ⟨(hcb : cty = .bool), r⟩ := r
+  have ⟨(hte : tty = ety), (hτ : tty = τ)⟩ := r
+  exact ⟨hcb ▸ LExpr.typeCheck_to_HasTypeA h_c,
+    hτ ▸ LExpr.typeCheck_to_HasTypeA h_t,
+    (Eq.trans (hte.symm) hτ) ▸ LExpr.typeCheck_to_HasTypeA h_e⟩
 
 /-- From `HasTypeA Δ (.eq m e1 e2) τ`, extract the common type and
 sub-proofs. -/

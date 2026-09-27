@@ -97,7 +97,7 @@ def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (source : FileRange) : S
 structure THState where
   freshCounter : Nat := 0
 
-@[expose] abbrev THM := StateM THState
+abbrev THM := StateM THState
 
 private def freshVarName : THM Identifier := do
   let s ← get

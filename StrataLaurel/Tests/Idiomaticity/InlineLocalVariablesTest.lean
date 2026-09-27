@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests that the `InlineLocalVariables` pass rewrites transparent (function)
 bodies by inlining `var <name> := <expr>` declarations: every later reference
@@ -17,7 +17,7 @@ it operates purely on a `Procedure`, so here we drive
 compare its printed body against the expected output.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.InlineLocalVariables
 import StrataLaurel.Implementation.Resolution
 
@@ -28,7 +28,7 @@ namespace Strata.Laurel
 
 /-- Parse + resolve a program, then inline local variables in every procedure,
     printing each rewritten procedure and any diagnostics it produced. -/
-private def printInlined (program : StrataDDM.Program) : IO Unit := do
+private meta def printInlined (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let resolved := (resolve laurelProgram).program
   for proc in resolved.staticProcedures do

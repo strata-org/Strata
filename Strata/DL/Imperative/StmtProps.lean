@@ -2005,7 +2005,7 @@ theorem Block.initVars_map_cmd {P : PureExpr} [HasFvars P] (cs : List (Cmd P)) :
   | nil => simp [Block.initVars, Cmds.definedVars]
   | cons c rest ih =>
     simp only [List.map_cons, Block.initVars_cons, Cmds.definedVars]
-    rw [ih]; congr 1; cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
+    rw [ih]; congr 1 <;> (cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars])
 
 /-- A `.cmd`-only block has `noFuncDecl`. -/
 theorem Block.noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :

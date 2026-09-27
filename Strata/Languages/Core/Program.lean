@@ -174,7 +174,7 @@ instance : ToFormat Decl where
 def Decl.formatWithMetaData (decl : Decl) : Format :=
   f!"{decl.metadata}{decl}"
 
-@[expose] abbrev Decls := List Decl
+abbrev Decls := List Decl
 
 /-- A Core.Program is an ordered list of declarations. -/
 structure Program where

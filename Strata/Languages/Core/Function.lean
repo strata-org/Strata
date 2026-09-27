@@ -18,7 +18,6 @@ open Lambda
 
 /-! # Strata Core Functions -/
 
-@[expose]
 abbrev Function := Lambda.LFuncDefined CoreLParams
 
 instance : Inhabited Function where

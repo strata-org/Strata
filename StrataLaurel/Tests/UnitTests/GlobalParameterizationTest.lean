@@ -501,7 +501,7 @@ procedure readsUnderBinder($global_g_1: int)
 };
 -/
 #guard_msgs in
-#eval testGlobalParam
+#eval testGlobalParam <|
 #strata
 program Laurel;
 var g: int := 0

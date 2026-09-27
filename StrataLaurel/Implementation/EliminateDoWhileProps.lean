@@ -231,7 +231,7 @@ theorem eliminateDoWhile_spec (s : KindSet) (opts : LaurelTranslateOptions)
         ∪ KindSet.ofList eliminateDoWhilePass.creates)
       (eliminateDoWhilePass.run opts p model).1 := by
   have hrun := ProgramLift.lift_program (elim_lift s) h {}
-  simpa [eliminateDoWhilePass, eliminateDoWhile, outSet] using hrun
+  simpa [eliminateDoWhilePass, eliminateDoWhile, outSet, StateT.run] using hrun
 
 /-! ## A do-while outside a procedure
 

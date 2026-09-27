@@ -74,7 +74,7 @@ class MonadPost (m : Type → Type) [Monad m] where
   /-- Every action satisfies the trivial postcondition. -/
   postTrue {α : Type} {a : m α} : Post a (fun _ => True)
 
-@[expose] abbrev PostM {m : Type → Type} [Monad m] [MonadPost m] {α : Type}
+abbrev PostM {m : Type → Type} [Monad m] [MonadPost m] {α : Type}
     (a : m α) (P : α → Prop) : Prop := MonadPost.Post a P
 
 /-- For `StateM`, a postcondition holds of the value returned from every starting
@@ -125,6 +125,10 @@ theorem post_and {a : m α} {P Q : α → Prop} (hp : PostM a P) (hq : PostM a Q
 /-- In `Id` a postcondition is a property of the value, so a pure pass's proofs
     need no monadic plumbing. -/
 theorem post_id {α : Type} {a : Id α} {P : α → Prop} (h : P a) : PostM (m := Id) a P := h
+
+/-- `post_id` as a rewrite, usable in either direction. -/
+@[simp] theorem postM_id_iff {α : Type} {a : Id α} {P : α → Prop} :
+    PostM (m := Id) a P ↔ P a := Iff.rfl
 
 /-- A postcondition of `g <$> a` follows from one of `a` stated through `g`. -/
 private theorem post_map [LawfulMonad m] {a : m α} {g : α → β} {P : β → Prop}

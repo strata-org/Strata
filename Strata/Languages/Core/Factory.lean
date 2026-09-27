@@ -8,6 +8,7 @@ module
 public meta import Lean.Elab.Command
 
 public import Strata.Languages.Core.Expressions
+public meta import Strata.Languages.Core.Identifiers
 public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy

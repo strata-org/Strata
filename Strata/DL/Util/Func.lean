@@ -26,7 +26,7 @@ open Std (ToFormat Format format)
 public section
 
 /-- Type identifiers for generic type arguments. Alias for String. -/
-@[expose] abbrev TyIdentifier := String
+abbrev TyIdentifier := String
 
 /-- A precondition with its associated metadata -/
 structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
