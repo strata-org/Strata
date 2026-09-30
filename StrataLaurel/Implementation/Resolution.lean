@@ -380,11 +380,26 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
 
     Falls back (when `holderTy?` is absent or names no known composite) to
     `targetTypeName target`, then to the instance type name (for `self.field` in
-    instance methods), then to unqualified `resolveRef`. Threading the already-
-    computed holder type only ever ADDS a successful resolution (it never overrides
-    a name the old path resolved differently — the type-scope field map is the same
-    one both paths consult), so it is a pure completeness improvement, never a
-    wrong-accept: a field absent from the concrete holder still falls through. -/
+    instance methods), then to unqualified `resolveRef`.
+
+    Every call site in this file now passes `holderTy?`, so the `targetTypeName`
+    fallback is reached only for a holder type with no name to key on. It is kept
+    because `highBaseName?` yields `none` for a primitive / `.TSet` / `.TMap`
+    holder, and because the two later fallbacks are still needed.
+
+    Threading the holder type never changes which field a resolvable holder binds
+    to: `targetTypeName` reads its name out of the same declarations the
+    synthesizer types the holder from, and both then key the SAME per-type field
+    map (aliases unfolded on both sides — `TypeLattice.unfold` here,
+    `resolveFieldInTypeScope`'s `unfoldAlias` there). Nor is it a wrong-accept: a
+    field absent from the concrete holder still falls through.
+
+    It is NOT, however, unconditionally additive, because of the third fallback.
+    When `targetTypeName` yields `none`, an unsupplied `holderTy?` let the
+    *enclosing instance type* answer — binding the field to the host composite's
+    same-named field rather than the holder's. Supplying `holderTy?` makes the
+    holder win, which is the intended meaning; see
+    `Tests/EndToEndTests/Verification/Objects/ModifiesFieldOwnerShapes.lean`. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     (source : FileRange) (holderTy? : Option HighTypeMd := none) : ResolveM Identifier := do
   -- Authoritative path: use the synthesized concrete holder type when available.
@@ -3024,8 +3039,14 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       let ref' ← resolveRef ref source
       pure (⟨.Local ref', target.source⟩ : VariableMd)
     | .Field tgt fieldName =>
-      let (tgt', _) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source
+      -- Thread the synthesized holder type, exactly as `Synth.incrDecr` does: without
+      -- it `resolveFieldRef` falls back to `targetTypeName`, which types only a local,
+      -- a field chain of `.UserDefined`s, and an `as`-cast — so `x#f += e` failed to
+      -- resolve `f` whenever the holder came from anything else (a call, e.g. a
+      -- datatype destructor application) or from a generic field whose declared type
+      -- is a `.TVar`. `x#f++` already resolved both, via 2752.
+      let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
+      let fieldName' ← resolveFieldRef tgt' fieldName source (holderTy? := holderTy)
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
@@ -4560,9 +4581,23 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     let e' ← resolveStmtExpr e
     return some e'
   | .Var (.Field target fieldName) =>
-    -- Resolve the owner directly (as `Synth.varField` does) to gate on its type.
+    -- Resolve the owner directly (as `Synth.varField` does) to gate on its type, and
+    -- thread that type into field resolution as `Synth.varField` also does. Without it
+    -- `resolveFieldRef` falls back to `targetTypeName`, which types only a local, a
+    -- field chain of `.UserDefined`s, and an `as`-cast — so `modifies o#f` failed to
+    -- resolve `f` for any other owner shape (notably a call, e.g. a datatype destructor
+    -- application `D..g!(d)#f`) and reported "'f' is not defined", naming the field
+    -- rather than the owner. Note the field is resolved BEFORE the heap-relevance gate
+    -- below, so a non-composite owner passes through here first — and still reaches the
+    -- gate unchanged. An unnamed owner type (`int`, `bool`, a bare `.TSet`) skips the
+    -- `holderTy?` branch entirely (`highBaseName?` is `none`); a NAMED non-composite
+    -- (`Box<int>`, `Sequence<int>`, an opaque) takes it, but keys the same per-type
+    -- field map `targetTypeName`'s path would have keyed under the same name, which
+    -- holds no fields for a non-composite — so the field stays unresolved and the gate
+    -- still reports "non-composite owner type". `NonCompositeModifies.lean`'s
+    -- `fieldTargetOnValueOwner` pins that pair of diagnostics for `Box<int>`.
     let (target', ownerTy) ← Synth.resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName e.source
+    let fieldName' ← resolveFieldRef target' fieldName e.source (holderTy? := ownerTy)
     let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
     let ownerTy' := (ctx.unfold ownerTy).val
     if isHeapRelevantModifiesTarget st.scope ownerTy' then
