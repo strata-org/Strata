@@ -54,10 +54,8 @@ instance [x : Repr (List (α × β))] : Repr (ListMap α β) where
 
 def ListMap.ofList (l : List (α × β)) : ListMap α β := l
 
-
 @[expose]
 def ListMap.toList (m : ListMap α β) : List (α × β) := m
-
 
 def ListMap.format' [ToFormat α] [ToFormat β] (m : ListMap α β) : Format :=
   match m with

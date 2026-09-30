@@ -23,8 +23,8 @@ section
 
 variable (P : PureExpr)
 
-@[expose] abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
-@[expose] abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
+abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
+abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
 /--
 Evaluation relation of an Imperative command `Cmd`.
 Commands do not modify the evaluator - only `funcDecl` statements do.
@@ -33,14 +33,14 @@ The Bool flag reports whether the command observed
 a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
 when the command signals a failure.
 -/
-@[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
+abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   P.Factory → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
 
 /-- Command evaluation relation that reports an ordered event trace instead of
 an assertion-failure flag.  The event payload type `EventT` is a parameter so
 that generic operational metatheory can be stated over an arbitrary payload; the
 base command semantics `EvalCmdE` instantiates it at `Trace P`. -/
-@[expose] abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
+abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
   P.Factory → SemanticStore P → Cmd → SemanticStore P → List EventT → Prop
 
 /-! ### Well-Formedness of `SemanticStore` -/

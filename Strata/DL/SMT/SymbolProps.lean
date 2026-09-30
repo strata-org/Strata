@@ -218,7 +218,7 @@ fails this file rather than emitting an illegal script. -/
 private theorem isAlphanum_ascii (c : Char) (h : c.isAlphanum = true) :
     c.toNat ≤ 0x7F := by
   simp [Char.isAlphanum, Char.isAlpha, Char.isUpper, Char.isLower, Char.isDigit,
-        Char.toNat, UInt32.le_iff_toNat_le] at h ⊢
+        UInt32.le_iff_toNat_le] at h ⊢
   rcases h with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩ <;> omega
 
 /-- A letter is not a digit; the two ranges are disjoint. -/

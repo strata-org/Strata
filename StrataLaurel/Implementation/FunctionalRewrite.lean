@@ -263,7 +263,7 @@ private theorem sizeOf_dropLast_le {α : Type} [SizeOf α] (xs : List α) :
     cases as with
     | nil => simp
     | cons b bs =>
-      simp only [List.dropLast_cons₂, List.cons.sizeOf_spec] at *
+      simp only [List.dropLast_cons_cons, List.cons.sizeOf_spec] at *
       omega
 
 /-- The name of the uninterpreted function standing for the initial value of the

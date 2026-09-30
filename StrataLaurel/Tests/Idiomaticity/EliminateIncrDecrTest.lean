@@ -71,7 +71,7 @@ info: procedure stmtForm()
 };
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let program ← parseLowerIncrDecr stmtFormProgram
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
@@ -103,7 +103,7 @@ info: procedure preIncrExpr()
 };
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let program ← parseLowerIncrDecr preIncrExprProgram
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
@@ -137,7 +137,7 @@ info: procedure postIncrExpr()
 };
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let program ← parseLowerIncrDecr postIncrExprProgram
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))

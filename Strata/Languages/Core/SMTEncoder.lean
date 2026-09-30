@@ -265,7 +265,7 @@ def SMT.writeSortsAndDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := 
   let _ ← ctx.sorts.toArray.mapM fun s => Strata.SMT.Solver.declareSort s.name s.arity
   ctx.emitDatatypes
 
-@[expose] abbrev BoundVars := List (String × TermType)
+abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
 /--

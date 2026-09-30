@@ -256,7 +256,7 @@ def Procedure.Spec.updateCheckExprs
     { c with expr := e } :: go erest crest
 
 /-- A deterministic control-flow graph over Core commands and expressions. -/
-@[expose] abbrev DetCFG := Imperative.DetCFG Expression Command
+abbrev DetCFG := Imperative.DetCFG Expression Command
 
 /-- The body of a Core procedure. An empty structured body (`structured []`)
     represents an abstract/bodyless procedure. -/

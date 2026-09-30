@@ -1358,7 +1358,6 @@ private theorem StepStar_getLFuncCall_args
           ((args'.take inner_args.length).get ⟨i, h_ia'_len ▸ hi⟩) := by
       intro i hi
       have h1 := h_steps i (by rw [h_split]; simp; omega)
-      simp only [] at h1
       grind
     obtain ⟨e_inner', h_step_inner, h_eq_inner⟩ :=
       StepStar_getLFuncCall_args e_inner op inner_args (args'.take inner_args.length)
@@ -1367,10 +1366,10 @@ private theorem StepStar_getLFuncCall_args
     have h_args_len : args.length = inner_args.length + 2 := by rw [h_split]; simp
     have h_step_a1 : StepStar F rf a1 a1' := by
       have h1 := h_steps inner_args.length (by omega)
-      simp only [] at h1; grind
+      grind
     have h_step_a2 : StepStar F rf a2 a2' := by
       have h1 := h_steps (inner_args.length + 1) (by omega)
-      simp only [] at h1; grind
+      grind
     -- Compose stepping
     have step1 := StepStar_app_fn F rf e_inner e_inner' a1 m2 h_step_inner
     have step2 := StepStar_app_fn F rf _ _ a2 m1 step1

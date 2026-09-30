@@ -470,20 +470,13 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
     Map.find? ms.toSingleMap x = none := by
   induction ms with
   | nil =>
-    show Map.find? ([] : Maps α β).flatten x = none
     rfl
   | cons m rest ih =>
-    simp only [Maps.find?] at h
-    cases hm : Map.find? m x with
-    | some v => rw [hm] at h; simp at h
-    | none =>
-      rw [hm] at h
-      have ih_rest := ih h
-      have hm_not_mem := Map.findNone_eq_notmem_mapfst.mpr hm
-      have hr_not_mem := Map.findNone_eq_notmem_mapfst.mpr ih_rest
-      apply Map.findNone_eq_notmem_mapfst.mp
-      show ¬ x ∈ List.map Prod.fst ((m :: rest : Maps α β).flatten)
-      grind
+    unfold Maps.find? at h
+    have m_find_is_none : m.find? x = none := by grind
+    have rest_find_is_none : Maps.find? rest x = none := by grind
+    simp only [toSingleMap, Map, List.flatten_cons, Map.find?_append, m_find_is_none]
+    exact ih rest_find_is_none
 
 
 theorem Maps.find?_toSingleMap [DecidableEq α] (ms : Maps α β) (x : α) :

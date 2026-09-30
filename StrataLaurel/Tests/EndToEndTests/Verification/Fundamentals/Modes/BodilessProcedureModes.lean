@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Condition modes on a *bodiless* procedure (an `opaque` declaration with no
 implementation).
@@ -27,7 +27,7 @@ call site (which always exists) and only *assumed* in the body, so a missing
 body never turns an assert into an unchecked assume.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

@@ -282,7 +282,15 @@ theorem denoteSortArray_Some :
   (denoteSort sctx (.constr "Array" [kTy, vTy])).get h sΓ =
    SmtArray ((denoteSort sctx kTy).get (denoteSortArray_isSome_key h) sΓ)
             ((denoteSort sctx vTy).get (denoteSortArray_isSome_val h) sΓ) := by
-  simp [denoteSort]
+  -- Name the key and value denotations, then discharge each `Option.get` against
+  -- an equation for the option it projects.
+  obtain ⟨kv, kp⟩ := Option.isSome_iff_exists.mp (denoteSortArray_isSome_key h)
+  obtain ⟨vv, vp⟩ := Option.isSome_iff_exists.mp (denoteSortArray_isSome_val h)
+  have harr : denoteSort sctx (.constr "Array" [kTy, vTy])
+      = some fun sΓ => SmtArray (kv sΓ) (vv sΓ) := by simp [denoteSort, kp, vp]
+  simp only [Option.get_of_eq_some h harr,
+             Option.get_of_eq_some _ kp,
+             Option.get_of_eq_some _ vp]
 
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     (denoteSort sctx a).isSome ∧ (denoteFunSort sctx as out).isSome := by

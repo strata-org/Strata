@@ -478,7 +478,7 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
     let (ty', _) ← LMonoTy.toSMTType mty ctx
     return (id.name, ty')
 
-@[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
+abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
 def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) : SolverM Unit := do
   match solver with
@@ -1178,7 +1178,7 @@ A model with values lifted to LExpr for display purposes.
 This is used for formatting models in a human-readable way
 using Core's expression formatter and for future use as program metadata.
 -/
-@[expose] abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
+abbrev LExprModel := List (Expression.Ident × LExpr CoreLParams.mono)
 
 /-- Format a model value using the Core DDM formatter.
     Renders constructors, applications, and primitives with Core syntax
@@ -1333,7 +1333,7 @@ def VCResult.hasSMTError (vr : VCResult) : Bool :=
   | .ok o => o.hasSMTError
   | .error _ => false
 
-@[expose] abbrev VCResults := Array VCResult
+abbrev VCResults := Array VCResult
 
 def VCResults.format (rs : VCResults) : Format :=
   let rsf := rs.map (fun r => f!"{Format.line}{r}")

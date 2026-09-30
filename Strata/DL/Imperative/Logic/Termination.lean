@@ -27,7 +27,7 @@ open Imperative
 /-- `s` terminates from `ρ₀` at `ρ'` along `trace` either normally or by
 exiting with a label. Hoare triples constrain both outcomes because an enclosing
 block may catch an exiting outcome and continue execution. -/
-@[expose] abbrev EventLang.TerminatesAt
+abbrev EventLang.TerminatesAt
     {P : PureExpr} {EventT : Type} (EL : EventLang P EventT)
     (s : EL.StmtT) (ρ₀ : Env P) (trace : List EventT) (ρ' : Env P) : Prop :=
   EL.traceStar (EL.stmtCfg s ρ₀) trace (EL.terminalCfg ρ') ∨
@@ -50,7 +50,7 @@ inductive EventLang.MustTerminate
 /-- Every execution of `s` from `ρ₀` eventually reaches a terminal or exiting
 configuration. In particular, no execution gets stuck or diverges. The final
 environment and emitted trace may differ across nondeterministic executions. -/
-@[expose] abbrev EventLang.Terminates
+abbrev EventLang.Terminates
     {P : PureExpr} {EventT : Type} (EL : EventLang P EventT)
     (s : EL.StmtT) (ρ₀ : Env P) : Prop :=
   EL.MustTerminate (EL.stmtCfg s ρ₀)

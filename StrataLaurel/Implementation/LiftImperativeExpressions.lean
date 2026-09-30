@@ -115,7 +115,7 @@ structure LiftState where
       quantifier proof block does exactly that for its havoc variable. -/
   liftedVarRefs : Std.HashSet Nat := {}
 
-@[expose] abbrev LiftM := ExceptT String (StateM LiftState)
+abbrev LiftM := ExceptT String (StateM LiftState)
 
 private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters

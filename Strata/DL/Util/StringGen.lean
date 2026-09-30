@@ -240,7 +240,7 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffixOf (s
     have Hsuf': (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList :=
       List.suffix_append_of_suffix (List.suffix_refl _)
     have ⟨t, h⟩ : ['_'] ++ (toString x).toList <:+ (toString y).toList :=
-      List.suffix_of_suffix_length_le Hsuf Hsuf' (by simp; exact x_lt)
+      List.suffix_of_suffix_length_le Hsuf Hsuf' (by simp [Nat.repr] at x_lt ⊢; omega)
     have : '_' ∈ (toString y).toList := by grind
     have := @Nat_toString_not_contain_underscore y
     contradiction
@@ -255,7 +255,7 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffixOf (s
       simp only [List.append_assoc]
       exact List.suffix_append_of_suffix (List.suffix_refl _)
     have ⟨t, h⟩ : ['_'] ++ (toString y).toList <:+ (toString x).toList :=
-      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp_all; exact x_gt)
+      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp [Nat.repr] at x_gt ⊢; omega)
     have : '_' ∈ (toString x).toList := by grind
     have := @Nat_toString_not_contain_underscore x
     contradiction

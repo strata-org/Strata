@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 End-to-end verification tests for the three condition modes selected by the
 `free` and `checked` clause keywords, run through the *full* pipeline (translate
@@ -26,7 +26,7 @@ FAILS at its assertion site and that the same clause written `free` VERIFIES
 assumed at its assumption site.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

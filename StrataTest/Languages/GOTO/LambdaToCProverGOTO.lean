@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.GOTO.LambdaToCProverGOTO
-import Lean.Server.Utils
+meta import Lean.Server.Utils
 
 meta section
 

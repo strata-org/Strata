@@ -99,7 +99,7 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .funcDecl decl _ => WFfuncDeclProp p decl
   | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
-@[expose] abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
+abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 
 instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
   split := by intros as a wfs
@@ -179,7 +179,7 @@ def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .func f _ => WFFunctionProp p f
   | .recFuncBlock fs _ => WFRecFuncBlockProp p fs
 
-@[expose, simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
+@[simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 
 instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
   split := by intros as a wfs

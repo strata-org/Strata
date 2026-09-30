@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 A modifies clause CAN be placed on any procedure to generate a modifies axiom.
 The modifies clause determines which references the procedure may modify.
@@ -14,7 +14,7 @@ since otherwise all heap state is lost after calling them.
 
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

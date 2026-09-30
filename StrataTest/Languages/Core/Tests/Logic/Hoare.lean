@@ -674,7 +674,7 @@ private theorem contractTriple_set_const (p : Core.Program)
           postAsPredicate_of_binds proc _ [(x, ty, κ)] hsyn
             (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; exact hnew)))
       (Imperative.Logic.Hoare.postWF_of_definedVars_nil _
-        (by simp [Core.Statement.set, Imperative.Block.definedVars,
+        (by simp [Imperative.Block.definedVars,
           Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
           Core.Command.definedVars, Imperative.Cmd.definedVars])))
 
@@ -1697,7 +1697,7 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
   have hbad := h
     { store := fun y => if y = x then some (Lambda.LExpr.const () (.intConst 1)) else none,
       factory := Core.Factory, hasFailure := false } (by simp)
-  simp [Imperative.dropVars, Core.Statement.init, Imperative.Block.definedVars,
+  simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
     Core.Command.definedVars, Imperative.Cmd.definedVars] at hbad
 

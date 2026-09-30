@@ -102,7 +102,7 @@ structure EventLang (P : PureExpr) (EventT : Type) where
   initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
 
 /-- Reflexive-transitive execution with emitted events in chronological order. -/
-@[expose] abbrev EventLang.traceStar
+abbrev EventLang.traceStar
     {P : PureExpr} {EventT : Type} (EL : EventLang P EventT) :
     EL.CfgT → List EventT → EL.CfgT → Prop :=
   ReflTransTrace EL.step

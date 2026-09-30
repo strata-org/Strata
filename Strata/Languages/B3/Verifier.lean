@@ -5,14 +5,16 @@
 -/
 module
 
-public meta import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+meta import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 public import Strata.Languages.B3.Verifier.Expression
 public import Strata.Languages.B3.Verifier.Formatter
 public import Strata.Languages.B3.Verifier.State
 public import Strata.Languages.B3.Verifier.Program
 public import Strata.Languages.B3.Verifier.Diagnosis
-public meta import Strata.Languages.B3.Verifier.Program
-public meta import Strata.Languages.B3.Verifier.Statements
+public import Strata.Languages.B3.Verifier.Statements
+import Strata.Languages.B3.DDMTransform.ParseCST
+import StrataDDM.AST
+import StrataDDM.SourcedProgram
 
 open Strata
 open StrataDDM (SourceRange)
@@ -62,7 +64,7 @@ Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - r
 
 -- Example: Verify a simple B3 program (meta to avoid including in production)
 -- This is not a test, it only demonstrates the end-to-end API
-public meta def exampleVerification : IO Unit := do
+public def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
   let ddmProgram : StrataDDM.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }

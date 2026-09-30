@@ -43,8 +43,8 @@ namespace Core
 
 open Imperative
 
-@[expose] abbrev CoreEval := SemanticEval Expression
-@[expose] abbrev CoreStore := SemanticStore Expression
+abbrev CoreEval := SemanticEval Expression
+abbrev CoreStore := SemanticStore Expression
 
 /-- `Lambda.LExpr.evalFully` only outputs canonical values (delegates to the
     generic `Lambda.evalFully_outputs_canonical`). -/

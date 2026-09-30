@@ -3,19 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Soundness of the quantifier-free modifies frame under `--use-array-theory`: illegal
 writes are rejected, legal shapes verify, callers may assume the free frame, and a
 fresh object exposed to a caller is not pinned by it.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
+import StrataLaurel.Implementation.LaurelPass
+import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 
 open StrataTest.Util
 open Strata
 
-private def arrayTheoryOpts :=
+private meta def arrayTheoryOpts :=
   { defaultLaurelTestOptions with
     translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
     verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }

@@ -22,7 +22,6 @@ public section
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
 -/
-@[expose]
 abbrev Command := CmdExt Expression
 
 namespace CallArg
@@ -38,42 +37,39 @@ def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
 end CallArg
 ---------------------------------------------------------------------
 
-@[expose]
 abbrev Statement := Imperative.Stmt Core.Expression Core.Command
-@[expose]
 abbrev Statements := List Statement
 
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name (.det expr) md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name .nondet md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.call (pname : String) (args : List (CallArg Expression))
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call pname args md)
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.typeDecl (tc : TypeConstructor) (md : MetaData Expression) :=
   @Stmt.typeDecl Expression Command tc md
 
 ---------------------------------------------------------------------
 
-@[expose]
 abbrev Block := Imperative.Block Core.Expression Core.Command
 
 ---------------------------------------------------------------------

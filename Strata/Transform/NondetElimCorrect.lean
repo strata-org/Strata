@@ -2066,7 +2066,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         have := step_ndelim_ite_prefix_outcome (extendFactory := extendFactory) true (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
           ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run
-        simpa only [ρ_tgt_g] using this
+        simpa [ρ_tgt_g] using this
       · exact StoreAgreement.of_projectStore_parents h_off_g h_off'
       · exact h_fail'
       · show ρ_tgt.factory = ρ_src.factory; exact h_eval_eq
@@ -2119,7 +2119,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         have := step_ndelim_ite_prefix_outcome (extendFactory := extendFactory) false (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
           ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run
-        simpa only [ρ_tgt_g] using this
+        simpa [ρ_tgt_g] using this
       · exact StoreAgreement.of_projectStore_parents h_off_g h_off'
       · exact h_fail'
       · show ρ_tgt.factory = ρ_src.factory; exact h_eval_eq
@@ -2646,7 +2646,7 @@ private theorem nondetElim_simulation_exit {P : PureExpr} [HasFvar P] [HasFvars 
       StringGenState.wf_emp h_no_gen_suffix h_tgt_fresh h_store_inits h_unique h_no_writes h_nofd
       (some lbl) (by simpa only [Env.outcomeConfig] using h_exit)
   refine ⟨ρ_out, ?_, h_off, h_fl⟩
-  simpa only [Env.outcomeConfig] using h_run
+  simpa only [Env.outcomeConfig, Block.nondetElim] using h_run
 
 /-- Forward simulation: every terminating source execution of `ss` has a
 matching execution of `Block.nondetElim ss` agreeing on the source's variables
@@ -3107,7 +3107,7 @@ theorem nondetElim_sound_kind_exit_compositional {P : PureExpr} [HasFvar P] [Has
       StringGenState.wf_emp (Env.varsUndefined_iff.mp h_src_no_gen) h_tgt_fresh h_tgt_inits h_unique h_no_writes h_nofd
       (some lbl) (by simpa only [Env.outcomeConfig] using h_exit)
   refine ⟨ρ_out, ?_, h_off, h_fl⟩
-  simpa only [Env.outcomeConfig] using h_run
+  simpa only [Env.outcomeConfig, Block.nondetElim] using h_run
 
 /-! ## Failing-config forward simulation (`nondetElim_to_fail`)
 

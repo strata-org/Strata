@@ -12,6 +12,9 @@ import StrataDDM.Integration.Lean.HashCommands
 
 meta import StrataLaurel.Implementation.Checked
 meta import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
+import StrataLaurel.Implementation.Checked.Builder
+import StrataLaurel.Implementation.Checked.Raw
+import StrataLaurel.Implementation.Checked.BuilderM
 
 /-!
 # Checked Laurel API tests

@@ -28,15 +28,15 @@ public section
 
 theorem createHavocsApp :
 createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
-simp [createHavocs]
+  simp [createHavocs]
 
 theorem createFvarsApp :
 createFvars (a ++ b) = createFvars a ++ createFvars b := by
-simp [createFvars]
+  simp [createFvars]
 
 theorem createFvarsLength :
 (createFvars ls).length = ls.length := by
-induction ls <;> simp [createFvars]
+  induction ls <;> simp [createFvars]
 
 /-
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception

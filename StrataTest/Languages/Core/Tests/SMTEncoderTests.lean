@@ -814,7 +814,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
+#eval Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := false})
 
 -- Test verification with Array theory
 /--
@@ -824,7 +824,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
+#eval Core.verify simpleMapProgram (options := {Core.VerifyOptions.quiet with useArrayTheory := true})
 
 -- Test that string literals with embedded double quotes are correctly encoded for SMT
 def quotedStringProgram :=
@@ -850,7 +850,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval! Core.verify quotedStringProgram (options := Core.VerifyOptions.quiet)
+#eval Core.verify quotedStringProgram (options := Core.VerifyOptions.quiet)
 
 -- A `frac{n, d}` literal whose value has no terminating decimal expansion is
 -- encoded to SMT as exact real division, so it verifies precisely rather than

@@ -167,10 +167,8 @@ def CoreTransformState.emp : CoreTransformState :=
     currentProcedureName := .none, cachedAnalyses := .emp,
     factory := Lambda.Factory.default }
 
-@[expose]
 abbrev Err := Strata.Message
 
-@[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
 
 /-- A lifter from CoreGenM to (StateM CoreTransformState) -/

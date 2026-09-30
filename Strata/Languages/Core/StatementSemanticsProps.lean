@@ -401,22 +401,22 @@ theorem updatedStatesDefMonotone
   theorem updatedStatesDefined :
   ks.length = vs.length →
   isDefined (updatedStates σ ks vs) ks := by
-  intros Hlen k Hin
-  induction ks generalizing σ vs <;> simp_all
-  case cons h t ih =>
-  simp [updatedStates] at *
-  cases vs <;> simp at Hlen
-  case cons h' t' =>
-  cases Hin with
-  | inl Hin =>
-    simp [updatedStates']
-    have Hdef : isDefined (updatedStates' (updatedState σ h h') (t.zip t')) [h] := by
-      apply updatedStatesDefMonotone
-      simp [isDefined, updatedState]
-    simp_all [isDefined]
-  | inr Hin =>
-    apply ih <;> assumption
-
+    intros Hlen k Hin
+    induction ks generalizing σ vs <;> simp_all
+    case cons h t ih =>
+    simp [updatedStates] at *
+    cases vs <;> simp at Hlen
+    case cons h' t' =>
+    cases Hin with
+    | inl Hin =>
+      simp [updatedStates']
+      have Hdef : isDefined (updatedStates' (updatedState σ h h') (t.zip t')) [h] := by
+        apply updatedStatesDefMonotone
+        simp [isDefined, updatedState]
+      simp_all [isDefined]
+    | inr Hin =>
+      apply ih <;> assumption
+  
 theorem updatedStatesUpdate {P : PureExpr}
   {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
   hs.length = vs.length →
@@ -469,7 +469,6 @@ theorem updatedStatesInit {P : PureExpr}
     case cons h' t' =>
     simp [isNotDefined] at Hdef
     have Hlkup := Hdef.1
-    simp at Hlkup
     apply InitStates.init_some (updatedStateInit Hlkup)
     apply ih rfl
     simp [isNotDefined, updatedState]
@@ -1882,41 +1881,41 @@ substDefined σ σ' substs →
 substStores σ σ' substs →
 InitState Expression σ' k v σ'' →
 substStores σ σ'' substs := by
-intros Hdef Hsubst Hinit
-simp [substStores, substDefined] at *
-intros k1 k2 Hin
-cases Hinit with
-| init Hnone Hsome' Heq =>
-rw [Heq] <;> simp_all
-rw [Hsubst] <;> simp_all
-apply Not.intro
-intro Heq'
-simp [Heq'] at *
-specialize Hdef k1 k2 Hin
-simp [Option.isSome] at Hdef
-split at Hdef <;> simp_all
+  intros Hdef Hsubst Hinit
+  simp [substStores, substDefined] at *
+  intros k1 k2 Hin
+  cases Hinit with
+  | init Hnone Hsome' Heq =>
+  rw [Heq] <;> simp_all
+  rw [Hsubst] <;> simp_all
+  apply Not.intro
+  intro Heq'
+  simp [Heq'] at *
+  specialize Hdef k1 k2 Hin
+  simp [Option.isSome] at Hdef
+  split at Hdef <;> simp_all
 
 theorem substStoresInitsInv :
 substDefined σ σ' substs →
 substStores σ σ' substs →
 InitStates σ' ks vs σ'' →
 substStores σ σ'' substs := by
-intros Hdef Hsubst Hinit
-simp [substStores, substDefined] at *
-intros k1 k2 Hin
-induction Hinit generalizing σ
-case init_none =>
-  exact Hsubst k1 k2 Hin
-case init_some Hinit Hinits ih =>
-  simp [Hsubst k1 k2 Hin]
-  specialize Hdef k1 k2 Hin
-  simp [Option.isSome] at Hdef
-  split at Hdef <;> simp_all
-  split at Hdef <;> simp_all
-  next x val Hsome =>
-  have Hsome' := InitStateSomeMonotone Hsome Hinit
-  have Hsome'' := InitStatesSomeMonotone Hsome' Hinits
-  simp_all
+  intros Hdef Hsubst Hinit
+  simp [substStores, substDefined] at *
+  intros k1 k2 Hin
+  induction Hinit generalizing σ
+  case init_none =>
+    exact Hsubst k1 k2 Hin
+  case init_some Hinit Hinits ih =>
+    simp [Hsubst k1 k2 Hin]
+    specialize Hdef k1 k2 Hin
+    simp [Option.isSome] at Hdef
+    split at Hdef <;> simp_all
+    split at Hdef <;> simp_all
+    next x val Hsome =>
+    have Hsome' := InitStateSomeMonotone Hsome Hinit
+    have Hsome'' := InitStatesSomeMonotone Hsome' Hinits
+    simp_all
 
 theorem substStoresInitsInv' :
 substDefined σ σ' substs →
@@ -1935,42 +1934,42 @@ theorem substStoresUpdateInv {k : P.Ident} {substs : List (P.Ident × P.Ident)}:
 substStores (P:=P) σ σ' substs →
 UpdateState (P:=P) σ' k v σ'' →
 substStores (P:=P) σ σ'' substs := by
-intros Hnin Hsubst Hinit
-simp [substStores] at *
-intros k1 k2 Hin
-cases Hinit with
-| update Hnone Hsome' Heq =>
-rw [Heq] <;> simp_all
-rw [Hsubst] <;> simp_all
-intros Heq'
-specialize Hnin k1
-simp_all
+  intros Hnin Hsubst Hinit
+  simp [substStores] at *
+  intros k1 k2 Hin
+  cases Hinit with
+  | update Hnone Hsome' Heq =>
+  rw [Heq] <;> simp_all
+  rw [Hsubst] <;> simp_all
+  intros Heq'
+  specialize Hnin k1
+  simp_all
 
 theorem substStoresUpdatesInv :
 ks.Disj substs.unzip.2 →
 substStores σ σ' substs →
 UpdateStates σ' ks vs σ'' →
 substStores σ σ'' substs := by
-intros Hnin Hsubst Hup
-simp [substStores] at *
-intros k1 k2 Hin
-induction Hup generalizing σ
-case update_none =>
-  exact Hsubst k1 k2 Hin
-case update_some σ x v σ' xs vs σ₁ Hup Hinits ih =>
-  have Hnin : ¬ x ∈ substs.unzip.2 := by
-    simp [List.Disj] at Hnin
-    intros Hin
-    have Hprod := List.mem_zip_2 (l₁:=substs.unzip.fst) (by simp) Hin
-    rw [List.zip_unzip] at Hprod
-    cases Hprod with
-    | intro w Hprod =>
-    have HH := Hnin.1 w
-    contradiction
-  have HH := substStoresUpdateInv (σ:=σ) Hnin Hsubst Hup
-  apply ih HH
-  simp [List.Disj] at *
-  simp_all
+  intros Hnin Hsubst Hup
+  simp [substStores] at *
+  intros k1 k2 Hin
+  induction Hup generalizing σ
+  case update_none =>
+    exact Hsubst k1 k2 Hin
+  case update_some σ x v σ' xs vs σ₁ Hup Hinits ih =>
+    have Hnin : ¬ x ∈ substs.unzip.2 := by
+      simp [List.Disj] at Hnin
+      intros Hin
+      have Hprod := List.mem_zip_2 (l₁:=substs.unzip.fst) (by simp) Hin
+      rw [List.zip_unzip] at Hprod
+      cases Hprod with
+      | intro w Hprod =>
+      have HH := Hnin.1 w
+      contradiction
+    have HH := substStoresUpdateInv (σ:=σ) Hnin Hsubst Hup
+    apply ih HH
+    simp [List.Disj] at *
+    simp_all
 
 theorem substStoresUpdatesInv' :
 ks.Disj substs.unzip.1 →
@@ -2544,7 +2543,7 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
 theorem EvalCmdRefinesContract :
 EvalCmd Expression fac σ c σ' f →
 EvalCommandContract π fac σ (CmdExt.cmd c) σ' f := by
-intros H; constructor; exact H
+  intros H; constructor; exact H
 
 theorem InvStoresUpdatedStateDisjRightMono :
   ¬ k' ∈ ks →

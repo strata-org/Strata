@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Regression test for issue #490: a modifies clause referencing a non-composite
 type (e.g. a parameter of type int) previously caused an infinite loop
@@ -11,7 +11,7 @@ in laurelAnalyze. The fix filters out non-composite modifies entries and emits
 a diagnostic error.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

@@ -82,7 +82,7 @@ abbrev SolverState.init := SMTLibSolverState.init
 
 /-- SMT-LIB solver monad. Renamed from `SolverM` to `SMTLibSolverM`
     to distinguish from the abstract solver interface. -/
-@[expose] abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
+abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 /-- Backward-compatible alias for `SMTLibSolverM`. -/
 abbrev SolverM := SMTLibSolverM

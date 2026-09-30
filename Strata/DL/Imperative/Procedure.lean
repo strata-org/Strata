@@ -27,7 +27,7 @@ public section
 
 /-- A deterministic control-flow graph over commands `C` and expressions `P`:
 labeled deterministic basic blocks with string labels. -/
-@[expose] abbrev DetCFG (P : PureExpr) (C : Type) :=
+abbrev DetCFG (P : PureExpr) (C : Type) :=
   CFG String (DetBlock String C P)
 
 /-- The body of a procedure: either structured (a list of statements) or

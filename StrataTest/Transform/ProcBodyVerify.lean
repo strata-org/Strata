@@ -55,7 +55,7 @@ info: ok: verify_Test: {
 }
 -/
 #guard_msgs in
-#eval! showTransformed
+#eval showTransformed
   (#strata
   program Core;
   procedure Test(inout g : int, x : int, out y : int)
@@ -86,7 +86,7 @@ info: ok: verify_Simple: {
 }
 -/
 #guard_msgs in
-#eval! showTransformed
+#eval showTransformed
   (#strata
   program Core;
   procedure Simple(x : bool, out y : bool)
@@ -116,7 +116,7 @@ info: ok: verify_WithFree: {
 }
 -/
 #guard_msgs in
-#eval! showTransformed
+#eval showTransformed
   (#strata
   program Core;
   procedure WithFree(x : int, out y : int)
@@ -155,7 +155,7 @@ info: ok: verify_MultipleModifies: {
 }
 -/
 #guard_msgs in
-#eval! showTransformed
+#eval showTransformed
   (#strata
   program Core;
   procedure MultipleModifies(inout g1 : int, inout g2 : bool, x : int, out y : int)

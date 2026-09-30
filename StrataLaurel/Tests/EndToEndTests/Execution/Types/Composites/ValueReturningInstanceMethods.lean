@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Comprehensive tests for **value-returning instance procedures** (methods
 declared inside a `composite` block that return a value via a `return expr`
@@ -25,7 +25,7 @@ See also `T7_InstanceProcedures.lean` for the surface-syntax / call-dispatch
 tests of `obj#method(args)`.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
