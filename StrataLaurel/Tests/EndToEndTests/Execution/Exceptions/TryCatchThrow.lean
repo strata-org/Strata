@@ -29,12 +29,19 @@ handlers, so the observable claims are:
     rejected.
 
 The first two cases are the construct's smoke test: they check that the whole shape,
-`finally` arm included, parses, resolves, type-checks, lowers, and runs. They throw
-nothing, so they need no exception objects and hence no heap, which lets them run
-under `testLaurelExecution` — verifier *and* interpreter. Everything after them throws
-a composite, so its exception values live on the heap and the interpret path cannot
-run it yet. The other file that runs both ways is `Throw.lean`, whose primitive
+`finally` arm included, parses, resolves, type-checks, lowers, and runs. They throw an
+unboxed `int`, so they need no exception objects and hence no heap, which lets them
+run under `testLaurelExecution` — verifier *and* interpreter. Everything after them
+throws a composite, so its exception values live on the heap and the interpret path
+cannot run it yet. The other file that runs both ways is `Throw.lean`, whose primitive
 section allocates nothing either.
+
+Those two throw rather than merely *having* a handler, which matters: a `try` whose
+body cannot throw gets a `catch` binding typed `Unknown`, and `EliminateExceptions`
+discards such clauses (it reads `Unknown` as "cannot fire"). A smoke test with a
+non-throwing body would therefore never lower a handler at all — it would check the
+shape parses and then verify a program with no handler in it. Every case below that
+keeps a non-throwing body carries the warning that says so.
 
 Exceptions are constructed *before* the `try` (a `new` inside a `try` body hits a
 known lifting-pass gap), and all throws are direct so the verifier knows each value's
@@ -54,9 +61,9 @@ procedure tryCatchFinally() entry
   opaque
 {
   try {
-    assert true
+    throw 7
   } catch e {
-    assert true
+    assert e == 7
   } finally {
     assert true
   }
@@ -72,9 +79,9 @@ procedure tryWithGuard() entry
   opaque
 {
   try {
-    assert true
+    throw 7
   } catch e when true {
-    assert true
+    assert e == 7
   }
 };
 #end
@@ -163,6 +170,7 @@ composite ParseError {}
 composite ArithError {}
 procedure multipleCatches() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when e is ParseError {
     assert true
@@ -180,6 +188,7 @@ composite ParseError {}
 composite ArithError {}
 procedure unionCatch() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when e is ParseError || e is ArithError {
     assert true
@@ -200,6 +209,7 @@ composite ParseError {}
 composite ArithError {}
 procedure unionCatchNonShortCircuit() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when e is ParseError | e is ArithError {
     assert true
@@ -213,6 +223,7 @@ procedure unionCatchNonShortCircuit() opaque {
 program Laurel;
 procedure catchAll() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e {
     assert true
@@ -227,7 +238,9 @@ program Laurel;
 composite ParseError {}
 procedure nestedTry() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     try {
+//  ^ warning: the `catch` clause(s) of this `try` can never fire
       assert true
     } catch inner {
       assert true
@@ -465,6 +478,7 @@ procedure invariantHoldsInsideTry(n: int)
 {
   r := 0;
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     var i: int := 0;
     while(i < n)
       invariant i >= 0

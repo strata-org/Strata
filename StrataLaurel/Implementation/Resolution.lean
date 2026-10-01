@@ -1484,68 +1484,102 @@ private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTy
   | none => true
   | some p => catchGuardCatches lattice c.binding p ty
 
-/-- Name-keyed adapter over `catchGuardCatches`, for the phase that works in type
-    *names* rather than resolved types: `collectThrownTypeNames` runs while the
-    `catch` binding's own type is still being computed, so a nested `try` must not
-    leak the types its own catches already absorb into an outer binding's
-    least-common-ancestor. Only the binding's text and the named type matter to
-    the guard analysis, so this wraps them and delegates rather than repeating the
-    recursion. -/
-private def catchGuardCatchesName (lattice : TypeLattice) (binding : String)
-    (pred : StmtExprMd) (tyName : String) : Bool :=
-  catchGuardCatches lattice (mkId binding) pred
-    { val := .UserDefined (mkId tyName), source := .unknown }
+/-- Over-approximate the exception *types* thrown within `expr`: the operand
+    types of direct `throw`s plus the declared `throws` type of any procedure it
+    calls. Used to type a `catch` binding at the join of these (so `e#field`
+    type-checks against the shared supertype without a downcast).
 
-/-- Whether a `catch` clause provably absorbs a thrown value of the composite
-    named `tyName`: the name-keyed adapter over `clauseCatches`. -/
-private def clauseCatchesName (lattice : TypeLattice) (c : CatchClause) (tyName : String) : Bool :=
-  clauseCatches lattice c { val := .UserDefined (mkId tyName), source := .unknown }
+    `throw` operands are read structurally — a literal types itself; `new T`/`(x
+    as T)` give `T` directly; a `Var` local/parameter is looked up (inner-block
+    declarations via the threaded `env`, outer names via the current scope).
+    Callee `throws` is available because `preRegisterTopLevel` stores each
+    procedure's full signature in scope before any body is resolved. Operands
+    whose type cannot be determined contribute nothing (the join is over what is
+    known), and `Unknown` counts as undetermined — see `determinate`.
 
-/-- Over-approximate the composite type *names* thrown within `expr`: the
-    operand types of direct `throw`s plus the declared `throws` type of any
-    procedure it calls. Used to type a `catch` binding at the least common
-    ancestor of these (so `e#field` type-checks against the shared supertype
-    without a downcast).
+    Types, not names: a thrown type that is not a `.UserDefined` composite — a
+    primitive from `throws (e: int)` or `throw 7`, a set/map, an applied generic
+    — has no name to collect, and must still reach the binding. Typing it
+    `Unknown` is not a harmless approximation: `EliminateExceptions` reads an
+    `Unknown` binding as "this handler can never fire" and discards the clause,
+    verifying the program as if the `catch` were absent.
 
-    `throw` operands are read structurally — `new T`/`(x as T)` give `T`
-    directly; a `Var` local/parameter is looked up (inner-block declarations via
-    the threaded `env`, outer names via the current scope). Callee `throws` is
-    available because `preRegisterTopLevel` stores each procedure's full
-    signature in scope before any body is resolved. Operands whose type cannot
-    be determined contribute nothing (the join is over what is known). -/
-private def collectThrownTypeNames (env : Std.HashMap String String) (expr : StmtExprMd)
-    : ResolveM (List String) := do
-  let operandName (op : StmtExprMd) : ResolveM (Option String) := do
-    match op.val with
-    | .New ref => pure (some ref.text)
-    | .AsType _ ty => pure (match ty.val with | .UserDefined r => some r.text | _ => none)
-    | .Var (.Local id) =>
-      match env.get? id.text with
-      | some n => pure (some n)
-      | none =>
-        match (← get).scope.get? id.text with
-        | some (_, node) => pure (match node.getType.val with | .UserDefined r => some r.text | _ => none)
-        | none => pure none
-    | _ => pure none
-  let calleeThrowsName (callee : Identifier) : ResolveM (Option String) := do
+    The sibling post-resolution traversal `exceptionEscapes` has the same shape
+    and the same operand cases but cannot be shared: it types operands with
+    `computeExprType`, which needs the finished `SemanticModel`. This one runs
+    *during* resolution, where only `scope` is available — hence the structural
+    read. A throw operand this cannot type (e.g. `throw f()`, whose type is the
+    callee's *output*) still yields `Unknown`; `Check.tryCatch` reports that
+    rather than letting the clause be dropped quietly. -/
+private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : StmtExprMd)
+    : ResolveM (List HighTypeMd) := do
+  -- "Cannot be determined" includes a type that already resolved to `Unknown` (a
+  -- dangling reference, diagnosed elsewhere): it denotes no type, so it must stay
+  -- out of the join — mixed in, it would turn a perfectly good set of thrown
+  -- composites into a spurious "no common ancestor".
+  let determinate (ty? : Option HighTypeMd) : Option HighTypeMd :=
+    ty?.filter (fun t => !(t.val matches .Unknown))
+  let operandType (op : StmtExprMd) : ResolveM (Option HighTypeMd) := do
+    let ty? : Option HighTypeMd ← match op.val with
+      | .LiteralInt _ => pure (some { val := .TInt, source := op.source })
+      | .LiteralBool _ => pure (some { val := .TBool, source := op.source })
+      | .LiteralString _ => pure (some { val := .TString, source := op.source })
+      | .LiteralDecimal _ => pure (some { val := .TReal, source := op.source })
+      | .LiteralBv _ width => pure (some { val := .TBv width, source := op.source })
+      -- `new T<τ…>` contributes the APPLIED type `T<τ…>` (a bare `T` only when there
+      -- are no arguments), built exactly as `computeExprType`'s `.New` arm builds it so
+      -- the two agree. Dropping the arguments here would not merely lose precision: a
+      -- callee's `throws (e: Box<int>)` contributes the full `.Applied`, and a join over
+      -- a bare `Box` and a `Box<int>` cannot be reconciled at all.
+      | .New ref typeArgs =>
+        if typeArgs.isEmpty then
+          pure (some { val := .UserDefined ref, source := op.source })
+        else
+          pure (some { val := .Applied { val := .UserDefined ref, source := op.source } typeArgs,
+                       source := op.source })
+      | .AsType _ ty => pure (some ty)
+      | .Var (.Local id) =>
+        match env.get? id.text with
+        | some ty => pure (some ty)
+        | none =>
+          match (← get).scope.get? id.text with
+          | some (_, node) => pure (some node.getType)
+          | none => pure none
+      -- `throw f()` throws the callee's *output*, so read the signature from
+      -- scope exactly as `calleeThrowsType` reads `throwsType` below, and derive
+      -- the call's type from `outputs` as `getCallType` does. Only a single
+      -- output is a value that can be thrown: zero outputs is void and several is
+      -- a tuple, neither of which is a legal `throw` operand, so both contribute
+      -- nothing rather than a type the join would have to reconcile.
+      | .StaticCall callee _ _
+      | .InstanceCall _ callee _ =>
+        match (← get).scope.get? callee.text with
+        | some (_, .staticProcedure p) | some (_, .instanceProcedure _ p) =>
+          match p.outputs with
+          | [singleOutput] => pure (some singleOutput.type)
+          | _ => pure none
+        | _ => pure none
+      | _ => pure none
+    pure (determinate ty?)
+  let calleeThrowsType (callee : Identifier) : ResolveM (Option HighTypeMd) := do
     match (← get).scope.get? callee.text with
     | some (_, .staticProcedure p) | some (_, .instanceProcedure _ p) =>
-      pure (p.throwsType.bind fun t => match t.val with | .UserDefined r => some r.text | _ => none)
+      pure (determinate p.throwsType)
     | _ => pure none
   -- Recursive descents go through `attach` (and named discriminant equations) so
   -- each child carries the membership/shape proof the termination argument needs.
   match _h : expr.val with
-  | .Throw op => pure ((← operandName op).toList ++ (← collectThrownTypeNames env op))
+  | .Throw op => pure ((← operandType op).toList ++ (← collectThrownTypes env op))
   | .StaticCall callee args _ =>
-    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypeNames env a)
-    pure ((← calleeThrowsName callee).toList ++ rs.flatten)
+    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypes env a)
+    pure ((← calleeThrowsType callee).toList ++ rs.flatten)
   | .InstanceCall target callee args =>
-    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypeNames env a)
-    pure ((← calleeThrowsName callee).toList ++ (← collectThrownTypeNames env target) ++ rs.flatten)
+    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypes env a)
+    pure ((← calleeThrowsType callee).toList ++ (← collectThrownTypes env target) ++ rs.flatten)
   | .IfThenElse c t el =>
-    let ee ← match _hel : el with | some x => collectThrownTypeNames env x | none => pure []
-    pure ((← collectThrownTypeNames env c) ++ (← collectThrownTypeNames env t) ++ ee)
-  | .While c _ _ b _ => pure ((← collectThrownTypeNames env c) ++ (← collectThrownTypeNames env b))
+    let ee ← match _hel : el with | some x => collectThrownTypes env x | none => pure []
+    pure ((← collectThrownTypes env c) ++ (← collectThrownTypes env t) ++ ee)
+  | .While c _ _ b _ => pure ((← collectThrownTypes env c) ++ (← collectThrownTypes env b))
   | .Assign targets v =>
     -- A `Field` target carries an arbitrary object expression (`mk()#x := 1`), so
     -- a throw reached through it must contribute to the enclosing binding's join
@@ -1553,43 +1587,50 @@ private def collectThrownTypeNames (env : Std.HashMap String String) (expr : Stm
     -- descents here have to match them.
     let ts ← targets.attach.mapM (fun ⟨t, _⟩ =>
       match _ht : t.val with
-      | .Field obj _ => collectThrownTypeNames env obj
+      | .Field obj _ => collectThrownTypes env obj
       | _ => pure [])
-    pure (ts.flatten ++ (← collectThrownTypeNames env v))
-  | .Return (some v) => collectThrownTypeNames env v
-  | .ProveBy v pf => pure ((← collectThrownTypeNames env v) ++ (← collectThrownTypeNames env pf))
+    pure (ts.flatten ++ (← collectThrownTypes env v))
+  | .Return (some v) => collectThrownTypes env v
+  | .ProveBy v pf => pure ((← collectThrownTypes env v) ++ (← collectThrownTypes env pf))
   | .Try body catches finally? =>
-    let ff ← match _hf : finally? with | some f => collectThrownTypeNames env f | none => pure []
-    let cc ← catches.attach.mapM (fun ⟨c, _⟩ => collectThrownTypeNames env c.body)
-    let bodyThrows ← collectThrownTypeNames env body
+    let ff ← match _hf : finally? with | some f => collectThrownTypes env f | none => pure []
+    let cc ← catches.attach.mapM (fun ⟨c, _⟩ => collectThrownTypes env c.body)
+    let bodyThrows ← collectThrownTypes env body
     -- Only what escapes this nested `try` can reach an outer `catch` binding, so
     -- drop the body throws its own catches provably absorb (mirroring
     -- `exceptionEscapes`); otherwise an inner-handled type would pollute the
     -- outer binding's least-common-ancestor and could spuriously report "no
     -- common ancestor". Handler and `finally` throws still escape outward.
     let lattice := (← get).typeLattice
-    let residual := bodyThrows.filter fun n => !catches.any (fun c => clauseCatchesName lattice c n)
+    let residual := bodyThrows.filter fun t => !catches.any (fun c => clauseCatches lattice c t)
     pure (residual ++ cc.flatten ++ ff)
   | .Block stmts _ =>
-    let (_, acc) ← stmts.attach.foldlM (init := (env, ([] : List String))) fun (st) ⟨s, _⟩ => do
+    let (_, acc) ← stmts.attach.foldlM (init := (env, ([] : List HighTypeMd))) fun (st) ⟨s, _⟩ => do
       let (env', acc) := st
-      let more ← collectThrownTypeNames env' s
-      -- A local declaration contributes its declared type name so a later
-      -- `catch e when e is T` guard can be resolved against it. The annotation is
-      -- optional (`Parameter?`), and an unannotated declaration contributes
-      -- nothing: there is no name to record, and the binding's type is inferred
-      -- elsewhere.
-      let noteDeclaredType (param : Parameter?) (e : Std.HashMap String String)
-          : Std.HashMap String String :=
-        match param.type with
-        | some ty => match ty.val with
-          | .UserDefined r => e.insert param.name.text r.text
-          | _ => e
-        | none => e
-      let env'' := match s.val with
-        | .Var (.Declare param) => noteDeclaredType param env'
-        | .Assign [⟨.Declare param, _⟩] _ => noteDeclaredType param env'
-        | _ => env'
+      let more ← collectThrownTypes env' s
+      -- A local declaration contributes its type so a later
+      -- `catch e when e is T` guard can be resolved against it, and so that
+      -- `var e := 7; throw e` has a type to contribute at all. The annotation is
+      -- optional (`Parameter?`); when it is absent the initializer stands in,
+      -- typed by the same structural `operandType` used for a `throw` operand.
+      -- An annotated declaration still wins — the annotation is what the rest of
+      -- resolution will give the local. A declaration with neither annotation nor
+      -- a typeable initializer contributes nothing.
+      let noteDeclaredType (param : Parameter?) (init? : Option StmtExprMd)
+          (e : Std.HashMap String HighTypeMd)
+          : ResolveM (Std.HashMap String HighTypeMd) := do
+        let ty? ← match determinate param.type with
+          | some ty => pure (some ty)
+          | none => match init? with
+            | some init => operandType init
+            | none => pure none
+        match ty? with
+        | some ty => pure (e.insert param.name.text ty)
+        | none => pure e
+      let env'' ← match s.val with
+        | .Var (.Declare param) => noteDeclaredType param none env'
+        | .Assign [⟨.Declare param, _⟩] v => noteDeclaredType param (some v) env'
+        | _ => pure env'
       pure (env'', acc ++ more)
     pure acc
   | _ => pure []
@@ -1778,6 +1819,15 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
       then bound.filterMap id else []
   return (.StaticCall callee' args' inferredTypeArgs,
           substTypeVars subst (procReturnType callee proc))
+/-- The type to give a `catch` binding: the join of the exception types that can reach
+    it, or `none` when they have no join — unrelated composites, or two instantiations
+    of one generic — which the caller reports as an error.
+
+    Stated over types rather than type names, so that a generic exception keeps its type
+    arguments. `TypeLattice.commonAncestorType` is where that join is defined. -/
+private def thrownTypesJoin (lattice : TypeLattice) (tys : List HighTypeMd)
+    : Option HighTypeMd :=
+  lattice.commonAncestorType tys
 
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
@@ -2718,21 +2768,36 @@ def Check.tryCatch (exprMd : StmtExprMd)
     (h : exprMd.val = .Try body catches finally?) :
     ResolveM StmtExprMd := do
   let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
-  -- Type each catch binding at the least common ancestor of the exception types
-  -- that can reach it — the operand types of direct `throw`s plus the declared
-  -- `throws` of procedures called in the body. `e#field` then type-checks
-  -- against the shared supertype without a downcast, so a front end can use its
-  -- own exception hierarchy directly. A non-empty set with no common ancestor
-  -- (or an ambiguous join under multiple inheritance) is a hard error; an
-  -- undeterminable/empty set falls back to `Unknown` (gradual).
-  let thrownNames ← collectThrownTypeNames {} body
-  let bindTy : HighTypeMd ← match thrownNames with
-    | [] => pure { val := .Unknown, source := body.source }
+  -- Type each catch binding at the join of the exception types that can reach it
+  -- — the operand types of direct `throw`s plus the declared `throws` of
+  -- procedures called in the body. `e#field` then type-checks against the shared
+  -- supertype without a downcast, so a front end can use its own exception
+  -- hierarchy directly. A non-empty set with no join (unrelated types, or an
+  -- ambiguous least common ancestor under multiple inheritance) is a hard error;
+  -- an empty set falls back to `Unknown` (gradual).
+  let thrownTys ← collectThrownTypes {} body
+  let bindTy : HighTypeMd ← match thrownTys with
+    | [] =>
+      -- An `Unknown` binding is how `EliminateExceptions` recognises a handler that
+      -- cannot fire, and it DISCARDS such clauses (see `lowerTry`). That is a change
+      -- of semantics, not an optimization: the `try` is then verified against a
+      -- program in which the exception is never caught. So it must not be silent —
+      -- this is the only place that knows *why* the type is undetermined, and
+      -- `lowerTry` relies on the warning being emitted here.
+      --
+      -- Deliberately not phrased "the body cannot throw": this analysis
+      -- over-approximates only what it can type structurally, so a body that
+      -- genuinely throws (`throw f()`, whose type is the callee's output) lands here
+      -- too. The message states what is known — no type — and the consequence.
+      unless catches.isEmpty do
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          "the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present" .warning) }
+      pure { val := .Unknown, source := body.source }
     | _ =>
-      match (← get).typeLattice.commonAncestor thrownNames with
-      | some anc => resolveHighType { val := .UserDefined (mkId anc), source := source }
+      match thrownTypesJoin (← get).typeLattice thrownTys with
+      | some joined => resolveHighType { joined with source := source }
       | none =>
-        let names := ", ".intercalate thrownNames.eraseDups
+        let names := ", ".intercalate (thrownTys.map formatType).eraseDups
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
           s!"the exception types thrown in this `try` block ({names}) have no common ancestor; a `catch` binding needs a single least-common-ancestor type") }
         pure { val := .Unknown, source := body.source }
@@ -5631,7 +5696,55 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
             MessageKind.notYetImplemented]
         else []
       | _, _ => []
+    -- Backstop for an untyped handler whose `try` body demonstrably throws.
+    -- `Check.tryCatch` types a `catch` binding `Unknown` whenever its structural
+    -- `collectThrownTypes` could type none of the body's throws, and
+    -- `EliminateExceptions.lowerTry` reads that `Unknown` as "this handler can
+    -- never fire" and DISCARDS the clause — so the body is then verified as if no
+    -- handler were present, and the `catch` body's own obligations disappear with
+    -- it. Resolution's structural read is an under-approximation; this check runs
+    -- with the finished model, so `exceptionEscapes` can type operands that
+    -- `collectThrownTypes` could not. When the two disagree — no type for the
+    -- binding, yet a typeable escape from the body — the clause would be dropped
+    -- on a body that really throws, and that must be a hard error rather than the
+    -- `.warning` the drop otherwise carries (every pipeline gate is spelled
+    -- `kind != .warning`).
+    --
+    -- The escape is computed over `body`, not `stmt`: on a `try` with a catch-all
+    -- `exceptionEscapes stmt` is empty by construction (the catches absorb
+    -- everything), so `stmt` would never fire. A body that genuinely throws
+    -- nothing typeable yields no escape and keeps the existing warning.
+    --
+    -- An `Unknown` binding has exactly two producers in `Check.tryCatch`, and only
+    -- one of them is this check's business. So rather than keying on the symptom
+    -- (`Unknown`, which both produce), re-derive the join over what actually
+    -- escapes and let that separate them:
+    --
+    --   * No valid type EXISTS — the thrown types have no common ancestor. The join
+    --     over the escapes is `none` too, and `Check.tryCatch` has already reported
+    --     it as a hard error, so the pipeline never reaches the lowering and the
+    --     discard never materialises. Nothing to add: stay quiet.
+    --   * A valid type exists and resolution MISSED it — the structural read could
+    --     type none of the throws, so the binding came out `Unknown` even though
+    --     the model can type the escape and join it. That is the whole soundness
+    --     hole, and the join names the type the binding should have had.
+    --
+    -- `thrownTypesJoin` returns `none` on an empty list, so a body that throws
+    -- nothing typeable falls into the quiet arm on its own and keeps the warning.
+    let untypedHandlerError : List Message :=
+      match thisTy with
+      | some ti =>
+        if ti.val matches .Unknown then
+          let escaping := (exceptionEscapes model lattice body).map Prod.fst
+          match thrownTypesJoin lattice escaping with
+          | some joined =>
+            [diagnosticFromSource stmt.source
+              s!"the `catch` binding of this `try` was left untyped, but the body throws an exception of type '{formatType joined}': the clause(s) would be discarded and that exception would go uncaught. This is a gap in Strata's exception-type inference, not an error in this program — binding the thrown value to a local with an explicit type annotation and throwing that (e.g. `var t: {formatType joined} := …; throw t`) works around it."]
+          | none => []
+        else []
+      | none => []
     edgeError
+      ++ untypedHandlerError
       ++ checkPropagationEdges model lattice (match thisTy with
            | some _ => thisTy
            | none => parentTy) body

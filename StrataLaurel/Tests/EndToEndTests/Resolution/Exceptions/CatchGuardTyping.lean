@@ -27,6 +27,7 @@ procedure badGuard()
   opaque
 {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when 5 {
 //               ^ error: expected 'bool', got 'int'
@@ -42,6 +43,7 @@ program Laurel;
 composite ParseError {}
 procedure badUnionGuard() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when e is ParseError || 5 {
 //                                  ^ error: expected 'bool', got 'int'

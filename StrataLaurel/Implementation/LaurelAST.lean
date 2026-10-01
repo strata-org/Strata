@@ -1750,6 +1750,60 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     (ctx.substitutedAncestors subName.text []).any (fun anc => ancestorMatchesTarget anc sup')
   | _, _ => highEq sub' sup'
 
+/-- The least common ancestor (join) of a list of TYPES: the unique most-specific type
+    that every element is a subtype of. The type-level counterpart of the name-keyed
+    `TypeLattice.commonAncestor`, and defined here because it is stated in terms of
+    `isSubtype`.
+
+    Both exist because a NAME cannot express type arguments. `commonAncestor` keys on
+    the `extending` graph's node names, so `Box<int>` and `Box<bool>` both key as `Box`
+    and join there — erasing the very arguments that make them incompatible — and the
+    join of `IntBox extends Box<int>` with `Box<int>` can only come back as the
+    argument-less head `Box`. Stated over types instead, the arguments survive: the walk
+    goes through `substitutedAncestors`, which applies the `extends` type-argument remap
+    (`P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the supertype `Pair<bool,int>`), so
+    an inherited instantiation is reported as the instantiation it actually is.
+
+    Same shape as the name-level version. The candidates are the REFLEXIVE ancestors of
+    the FIRST element — the element itself, plus its `substitutedAncestors` (which
+    deliberately excludes the starting type, so it is prepended here) — narrowed to those
+    every element is a subtype of; the join is the most specific survivor. A primitive,
+    set, map or type variable names no node in the `extending` graph, so its only
+    candidate is itself; since `isSubtype` bottoms out in `highEq`, such a set joins
+    exactly when every member *is* that one type, with no separate case.
+
+    Returns `none` when there is no common ancestor, and when the join is AMBIGUOUS: two
+    equally-specific incomparable common ancestors (possible under multiple inheritance,
+    `extends A, B`) each fail to dominate the other, so no survivor dominates all. Unlike
+    `mostSpecific`'s `find?`, the winner is required to be UNIQUE rather than merely
+    first: with the candidates deduplicated by `highEq` (the same equality
+    `substitutedAncestors` dedups by), a second dominator means two structurally distinct
+    types are mutually subtypes, which needs an `extending` cycle — nothing rejects one
+    today — and picking whichever came first would be silently order-dependent.
+
+    A singleton list joins to itself (a type is its own most-specific ancestor). -/
+def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
+    : Option HighTypeMd :=
+  match tys with
+  | [] => none
+  | first :: _ =>
+    -- Only a composite -- bare (`Box`) or applied (`Box<int>`) -- has an ancestry to
+    -- walk; `highBaseName?` peels the head off either spelling.
+    let ancestry : List HighTypeMd :=
+      match first.val with
+      | .UserDefined r => ctx.substitutedAncestors r.text []
+      | .Applied base args =>
+        match highBaseName? base.val with
+        | some n => ctx.substitutedAncestors n.text args
+        | none => []
+      | _ => []
+    let candidates : List HighTypeMd :=
+      (first :: ancestry).foldl (fun acc c => if acc.any (highEq c) then acc else acc ++ [c]) []
+    let common := candidates.filter fun a => tys.all fun t => isSubtype ctx t a
+    match common.filter (fun a => common.all fun b => isSubtype ctx a b) with
+    | [winner] => some winner
+    | _ => none
+
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    `isConsistent` RECURSES element-wise (with `isConsistent`, not `highEq`) through
    `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/`.TVar` wildcard

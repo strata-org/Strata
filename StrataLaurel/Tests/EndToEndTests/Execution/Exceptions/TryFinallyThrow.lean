@@ -97,6 +97,7 @@ procedure returnSkipsCatchRunsFinally()
 {
   r := 0;
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     return
   } catch c {
     r := 1

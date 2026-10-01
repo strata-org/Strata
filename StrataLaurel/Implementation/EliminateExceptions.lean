@@ -650,11 +650,18 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- no handler to inspect it, so nothing narrows its type).
   -- A `catch` clause is *reachable* only if resolution found a thrown type for
   -- it. A try whose body throws nothing determinable has `bindingType = Unknown`
-  -- (resolution's `collectThrownTypeNames` reached no throw), so its catches can
-  -- never fire; drop them and lower the try as finally-only. This also avoids an
-  -- `Unknown`-typed `$exc_<i>` (which Core rejects) and dead catch guards
+  -- (resolution's `collectThrownTypes` reached no throw it could type), so its
+  -- catches can never fire; drop them and lower the try as finally-only. This also
+  -- avoids an `Unknown`-typed `$exc_<i>` (which Core rejects) and dead catch guards
   -- (`e is T`) that, at the erased Unknown type, have no valid pre-heap type to
   -- test unrelated `T`s against.
+  --
+  -- This drop is NOT silent, and must not become so: `Check.tryCatch` warns
+  -- whenever it types a binding `Unknown` with clauses present, which is the only
+  -- way a clause reaches here unreachable (resolution recomputes `bindingType` on
+  -- every program, front-end-authored ASTs included). Discarding a handler changes
+  -- the semantics the procedure is verified against, so if this guard ever gains a
+  -- path that resolution does not cover, that path needs its own diagnostic.
   let catchesReachable : Bool :=
     match catches with
     | c :: _ => match c.bindingType.val with | .Unknown => false | _ => true
