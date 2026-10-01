@@ -28,15 +28,17 @@ namespace Strata.Laurel
 
 private def parseLaurelAndLift (roots : List String) (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
+  let result := resolve (withBuiltins laurelProgram)
   match liftExpressionAssignments result.program result.model roots with
   | .ok p => pure p
   | .error e => throw (IO.userError s!"Lift error: {e}")
 
 private def printLifted (roots : List String) (program : StrataDDM.Program) : IO Unit := do
   let lifted ← parseLaurelAndLift roots program
+  let builtinNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
   for proc in lifted.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+    unless builtinNames.contains proc.name.text do
+      IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /-- Lift a program that has deliberately **not** been resolved, so its
     declarations carry no `uniqueId`, and print the resulting error instead of
@@ -77,7 +79,6 @@ info: procedure assertInBlockExpr()
 {
   var x: int := 0;
   assert x == 0;
-  var $x_0: int := x;
   x := 1;
   var y: int := {
     x
@@ -132,7 +133,6 @@ procedure test() {
 info: procedure test()
 {
   var x: int := 0;
-  var $x_0: int := x;
   x := 2;
   assert x == 2
 };
@@ -263,7 +263,7 @@ procedure ifCondLeaksToNextStmt()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  if {
+  if $x_0 + {
     x
   } > 0
     then {
@@ -284,7 +284,7 @@ procedure ifCondLeaksToNextStmt()
   opaque
 {
   var x: int := 1;
-  if { x := 5; x } > 0 then { };
+  if x + { x := 5; x } > 0 then { };
   consume(0, x)
 };
 #end
@@ -298,7 +298,7 @@ procedure whileCondLeaksToNextStmt()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  while({
+  while($x_0 + {
     x
   } > 0) {
     {
@@ -318,7 +318,7 @@ procedure whileCondLeaksToNextStmt()
   opaque
 {
   var x: int := 1;
-  while ({ x := 5; x } > 0) { };
+  while (x + { x := 5; x } > 0) { };
   consume(0, x)
 };
 #end
@@ -332,7 +332,7 @@ procedure ifCondLeaksIntoBranch()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  if {
+  if $x_0 + {
     x
   } > 0
     then {
@@ -353,7 +353,7 @@ procedure ifCondLeaksIntoBranch()
   opaque
 {
   var x: int := 1;
-  if { x := 5; x } > 0 then { consume(0, x) };
+  if x + { x := 5; x } > 0 then { consume(0, x) };
   consume(1, x)
 };
 #end
@@ -367,7 +367,7 @@ procedure whileCondLeaksIntoBody()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  while({
+  while($x_0 + {
     x
   } > 0) {
     {
@@ -387,7 +387,7 @@ procedure whileCondLeaksIntoBody()
   opaque
 {
   var x: int := 1;
-  while ({ x := 5; x } > 0) { consume(0, x) };
+  while (x + { x := 5; x } > 0) { consume(0, x) };
   consume(1, x)
 };
 #end
@@ -410,7 +410,7 @@ procedure invariantReadsLiveVar()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  while({
+  while($x_0 + {
     x
   } > 0)
     invariant x >= 0 {
@@ -431,7 +431,7 @@ procedure invariantReadsLiveVar()
   opaque
 {
   var x: int := 1;
-  while ({ x := 5; x } > 0) invariant x >= 0 { };
+  while (x + { x := 5; x } > 0) invariant x >= 0 { };
   consume(0, x)
 };
 #end
@@ -445,7 +445,7 @@ procedure exprIfBranchesReadLiveVar()
   var x: int := 1;
   var $x_0: int := x;
   x := 5;
-  var z: int := if {
+  var z: int := if $x_0 + {
     x
   } > 0
     then x
@@ -463,7 +463,7 @@ procedure exprIfBranchesReadLiveVar()
   opaque
 {
   var x: int := 1;
-  var z: int := (if { x := 5; x } > 0 then x else x + 1);
+  var z: int := (if x + { x := 5; x } > 0 then x else x + 1);
   consume(0, z)
 };
 #end
@@ -630,6 +630,425 @@ info: procedure binderLocalNoProof()
 program Laurel;
 procedure binderLocalNoProof() opaque {
   assert forall(x: int) => { var t: int := x * x; t >= 0 }
+};
+#end
+
+/-! ## A construct lifted whole is snapshotted for the operands on its left
+
+An operand to the left of a lifted `if` must read the value from before it. Each case
+notes the value the source computes. -/
+
+/-! `b = true`: the left `x` is 1 and the `if` makes it 2 and yields 2, so
+`y = 3`. Reading `x` live after the lifted `if` would give 4. -/
+
+/--
+info: procedure demo(b: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  var $cndtn_0: int;
+  if b
+    then {
+      x := x + 1;
+      $cndtn_0 := {
+        x
+      }
+    }
+    else {
+      x := x + 2;
+      $cndtn_0 := {
+        x
+      }
+    };
+  y := $x_0 + $cndtn_0;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure demo(b: bool) returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  y := x + (if b then { x := x + 1 } else { x := x + 2 });
+  return y
+};
+#end
+
+/-! ### Both left operands share one snapshot, across a lifted `if`
+
+The `if` does not assign `x`, but the assignment after it does, so the two left
+operands read the same snapshot, taken above the `if`. `c = true` gives
+`1 + 1 + 1 + 5 = 8`. -/
+
+/--
+info: procedure sharedSnapshot(c: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  var $x_0: int := x;
+  var $cndtn_0: int;
+  if c
+    then {
+      z := 1;
+      $cndtn_0 := {
+        z
+      }
+    }
+    else {
+      z := 2;
+      $cndtn_0 := {
+        z
+      }
+    };
+  x := 5;
+  y := $x_0 + $x_0 + $cndtn_0 + x;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure sharedSnapshot(c: bool) returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  y := x + x + (if c then { z := 1 } else { z := 2 }) + (x := 5);
+  return y
+};
+#end
+
+/-! ### An assigning condition
+
+Only the condition assigns `x`, so the snapshot comes from what the condition
+lifts. `b = true` gives `1 + 10 = 11`. -/
+
+/--
+info: procedure condAssigns(b: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  var $x_0: int := x;
+  x := x + 1;
+  var $cndtn_0: int;
+  if {
+    b
+  }
+    then {
+      z := 10;
+      $cndtn_0 := {
+        z
+      }
+    }
+    else {
+      z := 20;
+      $cndtn_0 := {
+        z
+      }
+    };
+  y := $x_0 + $cndtn_0;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure condAssigns(b: bool) returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  y := x + (if { x := x + 1; b } then { z := 10 } else { z := 20 });
+  return y
+};
+#end
+
+/-! ### A lifted condition reads the variable itself
+
+The first `if` runs before everything to its right, so its condition reads `x`:
+neither the snapshot taken for the later `x` nor one of its own. `c = true` gives
+`1 + -5 + -5 + 7 = -2`. -/
+
+/--
+info: procedure condReadsLive(c: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  var $cndtn_1: int;
+  if x > 0
+    then {
+      z := 1;
+      $cndtn_1 := {
+        z
+      }
+    }
+    else {
+      z := 2;
+      $cndtn_1 := {
+        z
+      }
+    };
+  var $cndtn_0: int;
+  if c
+    then {
+      x := -5;
+      $cndtn_0 := {
+        x
+      }
+    }
+    else {
+      $cndtn_0 := {
+        0
+      }
+    };
+  var $x_0: int := x;
+  x := 7;
+  y := $cndtn_1 + $cndtn_0 + $x_0 + x;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure condReadsLive(c: bool) returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var z: int := 0;
+  y := (if x > 0 then { z := 1 } else { z := 2 }) + (if c then { x := -5 } else { 0 }) + x + (x := 7);
+  return y
+};
+#end
+
+/-! ### A declaration is hoisted above a lifted assignment to it
+
+Nothing lifted reads `t`, but the lifted `t := 5` must still land below the
+declaration. `y = 5 + 1 = 6`. -/
+
+/--
+info: procedure declHoistedForWrite()
+  returns (y: int)
+  opaque
+{
+  var t: int;
+  t := 5;
+  y := {
+    t + 1
+  };
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure declHoistedForWrite() returns (y: int)
+  opaque
+{
+  y := { var t: int; (t := 5) + 1 };
+  return y
+};
+#end
+
+/-! ### The other constructs lifted whole
+
+An imperative call, an `assert` condition and an assignment's value. -/
+
+/-! The argument assigns `x` before the call, so the left operand reads 1 and the
+result is `1 + 2 = 3`. -/
+
+/--
+info: procedure impure(v: int)
+  returns (r: int)
+  opaque
+{
+  return v
+};
+procedure callArgAssigns()
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := x + 1;
+  var $cndtn_0: int := impure({
+    x
+  });
+  y := $x_0 + $cndtn_0;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted ["impure"] <|
+#strata
+program Laurel;
+procedure impure(v: int) returns (r: int)
+  opaque
+{
+  return v
+};
+procedure callArgAssigns() returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  y := x + impure({ x := x + 1; x });
+  return y
+};
+#end
+
+/-! An `assert` or `assume` condition may assign, and each is hoisted above the
+statement that contained it, so `y = 1 + 1 + 3 = 5`. -/
+
+/--
+info: procedure assertCondAssigns()
+  returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var w: int := 1;
+  var $w_0: int := w;
+  var $x_0: int := x;
+  x := 5;
+  assert x > 0;
+  w := 6;
+  assume w > 0;
+  y := $w_0 + $x_0 + {
+    3
+  };
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure assertCondAssigns() returns (y: int)
+  opaque
+{
+  var x: int := 1;
+  var w: int := 1;
+  y := w + x + { assert (x := 5) > 0; assume (w := 6) > 0; 3 };
+  return y
+};
+#end
+
+/-! ### A block computes no value for the elements it discards
+
+Only the last element's value is the block's. So `x := 1` and `x := 4` get no
+snapshot although `x` is assigned again later, the `x` compared with the call is
+not read, and neither the `if` nor the call gets a temporary. `c = true` gives `5`. -/
+
+/--
+info: procedure impure(v: int)
+  returns (r: int)
+  opaque
+{
+  return v
+};
+procedure discardedValues(c: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 0;
+  x := 1;
+  if c
+    then {
+      x := 2;
+      {
+        x
+      }
+    }
+    else {
+      x := 3;
+      {
+        x
+      }
+    };
+  x := 4;
+  impure(x);
+  x := 5;
+  y := {
+    x
+  };
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted ["impure"] <|
+#strata
+program Laurel;
+procedure impure(v: int) returns (r: int)
+  opaque
+{
+  return v
+};
+procedure discardedValues(c: bool) returns (y: int)
+  opaque
+{
+  var x: int := 0;
+  y := { x := 1; (if c then { x := 2 } else { x := 3 }); { x := 4 }; x == impure(x); x := 5; x };
+  return y
+};
+#end
+
+/-! A loop in a lifted branch is lifted whole, so its body stays inside it and runs
+on every iteration. `c = true` gives `0 + 3 = 3`. -/
+
+/--
+info: procedure loopInBranch(c: bool)
+  returns (y: int)
+  opaque
+{
+  var x: int := 0;
+  var i: int := 0;
+  var $x_0: int := x;
+  var $cndtn_0: int;
+  if c
+    then {
+      while(i < 3) {
+        {
+          x := x + 1;
+          i := i + 1
+        }
+      };
+      $cndtn_0 := {
+        x
+      }
+    }
+    else {
+      $cndtn_0 := {
+        0
+      }
+    };
+  y := $x_0 + $cndtn_0;
+  return y
+};
+-/
+#guard_msgs in
+#eval printLifted [] <|
+#strata
+program Laurel;
+procedure loopInBranch(c: bool) returns (y: int)
+  opaque
+{
+  var x: int := 0;
+  var i: int := 0;
+  y := x + (if c then { while (i < 3) { x := x + 1; i := i + 1 }; x } else { 0 });
+  return y
 };
 #end
 
