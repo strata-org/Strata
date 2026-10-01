@@ -21,8 +21,7 @@ spec {
       assume [loopElimAssume_guard_loop_1]: int.lt(i, n);
       assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
       assume [insertLoopInvAssume_invariant_loop_0_1]: int.div(int.mul(i, int.sub(i, 1)), 2) == sum;
-      var $__loop_measure_loop_0 : int;
-      assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+      var $__loop_measure_loop_0 : int := int.sub(n, i);
       assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
       sum := int.add(sum, i);
       i := int.add(i, 1);
