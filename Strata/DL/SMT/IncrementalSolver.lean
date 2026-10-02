@@ -339,6 +339,16 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
     let bodyStr ← termToStr body
     emitln s!"(define-fun {Symbol.toSMTString name} ({inline}) {retStr} {bodyStr})"
 
+  defineFunRec name args retTy body := do
+    let retStr ← typeToStr retTy
+    let mut typedArgs := []
+    for (n, ty) in args.reverse do
+      let tyStr ← typeToStr ty
+      typedArgs := s!"({Symbol.toSMTString n} {tyStr})" :: typedArgs
+    let inline := String.intercalate " " typedArgs
+    let bodyStr ← termToStr body
+    emitln s!"(define-fun-rec {Symbol.toSMTString name} ({inline}) {retStr} {bodyStr})"
+
   declareSort name arity := do
     emitln s!"(declare-sort {Symbol.toSMTString name} {arity})"
     return (.constr name (List.replicate arity (.constr "_" [])))
