@@ -61,7 +61,7 @@ procedure impureContractIsNotLegal2(x: int)
 //          ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
   opaque
 {
-  assert (x := 2) == 2
+  assert x == 2
 };
 #end
 
@@ -79,5 +79,31 @@ procedure functionWithWhile(x: int): int
   while(false) {};
 //^^^^^^^^^^^^^^^ error: loops are not YET supported in transparent bodies or contracts
   return 3
+};
+#end
+
+-- Reject writes to outer variables.
+#eval testLaurelResolution <| #strata
+program Laurel;
+procedure assertionOuterWrites(p: int) returns (r: int) opaque {
+  var x: int := 0;
+  assert (x := 1) == 1;
+//        ^ error: assertion cannot modify variable 'x'
+  assert { p += 1; true };
+//         ^ error: assertion cannot modify variable 'p'
+  assert r++ == 0
+//       ^ error: assertion cannot modify variable 'r'
+};
+#end
+
+-- Allow assertion-local writes and preserve shadowing.
+#eval testLaurelResolution <| #strata
+program Laurel;
+var x: int := 0
+procedure assertionShadowing() opaque {
+  var x: int := 0;
+  assert { var x: int := 1; x := 2; x == 2 };
+  assert { var x: int := (x := 1); x == 1 }
+//                        ^ error: assertion cannot modify variable 'x'
 };
 #end
