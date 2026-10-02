@@ -1887,6 +1887,44 @@ Equality means different things at different types, and the difference matters: 
 is structural, and on a composite it is reference identity. See
 {ref "aliasing-and-separation"}[*Aliasing and separation*].
 
+### Bitwise operations
+
+There is **no bitwise operator at `int`**. `&` and `|` are the eager boolean operators, `^` is string
+concatenation, and `<<` / `>>` are not Laurel syntax at all. Bitwise work is done by calling built-in
+procedures whose names carry the width and the signedness, because a bitwise operation on a bounded
+integer needs both and an operator spelling could carry neither:
+
+```laurel
+procedure bits(x: int, y: int)
+  requires x >= 0
+  requires x <= 4294967295
+  requires y >= 0
+  requires y <= 4294967295
+  opaque
+{
+  assert $bitAndU8(12, 10) == 8;
+  assert $bitOrU8(12, 10) == 14;
+  assert $bitXorU8(12, 10) == 6;
+  assert $bitAndS32(-2, 3) == 2;
+  assert $bitXorU32(x, x) == 0;
+  assert $bitAndU32(x, y) <= 4294967295
+};
+```
+
+`$bitAndU8`, `$bitOrS32`, `$bitXorU64`, … are available as `$bit{And,Or,Xor}{S,U}{8,16,32,64}`. Each
+*requires* both operands to lie in the width's range for that signedness and returns the
+two's-complement result in the same range. An out-of-range operand is a failed precondition, not a
+silent truncation, and since a bitwise and/or/xor of two in-range values is itself in range there is
+no overflow case to report.
+
+Underneath them the bitvector layer is exposed directly, for widths 1 through 128:
+`$bv{W}{And,Or,Xor,Not,Shl,UShr,SShr}` on `bv W`, plus the three conversions `$intToBv{W}`,
+`$bv{W}ToInt` (signed reading) and `$bv{W}ToUInt` (unsigned). `$intToBv{W}` truncates to `W` bits, so
+a caller using these directly owns the range premise that makes the round trip exact. Note these all
+reach the solver through SMT-LIB's `int_to_bv`/`ubv_to_int`/`sbv_to_int`, which **cvc5 supports and
+z3 does not**; and prefer `$bv{W}ToUInt` for symbolic reasoning, because a bound on `$bv{W}ToInt` at
+width 32 or above is not something the solver discharges in practice.
+
 ## Conditionals
 
 An `if` is usable both as a statement and as an expression:
