@@ -32,6 +32,7 @@ meta import Lean.Meta.Tactic.Rewrite
 import Lean.Meta.Tactic.Unfold -- shake: keep
 meta import Lean.Meta.Tactic.Unfold
 import Lean.Meta.Eval -- shake: keep
+import Lean.Meta.Constructions.CasesOn -- shake: keep
 
 open Lean hiding Options
 
@@ -45,11 +46,31 @@ structure SanitizedContext where
   ifs : Array IF := #[]
   axms : Array Term := #[]
   tySubst : Map String TermType := []
+  /-- The datatypes the query uses, in declaration order (`SMT.Datatypes` itself
+      is not kernel-reducible, so only this plain projection travels to the
+      tactic). -/
+  datatypes : Array SanitizedDatatype := #[]
 deriving Repr, Inhabited, DecidableEq
+
+/-- The used datatypes of `ctx` as `SanitizedDatatype`s.  A datatype with a
+    field whose sort has no SMT form is left out; the translation then reports
+    it as an unknown sort. -/
+private def sanitizedDatatypes (ctx : Core.SMT.Context) : Array SanitizedDatatype :=
+  ctx.datatypes.factory.toList.foldl (init := #[]) fun acc block =>
+    block.foldl (init := acc) fun acc d =>
+      if !ctx.seenDatatypes.contains d.name then acc else
+      let constrs? : Option (Array SanitizedConstr) := d.constrs.toArray.mapM fun c => do
+        let fields ← c.args.toArray.mapM fun (f, ty) => do
+          let (t, _) ← (Core.LMonoTy.toSMTType ty ctx).toOption
+          pure (d.name ++ ".." ++ f.name, t)
+        pure { name := c.name.name, fields }
+      match constrs? with
+      | some constrs => acc.push { name := d.name, constrs }
+      | none => acc
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
   { sorts := ctx.sorts.toArray, ufs := ctx.ufs.toArray, ifs := ctx.ifs.toArray,
-    axms := ctx.axms.toArray, tySubst := ctx.tySubst }
+    axms := ctx.axms.toArray, tySubst := ctx.tySubst, datatypes := sanitizedDatatypes ctx }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
   -- Build each OrderedKeyedSet with `ofArrayUnchecked`, not `ofArray`.
@@ -279,6 +300,8 @@ deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Strata.DL.SMT.Sort
 deriving instance ToExpr for IF
+deriving instance ToExpr for SanitizedConstr
+deriving instance ToExpr for SanitizedDatatype
 deriving instance ToExpr for SanitizedContext
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy
@@ -321,8 +344,114 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
+/-- Namespace of the generated datatype declarations: `<current decl>.DT` when
+    inside a declaration (the kernel restricts declarations added during
+    elaboration to that prefix), `Strata.SMT.DT` otherwise. -/
+def datatypeNamespace : CoreM Name :=
+  return ((← getEnv).asyncPrefix?.getD `Strata.SMT) ++ `DT
+
+/-- Lean declarations for the datatypes of a query, generated once per datatype
+    (skipped when `ns.<name>` already exists).  For each datatype, in
+    declaration order so that field types of earlier datatypes resolve:
+
+    * `inductive ns.<d>` with the constructors and their fields;
+    * a tester `is_<c> : ns.<d> → Prop` per constructor and a selector
+      `<field> : ns.<d> → σ` per field, both by `casesOn`.
+
+    SMT-LIB leaves a selector applied to another constructor unspecified, so a
+    verification condition is valid only if it holds whatever that value is.
+    Each selector therefore falls back to an `opaque` constant of its own: a
+    proof can say nothing about it, and two selectors do not collapse onto the
+    same value.  The witness such a declaration needs is the datatype's first
+    constructor whose fields all have one.
+
+    Strata also generates an eliminator for a datatype, encoding its induction
+    principle.  That is not translated; only constructors, testers and
+    selectors are. -/
+def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM Unit := do
+  let mut witnesses : Std.HashMap Lean.Name Lean.Expr := {}
+  for dt in dts do
+    let tyName := SanitizedDatatype.typeName ns dt.name
+    let sortExpr (t : TermType) : MetaM Lean.Expr :=
+      Lean.ofExcept ((Translate.withDatatypes ns dts (Translate.translateSort t)).run' {})
+    -- default witness: first constructor whose fields all have a default
+    -- (a nullary one for the datatypes Strata generates); kept in `witnesses`
+    -- rather than as an `Inhabited` instance, which cannot be registered from
+    -- inside a declaration's elaboration.  Computed even when the datatype
+    -- was declared by an earlier goal, since later datatypes' selectors need it.
+    let dflt (ws : Std.HashMap Lean.Name Lean.Expr) (σ : Lean.Expr) : MetaM (Option Lean.Expr) := do
+      if let .const n [] := σ then
+        if let some w := ws[n]? then return some w
+      try pure (some (← Meta.mkAppOptM ``Inhabited.default #[σ, none]))
+      catch _ => pure none
+    let mut witness : Option Lean.Expr := none
+    for c in dt.constrs do
+      if witness.isSome then break
+      let fieldTys ← c.fields.toList.mapM (fun (_, σ) => sortExpr σ)
+      let defaults? ← fieldTys.mapM (dflt witnesses)
+      if defaults?.all Option.isSome then
+        witness := some (mkAppN (.const (SanitizedDatatype.ctorName ns dt.name c.name) [])
+                           (defaults?.filterMap id).toArray)
+    let some w := witness
+      | throwError m!"gen_smt_vcs: no default element for datatype '{dt.name}'"
+    witnesses := witnesses.insert tyName w
+    if (← getEnv).contains tyName then continue
+    -- the inductive
+    let ctors ← dt.constrs.toList.mapM fun c => do
+      let fieldTys ← c.fields.toList.mapM (fun (_, σ) => sortExpr σ)
+      let ty := fieldTys.foldr (fun σ acc => Lean.Expr.forallE .anonymous σ acc .default) (.const tyName [])
+      pure ({ name := SanitizedDatatype.ctorName ns dt.name c.name, type := ty } : Constructor)
+    addDecl <| .inductDecl [] 0
+      [{ name := tyName, type := .sort (.succ .zero), ctors }] false
+    -- realizations (equation lemmas, `noConfusion`, ...) are opt-in for
+    -- declarations added programmatically
+    enableRealizationsForConst tyName
+    for c in ctors do enableRealizationsForConst c.name
+    mkCasesOn tyName
+    let dtTy : Lean.Expr := .const tyName []
+    let addDefn (n : Lean.Name) (ty val : Lean.Expr) : MetaM Unit := do
+      addDecl <| .defnDecl { name := n, levelParams := [], type := ty, value := val, hints := .abbrev, safety := .safe }
+      enableRealizationsForConst n
+    -- casesOn with an explicit motive; minor premises built per constructor
+    let casesOn (motiveLvl : Lean.Level) (motive : Lean.Expr) (x : Lean.Expr) (minors : Array Lean.Expr) : Lean.Expr :=
+      mkAppN (.const (tyName ++ `casesOn) [motiveLvl]) (#[motive, x] ++ minors)
+    let minorFor (c : SanitizedConstr) (body : Array Lean.Expr → MetaM Lean.Expr) : MetaM Lean.Expr := do
+      let fieldTys ← c.fields.toList.mapM (fun (_, σ) => sortExpr σ)
+      let decls := (c.fields.toList.zip fieldTys).map fun ((sel, _), σ) =>
+        (Lean.Name.mkSimple (match sel.splitOn ".." with | [_, f] => f | _ => sel), fun _ => pure σ)
+      Meta.withLocalDeclsD decls.toArray fun fvars => do Meta.mkLambdaFVars fvars (← body fvars)
+    -- testers
+    for c in dt.constrs do
+      let minors ← dt.constrs.mapM fun c' => minorFor c' fun _ =>
+        pure (.const (if c'.name == c.name then ``True else ``False) [])
+      let value ← Meta.withLocalDeclD `x dtTy fun x => do
+        Meta.mkLambdaFVars #[x] (casesOn (.succ .zero) (.lam `_ dtTy (.sort .zero) .default) x minors)
+      addDefn (SanitizedDatatype.testerName ns dt.name c.name) (.forallE `x dtTy (.sort .zero) .default) value
+    -- selectors
+    for c in dt.constrs do
+      for ((sel, σt), k) in c.fields.toList.zip (List.range c.fields.size) do
+        let σ ← sortExpr σt
+        let selName := SanitizedDatatype.selectorName ns dt.name sel
+        -- The witness is only what an `opaque` declaration needs to exist; it
+        -- is invisible to a proof, which is the point.
+        let some wσ ← dflt witnesses σ
+          | throwError m!"gen_smt_vcs: no element to witness the unspecified result \
+                          of selector '{sel}'"
+        let unspecName := selName ++ `unspec
+        unless (← getEnv).contains unspecName do
+          addDecl <| .opaqueDecl { name := unspecName, levelParams := [], type := σ,
+                                   value := wσ, isUnsafe := false, all := [unspecName] }
+        let d : Lean.Expr := .const unspecName []
+        let minors ← dt.constrs.mapM fun c' => minorFor c' fun fvars =>
+          pure (if c'.name == c.name then fvars[k]! else d)
+        let value ← Meta.withLocalDeclD `x dtTy fun x => do
+          Meta.mkLambdaFVars #[x] (casesOn (.succ .zero) (.lam `_ dtTy σ .default) x minors)
+        addDefn selName (.forallE `x dtTy σ .default) value
+
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
-  match translateQuery ctx.toCore ts t with
+  let ns ← datatypeNamespace
+  ensureDatatypeDecls ns ctx.datatypes
+  match translateQuery ctx.toCore ts t ctx.datatypes ns with
   | .error e =>
     -- Name the VC: the tactic must not drop an obligation it cannot state in
     -- Lean (that would weaken the bridge axiom's premise), so it fails, and the
