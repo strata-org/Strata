@@ -361,11 +361,14 @@ def strReplaceFunc : WFLFunc CoreLParams :=
 def strAtFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
 
+-- `Str.Lt`/`Str.Le` carry concrete evaluators so the interpreter can reduce
+-- string comparisons. The evaluators use code-point lexicographic order and
+-- must agree with the SMT-LIB `str.<`/`str.<=` operators emitted by the encoder.
 def strLtFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.Lt" mty[string] mty[string] mty[bool]
+  binaryOp "Str.Lt" (fun (s t : String) => decide (s < t))
 
 def strLeFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.Le" mty[string] mty[string] mty[bool]
+  binaryOp "Str.Le" (fun (s t : String) => decide (s ≤ t))
 
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]

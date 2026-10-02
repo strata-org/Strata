@@ -20,7 +20,7 @@ import Strata.Languages.Core.Factory
 import StrataLaurel.Implementation.LaurelTypes
 
 open Core (VerifyOptions)
-open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp strLtOp strLeOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
 -- Signed bitvector comparisons, generated per width by `Factory.lean`'s
 -- `DefBVOpFuncExprs [1, 8, 16, 32, 64]`.
@@ -437,7 +437,10 @@ private def isOperatorProcName (name : String) : Bool :=
   name == "intLt" || name == "intLe" || name == "intGt" || name == "intGe" ||
   name == "realAdd" || name == "realSub" || name == "realMul" || name == "realDiv" ||
   name == "realLt" || name == "realLe" || name == "realGt" || name == "realGe" ||
-  name == "strConcat"
+  -- `strConcat` is reached under the operator wrapper's own name; `strLt`/`strLe`
+  -- are separate delegates because `$lt`/`$le` are overloaded names that also
+  -- have int/real/bv arms, so they cannot be `external` under the wrapper name.
+  name == "strConcat" || name == "strLt" || name == "strLe"
 
 /-- Map a binary operator procedure name to its Core operator expression.
     Only reached for `$`-prefixed names — see `dropReservedPrefix`. -/
@@ -474,6 +477,8 @@ private def binaryOperatorOp (name : String) : Core.Expression.Expr :=
   | "realGt" => realGtOp
   | "realGe" => realGeOp
   | "strConcat" => strConcatOp
+  | "strLt" => strLtOp
+  | "strLe" => strLeOp
   | _ => panic! s!"binaryOperatorOp: unexpected operator name '{name}'"
 
 /--

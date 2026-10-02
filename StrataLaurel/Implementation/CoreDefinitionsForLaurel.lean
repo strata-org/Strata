@@ -231,6 +231,18 @@ procedure $boolAnd(x: bool, y: bool) : bool external;
 procedure $boolOr(x: bool, y: bool) : bool external;
 procedure $boolImplies(x: bool, y: bool) : bool external;
 
+// String ordering. Core has exactly TWO ordering operators on `string`
+// (`Str.Lt`, `Str.Le` — `Factory.lean`), both lowered to the SMT string theory's
+// `str.<` / `str.<=`, i.e. the lexicographic order over code-point sequences.
+// There is no `Str.Gt`/`Str.Ge`, so the `$gt`/`$ge` string overloads below are
+// defined by SWAPPING the operands rather than by a third and fourth delegate:
+// `x > y` is `y < x` and `x >= y` is `y <= x`. That identity is exact for a total
+// order, which `str.<` is (`Fundamentals/StringOrdering.lean` pins totality,
+// irreflexivity and antisymmetry over symbolic operands, so the swap is not
+// taken on faith).
+procedure $strLt(x: string, y: string) : bool external;
+procedure $strLe(x: string, y: string) : bool external;
+
 // Short-circuit boolean operations, string concatenation and equality have no
 // separate delegate: the operator wrapper's own reserved name (`$andThen`,
 // `$orElse`, `$strConcat`, `$eq`, `$neq`) is already the name
@@ -336,6 +348,23 @@ procedure $gt(x: bv 64, y: bv 64) : bool
   return $bv64SGt(x, y);
 procedure $ge(x: bv 64, y: bv 64) : bool
   return $bv64SGe(x, y);
+
+// Comparisons (string overload) — lexicographic over code points, see `$strLt`.
+//
+// Adding these four cannot make an existing `$lt`/`$le`/`$gt`/`$ge` call site
+// ambiguous: overload selection is by operand type, and `string` is disjoint from
+// `int`, `real` and every `bv n`. The one call shape that *is* ambiguous — both
+// before and after — is a comparison whose operands have a TYPE VARIABLE type
+// (`a > b` on `a: T`), because a type variable selects no overload at all; that is
+// a pre-existing property of the overload set, not something this adds.
+procedure $lt(x: string, y: string) : bool
+  return $strLt(x, y);
+procedure $le(x: string, y: string) : bool
+  return $strLe(x, y);
+procedure $gt(x: string, y: string) : bool
+  return $strLt(y, x);
+procedure $ge(x: string, y: string) : bool
+  return $strLe(y, x);
 
 // Boolean
 procedure $not(x: bool) : bool
