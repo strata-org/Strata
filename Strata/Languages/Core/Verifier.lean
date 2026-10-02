@@ -1578,12 +1578,13 @@ def symbolicEvalPipelinePhase
   -- `noBetaRedexes` is the one fact this phase cannot claim: partial-evaluation
   -- inlining introduces redexes. It requires `noLoops`, so the loop facts it
   -- carries forward were established upstream; it preserves rather than
-  -- re-establishes them.
+  -- re-establishes them. `noNondetGuards` is not preserved: the output separates
+  -- obligations with `ite *`.
   modelPreservingPipelinePhase "symbolicEval"
     (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
-    (establishes := factSet![.noCalls, .staticSingleAssignment])
+    (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs,
                          .noInternalFuncDecl, .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
@@ -1633,12 +1634,16 @@ def corePipelinePhases
     returns *no obligations at all* for one, so every assertion in it would go
     unchecked and unreported.
 
+    `noNondetGuards` is absent because obligation extraction accepts `ite *`;
+    `hasObligationForm` states what it does require.
+
     `noLoopInvariants` and `noLoopMeasures` are absent because `noLoops` covers
     them; they are required by `LoopElim`, which is where they matter. -/
 def backEndRequiredFacts : ProgramFactSet :=
   factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
-           .noBetaRedexes, .noPrecondsFromFuncs, .noInternalFuncDecl,
-           .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated]
+           .noBetaRedexes, .noPrecondsFromFuncs, .hasObligationForm,
+           .noInternalFuncDecl, .noPolymorphicProcedures, .noPolymorphicFunctions,
+           .typeAnnotated]
 
 /-- The Core pipeline, checked as it is assembled: the phase list built from
     `options`, validated against the phases' contracts and against what the back
