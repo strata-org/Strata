@@ -24,18 +24,25 @@ per fact, each cell a lifeline symbol read against the facts holding at that
 point in the pipeline. `entryFacts` seeds the facts assumed to hold on entry; a
 `consumer` (a name and the facts it requires, e.g. the verification back end)
 becomes a final requirements-only row. Unlike the composition checker, the walk
-does not stop at the first unmet requirement — it treats each as satisfied and
-carries on — so every breakage shows at once. -/
+does not stop at an unmet requirement, so every breakage shows at once. -/
 
-/-- Lifeline symbol for a fact at one phase: `V` established, `+`/`#` required
-    and holds / does not hold, `|`/`:` preserved and holds / would hold, `'`
-    dropped, blank neither. -/
+/-- Lifeline symbol for a fact at one phase: `+`/`-` required, holds, and still
+    holds / is dropped after, `#` required and does not hold, `V` established,
+    `|`/`:` preserved and holds / would hold, `'` dropped, blank neither. -/
 private def phaseCellChar (req est pres held : Bool) : Char :=
-  if est then 'V'
-  else if req then (if held then '+' else '#')
+  if req then (if !held then '#' else if est || pres then '+' else '-')
+  else if est then 'V'
   else if pres then (if held then '|' else ':')
   else if held then '\''
   else ' '
+
+/-- `#`, `+` and `-` mark exactly the required facts, `#` exactly the unmet
+    ones, and otherwise `V`, `+` and `|` exactly the facts that hold after. -/
+private theorem phaseCellChar_spec : ∀ req est pres held : Bool,
+    let c := phaseCellChar req est pres held
+    (['#', '+', '-'].contains c = req) ∧ ((c == '#') = (req && !held)) ∧
+    (!(req && !held) → ['V', '+', '|'].contains c = (est || pres && held)) := by
+  decide
 
 /-- Two-character column label for a fact: drop a leading `no`, capitalize the
     first letter, and follow it with the next capital (an acronym like
@@ -116,7 +123,8 @@ def phaseTable (phases : List PipelinePhase)
     [('#', "# required here, and does not hold"),
      ('V', "V starts holding here"),
      ('|', "| holds, and is carried on"),
-     ('+', "+ required here, and holds"),
+     ('+', "+ required here, holds, and is carried on"),
+     ('-', "- required here, holds, and is dropped here"),
      ('\'', "' was holding, and is dropped here"),
      (':', ": not holding, but would be carried"),
      (' ', "(blank) not holding, and would not be carried")]

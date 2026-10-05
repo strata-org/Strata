@@ -423,6 +423,20 @@ directly; what is left here is what genuinely mentions a Core command. -/
 @[expose] def Statements.funcDeclsNoPreconditions (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.funcDeclNoPreconditions ss
 
+/-- Is this statement an `assume`, `assert`, `cover`, `init`, or `ite *`?
+    These are the statements obligation extraction accepts. -/
+@[expose] def Statement.isObligationForm (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.assume ..))
+  | .cmd (.cmd (.cover ..)) | .cmd (.cmd (.init ..)) => true
+  | .ite .nondet _ _ _ => true
+  | _ => false
+
+/-- Does `ss` contain only `assume`, `assert`, `cover` and `init`, nested under
+    `ite *` to any depth? -/
+@[expose] def Statements.hasObligationForm (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isObligationForm ss
+
 ---------------------------------------------------------------------
 
 /-! ## Expressions of local functions
