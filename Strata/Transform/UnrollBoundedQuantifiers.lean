@@ -739,15 +739,19 @@ public section
     range over the old value and drop conjuncts. -/
 def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "unrollBoundedQuantifiers"
-    (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment])
+    -- `hasObligationForm` rules out `block` and `exit`. `collectAssumeIntFacts`
+    -- reads an `assume` out of a `block`, which is unsound if an `exit` skips it.
+    (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment,
+                          .hasObligationForm])
     -- `noBetaRedexes` survives because an instance is the body with a *constant* index
     -- substituted for the bound variable, which cannot put an abstraction in an
     -- application's head; the fold builds applications of operators; and the per-instance
     -- reduction only contracts redexes.
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards, .noInternalFuncDecl,
-                         .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated])
+                         .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       let baseF ← Core.Transform.getFactory
       let blocks := prog.decls.filterMap fun d =>

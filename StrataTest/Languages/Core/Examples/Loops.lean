@@ -216,11 +216,10 @@ loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-!(int.lt($__loop_measure_loop_0, 0))
+!(int.lt(int.sub(n@2, i@1), 0))
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
@@ -230,7 +229,6 @@ loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
@@ -244,7 +242,6 @@ loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
@@ -258,7 +255,6 @@ loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
@@ -272,11 +268,10 @@ loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-int.lt(int.sub(n@2, int.add(i@1, 1)), $__loop_measure_loop_0)
+int.lt(int.sub(n@2, int.add(i@1, 1)), int.sub(n@2, i@1))
 
 Label: sum_ensures_1
 Property: assert
@@ -288,7 +283,6 @@ loopElimAssume_guard_loop_1: if int.lt(0, n@2) then int.lt(i@1, n@2) else true
 insertLoopInvAssume_invariant_loop_0_0: if int.lt(0, n@2) then int.le(0, i@1) else true
 insertLoopInvAssume_invariant_loop_0_1: if int.lt(0, n@2) then int.le(i@1, n@2) else true
 insertLoopInvAssume_invariant_loop_0_2: if int.lt(0, n@2) then s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2) else true
-insertLoopInvAssume_measure_loop_0: if int.lt(0, n@2) then $__loop_measure_loop_0 == int.sub(n@2, i@1) else true
 loopElimAssume_not_guard_loop_1: if int.lt(0, n@2) then !(int.lt(i@2, n@2)) else true
 <label_ite_cond_false: !(int.lt(i, n))>: if if int.lt(0, n@2) then false else true then if int.lt(0, n@2) then false else true else true
 insertLoopInvAssume_exit_invariant_loop_0_0: int.le(0, if int.lt(0, n@2) then i@2 else 0)
@@ -576,14 +570,12 @@ theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm 
   all_goals (try grind)
   -- insertLoopInvAssert_measure_lb_loop_0: the loop measure i / d is non-negative
   case insertLoopInvAssert_measure_lb_loop_0 =>
-    intro _ d i _ _ dpos _ _ _ inonneg meas_def
-    subst meas_def
+    intro _ d i _ dpos _ _ _ inonneg _
     have p := Int.ediv_nonneg (a := i) (b := d)
     grind
   -- insertLoopInvAssert_measure_decrease_loop_0: the loop measure i / d strictly decreases
   case insertLoopInvAssert_measure_decrease_loop_0 =>
-    intro _ d i _ _ dpos _ _ _ _ meas_def
-    subst meas_def
+    intro _ d i _ dpos _ _ _ _
     have p := Int.add_mul_ediv_left (a := i) (b := d) (c := -1)
     grind
 

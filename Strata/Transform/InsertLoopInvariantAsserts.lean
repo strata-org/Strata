@@ -39,7 +39,7 @@ For `loop (G) decreases D invariant I { S }` this pass produces:
 assert(I); assume(I);           -- before the loop (VC1 + zero-iteration assume)
 loop (G) {                      -- invariants/measure stripped: now a "bare" loop
   assume(I);                    -- invariant at the arbitrary mid-loop state
-  init(m_old); assume(m_old==D); assert(!(m_old<0));   -- measure setup + VC3
+  init(m_old := D); assert(!(m_old<0));   -- measure snapshot + VC3
   S;                            -- original body
   assert(I);                    -- VC2
   assert(D < m_old);            -- VC4
@@ -73,8 +73,10 @@ after the loop.
 ### Role of the measure (termination)
 
 When a `decreases D` clause is present, a fresh `init`-declared variable
-`m_old` records the pre-body value of `D`, and two termination VCs are added
-inside the body:
+`m_old` records the pre-body value of `D` — a deterministic `init m_old := D`,
+which leaves `m_old` the single value an unconstrained `init` pinned by an
+`assume(m_old == D)` would leave it, and draws no nondeterministic value. Two
+termination VCs are added inside the body:
 
 - **VC3** (`measure_lb`): `assert(!(m_old < 0))` — the measure is non-negative.
 - **VC4** (`measure_decrease`): `assert(D < m_old)` — the measure strictly
@@ -157,30 +159,28 @@ def insertInvariantAsserts (s : Statement)
     let exit_assumes := (invariants.mapIdx fun i (lbl, inv) =>
       Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}exit_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i)))
       ++ exit_not_guard
-    -- Measure: init m_old := nondet; assume(m_old == D); assert(!(m_old<0)) at
-    -- the top of the body, and assert(D < m_old) at the bottom.
+    -- Measure: init m_old := D; assert(!(m_old<0)) at the top of the body, and
+    -- assert(D < m_old) at the bottom.
     let (measure_pre, measure_post) := match measure with
       | none => ([], [])
       | some m =>
         let m_old_ident    := HasIdent.ident s!"{insertLoopInvAssertReservedPrefix}_measure_{loop_num}"
         let m_old_expr     := HasFvar.mkTypedFvar m_old_ident HasInt.intTy
-        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy .nondet md)
-        let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-          s!"{insertLoopInvAssumePrefix}measure_{loop_num}" (HasIntOps.eq m_old_expr m) md)
+        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy (.det m) md)
         let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
           s!"{insertLoopInvAssertPrefix}measure_lb_{loop_num}"
           (HasBoolOps.not (HasIntOps.lt m_old_expr HasInt.zero)) md)
         let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
           s!"{insertLoopInvAssertPrefix}measure_decrease_{loop_num}" (HasIntOps.lt m m_old_expr) md)
-        ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
+        ([init_m_old, assert_lb], [assert_decrease])
     -- Decorated body and bare loop (invariants/measure cleared).
     let new_body := mid_assumes ++ measure_pre ++ bss ++ maintain_asserts ++ measure_post
     let bare_loop : Statement := .loop guard none [] new_body md
     -- Count assert/assume statements inserted (init is not an assert/assume;
-    -- the measure contributes assume_m_old + assert_lb + assert_decrease = 3).
+    -- the measure contributes assert_lb + assert_decrease = 2).
     let numAssertAssumes := entry_asserts.length + entry_assumes.length +
       mid_assumes.length + maintain_asserts.length + exit_assumes.length +
-      (if measure.isSome then 3 else 0)
+      (if measure.isSome then 2 else 0)
     Transform.incrementStat s!"{InsertLoopInvariantAsserts.Stats.insertedAssertAssumes}" numAssertAssumes
     return some (entry_asserts ++ entry_assumes ++ [bare_loop] ++ exit_assumes)
   | _ => return none
