@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
 import Strata.Languages.Core.Factory
+import Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 import Strata.Util.Tactics
 
@@ -277,7 +278,7 @@ private def mkTermCheckProc
         let relevantAxioms := adtRankAxioms.filter fun (name, _) =>
           relevantDtNames.any (fun dtName => name.startsWith (adtRankFuncName dtName))
         let tySubst := mkTySubst tf callerAdtTy
-        relevantAxioms.map fun (name, e) => (name, e.applySubst tySubst)
+        relevantAxioms.map fun (name, e) => (name, e.applyTypeSubst tySubst)
       | none => []
     | .intValued _ => []
   return some (.proc {

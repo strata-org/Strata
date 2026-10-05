@@ -13,7 +13,7 @@ import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprProps
 import all Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LStateProps
-import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.Scopes
 public import Strata.Util.RelationsProps
@@ -164,7 +164,7 @@ result. Note that this rule does not enforce an evaluation order. -/
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.body = .some fnbody →
     LFunc.computeTypeSubst fn callee args = .some tySubst →
-    new_body = LExpr.substFvarsLifting (fnbody.applySubst tySubst) (fn.inputs.keys.zip args) →
+    new_body = LExpr.substFvarsLifting (fnbody.applyTypeSubst tySubst) (fn.inputs.keys.zip args) →
     Step F rf e new_body
 
 /-- Evaluate a built-in function when a concrete evaluation function is
@@ -2396,41 +2396,38 @@ private theorem evalCore_eraseMetadata_congr
 
 ---------------------------------------------------------------------
 
--- typeOf ignores metadata: erasing metadata preserves typeOf.
-private theorem typeOf_eraseMetadata {T : LExprParams}
-    (e : LExpr T.mono) : e.eraseMetadata.typeOf = e.typeOf := by
-  induction e with
-  | const => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | op => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | bvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | fvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | abs m name ty body ih =>
-    cases ty with
-    | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    | some t =>
-      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-      rw [show (body.replaceMetadata fun _ => ()).typeOf = body.eraseMetadata.typeOf from rfl, ih]
-  | quant => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | app m fn arg ih_fn _ =>
-    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    rw [show (fn.replaceMetadata fun _ => ()).typeOf = fn.eraseMetadata.typeOf from rfl, ih_fn]
-  | ite m c t f _ ih_t _ =>
-    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    rw [show (t.replaceMetadata fun _ => ()).typeOf = t.eraseMetadata.typeOf from rfl, ih_t]
-  | eq => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+/-- Replacing an expression's metadata does not change its type-check result. -/
+private theorem typeCheck_replaceMetadata {T : LExprParams} {NewMetadata : Type}
+    (e : LExpr T.mono) (ctx : List LMonoTy) (f : T.Metadata → NewMetadata) :
+    LExpr.typeCheck ctx e = LExpr.typeCheck ctx (e.replaceMetadata f) := by
+  induction e generalizing ctx <;>
+    simp [LExpr.replaceMetadata, LExpr.typeCheck] <;> try grind
+  case op m o ty => cases ty <;> simp [LExpr.typeCheck]
+  case fvar m name ty => cases ty <;> simp [LExpr.typeCheck]
+  case abs m name ty body ih =>
+    cases ty <;> simp [LExpr.typeCheck, ih]
+  case quant m k name ty tr body ihtr ih =>
+    cases ty <;> simp [LExpr.typeCheck, ih, ihtr]
 
--- If two expressions have the same eraseMetadata, they have the same typeOf.
-private theorem typeOf_of_eraseMetadata_eq {T : LExprParams}
+/-- Erasing all metadata from an expression does not change its type-check result. -/
+private theorem typeCheck_eraseMetadata {T : LExprParams}
+    (e : LExpr T.mono) (ctx : List LMonoTy) :
+    LExpr.typeCheck ctx e.eraseMetadata = LExpr.typeCheck ctx e := by
+  simpa [LExpr.eraseMetadata] using
+    (typeCheck_replaceMetadata e ctx (fun _ => ())).symm
+
+/-- Expressions with the same metadata-free form type-check identically. -/
+private theorem typeCheck_of_eraseMetadata_eq {T : LExprParams}
     (e₁ e₂ : LExpr T.mono) (h : e₁.eraseMetadata = e₂.eraseMetadata) :
-    e₁.typeOf = e₂.typeOf := by
-  have h1 := typeOf_eraseMetadata e₁
-  have h2 := typeOf_eraseMetadata e₂
+    LExpr.typeCheck [] e₁ = LExpr.typeCheck [] e₂ := by
+  have h1 := typeCheck_eraseMetadata e₁ []
+  have h2 := typeCheck_eraseMetadata e₂ []
   rw [h] at h1; rw [← h1, h2]
 
 -- computeTypeSubst is metadata-invariant: if callee and args have the same
 -- eraseMetadata, computeTypeSubst produces the same result.
 -- computeTypeSubst depends on callee only through its .op type annotation
--- (preserved by eraseMetadata) and on args only through typeOf (also preserved).
+-- (preserved by eraseMetadata) and on args only through typeCheck (also preserved).
 theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
     (fn : LFunc T) (op₁ op₂ : LExpr T.mono)
     (args₁ args₂ : List (LExpr T.mono))
@@ -2440,14 +2437,16 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
 
   -- For the args part:
   have h_argC : ((args₁.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))) =
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) =
     ((args₂.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))) := by
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) := by
     -- Prove by auxiliary induction on args and formals simultaneously
     suffices h_suff : ∀ (l₁ l₂ : List (LExpr T.mono)) (vs : List LMonoTy),
         l₁.map LExpr.eraseMetadata = l₂.map LExpr.eraseMetadata →
-        (l₁.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) =
-        (l₂.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) from
+        (l₁.zip vs).filterMap
+            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) =
+        (l₂.zip vs).filterMap
+            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) from
       h_suff args₁ args₂ fn.inputs.values h_args
     intro l₁ l₂ vs h_eM
     induction l₁ generalizing l₂ vs with
@@ -2462,7 +2461,7 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
           have h_head_eq := congrArg List.head? h_eM; simp at h_head_eq; exact h_head_eq
         have h_tl : tl₁.map LExpr.eraseMetadata = tl₂.map LExpr.eraseMetadata := by
           have h_tail_eq := congrArg List.tail h_eM; simp at h_tail_eq; exact h_tail_eq
-        rw [typeOf_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
+        rw [typeCheck_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
       | hd₂ :: tl₂, [] => simp [List.zip]
       | [], _ => simp at h_eM
   -- opTypeSubst only depends on the type annotation of the callee
@@ -2971,19 +2970,19 @@ theorem eval_StepStar
               exact computeTypeSubst_eraseMetadata_congr lfunc op' op_expr _ _
                 h_op'_eM.symm h_vals_eM
             have h_expand : Step F (env) e_stepped
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')) :=
               Step.expand_fn e_stepped op' body _ stepped_args' lfunc tySubst
                 h_call_stepped h_body_eq h_tySubst_stepped rfl
             obtain ⟨e'_s, h_step_s, h_ve_s⟩ :=
-              ih (LExpr.substFvarsLifting (body.applySubst tySubst)
+              ih (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip stepped_args'))
             refine ⟨e'_s, ReflTrans_Transitive _ _ _ _ h_step_e
               (ReflTrans.step _ _ _ h_expand h_step_s), ?_⟩
             have h_subst_eM :
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')).eraseMetadata =
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip (args.map (fun a => (LExpr.eval n F env a).fst)))).eraseMetadata :=
               substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_vals_eM
             have h_body_get : lfunc.body.get (by simp [h_body_eq]) = body := by

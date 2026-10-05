@@ -102,7 +102,7 @@ def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdent
     (the caller supplies its reserved prefix, e.g. `freshTyVarPrefix` in
     `CallElim.lean`), for per-call-site contract instantiation in call
     elimination. Returns the empty substitution (a verified identity for
-    `LMonoTy.subst`/`LExpr.applySubst`, which short-circuit on
+    `LMonoTy.subst`/`LExpr.applyTypeSubst`, which short-circuit on
     `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
     exact no-op for monomorphic procedures. -/
 def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)

@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.LExprType
 import Strata.Util.ListUtils
 public import Strata.Util.PtrCache
 import Lean.Util.ShareCommon
@@ -321,24 +322,22 @@ def fuel (exprs : List Expression.Expr) : Nat :=
     prepends the declarations. Returns `none` when there is nothing to extract. -/
 def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × Nat) :=
   -- A duplicate whose type is unknown is left alone: abbreviating it would name
-  -- it with an unannotated variable, which the SMT encoder cannot read. This is
-  -- what makes the `typeAnnotated` claim below true, and it makes the `none`
-  -- branch of `ty` unreachable.
-  let targets := (collectExprsToAbbreviate (Statements.collectExprs body)).filter
-    (fun (_, dup) => dup.typeOf.isSome)
+  -- it with an unannotated variable, which the SMT encoder cannot read. Keep
+  -- each checked type with its target so declaration generation does not
+  -- recursively type-check the expression again.
+  let targets := (collectExprsToAbbreviate (Statements.collectExprs body)).filterMap
+    (fun (h, dup) => (LExpr.typeCheck [] dup).map (fun ty => (h, dup, ty)))
   if targets.isEmpty then
     none
   else
     -- Build all var declarations and the replacement map. The map value is a
     -- list of (target, replacement) pairs to be collision-safe under the
     -- structural hash; see `replaceExprs` above.
-    let (revDecls, replacements, nextIdx) := targets.foldl (fun (decls, repMap, idx) (h, dup) =>
+    let (revDecls, replacements, nextIdx) := targets.foldl
+        (fun (decls, repMap, idx) (h, dup, freshTy) =>
       let freshName : CoreIdent := ⟨s!"{cseVarPrefix}{idx}", ()⟩
-      let freshTy := dup.typeOf
-      let freshVar : Expression.Expr := .fvar () freshName freshTy
-      let ty : Expression.Ty := match freshTy with
-        | some mty => LTy.forAll [] mty
-        | none => LTy.forAll ["α"] (.ftvar "α")
+      let freshVar : Expression.Expr := .fvar () freshName (some freshTy)
+      let ty : Expression.Ty := LTy.forAll [] freshTy
       let varDecl := Statement.init freshName ty (.det dup) .empty
       -- `h` is `dup`'s structural hash, already computed by
       -- `collectExprsToAbbreviate` (the `dups` bucket key); no need to re-hash.
