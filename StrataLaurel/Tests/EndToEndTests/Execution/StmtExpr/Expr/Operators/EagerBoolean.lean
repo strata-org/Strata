@@ -24,10 +24,9 @@ This file covers:
 
 /-! ### Truth tables
 
-`&`, `|`, `!` and boolean `==` are all supported by the standalone Laurel
-interpreter, so this block runs all three paths. -/
+`&`, `|`, `!` and boolean `==`. -/
 
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure eagerAndTruthTable()
@@ -75,10 +74,10 @@ procedure eagerAndNegative()
 
 /-! ### Logical laws (`==>`)
 
-`==>` (implies) is not yet supported by the standalone Laurel interpreter, so these
-laws stay verify-only (no `entry`; symbolic over `a`/`b`). -/
+The verifier proves these laws for every `a`/`b`; the `entry` runs them on all four
+boolean pairs under both interpreters. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure eagerAndLaws(a: bool, b: bool)
@@ -95,6 +94,19 @@ procedure eagerOrLaws(a: bool, b: bool)
   // Each disjunct implies `a | b`.
   assert a ==> (a | b);
   assert b ==> (a | b)
+};
+
+procedure runAll() entry
+  opaque
+{
+  eagerAndLaws(true, true);
+  eagerAndLaws(true, false);
+  eagerAndLaws(false, true);
+  eagerAndLaws(false, false);
+  eagerOrLaws(true, true);
+  eagerOrLaws(true, false);
+  eagerOrLaws(false, true);
+  eagerOrLaws(false, false)
 };
 #end
 

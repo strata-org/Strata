@@ -97,27 +97,19 @@ procedure testImpliesProc()
 };
 #end
 
-/-! ## Standalone Laurel interpreter: skip-free `&&` / `||`
+/-! ## A doubly booby-trapped callee
 
-The blocks above use `> 0` comparisons and `==>`, which the standalone Laurel
-interpreter does not yet implement, so they stay verify + Core only. This block
-covers the same short-circuit behavior for `&&`/`||` in a form the Laurel
-interpreter *can* run — with no skips — by booby-trapping the right-operand callee
-two ways so every path (verify, Core interpret, Laurel interpret) observes a
+The right operand's callee is trapped two ways, so every path observes a
 short-circuit miss:
 
-- `requires false` — the verifier proves the callee's own body vacuously (fine in
-  isolation); at a *guarded* call site the precondition is never checked because
-  `&&`/`||` short-circuit. If a short-circuit misfired, it would fail.
-- body `assert false` — the interpreters ignore contracts, so if either actually
-  called the callee it would record an assertion failure. Short-circuited, the
-  callee is never entered, so no failure fires.
+- `requires false` — at a guarded call site the precondition is never checked
+  because `&&`/`||` short-circuit. If a short-circuit misfired, the verifier and
+  both interpreters would report it.
+- body `assert false` — if either interpreter actually entered the callee it
+  would record an assertion failure. Short-circuited, the callee is never
+  entered, so no failure fires. -/
 
-Making the callee bool-returning drops the `>` dependency. (`==>` is left to the
-verify+Core blocks above until a lazy `.Implies` case lands beside
-`.AndThen`/`.OrElse` in `evalExpr`.) -/
-
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure boom() returns (r: bool)

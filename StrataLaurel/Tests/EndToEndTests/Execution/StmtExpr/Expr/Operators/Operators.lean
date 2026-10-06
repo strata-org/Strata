@@ -9,12 +9,9 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! ## Integer arithmetic (`+ - * / %`) and unary negation (`-x`)
+/-! ## Integer arithmetic (`+ - * / %`) and unary negation (`-x`) -/
 
-Fully supported by the standalone Laurel interpreter, so this block runs all three
-paths (verify + Core interpret + Laurel interpret). -/
-
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testArithmetic()
@@ -72,12 +69,9 @@ procedure testUnaryNegative()
 };
 #end
 
-/-! ## Inequality (`!=`) on `bool` and `string`
+/-! ## Inequality (`!=`) on `bool` and `string` -/
 
-`!=` spans shapes via `primEq`; supported by the standalone interpreter, so this
-block runs all three paths. -/
-
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testInequality()
@@ -97,12 +91,9 @@ procedure testInequalityNegative()
 };
 #end
 
-/-! ## Logical operators
+/-! ## Logical operators -/
 
-`&&`, `||`, `!` and boolean `==` are supported by the standalone interpreter; `==>`
-(implies) is not yet, so the `==>` laws live in their own verify+Core block below. -/
-
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testLogical()
@@ -121,10 +112,7 @@ procedure testLogical()
 };
 #end
 
-/-! `==>` (implies) is not yet supported by the standalone Laurel interpreter, so
-this block stays verify + Core interpret only. Drop `skipLaurelInterpreter` (i.e. add
-`:= false`) once a lazy `.Implies` case lands beside `.AndThen`/`.OrElse` in
-`evalExpr`. -/
+/-! `==>` (implies) -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -140,8 +128,7 @@ procedure testImplies()
 };
 #end
 
-/-! `/t` and `%t` (truncating division / remainder) are not yet supported by the
-standalone Laurel interpreter, so this block stays verify + Core interpret only. -/
+/-! `/t` and `%t` (truncating division / remainder) -/
 
 #eval testLaurelExecution {} <|
 #strata

@@ -32,6 +32,7 @@ open Strata
 
 /-! ## 1. Basic: instance method body returns a field via `return expr`. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -52,10 +53,18 @@ procedure useGet()
   var x: int := b#get();
   assert x == b#v
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useGet()
+};
 #end
 
 /-! ## 2. Return a computed expression. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -76,10 +85,18 @@ procedure useIncd()
   var x: int := b#incd();
   assert x == b#v + 1
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useIncd()
+};
 #end
 
 /-! ## 3. Return an expression that uses a (non-self) parameter. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -100,11 +117,19 @@ procedure useAddTo()
   var x: int := b#addTo(5);
   assert x == b#v + 5
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useAddTo()
+};
 #end
 
 /-! ## 4. Conditional / early returns: a valued `return` in each branch of an
     if-then-else inside the method body. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -129,10 +154,18 @@ procedure useClampPos()
   var x: int := b#clampPos();
   assert x >= 0
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useClampPos()
+};
 #end
 
 /-! ## 5. Method that mutates a field (modifies clause) and then returns. -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -157,10 +190,18 @@ procedure useSetAndGet()
   assert x == 7;
   assert b#v == 7
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useSetAndGet()
+};
 #end
 
 /-! ## 6. Boolean return type. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -181,11 +222,19 @@ procedure useIsPos()
   var p: bool := b#isPos();
   assert p == (b#v > 0)
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useIsPos()
+};
 #end
 
 /-! ## 7. Two composites sharing a method name, both with value-returning
     bodies. Confirms lifting + value-return elimination keep them distinct. -/
 
+-- No Core interpreter: `a#v` and `b#w` are never written, so their reads leave a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -219,12 +268,20 @@ procedure useBoth()
   assert x == a#v;
   assert y == b#w
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useBoth()
+};
 #end
 
 /-! ## 8. Value-returning method invoked through a field-selected receiver:
     `o#inner#getX()`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: `o#inner` is never written, so a concrete run reads an unset field.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Inner {
@@ -252,6 +309,7 @@ procedure useOuter()
 
 /-! ## 9. Local variable in the body before a valued return. -/
 
+-- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -273,12 +331,20 @@ procedure useDoubleV()
   var x: int := b#doubleV();
   assert x == b#v + b#v
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useDoubleV()
+};
 #end
 
 /-! ## 10. Negative: valued return in an instance method with NO output
     parameter is rejected by `EliminateValueInReturns`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated lowering error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite C {
@@ -295,7 +361,8 @@ composite C {
 /-! ## 11. Negative: valued return in an instance method with MULTIPLE output
     parameters is rejected by `EliminateValueInReturns`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated lowering error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite D {

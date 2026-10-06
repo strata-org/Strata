@@ -29,12 +29,10 @@ handlers, so the observable claims are:
     rejected.
 
 The first two cases are the construct's smoke test: they check that the whole shape,
-`finally` arm included, parses, resolves, type-checks, lowers, and runs. They throw an
-unboxed `int`, so they need no exception objects and hence no heap, which lets them
-run under `testLaurelExecution` — verifier *and* interpreter. Everything after them
-throws a composite, so its exception values live on the heap and the interpret path
-cannot run it yet. The other file that runs both ways is `Throw.lean`, whose primitive
-section allocates nothing either.
+`finally` arm included, parses, resolves, type-checks, lowers, and runs. Every case has
+an `entry` and runs under the verifier and the Laurel interpreter. The cases that throw
+a composite skip the Core interpreter, which does not reduce an assertion over the
+heap their exception values live on.
 
 Those two throw rather than merely *having* a handler, which matters: a `try` whose
 body cannot throw gets a `catch` binding typed `Unknown`, and `EliminateExceptions`
@@ -91,6 +89,7 @@ procedure tryWithGuard() entry
 -- A caught `throw` skips the rest of the try body; the handler runs and control
 -- resumes after the `try`, so the handler's assignment is what is observed. The
 -- guard `c is MyError` is satisfied by the thrown value, so the clause fires.
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -109,12 +108,20 @@ procedure caughtResumes()
   };
   assert r == 2
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: int := caughtResumes()
+};
 #end
 
 -- Predicate dispatch skips a non-matching earlier clause and takes the matching
 -- later one. `ErrorA` is a subtype of `ErrorB`, and the thrown value is a plain
 -- `ErrorB`: it is not the more-specific `ErrorA` (so `is ErrorA` skips), but it
 -- is an `ErrorB` (so `is ErrorB` matches).
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -135,11 +142,19 @@ procedure dispatchSkipsNonMatching()
   };
   assert r == 2
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: int := dispatchSkipsNonMatching()
+};
 #end
 
 -- First-match-wins with overlapping guards: a `ChildError` matches both the
 -- earlier `is ParentError` clause and the later `is ChildError` clause; the
 -- earlier one wins (r == 1, not 2).
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -160,9 +175,17 @@ procedure firstMatchWinsOnOverlap()
   };
   assert r == 1
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: int := firstMatchWinsOnOverlap()
+};
 #end
 
 -- Multiple ordered catch clauses (first-match-wins).
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -178,9 +201,16 @@ procedure multipleCatches() opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  multipleCatches()
+};
 #end
 
 -- Union multi-catch: one clause matching either type.
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -194,6 +224,12 @@ procedure unionCatch() opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  unionCatch()
+};
 #end
 
 -- The same union written with `|` instead of `||`. Laurel has two disjunctions — `|`
@@ -202,6 +238,7 @@ procedure unionCatch() opaque {
 -- collection, so a guard shape that stopped being recognised there would silently
 -- change which exceptions count as caught. The case above covers `OrElse`; this one
 -- covers `Or`.
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -215,9 +252,16 @@ procedure unionCatchNonShortCircuit() opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  unionCatchNonShortCircuit()
+};
 #end
 
 -- Catch-all clause (no guard).
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -229,9 +273,16 @@ procedure catchAll() opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  catchAll()
+};
 #end
 
 -- Nested try/catch (the outer handler is what reaches lowering first).
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -249,12 +300,19 @@ procedure nestedTry() opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  nestedTry()
+};
 #end
 
 -- A `catch` handler dereferences a field of the (cast) exception binding and
 -- checks a *condition* on it: the caught `IndexError` records the offending
 -- index, and on the handler path (reached only via the out-of-bounds throw) that
 -- recorded index is provably out of bounds.
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -280,6 +338,14 @@ procedure catchReadsField(alen: int, i: int)
     r := 0
   }
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r1: int := catchReadsField(3, 1);
+  var r2: int := catchReadsField(3, 5)
+};
 #end
 
 -- Nested `catch`: a handler's binding must survive a throw that occurs *inside*
@@ -289,6 +355,7 @@ procedure catchReadsField(alen: int, i: int)
 -- refer to the original `Outer` (tag == 1), not the inner exception. This
 -- exercises the per-handler snapshot of the caught value (a single shared `$exc`
 -- is overwritten by the inner throw).
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -317,6 +384,13 @@ procedure nestedCatchKeepsBinding()
     r := (a as Outer)#tag
   }
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: int := nestedCatchKeepsBinding()
+};
 #end
 
 /-! ## Typing the catch binding at its least common ancestor
@@ -333,7 +407,8 @@ would otherwise be silently untyped, and a handler could then dereference a fiel
 no reaching value has. This is the one hard error in the LCA rule (an
 undeterminable/empty thrown set falls back to `Unknown` instead).
 -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated diagnostic is a resolution error, on which both interpreter paths abort.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Unrelated1 {}
@@ -360,6 +435,7 @@ procedure noCommonAncestor(pick: bool)
 -- their least common ancestor (`Exception`), so a guard `e is Exception`
 -- type-checks and the program verifies. (A body throwing two *unrelated* types
 -- would be rejected — no common ancestor to type the binding at.)
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -379,6 +455,14 @@ procedure catchAtLca(pick: bool) opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  catchAtLca(true);
+  catchAtLca(false)
+};
 #end
 
 -- A nested `try` whose own catches fully absorb the types thrown in its body
@@ -387,6 +471,7 @@ procedure catchAtLca(pick: bool) opaque {
 -- the only type that escapes the outer body is the unrelated `Gamma`. So the
 -- outer binding is typed at `Gamma` and the program verifies — rather than being
 -- rejected for "no common ancestor" over `Alpha`/`Beta`, which never reach it.
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -413,6 +498,14 @@ procedure nestedFullyCaught(c: bool) opaque {
     assert true
   }
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  nestedFullyCaught(true);
+  nestedFullyCaught(false)
+};
 #end
 
 /-! ## Loops inside an exception region
@@ -433,6 +526,7 @@ that a broken `$exc` would fail. -/
 -- type, even though the throw crossed the loop's lowered guard/havoc encoding on the
 -- way out. `assert c is Err` is vacuous if the handler never runs, and a genuine
 -- obligation if it does.
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -460,12 +554,21 @@ procedure loopBodyThrowIsCaught(n: int)
     r := 2
   }
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r1: int := loopBodyThrowIsCaught(1);
+  var r2: int := loopBodyThrowIsCaught(5)
+};
 #end
 
 -- A `try` wrapping a loop that carries invariants: the invariants discharge inside the
 -- exception region exactly as they would outside it. `assert i == n` after the loop
 -- follows from `i <= n` plus the negated condition, so it is the evidence that the
 -- invariant survived being lowered inside a `try` body.
+-- The Core interpreter path does not report the static never-fires warning.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -492,4 +595,45 @@ procedure invariantHoldsInsideTry(n: int)
     r := 0
   }
 };
+
+procedure runAll() entry
+  opaque
+{
+  var r: int := invariantHoldsInsideTry(3)
+};
 #end
+
+-- A `catch` binding is scoped to its clause: a local of the same name is visible
+-- again after the `try`, whether the clause ran its handler or was rejected by its
+-- guard.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+
+procedure bindingShadowsLocal() entry
+  opaque
+{
+  var e: int := 10;
+  try {
+    throw 3
+  } catch e {
+    assert e == 3
+  };
+  assert e == 10
+};
+
+procedure rejectedBindingShadowsLocal() entry
+  opaque
+{
+  var e: int := 10;
+  try {
+    throw 3
+  } catch e when e == 4 {
+    assert false
+  } catch f {
+    assert e == 10
+  };
+  assert e == 10
+};
+#end
+

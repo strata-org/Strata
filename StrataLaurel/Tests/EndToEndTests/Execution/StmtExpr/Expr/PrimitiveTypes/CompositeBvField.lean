@@ -14,6 +14,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+-- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 
@@ -48,5 +49,15 @@ procedure writeWrongLiteral(r: Register)
   modifies r
 {
   r#value := 200 bv 16
+};
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: Register := new Register;
+  writeValue(r, 7 bv 16);
+  writeLiteral(r);
+  writeWrongLiteral(r)
 };
 #end

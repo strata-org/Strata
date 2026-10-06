@@ -17,7 +17,8 @@ body, so inlining would make everything after the call trivially provable.
 Now the body assumes the postconditions instead, so `assert false` after
 the inlined call is correctly rejected. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } (options := { verifyOptions := .quiet, translateOptions := { inlineFunctionsWhenPossible := true } }) <|
+-- No interpreters: the Laurel interpreter returns 0 from bodiless `bodilessProcedure`, violating its `ensures r > 0`; Core says "condition did not reduce to bool".
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } (options := { verifyOptions := .quiet, translateOptions := { inlineFunctionsWhenPossible := true } }) <|
 #strata
 program Laurel;
 procedure bodilessProcedure() returns (r: int)

@@ -17,7 +17,8 @@ identically.
 -/
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: any caller turns the verdict into "could not be proved", and neither interpreter checks a quantified postcondition.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -48,7 +49,8 @@ procedure quantFresh()
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated failures are "could not be proved", which a concrete run cannot produce.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -79,6 +81,7 @@ procedure existsFresh()
 #end
 
 #guard_msgs in
+-- No Core interpreter: its quantified postcondition "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -127,10 +130,20 @@ procedure quantEnclosedDeclFresh()
   x#code := 5;
   throw x
 };
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try { declShadows() } catch e { assert true };
+  try { declFresh() } catch e { assert true };
+  try { quantEnclosedDecl() } catch e { assert true };
+  try { quantEnclosedDeclFresh() } catch e { assert true }
+};
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated errors are Laurel→Core translation rejections, not runtime failures.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -150,7 +163,7 @@ procedure bareUninitShadow()
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -175,9 +188,21 @@ procedure valueStillBinds() returns (n: int)
 {
   n := 1
 };
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    var a: int := valueShadows();
+    var b: int := valueFresh();
+    var c: int := valueStillBinds();
+    assert c > 0
+  } catch e { assert true }
+};
 #end
 
 #guard_msgs in
+-- No Core interpreter: a quantified postcondition "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -238,10 +263,21 @@ procedure quantInsideBlock()
   x#code := 5;
   throw x
 };
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try { bindingStillWorks() } catch e { assert true };
+  try { mixed() } catch e { assert true };
+  try { readBeforeShadow() } catch e { assert true };
+  try { nestedBlockShadow() } catch e { assert true };
+  try { quantInsideBlock() } catch e { assert true }
+};
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: Core says the quantifier "did not reduce to bool"; Laurel says "unsupported expression: quantifier".
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -306,7 +342,8 @@ procedure catchGuardQuantFresh() returns (r: int)
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: Core says the quantifier "did not reduce to bool"; Laurel says "unsupported expression: quantifier".
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -343,6 +380,7 @@ procedure catchBindingFullyFresh() returns (r: int)
 #end
 
 #guard_msgs in
+-- No Core interpreter: calling an allocating procedure fails with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -388,5 +426,15 @@ procedure nestedCatchFresh() returns (r: int)
     };
     r := r + e#code
   }
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    var a: int := nestedCatchSameName();
+    var b: int := nestedCatchFresh();
+    assert a == 7 && b == 7
+  } catch e { assert true }
 };
 #end

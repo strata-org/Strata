@@ -47,7 +47,7 @@ and no error — an empty escape set joins to `none` as well. Pinned by the
 -- (1a) `throw f()` is typed from `f`'s single output, so the handler survives and the
 -- caught value is the thrown one. The failing `assert` is what shows the clause is
 -- still in the program: a discarded one takes its obligations with it.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure f() returns (q: int) opaque { return 7 };
@@ -65,7 +65,7 @@ procedure throwsCallResult() returns (r: int) opaque
 
 -- (1b) An unannotated local is typed from its initializer, so `var e := 7; throw e`
 -- reaches the binding too. No warning: the body's thrown type is determined.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure throwsInferredLocal() returns (r: int) opaque
@@ -85,7 +85,7 @@ procedure throwsInferredLocal() returns (r: int) opaque
 -- `Unknown` and the clause would be dropped — on a body that demonstrably throws.
 -- The hard error is the backstop: without it this program verifies green with only
 -- the warning, even though the handler (and any obligation inside it) is gone.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Box { var v: int }

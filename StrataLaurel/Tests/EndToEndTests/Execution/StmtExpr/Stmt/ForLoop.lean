@@ -37,8 +37,8 @@ than the whole loop. -/
 
 /-! ### The initial invariant fails on entry -/
 
--- Verification only: a loop invariant is a proof annotation, not a runtime check.
--- Concrete execution runs the real loop, so the interpreter reports nothing here.
+-- The Core interpreter does not check loop invariants; the verifier and the Laurel
+-- interpreter both report the failing one.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -58,7 +58,7 @@ procedure forBadInitialInvariant()
 
 /-! ### A later invariant fails while earlier ones hold -/
 
--- Verification only, for the same reason as above.
+-- The Core interpreter is skipped for the same reason as above.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
