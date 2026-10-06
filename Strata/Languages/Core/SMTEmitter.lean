@@ -232,6 +232,26 @@ private def registeredNames (estate : EncoderState) : Std.HashSet String :=
   estate.functions.toList.foldl (fun acc (p : UF × String) => acc.insert p.2)
     (∅ : Std.HashSet String)
 
+/-- IO used while capturing SMT text, with serialization failures kept
+separate from filesystem and process errors. -/
+abbrev EmitterEncodingM := ExceptT StringLit.EncodingError IO
+
+/-- Run an encoding action against an in-memory solver and retain its typed
+serialization failure. -/
+private def recordEncodingToString (act : SolverEncodingM α)
+    (state : SolverState := SolverState.init) :
+    EmitterEncodingM (α × String × SolverState) := do
+  let (result, text, state) ← Solver.recordToString act.run state
+  match result with
+  | .ok value => return (value, text, state)
+  | .error error => throw error
+
+/-- Capture-time failures disable the optimization and fall back to ordinary
+per-obligation encoding, so convert them to IO only at that boundary. -/
+private def encodingOrIO : Except StringLit.EncodingError α → IO α
+  | .ok value => pure value
+  | .error error => throw (IO.userError (toString error))
+
 /-- Fresh emission state. Captures the environment-constant file header once:
     logic, solver prelude, and the base context's declarations, definitions,
     and axioms, mirroring `encodeCore`'s header phases in order.
@@ -245,15 +265,15 @@ def EmitterState.init (baseCtx : SMT.Context) (prelude : SolverM Unit) :
   let preludeAct : EncoderM Unit := do
     Solver.setLogic "ALL"
     prelude
-  let ((_, estate), headerPreText, sstate) ←
-    Solver.recordToString (preludeAct.run (EncoderState.initWithNames pre))
+  let ((_, estate), headerPreText, sstate) ← encodingOrIO
+    (← (recordEncodingToString (preludeAct.run (EncoderState.initWithNames pre))).run)
   let baseDeclAct : EncoderM Unit := do
     -- The base context has no managed names: program variables come from
     -- `varDecl` entries.
     writeContextDeclarations baseCtx {}
     Encoder.encodeAxioms baseCtx.axms.toArray
-  let ((_, estate), headerPostText, sstate) ←
-    Solver.recordToString (baseDeclAct.run estate) sstate
+  let ((_, estate), headerPostText, sstate) ← encodingOrIO
+    (← (recordEncodingToString (baseDeclAct.run estate) sstate).run)
   return {
     estate := estate
     sstate := sstate
@@ -431,11 +451,11 @@ def captureDelta (factory : @Lambda.Factory CoreLParams)
     (dctx : SMT.Context) (ctxBefore ctxAfter : SMT.Context)
     (items : DeltaItems) : IO CaptureResult := do
   let oldFunctions := estate.functions
-  let (((dctx, managed), estate), declText, sstate) ←
-    Solver.recordToString
-      ((declarationsPass factory dctx ctxBefore ctxAfter items).run estate) sstate
-  let ((_, estate), assertText, sstate) ←
-    Solver.recordToString ((assertionsPass items).run estate) sstate
+  let (((dctx, managed), estate), declText, sstate) ← encodingOrIO
+    (← (recordEncodingToString
+      ((declarationsPass factory dctx ctxBefore ctxAfter items).run estate) sstate).run)
+  let ((_, estate), assertText, sstate) ← encodingOrIO
+    (← (recordEncodingToString ((assertionsPass items).run estate) sstate).run)
   -- Everything newly registered that we did not seed ourselves was declared
   -- on the fly (or is a drained definition); record for the safety check.
   let managedSet := managed.foldl (·.insert ·) (∅ : Std.HashSet String)
@@ -606,13 +626,13 @@ def EmitterState.emitObligation
     (es : EmitterState) (ctx : SMT.Context) (goalTerm : Term)
     (md : Imperative.MetaData Core.Expression) (label : String)
     (managedNames : Std.HashSet String)
-    (satisfiabilityCheck validityCheck : Bool) : IO CapturedFile := do
+    (satisfiabilityCheck validityCheck : Bool) : EmitterEncodingM CapturedFile := do
   let declPieces := es.declPieces
   let assertPieces := es.assertPieces
   -- Prologue: this obligation's sorts and datatypes. They are name-neutral,
   -- so rendering outside the captured lineage is sound.
-  let prologueAct : SolverM Unit := writeSortsAndDatatypes ctx
-  let (_, prologueText, _) ← Solver.recordToString prologueAct es.sstate
+  let prologueAct : SolverEncodingM Unit := writeSortsAndDatatypes ctx
+  let (_, prologueText, _) ← recordEncodingToString prologueAct es.sstate
   let tailAct : EncoderM (List String) := do
     writeContextDeclarations ctx managedNames
     -- This obligation's own definition axioms.
@@ -624,7 +644,7 @@ def EmitterState.emitObligation
       satisfiabilityCheck validityCheck label managedNames
   -- The fork: never written back to `es`.
   let ((ids, forkEstate), tailText, _) ←
-    Solver.recordToString (tailAct.run es.estate) es.sstate
+    recordEncodingToString (tailAct.run es.estate) es.sstate
   let pieces :=
     (es.headerPreText :: prologueText :: es.headerPostText :: declPieces)
       ++ assertPieces ++ [tailText]
@@ -645,9 +665,13 @@ def EmitterState.syncAndEmit (es : EmitterState)
     IO (EmitterState × Option CapturedFile) := do
   let es ← es.sync factory foldFrames currentCtx
   if !pruned && es.usableFor ctx then
-    let cf ← es.emitObligation ctx goalTerm md label managedNames
-      satisfiabilityCheck validityCheck
-    return (es, some cf)
+    match ← (es.emitObligation ctx goalTerm md label managedNames
+        satisfiabilityCheck validityCheck).run with
+    | .ok cf => return (es, some cf)
+    | .error _ =>
+      -- Re-run through the normal per-obligation encoder. Its discharge result
+      -- carries the same structured error to `VCError.encoding`.
+      return (es, none)
   return (es, none)
 
 end -- public section

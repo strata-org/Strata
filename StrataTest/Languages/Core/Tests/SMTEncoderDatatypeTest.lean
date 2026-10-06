@@ -18,8 +18,11 @@ meta import Strata.Languages.Core.Identifiers
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core.Verifier
+meta import StrataTest.DL.SMT.EncodingTestUtils
 
 meta section
+
+open Strata.SMT.TestUtils
 
 /-!
 This file contains unit tests for SMT datatype encoding.
@@ -95,20 +98,21 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
       -- Emit the full SMT output including datatype declarations
       let b ← IO.mkRef { : IO.FS.Stream.Buffer }
       let solver ← Strata.SMT.Solver.bufferWriter b
-      match (← ((do
+      let action : Strata.SMT.SolverEncodingM Unit := do
         -- First emit datatypes
         ctx.emitDatatypes
         -- Then encode the term
         let _ ← (Strata.SMT.Encoder.encodeTerm smt).run Strata.SMT.EncoderState.init
         pure ()
-      ).run solver).toBaseIO) with
-      | .error e => return s!"Error: {e}"
-      | .ok _ =>
+      try
+        let _ ← runSolverEncoding solver action
         let contents ← b.get
         if h: contents.data.IsValidUTF8 then
           return String.fromUTF8 contents.data h
         else
           return "Invalid UTF-8 in output"
+      catch e =>
+        return s!"Error: {e}"
 
 /--
 Convert an expression to full SMT string including datatype declarations.
@@ -508,21 +512,22 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
       | .ok (smt, ctx) =>
         let b ← IO.mkRef { : IO.FS.Stream.Buffer }
         let solver ← Strata.SMT.Solver.bufferWriter b
-        match (← ((do
+        let action : Strata.SMT.SolverEncodingM Unit := do
           ctx.emitDatatypes
           let (_, estate) ← ctx.ufs.toArray.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
           let (axmIds, estate) ← ctx.axms.toArray.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
           for id in axmIds do
             Strata.SMT.Solver.assert id
           let _ ← (Strata.SMT.Encoder.encodeTerm smt).run estate
-        ).run solver).toBaseIO) with
-        | .error e => return s!"Error: {e}"
-        | .ok _ =>
+        try
+          let _ ← runSolverEncoding solver action
           let contents ← b.get
           if h: contents.data.IsValidUTF8 then
             return String.fromUTF8 contents.data h
           else
             return "Invalid UTF-8 in output"
+        catch e =>
+          return s!"Error: {e}"
 
 -- Test: listLen(Nil) — should show datatype, UF declaration, axioms, and the encoded call
 /--

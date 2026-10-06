@@ -269,7 +269,7 @@ info: encodeFunctionDef: function 'g' was already declared as uninterpreted befo
     let _ ← (do
       let _ ← Encoder.encodeUF g
       let _ ← Encoder.encodeFunctionDef gIF
-      : EncoderM Unit).run EncoderState.init |>.run solver
+      : EncoderM Unit).run EncoderState.init |>.run |>.run solver
     IO.println "ERROR: expected an error but succeeded"
   catch e =>
     IO.println s!"{e}"

@@ -98,6 +98,12 @@ structure B3VerificationState where
   context : ConversionContext
   pathCondition : List (B3AST.Expression SourceRange)  -- Accumulated assertions for debugging
 
+def runEncoding (solver : Solver) (action : SolverEncodingM α) : IO α := do
+  let (result, _) ← action.run.run solver
+  match result with
+  | .ok value => return value
+  | .error error => throw (IO.userError (toString error))
+
 def initVerificationState (solver : Solver) : IO B3VerificationState := do
   let _ ← (Solver.setLogic "ALL").run solver
   let _ ← (Solver.setOption "produce-models" "true").run solver
@@ -112,11 +118,11 @@ def initVerificationState (solver : Solver) : IO B3VerificationState := do
   }
 
 def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List TermType) (returnType : TermType) : IO B3VerificationState := do
-  let _ ← (Solver.declareFun name argTypes returnType).run state.smtState.solver
+  let _ ← runEncoding state.smtState.solver (Solver.declareFun name argTypes returnType)
   return { state with smtState := { state.smtState with declaredFunctions := (name, argTypes, returnType) :: state.smtState.declaredFunctions } }
 
 def addPathCondition (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (term : Term) : IO B3VerificationState := do
-  let _ ← (Solver.assert term).run state.smtState.solver
+  let _ ← runEncoding state.smtState.solver (Solver.assert term)
   return {
     state with
     smtState := { state.smtState with assertions := term :: state.smtState.assertions }
@@ -134,12 +140,12 @@ def pop (state : B3VerificationState) : IO B3VerificationState := do
 /-- Prove a property holds (check/assert statement) -/
 def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
-  let runCheck : SolverM (Decision × Option String) := do
+  let runCheck : SolverEncodingM (Decision × Option String) := do
     Solver.assert (Factory.not term)
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
-  let ((decision, model), _) ← runCheck.run state.smtState.solver
+  let (decision, model) ← runEncoding state.smtState.solver runCheck
   let _ ← pop state
   return {
     context := ctx
@@ -150,12 +156,12 @@ def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext
 /-- Check if a property is reachable (reach statement) -/
 def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
-  let runCheck : SolverM (Decision × Option String) := do
+  let runCheck : SolverEncodingM (Decision × Option String) := do
     Solver.assert term
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "reachable" else none
     return (decision, model)
-  let ((decision, model), _) ← runCheck.run state.smtState.solver
+  let (decision, model) ← runEncoding state.smtState.solver runCheck
   let _ ← pop state
   return {
     context := ctx

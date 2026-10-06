@@ -23,6 +23,7 @@ import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
+import Strata.DL.SMT.StringLit
 public import Strata.Languages.Core.SMTEmitter
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
@@ -384,11 +385,11 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (varDefinitions : List Core.VarDefinition := [])
     (varDeclarations : List Core.VarDeclaration := [])
     (pctx : PipelineContext) :
-    SolverM (List String × EncoderState) := do
+    SolverEncodingM (List String × EncoderState) := do
   -- Phase naming convention: `build*` is the Term-to-Term rewrite pass (no SMT
   -- text produced), `write*` renders terms to SMT-LIB text and writes them.
   -- Though a `write*` phase may also rewrite in the same loop.
-  let phase {α} (name : String) (action : SolverM α) : SolverM α :=
+  let phase {α} (name : String) (action : SolverEncodingM α) : SolverEncodingM α :=
     pctx.withRepeatedPhase name action
   Solver.setLogic "ALL"
   phase "prelude" do
@@ -533,7 +534,7 @@ def dischargeObligation
       baseFlags
   -- With a pre-assembled file (env-scoped capture), writing it is the
   -- encoding; its `ids`/`estate` keep result parsing unchanged.
-  let encodeAct : SolverM (List String × EncoderState) :=
+  let encodeAct : SolverEncodingM (List String × EncoderState) :=
     match captured with
     | some cf => do
       Core.SMT.Emitter.emitPrerendered cf.pieces
@@ -584,9 +585,9 @@ def dischargeObligationIncremental
     | _ => #[]
   let allFlags := solverSpecificFlags ++ baseFlags
   let encodeDecl (solver : Strata.SMT.AbstractSolver Term TermType
-                            Strata.SMT.IncrementalSolverM) :
-      Strata.SMT.IncrementalSolverM Imperative.SMT.EncodedObligation := do
-    let prelude : Strata.SMT.IncrementalSolverM Unit := do
+                            Strata.SMT.IncrementalEncodingM) :
+      Strata.SMT.IncrementalEncodingM Imperative.SMT.EncodedObligation := do
+    let prelude : Strata.SMT.IncrementalEncodingM Unit := do
       match options.solver with
       | "z3" => do
         solver.setOption "smt.mbqi" "false"
@@ -1768,10 +1769,15 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
   match ans with
   | .error solverError =>
     let vcError : VCError := match solverError with
+      | .encoding e => .encoding (toString e)
       | .timeout d => .solverTimeout d
       | .crash d   => .solverCrash d
-    dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
-                 {if options.verbose >= VerboseMode.debug then prog else ""}"
+    let traceInQuiet := match solverError with
+      | .encoding _ => false
+      | _ => true
+    if traceInQuiet || options.verbose >= VerboseMode.debug then
+      dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
+                   {if options.verbose >= VerboseMode.debug then prog else ""}"
     return { obligation := obligation,
              outcome := Except.error vcError,
              verbose := options.verbose,
@@ -1908,6 +1914,142 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
   return results
 
 private
+def isCSEGeneratedName (name : String) : Bool :=
+  name.startsWith CSE.cseVarPrefix
+
+private
+def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
+    Std.HashSet String :=
+  (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) =>
+    if isCSEGeneratedName id.name then refs.insert id.name else refs) refs
+
+private
+def addFreeVarNames (refs : Std.HashSet String) (e : Expression.Expr) :
+    Std.HashSet String :=
+  (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) => refs.insert id.name) refs
+
+private
+def collectModelVars
+    (obligation : Imperative.ProofObligation Expression)
+    (varDefinitions : List VarDefinition)
+    (varDeclarations : List VarDeclaration) :
+    List (Lambda.IdentT Lambda.LMonoTy Unit) :=
+  let managedNames := managedNameSet varDefinitions varDeclarations
+  let definitions := obligation.assumptions.flatMap fun pathCondition =>
+    pathCondition.filterMap fun
+      | .varDecl name _ (.det rhs) =>
+        if managedNames.contains name.name then some (name.name, rhs) else none
+      | _ => none
+  let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
+    pathCondition.foldl (fun refs entry =>
+      match entry with
+      | .assumption _ e => addFreeVarNames refs e
+      | .distinct _ es => es.foldl addFreeVarNames refs
+      | .varDecl name _ (.det rhs) =>
+        if managedNames.contains name.name then refs else addFreeVarNames refs rhs
+      | .varDecl _ _ .nondet => refs) refs)
+    (addFreeVarNames {} obligation.obligation)
+  let relevantNames := close definitions.length definitions rootRefs
+  (ProofObligation.getVars obligation).filter fun (v, _) =>
+    relevantNames.contains v.name && !managedNames.contains v.name
+where
+  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
+      Std.HashSet String
+    | 0, _, relevant => relevant
+    | fuel + 1, definitions, relevant =>
+      let relevant' := definitions.foldl (fun refs definition =>
+        if relevant.contains definition.1
+        then addFreeVarNames refs definition.2
+        else refs) relevant
+      if relevant'.size == relevant.size then relevant
+      else close fuel definitions relevant'
+
+private
+def containsUnsupportedSMTString : Expression.Expr → Bool
+  | .const _ (.strConst s) =>
+    match SMT.StringLit.validate s with
+    | .ok () => false
+    | .error _ => true
+  | .const _ _ | .op .. | .bvar .. | .fvar .. => false
+  | .abs _ _ _ body => containsUnsupportedSMTString body
+  | .quant _ _ _ _ trigger body =>
+    containsUnsupportedSMTString trigger || containsUnsupportedSMTString body
+  | .app _ fn arg =>
+    containsUnsupportedSMTString fn || containsUnsupportedSMTString arg
+  | .ite _ c t e =>
+    containsUnsupportedSMTString c ||
+      containsUnsupportedSMTString t ||
+      containsUnsupportedSMTString e
+  | .eq _ lhs rhs =>
+    containsUnsupportedSMTString lhs || containsUnsupportedSMTString rhs
+
+private
+def hasUnsupportedStringCSEDefinition
+    (obligation : Imperative.ProofObligation Expression) : Bool :=
+  obligation.assumptions.any fun pathCondition =>
+    pathCondition.any fun
+      | .varDecl name _ (.det rhs) =>
+        isCSEGeneratedName name.name && containsUnsupportedSMTString rhs
+      | _ => false
+
+/-- Remove CSE-generated definitions that cannot affect this obligation.
+
+Symbolic evaluation combines every deferred obligation into one synthetic
+procedure before CSE runs. CSE may therefore hoist a repeated expression above
+all obligation branches, making its `init $__cse.*` entry appear in every
+obligation even when only one branch references it. Besides producing needless
+SMT, an unencodable literal in such a definition would then prevent unrelated
+obligations from reaching the solver.
+
+This pruning is applied only when the extracted obligation set contains an
+SMT-unrepresentable string inside a CSE definition. Ordinary CSE definitions
+remain shared across obligations, preserving the fold and emitter's
+shared-prefix reuse. On the exceptional path, start from CSE variables
+referenced by the obligation and by non-CSE path-condition entries, close
+transitively over CSE definition bodies, and retain only those definitions.
+The original entry ordering is preserved, so every retained dependency is
+still emitted before its users. -/
+private def pruneUnusedCSEDefinitions
+    (obligation : Imperative.ProofObligation Expression) :
+    Imperative.ProofObligation Expression :=
+  let definitions := obligation.assumptions.flatMap fun pathCondition =>
+    pathCondition.filterMap fun
+      | .varDecl name _ (.det rhs) =>
+        if isCSEGeneratedName name.name then some (name.name, rhs) else none
+      | _ => none
+  if definitions.isEmpty then
+    obligation
+  else
+    let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
+      pathCondition.foldl (fun refs entry =>
+        match entry with
+        | .assumption _ e => addCSEReferences refs e
+        | .distinct _ es => es.foldl addCSEReferences refs
+        | .varDecl name _ (.det rhs) =>
+          if isCSEGeneratedName name.name then refs
+          else addCSEReferences refs rhs
+        | .varDecl _ _ .nondet => refs) refs)
+      (addCSEReferences {} obligation.obligation)
+    let needed := close definitions.length definitions rootRefs
+    let assumptions := obligation.assumptions.map fun pathCondition =>
+      pathCondition.filter fun
+        | .varDecl name _ (.det _) =>
+          !isCSEGeneratedName name.name || needed.contains name.name
+        | _ => true
+    { obligation with assumptions }
+where
+  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
+      Std.HashSet String
+    | 0, _, needed => needed
+    | fuel + 1, definitions, needed =>
+      let needed' := definitions.foldl (fun refs definition =>
+        if needed.contains definition.1
+        then addCSEReferences refs definition.2
+        else refs) needed
+      if needed'.size == needed.size then needed
+      else close fuel definitions needed'
+
+private
 def verifySingleEnv (oblProgram : Program)
     (factory : @Lambda.Factory CoreLParams)
     (options : VerifyOptions)
@@ -1929,7 +2071,13 @@ def verifySingleEnv (oblProgram : Program)
   let p := E.program
   -- Extract obligations from the obligations program via ObligationExtraction
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
-    | .ok obs => pure obs
+    | .ok obs =>
+      -- Per-obligation pruning changes the shared oldest frame and defeats
+      -- prefix reuse. Pay that cost only when it isolates a CSE definition
+      -- whose string literal cannot be serialized for SMT-LIB.
+      if obs.any hasUnsupportedStringCSEDefinition
+      then pure (obs.map pruneUnusedCSEDefinitions)
+      else pure obs
     | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
   -- Note: the encoder below reuses shared path-condition prefixes only between
   -- consecutive obligations.
@@ -2023,8 +2171,8 @@ def verifySingleEnv (oblProgram : Program)
     let encState0 := encState
     let snapCache0 := snapCache
     let emState0 := emState
-    let (disposition, encStats, encStateNext, snapCacheNext, emStateNext) ←
-        pctx.withRepeatedPhase "smtDischarge" do
+    let dischargeResult ←
+      (pctx.withRepeatedPhase (m := EIO Message) "smtDischarge" do
       -- `encodeObligationToSMT` is pure, so it must go through the `*Pure` helper
       -- otherwise the compiler will evaluate it before the phase is entered.
       -- It advances over the obligation's history (encoding only the delta
@@ -2045,11 +2193,12 @@ def verifySingleEnv (oblProgram : Program)
               snapCache0, emState0)
       | .ok ({ assumptions := assumptionTerms, varDefs, varDecls,
                goal := obligationTerm, ctx, stats := encStats }, encState', snapCache') =>
-        -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
+        -- Shared managed definitions can mention variables from unrelated
+        -- obligations. Follow only the definitions reachable from this
+        -- obligation before deciding which user variables to request in a
+        -- counterexample.
         let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
-          let vars := ProofObligation.getVars obligation
-          let managedNames := managedNameSet varDefs varDecls
-          vars.filter fun (v, _) => !managedNames.contains v.name
+          collectModelVars obligation varDefs varDecls
         let typedVarsInObligation ← varsInObligation.mapM
           (fun (v,ty) => do
             match ty with
@@ -2089,6 +2238,11 @@ def verifySingleEnv (oblProgram : Program)
                   validityProperty := valResult } }
             | .error _ => result
           pure (ObligationDisposition.resolved result, encStats, encState', snapCache', emState1)
+      ).toBaseIO
+    let (disposition, encStats, encStateNext, snapCacheNext, emStateNext) ←
+      match dischargeResult with
+      | .ok result => pure result
+      | .error err => throw err
     encState := encStateNext
     snapCache := snapCacheNext
     emState := emStateNext

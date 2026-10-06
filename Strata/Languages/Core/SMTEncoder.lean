@@ -244,7 +244,7 @@ Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
-def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM Unit := do
   match validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
@@ -261,7 +261,7 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
 
 /-- Emit a context's sort declarations, then its datatype declarations (whose
     constructors may mention the sorts). -/
-def SMT.writeSortsAndDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+def SMT.writeSortsAndDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM Unit := do
   let _ ← ctx.sorts.toArray.mapM fun s => Strata.SMT.Solver.declareSort s.name s.arity
   ctx.emitDatatypes
 
@@ -1073,12 +1073,18 @@ def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono)
   | .ok (smt, _, _) =>
     let b ← IO.mkRef { : IO.FS.Stream.Buffer }
     let solver ← Solver.bufferWriter b
-    let ((enc, _), _) ← ((Encoder.encodeTerm smt).run EncoderState.init).run solver
-    let _ ← (Solver.assert enc).run solver
-    let contents ← b.get
-    if h: contents.data.IsValidUTF8
-    then return String.fromUTF8 contents.data h
-    else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
+    let (encoded, _) ← (((Encoder.encodeTerm smt).run EncoderState.init).run).run solver
+    match encoded with
+    | .error err => return toString err
+    | .ok (enc, _) =>
+      let (asserted, _) ← ((Solver.assert enc).run).run solver
+      match asserted with
+      | .error err => return toString err
+      | .ok () =>
+        let contents ← b.get
+        if h: contents.data.IsValidUTF8
+        then return String.fromUTF8 contents.data h
+        else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
 
 /-- Whether a term is a real literal (top-level only). -/
 def smtTermIsReal : Strata.SMT.Term → Bool
