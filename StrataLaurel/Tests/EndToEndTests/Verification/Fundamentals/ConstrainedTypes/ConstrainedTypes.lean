@@ -71,6 +71,26 @@ procedure reassignInvalid()
 //^^^^^^^ error: assertion does not hold
 };
 
+// Holes in constrained declarations
+
+procedure nondetHoleAtConstrainedType()
+  opaque
+{
+  var x: nat := <??>;
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert x >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure detHoleAtConstrainedType()
+  opaque
+{
+  var x: nat := <?>;
+//^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert x >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
   opaque

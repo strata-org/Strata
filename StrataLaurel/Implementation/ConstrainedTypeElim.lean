@@ -124,6 +124,10 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     ⟨.Quantifier mode param' trigger injected, source⟩
   | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source⟩
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
+  -- `Resolution.Check.holeNone` records the expected type on an untyped hole in check
+  -- position. Resolve that annotation together with the surrounding declaration so no
+  -- constrained type remains after this pass. This applies to both hole kinds.
+  | .Hole det ty => ⟨.Hole det (ty.map (resolveType ptMap ·)), source⟩
   | _ => expr
 
 /-- Per-node constrained-type elimination, applied bottom-up (with flattening)
