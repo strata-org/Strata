@@ -33,6 +33,7 @@ import Lean.Meta.Tactic.Unfold -- shake: keep
 meta import Lean.Meta.Tactic.Unfold
 import Lean.Meta.Eval -- shake: keep
 import Lean.Meta.Constructions.CasesOn -- shake: keep
+import StrataDDM.SourcedProgram
 
 open Lean hiding Options
 
@@ -52,13 +53,14 @@ structure SanitizedContext where
   datatypes : Array SanitizedDatatype := #[]
 deriving Repr, Inhabited, DecidableEq
 
-/-- The used datatypes of `ctx` as `SanitizedDatatype`s.  A datatype with a
-    field whose sort has no SMT form is left out; the translation then reports
-    it as an unknown sort. -/
-private def sanitizedDatatypes (ctx : Core.SMT.Context) : Array SanitizedDatatype :=
+/-- The datatypes of `ctx` that `keep` selects, as `SanitizedDatatype`s.  A
+    datatype with a field whose sort has no SMT form is left out; the
+    translation then reports it as an unknown sort. -/
+private def sanitizeDatatypes (ctx : Core.SMT.Context) (keep : String → Bool) :
+    Array SanitizedDatatype :=
   ctx.datatypes.factory.toList.foldl (init := #[]) fun acc block =>
     block.foldl (init := acc) fun acc d =>
-      if !ctx.seenDatatypes.contains d.name then acc else
+      if !keep d.name then acc else
       let constrs? : Option (Array SanitizedConstr) := d.constrs.toArray.mapM fun c => do
         let fields ← c.args.toArray.mapM fun (f, ty) => do
           let (t, _) ← (Core.LMonoTy.toSMTType ty ctx).toOption
@@ -70,7 +72,14 @@ private def sanitizedDatatypes (ctx : Core.SMT.Context) : Array SanitizedDatatyp
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
   { sorts := ctx.sorts.toArray, ufs := ctx.ufs.toArray, ifs := ctx.ifs.toArray,
-    axms := ctx.axms.toArray, tySubst := ctx.tySubst, datatypes := sanitizedDatatypes ctx }
+    axms := ctx.axms.toArray, tySubst := ctx.tySubst,
+    datatypes := sanitizeDatatypes ctx ctx.seenDatatypes.contains }
+
+/-- All datatypes declared in `E`, whether or not a query uses them, in
+    declaration order. -/
+def envDatatypes (E : Core.Env) (useArrayTheory : Bool) : Array SanitizedDatatype :=
+  sanitizeDatatypes { Core.SMT.Context.default with
+    datatypes := .ofFactory E.datatypes, useArrayTheory } fun _ => true
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
   -- Build each OrderedKeyedSet with `ofArrayUnchecked`, not `ofArray`.
@@ -257,6 +266,17 @@ def genSMTVCs (program : Program)
   toSMTVCs coreVCs options
 
 /--
+All datatypes of a program, for `#strata_datatypes`, under the default options.
+They are read from the environment its verification conditions are generated
+in, so a program without verification conditions has none to declare.
+-/
+def programDatatypes (program : Program) : Option (Array SanitizedDatatype) := do
+  let options : MetaVerifier.Options := {}
+  match ← genCoreVCs program options with
+  | [] => return #[]
+  | (E, _) :: _ => return SMT.envDatatypes E options.useArrayTheory
+
+/--
 State semantic correctness of the SMT verification conditions generated for a
 program under the given metaverifier options. For example,
 `options.useArrayTheory` selects how the SMT encoder treats `Map` types: under
@@ -344,15 +364,9 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
-/-- Namespace of the generated datatype declarations: `<current decl>.DT` when
-    inside a declaration (the kernel restricts declarations added during
-    elaboration to that prefix), `Strata.SMT.DT` otherwise. -/
-def datatypeNamespace : CoreM Name :=
-  return ((← getEnv).asyncPrefix?.getD `Strata.SMT) ++ `DT
-
-/-- Lean declarations for the datatypes of a query, generated once per datatype
-    (skipped when `ns.<name>` already exists).  For each datatype, in
-    declaration order so that field types of earlier datatypes resolve:
+/-- Lean declarations for datatypes under the namespace `ns`, made by
+    `#strata_datatypes`.  For each datatype, in declaration order so that field
+    types of earlier datatypes resolve:
 
     * `inductive ns.<d>` with the constructors and their fields;
     * a tester `is_<c> : ns.<d> → Prop` per constructor and a selector
@@ -368,17 +382,15 @@ def datatypeNamespace : CoreM Name :=
     Strata also generates an eliminator for a datatype, encoding its induction
     principle.  That is not translated; only constructors, testers and
     selectors are. -/
-def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM Unit := do
+def declareDatatypes (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM Unit := do
   let mut witnesses : Std.HashMap Lean.Name Lean.Expr := {}
   for dt in dts do
     let tyName := SanitizedDatatype.typeName ns dt.name
     let sortExpr (t : TermType) : MetaM Lean.Expr :=
       Lean.ofExcept ((Translate.withDatatypes ns dts (Translate.translateSort t)).run' {})
     -- default witness: first constructor whose fields all have a default
-    -- (a nullary one for the datatypes Strata generates); kept in `witnesses`
-    -- rather than as an `Inhabited` instance, which cannot be registered from
-    -- inside a declaration's elaboration.  Computed even when the datatype
-    -- was declared by an earlier goal, since later datatypes' selectors need it.
+    -- (a nullary one for the datatypes Strata generates), kept in `witnesses`
+    -- for the selectors of later datatypes.
     let dflt (ws : Std.HashMap Lean.Name Lean.Expr) (σ : Lean.Expr) : MetaM (Option Lean.Expr) := do
       if let .const n [] := σ then
         if let some w := ws[n]? then return some w
@@ -393,9 +405,8 @@ def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM
         witness := some (mkAppN (.const (SanitizedDatatype.ctorName ns dt.name c.name) [])
                            (defaults?.filterMap id).toArray)
     let some w := witness
-      | throwError m!"gen_smt_vcs: no default element for datatype '{dt.name}'"
+      | throwError m!"#strata_datatypes: no default element for datatype '{dt.name}'"
     witnesses := witnesses.insert tyName w
-    if (← getEnv).contains tyName then continue
     -- the inductive
     let ctors ← dt.constrs.toList.mapM fun c => do
       let fieldTys ← c.fields.toList.mapM (fun (_, σ) => sortExpr σ)
@@ -435,12 +446,11 @@ def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM
         -- The witness is only what an `opaque` declaration needs to exist; it
         -- is invisible to a proof, which is the point.
         let some wσ ← dflt witnesses σ
-          | throwError m!"gen_smt_vcs: no element to witness the unspecified result \
+          | throwError m!"#strata_datatypes: no element to witness the unspecified result \
                           of selector '{sel}'"
         let unspecName := selName ++ `unspec
-        unless (← getEnv).contains unspecName do
-          addDecl <| .opaqueDecl { name := unspecName, levelParams := [], type := σ,
-                                   value := wσ, isUnsafe := false, all := [unspecName] }
+        addDecl <| .opaqueDecl { name := unspecName, levelParams := [], type := σ,
+                                 value := wσ, isUnsafe := false, all := [unspecName] }
         let d : Lean.Expr := .const unspecName []
         let minors ← dt.constrs.mapM fun c' => minorFor c' fun fvars =>
           pure (if c'.name == c.name then fvars[k]! else d)
@@ -448,17 +458,32 @@ def ensureDatatypeDecls (ns : Lean.Name) (dts : Array SanitizedDatatype) : MetaM
           Meta.mkLambdaFVars #[x] (casesOn (.succ .zero) (.lam `_ dtTy σ .default) x minors)
         addDefn selName (.forallE `x dtTy σ .default) value
 
-def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
-  let ns ← datatypeNamespace
-  ensureDatatypeDecls ns ctx.datatypes
+/-- The namespace holding the datatypes a verification condition uses, after
+    checking that `#strata_datatypes` declared them there.  `dtNs?` is
+    `<program>.DT` when the program is a named definition. -/
+private def datatypeNamespace (label : String) (dtNs? : Option Name)
+    (dts : Array SanitizedDatatype) : MetaM Name := do
+  let some dt := dts[0]? | return `Strata.SMT.DT
+  let some ns := dtNs?
+    | throwError m!"gen_smt_vcs: verification condition '{label}' uses datatype \
+        '{dt.name}', so the program must be a named definition declared with \
+        `#strata_datatypes`"
+  for dt in dts do
+    unless (← getEnv).contains (SanitizedDatatype.typeName ns dt.name) do
+      throwError m!"gen_smt_vcs: datatype '{dt.name}' is not declared; run \
+        `#strata_datatypes {ns.getPrefix}` before this proof"
+  return ns
+
+def createGoal (vc : SMTVC) (dtNs? : Option Name := none) : MetaM MVarId := do
+  let (label, ctx, ts, t) := vc
+  let ns ← datatypeNamespace label dtNs? ctx.datatypes
   match translateQuery ctx.toCore ts t ctx.datatypes ns with
   | .error e =>
     -- Name the VC: the tactic must not drop an obligation it cannot state in
     -- Lean (that would weaken the bridge axiom's premise), so it fails, and the
-    -- user should learn which obligation and why. A common cause is a datatype
-    -- sort in the query: the bridge introduces uninterpreted sorts and
-    -- functions but does not yet declare datatypes; the SMT path still checks
-    -- such VCs.
+    -- user should learn which obligation and why. A common cause is a sort the
+    -- translation does not cover yet, such as a parametric datatype; the SMT
+    -- path still checks such VCs.
     throwError m!"gen_smt_vcs: cannot translate verification condition '{label}' to a Lean goal: {e}"
   | .ok e =>
     trace[debug] "e := {e}"
@@ -517,6 +542,14 @@ where
     addAndCompile decl
     pure auxName
 
+/-- The definition a program expression names: `p` itself, or the `#strata`
+    block `p` that it is coerced from. -/
+private def programName? (e : Lean.Expr) : Option Name :=
+  match e.consumeMData with
+  | .const n _ => some n
+  | .app (.const ``StrataDDM.SourcedProgram.program _) (.const n _) => some n
+  | _ => none
+
 private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   let type ← mv.getType
   let some (program, options) := type.app2? ``Strata.smtVCsCorrect
@@ -533,7 +566,8 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   let hEQVCs ← nativeDecide eqVCs
   let r ← mv.rewrite (← mv.getType) hEQVCs
   let mv ← mv.replaceTargetEq r.eNew r.eqProof
-  let mvs ← evcs.mapM SMT.createGoal
+  let dtNs? := (programName? program).map (· ++ `DT)
+  let mvs ← evcs.mapM (SMT.createGoal · dtNs?)
   trace[debug] m!"Created {mvs.length} SMT VC goals: {mvs}"
   let ps ← mvs.mapM MVarId.getType
   let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
@@ -548,6 +582,19 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
 
 @[implemented_by genSMTVCsUnsafe]
 meta opaque genSMTVCs (mv : MVarId) : MetaM (List MVarId)
+
+/-- Declare the datatypes of the program `program`, which names the
+    definition `prog`, under `prog.DT`. -/
+private unsafe def declareProgramDatatypesUnsafe (prog : Name) (program : Lean.Expr) :
+    MetaM Unit := do
+  let ty := .app (.const ``Option [0]) (.app (.const ``Array [0]) (.const ``SanitizedDatatype []))
+  let some dts ← Meta.evalExpr (Option (Array SanitizedDatatype)) ty
+      (.app (.const ``Strata.programDatatypes []) program)
+    | throwError m!"#strata_datatypes: cannot generate the verification conditions of '{prog}'"
+  SMT.declareDatatypes (prog ++ `DT) dts
+
+@[implemented_by declareProgramDatatypesUnsafe]
+meta opaque declareProgramDatatypes (prog : Name) (program : Lean.Expr) : MetaM Unit
 
 end Meta
 
@@ -572,6 +619,30 @@ open Lean Elab Tactic in
   | _ => throwUnsupportedSyntax
 
 end Tactic
+
+namespace Command
+
+/--
+Declare all datatypes of a Strata program as Lean inductives under
+`<program>.DT`: for a datatype `d`, the inductive `<program>.DT.d`, a tester
+`is_<c>` per constructor and a selector per field.  `gen_smt_vcs` needs them for
+every verification condition that uses a datatype, and does not declare them
+itself.
+-/
+syntax (name := strataDatatypes) "#strata_datatypes " ident : command
+
+open Lean Elab Command in
+@[command_elab strataDatatypes] meta def elabStrataDatatypes : CommandElab := fun stx => do
+  match stx with
+  | `(#strata_datatypes $prog:ident) => liftTermElabM do
+    let name ← realizeGlobalConstNoOverloadWithInfo prog
+    -- a `#strata` block is coerced to the `Program` it holds
+    let program ← Term.elabTermEnsuringType prog (some (mkConst ``StrataDDM.Program))
+    Term.synthesizeSyntheticMVarsNoPostponing
+    Meta.declareProgramDatatypes name (← instantiateMVars program)
+  | _ => throwUnsupportedSyntax
+
+end Command
 
 end -- public section
 

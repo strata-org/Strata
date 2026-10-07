@@ -35,7 +35,7 @@ structure SanitizedDatatype where
   constrs : Array SanitizedConstr
 deriving Repr, Inhabited, DecidableEq
 
--- Lean constants generated for a datatype (see `MetaVerifier.ensureDatatypeDecls`),
+-- Lean constants generated for a datatype (see `MetaVerifier.declareDatatypes`),
 -- all under a namespace `ns` chosen by the caller: the type `ns.<dt>`,
 -- constructors `ns.<dt>.<c>`, testers `ns.<dt>.is_<c>` (Prop-valued) and
 -- selectors `ns.<dt>.<field>`.
@@ -754,8 +754,8 @@ where
     return (n, t)
 
 /-- Register the generated Lean constants of `dts` under namespace `ns` (their
-    declarations are created by `MetaVerifier.ensureDatatypeDecls` before
-    translation). -/
+    declarations are made by `#strata_datatypes`, through
+    `MetaVerifier.declareDatatypes`). -/
 def withDatatypes (ns : Name) (dts : Array SanitizedDatatype) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   for dt in dts do
