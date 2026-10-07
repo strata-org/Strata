@@ -17,7 +17,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.FunctionInlining
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
-import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
@@ -1571,7 +1571,7 @@ def symbolicEvalPipelinePhase
 
 
 /-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
-    monomorphize procedures, type-check, monomorphize functions, and eliminate
+    replace procedure and lemma type parameters by opaque types, type-check, monomorphize functions, and eliminate
     nondeterminism.
 
     Factored out so `genVCs` in `MetaVerifier` can reuse them without pulling in
@@ -1583,7 +1583,7 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
   -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
   -- fallback here is only a totality safety net.
   let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
-  [monomorphizeProceduresPipelinePhase,
+  [genOpaqueTypeParamsPipelinePhase,
    typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
    nondetElimPipelinePhase]

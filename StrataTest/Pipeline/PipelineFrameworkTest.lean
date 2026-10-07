@@ -35,7 +35,7 @@ import Strata.Transform.TerminationCheck
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FunctionInlining
 import Strata.Transform.UnrollBoundedQuantifiers
-import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.GenOpaqueTypeParams
 import Strata.Languages.Core.ObligationExtraction
 
 /-! ## Pipeline framework tests
@@ -574,7 +574,7 @@ phase                           Ca  LI  SS  PF  HO  Po
  4 precondElim                + | : : : :   V :     : :
  5 insertLoopInvariantAsserts + | : V V : : | :   : : :
  6 loopElim                   + | V + +   : | :   : : :
- 7 monomorphizeProcedures     + + | | | : : | :   V : :
+ 7 genOpaqueTypeParams        + + | | | : : | :   V : :
  8 typeCheck                  | | | | | : : | :   | : V
  9 monomorphizeFunctions      | | | | | : : | :   + V |
 10 nondetElim                 + | | | |   : | V   | | |
@@ -633,7 +633,7 @@ phases:
   precondElim
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -654,7 +654,7 @@ phases:
   filterProcedures
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -679,7 +679,7 @@ phases:
   precondElim
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -706,7 +706,7 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+/-- info: [assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
@@ -740,7 +740,7 @@ phases:
   precondElim
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -760,7 +760,7 @@ phases:
   precondElim
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -781,7 +781,7 @@ phases:
   precondElim
   insertLoopInvariantAsserts
   loopElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -984,7 +984,7 @@ phases:
   callElim
   termCheck
   precondElim
-  monomorphizeProcedures
+  genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
   nondetElim
@@ -1012,7 +1012,7 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+  --phases assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -1093,7 +1093,7 @@ construct. -/
     there is nothing to monomorphize, so structural checks are skipped. -/
 /-- info: accepted -/
 #guard_msgs in
-#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase cfgBodiedProgram)
+#eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase cfgBodiedProgram)
 
 /-! For a *polymorphic* procedure the CFG-body and noCalls checks still fire,
     because the substitution cannot be applied without a structured body, and
@@ -1103,21 +1103,21 @@ private def polyProgOf (typeArgs : List String) (body : Procedure.Body) : Progra
   { decls := [.proc { (default : Procedure) with header.typeArgs := typeArgs, body := body }
       default] }
 
-/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ has a CFG body; monomorphization only handles structured bodies. -/
+/-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ has a CFG body; only structured bodies are supported. -/
 #guard_msgs in
-#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+#eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
   (polyProgOf ["T"] (.cfg { entry := "entry", blocks := [] })))
 
-/-- info: rejected: ❌ MonomorphizeProcedures: procedure _ still contains a call; eliminate calls before monomorphizing. -/
+/-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in
-#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+#eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
   (polyProgOf ["T"] (.structured [Statement.call "f" [] {}])))
 
 /-! A non-polymorphic procedure with a call is similarly accepted:
     monomorphization is a no-op, so the noCalls precondition does not apply. -/
 /-- info: accepted -/
 #guard_msgs in
-#eval IO.println (runAsserter monomorphizeProceduresPipelinePhase
+#eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
   (progOf [Statement.call "f" [] {}]))
 
 /-! Symbolic evaluation reports a `loop` and a CFG body through the evaluator's

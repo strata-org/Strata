@@ -303,7 +303,7 @@ procedure u() opaque { var gi: int := idp(7); var gb: bool := idp(true); assert 
   -- An UNCALLED value-`T` poly proc (kept verbatim, NOT witness-cloned — it touches no generic
   -- composite) still has its own body VC emitted + discharged: a TRUE postcondition verifies,
   -- a FALSE one fails loud. Pins that the uncalled value-`T` path is never silently unchecked.
-  -- Both halves assert their property: MonomorphizeProcedures replaces the type
+  -- Both halves assert their property: GenOpaqueTypeParams replaces the type
   -- variable with an opaque type before type checking, so the body VC encodes and the
   -- `_false` half fails via a genuine solver verdict.
   { name := "poly_proc_value_t_uncalled_true", outcome := .verifies,
@@ -327,7 +327,7 @@ procedure u() opaque { assert 1 == 1 };"},
   -- holds in every interpretation (verifies), while `forall(y:T)=>y==x` is falsifiable once
   -- |T| >= 2 (an uninterpreted sort is not forced to be a singleton) so it must FAIL.
   -- TRANSITIONAL: the `_true` half hits one encoder error on the
-  -- poly-procedure's opaque-type body VC because `MonomorphizeProcedures`
+  -- poly-procedure's opaque-type body VC because `GenOpaqueTypeParams`
   -- substitutes the type variable with a fresh opaque type in-place — the
   -- body's own self-check VC is emitted at the caller site under the
   -- original type variable.  The `_false` and `_multi_inst` twins below do
