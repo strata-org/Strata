@@ -230,7 +230,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
       else
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -244,7 +244,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
 
 open Lean Elab Command in
 /-- Generate safe signed division/modulo operations with both div-by-zero
@@ -283,8 +283,8 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
               intro p hp
               simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
               cases hp with
-              | inl h => subst h; native_decide
-              | inr h => subst h; native_decide)))
+              | inl h => subst h; cbv; grind
+              | inr h => subst h; cbv; grind)))
 
 end -- public meta section
 
