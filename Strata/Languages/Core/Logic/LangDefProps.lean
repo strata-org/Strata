@@ -79,7 +79,8 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
     (hres : ∀ n, (ρ.store n).isSome → ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true)
-    (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
+    (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hinit : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s) :
     InitEnvWF params s ρ where
   toWellFormedSemanticEval := hwf
   storeWellDefined := hsv
@@ -91,6 +92,7 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
   reservedFresh := hres
   defUseOk := hdu
   factoryDeclared := hfd
+  initTypesInhabited := hinit
 
 /-- Build a `BlockInitEnvWF` without supplying `readWritesDefined`: it follows from
     `defUseOk`. -/
@@ -106,7 +108,8 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
     (hres : ∀ n, (ρ.store n).isSome → ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true)
-    (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
+    (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
+    (hinit : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss) :
     BlockInitEnvWF params bss ρ where
   toWellFormedSemanticEval := hwf
   storeWellDefined := hsv
@@ -118,6 +121,7 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
   reservedFresh := hres
   defUseOk := hdu
   factoryDeclared := hfd
+  initTypesInhabited := hinit
 
 /-! ## Lowering: enclosing condition → sub-derivation condition
 
@@ -139,6 +143,8 @@ theorem blockInitEnvWF_cons_head {params : InitEnvWFParams} {s : Statement} {ss 
     (fun n hn => h.definedVarsNotReserved n (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
     (fun n hn => h.funcDeclNamesNotReserved n (by rw [Block.funcDeclNames]; exact List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh hdu.1 h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty
+      (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
 
 /-- Singleton statement list: the block condition on `[s]` lowers to the statement
     condition on `s`. -/
@@ -176,6 +182,8 @@ theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Sta
     (fun n hn => hfnr n (List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh (Imperative.Block.defUseWellFormed_of_append_left h.defUseOk)
     h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty
+      (by rw [Block.initTypes_append]; exact List.mem_append.mpr (Or.inl hty)))
 
 /-- Block statement: the statement condition on `.block l ss md` lowers to the
     block condition on the body `ss`. -/
@@ -192,6 +200,7 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr hfnr
     h.reservedFresh hdu h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
 
 /-- `ite`: the statement condition lowers to the block condition on the *then*
     branch. -/
@@ -211,6 +220,8 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
     (fun n hn => hfnr n (List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh hdu.1.2 h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty
+      (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
 
 /-- `ite`: the statement condition lowers to the block condition on the *else*
     branch. -/
@@ -230,6 +241,8 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inr hn)))
     (fun n hn => hfnr n (List.mem_append.mpr (Or.inr hn)))
     h.reservedFresh hdu.2 h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty
+      (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
 
 /-- `loop`: the statement condition lowers to the block condition on the body. -/
 theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.Expr}
@@ -246,6 +259,7 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr hfnr
     h.reservedFresh hdu.2 h.factoryDeclared
+    (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
 
 /-! ## Preservation: re-establishing a condition after a sub-derivation runs
 
@@ -309,6 +323,10 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
       (Core.CoreStepStar_to_StepStmtStar hrun) hnofd h.storeWellDefined)
     (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
     (fun n hn => h.funcDeclNamesNotReserved n ?_) (fun n hn => ?_) ?_ h.factoryDeclared
+    (by
+      rw [hfac]
+      exact fun ty hty => h.initTypesInhabited ty
+        (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
   · -- defsUndefined on the tail
     obtain ⟨hnone, hnotdef⟩ := hfresh n hn
     rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π φ hnotdef hnone hrun]
@@ -422,6 +440,10 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
       h.storeWellDefined)
     (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
     (fun n hn => h.funcDeclNamesNotReserved n ?_) (fun n hn => ?_) ?_ h.factoryDeclared
+    (by
+      rw [hfac]
+      exact fun ty hty => h.initTypesInhabited ty
+        (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
   · obtain ⟨hnone, hnotdef⟩ := hfresh n hn
     rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π φ hnotdef hnone hrun]
     rfl
@@ -524,6 +546,7 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
     · exact absurd hx (by simp)
   refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval hproj (fun n hn => ?_)
     h.definedVarsNotReserved h.funcDeclNamesNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
+    h.initTypesInhabited
   · -- defsUndefined: `isNone` is `¬ isSome`, and the predicate is unchanged.
     have := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
@@ -579,6 +602,7 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
     · exact absurd hx (by simp)
   refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval hproj (fun n hn => ?_)
     h.definedVarsNotReserved h.funcDeclNamesNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
+    h.initTypesInhabited
   · have hdef := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
     rw [Option.isNone_iff_eq_none] at hdef ⊢
@@ -608,7 +632,7 @@ theorem blockInitEnvWF_nil {params : InitEnvWFParams} {ρ : Imperative.Env Expre
       params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
     BlockInitEnvWF params [] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_)
-    (fun n _ p hp => ?_) rfl hfd
+    (fun n _ p hp => ?_) rfl hfd (by intro ty hty; simp [Block.initTypes] at hty)
   · simp [Block.definedVars] at hn
   · simp [Block.definedVars] at hn
   · simp [Block.funcDeclNames] at hn
@@ -625,12 +649,36 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
       params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
     BlockInitEnvWF params [Imperative.Stmt.block l [] md] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_)
-    (fun n _ p hp => ?_) ?_ hfd
+    (fun n _ p hp => ?_) ?_ hfd (by intro ty hty; simp [Block.initTypes, Stmt.initTypes] at hty)
   · simp [Block.definedVars, Stmt.definedVars] at hn
   · simp [Block.definedVars, Stmt.definedVars] at hn
   · simp [Block.funcDeclNames, Stmt.funcDeclNames] at hn
   · rw [hpref] at hp; simp at hp
   · simp [Block.defUseWellFormed, Stmt.defUseWellFormed]
+
+/-! ## Weakening to the generic Imperative block condition -/
+
+/-- A Core `BlockInitEnvWF` weakens to the generic `Imperative.Logic.BlockInitEnvWF`
+    at the reserved-prefix name predicate `Q`.  The generic gate keeps only three
+    of Core's conditions: evaluator well-formedness, that the block's defined
+    variables start undefined, and that no `Q`-name is initially defined — the last
+    of which is exactly Core's `reservedFresh` read at `Q`.  The init-type witnesses
+    are the same predicate on both sides, so they transfer unchanged. -/
+theorem BlockInitEnvWF.toImperative {params : InitEnvWFParams} {bss : Statements}
+    {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params bss ρ) :
+    Imperative.Logic.BlockInitEnvWF (P := Expression) (CmdT := Command)
+      (fun s => ∃ p ∈ params.prefixIdents, p.toList.isPrefixOf s.toList) bss ρ where
+  toWellFormedSemanticEval := h.toWellFormedSemanticEval
+  defsUndefined := fun x hx => Option.isNone_iff_eq_none.mp (h.defsUndefined x hx)
+  definedVarsNotReserved := by
+    intro y hy
+    obtain ⟨s, ⟨p, hp, hpre⟩, rfl⟩ := hy
+    cases hq : ρ.store (HasIdent.ident (P := Expression) s) with
+    | none => rfl
+    | some v =>
+      exact absurd hpre
+        (h.reservedFresh (HasIdent.ident (P := Expression) s) (by rw [hq]; rfl) p hp)
+  initTypesInhabited := h.initTypesInhabited
 
 end Core.Logic
 

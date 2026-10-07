@@ -645,10 +645,10 @@ procedure runMe()
 program Laurel;
 var $result: int := 0
 //  ^^^^^^^ error: file-scope global name '$result' is reserved for compiler-generated variables
-var $tmp0: int := 0
-//  ^^^^^ error: file-scope global name '$tmp0' is reserved for compiler-generated variables
-var $cp_0: int := 0
-//  ^^^^^ error: file-scope global name '$cp_0' is reserved for compiler-generated variables
+var $writeValue0: int := 0
+//  ^^^^^^^^^^^^ error: file-scope global name '$writeValue0' is reserved for compiler-generated variables
+var $inputCopy0: int := 0
+//  ^^^^^^^^^^^ error: file-scope global name '$inputCopy0' is reserved for compiler-generated variables
 var $heap: int := 0
 //  ^^^^^ error: file-scope global name '$heap' is reserved for compiler-generated variables
 #end

@@ -443,7 +443,7 @@ private def holePrelude (inputs : List Parameter) (decls : List HoleBinding)
   let src := body.source
   let args : List StmtExprMd := inputs.map fun p => ⟨.Var (.Local p.name), src⟩
   decls.foldr (init := body) fun (uid, name, ty) acc =>
-    let call : StmtExprMd := ⟨.StaticCall (declHoleName uid) args, src⟩
+    let call : StmtExprMd := ⟨.StaticCall (declHoleName uid) args [], src⟩
     let decl : StmtExprMd :=
       ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] call, src⟩
     ⟨.Block [decl, acc] none, src⟩

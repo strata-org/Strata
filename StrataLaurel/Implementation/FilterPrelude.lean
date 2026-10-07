@@ -90,7 +90,12 @@ private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
 private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
   foldStmtExprM (fun e => do
     match e.val with
-    | .StaticCall callee _ => addProcName callee.text
+    | .StaticCall callee _ tyArgs =>
+      addProcName callee.text
+      -- An inferred instantiation names types; those are reachability edges too, exactly as
+      -- `New`'s explicit ones are. Missing them would filter out a prelude type the program
+      -- still mentions after lowering.
+      tyArgs.forM collectHighTypeNames
     | .InstanceCall _ callee _ => addProcName callee.text
     -- `New` gained a `typeArgs` field with polymorphism; collect any explicit
     -- instantiation type names (`new Box<int>`) as well as the composite name.
@@ -189,7 +194,7 @@ private def CollectState.allNames (s : CollectState) : Std.HashSet String :=
 private def collectInvokeOnTargets (expr : StmtExprMd)
     : Except String (List String) := do
   match _h : expr.val with
-  | .StaticCall callee args =>
+  | .StaticCall callee args _ =>
     let rest ← args.attach.flatMapM (fun ⟨a, _⟩ => collectInvokeOnTargets a)
     return callee.text :: rest
   | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _

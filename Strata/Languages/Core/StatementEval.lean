@@ -6,6 +6,7 @@
 module
 
 import all Strata.Languages.Core.Statement
+import Strata.DL.Lambda.LExprType
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Imperative.StmtEval
@@ -162,7 +163,7 @@ def Command.inlineCallContract (E : Env)
 
     -- Apply type substitution to preconditions to instantiate type variables.
     let preconditions_typed := proc.spec.preconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
     -- Generate precondition proof obligations.
     let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
     let preconditions := preconditions.map
@@ -172,7 +173,7 @@ def Command.inlineCallContract (E : Env)
 
     -- Apply type substitution to postconditions to instantiate type variables.
     let postconditions_typed := proc.spec.postconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
     -- For inout parameters (in both inputs and outputs), the output mapping
     -- to a fresh post-call variable is the correct one; remove the duplicate
     -- input mapping so there is no ambiguity.

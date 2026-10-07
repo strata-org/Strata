@@ -56,6 +56,12 @@ instance : Imperative.ToGoto LExprTP where
 
 instance : Imperative.HasVal LExprTP where
   value _ _ := True
+  valueOfTy _ _ _ := True
+
+
+instance : Imperative.LawfulHasVal LExprTP where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 
 instance : Imperative.HasFvars LExprTP where
   getFvars _ := []
@@ -65,7 +71,7 @@ instance : Imperative.HasBool LExprTP where
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := .tcons "bool" []
-  boolIsVal := fun _ => ⟨trivial, trivial⟩
+  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩

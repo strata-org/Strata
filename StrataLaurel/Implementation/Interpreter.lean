@@ -238,7 +238,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       | some v => pure v
       | none =>
           liftM (m := IO) (throw (IO.userError s!"undefined identifier '{name.text}'"))
-  | .StaticCall callee args => do
+  | .StaticCall callee args _ => do
       match Operation.ofProcName? callee.text with
       | some .AndThen =>
           match args with

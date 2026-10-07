@@ -8,6 +8,7 @@ public import Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LStateProps
@@ -282,7 +283,7 @@ theorem eval_value_isCanonicalValue
               rename_i tySubst h_subst
               simp only [h_subst] at hv
               generalize h_target : LExpr.substFvarsLifting
-                ((lfunc.body.get _).applySubst tySubst)
+                ((lfunc.body.get _).applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip (List.map (fun a => (LExpr.eval n' F env a).fst) args)) = target at hv ⊢
               have h_and : ∃ b0, (LExpr.eval n' F env target).snd = .value b0 := by
                 rcases h_split : (LExpr.eval n' F env target).snd with _ | b0 | _
@@ -499,7 +500,7 @@ theorem eval_getVars_subset
             have h1 := ih _ y hy
             rcases getVars_substFvarsLifting_mem _ _ y h1 with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
             · exfalso
-              rw [getVars_applySubst] at hin
+              rw [getVars_applyTypeSubst] at hin
               have hsome : lfunc.body.isSome = true := by
                 simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
               have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
@@ -787,7 +788,7 @@ theorem eval_env_congr
             rename_i tySubst h_ts
             generalize h_new_e :
               LExpr.substFvarsLifting
-                ((lfunc.body.get (by simp only [Bool.and_eq_true] at h_cond; exact h_cond.1)).applySubst tySubst)
+                ((lfunc.body.get (by simp only [Bool.and_eq_true] at h_cond; exact h_cond.1)).applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip
                   (List.map (fun a => (LExpr.eval n' F env₂ a).fst) args)) = new_e
             have h_ih_new : LExpr.eval n' F env₁ new_e = LExpr.eval n' F env₂ new_e := by
@@ -796,7 +797,7 @@ theorem eval_env_congr
               rw [← h_new_e] at hx
               rcases getVars_substFvarsLifting_mem _ _ x hx with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
               · exfalso
-                rw [getVars_applySubst] at hin
+                rw [getVars_applyTypeSubst] at hin
                 have hsome : lfunc.body.isSome = true := by
                   simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
                 have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
@@ -1403,7 +1404,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
             intro h
             -- `inner` is the substituted body evaluated at fuel n'.
             let inner := LExpr.substFvarsLifting
-                ((lfunc.body.get h_body_isSome).applySubst tySubst)
+                ((lfunc.body.get h_body_isSome).applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip
                   (List.map (fun a => (LExpr.eval n' F env a).fst) args))
             have h_fst : (LExpr.eval n' F env inner).fst = v := by
@@ -1941,7 +1942,7 @@ theorem eval_frame
           · rename_i tySubst h_ts
             intro h
             let inner := LExpr.substFvarsLifting
-                ((lfunc.body.get h_body_isSome).applySubst tySubst)
+                ((lfunc.body.get h_body_isSome).applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip
                   (List.map (fun a => (LExpr.eval n' F env a).fst) args))
             have h_fst : (LExpr.eval n' F env inner).fst = v := by
@@ -3128,13 +3129,13 @@ theorem call_node_eval_eq
         · -- computeTypeSubst = some: shared closed reduct, store-independent.
           rename_i tySubst h_ts
           have hclosed : LExpr.LExpr.getVars
-              (((lfunc.body.get (by simp only [Bool.and_eq_true] at h_cond; exact h_cond.1)).applySubst tySubst).substFvarsLifting
+              (((lfunc.body.get (by simp only [Bool.and_eq_true] at h_cond; exact h_cond.1)).applyTypeSubst tySubst).substFvarsLifting
                 (lfunc.inputs.keys.zip
                   (args.map (fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).fst)))) = [] := by
             apply List.eq_nil_iff_forall_not_mem.mpr
             intro x hx
             rcases getVars_substFvarsLifting_mem _ _ x hx with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
-            · rw [getVars_applySubst] at hin
+            · rw [getVars_applyTypeSubst] at hin
               have hsome : lfunc.body.isSome = true := by
                 simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
               have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by simp [Option.some_get]

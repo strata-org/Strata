@@ -111,7 +111,7 @@ theorem set (params : InitEnvWFParams)
   cases hstep with
   | cmd_sem hbase =>
     cases hbase with
-    | eval_set heval hupdate _ =>
+    | eval_set heval hupdate _ _ =>
         exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hupdate⟩
 
 /-- Declaration.  `InitState` differs from `UpdateState` only in requiring the slot to
@@ -129,7 +129,7 @@ theorem init (params : InitEnvWFParams)
   cases hstep with
   | cmd_sem hbase =>
     cases hbase with
-    | eval_init heval hinit _ =>
+    | eval_init heval hinit _ _ =>
         exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hinit⟩
 
 /-! ## Structural rules -/

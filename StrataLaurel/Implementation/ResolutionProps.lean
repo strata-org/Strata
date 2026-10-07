@@ -252,7 +252,7 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
      | _ => []) ++ collectStmtExprList g rhs
   | .PureFieldUpdate target _ newValue =>
     collectStmtExprList g target ++ collectStmtExprList g newValue
-  | .StaticCall _ args => args.flatMap (collectStmtExprList g)
+  | .StaticCall _ args _ => args.flatMap (collectStmtExprList g)
   | .ReferenceEquals lhs rhs => collectStmtExprList g lhs ++ collectStmtExprList g rhs
   | .AsType target _ => collectStmtExprList g target
   | .IsType target _ => collectStmtExprList g target
@@ -1184,7 +1184,7 @@ public theorem resolve_fullyAnnotated' (p : Program)
   show CleanProgram (resolve p existingModel gradualTypes realizeCoercion toBool).program
   unfold resolve
   simp only []
-  exact phase1_clean masterSynth masterCheck p _
+  exact phase1_clean masterSynth masterCheck _ _
 
 
 end Plumbing

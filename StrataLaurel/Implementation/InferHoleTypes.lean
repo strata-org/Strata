@@ -215,12 +215,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
       let args' ← match calleeParamTypes model callee with
         | some paramTypes => inferArgsTyped args paramTypes source outputType
         | none =>
           inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
-      return ⟨.StaticCall callee args', source⟩
+      return ⟨.StaticCall callee args' tyArgs, source⟩
   | .InstanceCall target callee args =>
       return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType), source⟩
   | .ReferenceEquals lhs rhs =>

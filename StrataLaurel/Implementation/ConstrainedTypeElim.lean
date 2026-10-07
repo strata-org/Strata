@@ -63,7 +63,7 @@ def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
     (ref : StmtExprMd) (src : FileRange) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩
     else none
   | _ => none
 
@@ -85,8 +85,8 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
         let paramRef : StmtExprMd :=
           { val := .Var (.Local paramId), source := src }
         let parentCall : StmtExprMd :=
-          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := src }
-        { val := .StaticCall (mkId Operation.And.procName) [ct.constraint, parentCall], source := src }
+          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef] [], source := src }
+        { val := .StaticCall (mkId Operation.And.procName) [ct.constraint, parentCall] [], source := src }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
@@ -119,7 +119,7 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     -- that don't need further resolution.
     let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.And
     let injected := match constraintCallFor ptMap param.type.val param.name (src := source) with
-      | some c => ⟨.StaticCall (mkId combiner.procName) [c, body], source⟩
+      | some c => ⟨.StaticCall (mkId combiner.procName) [c, body] [], source⟩
       | none => body
     ⟨.Quantifier mode param' trigger injected, source⟩
   | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source⟩

@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.LExprType
 
 /-! # Call Elimination Transformation -/
 
@@ -70,7 +71,7 @@ def callElimCmd (s : Statement)
         -- empty and the applications below are no-ops.
         let tySubst ← freshenTypeArgsSubst freshTyVarPrefix proc.header.typeArgs
         let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
-        let instantiatedExpr (e : Expression.Expr) : Expression.Expr := Lambda.LExpr.applySubst e tySubst
+        let instantiatedExpr (e : Expression.Expr) : Expression.Expr := Lambda.LExpr.applyTypeSubst e tySubst
 
         -- The callee's signature with type variables instantiated. All later
         -- reads go through these (keys are unchanged by instantiation), so

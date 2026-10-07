@@ -27,6 +27,8 @@ evaluation relation `EvalCmd`. Key results:
 - `storeAgreement_storeWith`: a `SemanticStore.update` at a source-undefined slot
   preserves `StoreAgreement`.
 - `EvalCmd_preserves_isSome`: a command never undefines an already-defined slot.
+- Exact-value framing: `evalCmd_preserves_eq_of_not_written` preserves the value
+  of a slot the command neither defines nor modifies.
 - None-preservation: `InitState_preserves_none`, `UpdateState_preserves_none`,
   `evalCmd_preserves_none`, and `evalCmd_preserves_none_of_not_def` (a command
   preserves a `none` slot it neither defines nor modifies).
@@ -422,6 +424,29 @@ theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
   rw [h_agree x h_def]
   simp [SemanticStore.update, h_ne]
 
+/-- `InitState` never undefines a slot: its target becomes `some`, others are
+unchanged. -/
+theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h : InitState P σ x v σ') (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h with
+  | init _ h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_xv]; rfl
+    · rw [h_other y hxy]; exact h_some
+
+/-- `UpdateState` never undefines a slot. -/
+theorem UpdateState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
+    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    (h : UpdateState P σ x v σ') (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h with
+  | update _ h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_xv]; rfl
+    · rw [h_other y hxy]; exact h_some
+
 /-- A single `EvalCmd` never undefines a slot: any `y` that was `isSome` stays
 `isSome` (`init`/`set` only assign `some`; `assert`/`assume`/`cover` keep the
 store). -/
@@ -431,30 +456,14 @@ theorem EvalCmd_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
     {y : P.Ident} (h_some : (σ y).isSome = true) :
     (σ' y).isSome = true := by
   cases h with
-  | @eval_init _ _ _ _ _ _ x _ _ hinit _ =>
-    cases hinit with
-    | init _ h_xv h_other =>
-      by_cases hxy : x = y
-      · subst hxy; rw [h_xv]; rfl
-      · rw [h_other y hxy]; exact h_some
-  | @eval_init_unconstrained _ _ _ x _ _ _ hinit _ _ =>
-    cases hinit with
-    | init _ h_xv h_other =>
-      by_cases hxy : x = y
-      · subst hxy; rw [h_xv]; rfl
-      · rw [h_other y hxy]; exact h_some
-  | @eval_set _ _ _ _ _ x _ _ hupd _ =>
-    cases hupd with
-    | update _ h_xv h_other =>
-      by_cases hxy : x = y
-      · subst hxy; rw [h_xv]; rfl
-      · rw [h_other y hxy]; exact h_some
-  | @eval_set_nondet _ _ x _ _ _ hupd _ _ =>
-    cases hupd with
-    | update _ h_xv h_other =>
-      by_cases hxy : x = y
-      · subst hxy; rw [h_xv]; rfl
-      · rw [h_other y hxy]; exact h_some
+  | eval_init _ hinit _ _ =>
+    exact InitState_preserves_isSome hinit h_some
+  | eval_init_unconstrained hinit _ _ =>
+    exact InitState_preserves_isSome hinit h_some
+  | eval_set _ hupd _ _ =>
+    exact UpdateState_preserves_isSome hupd h_some
+  | eval_set_nondet hupd _ _ =>
+    exact UpdateState_preserves_isSome hupd h_some
   | eval_assert_pass _ _ => exact h_some
   | eval_assert_fail _ _ => exact h_some
   | eval_assume _ _ => exact h_some
@@ -491,34 +500,63 @@ theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     (h_not_mod : y ∉ Cmd.modifiedVars c) :
     σ' y = none := by
   cases h with
-  | @eval_init _ _ _ _ _ _ x _ _ hinit _ =>
-    have h_ne : x ≠ y := by
-      intro h_eq; apply h_not_def
-      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+  | eval_init _ hinit _ _ =>
     cases hinit with
-    | init _ _ h_other => rw [h_other y h_ne]; exact h_none
-  | @eval_init_unconstrained _ _ _ x _ _ _ hinit _ _ =>
-    have h_ne : x ≠ y := by
-      intro h_eq; apply h_not_def
-      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
+    | init _ _ h_other =>
+      rw [h_other y (by
+        intro h
+        subst h
+        exact h_not_def (by simp [Cmd.definedVars]))]
+      exact h_none
+  | eval_init_unconstrained hinit _ _ =>
     cases hinit with
-    | init _ _ h_other => rw [h_other y h_ne]; exact h_none
-  | @eval_set _ _ _ _ _ x _ _ hupd _ =>
-    have h_ne : x ≠ y := by
-      intro h_eq; apply h_not_mod
-      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
-    cases hupd with
-    | update _ _ h_other => rw [h_other y h_ne]; exact h_none
-  | @eval_set_nondet _ _ x _ _ _ hupd _ _ =>
-    have h_ne : x ≠ y := by
-      intro h_eq; apply h_not_mod
-      rw [h_eq]; with_unfolding_all exact List.mem_singleton.mpr rfl
-    cases hupd with
-    | update _ _ h_other => rw [h_other y h_ne]; exact h_none
+    | init _ _ h_other =>
+      rw [h_other y (by
+        intro h
+        subst h
+        exact h_not_def (by simp [Cmd.definedVars]))]
+      exact h_none
+  | eval_set _ hupd _ _ =>
+    exact UpdateState_preserves_none hupd h_none
+  | eval_set_nondet hupd _ _ =>
+    exact UpdateState_preserves_none hupd h_none
   | eval_assert_pass _ _ => exact h_none
   | eval_assert_fail _ _ => exact h_none
   | eval_assume _ _ => exact h_none
   | eval_cover _ => exact h_none
+
+/-- **Exact-value frame.**  A single `EvalCmd` whose command neither defines nor
+modifies `y` preserves the *exact* value at `y`: `σ' y = σ y`.  This is the
+value-level companion of `evalCmd_preserves_none`/`EvalCmd_preserves_isSome`. -/
+theorem evalCmd_preserves_eq_of_not_written {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
+    (h : EvalCmd P f σ c σ' haf)
+    {y : P.Ident}
+    (h_not_def : y ∉ Cmd.definedVars c)
+    (h_not_mod : y ∉ Cmd.modifiedVars c) :
+    σ' y = σ y := by
+  cases h with
+  | eval_init _ hinit _ _ =>
+    cases hinit with
+    | init _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact h_not_def (by simp [Cmd.definedVars]))
+  | eval_init_unconstrained hinit _ _ =>
+    cases hinit with
+    | init _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact h_not_def (by simp [Cmd.definedVars]))
+  | eval_set _ hupd _ _ =>
+    cases hupd with
+    | update _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact h_not_mod (by simp [Cmd.modifiedVars]))
+  | eval_set_nondet hupd _ _ =>
+    cases hupd with
+    | update _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact h_not_mod (by simp [Cmd.modifiedVars]))
+  | eval_assert_pass _ _ => rfl
+  | eval_assert_fail _ _ => rfl
+  | eval_assume _ _ => rfl
+  | eval_cover _ => rfl
 
 /-- `InitState` writes `some v`, so the slot cannot come back `none`. -/
 private theorem initState_isSome {P : PureExpr}
@@ -579,7 +617,7 @@ step preserves a `none` slot `y` it does not `init`/`set`.  `assert`/`assume`/
 theorem evalCmdE_preserves_none_of_not_def {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
-    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_eval : EvalCmdE P f σ c σ' emitted)
     (h_none : σ y = none)
     (h_not_def : y ∉ Cmd.definedVars c) :
     σ' y = none := by
@@ -597,42 +635,21 @@ theorem evalCmdE_preserves_none_of_not_def {P : PureExpr}
   | eval_assume => exact h_none
   | eval_cover => exact h_none
 
-/-- `InitState` never undefines a slot: its target becomes `some`, others are
-unchanged. -/
-theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
-    (h : InitState P σ x v σ') (h_some : (σ y).isSome = true) :
-    (σ' y).isSome = true := by
-  cases h with
-  | init _ h_xv h_other =>
-    by_cases hxy : x = y
-    · subst hxy; rw [h_xv]; rfl
-    · rw [h_other y hxy]; exact h_some
-
-/-- `UpdateState` never undefines a slot. -/
-theorem UpdateState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
-    (h : UpdateState P σ x v σ') (h_some : (σ y).isSome = true) :
-    (σ' y).isSome = true := by
-  cases h with
-  | update _ h_xv h_other =>
-    by_cases hxy : x = y
-    · subst hxy; rw [h_xv]; rfl
-    · rw [h_other y hxy]; exact h_some
-
 /-- Event-trace analogue of `EvalCmd_preserves_isSome`: an `EvalCmdE` step never
 undefines a slot.  `init`/`set` only assign `some`; `assert`/`assume`/`cover`
 keep the store. -/
 theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
-    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_eval : EvalCmdE P f σ c σ' emitted)
     (h_some : (σ y).isSome = true) :
     (σ' y).isSome = true := by
   cases h_eval with
   | eval_init _ hinit _ => exact InitState_preserves_isSome hinit h_some
-  | eval_init_unconstrained hinit _ _ => exact InitState_preserves_isSome hinit h_some
+  | eval_init_unconstrained hinit _ _ =>
+    exact InitState_preserves_isSome hinit h_some
   | eval_set _ hupd _ => exact UpdateState_preserves_isSome hupd h_some
-  | eval_set_nondet hupd _ _ => exact UpdateState_preserves_isSome hupd h_some
+  | eval_set_nondet hupd _ _ =>
+    exact UpdateState_preserves_isSome hupd h_some
   | eval_assert => exact h_some
   | eval_assume => exact h_some
   | eval_cover => exact h_some
@@ -641,7 +658,7 @@ theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
 `y` leaves it defined.  Only `init` declares variables. -/
 theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
-    (h_eval : EvalCmdE (P := P) f σ c σ' emitted)
+    (h_eval : EvalCmdE P f σ c σ' emitted)
     (h_def : y ∈ Cmd.definedVars c) :
     (σ' y).isSome = true := by
   cases h_eval with
@@ -660,6 +677,7 @@ theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
 /-- **A command leaves the store holding only values.**  Every writing rule supplies
     value-hood for what it writes, and the rest do not touch the store. -/
 theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {fl : Bool}
     (hval : WellFormedSemanticEvalVal (P := P) f)
     (h : EvalCmd P f σ c σ' fl) (hsv : WellFormedStore σ f) :
@@ -678,13 +696,16 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
     | init _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
   | eval_init_unconstrained hinit hv _ =>
     cases hinit with
-    | init _ hx hoth => exact hwrite _ _ hv hx hoth
+    | init _ hx hoth =>
+      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
   | eval_set heval hup _ =>
     cases hup with
     | update _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
-  | eval_set_nondet hup hv _ =>
+  | eval_set_nondet hup htyped _ =>
+    obtain ⟨_, _, _, _, hv⟩ := htyped
     cases hup with
-    | update _ hx hoth => exact hwrite _ _ hv hx hoth
+    | update _ hx hoth =>
+      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
   | eval_assert_pass _ _ => exact hsv
   | eval_assert_fail _ _ => exact hsv
   | eval_assume _ _ => exact hsv
@@ -694,9 +715,10 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
 a store that holds only values.  `assert`/`assume`/`cover` keep the store;
 `init`/`set` write a value. -/
 theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
     (hval : WellFormedSemanticEvalVal (P := P) f)
-    (h : EvalCmdE (P := P) f σ c σ' emitted) (hsv : WellFormedStore σ f) :
+    (h : EvalCmdE P f σ c σ' emitted) (hsv : WellFormedStore σ f) :
     WellFormedStore σ' f := by
   have hwrite : ∀ (x : P.Ident) (v : P.Expr), HasVal.value f v →
       σ' x = some v → (∀ y, x ≠ y → σ' y = σ y) → WellFormedStore σ' f := by
@@ -710,13 +732,16 @@ theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoo
     | init _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
   | eval_init_unconstrained hinit hv _ =>
     cases hinit with
-    | init _ hx hoth => exact hwrite _ _ hv hx hoth
+    | init _ hx hoth =>
+      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
   | eval_set heval hup _ =>
     cases hup with
     | update _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
-  | eval_set_nondet hup hv _ =>
+  | eval_set_nondet hup htyped _ =>
+    obtain ⟨_, _, _, _, hv⟩ := htyped
     cases hup with
-    | update _ hx hoth => exact hwrite _ _ hv hx hoth
+    | update _ hx hoth =>
+      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
   | eval_assert => exact hsv
   | eval_assume => exact hsv
   | eval_cover => exact hsv
@@ -740,10 +765,10 @@ theorem EvalCmd.toEvalCmdE {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
     (h : EvalCmd P f σ c σ' failed) :
     EvalCmdE P f σ c σ' (Cmd.emittedEvents P c f σ) := by
   cases h with
-  | eval_init heval hinit hvar => exact .eval_init heval hinit hvar
+  | eval_init heval hinit htyped hvar => exact .eval_init heval hinit htyped hvar
   | eval_init_unconstrained hinit hval hvar =>
       exact .eval_init_unconstrained hinit hval hvar
-  | eval_set heval hupdate hvar => exact .eval_set heval hupdate hvar
+  | eval_set heval hupdate htyped hvar => exact .eval_set heval hupdate htyped hvar
   | eval_set_nondet hupdate hval hvar => exact .eval_set_nondet hupdate hval hvar
   | eval_assert_pass _ _ => exact .eval_assert
   | eval_assert_fail _ _ => exact .eval_assert

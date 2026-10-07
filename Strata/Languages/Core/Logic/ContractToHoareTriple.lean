@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Logic.Hoare
 public import Strata.Languages.Core.Program
+import Strata.DL.Lambda.LExprType
 import all Strata.Languages.Core.Logic.Hoare
 
 /-! # A procedure's contract, read as a Hoare triple
@@ -86,12 +87,12 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
     ρ.store (CoreIdent.mkOld id.name) = ρ.store id
 
 /-- Runtime values matching a declared Core type. Bitvectors are represented by
-width-matching literals; other values use their syntactically recoverable type. -/
+width-matching literals; other values must type-check as closed expressions. -/
 @[expose] def Procedure.valueHasType (ty : Lambda.LMonoTy)
     (v : Expression.Expr) : Prop :=
   match ty with
   | .bitvec n => ∃ b : BitVec n, v = Lambda.LExpr.bitvecConst () n b
-  | _ => Lambda.LExpr.typeOf v = some ty
+  | _ => Lambda.LExpr.typeCheck [] v = some ty
 
 /-- Every input and inout formal is bound to a value matching its declared type. -/
 @[expose] def Procedure.inputAsPredicate (proc : Procedure)

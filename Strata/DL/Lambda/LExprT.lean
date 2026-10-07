@@ -96,7 +96,7 @@ Convert a typed `LExprT` back to an `LExpr`:
 /--
 Apply type substitution `S` to `LExpr e`.
 This is for metadata-stored types.
-To change user-defined types, use applySubst
+To change user-defined types, use applyTypeSubst
 -/
 def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
   LExpr.replaceMetadata (T:=T.mono.typed) (NewMetadata:=T.mono.typed.base.Metadata) e <|

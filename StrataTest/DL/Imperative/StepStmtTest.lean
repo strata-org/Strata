@@ -64,6 +64,11 @@ abbrev MiniPureExpr : PureExpr :=
 
 instance : HasVal MiniPureExpr where
   value _ _ := True
+  valueOfTy _ _ _ := True
+
+instance : LawfulHasVal MiniPureExpr where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 
 instance : HasFvars MiniPureExpr where
   getFvars _ := []
@@ -73,7 +78,7 @@ instance : HasBool MiniPureExpr where
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
-  boolIsVal := fun _ => ⟨trivial, trivial⟩
+  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : HasBoolOps MiniPureExpr where
   not := .not
@@ -319,13 +324,18 @@ abbrev MiniPureExpr2 : PureExpr :=
 
 instance : HasVal MiniPureExpr2 where
   value _ _ := True
+  valueOfTy _ _ _ := True
 
+
+instance : LawfulHasVal MiniPureExpr2 where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 instance : HasBool MiniPureExpr2 where
   tt := .tt
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
-  boolIsVal := fun _ => ⟨trivial, trivial⟩
+  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : HasBoolOps MiniPureExpr2 where
   not := .not
@@ -395,7 +405,7 @@ theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) () := by
 
 /-- The standard `EvalCmd` for `Cmd MiniPureExpr`. -/
 def stdEvalCmd : EvalCmdParam MiniPureExpr (Cmd MiniPureExpr) :=
-  EvalCmd MiniPureExpr
+  EvalCmd (P := MiniPureExpr)
 
 /-- A store where "x" is defined (maps to `.tt`), everything else is `none`. -/
 def storeWithX : SemanticStore MiniPureExpr :=
@@ -448,6 +458,7 @@ theorem blockScopeTest :
               (show storeWithX "y" = none from rfl)
               (show storeWithXY "y" = some .tt from rfl)
               storeWithXY_frame)
+            (show HasVal.valueOfTy (P := MiniPureExpr) () .tt .Bool from trivial)
             miniEval_wfVar)))) ?_
   -- Step 4: step_block_body (step_seq_done) — seq is done, go to stmts [].
   refine .step _ _ _
@@ -515,6 +526,7 @@ theorem loopScopeTest :
                 (show storeWithX "y" = none from rfl)
                 (show storeWithXY "y" = some .tt from rfl)
                 storeWithXY_frame)
+              (show HasVal.valueOfTy (P := MiniPureExpr) () .tt .Bool from trivial)
               miniEval_wfVar))))) ?_
   -- Step 4: step_seq_inner (step_block_body step_seq_done) — inner stmt terminal
   refine .step _ _ _
@@ -571,7 +583,7 @@ theorem reinit_stuck :
       (.stmt (.cmd (.init "x" .Bool (.det .ff) .empty)) ρ_x) c₂ := by
   intro ⟨c₂, hstep⟩
   match hstep with
-  | .step_cmd (.eval_init _ (.init h_none _ _) _) =>
+  | .step_cmd (.eval_init _ (.init h_none _ _) _ _) =>
     exact absurd h_none (by simp [ρ_x, storeWithX])
 
 ---------------------------------------------------------------------

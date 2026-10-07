@@ -143,6 +143,16 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
+/-- The declared types of the `init` commands in `c`: a singleton for `init`,
+    empty otherwise. -/
+@[expose] def Cmd.initTypes (c : Cmd P) : List P.Ty :=
+  match c with
+  | .init _ ty _ _ => [ty]
+  | _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (Cmd P) where
+  initTypes := Cmd.initTypes
+
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
@@ -280,6 +290,16 @@ instance : HasHavoc P (CmdExt P) where
 
 instance : HasInit P (CmdExt P) where
   init x ty e md := .cmd (.init x ty e md)
+
+/-- The declared init-types of a `CmdExt`: those of the wrapped command; a
+    procedure `call` initializes nothing. -/
+@[expose] def CmdExt.initTypes (c : CmdExt P) : List P.Ty :=
+  match c with
+  | .cmd c => Cmd.initTypes c
+  | .call _ _ _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (CmdExt P) where
+  initTypes := CmdExt.initTypes
 
 ---------------------------------------------------------------------
 
