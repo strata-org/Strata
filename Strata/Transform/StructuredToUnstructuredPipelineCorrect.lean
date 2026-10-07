@@ -77,7 +77,7 @@ variable [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- Under `PipelinePre`, `nondetElim` overapproximates the source imperative-block
 language by itself up to `EnvStoreAgree`, with source kind `pipelineKind` and target
 kind `s2uKind`. -/
-private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
+private theorem nondetElim_overapproximates_upto [HasSubstFvar P] [LawfulHasVal P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
@@ -104,9 +104,14 @@ private theorem nondetElim_overapproximates_upto [HasSubstFvar P]
     nondetElim_overapproximates_upto_local (P := P) extendFactory ss (Block.nondetElim ss) rfl
       ⟨hpre.h_nofd, hpre.h_unique, hpre.h_ndelim_writes⟩
       ρ₀ ρ₀ rfl
-      ⟨hwf.toWellFormedSemanticEval, hwf.defsUndefined, h_gens_ndelim⟩
+      ⟨hwf.toWellFormedSemanticEval, hwf.defsUndefined, h_gens_ndelim, hwf.initTypesInhabited⟩
+  have h_tgt_inhab : Block.InitTypesInhabited (P := P) ρ₀.factory (Block.nondetElim ss) := by
+    intro ty hty
+    rcases Block.nondetElimM_initTypes_classified ss StringGenState.emp ty hty with h_src | h_bool
+    · exact hwf.initTypesInhabited ty h_src
+    · subst h_bool; exact ⟨HasBool.tt, (HasBool.boolIsValOfTy ρ₀.factory).1⟩
   refine ⟨h_arms, h_canfail,
-    { hwf.toWellFormedSemanticEval with defsUndefined := ?_, definedVarsNotReserved := h_gens_s2u }⟩
+    { hwf.toWellFormedSemanticEval with defsUndefined := ?_, definedVarsNotReserved := h_gens_s2u, initTypesInhabited := h_tgt_inhab }⟩
   -- `nondetElim`-output initVars are undefined in ρ₀: source `initVars`
   -- (`hwf.defsUndefined`) or `ndelimKind`-generated (`h_gens_ndelim`).
   intro x hx
@@ -225,7 +230,7 @@ private theorem hpre_ndelim_hoist :
 transitive) into one source-`imperativeBlock` → `cfg` instance, with the monadic
 composition of the three pass transforms and `pre = pre_src`.  The source
 language's `initEnvWF` is keyed on the combined `pipelineKind`. -/
-private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P]
+private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [LawfulHasVal P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
@@ -280,7 +285,7 @@ private theorem pipeline_transform_eq (ss : List (Stmt P (Cmd P))) :
 whole-pipeline refinement: `fun ss => some (s2uPipeline ss)` overapproximates the
 source statement-list language by the unstructured CFG language up to
 `EnvStoreAgree`. -/
-theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P]
+theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P] [LawfulHasVal P]
     (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)

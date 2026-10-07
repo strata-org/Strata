@@ -87,7 +87,6 @@ info: procedure exprForm()
   opaque
 {
   var x: int := 5;
-  var $x_0: int := x;
   x := x + 2;
   var y: int := x;
   assert x == 7;
@@ -124,7 +123,6 @@ info: procedure nestedRhs()
 {
   var x: int := 1;
   var y: int := 10;
-  var $y_0: int := y;
   y := y + 1;
   x := x + y;
   assert y == 11;

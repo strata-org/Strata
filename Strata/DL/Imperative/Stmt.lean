@@ -490,6 +490,41 @@ def Block.initVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   Block.definedVars ss false
 
 mutual
+/-- Deep init-type list of a statement: the declared type of every `init`
+    command at any nesting level.  Parallel to `Stmt.definedVars _ false`, but
+    collecting the `init` types rather than the names. -/
+@[expose]
+def Stmt.initTypes [HasInitTypesImp P C] (s : Stmt P C) : List P.Ty :=
+  match s with
+  | .cmd cmd => HasInitTypesImp.initTypes cmd
+  | .block _ bss _ => Block.initTypes bss
+  | .ite _ tbss ebss _ => Block.initTypes tbss ++ Block.initTypes ebss
+  | .loop _ _ _ body _ => Block.initTypes body
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Deep init-type list of a block. -/
+@[expose]
+def Block.initTypes [HasInitTypesImp P C] (ss : Block P C) : List P.Ty :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.initTypes s ++ Block.initTypes srest
+end
+
+/-- Every init-type collected from the statement `s` has a `valueOfTy` witness in
+    the factory `f`; types absent from `s` need no witness. -/
+@[expose]
+def Stmt.InitTypesInhabited [HasVal P] [HasInitTypesImp P C] (f : P.Factory) (s : Stmt P C) : Prop :=
+  ∀ ty ∈ Stmt.initTypes s, ∃ v, HasVal.valueOfTy f v ty
+
+/-- Every init-type collected from the block `ss` has a `valueOfTy` witness in
+    the factory `f`.  See `Stmt.InitTypesInhabited`. -/
+@[expose]
+def Block.InitTypesInhabited [HasVal P] [HasInitTypesImp P C] (f : P.Factory) (ss : Block P C) : Prop :=
+  ∀ ty ∈ Block.initTypes ss, ∃ v, HasVal.valueOfTy f v ty
+
+mutual
 /-- Get all variables modified by the statement `s`. -/
 @[simp, expose]
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=

@@ -58,8 +58,10 @@ procedure select<K, V>(map: TotalMap K V, key: K) : V
 procedure update<K, V>(map: TotalMap K V, key: K, value: V) : TotalMap K V
   external;
 
-// `K` is not determined by the single value argument; `LaurelToCoreSchemaPass` recovers it
-// from the binding's declared type (`expectedType`), defaulting to `TypeTag`.
+// `K` is not determined by the single value argument, so it comes from the CHECK direction:
+// resolution matches this declared return type against the expected type at the call site
+// (`var m: TotalMap int bool := mapConst(false)` binds `K ↦ int`) and reports an error when
+// nothing determines it. `LaurelToCoreSchemaPass` then reads it off the binding.
 procedure mapConst<K, V>(value: V) : TotalMap K V
   external;
 
@@ -72,8 +74,9 @@ procedure mapConst<K, V>(value: V) : TotalMap K V
 // corresponding Core `Set.*` op by `coreSetOpName?`. The spellings differ (`setInsert` vs
 // `Set.insert`) only because a Laurel identifier cannot contain a `.`.
 //
-// `setEmpty`'s element type is not determined by any argument, so — like `mapConst`'s key —
-// it is recovered from the declared type at the use site (`var s: Set<int> := setEmpty()`).
+// `setEmpty`'s element type is not determined by any argument, so — like `mapConst`'s key — it
+// is bound by resolution's check direction from the declared type at the use site
+// (`var s: Set<int> := setEmpty()`), and is a resolution error when nothing supplies it.
 opaque Set<T>
 
 procedure setEmpty<T>() : Set<T> external;

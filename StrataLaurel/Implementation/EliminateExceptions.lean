@@ -204,7 +204,7 @@ private def declNoInit (name : String) (ty : HighTypeMd) : StmtExprMd :=
 private def declInit (name : String) (ty : HighTypeMd) (val : StmtExprMd) : StmtExprMd :=
   nn (.Assign [⟨.Declare ⟨mkId name, ty⟩, .unknown⟩] val)
 private def callStatic (name : String) (args : List StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId name) args)
+  nn (.StaticCall (mkId name) args [])
 /-- `Ctor(arg)` / `Datatype..fn(arg)` — a single-argument datatype op. -/
 private def resultApp (fn : String) (arg : StmtExprMd) : StmtExprMd := callStatic fn [arg]
 private def exitTo (label : String) : StmtExprMd := nn (.Exit label)
@@ -215,11 +215,11 @@ private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
 -- Operators are calls to their built-in wrappers (see `Operation.procName`); neither
 -- `$implies` nor `$and` is overloaded, so these names survive `UniqueOverloadNames`.
 private def impliesOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.Implies.procName) [a, b])
+  nn (.StaticCall (mkId Operation.Implies.procName) [a, b] [])
 private def orOf (a b : StmtExprMd) : StmtExprMd :=
   callStatic Operation.Or.procName [a, b]
 private def andOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.And.procName) [a, b])
+  nn (.StaticCall (mkId Operation.And.procName) [a, b] [])
 /-- `e as ty` — a downcast. On a propagation edge its runtime cast-assert is
     discharged by a preceding `assume e is ty` (see `lowerTry`). -/
 private def asTypeOf (e : StmtExprMd) (ty : HighTypeMd) : StmtExprMd := nn (.AsType e ty)
@@ -473,7 +473,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   markUsedExc
   let model := (← get).model
   let callee := match callNode.val with
-    | .StaticCall c _ => c
+    | .StaticCall c _ _ => c
     | .InstanceCall _ c _ => c
     | _ => mkId "?"
   let p? := calleeProc model callee
@@ -605,12 +605,12 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       -- A call to a throwing procedure on the RHS needs the propagate/unwrap
       -- dispatch; any other assignment is left untouched.
       match value.val with
-      | .StaticCall callee _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
           if calleeThrows (← get).model callee then
             lowerThrowingCall ctx value targets
           else pure [stmt]
       | _ => pure [stmt]
-  | .StaticCall callee _ =>
+  | .StaticCall callee _ _ =>
       if calleeThrows (← get).model callee then
         lowerThrowingCall ctx stmt []
       else pure [stmt]
@@ -844,7 +844,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   match _h : stmt.val with
   | .Throw _ => true
   | .Try _ _ _ => true
-  | .StaticCall callee _ => calleeThrows model callee
+  | .StaticCall callee _ _ => calleeThrows model callee
   | .InstanceCall _ callee _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
   | .Block stmts _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)

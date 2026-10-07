@@ -32,7 +32,9 @@ Key results for `StepStmt` / `StepStmtStar`:
 - Configuration invariants: `Config.varsDefined_star_of`,
   `Config.varsUndefinedThroughout_star_of`,
   `Config.varsUndefinedScoped_star_of`, and
-  `Config.storeWellDefined_star_of` preserve store-domain properties.
+  `Config.storeWellDefined_star_of` preserve store-domain properties;
+  `block_run_terminal_preserves_eq_of_not_written` preserves the exact value of
+  variables a block does not write.
 - Factory preservation: `noFuncDecl_preserves_factory` and its block,
   statement, and exiting corollaries, together with `factoryExtendsOf`
   step/star preservation.
@@ -2616,7 +2618,7 @@ The havoc value is existentially chosen by `eval_init_unconstrained`. -/
 theorem step_init_havoc_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (ident : P.Ident) (ty : P.Ty) (b : P.Expr) (md : MetaData P) (ρ : Env P)
     (h_none : ρ.store ident = none)
-    (hval : HasVal.value ρ.factory b)
+    (hval : HasVal.valueOfTy ρ.factory b ty)
     (hwf_var : WellFormedSemanticEvalVar ρ.factory) :
     StepStmtStar P (EvalCmd P) extendFactory
       (.stmt (.cmd (HasInit.init ident ty (.nondet) md)) ρ)
@@ -2642,7 +2644,9 @@ per-iteration re-havoc emitted at the body tail of the rewritten nondet loop. -/
 theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (ident : P.Ident) (b : P.Expr) (md : MetaData P) (ρ : Env P)
     (v' : P.Expr) (h_def : ρ.store ident = some v')
-    (hval : HasVal.value ρ.factory b)
+    (ty : P.Ty)
+    (hprev : HasVal.valueOfTy ρ.factory v' ty)
+    (hval : HasVal.valueOfTy ρ.factory b ty)
     (hwf_var : WellFormedSemanticEvalVar ρ.factory) :
     StepStmtStar P (EvalCmd P) extendFactory
       (.stmt (.cmd (HasHavoc.havoc ident md)) ρ)
@@ -2652,7 +2656,7 @@ theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     apply EvalCmd.eval_set_nondet (v := b)
     · exact UpdateState.update h_def (by simp [SemanticStore.update]) (by
         intro y hy; simp [SemanticStore.update, Ne.symm hy])
-    · exact hval
+    · exact ⟨v', ty, h_def, hprev, hval⟩
     · exact hwf_var
   have h_step := StepStmt.step_cmd (P := P) (EvalCmd := EvalCmd P)
     (extendFactory := extendFactory) (ρ := ρ) (c := HasHavoc.havoc ident md)
@@ -3477,6 +3481,155 @@ theorem block_run_terminal_preserves_none_of_not_definedVars {P : PureExpr}
     ρ'.store y = none :=
   Config.varsUndefinedThroughout_star (Q := (· = y)) h_run
     (by rintro z rfl; exact ⟨h_none, all_not_mem_definedVars_of_block h_y_not_def⟩) y rfl
+
+/-! ## Per-variable *value* preservation through a run (frame lemma)
+
+Dual of `Config.varsUndefined`: rather than tracking that a variable stays
+`none`, we track that a variable holds a *fixed value option* `w` — both in the
+operative store and in every enclosing block's saved parent store — as long as no
+statement still to run writes it (neither `init`s it at any scope depth, nor
+`set`/`havoc`s it).  This lifts the command-level exact-value frame
+(`evalCmd_preserves_eq_of_not_written`) to a whole terminating/escaping run: a
+variable a block never writes exits the block with exactly its entry value. -/
+
+/-- A statement list writes `y` at neither scope: `y` is defined by no member (at
+any nesting depth) and modified by no member.  Companion of
+`all_not_mem_definedVars_of_block` for the modified-variable set. -/
+private theorem all_not_mem_modifiedVars_of_block {P : PureExpr} [HasFvars P]
+    {y : P.Ident} {ss : List (Stmt P (Cmd P))}
+    (h : y ∉ Block.modifiedVars (P := P) (C := Cmd P) ss) :
+    ∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s := by
+  induction ss with
+  | nil => intro s hs; exact absurd hs (List.not_mem_nil)
+  | cons s rest ih =>
+    rw [Block.modifiedVars] at h
+    intro s' hs'
+    rcases List.mem_cons.mp hs' with h_eq | h_in
+    · exact h_eq ▸ (fun hc => h (List.mem_append.mpr (Or.inl hc)))
+    · exact ih (fun hc => h (List.mem_append.mpr (Or.inr hc))) s' h_in
+
+/-- Scope-aware value-preservation invariant: the variable `y` is bound to the
+fixed value option `w` in the operative store and in every enclosing block's
+saved parent store, and no statement still to run writes `y` (defines it at any
+depth or modifies it). -/
+@[expose] def Config.varEqUnwritten {P : PureExpr} [HasFvars P]
+    (y : P.Ident) (w : Option P.Expr) : Config P (Cmd P) → Prop
+  | .stmt s ρ => ρ.store y = w
+      ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+      ∧ y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s
+  | .stmts ss ρ => ρ.store y = w
+      ∧ (∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false)
+      ∧ (∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s)
+  | .terminal ρ => ρ.store y = w
+  | .exiting _ ρ => ρ.store y = w
+  | .block _ σ_parent _ inner => σ_parent y = w ∧ Config.varEqUnwritten y w inner
+  | .seq inner ss => Config.varEqUnwritten y w inner
+      ∧ (∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false)
+      ∧ (∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s)
+
+/-- A single `EvalCmd` statement step preserves `Config.varEqUnwritten`. -/
+theorem Config.varEqUnwritten_step {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {y : P.Ident} {w : Option P.Expr} {cfg cfg' : Config P (Cmd P)}
+    (h_step : StepStmt P (EvalCmd P) extendFactory cfg cfg')
+    (h_inv : Config.varEqUnwritten (P := P) y w cfg) :
+    Config.varEqUnwritten (P := P) y w cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    have heq := evalCmd_preserves_eq_of_not_written (y := y) h_eval
+      (by simpa [Stmt.definedVars, HasVarsImp.definedVars] using hnd)
+      (by simpa [Stmt.modifiedVars, HasVarsImp.modifiedVars] using hnm)
+    exact heq.trans hw
+  | step_block =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩
+  | step_ite_true _ _ | step_ite_nondet_true =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw,
+      all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inl hc))),
+      all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inl hc)))⟩
+  | step_ite_false _ _ | step_ite_nondet_false =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw,
+      all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inr hc))),
+      all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inr hc)))⟩
+  | step_loop_enter _ _ | step_loop_nondet_enter =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    have hnd' := hnd; have hnm' := hnm
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    refine ⟨⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩,
+      ?_, ?_⟩
+    · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnd'
+    · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnm'
+  | step_loop_exit _ _ | step_loop_nondet_exit | step_exit | step_typeDecl =>
+    exact h_inv.1
+  | step_funcDecl =>
+    show _ = w; exact h_inv.1
+  | step_stmts_nil =>
+    exact h_inv.1
+  | step_stmts_cons =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    exact ⟨⟨hw, hnd _ List.mem_cons_self, hnm _ List.mem_cons_self⟩,
+      fun s hs => hnd _ (List.mem_cons_of_mem _ hs),
+      fun s hs => hnm _ (List.mem_cons_of_mem _ hs)⟩
+  | step_seq_inner _ ih =>
+    obtain ⟨h_inner, h_nd, h_nm⟩ := h_inv
+    exact ⟨ih h_inner, h_nd, h_nm⟩
+  | step_seq_done =>
+    obtain ⟨h_inner, h_nd, h_nm⟩ := h_inv
+    exact ⟨h_inner, h_nd, h_nm⟩
+  | step_seq_exit =>
+    exact h_inv.1
+  | step_block_body _ ih =>
+    obtain ⟨h_parent, h_inner⟩ := h_inv
+    exact ⟨h_parent, ih h_inner⟩
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    obtain ⟨h_parent, h_inner⟩ := h_inv
+    have hi : _ = w := h_inner
+    show projectStore _ _ y = w
+    simp only [projectStore]
+    rw [h_parent, hi]
+    cases w with
+    | none => simp
+    | some v => simp
+
+/-- Trace lift: `Config.varEqUnwritten` is preserved along a multi-step run. -/
+theorem Config.varEqUnwritten_star {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {y : P.Ident} {w : Option P.Expr} {cfg cfg' : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) extendFactory cfg cfg')
+    (h_inv : Config.varEqUnwritten (P := P) y w cfg) :
+    Config.varEqUnwritten (P := P) y w cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih => exact ih (Config.varEqUnwritten_step h_step h_inv)
+
+/-- **Value frame lemma.**  A terminating `.stmts bss` run preserves the exact
+value at any `y` the block never writes: if `y ∉ Block.definedVars bss false`
+and `y ∉ Block.modifiedVars bss`, then `ρ'.store y = ρ.store y`.  The exact-value
+analogue of `block_run_terminal_preserves_none_of_not_definedVars`; instantiates
+the `Config.varEqUnwritten` engine at `w := ρ.store y`. -/
+theorem block_run_terminal_preserves_eq_of_not_written {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {extendFactory : ExtendFactory P}
+    {y : P.Ident} {bss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
+    (h_y_not_def : y ∉ Block.definedVars (P := P) (C := Cmd P) bss false)
+    (h_y_not_mod : y ∉ Block.modifiedVars (P := P) (C := Cmd P) bss)
+    (h_run : StepStmtStar P (EvalCmd P) extendFactory (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.store y = ρ.store y :=
+  Config.varEqUnwritten_star (w := ρ.store y) h_run
+    ⟨rfl, all_not_mem_definedVars_of_block h_y_not_def,
+     all_not_mem_modifiedVars_of_block h_y_not_mod⟩
 
 /-- Single-statement no-funcDecl factory preservation (terminal target).
 

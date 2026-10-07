@@ -51,6 +51,158 @@ property lemmas (`_of_namesFreshInExprs`, `_subset`, `_append`, `_nil`,
 `_cons_names`, `_of_forall_mem`, `_of_exprsShapeFree'`) are proved upstream in
 `Strata.DL.Imperative.StmtProps`. -/
 
+/-! ## Typed target-definedness invariant.
+
+The hoisted `set y := e` step (the same-name rewrite of a body-local `init y := e`)
+now carries a typed-store premise (`HasVal.valueOfStoredTy`): the value written must
+share a type with the value already stored at `y`.  The prelude havoc seeds `y` with
+a value of `y`'s DECLARED type, so the invariant the driver threads must record, for
+each hoisted name, the declared type of its value in the target store — not merely
+that it is defined.  `DTyped Dτ D ρ` says every name in `D` holds, in `ρ`, a
+value of the type `Dτ` assigns it.  `Dτ` is a total type assignment (only its values
+on `D` matter). -/
+def DTyped {P : PureExpr} [HasVal P]
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) (ρ : Env P) : Prop :=
+  ∀ y ∈ D, ∃ prev, ρ.store y = some prev ∧ HasVal.valueOfTy ρ.factory prev (Dτ y)
+
+/-- A `DTyped` slot is in particular defined. -/
+theorem DTyped.isSome {P : PureExpr} [HasVal P]
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {ρ : Env P}
+    (h : DTyped Dτ D ρ) {y : P.Ident} (hy : y ∈ D) :
+    (ρ.store y).isSome = true := by
+  obtain ⟨prev, hp, _⟩ := h y hy; rw [hp]; rfl
+
+/-- `DTyped` is monotone in the name list. -/
+theorem DTyped.mono {P : PureExpr} [HasVal P]
+    {Dτ : P.Ident → P.Ty} {D D' : List P.Ident} {ρ : Env P}
+    (h : DTyped Dτ D ρ) (hsub : ∀ y ∈ D', y ∈ D) :
+    DTyped Dτ D' ρ :=
+  fun y hy => h y (hsub y hy)
+
+/-- `DTyped` splits/combines over a list append. -/
+theorem DTyped.append {P : PureExpr} [HasVal P]
+    {Dτ : P.Ident → P.Ty} {D₁ D₂ : List P.Ident} {ρ : Env P}
+    (h₁ : DTyped Dτ D₁ ρ) (h₂ : DTyped Dτ D₂ ρ) :
+    DTyped Dτ (D₁ ++ D₂) ρ := by
+  intro y hy
+  rcases List.mem_append.mp hy with h | h
+  · exact h₁ y h
+  · exact h₂ y h
+
+/-- Re-establish `DTyped` across a per-iteration / block-scope `projectStore`
+boundary: every `D`-name is parent-defined (from the parent invariant) so it
+survives the projection, taking the body's value, and the body invariant supplies
+the type.  The projected env carries the parent's factory, so the body's typed
+values are transported along the factory equality `h_fac`. -/
+theorem DTyped.projectStore {P : PureExpr} [HasVal P]
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {ρ_parent ρ_body : Env P}
+    (h_parent : DTyped Dτ D ρ_parent)
+    (h_body : DTyped Dτ D ρ_body)
+    (h_fac : ρ_body.factory = ρ_parent.factory) :
+    DTyped Dτ D
+      { ρ_body with store := projectStore ρ_parent.store ρ_body.store,
+                    factory := ρ_parent.factory } := by
+  intro y hy
+  obtain ⟨prevP, hP, _⟩ := h_parent y hy
+  obtain ⟨prevB, hB, htyB⟩ := h_body y hy
+  have hsome : (ρ_parent.store y).isSome = true := by rw [hP]; rfl
+  refine ⟨prevB, ?_, h_fac ▸ htyB⟩
+  show (if (ρ_parent.store y).isSome then ρ_body.store y else none) = some prevB
+  rw [if_pos hsome]; exact hB
+
+/-! ## Typed-slot preservation through a single command.
+
+The hoisted `set` premise (`valueOfStoredTy`) only forces the new value to SHARE a
+type with the old one; `valueOfTy_congr` (from `LawfulHasVal`) then transfers the
+old slot's declared type to the new value, so a slot keeps its recorded type across
+any command that writes it. -/
+
+/-- `InitState` preserves a typed slot: the init target starts `none`, so it cannot
+be the (already-defined) slot `y`, whose value is left untouched. -/
+theorem InitState_typedAt {P : PureExpr} [HasVal P] [DecidableEq P.Ident]
+    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
+    (h : InitState P σ x v σ')
+    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
+    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
+  obtain ⟨prev, hprev, hprev_ty⟩ := hy
+  cases h with
+  | init h_xn h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy; rw [h_xn] at hprev; exact absurd hprev (by simp)
+    · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
+
+/-- `UpdateState` (a `set`/`havoc`), together with its typed-store premise,
+preserves a typed slot: an untouched slot is unchanged; the written slot receives a
+value that shares the old value's type, and `valueOfTy_congr` carries the recorded
+type across. -/
+theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [LawfulHasVal P]
+    [DecidableEq P.Ident]
+    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
+    (h : UpdateState P σ x v σ')
+    (hstored : HasVal.valueOfStoredTy (P := P) f σ x v)
+    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
+    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
+  obtain ⟨prev, hprev, hprev_ty⟩ := hy
+  cases h with
+  | update h_xold h_xv h_other =>
+    by_cases hxy : x = y
+    · subst hxy
+      obtain ⟨p, t, hp, hp_t, hv_t⟩ := hstored
+      have hp_prev : p = prev := Option.some.inj (hp.symm.trans hprev)
+      subst hp_prev
+      exact ⟨v, h_xv, LawfulHasVal.valueOfTy_congr f p v ty t hprev_ty hp_t hv_t⟩
+    · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
+
+/-- A single `EvalCmd` preserves a typed slot at any fixed type. -/
+theorem EvalCmd_preserves_typedAt {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [LawfulHasVal P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
+    (h : EvalCmd P f σ c σ' haf)
+    {y : P.Ident} {ty : P.Ty}
+    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
+    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
+  cases h with
+  | eval_init _ hinit _ _ => exact InitState_typedAt hinit hy
+  | eval_init_unconstrained hinit _ _ => exact InitState_typedAt hinit hy
+  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
+  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
+  | eval_assert_pass _ _ => exact hy
+  | eval_assert_fail _ _ => exact hy
+  | eval_assume _ _ => exact hy
+  | eval_cover _ => exact hy
+
+/-- A single `.cmd` step preserves the `DTyped` invariant (the factory is
+unchanged by a command step). -/
+theorem DTyped.step_cmd {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [LawfulHasVal P]
+    {extendFactory : ExtendFactory P}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {c : Cmd P} {ρ ρ' : Env P}
+    (hstep : StepStmt P (EvalCmd P) extendFactory
+      (.stmt (.cmd c) ρ) (.terminal ρ'))
+    (h : DTyped Dτ D ρ) :
+    DTyped Dτ D ρ' := by
+  cases hstep with
+  | step_cmd hev =>
+    intro y hy
+    exact EvalCmd_preserves_typedAt hev (h y hy)
+
+/-- A `.stmt (.cmd c)` run to terminal preserves `DTyped`. -/
+theorem DTyped.cmd_star {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [LawfulHasVal P]
+    {extendFactory : ExtendFactory P}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {c : Cmd P} {ρ ρ' : Env P}
+    (h_run : StepStmtStar P (EvalCmd P) extendFactory
+      (.stmt (.cmd c) ρ) (.terminal ρ'))
+    (h : DTyped Dτ D ρ) :
+    DTyped Dτ D ρ' := by
+  cases h_run with
+  | step _ _ _ hstep hrest =>
+    cases hstep with
+    | step_cmd hev =>
+      cases hrest with
+      | refl => intro y hy; exact EvalCmd_preserves_typedAt hev (h y hy)
+      | step _ _ _ hd _ => exact nomatch hd
+
 namespace LoopInitHoistLoopDriver
 
 /-! ## Iteration build helper. -/
@@ -208,14 +360,14 @@ which the prelude keeps defined across iterations).  This is the same-name
 consumes. -/
 public def BodySimSumSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
     StoreAgreement ρ_s.store ρ_h.store →
     WellFormedSemanticEvalBool ρ_s.factory → WellFormedSemanticEvalVal ρ_s.factory →
     WellFormedSemanticEvalMono ρ_s.factory → WellFormedSemanticEvalExprCongr ρ_s.factory →
     WellFormedSemanticEvalVar ρ_s.factory →
-    (∀ y ∈ D, (ρ_h.store y).isSome = true) →
+    DTyped Dτ D ρ_h →
     -- TERMINAL clause:
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts bsrc ρ_s) (.terminal ρ_s') →
@@ -223,7 +375,7 @@ public def BodySimSumSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
         StepStmtStar P (EvalCmd P) extendFactory (.stmts bh ρ_h) (.terminal ρ_h') ∧
         StoreAgreement ρ_s'.store ρ_h'.store ∧
         ρ_h'.hasFailure = ρ_s'.hasFailure ∧ ρ_h'.factory = ρ_s'.factory ∧
-        (∀ y ∈ D, (ρ_h'.store y).isSome = true))
+        DTyped Dτ D ρ_h')
     ∧
     -- EXITING clause:
     (∀ (l : String) (ρ_s' : Env P),
@@ -232,7 +384,7 @@ public def BodySimSumSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
         StepStmtStar P (EvalCmd P) extendFactory (.stmts bh ρ_h) (.exiting l ρ_h') ∧
         StoreAgreement ρ_s'.store ρ_h'.store ∧
         ρ_h'.hasFailure = ρ_s'.hasFailure ∧ ρ_h'.factory = ρ_s'.factory ∧
-        (∀ y ∈ D, (ρ_h'.store y).isSome = true))
+        DTyped Dτ D ρ_h')
 
 /-- A `.det`-rhs source `init y` step is simulated by a hoist `set y` step,
 maintaining `StoreAgreement`.  The hoist `set` requires `y` already defined in the
@@ -249,7 +401,8 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIde
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
     (h_agree : StoreAgreement ρ_src.store ρ_tgt.store)
     (h_wf_def : WellFormedSemanticEvalMono ρ_src.factory)
-    (h_tgt_y_def : (ρ_tgt.store y).isSome = true)
+    (h_tgt_y_typed : ∃ prev, ρ_tgt.store y = some prev ∧
+      HasVal.valueOfTy ρ_tgt.factory prev ty)
     (h_step : StepStmt P (EvalCmd P) extendFactory
         (.stmt (.cmd (.init y ty (.det e) md)) ρ_src) (.terminal ρ_src')) :
     ∃ ρ_tgt', StepStmt P (EvalCmd P) extendFactory
@@ -257,24 +410,26 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIde
         ∧ StoreAgreement ρ_src'.store ρ_tgt'.store
         ∧ ρ_tgt'.hasFailure = ρ_src'.hasFailure
         ∧ ρ_tgt'.factory = ρ_src'.factory
-        ∧ (ρ_tgt'.store y).isSome = true
+        ∧ (∃ prev', ρ_tgt'.store y = some prev' ∧
+            HasVal.valueOfTy ρ_tgt'.factory prev' ty)
         ∧ (∀ z, y ≠ z → ρ_tgt'.store z = ρ_tgt.store z) := by
+  obtain ⟨vprev, h_tgt_y_old, h_prev_ty⟩ := h_tgt_y_typed
   cases h_step with
   | step_cmd h_eval =>
     rename_i σ' haf
     cases h_eval with
-    | eval_init heval hinit hwfvar =>
+    | eval_init heval hinit htyv hwfvar =>
       rename_i v
       have h_eval_tgt : P.eval ρ_tgt.factory ρ_tgt.store e = .some v := by
         rw [h_eval_eq]
         exact h_wf_def e v ρ_src.store ρ_tgt.store
           (storeAgreement_supplies_mono_premise ρ_src.store ρ_tgt.store h_agree) heval
+      -- `v` has the declared type `ty` in the target factory (transport by factory eq).
+      have h_v_ty_tgt : HasVal.valueOfTy ρ_tgt.factory v ty := h_eval_eq ▸ htyv
+      have h_storedty : HasVal.valueOfStoredTy (P := P) ρ_tgt.factory ρ_tgt.store y v :=
+        ⟨vprev, ty, h_tgt_y_old, h_prev_ty, h_v_ty_tgt⟩
       cases hinit with
       | init h_yn h_yv h_other =>
-        obtain ⟨v', h_tgt_y_old⟩ : ∃ v', ρ_tgt.store y = some v' := by
-          cases h : ρ_tgt.store y with
-          | none => rw [h] at h_tgt_y_def; simp at h_tgt_y_def
-          | some v' => exact ⟨v', rfl⟩
         let σ_tgt' : SemanticStore P := fun z => if z = y then some v else ρ_tgt.store z
         have h_tgt_y : σ_tgt' y = some v := by show (if y = y then _ else _) = _; simp
         have h_tgt_oth : ∀ z, y ≠ z → σ_tgt' z = ρ_tgt.store z := by
@@ -282,6 +437,7 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIde
         refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || false },
           .step_cmd (EvalCmd.eval_set h_eval_tgt
             (UpdateState.update h_tgt_y_old h_tgt_y h_tgt_oth)
+            h_storedty
             (h_eval_eq ▸ hwfvar)),
           ?_, ?_, ?_, ?_, ?_⟩
         · intro z h_def_z
@@ -295,7 +451,7 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIde
             exact h_agree z (fun w hw => by simpa [List.mem_singleton.mp hw] using h_z_some)
         · show (ρ_tgt.hasFailure || false) = (ρ_src.hasFailure || false); simp [h_fail_eq]
         · exact h_eval_eq
-        · show (σ_tgt' y).isSome = true; rw [h_tgt_y]; rfl
+        · exact ⟨v, h_tgt_y, h_v_ty_tgt⟩
         · exact h_tgt_oth
 
 /-- The minimal same-name body simulation: source body `[.cmd (.init y ty e md)]`
@@ -306,10 +462,11 @@ public theorem samenameBodySimInitSet {P : PureExpr} [HasFvars P] [HasFvar P] [H
     [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P) :
-    BodySimSumSA (extendFactory := extendFactory) [y]
+    BodySimSumSA (extendFactory := extendFactory) (fun _ => ty) [y]
       [.cmd (.init y ty (.det e) md)] [.cmd (.set y (.det e) md)] := by
   intro ρb_src ρb_tgt h_eval_eq h_fail_eq h_agree _ _ h_wf_def h_congr _ h_dy
-  have h_tgt_y_def : (ρb_tgt.store y).isSome = true := h_dy y (List.mem_singleton.mpr rfl)
+  have h_tgt_y_typed : ∃ prev, ρb_tgt.store y = some prev ∧
+      HasVal.valueOfTy ρb_tgt.factory prev ty := h_dy y (List.mem_singleton.mpr rfl)
   refine ⟨?_, ?_⟩
   · -- TERMINAL clause.
     intro ρb' h_run
@@ -333,7 +490,7 @@ public theorem samenameBodySimInitSet {P : PureExpr} [HasFvars P] [HasFvar P] [H
       rw [h_ρb'_eq]
       obtain ⟨ρ_tgt', h_set_step, h_agree', h_fail', h_eval', h_ydef', _⟩ :=
         initToSetStepSA y ty e md ρb_src ρ_mid ρb_tgt
-          h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_y_def h_cmd_step
+          h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_y_typed h_cmd_step
       refine ⟨ρ_tgt', ?_, h_agree', h_fail', h_eval', ?_⟩
       · refine .step _ _ _ .step_stmts_cons ?_
         refine .step _ _ _ (.step_seq_inner h_set_step) ?_
@@ -369,8 +526,8 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true) :
     ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P},
       StoreAgreement ρ_src.store ρ_hoist.store →
@@ -378,7 +535,7 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
       WellFormedSemanticEvalBool ρ_src.factory → WellFormedSemanticEvalVal ρ_src.factory →
       WellFormedSemanticEvalMono ρ_src.factory → WellFormedSemanticEvalExprCongr ρ_src.factory →
       WellFormedSemanticEvalVar ρ_src.factory →
-      (∀ y ∈ D, (ρ_hoist.store y).isSome = true) →
+      DTyped Dτ D ρ_hoist →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) →
       h_run.len ≤ n →
@@ -387,7 +544,7 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
           (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
         StoreAgreement ρ_post.store ρ_post_h.store ∧
         ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory ∧
-        (∀ y ∈ D, (ρ_post_h.store y).isSome = true) := by
+        DTyped Dτ D ρ_post_h := by
   intro n
   induction n with
   | zero =>
@@ -417,7 +574,7 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
         · exact h_agree
         · exact h_hf
         · exact h_eval
-        · intro y hy; exact h_def y hy
+        · exact h_def
       | step_loop_enter ht hwf =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_eval]
@@ -443,7 +600,7 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
         have h_eval_body : ρ_h_body.factory = ρ_src_body.factory := h_eval
         have h_hf_body : ρ_h_body.hasFailure = ρ_src_body.hasFailure := h_hf
-        have h_def_body : ∀ y ∈ D, (ρ_h_body.store y).isSome = true := h_def
+        have h_def_body : DTyped Dτ D ρ_h_body := h_def
         obtain ⟨ρ_h_inner, h_body_h_run, h_agree_inner, h_hf_inner, h_eval_inner, h_def_inner⟩ :=
           (body_sim ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
             hwfb hwfv hwf_def hwf_congr hwf_var h_def_body).1
@@ -476,11 +633,9 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
         have h_hf_next : ρ_tgt_next.hasFailure = ρ_src_next.hasFailure := by
           show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
         have h_eval_src_next : ρ_src_next.factory = ρ_src.factory := rfl
-        have h_def_next : ∀ y ∈ D, (ρ_tgt_next.store y).isSome = true := by
-          intro y hy
-          show (projectStore ρ_hoist.store ρ_h_inner.store y).isSome = true
-          show ((if (ρ_hoist.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-          rw [if_pos (h_def y hy)]; exact h_def_inner y hy
+        have h_def_next : DTyped Dτ D ρ_tgt_next :=
+          DTyped.projectStore h_def h_def_inner
+            (h_eval_inner.trans (h_eval_inner_src.trans h_eval.symm))
         obtain ⟨ρ_post_h, h_post_h_run, h_agree_post, h_hf_post, h_eval_post, h_def_post⟩ :=
           ih (ρ_src := ρ_src_next) (ρ_hoist := ρ_tgt_next)
             h_agree_next h_eval_next h_hf_next
@@ -507,8 +662,8 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true) :
     ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P} {label : String},
       StoreAgreement ρ_src.store ρ_hoist.store →
@@ -516,7 +671,7 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
       WellFormedSemanticEvalBool ρ_src.factory → WellFormedSemanticEvalVal ρ_src.factory →
       WellFormedSemanticEvalMono ρ_src.factory → WellFormedSemanticEvalExprCongr ρ_src.factory →
       WellFormedSemanticEvalVar ρ_src.factory →
-      (∀ y ∈ D, (ρ_hoist.store y).isSome = true) →
+      DTyped Dτ D ρ_hoist →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) →
       h_run.len ≤ n →
@@ -525,7 +680,7 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
           (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
         StoreAgreement ρ_post.store ρ_post_h.store ∧
         ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory ∧
-        (∀ y ∈ D, (ρ_post_h.store y).isSome = true) := by
+        DTyped Dτ D ρ_post_h := by
   intro n
   induction n with
   | zero =>
@@ -551,7 +706,7 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
         have h_eval_body : ρ_h_body.factory = ρ_src_body.factory := h_eval
         have h_hf_body : ρ_h_body.hasFailure = ρ_src_body.hasFailure := h_hf
-        have h_def_body : ∀ y ∈ D, (ρ_h_body.store y).isSome = true := h_def
+        have h_def_body : DTyped Dτ D ρ_h_body := h_def
         have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_eval]; exact hwfb
         rcases seqT_reaches_exiting hrest with ⟨h_block_exit, hl⟩ | ⟨ρ₁, h_block_term, h_loop_stmts,
             hl⟩
@@ -580,10 +735,10 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
           · subst h_ρpost_eq; exact StoreAgreement.of_projectStore_parents h_agree h_agree_inner
           · subst h_ρpost_eq; show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
           · subst h_ρpost_eq; show ρ_hoist.factory = ρ_src.factory; exact h_eval
-          · intro y hy
-            show (projectStore ρ_hoist.store ρ_h_inner.store y).isSome = true
-            show ((if (ρ_hoist.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-            rw [if_pos (h_def y hy)]; exact h_def_inner y hy
+          · exact DTyped.projectStore h_def h_def_inner
+              (h_eval_inner.trans
+                ((block_noFuncDecl_preserves_factory_exiting body_src ρ_src ρ_inner
+                    label h_src_body_nofd (reflTransT_to_prop h_body_exit_T)).trans h_eval.symm))
         · -- inr: this iteration's body terminates; recurse on the inner loop.
           obtain ⟨ρ_inner, h_body_term_T, h_ρ_block_eq, hl_blk⟩ := blockT_none_reaches_terminal
               h_block_term
@@ -616,11 +771,9 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
           have h_hf_next : ρ_tgt_next.hasFailure = ρ_src_next.hasFailure := by
             show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
           have h_eval_src_next : ρ_src_next.factory = ρ_src.factory := rfl
-          have h_def_next : ∀ y ∈ D, (ρ_tgt_next.store y).isSome = true := by
-            intro y hy
-            show (projectStore ρ_hoist.store ρ_h_inner.store y).isSome = true
-            show ((if (ρ_hoist.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-            rw [if_pos (h_def y hy)]; exact h_def_inner y hy
+          have h_def_next : DTyped Dτ D ρ_tgt_next :=
+            DTyped.projectStore h_def h_def_inner
+              (h_eval_inner.trans (h_eval_inner_src.trans h_eval.symm))
           rcases stmtsT_cons_exiting h_loop_stmts with ⟨h_inner_loop_T, _⟩ | ⟨ρ₂, _, h_nil, _⟩
           · obtain ⟨ρ_post_h, h_post_h_run, h_agree_post, h_hf_post, h_eval_post, h_def_post⟩ :=
               ih (ρ_src := ρ_src_next) (ρ_hoist := ρ_tgt_next) (ρ_post := ρ_post) (label := label)
@@ -646,8 +799,8 @@ public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [Has
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true)
     {ρ_src ρ_hoist ρ_post : Env P}
     (h_agree : StoreAgreement ρ_src.store ρ_hoist.store)
@@ -657,7 +810,7 @@ public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [Has
     (hwf_def : WellFormedSemanticEvalMono ρ_src.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
-    (h_def : ∀ y ∈ D, (ρ_hoist.store y).isSome = true)
+    (h_def : DTyped Dτ D ρ_hoist)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
     ∃ ρ_post_h : Env P,
@@ -665,7 +818,7 @@ public theorem samenameLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [Has
         (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
       StoreAgreement ρ_post.store ρ_post_h.store ∧
       ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory ∧
-      (∀ y ∈ D, (ρ_post_h.store y).isSome = true) :=
+      DTyped Dτ D ρ_post_h :=
   samenameLoopDetSA_TE_fuel body_sim h_src_body_nofd
     (reflTrans_to_T h_run).len h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var h_def
     (reflTrans_to_T h_run) (Nat.le_refl _)
@@ -676,8 +829,8 @@ public theorem samenameLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [HasB
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true)
     {ρ_src ρ_hoist ρ_post : Env P} {label : String}
     (h_agree : StoreAgreement ρ_src.store ρ_hoist.store)
@@ -687,7 +840,7 @@ public theorem samenameLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [HasB
     (hwf_def : WellFormedSemanticEvalMono ρ_src.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
-    (h_def : ∀ y ∈ D, (ρ_hoist.store y).isSome = true)
+    (h_def : DTyped Dτ D ρ_hoist)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) :
     ∃ ρ_post_h : Env P,
@@ -695,7 +848,7 @@ public theorem samenameLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [HasB
         (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
       StoreAgreement ρ_post.store ρ_post_h.store ∧
       ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory ∧
-      (∀ y ∈ D, (ρ_post_h.store y).isSome = true) :=
+      DTyped Dτ D ρ_post_h :=
   samenameLoopDetSA_E_fuel body_sim h_src_body_nofd
     (reflTrans_to_T h_run).len h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var h_def
     (reflTrans_to_T h_run) (Nat.le_refl _)
@@ -728,6 +881,7 @@ public def BodyDualUndefSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ U, ρ_s.store y = none) →
     (∀ y ∈ U, ρ_h.store y = none) →
+    Block.InitTypesInhabited ρ_s.factory bsrc →
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts bsrc ρ_s) (.terminal ρ_s') →
       ∃ ρ_h' : Env P,
@@ -762,6 +916,7 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
       WellFormedSemanticEvalVar ρ_src.factory →
       (∀ y ∈ U, ρ_src.store y = none) →
       (∀ y ∈ U, ρ_hoist.store y = none) →
+      Block.InitTypesInhabited ρ_src.factory body_src →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) →
       h_run.len ≤ n →
@@ -774,12 +929,12 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
   intro n
   induction n with
   | zero =>
-    intro ρ_src ρ_hoist ρ_post _ _ _ _ _ _ _ _ _ _ h_run hlen
+    intro ρ_src ρ_hoist ρ_post _ _ _ _ _ _ _ _ _ _ _ h_run hlen
     match h_run with
     | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
   | succ n ih =>
     intro ρ_src ρ_hoist ρ_post h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-      h_src_none h_tgt_none h_run hlen
+      h_src_none h_tgt_none h_init h_run hlen
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
@@ -830,7 +985,7 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
         have h_tgt_none_body : ∀ y ∈ U, ρ_h_body.store y = none := h_tgt_none
         obtain ⟨ρ_h_inner, h_body_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
           (body_sim ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
-            hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body).1
+            hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body h_init).1
             ρ_inner (reflTransT_to_prop h_body_src_T)
         have h_hoist_iter : StepStmtStar P (EvalCmd P) extendFactory
             (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist)
@@ -871,7 +1026,7 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
             (by rw [h_eval_src_next]; exact hwfb) (by rw [h_eval_src_next]; exact hwfv)
             (by rw [h_eval_src_next]; exact hwf_def) (by rw [h_eval_src_next]; exact hwf_congr)
             (by rw [h_eval_src_next]; exact hwf_var)
-            h_src_none_next h_tgt_none_next h_loop_T (by simp only [ReflTransT.len] at hlen; omega)
+            h_src_none_next h_tgt_none_next h_init h_loop_T (by simp only [ReflTransT.len] at hlen; omega)
         refine ⟨ρ_post_h, ?_, h_agree_post, h_hf_post, h_eval_post, ?_, h_tgt_post⟩
         · refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
           refine ReflTrans.step _ _ _ .step_stmts_cons ?_
@@ -903,6 +1058,7 @@ public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [Ha
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
     (h_src_none : ∀ y ∈ U, ρ_src.store y = none)
     (h_tgt_none : ∀ y ∈ U, ρ_hoist.store y = none)
+    (h_init : Block.InitTypesInhabited ρ_src.factory body_src)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
     ∃ ρ_post_h : Env P,
@@ -913,7 +1069,7 @@ public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [Ha
   obtain ⟨ρ_post_h, h, ha, hf, he, _, _⟩ :=
     dualUndefLoopDetSA_TE_fuel body_sim h_src_body_nofd
       (reflTrans_to_T h_run).len h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-      h_src_none h_tgt_none (reflTrans_to_T h_run) (Nat.le_refl _)
+      h_src_none h_tgt_none h_init (reflTrans_to_T h_run) (Nat.le_refl _)
   exact ⟨ρ_post_h, h, ha, hf, he⟩
 
 /-- **Dual-undef `StoreAgreement` EXITING-target fuel recursion.** -/
@@ -932,6 +1088,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
       WellFormedSemanticEvalVar ρ_src.factory →
       (∀ y ∈ U, ρ_src.store y = none) →
       (∀ y ∈ U, ρ_hoist.store y = none) →
+      Block.InitTypesInhabited ρ_src.factory body_src →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) →
       h_run.len ≤ n →
@@ -943,12 +1100,12 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
   intro n
   induction n with
   | zero =>
-    intro ρ_src ρ_hoist ρ_post label _ _ _ _ _ _ _ _ _ _ h_run hlen
+    intro ρ_src ρ_hoist ρ_post label _ _ _ _ _ _ _ _ _ _ _ h_run hlen
     match h_run with
     | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
   | succ n ih =>
     intro ρ_src ρ_hoist ρ_post label h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-      h_src_none h_tgt_none h_run hlen
+      h_src_none h_tgt_none h_init h_run hlen
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
@@ -974,7 +1131,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
             h_block_exit
           obtain ⟨ρ_h_inner, h_body_h_exit, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
             (body_sim ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
-              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body).2
+              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body h_init).2
               label ρ_inner (reflTransT_to_prop h_body_exit_T)
           refine ⟨{ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store,
                                    factory := ρ_hoist.factory }, ?_, ?_, ?_, ?_⟩
@@ -999,7 +1156,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
           subst h_ρ_block_eq
           obtain ⟨ρ_h_inner, h_body_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
             (body_sim ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
-              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body).1
+              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body h_init).1
               ρ_inner (reflTransT_to_prop h_body_term_T)
           have h_hoist_iter : StepStmtStar P (EvalCmd P) extendFactory
               (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist)
@@ -1038,7 +1195,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
                 (by rw [h_eval_src_next]; exact hwfb) (by rw [h_eval_src_next]; exact hwfv)
                 (by rw [h_eval_src_next]; exact hwf_def) (by rw [h_eval_src_next]; exact hwf_congr)
                 (by rw [h_eval_src_next]; exact hwf_var)
-                h_src_none_next h_tgt_none_next h_inner_loop_T
+                h_src_none_next h_tgt_none_next h_init h_inner_loop_T
                     (by simp only [ReflTransT.len] at hlen; omega)
             refine ⟨ρ_post_h, ?_, h_agree_post, h_hf_post, h_eval_post⟩
             refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
@@ -1069,6 +1226,7 @@ public theorem dualUndefLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [Has
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
     (h_src_none : ∀ y ∈ U, ρ_src.store y = none)
     (h_tgt_none : ∀ y ∈ U, ρ_hoist.store y = none)
+    (h_init : Block.InitTypesInhabited ρ_src.factory body_src)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) :
     ∃ ρ_post_h : Env P,
@@ -1078,7 +1236,7 @@ public theorem dualUndefLoopDetSA_E {P : PureExpr} [HasFvars P] [HasFvar P] [Has
       ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory :=
   dualUndefLoopDetSA_E_fuel body_sim h_src_body_nofd
     (reflTrans_to_T h_run).len h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-    h_src_none h_tgt_none (reflTrans_to_T h_run) (Nat.le_refl _)
+    h_src_none h_tgt_none h_init (reflTrans_to_T h_run) (Nat.le_refl _)
 
 /-- **Dual-undef FAILING-body simulation slot.**
 
@@ -1097,6 +1255,7 @@ public def BodyDualUndefFailSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolO
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ U, ρ_s.store y = none) →
     (∀ y ∈ U, ρ_h.store y = none) →
+    Block.InitTypesInhabited ρ_s.factory bsrc →
     ∀ (d : Config P (Cmd P)),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts bsrc ρ_s) d →
       d.getEnv.hasFailure = true →
@@ -1135,6 +1294,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
       WellFormedSemanticEvalVar ρ_src.factory →
       (∀ y ∈ U, ρ_src.store y = none) →
       (∀ y ∈ U, ρ_hoist.store y = none) →
+      Block.InitTypesInhabited ρ_src.factory body_src →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) a') →
       a'.getEnv.hasFailure = true →
@@ -1145,7 +1305,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
   intro n
   induction n with
   | zero =>
-    intro ρ_src ρ_hoist a' h_agree h_eval h_hf _ _ _ _ _ _ _ h_run h_a'_fail hlen
+    intro ρ_src ρ_hoist a' h_agree h_eval h_hf _ _ _ _ _ _ _ _ h_run h_a'_fail hlen
     match h_run, hlen with
     | .refl _, _ =>
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_a'_fail
@@ -1154,7 +1314,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
     | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
   | succ n ih =>
     intro ρ_src ρ_hoist a' h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-      h_src_none h_tgt_none h_run h_a'_fail hlen
+      h_src_none h_tgt_none h_init h_run h_a'_fail hlen
     match h_run, hlen with
     | .refl _, _ =>
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_a'_fail
@@ -1197,7 +1357,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
             blockT_none_reaches_failing' P extendFactory h_blk_run hd_blk_fail
           obtain ⟨d', h_body_tgt, hd'_fail⟩ :=
             body_sim_fail ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
-              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body d_body
+              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body h_init d_body
               (reflTransT_to_prop h_body_run) hd_body_fail
           have h_blk_tgt : StepStmtStar P (EvalCmd P) extendFactory
               (.block .none ρ_hoist.store ρ_hoist.factory (.stmts body_h ρ_h_body))
@@ -1218,7 +1378,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
               (.stmts body_src ρ_src_body) (.terminal ρ_inner) := reflTransT_to_prop h_inner_term
           obtain ⟨ρ_h_inner, h_body_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
             (body_sim ρ_src_body ρ_h_body h_eval_body h_hf_body h_agree_body
-              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body).1
+              hwfb hwfv hwf_def hwf_congr hwf_var h_src_none_body h_tgt_none_body h_init).1
               ρ_inner h_body_run
           have h_hoist_iter : StepStmtStar P (EvalCmd P) extendFactory
               (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist)
@@ -1259,7 +1419,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
               (by rw [h_eval_src_next]; exact hwfb) (by rw [h_eval_src_next]; exact hwfv)
               (by rw [h_eval_src_next]; exact hwf_def) (by rw [h_eval_src_next]; exact hwf_congr)
               (by rw [h_eval_src_next]; exact hwf_var)
-              h_src_none_next h_tgt_none_next h_loop_stmt hd_loop_fail h_inner_le_n
+              h_src_none_next h_tgt_none_next h_init h_loop_stmt hd_loop_fail h_inner_le_n
           have h_run_recurse_stmts : StepStmtStar P (EvalCmd P) extendFactory
               (.stmts [.loop (.det g) none [] body_h md_h] ρ_tgt_next)
               (.seq d ([] : List (Stmt P (Cmd P)))) :=
@@ -1280,14 +1440,14 @@ config is matched by a hoist body run that reaches a failing config too.  No
 abandoned there). -/
 public def BodySimSumFailSA {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
     StoreAgreement ρ_s.store ρ_h.store →
     WellFormedSemanticEvalBool ρ_s.factory → WellFormedSemanticEvalVal ρ_s.factory →
     WellFormedSemanticEvalMono ρ_s.factory → WellFormedSemanticEvalExprCongr ρ_s.factory →
     WellFormedSemanticEvalVar ρ_s.factory →
-    (∀ y ∈ D, (ρ_h.store y).isSome = true) →
+    DTyped Dτ D ρ_h →
     ∀ (d : Config P (Cmd P)),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts bsrc ρ_s) d →
       d.getEnv.hasFailure = true →
@@ -1317,9 +1477,9 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
-    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
+    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true) :
     ∀ (n : Nat) {ρ_src ρ_hoist : Env P} {a' : Config P (Cmd P)},
       StoreAgreement ρ_src.store ρ_hoist.store →
@@ -1327,7 +1487,7 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
       WellFormedSemanticEvalBool ρ_src.factory → WellFormedSemanticEvalVal ρ_src.factory →
       WellFormedSemanticEvalMono ρ_src.factory → WellFormedSemanticEvalExprCongr ρ_src.factory →
       WellFormedSemanticEvalVar ρ_src.factory →
-      (∀ y ∈ D, (ρ_hoist.store y).isSome = true) →
+      DTyped Dτ D ρ_hoist →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) a') →
       a'.getEnv.hasFailure = true →
@@ -1375,7 +1535,7 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
         have h_eval_body : ρ_h_body.factory = ρ_src_body.factory := h_eval
         have h_hf_body : ρ_h_body.hasFailure = ρ_src_body.hasFailure := h_hf
-        have h_def_body : ∀ y ∈ D, (ρ_h_body.store y).isSome = true := h_def
+        have h_def_body : DTyped Dτ D ρ_h_body := h_def
         have h_step_enter : StepStmtStar P (EvalCmd P) extendFactory
             (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist)
             (.seq (.block .none ρ_hoist.store ρ_hoist.factory (.stmts body_h ρ_h_body))
@@ -1435,11 +1595,9 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
           have h_hf_next : ρ_tgt_next.hasFailure = ρ_src_next.hasFailure := by
             show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
           have h_eval_src_next : ρ_src_next.factory = ρ_src.factory := rfl
-          have h_def_next : ∀ y ∈ D, (ρ_tgt_next.store y).isSome = true := by
-            intro y hy
-            show (projectStore ρ_hoist.store ρ_h_inner.store y).isSome = true
-            show ((if (ρ_hoist.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-            rw [if_pos (h_def y hy)]; exact h_def_inner y hy
+          have h_def_next : DTyped Dτ D ρ_tgt_next :=
+            DTyped.projectStore h_def h_def_inner
+              (h_eval_inner.trans (h_eval_inner_src.trans h_eval.symm))
           obtain ⟨d_loop, h_loop_stmt, hd_loop_fail, hlen_loop⟩ :=
             stmts_singleton_reaches_failing' P extendFactory h_loop_rest hd_rest_fail
           have h_inner_le_n : h_loop_stmt.len ≤ n := by
@@ -1466,9 +1624,9 @@ public theorem samenameLoopDetSA_F {P : PureExpr} [HasFvars P] [HasFvar P] [HasB
     [HasIdent P] [DecidableEq P.Ident]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
-    {D : List P.Ident}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) D body_src body_h)
-    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) D body_src body_h)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident}
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D body_src body_h)
+    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D body_src body_h)
     (h_src_body_nofd : Block.noFuncDecl body_src = true)
     {ρ_src ρ_hoist : Env P} {a' : Config P (Cmd P)}
     (h_agree : StoreAgreement ρ_src.store ρ_hoist.store)
@@ -1478,7 +1636,7 @@ public theorem samenameLoopDetSA_F {P : PureExpr} [HasFvars P] [HasFvar P] [HasB
     (hwf_def : WellFormedSemanticEvalMono ρ_src.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
-    (h_def : ∀ y ∈ D, (ρ_hoist.store y).isSome = true)
+    (h_def : DTyped Dτ D ρ_hoist)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) a')
     (h_a'_fail : a'.getEnv.hasFailure = true) :
@@ -1520,11 +1678,12 @@ public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvars P] [HasFvar
     [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (x : P.Ident) (ty : P.Ty) (e : P.Expr) (lbl : String) (Q : P.Expr) (md : MetaData P) :
-    BodySimSumSA (extendFactory := extendFactory) [x]
+    BodySimSumSA (extendFactory := extendFactory) (fun _ => ty) [x]
       [.cmd (.init x ty (.det e) md), .cmd (.assert lbl Q md)]
       [.cmd (.set x (.det e) md), .cmd (.assert lbl Q md)] := by
   intro ρ_s ρ_h h_eval_eq h_fail_eq h_agree hwfb hwfv h_wf_def h_congr hwfvar h_dx
-  have h_tgt_x_def : (ρ_h.store x).isSome = true := h_dx x (List.mem_singleton.mpr rfl)
+  have h_tgt_x_typed : ∃ prev, ρ_h.store x = some prev ∧
+      HasVal.valueOfTy ρ_h.factory prev ty := h_dx x (List.mem_singleton.mpr rfl)
   refine ⟨?_, ?_⟩
   · -- TERMINAL: peel the cons, head `init` terminates, tail `[assert]` terminates (pass).
     intro ρ_s' h_run
@@ -1542,12 +1701,12 @@ public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvars P] [HasFvar
       -- transport `init → set`.
       obtain ⟨ρ_h_mid, h_set_step, h_agree_mid, h_fail_mid, h_eval_mid, h_xdef_mid, _⟩ :=
         initToSetStepSA x ty e md ρ_s ρ_mid ρ_h
-          h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_x_def h_init_step
+          h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_x_typed h_init_step
       -- `init` preserves `eval`.
       have h_eval_mid_src : ρ_mid.factory = ρ_s.factory := by
         cases h_init_step with
         | step_cmd hev => cases hev with
-          | eval_init _ _ _ => rfl
+          | eval_init _ _ _ _ => rfl
       -- now the tail `[assert Q]` from `ρ_mid` (src) / `ρ_h_mid` (tgt).
       -- invert the source assert run to `.terminal ρ_s'`.
       match h_after with
@@ -1594,8 +1753,7 @@ public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvars P] [HasFvar
               show StoreAgreement ρ_mid.store ρ_h_mid.store; exact h_agree_mid
             · show (ρ_h_mid.hasFailure || false) = (ρ_mid.hasFailure || false); simp [h_fail_mid]
             · show ρ_h_mid.factory = ρ_mid.factory; exact h_eval_mid
-            · intro z hz; rw [List.mem_singleton.mp hz]
-              show (ρ_h_mid.store x).isSome = true; exact h_xdef_mid
+            · intro z hz; rw [List.mem_singleton.mp hz]; exact h_xdef_mid
           | eval_assert_fail hff hwfb_a =>
             -- source assert FAILED: ρ_a = ρ_mid with hasFailure := ρ_mid.hasFailure || true.
             -- The hoist assert fails the same way; the resulting config still terminal.
@@ -1614,8 +1772,7 @@ public theorem samenameBodySimInitSetAssert {P : PureExpr} [HasFvars P] [HasFvar
             · show StoreAgreement ρ_mid.store ρ_h_mid.store; exact h_agree_mid
             · show (ρ_h_mid.hasFailure || true) = (ρ_mid.hasFailure || true); simp [h_fail_mid]
             · show ρ_h_mid.factory = ρ_mid.factory; exact h_eval_mid
-            · intro z hz; rw [List.mem_singleton.mp hz]
-              show (ρ_h_mid.store x).isSome = true; exact h_xdef_mid
+            · intro z hz; rw [List.mem_singleton.mp hz]; exact h_xdef_mid
   · -- EXITING clause: vacuous, the body is two `.cmd`s, neither exits.
     intro l ρ_s' h_run
     exfalso
@@ -1650,11 +1807,12 @@ public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvars P] [Has
     [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
     {extendFactory : ExtendFactory P}
     (x : P.Ident) (ty : P.Ty) (e : P.Expr) (lbl : String) (Q : P.Expr) (md : MetaData P) :
-    BodySimSumFailSA (extendFactory := extendFactory) [x]
+    BodySimSumFailSA (extendFactory := extendFactory) (fun _ => ty) [x]
       [.cmd (.init x ty (.det e) md), .cmd (.assert lbl Q md)]
       [.cmd (.set x (.det e) md), .cmd (.assert lbl Q md)] := by
   intro ρ_s ρ_h h_eval_eq h_fail_eq h_agree hwfb hwfv h_wf_def h_congr hwfvar h_dx d h_run hd
-  have h_tgt_x_def : (ρ_h.store x).isSome = true := h_dx x (List.mem_singleton.mpr rfl)
+  have h_tgt_x_typed : ∃ prev, ρ_h.store x = some prev ∧
+      HasVal.valueOfTy ρ_h.factory prev ty := h_dx x (List.mem_singleton.mpr rfl)
   -- If the source ALREADY fails at entry, the hoist body's start env fails too (h_fail_eq).
   by_cases h_s_entry : ρ_s.hasFailure = true
   · exact ⟨.stmts [.cmd (.set x (.det e) md), .cmd (.assert lbl Q md)] ρ_h, .refl _,
@@ -1677,7 +1835,7 @@ public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvars P] [Has
           | refl =>
             -- for `.det` rhs only `eval_init` applies; its failure flag is `false`.
             cases hev with
-            | eval_init _ _ _ => simpa [Config.getEnv, Bool.or_false] using hd_head
+            | eval_init _ _ _ _ => simpa [Config.getEnv, Bool.or_false] using hd_head
           | step _ _ _ hd' _ => exact nomatch hd'
     exact h_s_entry h_ρs_fail
   · -- HEAD `init` terminated at ρ_mid; transport to a hoist `set` reaching ρ_h_mid.
@@ -1690,7 +1848,7 @@ public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvars P] [Has
         | .step _ _ _ hd' _ => exact nomatch hd'
     obtain ⟨ρ_h_mid, h_set_step, h_agree_mid, h_fail_mid, h_eval_mid, h_xdef_mid, _⟩ :=
       initToSetStepSA x ty e md ρ_s ρ_mid ρ_h
-        h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_x_def h_init_step
+        h_eval_eq h_fail_eq h_agree h_wf_def h_tgt_x_typed h_init_step
     -- the hoist `set` reaches `ρ_h_mid` (terminal); chain its run prefix.
     have h_set_prefix : StepStmtStar P (EvalCmd P) extendFactory
         (.stmts [.cmd (.set x (.det e) md), .cmd (.assert lbl Q md)] ρ_h)
@@ -1726,7 +1884,7 @@ public theorem samenameBodySimInitSetAssertFail {P : PureExpr} [HasFvars P] [Has
       have h_eval_mid_src : ρ_mid.factory = ρ_s.factory := by
         cases h_init_step with
         | step_cmd hev => cases hev with
-          | eval_init _ _ _ => rfl
+          | eval_init _ _ _ _ => rfl
       have h_eval_Q_h : P.eval ρ_h_mid.factory ρ_h_mid.store Q = .some HasBool.ff := by
         rw [h_eval_mid]
         exact (h_eval_mid_src ▸ h_wf_def) Q HasBool.ff ρ_mid.store ρ_h_mid.store
@@ -1764,7 +1922,8 @@ public theorem samenameLoopDetSA_F_initSetAssert {P : PureExpr} [HasFvars P] [Ha
     (hwf_def : WellFormedSemanticEvalMono ρ_src.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
-    (h_tgt_x_def : (ρ_hoist.store x).isSome = true)
+    (h_tgt_x_typed : ∃ prev, ρ_hoist.store x = some prev ∧
+      HasVal.valueOfTy ρ_hoist.factory prev ty)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none []
           [.cmd (.init x ty (.det e) md), .cmd (.assert lbl Q md)] md_s) ρ_src) a')
@@ -1773,12 +1932,12 @@ public theorem samenameLoopDetSA_F_initSetAssert {P : PureExpr} [HasFvars P] [Ha
         (.stmt (.loop (.det g) none []
           [.cmd (.set x (.det e) md), .cmd (.assert lbl Q md)] md_h) ρ_hoist) d
       ∧ d.getEnv.hasFailure = true :=
-  samenameLoopDetSA_F (D := [x])
+  samenameLoopDetSA_F (Dτ := fun _ => ty) (D := [x])
     (samenameBodySimInitSetAssert x ty e lbl Q md)
     (samenameBodySimInitSetAssertFail x ty e lbl Q md)
     (by simp [Block.noFuncDecl, Stmt.noFuncDecl])
     h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-    (by intro z hz; rw [List.mem_singleton.mp hz]; exact h_tgt_x_def) h_run h_a'_fail
+    (by intro z hz; rw [List.mem_singleton.mp hz]; exact h_tgt_x_typed) h_run h_a'_fail
 
 /-! ## End-to-end same-name loop transport (driver ∘ minimal body sim).
 
@@ -1804,7 +1963,8 @@ public theorem samenameLoopDetSA_TE_initSet {P : PureExpr} [HasFvars P] [HasFvar
     (hwf_def : WellFormedSemanticEvalMono ρ_src.factory)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (hwf_var : WellFormedSemanticEvalVar ρ_src.factory)
-    (h_tgt_y_def : (ρ_hoist.store y).isSome = true)
+    (h_tgt_y_typed : ∃ prev, ρ_hoist.store y = some prev ∧
+      HasVal.valueOfTy ρ_hoist.factory prev ty)
     (h_run : StepStmtStar P (EvalCmd P) extendFactory
         (.stmt (.loop (.det g) none []
           [.cmd (.init y ty (.det rhs) md)] md_s) ρ_src) (.terminal ρ_post)) :
@@ -1816,12 +1976,12 @@ public theorem samenameLoopDetSA_TE_initSet {P : PureExpr} [HasFvars P] [HasFvar
       ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory ∧
       (ρ_post_h.store y).isSome = true := by
   obtain ⟨ρ_post_h, h_run_h, h_agree', h_hf', h_eval', h_def'⟩ :=
-    samenameLoopDetSA_TE (D := [y])
+    samenameLoopDetSA_TE (Dτ := fun _ => ty) (D := [y])
       (samenameBodySimInitSet y ty rhs md)
       (by simp [Block.noFuncDecl, Stmt.noFuncDecl])
       h_agree h_eval h_hf hwfb hwfv hwf_def hwf_congr hwf_var
-      (by intro z hz; rw [List.mem_singleton.mp hz]; exact h_tgt_y_def) h_run
-  exact ⟨ρ_post_h, h_run_h, h_agree', h_hf', h_eval', h_def' y (List.mem_singleton.mpr rfl)⟩
+      (by intro z hz; rw [List.mem_singleton.mp hz]; exact h_tgt_y_typed) h_run
+  exact ⟨ρ_post_h, h_run_h, h_agree', h_hf', h_eval', DTyped.isSome h_def' (List.mem_singleton.mpr rfl)⟩
 
 end LoopInitHoistLoopDriver
 
@@ -1895,21 +2055,21 @@ A `StmtSimSA D s s'` is the single-statement (eval-carrying) terminal-OR-exiting
 StoreAgreement simulation, the head shape `bodySimSA_cons` stitches. -/
 private def StmtSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
     StoreAgreement ρ_s.store ρ_h.store →
     WellFormedSemanticEvalBool ρ_s.factory → WellFormedSemanticEvalVal ρ_s.factory →
     WellFormedSemanticEvalMono ρ_s.factory → WellFormedSemanticEvalExprCongr ρ_s.factory →
     WellFormedSemanticEvalVar ρ_s.factory →
-    (∀ y ∈ D, (ρ_h.store y).isSome = true) →
+    DTyped Dτ D ρ_h →
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ_s) (.terminal ρ_s') →
       ∃ ρ_h' : Env P,
         StepStmtStar P (EvalCmd P) extendFactory (.stmt s' ρ_h) (.terminal ρ_h') ∧
         StoreAgreement ρ_s'.store ρ_h'.store ∧
         ρ_h'.hasFailure = ρ_s'.hasFailure ∧ ρ_h'.factory = ρ_s'.factory ∧
-        (∀ y ∈ D, (ρ_h'.store y).isSome = true))
+        DTyped Dτ D ρ_h')
     ∧
     (∀ (l : String) (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ_s) (.exiting l ρ_s') →
@@ -1917,13 +2077,13 @@ private def StmtSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
         StepStmtStar P (EvalCmd P) extendFactory (.stmt s' ρ_h) (.exiting l ρ_h') ∧
         StoreAgreement ρ_s'.store ρ_h'.store ∧
         ρ_h'.hasFailure = ρ_s'.hasFailure ∧ ρ_h'.factory = ρ_s'.factory ∧
-        (∀ y ∈ D, (ρ_h'.store y).isSome = true))
+        DTyped Dτ D ρ_h')
 
 /-- The empty body is a `BodySimSumSA`. -/
 theorem bodySimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) :
-    BodySimSumSA (extendFactory := extendFactory) D [] [] := by
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) :
+    BodySimSumSA (extendFactory := extendFactory) Dτ D [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
@@ -1949,11 +2109,11 @@ theorem bodySimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 mid env) and tail `BodySimSumSA` compose to a cons `BodySimSumSA`. -/
 private theorem bodySimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
-    (hhead : StmtSimSA (extendFactory := extendFactory) D s s')
-    (htail : BodySimSumSA (extendFactory := extendFactory) D rest rest') :
-    BodySimSumSA (extendFactory := extendFactory) D (s :: rest) (s' :: rest') := by
+    (hhead : StmtSimSA (extendFactory := extendFactory) Dτ D s s')
+    (htail : BodySimSumSA (extendFactory := extendFactory) Dτ D rest rest') :
+    BodySimSumSA (extendFactory := extendFactory) Dτ D (s :: rest) (s' :: rest') := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
@@ -2007,14 +2167,15 @@ private theorem bodySimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 
 Requires `y ∈ D` (the prelude defined it). A `.cmd` never reaches `.exiting`. -/
 private theorem initSet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
-    {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P)
-    (h_y_D : y ∈ D) :
-    StmtSimSA (extendFactory := extendFactory) D
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (e : P.Expr) (md : MetaData P)
+    (h_y_D : y ∈ D) (h_Dτ : Dτ y = ty) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D
       (.cmd (.init y ty (.det e) md)) (.cmd (.set y (.det e) md)) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ hwfd _ _ h_def
-  have h_tgt_y_def : (ρ_h.store y).isSome = true := h_def y h_y_D
+  have h_tgt_y_typed : ∃ prev, ρ_h.store y = some prev ∧
+      HasVal.valueOfTy ρ_h.factory prev ty := h_Dτ ▸ h_def y h_y_D
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
     -- a single `.cmd` runs `step_cmd` to `.terminal`, then is stuck.
@@ -2028,13 +2189,9 @@ private theorem initSet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
           | refl => exact .step_cmd hev
           | step _ _ _ hd _ => exact nomatch hd
     obtain ⟨ρ_tgt', h_set_step, h_agree', h_fail', h_eval', h_ydef', h_oth'⟩ :=
-      initToSetStepSA y ty e md ρ_s ρ_s' ρ_h h_eval h_hf h_agree hwfd h_tgt_y_def h_cmd_step
-    refine ⟨ρ_tgt', ReflTrans.step _ _ _ h_set_step (ReflTrans.refl _),
-      h_agree', h_fail', h_eval', ?_⟩
-    intro z hz
-    by_cases hzy : z = y
-    · subst hzy; exact h_ydef'
-    · rw [h_oth' z (fun h => hzy h.symm)]; exact h_def z hz
+      initToSetStepSA y ty e md ρ_s ρ_s' ρ_h h_eval h_hf h_agree hwfd h_tgt_y_typed h_cmd_step
+    exact ⟨ρ_tgt', ReflTrans.step _ _ _ h_set_step (ReflTrans.refl _),
+      h_agree', h_fail', h_eval', DTyped.step_cmd h_set_step h_def⟩
   · intro l ρ_s' h_run
     exfalso
     cases h_run with
@@ -2055,7 +2212,8 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     (h_eval_eq : ρ_tgt.factory = ρ_src.factory)
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
     (h_agree : StoreAgreement ρ_src.store ρ_tgt.store)
-    (h_tgt_y_def : (ρ_tgt.store y).isSome = true)
+    (h_tgt_y_typed : ∃ prev, ρ_tgt.store y = some prev ∧
+      HasVal.valueOfTy ρ_tgt.factory prev ty)
     (h_step : StepStmt P (EvalCmd P) extendFactory
         (.stmt (.cmd (.init y ty .nondet md)) ρ_src) (.terminal ρ_src')) :
     ∃ ρ_tgt', StepStmt P (EvalCmd P) extendFactory
@@ -2063,20 +2221,21 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
         ∧ StoreAgreement ρ_src'.store ρ_tgt'.store
         ∧ ρ_tgt'.hasFailure = ρ_src'.hasFailure
         ∧ ρ_tgt'.factory = ρ_src'.factory
-        ∧ (ρ_tgt'.store y).isSome = true
+        ∧ (∃ prev', ρ_tgt'.store y = some prev' ∧
+            HasVal.valueOfTy ρ_tgt'.factory prev' ty)
         ∧ (∀ z, y ≠ z → ρ_tgt'.store z = ρ_tgt.store z) := by
+  obtain ⟨vprev, h_tgt_y_old, h_prev_ty⟩ := h_tgt_y_typed
   cases h_step with
   | step_cmd h_eval =>
     rename_i σ' haf
     cases h_eval with
     | eval_init_unconstrained hinit hval hwfvar =>
       rename_i v
+      have h_v_ty_tgt : HasVal.valueOfTy ρ_tgt.factory v ty := h_eval_eq ▸ hval
+      have h_storedty : HasVal.valueOfStoredTy (P := P) ρ_tgt.factory ρ_tgt.store y v :=
+        ⟨vprev, ty, h_tgt_y_old, h_prev_ty, h_v_ty_tgt⟩
       cases hinit with
       | init h_yn h_yv h_other =>
-        obtain ⟨v', h_tgt_y_old⟩ : ∃ v', ρ_tgt.store y = some v' := by
-          cases h : ρ_tgt.store y with
-          | none => rw [h] at h_tgt_y_def; simp at h_tgt_y_def
-          | some v' => exact ⟨v', rfl⟩
         let σ_tgt' : SemanticStore P := fun z => if z = y then some v else ρ_tgt.store z
         have h_tgt_y : σ_tgt' y = some v := by show (if y = y then _ else _) = _; simp
         have h_tgt_oth : ∀ z, y ≠ z → σ_tgt' z = ρ_tgt.store z := by
@@ -2084,7 +2243,7 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
         refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || false },
           .step_cmd (EvalCmd.eval_set_nondet
             (UpdateState.update h_tgt_y_old h_tgt_y h_tgt_oth)
-            (h_eval_eq ▸ hval)
+            h_storedty
             (h_eval_eq ▸ hwfvar)),
           ?_, ?_, ?_, ?_, ?_⟩
         · intro z h_def_z
@@ -2098,21 +2257,22 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
             exact h_agree z (fun w hw => by simpa [List.mem_singleton.mp hw] using h_z_some)
         · show (ρ_tgt.hasFailure || false) = (ρ_src.hasFailure || false); simp [h_fail_eq]
         · exact h_eval_eq
-        · show (σ_tgt' y).isSome = true; rw [h_tgt_y]; rfl
+        · exact ⟨v, h_tgt_y, h_v_ty_tgt⟩
         · exact h_tgt_oth
 
 /-- The hoist rewrite of a nondet `init` into a `set` is a store-agreeing simulation:
 `init y ty .nondet` on the source is matched by `set y .nondet` on the hoisted side under
 `StmtSimSA D`, provided `y` is already in the tracked defined set `D`. -/
 private theorem initSet_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
-    {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (md : MetaData P)
-    (h_y_D : y ∈ D) :
-    StmtSimSA (extendFactory := extendFactory) D
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} (y : P.Ident) (ty : P.Ty) (md : MetaData P)
+    (h_y_D : y ∈ D) (h_Dτ : Dτ y = ty) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D
       (.cmd (.init y ty .nondet md)) (.cmd (.set y .nondet md)) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
-  have h_tgt_y_def : (ρ_h.store y).isSome = true := h_def y h_y_D
+  have h_tgt_y_typed : ∃ prev, ρ_h.store y = some prev ∧
+      HasVal.valueOfTy ρ_h.factory prev ty := h_Dτ ▸ h_def y h_y_D
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
     have h_cmd_step : StepStmt P (EvalCmd P) extendFactory
@@ -2125,13 +2285,9 @@ private theorem initSet_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P]
           | refl => exact .step_cmd hev
           | step _ _ _ hd _ => exact nomatch hd
     obtain ⟨ρ_tgt', h_set_step, h_agree', h_fail', h_eval', h_ydef', h_oth'⟩ :=
-      initToSetStepSA_nondet y ty md ρ_s ρ_s' ρ_h h_eval h_hf h_agree h_tgt_y_def h_cmd_step
-    refine ⟨ρ_tgt', ReflTrans.step _ _ _ h_set_step (ReflTrans.refl _),
-      h_agree', h_fail', h_eval', ?_⟩
-    intro z hz
-    by_cases hzy : z = y
-    · subst hzy; exact h_ydef'
-    · rw [h_oth' z (fun h => hzy h.symm)]; exact h_def z hz
+      initToSetStepSA_nondet y ty md ρ_s ρ_s' ρ_h h_eval h_hf h_agree h_tgt_y_typed h_cmd_step
+    exact ⟨ρ_tgt', ReflTrans.step _ _ _ h_set_step (ReflTrans.refl _),
+      h_agree', h_fail', h_eval', DTyped.step_cmd h_set_step h_def⟩
   · intro l ρ_s' h_run
     exfalso
     cases h_run with
@@ -2148,11 +2304,11 @@ because no `EvalCmd` step undefines a slot (`Config.varsDefined_star`). The
 `h_no_init` premise (`Cmd.definedVars c = []`) discharges the cmd-replay's
 init-undefinedness side-condition vacuously. -/
 private theorem cmd_id_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
-    {D : List P.Ident} (c : Cmd P)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} (c : Cmd P)
     (h_no_init : Cmd.definedVars c = []) :
-    StmtSimSA (extendFactory := extendFactory) D (.cmd c) (.cmd c) := by
+    StmtSimSA (extendFactory := extendFactory) Dτ D (.cmd c) (.cmd c) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ hwfd _ _ h_def
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
@@ -2160,10 +2316,7 @@ private theorem cmd_id_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
       cmd_replay_agreement_storeAgree (extendFactory := extendFactory) c ρ_s ρ_s' ρ_h
         h_eval h_hf h_agree hwfd
         (by intro x hx; rw [h_no_init] at hx; exact absurd hx List.not_mem_nil) h_run
-    refine ⟨ρ_h', h_h_run, h_agree', h_hf', h_eval', ?_⟩
-    intro z hz
-    exact Config.varsDefined_star (extendFactory := extendFactory) h_h_run
-      (show Config.varDefined z (.stmt (.cmd c) ρ_h) from fun _ hw => hw ▸ h_def z hz) z rfl
+    exact ⟨ρ_h', h_h_run, h_agree', h_hf', h_eval', DTyped.cmd_star h_h_run h_def⟩
   · intro l ρ_s' h_run
     exfalso
     cases h_run with
@@ -2176,16 +2329,11 @@ private theorem cmd_id_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
 
 private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
-    (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h) :
-    StmtSimSA (extendFactory := extendFactory) D (.block lbl inner md) (.block lbl inner_h md) := by
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (inner_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D inner inner_h)
+    (h_nofd : Block.noFuncDecl inner_h = true) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D (.block lbl inner md) (.block lbl inner_h md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
-  -- D-definedness survives the projection: parent-defined keys are kept.
-  have proj_def : ∀ (ρ_inner : Env P), (∀ y ∈ D, (ρ_inner.store y).isSome = true) →
-      ∀ y ∈ D, (projectStore ρ_h.store ρ_inner.store y).isSome = true := by
-    intro ρ_inner h_def_inner y hy
-    show ((if (ρ_h.store y).isSome then ρ_inner.store y else none)).isSome = true
-    rw [if_pos (h_def y hy)]; exact h_def_inner y hy
   have peel_term : ∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt (.block lbl inner md) ρ_s) (.terminal ρ_s') →
       StepStmtStar P (EvalCmd P) extendFactory
@@ -2208,6 +2356,9 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     · obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner, h_def_inner⟩ :=
         (inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def).1 ρ_inner
             h_inner_term
+      have h_fac : ρ_h_inner.factory = ρ_h.factory :=
+        noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+          (show Config.noFuncDecl (.stmts inner_h ρ_h) from h_nofd) h_inner_h_run
       refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                                factory := ρ_h.factory }, ?_, ?_, ?_, ?_, ?_⟩
       · refine ReflTrans.step _ _ _ StepStmt.step_block ?_
@@ -2218,10 +2369,13 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
       · subst h_eq; exact StoreAgreement.of_projectStore_parents h_agree h_agree_inner
       · subst h_eq; show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
       · subst h_eq; show ρ_h.factory = ρ_s.factory; exact h_eval
-      · subst h_eq; exact proj_def ρ_h_inner h_def_inner
+      · exact DTyped.projectStore h_def h_def_inner h_fac
     · obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner, h_def_inner⟩ :=
         (inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def).2 lbl ρ_inner
             h_inner_exit
+      have h_fac : ρ_h_inner.factory = ρ_h.factory :=
+        noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+          (show Config.noFuncDecl (.stmts inner_h ρ_h) from h_nofd) h_inner_h_run
       refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                                factory := ρ_h.factory }, ?_, ?_, ?_, ?_, ?_⟩
       · refine ReflTrans.step _ _ _ StepStmt.step_block ?_
@@ -2232,7 +2386,7 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
       · subst h_eq; exact StoreAgreement.of_projectStore_parents h_agree h_agree_inner
       · subst h_eq; show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
       · subst h_eq; show ρ_h.factory = ρ_s.factory; exact h_eval
-      · subst h_eq; exact proj_def ρ_h_inner h_def_inner
+      · exact DTyped.projectStore h_def h_def_inner h_fac
   · intro l ρ_s' h_run0
     have h_run := peel_exit l ρ_s' h_run0
     obtain ⟨h_ne, ρ_inner, h_inner_exit, h_eq⟩ :=
@@ -2240,6 +2394,9 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner, h_def_inner⟩ :=
       (inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def).2 l ρ_inner
           h_inner_exit
+    have h_fac : ρ_h_inner.factory = ρ_h.factory :=
+      noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+        (show Config.noFuncDecl (.stmts inner_h ρ_h) from h_nofd) h_inner_h_run
     refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                              factory := ρ_h.factory }, ?_, ?_, ?_, ?_, ?_⟩
     · refine ReflTrans.step _ _ _ StepStmt.step_block ?_
@@ -2251,17 +2408,18 @@ private theorem block_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     · subst h_eq; exact StoreAgreement.of_projectStore_parents h_agree h_agree_inner
     · subst h_eq; show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf_inner
     · subst h_eq; show ρ_h.factory = ρ_s.factory; exact h_eval
-    · subst h_eq; exact proj_def ρ_h_inner h_def_inner
+    · exact DTyped.projectStore h_def h_def_inner h_fac
 
 /-! ## The `.ite` arms (same guard, no rename). -/
 
 private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
         P}
-    (then_sim : BodySimSumSA (extendFactory := extendFactory) D tss_s tss_h)
-    (else_sim : BodySimSumSA (extendFactory := extendFactory) D ess_s ess_h) :
-    StmtSimSA (extendFactory := extendFactory) D
+    (then_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D tss_s tss_h)
+    (else_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D ess_s ess_h)
+    (h_nofd_tss : Block.noFuncDecl tss_h = true) (h_nofd_ess : Block.noFuncDecl ess_h = true) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D
       (.ite (.det g) tss_s ess_s md) (.ite (.det g) tss_h ess_h md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
   -- transport the guard: source-defined reads pin the values, so hoist guard = source value.
@@ -2271,12 +2429,6 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
     rw [h_eval]
     exact hwfd g bv ρ_s.store ρ_h.store
       (storeAgreement_supplies_mono_premise ρ_s.store ρ_h.store h_agree) hg
-  -- projected D-definedness on the hoist side after the block cap.
-  have proj_def_h : ∀ (ρ_h_inner : Env P), (∀ y ∈ D, (ρ_h_inner.store y).isSome = true) →
-      ∀ y ∈ D, (projectStore ρ_h.store ρ_h_inner.store y).isSome = true := by
-    intro ρ_h_inner h_def_inner y hy
-    show ((if (ρ_h.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-    rw [if_pos (h_def y hy)]; exact h_def_inner y hy
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
     -- Invert the source ite: it steps to a scoped `.block .none`; recover the guard + block run.
@@ -2297,8 +2449,13 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ .step_block_done (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
       | step_ite_false hg hwf =>
@@ -2315,8 +2472,13 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ .step_block_done (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
   · intro l ρ_s' h_run
@@ -2337,8 +2499,13 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ (.step_block_exit_mismatch (by simp)) (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
       | step_ite_false hg hwf =>
@@ -2355,8 +2522,13 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ (.step_block_exit_mismatch (by simp)) (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
 
@@ -2365,17 +2537,13 @@ simulations of each branch: from `then`/`else` body simulations, the whole
 `.ite .nondet` statement's hoisted form matches the source. -/
 private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
-    (then_sim : BodySimSumSA (extendFactory := extendFactory) D tss_s tss_h)
-    (else_sim : BodySimSumSA (extendFactory := extendFactory) D ess_s ess_h) :
-    StmtSimSA (extendFactory := extendFactory) D
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (then_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D tss_s tss_h)
+    (else_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D ess_s ess_h)
+    (h_nofd_tss : Block.noFuncDecl tss_h = true) (h_nofd_ess : Block.noFuncDecl ess_h = true) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D
       (.ite .nondet tss_s ess_s md) (.ite .nondet tss_h ess_h md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
-  have proj_def_h : ∀ (ρ_h_inner : Env P), (∀ y ∈ D, (ρ_h_inner.store y).isSome = true) →
-      ∀ y ∈ D, (projectStore ρ_h.store ρ_h_inner.store y).isSome = true := by
-    intro ρ_h_inner h_def_inner y hy
-    show ((if (ρ_h.store y).isSome then ρ_h_inner.store y else none)).isSome = true
-    rw [if_pos (h_def y hy)]; exact h_def_inner y hy
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
     match h_run with
@@ -2395,8 +2563,13 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ .step_block_done (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
       | step_ite_nondet_false =>
@@ -2413,8 +2586,13 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ .step_block_done (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
   · intro l ρ_s' h_run
@@ -2435,8 +2613,13 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ (.step_block_exit_mismatch (by simp)) (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
       | step_ite_nondet_false =>
@@ -2453,8 +2636,13 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
               (block_inner_star P (EvalCmd P) extendFactory _ _ .none ρ_h.store ρ_h.factory
                   h_branch_h)
               (.step _ _ _ (.step_block_exit_mismatch (by simp)) (.refl _))),
-          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_, proj_def_h ρ_h_inner
-              h_def'⟩
+          StoreAgreement.of_projectStore_parents h_agree h_agree', ?_, ?_,
+            DTyped.projectStore h_def h_def' (by
+              first
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts tss_h ρ_h) from h_nofd_tss) h_branch_h
+              | exact noFuncDecl_preserves_factory P (EvalCmd P) extendFactory _ _
+                  (show Config.noFuncDecl (.stmts ess_h ρ_h) from h_nofd_ess) h_branch_h)⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
         · show ρ_h.factory = ρ_s.factory; exact h_eval
 
@@ -2462,11 +2650,11 @@ private theorem ite_nondet_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 
 private theorem nestedLoop_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
         P}
-    (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h)
+    (inner_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D inner inner_h)
     (h_nofd_src : Block.noFuncDecl inner = true) :
-    StmtSimSA (extendFactory := extendFactory) D
+    StmtSimSA (extendFactory := extendFactory) Dτ D
       (.loop (.det g2) none [] inner md2_s)
       (.loop (.det g2) none [] inner_h md2_h) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
@@ -2486,8 +2674,8 @@ private theorem nestedLoop_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 
 private theorem exit_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} (lbl : String) (md : MetaData P) :
-    StmtSimSA (extendFactory := extendFactory) D (.exit lbl md) (.exit lbl md) := by
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} (lbl : String) (md : MetaData P) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D (.exit lbl md) (.exit lbl md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
@@ -2514,8 +2702,8 @@ private theorem exit_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
 (it neither reads nor writes the store). -/
 private theorem typeDecl_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} (tc : TypeConstructor) (md : MetaData P) :
-    StmtSimSA (extendFactory := extendFactory) D (.typeDecl tc md) (.typeDecl tc md) := by
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} (tc : TypeConstructor) (md : MetaData P) :
+    StmtSimSA (extendFactory := extendFactory) Dτ D (.typeDecl tc md) (.typeDecl tc md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
@@ -2652,14 +2840,14 @@ sims (for completed head statements) and the failing ones (for the failure) in a
 single walk over the body. -/
 private def StmtSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) (s s' : Stmt P (Cmd P)) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
     ρ_h.factory = ρ_s.factory → ρ_h.hasFailure = ρ_s.hasFailure →
     StoreAgreement ρ_s.store ρ_h.store →
     WellFormedSemanticEvalBool ρ_s.factory → WellFormedSemanticEvalVal ρ_s.factory →
     WellFormedSemanticEvalMono ρ_s.factory → WellFormedSemanticEvalExprCongr ρ_s.factory →
     WellFormedSemanticEvalVar ρ_s.factory →
-    (∀ y ∈ D, (ρ_h.store y).isSome = true) →
+    DTyped Dτ D ρ_h →
     ∀ (d : Config P (Cmd P)),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ_s) d →
       d.getEnv.hasFailure = true →
@@ -2669,8 +2857,8 @@ private def StmtSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- The empty body cannot fail mid-run. -/
 theorem bodySimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    (D : List P.Ident) :
-    BodySimSumFailSA (extendFactory := extendFactory) D [] [] := by
+    (Dτ : P.Ident → P.Ty) (D : List P.Ident) :
+    BodySimSumFailSA (extendFactory := extendFactory) Dτ D [] [] := by
   intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ h_def d h_run hd_fail
   have h_d_env : d.getEnv = ρ_s := by
     cases h_run with
@@ -2687,12 +2875,12 @@ theorem bodySimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- The cons sequencer for failing body sims. -/
 private theorem bodySimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
-    (hhead_term : StmtSimSA (extendFactory := extendFactory) D s s')
-    (hhead_fail : StmtSimFailSA (extendFactory := extendFactory) D s s')
-    (htail_fail : BodySimSumFailSA (extendFactory := extendFactory) D rest rest') :
-    BodySimSumFailSA (extendFactory := extendFactory) D (s :: rest) (s' :: rest') := by
+    (hhead_term : StmtSimSA (extendFactory := extendFactory) Dτ D s s')
+    (hhead_fail : StmtSimFailSA (extendFactory := extendFactory) Dτ D s s')
+    (htail_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D rest rest') :
+    BodySimSumFailSA (extendFactory := extendFactory) Dτ D (s :: rest) (s' :: rest') := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
   rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_run) hd_fail with
     ⟨d_head, h_head_run, hd_head⟩ | ⟨ρ_mid, d_rest, h_head_term, h_rest_run, hd_rest⟩
@@ -2720,12 +2908,12 @@ private theorem bodySimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 `StmtSimSA`. -/
 private theorem stmtSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {s s' : Stmt P (Cmd P)}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {s s' : Stmt P (Cmd P)}
     (h_outcome : ∀ {ρ : Env P} {d : Config P (Cmd P)},
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) d →
       (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt s ρ)
-    (h_term : StmtSimSA (extendFactory := extendFactory) D s s') :
-    StmtSimFailSA (extendFactory := extendFactory) D s s' := by
+    (h_term : StmtSimSA (extendFactory := extendFactory) Dτ D s s') :
+    StmtSimFailSA (extendFactory := extendFactory) Dτ D s s' := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
   rcases h_outcome h_run with ⟨ρ', h_eq⟩ | ⟨l, ρ', h_eq⟩ | h_eq
   · subst h_eq
@@ -2747,9 +2935,9 @@ private theorem stmtSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasFv
 /-- The `.block` failing arm. -/
 private theorem block_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
-    (inner_fail : BodySimSumFailSA (extendFactory := extendFactory) D inner inner_h) :
-    StmtSimFailSA (extendFactory := extendFactory) D (.block lbl inner md) (.block lbl inner_h md)
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (inner_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D inner inner_h) :
+    StmtSimFailSA (extendFactory := extendFactory) Dτ D (.block lbl inner md) (.block lbl inner_h md)
         := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
   rcases h_run with _ | ⟨_, _, _, h1, hr1⟩
@@ -2771,11 +2959,11 @@ private theorem block_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 /-- The `.ite (.det g)` failing arm. -/
 private theorem ite_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData
         P}
-    (then_fail : BodySimSumFailSA (extendFactory := extendFactory) D tss_s tss_h)
-    (else_fail : BodySimSumFailSA (extendFactory := extendFactory) D ess_s ess_h) :
-    StmtSimFailSA (extendFactory := extendFactory) D
+    (then_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D tss_s tss_h)
+    (else_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D ess_s ess_h) :
+    StmtSimFailSA (extendFactory := extendFactory) Dτ D
       (.ite (.det g) tss_s ess_s md) (.ite (.det g) tss_h ess_h md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
   have guard_h : ∀ {bv : P.Expr}, P.eval ρ_s.factory ρ_s.store g = .some bv →
@@ -2813,10 +3001,10 @@ private theorem ite_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
 /-- The `.ite .nondet` failing arm. -/
 private theorem ite_nondet_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
-    (then_fail : BodySimSumFailSA (extendFactory := extendFactory) D tss_s tss_h)
-    (else_fail : BodySimSumFailSA (extendFactory := extendFactory) D ess_s ess_h) :
-    StmtSimFailSA (extendFactory := extendFactory) D
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (then_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D tss_s tss_h)
+    (else_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D ess_s ess_h) :
+    StmtSimFailSA (extendFactory := extendFactory) Dτ D
       (.ite .nondet tss_s ess_s md) (.ite .nondet tss_h ess_h md) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
   rcases h_run with _ | ⟨_, _, _, h1, hr1⟩
@@ -2848,12 +3036,12 @@ private theorem ite_nondet_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P]
 /-- The nested `.loop` failing arm. -/
 private theorem nestedLoop_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData
         P}
-    (inner_sim : BodySimSumSA (extendFactory := extendFactory) D inner inner_h)
-    (inner_fail : BodySimSumFailSA (extendFactory := extendFactory) D inner inner_h)
+    (inner_sim : BodySimSumSA (extendFactory := extendFactory) Dτ D inner inner_h)
+    (inner_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ D inner inner_h)
     (h_nofd_src : Block.noFuncDecl inner = true) :
-    StmtSimFailSA (extendFactory := extendFactory) D
+    StmtSimFailSA (extendFactory := extendFactory) Dτ D
       (.loop (.det g2) none [] inner md2_s)
       (.loop (.det g2) none [] inner_h md2_h) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def d h_run hd_fail
@@ -2865,14 +3053,14 @@ private theorem nestedLoop_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P]
 `noFuncDecl`) and a combined tail sim stitch onto a combined cons sim. -/
 private theorem bodySimBothSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (h_nofd_s : Stmt.noFuncDecl s = true)
-    (hhead_term : StmtSimSA (extendFactory := extendFactory) D s s')
-    (hhead_fail : StmtSimFailSA (extendFactory := extendFactory) D s s')
-    (htail : BodySimSumSA (extendFactory := extendFactory) D rest rest'
-        ∧ BodySimSumFailSA (extendFactory := extendFactory) D rest rest') :
-    BodySimSumSA (extendFactory := extendFactory) D (s :: rest) (s' :: rest')
-      ∧ BodySimSumFailSA (extendFactory := extendFactory) D (s :: rest) (s' :: rest') :=
+    (hhead_term : StmtSimSA (extendFactory := extendFactory) Dτ D s s')
+    (hhead_fail : StmtSimFailSA (extendFactory := extendFactory) Dτ D s s')
+    (htail : BodySimSumSA (extendFactory := extendFactory) Dτ D rest rest'
+        ∧ BodySimSumFailSA (extendFactory := extendFactory) Dτ D rest rest') :
+    BodySimSumSA (extendFactory := extendFactory) Dτ D (s :: rest) (s' :: rest')
+      ∧ BodySimSumFailSA (extendFactory := extendFactory) Dτ D (s :: rest) (s' :: rest') :=
   ⟨bodySimSA_cons h_nofd_s hhead_term htail.1,
    bodySimFailSA_cons h_nofd_s hhead_term hhead_fail htail.2⟩
 
@@ -2886,22 +3074,189 @@ producing BOTH the terminal/exiting `BodySimSumSA` and the failing
 reachable in `body₁` (`Block.definedVars body₁ ⊆ D`); the nested `.loop` arm
 supplies that the prelude havocs (whose names are exactly `Block.definedVars
 body₁`) are all defined in the target store before the loop. -/
+/-! `Dτ`-harvestable typed inits of a statement/block: each `.init a ty` reachable
+without descending into a nested loop, paired with its declared type.  Mirrors the
+positions `Block.liftInitsInLoopBody` harvests.  A list-valued walker (like
+`definedVars`) so the `∀ p ∈ …` consistency hypothesis threads through the
+producer's structural recursion without disturbing termination. -/
+mutual
+def Stmt.typedInitVars {P : PureExpr} : Stmt P (Cmd P) → List (P.Ident × P.Ty)
+  | .cmd (.init a ty _ _) => [(a, ty)]
+  | .cmd _ => []
+  | .block _ bss _ => Block.typedInitVars bss
+  | .ite _ tss ess _ => Block.typedInitVars tss ++ Block.typedInitVars ess
+  | .loop _ _ _ _ _ => []
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+def Block.typedInitVars {P : PureExpr} : List (Stmt P (Cmd P)) → List (P.Ident × P.Ty)
+  | [] => []
+  | s :: rest => Stmt.typedInitVars s ++ Block.typedInitVars rest
+end
+
+/-- An init-free block harvests no typed inits. -/
+theorem Block.typedInitVars_eq_nil_of_noInitsAnywhere {P : PureExpr} [HasFvars P] :
+    (ss : List (Stmt P (Cmd P))) → Block.noInitsAnywhere ss = true → Block.typedInitVars ss = []
+  | [], _ => rfl
+  | s :: rest, h => by
+    rw [Block.noInitsAnywhere, Bool.and_eq_true] at h
+    rw [Block.typedInitVars, Block.typedInitVars_eq_nil_of_noInitsAnywhere rest h.2, List.append_nil]
+    have hs := h.1
+    cases s with
+    | cmd c =>
+        cases c with
+        | init _ _ _ _ => simp [Stmt.noInitsAnywhere] at hs
+        | set _ _ _ => rfl
+        | assert _ _ _ => rfl
+        | assume _ _ _ => rfl
+        | cover _ _ _ => rfl
+    | block lbl bss md =>
+        rw [Stmt.typedInitVars]
+        exact Block.typedInitVars_eq_nil_of_noInitsAnywhere bss (by simpa [Stmt.noInitsAnywhere] using hs)
+    | ite g tss ess md =>
+        rw [Stmt.typedInitVars]
+        simp only [Stmt.noInitsAnywhere, Bool.and_eq_true] at hs
+        rw [Block.typedInitVars_eq_nil_of_noInitsAnywhere tss hs.1,
+            Block.typedInitVars_eq_nil_of_noInitsAnywhere ess hs.2, List.append_nil]
+    | loop _ _ _ _ _ => rfl
+    | exit _ _ => rfl
+    | funcDecl _ _ => rfl
+    | typeDecl _ _ => rfl
+  termination_by ss => sizeOf ss
+
+/-! ## A total `Dτ` lookup from a typed-init association list.
+
+The loop arm builds its total type assignment `Dτ` from the harvested typed inits
+of the (post-hoist) loop body via a plain association-list lookup, falling back to
+`HasBool.boolTy` off the list (its off-list value is irrelevant — only in-list
+names are ever queried).  With `Nodup` keys, the lookup agrees with every recorded
+pair. -/
+def typedInitVarsLookup {P : PureExpr} [HasBool P] [DecidableEq P.Ident]
+    (l : List (P.Ident × P.Ty)) (y : P.Ident) : P.Ty :=
+  match l with
+  | [] => HasBool.boolTy
+  | p :: rest => if p.1 = y then p.2 else typedInitVarsLookup rest y
+
+/-- With `Nodup` keys, `typedInitVarsLookup` returns each recorded pair's type. -/
+theorem typedInitVarsLookup_agrees {P : PureExpr} [HasBool P] [DecidableEq P.Ident]
+    (l : List (P.Ident × P.Ty)) (h_nodup : (l.map Prod.fst).Nodup)
+    (p : P.Ident × P.Ty) (hp : p ∈ l) :
+    typedInitVarsLookup l p.1 = p.2 := by
+  induction l with
+  | nil => exact absurd hp List.not_mem_nil
+  | cons a rest ih =>
+    rw [List.map_cons, List.nodup_cons] at h_nodup
+    obtain ⟨ha_notin, h_rest_nodup⟩ := h_nodup
+    rw [typedInitVarsLookup]
+    by_cases hpa : a.1 = p.1
+    · rw [if_pos hpa]
+      rcases List.mem_cons.mp hp with h_eq | h_rest
+      · rw [h_eq]
+      · exfalso; apply ha_notin; rw [hpa]; exact List.mem_map.mpr ⟨p, h_rest, rfl⟩
+    · rw [if_neg hpa]
+      rcases List.mem_cons.mp hp with h_eq | h_rest
+      · exact absurd (congrArg Prod.fst h_eq).symm hpa
+      · exact ih h_rest_nodup h_rest
+
+/-- The `(name, type)` pairs carried by a command list's `.init` entries. -/
+def Cmds.typedInitVars {P : PureExpr} (cs : List (Cmd P)) : List (P.Ident × P.Ty) :=
+  match cs with
+  | [] => []
+  | (.init y ty _ _) :: rest => (y, ty) :: Cmds.typedInitVars rest
+  | _ :: rest => Cmds.typedInitVars rest
+
+theorem Cmds.typedInitVars_append {P : PureExpr} (cs ds : List (Cmd P)) :
+    Cmds.typedInitVars (cs ++ ds) = Cmds.typedInitVars cs ++ Cmds.typedInitVars ds := by
+  induction cs with
+  | nil => rfl
+  | cons c rest ih => cases c <;> simp only [List.cons_append, Cmds.typedInitVars, ih]
+
+/-! The typed-init pairs harvested by the same-name lift's prelude (`.1`) are
+exactly the statement's shallow `typedInitVars`. -/
+mutual
+theorem Stmt.liftP_typedInitVars_res {P : PureExpr} (s : Stmt P (Cmd P)) :
+    Cmds.typedInitVars (Stmt.liftInitsInLoopBody s).1 = Stmt.typedInitVars s := by
+  match s with
+  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Cmds.typedInitVars, Stmt.typedInitVars]
+  | .block lbl bss md =>
+      simp only [Stmt.liftInitsInLoopBody, Stmt.typedInitVars]
+      exact Block.liftP_typedInitVars_res bss
+  | .ite g tss ess md =>
+      simp only [Stmt.liftInitsInLoopBody, Stmt.typedInitVars]
+      rw [Cmds.typedInitVars_append, Block.liftP_typedInitVars_res tss,
+          Block.liftP_typedInitVars_res ess]
+  | .loop g m inv body md =>
+      simp [Stmt.liftInitsInLoopBody, Cmds.typedInitVars, Stmt.typedInitVars]
+  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Cmds.typedInitVars, Stmt.typedInitVars]
+  | .funcDecl d md => simp [Stmt.liftInitsInLoopBody, Cmds.typedInitVars, Stmt.typedInitVars]
+  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Cmds.typedInitVars, Stmt.typedInitVars]
+  termination_by sizeOf s
+
+theorem Block.liftP_typedInitVars_res {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+    Cmds.typedInitVars (Block.liftInitsInLoopBody ss).1 = Block.typedInitVars ss := by
+  match ss with
+  | [] => simp [Block.liftInitsInLoopBody, Cmds.typedInitVars, Block.typedInitVars]
+  | s :: rest =>
+      rw [Block.liftInitsInLoopBody]
+      simp only [Block.typedInitVars]
+      rw [Cmds.typedInitVars_append, Stmt.liftP_typedInitVars_res s,
+          Block.liftP_typedInitVars_res rest]
+  termination_by sizeOf ss
+end
+
+/-! ## noFuncDecl preserved by the same-name lift residual (needed early by the
+producer's block/ite arms). -/
+mutual
+theorem Stmt.liftP_noFuncDecl_res {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noFuncDecl s = true)
+    :
+    Block.noFuncDecl (Stmt.liftInitsInLoopBody s).2 = true := by
+  match s with
+  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
+  | .block lbl bss md =>
+      simp only [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
+      exact Block.liftP_noFuncDecl_res bss (by simpa [Stmt.noFuncDecl] using h)
+  | .ite g tss ess md =>
+      simp only [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
+      simp only [Stmt.noFuncDecl, Bool.and_eq_true] at h
+      rw [Block.liftP_noFuncDecl_res tss h.1, Block.liftP_noFuncDecl_res ess h.2]; rfl
+  | .loop g m inv body md =>
+      simp_all [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
+  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
+  | .funcDecl d md => simp [Stmt.noFuncDecl] at h
+  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
+  termination_by sizeOf s
+
+theorem Block.liftP_noFuncDecl_res {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h : Block.noFuncDecl
+    ss = true) :
+    Block.noFuncDecl (Block.liftInitsInLoopBody ss).2 = true := by
+  match ss with
+  | [] => simp [Block.liftInitsInLoopBody, Block.noFuncDecl]
+  | s :: rest =>
+      simp only [Block.noFuncDecl, Bool.and_eq_true] at h
+      rw [Block.liftInitsInLoopBody]
+      simp only [Block.noFuncDecl_append]
+      rw [Stmt.liftP_noFuncDecl_res s h.1, Block.liftP_noFuncDecl_res rest h.2]; rfl
+  termination_by sizeOf ss
+end
+
 private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
-    {extendFactory : ExtendFactory P} {D : List P.Ident}
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasVal P]
+    {extendFactory : ExtendFactory P} {Dτ : P.Ident → P.Ty} {D : List P.Ident}
     (body₁ : List (Stmt P (Cmd P)))
     (h_if : Block.loopBodyNoInits body₁ = true)
     (h_shape : Block.transportShape body₁ = true)
     (h_nofd : Block.noFuncDecl body₁ = true)
-    (h_defD : ∀ y ∈ Block.definedVars body₁ false, y ∈ D) :
-    BodySimSumSA (extendFactory := extendFactory) D body₁ (Block.liftInitsInLoopBody body₁).2
-      ∧ BodySimSumFailSA (extendFactory := extendFactory) D body₁
+    (h_defD : ∀ y ∈ Block.definedVars body₁ false, y ∈ D)
+    (h_Dτ : ∀ p ∈ Block.typedInitVars body₁, Dτ p.1 = p.2) :
+    BodySimSumSA (extendFactory := extendFactory) Dτ D body₁ (Block.liftInitsInLoopBody body₁).2
+      ∧ BodySimSumFailSA (extendFactory := extendFactory) Dτ D body₁
           (Block.liftInitsInLoopBody body₁).2 := by
   match body₁ with
   | [] =>
       rw [show (Block.liftInitsInLoopBody ([] : List (Stmt P (Cmd P)))).2 = [] by
         rw [Block.liftInitsInLoopBody]]
-      exact ⟨bodySimSA_nil D, bodySimFailSA_nil D⟩
+      exact ⟨bodySimSA_nil Dτ D, bodySimFailSA_nil Dτ D⟩
   | s :: rest =>
       rw [liftP_cons_residual]
       obtain ⟨h_if_s, h_if_rest⟩ := initfree_cons h_if
@@ -2911,86 +3266,94 @@ private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [H
       obtain ⟨h_nofd_s, h_nofd_rest⟩ :
           Stmt.noFuncDecl s = true ∧ Block.noFuncDecl rest = true := by
         simpa [Block.noFuncDecl, Bool.and_eq_true] using h_nofd
+      have h_Dτ_rest : ∀ p ∈ Block.typedInitVars rest, Dτ p.1 = p.2 := fun p hp =>
+        h_Dτ p (by rw [Block.typedInitVars]; exact List.mem_append.mpr (Or.inr hp))
+      have h_Dτ_s : ∀ p ∈ Stmt.typedInitVars s, Dτ p.1 = p.2 := fun p hp =>
+        h_Dτ p (by rw [Block.typedInitVars]; exact List.mem_append.mpr (Or.inl hp))
       have h_defD_rest : ∀ y ∈ Block.definedVars rest false, y ∈ D := fun y hy =>
         h_defD y (by simp only [Block.definedVars, List.mem_append]; exact Or.inr hy)
       have h_defD_s : ∀ y ∈ Stmt.definedVars s false, y ∈ D := fun y hy =>
         h_defD y (by simp only [Block.definedVars, List.mem_append]; exact Or.inl hy)
       have h_tail := bodySimBothSA_of_lift (extendFactory := extendFactory) rest h_if_rest
-        h_shape_rest h_nofd_rest h_defD_rest
+        h_shape_rest h_nofd_rest h_defD_rest h_Dτ_rest
       -- Case on the head statement, restricted by `transportShape` to the
       -- expressible fragment.  Each head residual is a singleton, so
       -- `bodySimBothSA_cons` stitches it onto the combined tail.
-      match s, h_if_s, h_shape_s, h_nofd_s, h_defD_s with
-      | .cmd (.init a ty (.det rhs) md), _, _, _, h_defD_s =>
+      match s, h_if_s, h_shape_s, h_nofd_s, h_defD_s, h_Dτ_s with
+      | .cmd (.init a ty (.det rhs) md), _, _, _, h_defD_s, h_Dτ_s =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.init a ty (.det rhs) md))).2
               = [.cmd (.set a (.det rhs) md)] := by rw [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           have h_a_D : a ∈ D := h_defD_s a (by
             show a ∈ (Stmt.cmd (Cmd.init a ty (ExprOrNondet.det rhs) md)).definedVars false
             with_unfolding_all exact List.mem_singleton.mpr rfl)
+          have h_a_ty : Dτ a = ty :=
+            h_Dτ_s (a, ty) (by rw [Stmt.typedInitVars]; exact List.mem_singleton.mpr rfl)
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
-            (initSet_stmtSimSA a ty rhs md h_a_D)
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (initSet_stmtSimSA a ty rhs md h_a_D))
+            (initSet_stmtSimSA a ty rhs md h_a_D h_a_ty)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (initSet_stmtSimSA a ty rhs md h_a_D h_a_ty))
                 h_tail
-      | .cmd (.init a ty .nondet md), _, _, _, h_defD_s =>
+      | .cmd (.init a ty .nondet md), _, _, _, h_defD_s, h_Dτ_s =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.init a ty .nondet md))).2
               = [.cmd (.set a .nondet md)] := by rw [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           have h_a_D : a ∈ D := h_defD_s a (by
             show a ∈ (Stmt.cmd (Cmd.init a ty ExprOrNondet.nondet md)).definedVars false
             with_unfolding_all exact List.mem_singleton.mpr rfl)
+          have h_a_ty : Dτ a = ty :=
+            h_Dτ_s (a, ty) (by rw [Stmt.typedInitVars]; exact List.mem_singleton.mpr rfl)
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
-            (initSet_nondet_stmtSimSA a ty md h_a_D)
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (initSet_nondet_stmtSimSA a ty md
-                h_a_D)) h_tail
-      | .cmd (.set name rhs md), _, _, _, _ =>
+            (initSet_nondet_stmtSimSA a ty md h_a_D h_a_ty)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (initSet_nondet_stmtSimSA a ty md
+                h_a_D h_a_ty)) h_tail
+      | .cmd (.set name rhs md), _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.set name rhs md))).2
               = [.cmd (.set name rhs md)] := by simp [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (cmd_id_stmtSimSA (.set name rhs md) (by simp [Cmd.definedVars]))
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (cmd_id_stmtSimSA (.set name rhs md)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (cmd_id_stmtSimSA (.set name rhs md)
                 (by simp [Cmd.definedVars]))) h_tail
-      | .cmd (.assert lbl e md), _, _, _, _ =>
+      | .cmd (.assert lbl e md), _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.assert lbl e md))).2
               = [.cmd (.assert lbl e md)] := by simp [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (cmd_id_stmtSimSA (.assert lbl e md) (by simp [Cmd.definedVars]))
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (cmd_id_stmtSimSA (.assert lbl e md)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (cmd_id_stmtSimSA (.assert lbl e md)
                 (by simp [Cmd.definedVars]))) h_tail
-      | .cmd (.assume lbl e md), _, _, _, _ =>
+      | .cmd (.assume lbl e md), _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.assume lbl e md))).2
               = [.cmd (.assume lbl e md)] := by simp [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (cmd_id_stmtSimSA (.assume lbl e md) (by simp [Cmd.definedVars]))
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (cmd_id_stmtSimSA (.assume lbl e md)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (cmd_id_stmtSimSA (.assume lbl e md)
                 (by simp [Cmd.definedVars]))) h_tail
-      | .cmd (.cover lbl e md), _, _, _, _ =>
+      | .cmd (.cover lbl e md), _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.cmd (.cover lbl e md))).2
               = [.cmd (.cover lbl e md)] := by simp [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (cmd_id_stmtSimSA (.cover lbl e md) (by simp [Cmd.definedVars]))
-            (stmtSimFailSA_of_singleOutcome cmd_run_outcome (cmd_id_stmtSimSA (.cover lbl e md)
+            (stmtSimFailSA_of_singleOutcome (cmd_run_outcome) (cmd_id_stmtSimSA (.cover lbl e md)
                 (by simp [Cmd.definedVars]))) h_tail
-      | .typeDecl tc md, _, _, _, _ =>
+      | .typeDecl tc md, _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.typeDecl tc md)).2
               = [.typeDecl tc md] := by rw [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (typeDecl_stmtSimSA tc md)
-            (stmtSimFailSA_of_singleOutcome typeDecl_run_outcome (typeDecl_stmtSimSA tc md))
+            (stmtSimFailSA_of_singleOutcome (typeDecl_run_outcome) (typeDecl_stmtSimSA tc md))
                 h_tail
-      | .exit lbl md, _, _, _, _ =>
+      | .exit lbl md, _, _, _, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.exit lbl md)).2
               = [.exit lbl md] := by rw [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
           exact bodySimBothSA_cons (by simp [Stmt.noFuncDecl])
             (exit_stmtSimSA lbl md)
-            (stmtSimFailSA_of_singleOutcome exit_run_outcome (exit_stmtSimSA lbl md)) h_tail
-      | .block lbl bss md, h_if_s, h_shape_s, h_nofd_s, h_defD_s =>
+            (stmtSimFailSA_of_singleOutcome (exit_run_outcome) (exit_stmtSimSA lbl md)) h_tail
+      | .block lbl bss md, h_if_s, h_shape_s, h_nofd_s, h_defD_s, h_Dτ_s =>
           rw [liftP_block_residual, List.cons_append, List.nil_append]
           have h_if_bss := initfree_block h_if_s
           have h_shape_bss : Block.transportShape bss = true := by
@@ -3002,9 +3365,11 @@ private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [H
           have h_inner :=
             bodySimBothSA_of_lift (extendFactory := extendFactory) bss h_if_bss h_shape_bss
                 h_nofd_bss h_defD_bss
-          exact bodySimBothSA_cons h_nofd_s (block_stmtSimSA h_inner.1)
+                (fun p hp => h_Dτ_s p (by rw [Stmt.typedInitVars]; exact hp))
+          exact bodySimBothSA_cons h_nofd_s
+            (block_stmtSimSA h_inner.1 (Block.liftP_noFuncDecl_res bss h_nofd_bss))
             (block_stmtSimFailSA h_inner.2) h_tail
-      | .ite (.det g) tss ess md, h_if_s, h_shape_s, h_nofd_s, h_defD_s =>
+      | .ite (.det g) tss ess md, h_if_s, h_shape_s, h_nofd_s, h_defD_s, h_Dτ_s =>
           rw [liftP_ite_residual, List.cons_append, List.nil_append]
           obtain ⟨h_if_tss, h_if_ess⟩ := initfree_ite h_if_s
           obtain ⟨h_shape_tss, h_shape_ess⟩ :
@@ -3017,13 +3382,19 @@ private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [H
             h_defD_s y (by rw [Stmt.definedVars]; exact List.mem_append.mpr (Or.inl hy))
           have h_defD_ess : ∀ y ∈ Block.definedVars ess false, y ∈ D := fun y hy =>
             h_defD_s y (by rw [Stmt.definedVars]; exact List.mem_append.mpr (Or.inr hy))
+          have h_Dτ_tss : ∀ p ∈ Block.typedInitVars tss, Dτ p.1 = p.2 := fun p hp =>
+            h_Dτ_s p (by rw [Stmt.typedInitVars]; exact List.mem_append.mpr (Or.inl hp))
+          have h_Dτ_ess : ∀ p ∈ Block.typedInitVars ess, Dτ p.1 = p.2 := fun p hp =>
+            h_Dτ_s p (by rw [Stmt.typedInitVars]; exact List.mem_append.mpr (Or.inr hp))
           have h_then := bodySimBothSA_of_lift (extendFactory := extendFactory) tss h_if_tss
-              h_shape_tss h_nofd_tss h_defD_tss
+              h_shape_tss h_nofd_tss h_defD_tss h_Dτ_tss
           have h_else := bodySimBothSA_of_lift (extendFactory := extendFactory) ess h_if_ess
-              h_shape_ess h_nofd_ess h_defD_ess
-          exact bodySimBothSA_cons h_nofd_s (ite_stmtSimSA h_then.1 h_else.1)
+              h_shape_ess h_nofd_ess h_defD_ess h_Dτ_ess
+          exact bodySimBothSA_cons h_nofd_s
+            (ite_stmtSimSA h_then.1 h_else.1
+              (Block.liftP_noFuncDecl_res tss h_nofd_tss) (Block.liftP_noFuncDecl_res ess h_nofd_ess))
             (ite_stmtSimFailSA h_then.2 h_else.2) h_tail
-      | .ite .nondet tss ess md, h_if_s, h_shape_s, h_nofd_s, h_defD_s =>
+      | .ite .nondet tss ess md, h_if_s, h_shape_s, h_nofd_s, h_defD_s, h_Dτ_s =>
           rw [liftP_ite_residual, List.cons_append, List.nil_append]
           obtain ⟨h_if_tss, h_if_ess⟩ := initfree_ite h_if_s
           obtain ⟨h_shape_tss, h_shape_ess⟩ :
@@ -3036,13 +3407,19 @@ private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [H
             h_defD_s y (by rw [Stmt.definedVars]; exact List.mem_append.mpr (Or.inl hy))
           have h_defD_ess : ∀ y ∈ Block.definedVars ess false, y ∈ D := fun y hy =>
             h_defD_s y (by rw [Stmt.definedVars]; exact List.mem_append.mpr (Or.inr hy))
+          have h_Dτ_tss : ∀ p ∈ Block.typedInitVars tss, Dτ p.1 = p.2 := fun p hp =>
+            h_Dτ_s p (by rw [Stmt.typedInitVars]; exact List.mem_append.mpr (Or.inl hp))
+          have h_Dτ_ess : ∀ p ∈ Block.typedInitVars ess, Dτ p.1 = p.2 := fun p hp =>
+            h_Dτ_s p (by rw [Stmt.typedInitVars]; exact List.mem_append.mpr (Or.inr hp))
           have h_then := bodySimBothSA_of_lift (extendFactory := extendFactory) tss h_if_tss
-              h_shape_tss h_nofd_tss h_defD_tss
+              h_shape_tss h_nofd_tss h_defD_tss h_Dτ_tss
           have h_else := bodySimBothSA_of_lift (extendFactory := extendFactory) ess h_if_ess
-              h_shape_ess h_nofd_ess h_defD_ess
-          exact bodySimBothSA_cons h_nofd_s (ite_nondet_stmtSimSA h_then.1 h_else.1)
+              h_shape_ess h_nofd_ess h_defD_ess h_Dτ_ess
+          exact bodySimBothSA_cons h_nofd_s
+            (ite_nondet_stmtSimSA h_then.1 h_else.1
+              (Block.liftP_noFuncDecl_res tss h_nofd_tss) (Block.liftP_noFuncDecl_res ess h_nofd_ess))
             (ite_nondet_stmtSimFailSA h_then.2 h_else.2) h_tail
-      | .loop (.det g) none [] lbody md, h_if_s, h_shape_s, h_nofd_s, _ =>
+      | .loop (.det g) none [] lbody md, h_if_s, h_shape_s, h_nofd_s, _, _ =>
           have h_sres : (Stmt.liftInitsInLoopBody (.loop (.det g) none [] lbody md)).2
               = [.loop (.det g) none [] lbody md] := by rw [Stmt.liftInitsInLoopBody]
           rw [h_sres, List.cons_append, List.nil_append]
@@ -3053,25 +3430,28 @@ private theorem bodySimBothSA_of_lift {P : PureExpr} [HasFvar P] [HasFvars P] [H
             simpa only [Stmt.transportShape] using h_shape_s
           -- the loop body's lift residual is itself (init-free), and it self-simulates
           -- at any D (its definedVars are empty).
-          have h_inner : BodySimSumSA (extendFactory := extendFactory) D lbody lbody
-              ∧ BodySimSumFailSA (extendFactory := extendFactory) D lbody lbody := by
-            have := bodySimBothSA_of_lift (extendFactory := extendFactory) (D := D) lbody h_if_lbody
+          have h_inner : BodySimSumSA (extendFactory := extendFactory) Dτ D lbody lbody
+              ∧ BodySimSumFailSA (extendFactory := extendFactory) Dτ D lbody lbody := by
+            have := bodySimBothSA_of_lift (extendFactory := extendFactory) (Dτ := Dτ) (D := D) lbody h_if_lbody
                 h_shape_lbody h_nofd_lbody
               (by intro y hy
                   rw [block_definedVars_nil_of_noInits_noFuncDecl lbody h_noinits h_nofd_lbody]
                       at hy
                   exact absurd hy List.not_mem_nil)
+              (by intro p hp
+                  rw [Block.typedInitVars_eq_nil_of_noInitsAnywhere lbody h_noinits] at hp
+                  exact absurd hp List.not_mem_nil)
             rwa [liftP_body_residual_no_inits lbody h_noinits] at this
           exact bodySimBothSA_cons h_nofd_s
             (nestedLoop_stmtSimSA h_inner.1 h_nofd_lbody)
             (nestedLoop_stmtSimFailSA h_inner.1 h_inner.2 h_nofd_lbody) h_tail
-      | .loop (.det g) (some me) inv lbody md, _, h_shape_s, _, _ =>
+      | .loop (.det g) (some me) inv lbody md, _, h_shape_s, _, _, _ =>
           exact absurd h_shape_s (by simp [Stmt.transportShape])
-      | .loop (.det g) none (i :: inv) lbody md, _, h_shape_s, _, _ =>
+      | .loop (.det g) none (i :: inv) lbody md, _, h_shape_s, _, _, _ =>
           exact absurd h_shape_s (by simp [Stmt.transportShape])
-      | .loop .nondet m inv lbody md, _, h_shape_s, _, _ =>
+      | .loop .nondet m inv lbody md, _, h_shape_s, _, _, _ =>
           exact absurd h_shape_s (by simp [Stmt.transportShape])
-      | .funcDecl d md, _, _, h_nofd_s, _ =>
+      | .funcDecl d md, _, _, h_nofd_s, _, _ =>
           exact absurd h_nofd_s (by simp [Stmt.noFuncDecl])
   termination_by sizeOf body₁
 
@@ -3124,25 +3504,30 @@ list generalisation of `step_init_havoc_to`; the per-step `StoreAgreement` trans
 is `storeAgreement_storeWith` and the definedness carry-through is
 `stmts_preserves_isSome`. -/
 theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
+    [DecidableEq P.Ident] [LawfulHasVal P] {extendFactory : ExtendFactory P}
+    {Dτ : P.Ident → P.Ty}
     (hs : List (P.Ident × P.Ty × MetaData P))
+    (acc : List P.Ident)
     (ρ_s ρ_h : Env P)
+    (h_acc : DTyped Dτ acc ρ_h)
     (h_agree : StoreAgreement ρ_s.store ρ_h.store)
     (h_src_none : ∀ y ∈ preludeNames hs, ρ_s.store y = none)
     (h_tgt_none : ∀ y ∈ preludeNames hs, ρ_h.store y = none)
     (h_nodup : (preludeNames hs).Nodup)
+    (h_ty : ∀ t ∈ hs, Dτ t.1 = t.2.1)
+    (h_inhab : ∀ t ∈ hs, ∃ v, HasVal.valueOfTy ρ_h.factory v t.2.1)
     (hwf_var : WellFormedSemanticEvalVar ρ_h.factory) :
     ∃ ρ_h' : Env P,
       StepStmtStar P (EvalCmd P) extendFactory
         (.stmts (preludeHavocs hs) ρ_h) (.terminal ρ_h') ∧
       StoreAgreement ρ_s.store ρ_h'.store ∧
       ρ_h'.hasFailure = ρ_h.hasFailure ∧ ρ_h'.factory = ρ_h.factory ∧
-      (∀ y ∈ preludeNames hs, (ρ_h'.store y).isSome = true) := by
-  induction hs generalizing ρ_h with
+      DTyped Dτ (acc ++ preludeNames hs) ρ_h' := by
+  induction hs generalizing ρ_h acc with
   | nil =>
     refine ⟨ρ_h, ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _),
       h_agree, rfl, rfl, ?_⟩
-    intro y hy; simp [preludeNames] at hy
+    simpa [preludeNames] using h_acc
   | cons t rest ih =>
     obtain ⟨y, ty, md⟩ := t
     have h_nodup' : y ∉ preludeNames rest ∧ (preludeNames rest).Nodup := by
@@ -3152,11 +3537,11 @@ theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     have h_y_mem : y ∈ preludeNames ((y, ty, md) :: rest) := by simp [preludeNames]
     have h_y_src_none : ρ_s.store y = none := h_src_none y h_y_mem
     have h_y_tgt_none : ρ_h.store y = none := h_tgt_none y h_y_mem
-    -- run the head havoc to terminal, picking value `HasBool.tt` (any value works).
+    -- pick a value of the DECLARED type `ty` (direct witness from `h_inhab`).
+    obtain ⟨v, hv_ty⟩ := h_inhab (y, ty, md) List.mem_cons_self
     have h_head_step :=
-      step_init_havoc_to (extendFactory := extendFactory) y ty HasBool.tt md ρ_h h_y_tgt_none
-        (HasBool.boolIsVal ρ_h.factory).1 hwf_var
-    let ρ_mid : Env P := { ρ_h with store := SemanticStore.update ρ_h.store y HasBool.tt }
+      step_init_havoc_to (extendFactory := extendFactory) y ty v md ρ_h h_y_tgt_none hv_ty hwf_var
+    let ρ_mid : Env P := { ρ_h with store := SemanticStore.update ρ_h.store y v }
     have h_agree_mid : StoreAgreement ρ_s.store ρ_mid.store :=
       storeAgreement_storeWith _ _ _ _ h_agree h_y_src_none
     have h_src_none_rest : ∀ z ∈ preludeNames rest, ρ_s.store z = none := fun z hz =>
@@ -3164,29 +3549,37 @@ theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     have h_tgt_none_rest : ∀ z ∈ preludeNames rest, ρ_mid.store z = none := by
       intro z hz
       have h_zy : z ≠ y := fun h => h_y_notin (h ▸ hz)
-      show SemanticStore.update ρ_h.store y HasBool.tt z = none
+      show SemanticStore.update ρ_h.store y v z = none
       simp only [SemanticStore.update, if_neg h_zy]
       exact h_tgt_none z (by simp [preludeNames] at hz ⊢; exact Or.inr hz)
+    -- the accumulator stays typed across the head havoc; add `y : ty`.
+    have h_head_star : StepStmtStar P (EvalCmd P) extendFactory
+        (.stmt (.cmd (Cmd.init y ty .nondet md)) ρ_h) (.terminal ρ_mid) := h_head_step
+    have h_acc_mid : DTyped Dτ acc ρ_mid := DTyped.cmd_star h_head_star h_acc
+    have h_y_mid : DTyped Dτ [y] ρ_mid := by
+      intro z hz
+      rw [List.mem_singleton.mp hz]
+      refine ⟨v, ?_, ?_⟩
+      · show SemanticStore.update ρ_h.store y v y = some v; simp [SemanticStore.update]
+      · show HasVal.valueOfTy ρ_h.factory v (Dτ y)
+        rw [h_ty (y, ty, md) List.mem_cons_self]; exact hv_ty
+    have h_acc_mid' : DTyped Dτ (acc ++ [y]) ρ_mid := DTyped.append h_acc_mid h_y_mid
+    have h_ty_rest : ∀ t ∈ rest, Dτ t.1 = t.2.1 := fun t ht => h_ty t (List.mem_cons_of_mem _ ht)
+    have h_inhab_rest : ∀ t ∈ rest, ∃ v, HasVal.valueOfTy ρ_mid.factory v t.2.1 := fun t ht =>
+      h_inhab t (List.mem_cons_of_mem _ ht)
     obtain ⟨ρ_h', h_rest_run, h_agree', h_hf', h_eval', h_def'⟩ :=
-      ih ρ_mid h_agree_mid h_src_none_rest h_tgt_none_rest h_nodup_rest hwf_var
+      ih (acc := acc ++ [y]) (ρ_h := ρ_mid) h_acc_mid' h_agree_mid h_src_none_rest
+        h_tgt_none_rest h_nodup_rest h_ty_rest h_inhab_rest hwf_var
     refine ⟨ρ_h', ?_, h_agree', h_hf', h_eval', ?_⟩
-    · -- prelude = (head .cmd init) :: tail havocs; chain head terminal then tail run.
-      rw [show preludeHavocs ((y, ty, md) :: rest)
+    · rw [show preludeHavocs ((y, ty, md) :: rest)
           = (.cmd (Cmd.init y ty .nondet md)) :: preludeHavocs rest by rfl]
       exact ReflTrans_Transitive _ _ _ _
         (stmts_cons_step P (EvalCmd P) extendFactory _ _ ρ_h ρ_mid h_head_step)
         h_rest_run
-    · -- every name (head `y` or a tail name) is defined in `ρ_h'`.
-      intro z hz
-      rcases List.mem_cons.mp
-          (by rw [show preludeNames ((y, ty, md) :: rest) = y :: preludeNames rest from rfl] at hz
-              exact hz) with h_z_y | h_z_rest
-      · subst h_z_y
-        have h_y_mid_def : (ρ_mid.store z).isSome = true := by
-          show (SemanticStore.update ρ_h.store z HasBool.tt z).isSome = true;
-              simp [SemanticStore.update]
-        exact stmts_preserves_isSome (extendFactory := extendFactory) h_rest_run h_y_mid_def
-      · exact h_def' z h_z_rest
+    · -- `acc ++ (y :: preludeNames rest) = (acc ++ [y]) ++ preludeNames rest`.
+      have h_perm : acc ++ preludeNames ((y, ty, md) :: rest) = (acc ++ [y]) ++ preludeNames rest := by
+        simp [preludeNames]
+      rw [h_perm]; exact h_def'
 
 /-- **The top-level same-name hoist simulation** of a single source loop by its
 hoist (prelude ++ rewritten loop), on `StoreAgreement` (source-on-left).  Given
@@ -3205,6 +3598,7 @@ private def HoistSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ names, ρ_s.store y = none) →
     (∀ y ∈ names, ρ_h.store y = none) →
+    Stmt.InitTypesInhabited ρ_s.factory s →
     (∀ (oc : Option String) (ρ_post : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ_s) (Env.outcomeConfig oc ρ_post) →
       ∃ ρ_post_h : Env P,
@@ -3221,24 +3615,38 @@ names `Nodup`.  The recipe runs the prelude on the target via `prelude_runner`
 the terminal/exiting loop drivers, then stitches prelude ++ loop via
 `stmts_prefix_terminal_append` + `stmt_to_singleton_stmts`.  No pivot env. -/
 private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
+    {Dτ : P.Ident → P.Ty}
     {g : P.Expr} {body body₂ : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {hs : List (P.Ident × P.Ty × MetaData P)}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) (preludeNames hs) body body₂)
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ (preludeNames hs) body body₂)
     (h_src_body_nofd : Block.noFuncDecl body = true)
-    (h_nodup : (preludeNames hs).Nodup) :
+    (h_nodup : (preludeNames hs).Nodup)
+    (h_ty : ∀ t ∈ hs, Dτ t.1 = t.2.1)
+    (h_hs_sub : ∀ t ∈ hs, t.2.1 ∈ Block.initTypes body) :
     HoistSimSA (extendFactory := extendFactory)
       (.loop (.det g) none [] body md_s)
       (preludeHavocs hs ++ [.loop (.det g) none [] body₂ md_h])
       (preludeNames hs) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwf_def hwf_congr hwf_var
-    h_src_none h_tgt_none oc ρ_post h_run
-  -- (1) run the prelude on the target, establishing the names target-defined.
+    h_src_none h_tgt_none h_init oc ρ_post h_run
+  -- prelude type witnesses from the loop's `InitTypesInhabited` premise.
+  have h_prelude_inhab : ∀ t ∈ hs, ∃ v, HasVal.valueOfTy ρ_h.factory v t.2.1 := by
+    intro t ht
+    have hmem : t.2.1 ∈ Stmt.initTypes (Stmt.loop (.det g) none [] body md_s) := by
+      show t.2.1 ∈ Block.initTypes body
+      exact h_hs_sub t ht
+    rw [h_eval]; exact h_init t.2.1 hmem
+  -- (1) run the prelude on the target, establishing the names target-typed.
   obtain ⟨ρ_pre, h_pre_run, h_agree_pre, h_hf_pre, h_eval_pre, h_def_pre⟩ :=
-    prelude_runner hs ρ_s ρ_h h_agree h_src_none h_tgt_none h_nodup (h_eval ▸ hwf_var)
+    prelude_runner hs [] ρ_s ρ_h
+      (fun y hy => absurd hy List.not_mem_nil)
+      h_agree h_src_none h_tgt_none h_nodup h_ty h_prelude_inhab (h_eval ▸ hwf_var)
   have h_eval_pre_s : ρ_pre.factory = ρ_s.factory := by rw [h_eval_pre, h_eval]
   have h_hf_pre_s : ρ_pre.hasFailure = ρ_s.hasFailure := by rw [h_hf_pre, h_hf]
+  have h_def_pre' : DTyped Dτ (preludeNames hs) ρ_pre := by
+    simpa using h_def_pre
   -- (2)+(3) feed the loop driver, with D = preludeNames hs.  (4) stitch prelude++loop.
   cases oc with
   | none =>
@@ -3246,7 +3654,7 @@ private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [
     obtain ⟨ρ_post_h, h_loop_run, h_agree', h_hf', h_eval', _⟩ :=
       samenameLoopDetSA_TE (D := preludeNames hs) (g := g) (md_s := md_s) (md_h := md_h)
         body_sim h_src_body_nofd
-        h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre h_run
+        h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre' h_run
     exact ⟨ρ_post_h, ReflTrans_Transitive _ _ _ _
       (stmts_prefix_terminal_append P (EvalCmd P) extendFactory _ _ ρ_h ρ_pre h_pre_run)
       (stmt_to_singleton_stmts (extendFactory := extendFactory) _ ρ_pre ρ_post_h h_loop_run),
@@ -3256,7 +3664,7 @@ private theorem hoistSimSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [
     obtain ⟨ρ_post_h, h_loop_run, h_agree', h_hf', h_eval', _⟩ :=
       samenameLoopDetSA_E (D := preludeNames hs) (g := g) (md_s := md_s) (md_h := md_h)
         body_sim h_src_body_nofd
-        h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre h_run
+        h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre' h_run
     exact ⟨ρ_post_h, ReflTrans_Transitive _ _ _ _
       (stmts_prefix_terminal_append P (EvalCmd P) extendFactory _ _ ρ_h ρ_pre h_pre_run)
       (stmt_to_singleton_stmts_exiting (extendFactory := extendFactory) _ ρ_pre ρ_post_h lbl
@@ -3379,38 +3787,6 @@ theorem Block.hoistP_initVars_sub {P : PureExpr} [HasFvars P] (ss : List (Stmt P
 end
 
 /-! ## noFuncDecl is preserved by the same-name lift residual and the hoist. -/
-mutual
-theorem Stmt.liftP_noFuncDecl_res {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noFuncDecl s = true)
-    :
-    Block.noFuncDecl (Stmt.liftInitsInLoopBody s).2 = true := by
-  match s with
-  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
-  | .block lbl bss md =>
-      simp only [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
-      exact Block.liftP_noFuncDecl_res bss (by simpa [Stmt.noFuncDecl] using h)
-  | .ite g tss ess md =>
-      simp only [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
-      simp only [Stmt.noFuncDecl, Bool.and_eq_true] at h
-      rw [Block.liftP_noFuncDecl_res tss h.1, Block.liftP_noFuncDecl_res ess h.2]; rfl
-  | .loop g m inv body md =>
-      simp_all [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
-  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
-  | .funcDecl d md => simp [Stmt.noFuncDecl] at h
-  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.noFuncDecl, Stmt.noFuncDecl]
-  termination_by sizeOf s
-
-theorem Block.liftP_noFuncDecl_res {P : PureExpr} (ss : List (Stmt P (Cmd P))) (h : Block.noFuncDecl
-    ss = true) :
-    Block.noFuncDecl (Block.liftInitsInLoopBody ss).2 = true := by
-  match ss with
-  | [] => simp [Block.liftInitsInLoopBody, Block.noFuncDecl]
-  | s :: rest =>
-      simp only [Block.noFuncDecl, Bool.and_eq_true] at h
-      rw [Block.liftInitsInLoopBody]
-      simp only [Block.noFuncDecl_append]
-      rw [Stmt.liftP_noFuncDecl_res s h.1, Block.liftP_noFuncDecl_res rest h.2]; rfl
-  termination_by sizeOf ss
-end
 
 mutual
 theorem Stmt.hoistP_noFuncDecl {P : PureExpr} (s : Stmt P (Cmd P)) (h : Stmt.noFuncDecl s = true) :
@@ -3461,6 +3837,7 @@ private def BodyHoistSimSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ U, ρ_s.store y = none) →
     (∀ y ∈ U, ρ_h.store y = none) →
+    Block.InitTypesInhabited ρ_s.factory body →
     (∀ (oc : Option String) (ρ_post : Env P),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ_s) (Env.outcomeConfig oc ρ_post) →
       ∃ ρ_post_h : Env P,
@@ -3474,7 +3851,7 @@ private theorem bodyHoistSimSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) :
     BodyHoistSimSA (extendFactory := extendFactory) U [] [] := by
-  intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ _ oc ρ_post h_run
   cases oc with
   | none =>
     simp only [Env.outcomeConfig] at h_run ⊢
@@ -3506,7 +3883,7 @@ private theorem hoistSimSA_of_identity {P : PureExpr} [HasFvar P] [HasFvars P] [
           StoreAgreement ρ_post.store ρ_post_h.store ∧
           ρ_post_h.hasFailure = ρ_post.hasFailure ∧ ρ_post_h.factory = ρ_post.factory) :
     HoistSimSA (extendFactory := extendFactory) s [s] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar _ _ oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar _ _ _ oc ρ_post h_run
   obtain ⟨ρ_post_h, h_run_h, h_agree', h_hf', h_eval'⟩ :=
     h_id ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar oc ρ_post h_run
   exact ⟨ρ_post_h, stmt_to_singleton_stmts_outcome (extendFactory := extendFactory) s ρ_h ρ_post_h
@@ -3529,7 +3906,7 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
         :
     BodyHoistSimSA (extendFactory := extendFactory)
       (Stmt.initVars s ++ Block.initVars rest) (s :: rest) (hoist_s ++ hoist_rest) := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init oc ρ_post h_run
   -- split the dual-undef premises into head/tail.
   have h_src_none_s : ∀ y ∈ Stmt.initVars s, ρ_s.store y = none := fun y hy =>
     h_src_none y (List.mem_append_left _ hy)
@@ -3539,6 +3916,11 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     h_src_none y (List.mem_append_right _ hy)
   have h_tgt_none_r : ∀ y ∈ Block.initVars rest, ρ_h.store y = none := fun y hy =>
     h_tgt_none y (List.mem_append_right _ hy)
+  -- split the InitTypesInhabited premise into head/tail.
+  have h_init_s : Stmt.InitTypesInhabited ρ_s.factory s := by
+    intro ty hty; exact h_init ty (by rw [Block.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_r : Block.InitTypesInhabited ρ_s.factory rest := by
+    intro ty hty; exact h_init ty (by rw [Block.initTypes]; exact List.mem_append_right _ hty)
   -- `s` definedVars = initVars s (definitionally: `initVars := definedVars _ false`).
   have h_s_def_eq : Stmt.definedVars (P := P) (C := Cmd P) s false = Stmt.initVars s := rfl
   rcases stmts_cons_outcome (extendFactory := extendFactory) s rest ρ_s ρ_post oc h_run with
@@ -3547,7 +3929,7 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     subst h_oc_eq
     obtain ⟨ρ_post_h, h_hs_run, h_agree', h_hf', h_eval'⟩ :=
       hhead ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none_s h_tgt_none_s
-        (some lbl) ρ_post (by simpa only [Env.outcomeConfig] using h_s_exit)
+        h_init_s (some lbl) ρ_post (by simpa only [Env.outcomeConfig] using h_s_exit)
     refine ⟨ρ_post_h, ?_, h_agree', h_hf', h_eval'⟩
     simp only [Env.outcomeConfig] at h_hs_run ⊢
     exact stmts_cons_head_exiting_append (extendFactory := extendFactory) _ _ ρ_h ρ_post_h lbl
@@ -3555,7 +3937,7 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
   · -- head terminates to ρ_mid, then tail reaches outcome.
     obtain ⟨ρ_h_mid, h_hs_run, h_agree_mid, h_hf_mid, h_eval_mid⟩ :=
       hhead ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none_s h_tgt_none_s
-        none ρ_mid (by simpa only [Env.outcomeConfig] using h_s_term)
+        h_init_s none ρ_mid (by simpa only [Env.outcomeConfig] using h_s_term)
     -- recover WF at ρ_mid (source) via noFuncDecl eval-preservation.
     have h_eval_mid_src : ρ_mid.factory = ρ_s.factory :=
       smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory s ρ_s ρ_mid h_nofd_s h_s_term
@@ -3583,7 +3965,7 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
       htail ρ_mid ρ_h_mid h_eval_eq_mid h_hf_eq_mid h_agree_mid
         (h_eval_mid_src ▸ hwfb) (h_eval_mid_src ▸ hwfv) (h_eval_mid_src ▸ hwfd)
         (h_eval_mid_src ▸ hwfc) (h_eval_mid_src ▸ hwfvar) h_src_none_r_mid h_tgt_none_r_mid
-        oc ρ_post h_rest_run
+        (h_eval_mid_src ▸ h_init_r) oc ρ_post h_rest_run
     refine ⟨ρ_post_h, ?_, h_agree', h_hf', h_eval'⟩
     -- reassemble: hoist_s terminal then hoist_rest reaches outcome.
     exact ReflTrans_Transitive _ _ _ _
@@ -3593,13 +3975,12 @@ private theorem bodyHoistSimSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] [Has
 /-! ## Bridge: a `StmtSimSA [] s s` identity sim gives `HoistSimSA s [s] U`. -/
 private theorem hoistSimSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {U : List P.Ident} {s : Stmt P (Cmd P)}
-    (h : StmtSimSA (extendFactory := extendFactory) ([] : List P.Ident) s s) :
+    {U : List P.Ident} {Dτ : P.Ident → P.Ty} {s : Stmt P (Cmd P)}
+    (h : StmtSimSA (extendFactory := extendFactory) Dτ ([] : List P.Ident) s s) :
     HoistSimSA (extendFactory := extendFactory) s [s] U := by
   apply hoistSimSA_of_identity
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar oc ρ_post h_run
-  have h_def : ∀ y ∈ ([] : List P.Ident), (ρ_h.store y).isSome = true := by
-    intro y hy; exact absurd hy (List.not_mem_nil)
+  have h_def : DTyped Dτ ([] : List P.Ident) ρ_h := fun y hy => absurd hy List.not_mem_nil
   obtain ⟨h_term, h_exit⟩ := h ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_def
   cases oc with
   | none =>
@@ -3660,19 +4041,25 @@ triple list with the matching `preludeHavocs`/`preludeNames`. -/
 theorem nondet_cmds_to_prelude {P : PureExpr} (cs : List (Cmd P))
     (h : ∀ c ∈ cs, ∃ y ty md, c = Cmd.init y ty .nondet md) :
     ∃ hs : List (P.Ident × P.Ty × MetaData P),
-      cs.map Stmt.cmd = preludeHavocs hs ∧ preludeNames hs = Cmds.definedVars cs := by
+      cs.map Stmt.cmd = preludeHavocs hs ∧ preludeNames hs = Cmds.definedVars cs
+        ∧ hs.map (fun t => (t.1, t.2.1)) = Cmds.typedInitVars cs := by
   induction cs with
-  | nil => exact ⟨[], by simp [preludeHavocs], by simp [preludeNames, Cmds.definedVars]⟩
+  | nil =>
+    exact ⟨[], by simp [preludeHavocs], by simp [preludeNames, Cmds.definedVars],
+      by simp [Cmds.typedInitVars]⟩
   | cons c rest ih =>
     obtain ⟨y, ty, md, h_c⟩ := h c (List.mem_cons_self)
-    obtain ⟨hs, h_map, h_names⟩ := ih (fun c' hc' => h c' (List.mem_cons_of_mem _ hc'))
-    refine ⟨(y, ty, md) :: hs, ?_, ?_⟩
+    obtain ⟨hs, h_map, h_names, h_typed⟩ := ih (fun c' hc' => h c' (List.mem_cons_of_mem _ hc'))
+    refine ⟨(y, ty, md) :: hs, ?_, ?_, ?_⟩
     · subst h_c
       simp only [List.map_cons, preludeHavocs, List.map_cons] at h_map ⊢
       rw [h_map]
     · subst h_c
       simp only [preludeNames, List.map_cons, Cmds.definedVars, Cmd.definedVars] at h_names ⊢
       rw [h_names]; rfl
+    · subst h_c
+      simp only [List.map_cons, Cmds.typedInitVars]
+      rw [h_typed]
 
 
 
@@ -3682,8 +4069,8 @@ private theorem bodyDualUndefSA_of_bodyHoistSimSA {P : PureExpr} [HasFvar P] [Ha
     {U : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h : BodyHoistSimSA (extendFactory := extendFactory) U body hoist) :
     BodyDualUndefSA (extendFactory := extendFactory) U body hoist := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-  have hh := h ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init
+  have hh := h ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init
   refine ⟨?_, ?_⟩
   · intro ρ_s' h_run
     have := hh none ρ_s' (by simpa only [Env.outcomeConfig] using h_run)
@@ -3999,6 +4386,174 @@ theorem Block.hoistP_initVars_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt 
       exact (Stmt.hoistP_initVars_perm s).append (Block.hoistP_initVars_perm rest)
   termination_by sizeOf ss
 end
+
+/-! ## initTypes multiset preserved by lift and hoist (types analogue).
+
+The type-level counterparts of the `initVars` perm lemmas: hoisting and lifting
+permute (never add or drop) the multiset of declared init types, which lets a
+source-side `InitTypesInhabited` witness set transport to the hoisted body. -/
+
+/-- Init-declared types of a command list. -/
+def Cmds.initTypes {P : PureExpr} (cs : List (Cmd P)) : List P.Ty :=
+  match cs with
+  | [] => []
+  | c :: rest => Cmd.initTypes c ++ Cmds.initTypes rest
+
+theorem Cmds.initTypes_append {P : PureExpr} (xs ys : List (Cmd P)) :
+    Cmds.initTypes (xs ++ ys) = Cmds.initTypes xs ++ Cmds.initTypes ys := by
+  induction xs with
+  | nil => rfl
+  | cons c rest ih => simp only [List.cons_append, Cmds.initTypes, ih, List.append_assoc]
+
+theorem Block.initTypes_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
+    Block.initTypes (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = Cmds.initTypes cs := by
+  induction cs with
+  | nil => rfl
+  | cons c rest ih =>
+      simp only [List.map_cons, Block.initTypes, Stmt.initTypes, HasInitTypesImp.initTypes,
+        Cmds.initTypes, ih]
+
+mutual
+theorem Stmt.liftP_initTypes_perm {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
+    List.Perm (Cmds.initTypes (Stmt.liftInitsInLoopBody s).1
+      ++ Block.initTypes (Stmt.liftInitsInLoopBody s).2) (Stmt.initTypes s) := by
+  match s with
+  | .cmd c =>
+      cases c <;>
+        simp [Stmt.liftInitsInLoopBody, Cmds.initTypes, Cmd.initTypes, Block.initTypes,
+          Stmt.initTypes, HasInitTypesImp.initTypes]
+  | .block lbl bss md =>
+      simp only [Stmt.liftInitsInLoopBody, Stmt.initTypes, Block.initTypes, List.append_nil]
+      exact Block.liftP_initTypes_perm bss
+  | .ite g tss ess md =>
+      simp only [Stmt.liftInitsInLoopBody, Stmt.initTypes, Block.initTypes, List.append_nil,
+        Cmds.initTypes_append]
+      have ht := Block.liftP_initTypes_perm tss
+      have he := Block.liftP_initTypes_perm ess
+      refine (perm_append_swap_middle _ _ _ _).trans ?_
+      exact ht.append he
+  | .loop g m inv body md =>
+      simp [Stmt.liftInitsInLoopBody, Cmds.initTypes, Block.initTypes, Stmt.initTypes]
+  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Cmds.initTypes, Block.initTypes, Stmt.initTypes]
+  | .funcDecl d md =>
+      simp [Stmt.liftInitsInLoopBody, Cmds.initTypes, Block.initTypes, Stmt.initTypes]
+  | .typeDecl t md =>
+      simp [Stmt.liftInitsInLoopBody, Cmds.initTypes, Block.initTypes, Stmt.initTypes]
+  termination_by sizeOf s
+
+theorem Block.liftP_initTypes_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
+    List.Perm (Cmds.initTypes (Block.liftInitsInLoopBody ss).1
+      ++ Block.initTypes (Block.liftInitsInLoopBody ss).2) (Block.initTypes ss) := by
+  match ss with
+  | [] => simp [Block.liftInitsInLoopBody, Cmds.initTypes, Block.initTypes]
+  | s :: rest =>
+      simp only [Block.liftInitsInLoopBody, Cmds.initTypes_append, Block.initTypes_append,
+        Block.initTypes]
+      have hs := Stmt.liftP_initTypes_perm s
+      have hr := Block.liftP_initTypes_perm rest
+      refine (perm_append_swap_middle _ _ _ _).trans ?_
+      exact hs.append hr
+  termination_by sizeOf ss
+end
+
+mutual
+theorem Stmt.hoistP_initTypes_perm {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
+    List.Perm (Block.initTypes (Stmt.hoistLoopPrefixInits s)) (Stmt.initTypes s) := by
+  match s with
+  | .cmd c => cases c <;> simp [Stmt.hoistLoopPrefixInits, Block.initTypes, Stmt.initTypes,
+      Cmd.initTypes, HasInitTypesImp.initTypes]
+  | .block lbl bss md =>
+      simp only [Stmt.hoistLoopPrefixInits, Stmt.initTypes, Block.initTypes, List.append_nil]
+      exact Block.hoistP_initTypes_perm bss
+  | .ite g tss ess md =>
+      simp only [Stmt.hoistLoopPrefixInits, Stmt.initTypes, Block.initTypes, List.append_nil]
+      exact (Block.hoistP_initTypes_perm tss).append (Block.hoistP_initTypes_perm ess)
+  | .loop g m inv body md =>
+      simp only [Stmt.hoistLoopPrefixInits, Block.initTypes_append, Block.initTypes,
+        Stmt.initTypes, List.append_nil, Block.initTypes_map_cmd]
+      exact (Block.liftP_initTypes_perm (Block.hoistLoopPrefixInits body)).trans
+        (Block.hoistP_initTypes_perm body)
+  | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.initTypes, Stmt.initTypes]
+  | .funcDecl d md => simp [Stmt.hoistLoopPrefixInits, Block.initTypes, Stmt.initTypes]
+  | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.initTypes, Stmt.initTypes]
+  termination_by sizeOf s
+
+theorem Block.hoistP_initTypes_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt P (Cmd P))) :
+    List.Perm (Block.initTypes (Block.hoistLoopPrefixInits ss)) (Block.initTypes ss) := by
+  match ss with
+  | [] => simp [Block.hoistLoopPrefixInits, Block.initTypes]
+  | s :: rest =>
+      simp only [Block.hoistLoopPrefixInits, Block.initTypes_append, Block.initTypes]
+      exact (Stmt.hoistP_initTypes_perm s).append (Block.hoistP_initTypes_perm rest)
+  termination_by sizeOf ss
+end
+
+/-- `InitTypesInhabited` transports from a source block to its hoist: every
+hoisted init type is (a permutation of) a source init type. -/
+theorem Block.hoistP_initTypesInhabited {P : PureExpr} [HasFvars P] [HasVal P]
+    {f : P.Factory} {ss : List (Stmt P (Cmd P))}
+    (h : Block.InitTypesInhabited f ss) :
+    Block.InitTypesInhabited f (Block.hoistLoopPrefixInits ss) := by
+  intro ty hty
+  exact h ty ((Block.hoistP_initTypes_perm ss).mem_iff.mp hty)
+
+/-! The declared type of every harvestable typed init is a deep init type. -/
+mutual
+theorem Stmt.typedInitVars_snd_sub_initTypes {P : PureExpr} (s : Stmt P (Cmd P)) :
+    ∀ p ∈ Stmt.typedInitVars s, p.2 ∈ Stmt.initTypes s := by
+  match s with
+  | .cmd c =>
+      intro p hp
+      cases c <;>
+        simp_all [Stmt.typedInitVars, Stmt.initTypes, HasInitTypesImp.initTypes, Cmd.initTypes]
+  | .block lbl bss md =>
+      intro p hp
+      simp only [Stmt.typedInitVars, Stmt.initTypes] at hp ⊢
+      exact Block.typedInitVars_snd_sub_initTypes bss p hp
+  | .ite g tss ess md =>
+      intro p hp
+      simp only [Stmt.typedInitVars, Stmt.initTypes, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · exact Or.inl (Block.typedInitVars_snd_sub_initTypes tss p h)
+      · exact Or.inr (Block.typedInitVars_snd_sub_initTypes ess p h)
+  | .loop g m inv body md =>
+      intro p hp; simp only [Stmt.typedInitVars] at hp; exact absurd hp List.not_mem_nil
+  | .exit lbl md =>
+      intro p hp; simp only [Stmt.typedInitVars] at hp; exact absurd hp List.not_mem_nil
+  | .funcDecl d md =>
+      intro p hp; simp only [Stmt.typedInitVars] at hp; exact absurd hp List.not_mem_nil
+  | .typeDecl t md =>
+      intro p hp; simp only [Stmt.typedInitVars] at hp; exact absurd hp List.not_mem_nil
+  termination_by sizeOf s
+
+theorem Block.typedInitVars_snd_sub_initTypes {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+    ∀ p ∈ Block.typedInitVars ss, p.2 ∈ Block.initTypes ss := by
+  match ss with
+  | [] => intro p hp; simp only [Block.typedInitVars] at hp; exact absurd hp List.not_mem_nil
+  | s :: rest =>
+      intro p hp
+      simp only [Block.typedInitVars, Block.initTypes, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · exact Or.inl (Stmt.typedInitVars_snd_sub_initTypes s p h)
+      · exact Or.inr (Block.typedInitVars_snd_sub_initTypes rest p h)
+  termination_by sizeOf ss
+end
+
+/-- Every prelude havoc's declared type is a member of the prelude's init types. -/
+theorem preludeHavocs_initTypes_mem {P : PureExpr}
+    (hs : List (P.Ident × P.Ty × MetaData P)) :
+    ∀ t ∈ hs, t.2.1 ∈ Block.initTypes (preludeHavocs hs) := by
+  induction hs with
+  | nil => intro t ht; exact absurd ht List.not_mem_nil
+  | cons a rest ih =>
+      intro t ht
+      rcases List.mem_cons.mp ht with h | h
+      · subst h
+        simp only [preludeHavocs, List.map_cons, Block.initTypes, Stmt.initTypes,
+          HasInitTypesImp.initTypes, Cmd.initTypes, List.mem_append, List.mem_singleton]
+        exact Or.inl trivial
+      · simp only [preludeHavocs, List.map_cons, Block.initTypes, List.mem_append]
+        exact Or.inr (by simpa only [preludeHavocs] using ih t h)
 
 /-! ## Same-name hoist output shape lemmas (the pipeline-wiring facts).
 
@@ -4496,7 +5051,7 @@ intermediate loop `.loop … (hoist body)` (NO prelude), consuming the converted
 legs compose through the TARGET pivot `ρ_h` (refl `StoreAgreement`). -/
 private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (ih : BodyHoistSimSA (extendFactory := extendFactory) (Block.initVars body) body
@@ -4532,24 +5087,11 @@ private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [Has
       rw [Block.initVars_eq_nil_of_noInitsAnywhere (Block.liftInitsInLoopBody
           (Block.hoistLoopPrefixInits body)).2 h_body₂_nia] at h
       exact absurd h (List.not_mem_nil)
-  -- the lift body sim for the intermediate loop.
-  have h_lift_sim : BodySimSumSA (extendFactory := extendFactory) (Cmds.definedVars
-      (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits body)).1)
-      (Block.hoistLoopPrefixInits body) (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits
-          body)).2 :=
-    (bodySimBothSA_of_lift (D := Cmds.definedVars (Block.liftInitsInLoopBody
-        (Block.hoistLoopPrefixInits body)).1) (Block.hoistLoopPrefixInits body)
-      h_if_hb h_shape_hb h_nofd_hb h_defD).1
-  -- reconstruct the prelude triples from the (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits
-  -- body)).1.
-  obtain ⟨hs, h_map, h_names⟩ := nondet_cmds_to_prelude (Block.liftInitsInLoopBody
+  -- reconstruct the prelude triples from the lift's harvested havocs.
+  obtain ⟨hs, h_map, h_names, h_typed⟩ := nondet_cmds_to_prelude (Block.liftInitsInLoopBody
       (Block.hoistLoopPrefixInits body)).1
     (Block.liftP_havocs_nondet (Block.hoistLoopPrefixInits body))
-  -- D = preludeNames hs = Cmds.definedVars (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits
-  -- body)).1.
-  rw [← h_names] at h_lift_sim
-  -- Cmds.definedVars (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits body)).1 ~ initVars
-  -- (hoist body) (body₂ inits empty) ~ initVars body.
+  -- prelude names ~ initVars (hoist body) (body₂ inits empty) ~ initVars body.
   have h_perm : List.Perm (Cmds.definedVars (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits
       body)).1) (Block.initVars body) := by
     have hL := Block.liftP_initVars_perm (Block.hoistLoopPrefixInits body)
@@ -4558,15 +5100,49 @@ private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     exact hL.trans (Block.hoistP_initVars_perm body)
   have h_pn_sub : ∀ y ∈ preludeNames hs, y ∈ Block.initVars body := by
     intro y hy; rw [h_names] at hy; exact h_perm.mem_iff.mp hy
+  have h_nodup_pn : (preludeNames hs).Nodup := by
+    rw [h_names]; exact h_perm.nodup_iff.mpr h_unique
+  -- `hs`'s (name, type) pairs are exactly the post-hoist body's shallow typed inits.
+  have h_bridge : hs.map (fun t => (t.1, t.2.1))
+      = Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+    rw [h_typed, Block.liftP_typedInitVars_res (Block.hoistLoopPrefixInits body)]
+  -- the local total type assignment, built from the harvested typed inits.
+  let Dτ : P.Ident → P.Ty :=
+    typedInitVarsLookup (Block.typedInitVars (Block.hoistLoopPrefixInits body))
+  have h_L_nodup : ((Block.typedInitVars (Block.hoistLoopPrefixInits body)).map Prod.fst).Nodup := by
+    have h_eq : (Block.typedInitVars (Block.hoistLoopPrefixInits body)).map Prod.fst
+        = preludeNames hs := by
+      rw [← h_bridge]; simp [preludeNames, List.map_map, Function.comp]
+    rw [h_eq]; exact h_nodup_pn
+  have h_Dτ : ∀ p ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body), Dτ p.1 = p.2 :=
+    fun p hp => typedInitVarsLookup_agrees _ h_L_nodup p hp
+  have h_ty : ∀ t ∈ hs, Dτ t.1 = t.2.1 := by
+    intro t ht
+    have hmem : (t.1, t.2.1) ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+      rw [← h_bridge]; exact List.mem_map.mpr ⟨t, ht, rfl⟩
+    exact typedInitVarsLookup_agrees _ h_L_nodup (t.1, t.2.1) hmem
+  have h_hs_sub : ∀ t ∈ hs, t.2.1 ∈ Block.initTypes (Block.hoistLoopPrefixInits body) := by
+    intro t ht
+    have hmem : (t.1, t.2.1) ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+      rw [← h_bridge]; exact List.mem_map.mpr ⟨t, ht, rfl⟩
+    exact Block.typedInitVars_snd_sub_initTypes _ (t.1, t.2.1) hmem
+  -- the lift body sim for the intermediate loop, carrying `Dτ`.
+  have h_lift_sim : BodySimSumSA (extendFactory := extendFactory) Dτ
+      (Cmds.definedVars (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits body)).1)
+      (Block.hoistLoopPrefixInits body)
+      (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits body)).2 :=
+    (bodySimBothSA_of_lift (Dτ := Dτ) (D := Cmds.definedVars (Block.liftInitsInLoopBody
+        (Block.hoistLoopPrefixInits body)).1) (Block.hoistLoopPrefixInits body)
+      h_if_hb h_shape_hb h_nofd_hb h_defD h_Dτ).1
+  rw [← h_names] at h_lift_sim
   -- leg B: hoistSimSA_of_sequence at the intermediate loop.
   have h_legB : HoistSimSA (extendFactory := extendFactory)
       (.loop (.det g) none [] (Block.hoistLoopPrefixInits body) md)
       (preludeHavocs hs ++ [.loop (.det g) none [] (Block.liftInitsInLoopBody
           (Block.hoistLoopPrefixInits body)).2 md])
-      (preludeNames hs) := by
-    refine hoistSimSA_of_sequence (md_s := md) (md_h := md) h_lift_sim h_nofd_hb ?_
-    rw [h_names]
-    exact h_perm.nodup_iff.mpr h_unique
+      (preludeNames hs) :=
+    hoistSimSA_of_sequence (md_s := md) (md_h := md) h_lift_sim h_nofd_hb
+      h_nodup_pn h_ty h_hs_sub
   -- the actual hoist output equals `preludeHavocs hs ++ [.loop … body₂ md]`.
   have h_out : Stmt.hoistLoopPrefixInits (.loop (.det g) none [] body md)
       = preludeHavocs hs ++ [.loop (.det g) none [] (Block.liftInitsInLoopBody
@@ -4579,22 +5155,25 @@ private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     rw [h_map]
   rw [h_out]
   -- now compose leg A (dual-undef driver) and leg B through the target pivot.
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init oc ρ_post h_run
   -- Leg A: relate source loop to intermediate loop `.loop … (hoist body)`.
   have h_iA : BodyDualUndefSA (extendFactory := extendFactory) (Block.initVars body) body
       (Block.hoistLoopPrefixInits body) := bodyDualUndefSA_of_bodyHoistSimSA ih
+  have h_init_body : Block.InitTypesInhabited ρ_s.factory body := h_init
+  have h_init_hb : Block.InitTypesInhabited ρ_h.factory (Block.hoistLoopPrefixInits body) := by
+    rw [h_eval]; exact Block.hoistP_initTypesInhabited h_init_body
   cases oc with
   | none =>
     simp only [Env.outcomeConfig] at h_run ⊢
     obtain ⟨ρ_A, h_runA, h_agreeA, h_hfA, h_evalA⟩ :=
       dualUndefLoopDetSA_TE (g := g) (md_s := md) (md_h := md) h_iA h_nofd
-        h_agree h_eval h_hf hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_run
+        h_agree h_eval h_hf hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init_body h_run
     -- Leg B at (ρ_h, ρ_h) with refl.
     have h_pivot_none : ∀ y ∈ preludeNames hs, ρ_h.store y = none := fun y hy =>
       h_tgt_none y (h_pn_sub y hy)
     have h_legB' := h_legB ρ_h ρ_h rfl rfl (StoreAgreement.refl _)
       (h_eval ▸ hwfb) (h_eval ▸ hwfv) (h_eval ▸ hwfd) (h_eval ▸ hwfc) (h_eval ▸ hwfvar)
-      h_pivot_none h_pivot_none
+      h_pivot_none h_pivot_none h_init_hb
     obtain ⟨ρ_B, h_runB, h_agreeB, h_hfB, h_evalB⟩ := h_legB' none ρ_A
       (by simpa only [Env.outcomeConfig] using h_runA)
     refine ⟨ρ_B, by simpa only [Env.outcomeConfig] using h_runB, ?_, ?_, ?_⟩
@@ -4605,12 +5184,12 @@ private theorem hoistSimSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     simp only [Env.outcomeConfig] at h_run ⊢
     obtain ⟨ρ_A, h_runA, h_agreeA, h_hfA, h_evalA⟩ :=
       dualUndefLoopDetSA_E (g := g) (md_s := md) (md_h := md) h_iA h_nofd
-        h_agree h_eval h_hf hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_run
+        h_agree h_eval h_hf hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init_body h_run
     have h_pivot_none : ∀ y ∈ preludeNames hs, ρ_h.store y = none := fun y hy =>
       h_tgt_none y (h_pn_sub y hy)
     have h_legB' := h_legB ρ_h ρ_h rfl rfl (StoreAgreement.refl _)
       (h_eval ▸ hwfb) (h_eval ▸ hwfv) (h_eval ▸ hwfd) (h_eval ▸ hwfc) (h_eval ▸ hwfvar)
-      h_pivot_none h_pivot_none
+      h_pivot_none h_pivot_none h_init_hb
     obtain ⟨ρ_B, h_runB, h_agreeB, h_hfB, h_evalB⟩ := h_legB' (some lbl) ρ_A
       (by simpa only [Env.outcomeConfig] using h_runA)
     refine ⟨ρ_B, by simpa only [Env.outcomeConfig] using h_runB, ?_, ?_, ?_⟩
@@ -4624,7 +5203,7 @@ private theorem hoistSimSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     {extendFactory : ExtendFactory P} {U : List P.Ident} (c : Cmd P)
     (h_sub : ∀ x ∈ Cmd.definedVars c, x ∈ U) :
     HoistSimSA (extendFactory := extendFactory) (.cmd c) [.cmd c] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree _ _ hwfd _ _ _ h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree _ _ hwfd _ _ _ h_tgt_none _ oc ρ_post h_run
   have h_init_undef : ∀ x ∈ Cmd.definedVars c, ρ_h.store x = none := fun x hx =>
     h_tgt_none x (h_sub x hx)
   cases oc with
@@ -4650,7 +5229,8 @@ private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
     (inner_sim : BodyHoistSimSA (extendFactory := extendFactory) U inner inner_h) :
     HoistSimSA (extendFactory := extendFactory) (.block lbl inner md) [.block lbl inner_h md] U :=
         by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init oc ρ_post h_run
+  have h_init_inner : Block.InitTypesInhabited ρ_s.factory inner := h_init
   -- peel the block: `.stmt (.block lbl inner md) ρ → .block (some lbl) ρ.store (.stmts inner ρ)`.
   have peel : StepStmtStar P (EvalCmd P) extendFactory
       (.block (.some lbl) ρ_s.store ρ_s.factory (.stmts inner ρ_s)) (Env.outcomeConfig oc ρ_post) :=
@@ -4665,7 +5245,7 @@ private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
       ⟨ρ_inner, h_inner_term, h_eq⟩ | ⟨ρ_inner, h_inner_exit, h_eq⟩
     · obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
         inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-          none ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_term)
+          h_init_inner none ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_term)
       refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                                factory := ρ_h.factory }, ?_, ?_, ?_, ?_⟩
       · simp only [Env.outcomeConfig]
@@ -4683,7 +5263,7 @@ private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
     · -- inner exits with `lbl`, the block matches → block terminates.
       obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
         inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-          (some lbl) ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_exit)
+          h_init_inner (some lbl) ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_exit)
       refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                                factory := ρ_h.factory }, ?_, ?_, ?_, ?_⟩
       · simp only [Env.outcomeConfig]
@@ -4703,7 +5283,7 @@ private theorem hoistSimSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoo
       block_reaches_exiting_strong P (EvalCmd P) extendFactory peel
     obtain ⟨ρ_h_inner, h_inner_h_run, h_agree_inner, h_hf_inner, h_eval_inner⟩ :=
       inner_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-        (some l) ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_exit)
+        h_init_inner (some l) ρ_inner (by simpa only [Env.outcomeConfig] using h_inner_exit)
     refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store,
                              factory := ρ_h.factory }, ?_, ?_, ?_, ?_⟩
     · simp only [Env.outcomeConfig]
@@ -4738,7 +5318,11 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     (else_sim : BodyHoistSimSA (extendFactory := extendFactory) U ess ess_h) :
     HoistSimSA (extendFactory := extendFactory) (.ite (.det g) tss ess md)
       [.ite (.det g) tss_h ess_h md] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init oc ρ_post h_run
+  have h_init_t : Block.InitTypesInhabited ρ_s.factory tss := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_e : Block.InitTypesInhabited ρ_s.factory ess := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_right _ hty)
   -- guard transport via StoreAgreement.
   have guard_h : ∀ {bv : P.Expr}, P.eval ρ_s.factory ρ_s.store g = .some bv → P.eval ρ_h.factory
       ρ_h.store g = .some bv := by
@@ -4769,8 +5353,8 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
             exact .inr ⟨hg, hwf, blockT_none_reaches_outcome (extendFactory := extendFactory) hr1⟩
   rcases peel with ⟨hg, hwf, ρ_inner, h_branch, h_eq⟩ | ⟨hg, hwf, ρ_inner, h_branch, h_eq⟩
   · obtain ⟨ρ_post_h, h_branch_h, h_agree', h_hf', h_eval'⟩ :=
-      then_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc
-          ρ_inner h_branch
+      then_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
+          h_init_t oc ρ_inner h_branch
     subst h_eq
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store,
                             factory := ρ_h.factory }, ?_,
@@ -4782,8 +5366,8 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     · show ρ_post_h.hasFailure = ρ_inner.hasFailure; exact h_hf'
     · show ρ_h.factory = ρ_s.factory; exact h_eval
   · obtain ⟨ρ_post_h, h_branch_h, h_agree', h_hf', h_eval'⟩ :=
-      else_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc
-          ρ_inner h_branch
+      else_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
+          h_init_e oc ρ_inner h_branch
     subst h_eq
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store,
                             factory := ρ_h.factory }, ?_,
@@ -4803,7 +5387,11 @@ private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [H
     (else_sim : BodyHoistSimSA (extendFactory := extendFactory) U ess ess_h) :
     HoistSimSA (extendFactory := extendFactory) (.ite .nondet tss ess md)
       [.ite .nondet tss_h ess_h md] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc ρ_post h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init oc ρ_post h_run
+  have h_init_t : Block.InitTypesInhabited ρ_s.factory tss := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_e : Block.InitTypesInhabited ρ_s.factory ess := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_right _ hty)
   have peel : (∃ ρ_inner, StepStmtStar P (EvalCmd P) extendFactory (.stmts tss ρ_s)
       (Env.outcomeConfig oc ρ_inner) ∧
         ρ_post = { ρ_inner with store := projectStore ρ_s.store ρ_inner.store,
@@ -4823,8 +5411,8 @@ private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [H
             exact .inr (blockT_none_reaches_outcome (extendFactory := extendFactory) hr1)
   rcases peel with ⟨ρ_inner, h_branch, h_eq⟩ | ⟨ρ_inner, h_branch, h_eq⟩
   · obtain ⟨ρ_post_h, h_branch_h, h_agree', h_hf', h_eval'⟩ :=
-      then_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc
-          ρ_inner h_branch
+      then_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
+          h_init_t oc ρ_inner h_branch
     subst h_eq
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store,
                             factory := ρ_h.factory }, ?_,
@@ -4836,8 +5424,8 @@ private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [H
     · show ρ_post_h.hasFailure = ρ_inner.hasFailure; exact h_hf'
     · show ρ_h.factory = ρ_s.factory; exact h_eval
   · obtain ⟨ρ_post_h, h_branch_h, h_agree', h_hf', h_eval'⟩ :=
-      else_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none oc
-          ρ_inner h_branch
+      else_sim ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
+          h_init_e oc ρ_inner h_branch
     subst h_eq
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store,
                             factory := ρ_h.factory }, ?_,
@@ -4853,11 +5441,12 @@ private theorem hoistSimSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [H
 mutual
 private theorem Stmt.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P))
     (h_shape : Stmt.transportShape s = true)
     (h_nofd : Stmt.noFuncDecl s = true)
-    (h_unique : (Stmt.initVars s).Nodup) :
+    (h_unique : (Stmt.initVars s).Nodup)
+    :
     HoistSimSA (extendFactory := extendFactory) s (Stmt.hoistLoopPrefixInits s) (Stmt.initVars s) :=
         by
   match s, h_shape, h_nofd, h_unique with
@@ -4924,11 +5513,11 @@ private theorem Stmt.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
   | .exit lbl md, _, _, _ =>
       rw [show Stmt.hoistLoopPrefixInits (.exit lbl md) = [.exit lbl md] by
           rw [Stmt.hoistLoopPrefixInits]]
-      exact hoistSimSA_of_stmtSimSA_nilD (exit_stmtSimSA lbl md)
+      exact hoistSimSA_of_stmtSimSA_nilD (Dτ := (fun _ => (HasBool.boolTy : P.Ty))) (exit_stmtSimSA lbl md)
   | .typeDecl tc md, _, _, _ =>
       rw [show Stmt.hoistLoopPrefixInits (.typeDecl tc md) = [.typeDecl tc md] by
           rw [Stmt.hoistLoopPrefixInits]]
-      exact hoistSimSA_of_stmtSimSA_nilD (typeDecl_stmtSimSA tc md)
+      exact hoistSimSA_of_stmtSimSA_nilD (Dτ := (fun _ => (HasBool.boolTy : P.Ty))) (typeDecl_stmtSimSA tc md)
   -- excluded by transportShape / noFuncDecl:
   | .loop (.det g) (some me) inv body md, h_shape, _, _ =>
       exact absurd h_shape (by simp [Stmt.transportShape])
@@ -4941,11 +5530,12 @@ private theorem Stmt.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
 
 private theorem Block.hoistP_sim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (ss : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape ss = true)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_unique : (Block.initVars ss).Nodup) :
+    (h_unique : (Block.initVars ss).Nodup)
+    :
     BodyHoistSimSA (extendFactory := extendFactory) (Block.initVars ss) ss
         (Block.hoistLoopPrefixInits ss) := by
   match ss, h_shape, h_nofd, h_unique with
@@ -4993,11 +5583,12 @@ producer the `.loop` arm consumes: no fresh names, no rename, no `subst`, no piv
 through an intermediate `body₁`. -/
 private theorem hoistSimSA_of_hoist {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (body : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape body = true)
     (h_nofd : Block.noFuncDecl body = true)
-    (h_unique : Block.uniqueInits body) :
+    (h_unique : Block.uniqueInits body)
+    :
     BodyHoistSimSA (extendFactory := extendFactory) (Block.initVars body) body
       (Block.hoistLoopPrefixInits body) :=
   Block.hoistP_sim (extendFactory := extendFactory) body h_shape h_nofd h_unique
@@ -5026,6 +5617,7 @@ private def HoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ names, ρ_s.store y = none) →
     (∀ y ∈ names, ρ_h.store y = none) →
+    Stmt.InitTypesInhabited ρ_s.factory s →
     (∀ (d : Config P (Cmd P)),
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ_s) d →
       d.getEnv.hasFailure = true →
@@ -5043,6 +5635,7 @@ private def BodyHoistSimFailSA [HasFvar P] [HasFvars P] [HasBoolOps P]
     WellFormedSemanticEvalVar ρ_s.factory →
     (∀ y ∈ U, ρ_s.store y = none) →
     (∀ y ∈ U, ρ_h.store y = none) →
+    Block.InitTypesInhabited ρ_s.factory body →
     (∀ (d : Config P (Cmd P)),
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ_s) d →
       d.getEnv.hasFailure = true →
@@ -5058,8 +5651,8 @@ private theorem bodyDualUndefFailSA_of_bodyHoistSimFailSA {P : PureExpr} [HasFva
     {extendFactory : ExtendFactory P} {U : List P.Ident} {body hoist : List (Stmt P (Cmd P))}
     (h : BodyHoistSimFailSA (extendFactory := extendFactory) U body hoist) :
     BodyDualUndefFailSA (extendFactory := extendFactory) U body hoist := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
-  exact h ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
+  exact h ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run
       hd_fail
 
 /-- **The FAILING sequencer.**  Failing analogue of `hoistSimSA_of_sequence`, over the
@@ -5069,28 +5662,40 @@ target (terminal, never fails), feeds the source loop's failing run into the
 failing `BodySimSumFailSA`), then stitches `prelude ++ loop` via
 `stmts_prefix_terminal_append` and a `.step step_stmts_cons` failing prepend. -/
 private theorem hoistSimFailSA_of_sequence {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident]
+    [HasIdent P] [DecidableEq P.Ident] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
+    {Dτ : P.Ident → P.Ty}
     {g : P.Expr} {body body₂ : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {hs : List (P.Ident × P.Ty × MetaData P)}
-    (body_sim : BodySimSumSA (extendFactory := extendFactory) (preludeNames hs) body body₂)
-    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) (preludeNames hs) body body₂)
+    (body_sim : BodySimSumSA (extendFactory := extendFactory) Dτ (preludeNames hs) body body₂)
+    (body_sim_fail : BodySimSumFailSA (extendFactory := extendFactory) Dτ (preludeNames hs) body body₂)
     (h_src_body_nofd : Block.noFuncDecl body = true)
-    (h_nodup : (preludeNames hs).Nodup) :
+    (h_nodup : (preludeNames hs).Nodup)
+    (h_ty : ∀ t ∈ hs, Dτ t.1 = t.2.1)
+    (h_hs_sub : ∀ t ∈ hs, t.2.1 ∈ Block.initTypes body) :
     HoistSimFailSA (extendFactory := extendFactory)
       (.loop (.det g) none [] body md_s)
       (preludeHavocs hs ++ [.loop (.det g) none [] body₂ md_h])
       (preludeNames hs) := by
   intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwf_def hwf_congr hwf_var
-    h_src_none h_tgt_none a' h_run h_a'_fail
+    h_src_none h_tgt_none h_init a' h_run h_a'_fail
+  have h_prelude_inhab : ∀ t ∈ hs, ∃ v, HasVal.valueOfTy ρ_h.factory v t.2.1 := by
+    intro t ht
+    have hmem : t.2.1 ∈ Stmt.initTypes (Stmt.loop (.det g) none [] body md_s) := by
+      show t.2.1 ∈ Block.initTypes body
+      exact h_hs_sub t ht
+    rw [h_eval]; exact h_init t.2.1 hmem
   obtain ⟨ρ_pre, h_pre_run, h_agree_pre, h_hf_pre, h_eval_pre, h_def_pre⟩ :=
-    prelude_runner hs ρ_s ρ_h h_agree h_src_none h_tgt_none h_nodup (h_eval ▸ hwf_var)
+    prelude_runner hs [] ρ_s ρ_h
+      (fun y hy => absurd hy List.not_mem_nil)
+      h_agree h_src_none h_tgt_none h_nodup h_ty h_prelude_inhab (h_eval ▸ hwf_var)
   have h_eval_pre_s : ρ_pre.factory = ρ_s.factory := by rw [h_eval_pre, h_eval]
   have h_hf_pre_s : ρ_pre.hasFailure = ρ_s.hasFailure := by rw [h_hf_pre, h_hf]
+  have h_def_pre' : DTyped Dτ (preludeNames hs) ρ_pre := by simpa using h_def_pre
   obtain ⟨d_loop, h_loop_run, hd_loop_fail⟩ :=
     samenameLoopDetSA_F (D := preludeNames hs) (g := g) (md_s := md_s) (md_h := md_h)
       body_sim body_sim_fail h_src_body_nofd
-      h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre h_run
+      h_agree_pre h_eval_pre_s h_hf_pre_s hwfb hwfv hwf_def hwf_congr hwf_var h_def_pre' h_run
       h_a'_fail
   have h_loop_stmts : StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [.loop (.det g) none [] body₂ md_h] ρ_pre)
@@ -5108,7 +5713,7 @@ through the target pivot, mirroring `hoistSimSA_loop_arm`.  No `loopBodyNoInits`
 precondition; the output initfree fact is `Block.hoistP_allLoop_uncond`. -/
 private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (ih : BodyHoistSimSA (extendFactory := extendFactory) (Block.initVars body) body
@@ -5117,7 +5722,8 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
             (Block.hoistLoopPrefixInits body))
     (h_shape : Block.transportShape body = true)
     (h_nofd : Block.noFuncDecl body = true)
-    (h_unique : (Block.initVars body).Nodup) :
+    (h_unique : (Block.initVars body).Nodup)
+    :
     HoistSimFailSA (extendFactory := extendFactory)
       (.loop (.det g) none [] body md)
       (Stmt.hoistLoopPrefixInits (.loop (.det g) none [] body md))
@@ -5141,15 +5747,10 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
     · rw [Block.initVars_eq_nil_of_noInitsAnywhere (Block.liftInitsInLoopBody
         (Block.hoistLoopPrefixInits body)).2 h_body₂_nia] at h
       exact absurd h (List.not_mem_nil)
-  -- one combined walk yields both the terminal and failing lift sims.
-  obtain ⟨h_lift_sim, h_lift_sim_fail⟩ :=
-    bodySimBothSA_of_lift (D := Cmds.definedVars (Block.liftInitsInLoopBody
-        (Block.hoistLoopPrefixInits body)).1) (Block.hoistLoopPrefixInits body)
-      h_if_hb h_shape_hb h_nofd_hb h_defD
-  obtain ⟨hs, h_map, h_names⟩ := nondet_cmds_to_prelude (Block.liftInitsInLoopBody
+  -- reconstruct the prelude triples from the lift's harvested havocs.
+  obtain ⟨hs, h_map, h_names, h_typed⟩ := nondet_cmds_to_prelude (Block.liftInitsInLoopBody
       (Block.hoistLoopPrefixInits body)).1
     (Block.liftP_havocs_nondet (Block.hoistLoopPrefixInits body))
-  rw [← h_names] at h_lift_sim h_lift_sim_fail
   have h_perm : List.Perm (Cmds.definedVars (Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits
       body)).1) (Block.initVars body) := by
     have hL := Block.liftP_initVars_perm (Block.hoistLoopPrefixInits body)
@@ -5158,15 +5759,43 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
     exact hL.trans (Block.hoistP_initVars_perm body)
   have h_pn_sub : ∀ y ∈ preludeNames hs, y ∈ Block.initVars body := by
     intro y hy; rw [h_names] at hy; exact h_perm.mem_iff.mp hy
+  have h_nodup_pn : (preludeNames hs).Nodup := by
+    rw [h_names]; exact h_perm.nodup_iff.mpr h_unique
+  have h_bridge : hs.map (fun t => (t.1, t.2.1))
+      = Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+    rw [h_typed, Block.liftP_typedInitVars_res (Block.hoistLoopPrefixInits body)]
+  let Dτ : P.Ident → P.Ty :=
+    typedInitVarsLookup (Block.typedInitVars (Block.hoistLoopPrefixInits body))
+  have h_L_nodup : ((Block.typedInitVars (Block.hoistLoopPrefixInits body)).map Prod.fst).Nodup := by
+    have h_eq : (Block.typedInitVars (Block.hoistLoopPrefixInits body)).map Prod.fst
+        = preludeNames hs := by
+      rw [← h_bridge]; simp [preludeNames, List.map_map, Function.comp]
+    rw [h_eq]; exact h_nodup_pn
+  have h_Dτ : ∀ p ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body), Dτ p.1 = p.2 :=
+    fun p hp => typedInitVarsLookup_agrees _ h_L_nodup p hp
+  have h_ty : ∀ t ∈ hs, Dτ t.1 = t.2.1 := by
+    intro t ht
+    have hmem : (t.1, t.2.1) ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+      rw [← h_bridge]; exact List.mem_map.mpr ⟨t, ht, rfl⟩
+    exact typedInitVarsLookup_agrees _ h_L_nodup (t.1, t.2.1) hmem
+  have h_hs_sub : ∀ t ∈ hs, t.2.1 ∈ Block.initTypes (Block.hoistLoopPrefixInits body) := by
+    intro t ht
+    have hmem : (t.1, t.2.1) ∈ Block.typedInitVars (Block.hoistLoopPrefixInits body) := by
+      rw [← h_bridge]; exact List.mem_map.mpr ⟨t, ht, rfl⟩
+    exact Block.typedInitVars_snd_sub_initTypes _ (t.1, t.2.1) hmem
+  -- one combined walk yields both the terminal and failing lift sims, carrying `Dτ`.
+  obtain ⟨h_lift_sim, h_lift_sim_fail⟩ :=
+    bodySimBothSA_of_lift (Dτ := Dτ) (D := Cmds.definedVars (Block.liftInitsInLoopBody
+        (Block.hoistLoopPrefixInits body)).1) (Block.hoistLoopPrefixInits body)
+      h_if_hb h_shape_hb h_nofd_hb h_defD h_Dτ
+  rw [← h_names] at h_lift_sim h_lift_sim_fail
   have h_legB : HoistSimFailSA (extendFactory := extendFactory)
       (.loop (.det g) none [] (Block.hoistLoopPrefixInits body) md)
       (preludeHavocs hs ++ [.loop (.det g) none [] (Block.liftInitsInLoopBody
           (Block.hoistLoopPrefixInits body)).2 md])
-      (preludeNames hs) := by
-    refine hoistSimFailSA_of_sequence (md_s := md) (md_h := md) h_lift_sim h_lift_sim_fail
-        h_nofd_hb ?_
-    rw [h_names]
-    exact h_perm.nodup_iff.mpr h_unique
+      (preludeNames hs) :=
+    hoistSimFailSA_of_sequence (md_s := md) (md_h := md) h_lift_sim h_lift_sim_fail
+      h_nofd_hb h_nodup_pn h_ty h_hs_sub
   have h_out : Stmt.hoistLoopPrefixInits (.loop (.det g) none [] body md)
       = preludeHavocs hs ++ [.loop (.det g) none [] (Block.liftInitsInLoopBody
           (Block.hoistLoopPrefixInits body)).2 md] := by
@@ -5177,8 +5806,11 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
         rw [Stmt.hoistLoopPrefixInits]]
     rw [h_map]
   rw [h_out]
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none a' h_run
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init a' h_run
       h_a'_fail
+  have h_init_body : Block.InitTypesInhabited ρ_s.factory body := h_init
+  have h_init_hb : Block.InitTypesInhabited ρ_h.factory (Block.hoistLoopPrefixInits body) := by
+    rw [h_eval]; exact Block.hoistP_initTypesInhabited h_init_body
   have h_iA_fail : BodyDualUndefFailSA (extendFactory := extendFactory) (Block.initVars body) body
       (Block.hoistLoopPrefixInits body) := bodyDualUndefFailSA_of_bodyHoistSimFailSA ih_fail
   have h_iA : BodyDualUndefSA (extendFactory := extendFactory) (Block.initVars body) body
@@ -5186,13 +5818,13 @@ private theorem hoistSimFailSA_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] 
   obtain ⟨ρ_A, h_runA, hρ_A_fail⟩ :=
     dualUndefLoopDetSA_F_fuel (g := g) (md_s := md) (md_h := md) h_iA h_iA_fail h_nofd
       (reflTrans_to_T h_run).len h_agree h_eval h_hf hwfb hwfv hwfd hwfc hwfvar h_src_none
-          h_tgt_none
+          h_tgt_none h_init_body
       (reflTrans_to_T h_run) h_a'_fail (Nat.le_refl _)
   have h_pivot_none : ∀ y ∈ preludeNames hs, ρ_h.store y = none := fun y hy =>
     h_tgt_none y (h_pn_sub y hy)
   have h_legB' := h_legB ρ_h ρ_h rfl rfl (StoreAgreement.refl _)
     (h_eval ▸ hwfb) (h_eval ▸ hwfv) (h_eval ▸ hwfd) (h_eval ▸ hwfc) (h_eval ▸ hwfvar)
-    h_pivot_none h_pivot_none
+    h_pivot_none h_pivot_none h_init_hb
   exact h_legB' ρ_A h_runA hρ_A_fail
 
 /-- Monotonicity of `BodyHoistSimFailSA` in the undef-set (larger set = more premises). -/
@@ -5211,7 +5843,7 @@ private theorem bodyHoistSimFailSA_nil {P : PureExpr} [HasFvar P] [HasFvars P] [
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
     (U : List P.Ident) :
     BodyHoistSimFailSA (extendFactory := extendFactory) U [] [] := by
-  intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree _ _ _ _ _ _ _ _ d h_run hd_fail
   have h_d_env : d.getEnv = ρ_s := by
     cases h_run with
     | refl => rfl
@@ -5239,7 +5871,7 @@ private theorem bodyHoistSimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] 
         hoist_rest) :
     BodyHoistSimFailSA (extendFactory := extendFactory)
       (Stmt.initVars s ++ Block.initVars rest) (s :: rest) (hoist_s ++ hoist_rest) := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
   have h_src_none_s : ∀ y ∈ Stmt.initVars s, ρ_s.store y = none := fun y hy =>
     h_src_none y (List.mem_append_left _ hy)
   have h_tgt_none_s : ∀ y ∈ Stmt.initVars s, ρ_h.store y = none := fun y hy =>
@@ -5248,19 +5880,23 @@ private theorem bodyHoistSimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] 
     h_src_none y (List.mem_append_right _ hy)
   have h_tgt_none_r : ∀ y ∈ Block.initVars rest, ρ_h.store y = none := fun y hy =>
     h_tgt_none y (List.mem_append_right _ hy)
+  have h_init_s : Stmt.InitTypesInhabited ρ_s.factory s := by
+    intro ty hty; exact h_init ty (by rw [Block.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_r : Block.InitTypesInhabited ρ_s.factory rest := by
+    intro ty hty; exact h_init ty (by rw [Block.initTypes]; exact List.mem_append_right _ hty)
   have h_s_def_eq : Stmt.definedVars (P := P) (C := Cmd P) s false = Stmt.initVars s := rfl
   rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h_run) hd_fail with
     ⟨d_head, h_head_run, hd_head⟩ | ⟨ρ_mid, d_rest, h_head_term, h_rest_run, hd_rest⟩
   · obtain ⟨d', h_head_h_run, hd'_fail⟩ :=
       hhead_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none_s h_tgt_none_s
-        d_head h_head_run hd_head
+        h_init_s d_head h_head_run hd_head
     obtain ⟨c', h_run', hc'_fail⟩ :=
       stmts_prefix_failing_append P extendFactory hoist_s hoist_rest ρ_h d'
         h_head_h_run hd'_fail
     exact ⟨c', h_run', hc'_fail⟩
   · obtain ⟨ρ_h_mid, h_hs_run, h_agree_mid, h_hf_mid, h_eval_mid⟩ :=
       hhead_term ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none_s h_tgt_none_s
-        none ρ_mid (by simpa only [Env.outcomeConfig] using h_head_term)
+        h_init_s none ρ_mid (by simpa only [Env.outcomeConfig] using h_head_term)
     have h_eval_mid_src : ρ_mid.factory = ρ_s.factory :=
       smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory s ρ_s ρ_mid h_nofd_s
           h_head_term
@@ -5283,7 +5919,7 @@ private theorem bodyHoistSimFailSA_cons {P : PureExpr} [HasFvar P] [HasFvars P] 
       htail_fail ρ_mid ρ_h_mid h_eval_mid h_hf_mid h_agree_mid
         (h_eval_mid_src ▸ hwfb) (h_eval_mid_src ▸ hwfv) (h_eval_mid_src ▸ hwfd)
         (h_eval_mid_src ▸ hwfc) (h_eval_mid_src ▸ hwfvar) h_src_none_r_mid h_tgt_none_r_mid
-        d_rest h_rest_run hd_rest
+        (h_eval_mid_src ▸ h_init_r) d_rest h_rest_run hd_rest
     exact ⟨d', ReflTrans_Transitive _ _ _ _
       (stmts_prefix_terminal_append P (EvalCmd P) extendFactory _ _ ρ_h ρ_h_mid h_hs_run)
       h_rest_run_h, hd'_fail⟩
@@ -5298,20 +5934,20 @@ private theorem hoistSimFailSA_of_singleOutcome {P : PureExpr} [HasFvar P] [HasF
       (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt s ρ)
     (h_term : HoistSimSA (extendFactory := extendFactory) s hoist_s U) :
     HoistSimFailSA (extendFactory := extendFactory) s hoist_s U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
   rcases h_outcome h_run with ⟨ρ', h_eq⟩ | ⟨l, ρ', h_eq⟩ | h_eq
   · subst h_eq
     have hρ'_fail : ρ'.hasFailure = true := by simpa [Config.getEnv] using hd_fail
     obtain ⟨ρ_h', h_run_h, _, h_hf', _⟩ :=
       h_term ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-        none ρ' (by simpa only [Env.outcomeConfig] using h_run)
+        h_init none ρ' (by simpa only [Env.outcomeConfig] using h_run)
     exact ⟨.terminal ρ_h', by simpa only [Env.outcomeConfig] using h_run_h,
       by simpa [Config.getEnv] using (h_hf' ▸ hρ'_fail)⟩
   · subst h_eq
     have hρ'_fail : ρ'.hasFailure = true := by simpa [Config.getEnv] using hd_fail
     obtain ⟨ρ_h', h_run_h, _, h_hf', _⟩ :=
       h_term ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-        (some l) ρ' (by simpa only [Env.outcomeConfig] using h_run)
+        h_init (some l) ρ' (by simpa only [Env.outcomeConfig] using h_run)
     exact ⟨.exiting l ρ_h', by simpa only [Env.outcomeConfig] using h_run_h,
       by simpa [Config.getEnv] using (h_hf' ▸ hρ'_fail)⟩
   · subst h_eq
@@ -5324,7 +5960,7 @@ private theorem hoistSimFailSA_cmd {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     {extendFactory : ExtendFactory P} {U : List P.Ident} (c : Cmd P)
     (h_sub : ∀ x ∈ Cmd.definedVars c, x ∈ U) :
     HoistSimFailSA (extendFactory := extendFactory) (.cmd c) [.cmd c] U :=
-  hoistSimFailSA_of_singleOutcome cmd_run_outcome (hoistSimSA_cmd c h_sub)
+  hoistSimFailSA_of_singleOutcome (cmd_run_outcome) (hoistSimSA_cmd c h_sub)
 
 /-- The `.block` FAILING arm. -/
 private theorem hoistSimFailSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -5333,7 +5969,7 @@ private theorem hoistSimFailSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
     (inner_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U inner inner_h) :
     HoistSimFailSA (extendFactory := extendFactory) (.block lbl inner md) [.block lbl inner_h md] U
         := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
   rcases h_run with _ | ⟨_, _, _, h1, hr1⟩
   · have hρ_s_fail : ρ_s.hasFailure = true := by simpa [Config.getEnv] using hd_fail
     exact ⟨.stmts [.block lbl inner_h md] ρ_h, .refl _,
@@ -5343,7 +5979,7 @@ private theorem hoistSimFailSA_block {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
         hd_fail
     obtain ⟨d', h_inner_h_run, hd'_fail⟩ :=
       inner_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-          d_inner
+          h_init d_inner
         h_inner_run hd_inner_fail
     refine ⟨.seq (.block (.some lbl) ρ_h.store ρ_h.factory d') ([] : List (Stmt P (Cmd P))), ?_,
       by simpa [Config.getEnv] using hd'_fail⟩
@@ -5361,7 +5997,11 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     (else_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U ess ess_h) :
     HoistSimFailSA (extendFactory := extendFactory) (.ite (.det g) tss ess md)
       [.ite (.det g) tss_h ess_h md] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
+  have h_init_t : Block.InitTypesInhabited ρ_s.factory tss := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_e : Block.InitTypesInhabited ρ_s.factory ess := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_right _ hty)
   have guard_h : ∀ {bv : P.Expr}, P.eval ρ_s.factory ρ_s.store g = .some bv →
       P.eval ρ_h.factory ρ_h.store g = .some bv := by
     intro bv hg
@@ -5378,7 +6018,7 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
         blockT_none_reaches_failing' P extendFactory (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         then_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-            d_inner
+            h_init_t d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.seq (.block .none ρ_h.store ρ_h.factory d') ([] : List (Stmt P (Cmd P))), ?_,
         by simpa [Config.getEnv] using hd'_fail⟩
@@ -5391,7 +6031,7 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
         blockT_none_reaches_failing' P extendFactory (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         else_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-            d_inner
+            h_init_e d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.seq (.block .none ρ_h.store ρ_h.factory d') ([] : List (Stmt P (Cmd P))), ?_,
         by simpa [Config.getEnv] using hd'_fail⟩
@@ -5408,7 +6048,11 @@ private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P
     (else_fail : BodyHoistSimFailSA (extendFactory := extendFactory) U ess ess_h) :
     HoistSimFailSA (extendFactory := extendFactory) (.ite .nondet tss ess md)
       [.ite .nondet tss_h ess_h md] U := by
-  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none d h_run hd_fail
+  intro ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none h_init d h_run hd_fail
+  have h_init_t : Block.InitTypesInhabited ρ_s.factory tss := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_left _ hty)
+  have h_init_e : Block.InitTypesInhabited ρ_s.factory ess := by
+    intro ty hty; exact h_init ty (by rw [Stmt.initTypes]; exact List.mem_append_right _ hty)
   rcases h_run with _ | ⟨_, _, _, h1, hr1⟩
   · have hρ_s_fail : ρ_s.hasFailure = true := by simpa [Config.getEnv] using hd_fail
     exact ⟨.stmts [.ite .nondet tss_h ess_h md] ρ_h, .refl _,
@@ -5419,7 +6063,7 @@ private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P
         blockT_none_reaches_failing' P extendFactory (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         then_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-            d_inner
+            h_init_t d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.seq (.block .none ρ_h.store ρ_h.factory d') ([] : List (Stmt P (Cmd P))), ?_,
         by simpa [Config.getEnv] using hd'_fail⟩
@@ -5432,7 +6076,7 @@ private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P
         blockT_none_reaches_failing' P extendFactory (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         else_fail ρ_s ρ_h h_eval h_hf h_agree hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
-            d_inner
+            h_init_e d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.seq (.block .none ρ_h.store ρ_h.factory d') ([] : List (Stmt P (Cmd P))), ?_,
         by simpa [Config.getEnv] using hd'_fail⟩
@@ -5445,11 +6089,11 @@ private theorem hoistSimFailSA_ite_nondet {P : PureExpr} [HasFvar P] [HasFvars P
 terminal `HoistSimSA s [s] U`. -/
 private theorem hoistSimFailSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [DecidableEq P.Ident] {extendFactory : ExtendFactory P}
-    {U : List P.Ident} {s : Stmt P (Cmd P)}
+    {U : List P.Ident} {Dτ : P.Ident → P.Ty} {s : Stmt P (Cmd P)}
     (h_outcome : ∀ {ρ : Env P} {d : Config P (Cmd P)},
       StepStmtStar P (EvalCmd P) extendFactory (.stmt s ρ) d →
       (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt s ρ)
-    (h : StmtSimSA (extendFactory := extendFactory) ([] : List P.Ident) s s) :
+    (h : StmtSimSA (extendFactory := extendFactory) Dτ ([] : List P.Ident) s s) :
     HoistSimFailSA (extendFactory := extendFactory) s [s] U :=
   hoistSimFailSA_of_singleOutcome h_outcome (hoistSimSA_of_stmtSimSA_nilD h)
 
@@ -5459,11 +6103,12 @@ private theorem hoistSimFailSA_of_stmtSimSA_nilD {P : PureExpr} [HasFvar P] [Has
 mutual
 private theorem Stmt.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (s : Stmt P (Cmd P))
     (h_shape : Stmt.transportShape s = true)
     (h_nofd : Stmt.noFuncDecl s = true)
-    (h_unique : (Stmt.initVars s).Nodup) :
+    (h_unique : (Stmt.initVars s).Nodup)
+    :
     HoistSimFailSA (extendFactory := extendFactory) s (Stmt.hoistLoopPrefixInits s) (Stmt.initVars
         s) := by
   match s, h_shape, h_nofd, h_unique with
@@ -5531,11 +6176,13 @@ private theorem Stmt.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
   | .exit lbl md, _, _, _ =>
       rw [show Stmt.hoistLoopPrefixInits (.exit lbl md) = [.exit lbl md] by
           rw [Stmt.hoistLoopPrefixInits]]
-      exact hoistSimFailSA_of_stmtSimSA_nilD exit_run_outcome (exit_stmtSimSA lbl md)
+      exact hoistSimFailSA_of_stmtSimSA_nilD (Dτ := (fun _ => (HasBool.boolTy : P.Ty)))
+        (exit_run_outcome) (exit_stmtSimSA lbl md)
   | .typeDecl tc md, _, _, _ =>
       rw [show Stmt.hoistLoopPrefixInits (.typeDecl tc md) = [.typeDecl tc md] by
           rw [Stmt.hoistLoopPrefixInits]]
-      exact hoistSimFailSA_of_stmtSimSA_nilD typeDecl_run_outcome (typeDecl_stmtSimSA tc md)
+      exact hoistSimFailSA_of_stmtSimSA_nilD (Dτ := (fun _ => (HasBool.boolTy : P.Ty)))
+        (typeDecl_run_outcome) (typeDecl_stmtSimSA tc md)
   -- excluded by transportShape / noFuncDecl:
   | .loop (.det g) (some me) inv body md, h_shape, _, _ =>
       exact absurd h_shape (by simp [Stmt.transportShape])
@@ -5548,11 +6195,12 @@ private theorem Stmt.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Ha
 
 private theorem Block.hoistP_sim_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (ss : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape ss = true)
     (h_nofd : Block.noFuncDecl ss = true)
-    (h_unique : (Block.initVars ss).Nodup) :
+    (h_unique : (Block.initVars ss).Nodup)
+    :
     BodyHoistSimFailSA (extendFactory := extendFactory) (Block.initVars ss) ss
         (Block.hoistLoopPrefixInits ss) := by
   match ss, h_shape, h_nofd, h_unique with
@@ -5600,11 +6248,12 @@ under the `.loop`-arm Bool preconditions `transportShape` / `noFuncDecl` and
 `uniqueInits` — NO `loopBodyNoInits`. -/
 private theorem hoistSimFailSA_of_hoist {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-        [LawfulHasIdent P]
+        [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P} (body : List (Stmt P (Cmd P)))
     (h_shape : Block.transportShape body = true)
     (h_nofd : Block.noFuncDecl body = true)
-    (h_unique : Block.uniqueInits body) :
+    (h_unique : Block.uniqueInits body)
+    :
     BodyHoistSimFailSA (extendFactory := extendFactory) (Block.initVars body) body
       (Block.hoistLoopPrefixInits body) :=
   Block.hoistP_sim_fail (extendFactory := extendFactory) body h_shape h_nofd h_unique
@@ -5738,7 +6387,7 @@ terminal store and the same `hasFailure` flag.  Forwards to the structural produ
 theorem hoistLoopPrefixInits_preserves_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-    [LawfulHasIdent P]
+    [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
     {ρ_src ρ_tgt ρ_src' : Env P}
@@ -5755,6 +6404,7 @@ theorem hoistLoopPrefixInits_preserves_sa {P : PureExpr}
     (h_wfd        : WellFormedSemanticEvalMono ρ_src.factory)
     (h_wfc        : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (h_wfvar      : WellFormedSemanticEvalVar ρ_src.factory)
+    (h_init       : Block.InitTypesInhabited ρ_src.factory ss)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendFactory
                        (.stmts ss ρ_src) (.terminal ρ_src')) :
     ∃ ρ_h',
@@ -5768,7 +6418,7 @@ theorem hoistLoopPrefixInits_preserves_sa {P : PureExpr}
     LoopInitHoistProducerProps.hoistSimSA_of_hoist ss h_shape h_nofd h_unique
   obtain ⟨ρ_h', h_run_h, h_agree', h_hf', _⟩ :=
     hbody ρ_src ρ_tgt h_eval_eq h_hf_eq h_agree h_wfb h_wfv h_wfd h_wfc h_wfvar
-      h_src_undef h_tgt_undef none ρ_src'
+      h_src_undef h_tgt_undef h_init none ρ_src'
       (by simpa only [Env.outcomeConfig] using h_run_src)
   exact ⟨ρ_h', by simpa only [Env.outcomeConfig] using h_run_h, h_agree', h_hf'⟩
 
@@ -5781,7 +6431,7 @@ lbl` outcome). -/
 theorem hoistLoopPrefixInits_preserves_exit_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-    [LawfulHasIdent P]
+    [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
     {ρ_src ρ_tgt ρ_src' : Env P}
@@ -5798,6 +6448,7 @@ theorem hoistLoopPrefixInits_preserves_exit_sa {P : PureExpr}
     (h_wfd        : WellFormedSemanticEvalMono ρ_src.factory)
     (h_wfc        : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (h_wfvar      : WellFormedSemanticEvalVar ρ_src.factory)
+    (h_init       : Block.InitTypesInhabited ρ_src.factory ss)
     (lbl          : String)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendFactory
                        (.stmts ss ρ_src) (.exiting lbl ρ_src')) :
@@ -5812,7 +6463,7 @@ theorem hoistLoopPrefixInits_preserves_exit_sa {P : PureExpr}
     LoopInitHoistProducerProps.hoistSimSA_of_hoist ss h_shape h_nofd h_unique
   obtain ⟨ρ_h', h_run_h, h_agree', h_hf', _⟩ :=
     hbody ρ_src ρ_tgt h_eval_eq h_hf_eq h_agree h_wfb h_wfv h_wfd h_wfc h_wfvar
-      h_src_undef h_tgt_undef (some lbl) ρ_src'
+      h_src_undef h_tgt_undef h_init (some lbl) ρ_src'
       (by simpa only [Env.outcomeConfig] using h_run_src)
   exact ⟨ρ_h', by simpa only [Env.outcomeConfig] using h_run_h, h_agree', h_hf'⟩
 
@@ -5828,7 +6479,7 @@ the WF bundle + dual init-undef + `StoreAgreement` + eval/hf agreement) — NO
 theorem hoistLoopPrefixInits_to_fail_sa {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
-    [LawfulHasIdent P]
+    [LawfulHasIdent P] [LawfulHasVal P]
     {extendFactory : ExtendFactory P}
     (ss : List (Stmt P (Cmd P)))
     {ρ_src ρ_tgt : Env P} {d : Config P (Cmd P)}
@@ -5845,6 +6496,7 @@ theorem hoistLoopPrefixInits_to_fail_sa {P : PureExpr}
     (h_wfd        : WellFormedSemanticEvalMono ρ_src.factory)
     (h_wfc        : WellFormedSemanticEvalExprCongr ρ_src.factory)
     (h_wfvar      : WellFormedSemanticEvalVar ρ_src.factory)
+    (h_init       : Block.InitTypesInhabited ρ_src.factory ss)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendFactory (.stmts ss ρ_src) d)
     (h_d_fail     : d.getEnv.hasFailure = true) :
     ∃ d',
@@ -5856,7 +6508,7 @@ theorem hoistLoopPrefixInits_to_fail_sa {P : PureExpr}
         (Block.initVars ss) ss (Block.hoistLoopPrefixInits ss) :=
     LoopInitHoistProducerProps.hoistSimFailSA_of_hoist ss h_shape h_nofd h_unique
   exact hbody ρ_src ρ_tgt h_eval_eq h_hf_eq h_agree h_wfb h_wfv h_wfd h_wfc h_wfvar
-    h_src_undef h_tgt_undef d h_run_src h_d_fail
+    h_src_undef h_tgt_undef h_init d h_run_src h_d_fail
 
 
 /-! ## `hoist` per-pass overapproximation instance
@@ -5880,8 +6532,9 @@ ending in a store-agreeing, failure-matching, factory-preserving target state.  
 the middle per-pass instance the pipeline capstone composes. -/
 theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent
     P]
-    [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasIdent P]
-    [HasSubstFvar P] (extendFactory : ExtendFactory P) :
+    [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasVal P]
+    [HasSubstFvar P] (extendFactory : ExtendFactory P)
+    :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (Specification.Transform.EnvStoreAgree (P := P))
@@ -5924,7 +6577,7 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
       hoistLoopPrefixInits_preserves_sa
         (extendFactory := extendFactory) ss h_shape h_nofd h_unique
         rfl rfl (StoreAgreement.refl _) h_inits h_inits
-        hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀
+        hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀ hwf.initTypesInhabited
         h_term
     have h_src_eval : ρ'.factory = ρ₀.factory :=
       block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory ss ρ₀ ρ' h_nofd h_term
@@ -5941,7 +6594,7 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
       hoistLoopPrefixInits_preserves_exit_sa
         (extendFactory := extendFactory) ss h_shape h_nofd h_unique
         rfl rfl (StoreAgreement.refl _) h_inits h_inits
-        hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀
+        hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀ hwf.initTypesInhabited
         lbl h_exit
     have h_src_eval : ρ'.factory = ρ₀.factory :=
       block_noFuncDecl_preserves_factory_exiting ss ρ₀ ρ' lbl h_nofd h_exit
@@ -5968,12 +6621,15 @@ theorem hoist_overapproximates_upto {P : PureExpr} [HasFvar P] [HasFvars P] [Has
         hoistLoopPrefixInits_to_fail_sa
           (extendFactory := extendFactory) ss h_shape h_nofd h_unique
           rfl rfl (StoreAgreement.refl _) h_inits h_inits
-          hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀
+          hwfbool₀ hwfval₀ hwfmono₀ hwfcongr₀ hwfvar₀ hwf.initTypesInhabited
           h_reach h_fail
       exact ⟨d, by simpa [Lang.imperativeBlock] using hd_fail,
         by simpa [Lang.imperativeBlock] using hd_run⟩
   · -- ===== target initEnvWF conjunct =====
-    refine { hwf with defsUndefined := ?_, definedVarsNotReserved := h_s2u }
+    have h_tgt_inhab :
+        Block.InitTypesInhabited ρ₀.factory (Block.hoistLoopPrefixInits ss) :=
+      LoopInitHoistProducerProps.Block.hoistP_initTypesInhabited hwf.initTypesInhabited
+    refine { hwf with defsUndefined := ?_, definedVarsNotReserved := h_s2u, initTypesInhabited := h_tgt_inhab }
     intro x hx
     exact h_inits x (LoopInitHoistProducerProps.Block.hoistP_initVars_sub ss x hx)
 

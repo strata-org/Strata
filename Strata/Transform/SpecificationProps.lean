@@ -1159,7 +1159,7 @@ well-formedness.
 -/
 
 omit [HasOps P] in
-theorem overapproximates_stmts [HasIdent P] [HasVarsImp P CmdT]
+theorem overapproximates_stmts [HasIdent P] [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     {Params : Type}
     (wf : Params → List (Stmt P CmdT) → Env P → Prop)
     (p₁ p₂ : Params)
@@ -1380,7 +1380,7 @@ The state-relation analogue of `overapproximates_stmts`: if `T` overapproximates
 every individual statement up to `R`, then `fun ss => ss.mapM T` overapproximates
 the whole block up to `R`.  `hRfail` requires `R` to preserve the failure flag,
 which is what the empty-block case needs. -/
-theorem overapproximatesUpto_stmts [HasIdent P] [HasVarsImp P CmdT]
+theorem overapproximatesUpto_stmts [HasIdent P] [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     {Params : Type}
     (wf : Params → List (Stmt P CmdT) → Env P → Prop)
     (p₁ p₂ : Params)
@@ -1647,7 +1647,7 @@ The aggressive analogue of `overapproximates_stmts`: if `T` aggressively
 overapproximates every individual statement, then `fun ss => ss.mapM T`
 aggressively overapproximates the whole block.
 -/
-theorem overapproximatesAggressively_stmts [HasIdent P] [HasVarsImp P CmdT]
+theorem overapproximatesAggressively_stmts [HasIdent P] [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     {Params : Type}
     (wf : Params → List (Stmt P CmdT) → Env P → Prop)
     (p₁ p₂ : Params)

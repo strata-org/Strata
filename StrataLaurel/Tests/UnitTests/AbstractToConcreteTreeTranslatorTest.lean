@@ -655,7 +655,7 @@ private def resolvedMultiAssign : Program :=
         body := .Opaque []
           (some (node (.Block [
             node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
-              (node (.StaticCall (mkId "twoOut") [])))
+              (node (.StaticCall (mkId "twoOut") [] [])))
           ] none)))
           [] }
     ],
@@ -829,6 +829,85 @@ program Laurel;
 procedure useMap(m: Map<int, bool>, n: Map<int, Map<int, bool>>, t: TotalMap int bool) : bool
   return mapContains(m, 1);
 #end)
+
+/-! ## Operator wrappers, their delegates, and the excluded division family
+
+`$le` is an operator wrapper, so it prints as `<=`. `UniqueOverloadNames` renames
+every overloaded wrapper to `$ov<n>$$le`, which must print the same way. `$intLe`
+is the type-specific delegate the wrapper calls, and also prints as `<=` — except
+inside the wrapper's own body, where the delegate name is the only thing saying
+which primitive that overload bottoms out in. `$intDiv` is deliberately not
+mapped: `int` also has a `Safe` division delegate and both would print as `/`. -/
+
+private def opCall (nm : String) : StmtExprMd :=
+  node (.StaticCall (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2)] [])
+
+/-- info: 1 <= 2 -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall "$le")).pretty
+
+/-- info: 1 <= 2 -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall "$ov104$$le")).pretty
+
+/-- info: 1 <= 2 -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall "$intLe")).pretty
+
+/-- info: $intDiv(1, 2) -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall "$intDiv")).pretty
+
+/-- A binary operator wrapper applied to the wrong number of args must not print
+    as an operator: the arity filter makes the operator lookup miss so it falls
+    to the call fallback, instead of the DDM formatter panicking on an operand
+    count the operator's binding shape can't hold. -/
+private def opCall1 (nm : String) : StmtExprMd :=
+  node (.StaticCall (mkId nm) [node (.LiteralInt 1)] [])
+
+private def opCall3 (nm : String) : StmtExprMd :=
+  node (.StaticCall (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2), node (.LiteralInt 3)] [])
+
+/-- info: $le(1) -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall1 "$le")).pretty
+
+/-- info: $le(1, 2, 3) -/
+#guard_msgs in
+#eval IO.println (formatStmtExpr (opCall3 "$le")).pretty
+
+/-- A wrapper-shaped procedure: `return $intLe(x, y)`, as `CoreDefinitionsForLaurel`
+    declares the `int` overload of `$le`. -/
+private def leWrapper (nm : String) : Procedure :=
+  { name := mkId nm,
+    inputs := [{ name := mkId "x", type := node .TInt },
+               { name := mkId "y", type := node .TInt }],
+    outputs := [{ name := mkId resultOutputName, type := node .TBool }],
+    preconditions := [], decreases := none,
+    body := .Transparent (node (.Return (some (node (.StaticCall (mkId "$intLe")
+      [node (.Var (.Local (mkId "x"))), node (.Var (.Local (mkId "y")))] []))))) }
+
+/--
+info: procedure $le(x: int, y: int): bool
+return $intLe(x, y);
+-/
+#guard_msgs in
+#eval IO.println (formatProcedure (leWrapper "$le")).pretty
+
+/--
+info: procedure $ov104$$le(x: int, y: int): bool
+return $intLe(x, y);
+-/
+#guard_msgs in
+#eval IO.println (formatProcedure (leWrapper "$ov104$$le")).pretty
+
+-- Outside a wrapper body the same call still prints as an operator.
+/--
+info: procedure notAWrapper(x: int, y: int): bool
+return x <= y;
+-/
+#guard_msgs in
+#eval IO.println (formatProcedure (leWrapper "notAWrapper")).pretty
 
 /-! ## Legacy-arity artifacts fail loud
 

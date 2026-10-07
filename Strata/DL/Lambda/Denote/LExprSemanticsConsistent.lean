@@ -7,6 +7,7 @@ module
 import all Strata.DL.Lambda.LTyProps
 
 import all Strata.DL.Lambda.Semantics
+import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 
 /-!
@@ -549,28 +550,28 @@ theorem Step.denote_preserved
         h_sorts_eq h_ret_eq.symm
         (opInterp name.name (LMonoTy.substTyVars vt (τ.mkArrow' argTys))) da
       grind
-    -- Part B: use denote_applySubst
-    have h_applySubst_wt : LExpr.HasTypeA [] (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
-      applySubst_typeCheck tySubst' h_body_wt
+    -- Part B: use denote_applyTypeSubst
+    have h_applyTypeSubst_wt : LExpr.HasTypeA [] (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
+      applyTypeSubst_typeCheck tySubst' h_body_wt
     have h_td2 : TyDenote tcInterp vt (LMonoTy.subst tySubst' fn.output) = TyDenote tcInterp vt' fn.output := by
       rw [h_τ_eq] at h_td; exact h_td.symm
-    have h_partB := denote_applySubst (tcInterp := tcInterp) (opInterp := opInterp)
+    have h_partB := denote_applyTypeSubst (tcInterp := tcInterp) (opInterp := opInterp)
       (fvarVal := fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da))
       (rfl : vt' = fun x => match tySubst'.find? x with
         | some t => LMonoTy.substTyVars vt t | none => vt x)
-      h_body_wt h_applySubst_wt h_td2
-    -- h_partB : denote vt (applySubst tySubst' fnbody) ... = cast h_td2.symm (denote vt' fnbody ...)
-    -- Derive: cast h_td2 (denote vt (applySubst ...)) = denote vt' fnbody
+      h_body_wt h_applyTypeSubst_wt h_td2
+    -- h_partB : denote vt (applyTypeSubst tySubst' fnbody) ... = cast h_td2.symm (denote vt' fnbody ...)
+    -- Derive: cast h_td2 (denote vt (applyTypeSubst ...)) = denote vt' fnbody
     have h_partB' : cast h_td2
         (LExpr.denote tcInterp opInterp
           (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt .nil
-          (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) h_applySubst_wt) =
+          (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) h_applyTypeSubst_wt) =
         LExpr.denote tcInterp opInterp
           (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt' .nil fnbody fn.output h_body_wt := by
       rw [h_partB]; simp [cast_cast, cast_eq]
     rw [h_partA, ← h_partB']
     simp only [cast_cast]
-    -- Goal: cast _ (denote (withArgs ...) vt (applySubst tySubst' fnbody) (subst tySubst' fn.output)) = denote vt new_body τ h₂
+    -- Goal: cast _ (denote (withArgs ...) vt (applyTypeSubst tySubst' fnbody) (subst tySubst' fn.output)) = denote vt new_body τ h₂
     subst h_τ_eq heq
     simp only [cast_eq]
     -- Part C: use substFvarsLifting_denote
@@ -593,7 +594,7 @@ theorem Step.denote_preserved
         (denoteArgs tcInterp opInterp fvarVal vt .nil ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt) := by
       simp [h_zip_snd]; grind
     have h_annot_subst : fvars_annotated_by
-        ((fn.inputs.keys.zip args).map Prod.fst |>.zip argTys) (fnbody.applySubst tySubst') := by
+        ((fn.inputs.keys.zip args).map Prod.fst |>.zip argTys) (fnbody.applyTypeSubst tySubst') := by
       rw [h_zip_fst, ListMap.keys_eq_map_fst, h_argTys_eq]
       have h_map_eq : (fn.inputs.map Prod.fst).zip (List.map (LMonoTy.subst tySubst') (fn.inputs.map Prod.snd)) =
           fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) := by
@@ -602,10 +603,10 @@ theorem Step.denote_preserved
           | nil => rfl
           | cons h t ih => simp [ih]
       rw [h_map_eq]
-      exact applySubst_fvars_annotated h_annot
+      exact applyTypeSubst_fvars_annotated h_annot
     symm
     exact substFvarsLifting_denote tcInterp opInterp fvarVal vt
-      .nil h_applySubst_wt h₂
+      .nil h_applyTypeSubst_wt h₂
       (HList.cast h_sorts_eq da)
       h_keys h_len h_tys_len h_sorts_eq.symm h_wt h_denotes h_annot_subst
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
@@ -754,11 +755,11 @@ theorem Step.type_preserved
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have ⟨h_body_wt, h_body_annot⟩ := h_fn_eq ▸ hFwt name.name h_fn_mem fnbody (h_fn_eq ▸ hbody)
-    -- applySubst preserves typing
-    have h_applySubst_wt : LExpr.HasTypeA [] (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
-      applySubst_typeCheck tySubst' h_body_wt
-    -- Annotation after applySubst
-    have h_annot_subst := applySubst_fvars_annotated (S := tySubst') h_body_annot
+    -- applyTypeSubst preserves typing
+    have h_applyTypeSubst_wt : LExpr.HasTypeA [] (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
+      applyTypeSubst_typeCheck tySubst' h_body_wt
+    -- Annotation after applyTypeSubst
+    have h_annot_subst := applyTypeSubst_fvars_annotated (S := tySubst') h_body_annot
     have h_map_eq : fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) =
         (fn.inputs.map Prod.fst).zip (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
       rw [List.map_map]; induction fn.inputs with
@@ -782,9 +783,9 @@ theorem Step.type_preserved
     have h_annot_match : fvars_annotated_by
         ((fn.inputs.keys.zip args).map Prod.fst |>.zip
           (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')))
-        (fnbody.applySubst tySubst') := by
+        (fnbody.applyTypeSubst tySubst') := by
       rw [h_zip_fst, ListMap.keys_eq_map_fst]; exact h_annot_subst
-    exact substFvarsLifting_typeCheck h_wt_bindings h_annot_match h_applySubst_wt
+    exact substFvarsLifting_typeCheck h_wt_bindings h_annot_match h_applyTypeSubst_wt
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
     -- Get tySubst from OpsConsistent
     obtain ⟨tySubst, htySubst, h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
@@ -938,9 +939,9 @@ theorem Step.OpsConsistent_preserved
     obtain ⟨md, name, ty_callee, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
-    -- Body satisfies OpsConsistent after applySubst
+    -- Body satisfies OpsConsistent after applyTypeSubst
     have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
-    have h_body_ops : OpsConsistent F (fnbody.applySubst tySubst) :=
+    have h_body_ops : OpsConsistent F (fnbody.applyTypeSubst tySubst) :=
       hFBodyOps name.name h_fn_mem fnbody tySubst h_body_eq
     -- Args satisfy OpsConsistent
     have h_args_ops : ∀ a ∈ args, OpsConsistent F a :=
@@ -1003,7 +1004,7 @@ theorem Step.fvars_annotated_preserved
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
-    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applySubst tySubst) :=
+    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applyTypeSubst tySubst) :=
       hFBodyAnnot name.name h_fn_mem fnbody tySubst h_body_eq
     have h_args_annot : ∀ a ∈ args, fvars_annotated_by hEnvTy.tyMap a :=
       fvars_annotated_by_callOfLFunc_args hAnnot hcall

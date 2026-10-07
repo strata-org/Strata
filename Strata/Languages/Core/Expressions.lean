@@ -10,6 +10,8 @@ public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.IntBoolFactory
 
@@ -49,6 +51,26 @@ def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.E
 
 instance : HasVal Core.Expression where
   value := fun f e => Lambda.LExpr.isCanonicalValue f e = true
+  valueOfTy := fun f e ty =>
+    ∃ mty,
+      Lambda.LExpr.isCanonicalValue f e = true ∧
+      ty.toMonoType? = some mty ∧
+      Lambda.LExpr.typeCheck [] e = some mty
+
+instance : LawfulHasVal Core.Expression where
+  valueOfTy_isVal := by
+    rintro _ _ _ ⟨_, hval, _, _⟩
+    exact hval
+  valueOfTy_congr := by
+    rintro f a b ty₁ ty₂
+      ⟨mty₁, _, hty₁, ha₁⟩
+      ⟨mty₂, _, hty₂, ha₂⟩
+      ⟨mty₃, hb, hty₃, hb₃⟩
+    have hmty₁₂ : mty₁ = mty₂ := Option.some.inj (ha₁.symm.trans ha₂)
+    have hmty₂₃ : mty₂ = mty₃ := Option.some.inj (hty₂.symm.trans hty₃)
+    subst mty₂
+    subst mty₃
+    exact ⟨mty₁, hb, hty₁, hb₃⟩
 
 instance : HasFvar Core.Expression where
   mkFvar := (.fvar () · none)
@@ -100,12 +122,12 @@ instance : HasBool Core.Expression where
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
-  boolIsVal := fun f => by
-    simp only [HasVal.value]
-    exact ⟨by show Lambda.LExpr.isCanonicalValue f Core.true = true
-              simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue],
-           by show Lambda.LExpr.isCanonicalValue f Core.false = true
-              simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]⟩
+  boolIsValOfTy := fun f => by
+    constructor
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
 
 instance : HasInt Core.Expression where
   zero        := .intConst () 0
