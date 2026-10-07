@@ -7,7 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import StrataLaurel.Implementation.LaurelPass
-public import StrataLaurel.Implementation.UnorderedCore
+public import StrataLaurel.Implementation.CoreWithLaurelTypes
 import StrataLaurel.Implementation.LaurelAST
 import StrataLaurel.Implementation.MapStmtExpr
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
@@ -226,25 +226,27 @@ def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
     | none => (proc, #[])
   | _ => (proc, #[])
 
-/-- Inline local variables in every function of an `UnorderedCoreWithLaurelTypes`,
-    and in the loop invariants of every `coreProcedure`. -/
-def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
-    : UnorderedCoreWithLaurelTypes × List Message :=
-  let results := uc.functions.map inlineLocalVariablesInFunction
-  let functions' := results.map (·.1)
-  let procResults := uc.coreProcedures.map inlineLocalVariablesInProcedureSpecs
-  let coreProcedures' := procResults.map (·.1)
+/-- Inline local variables in every static function, and in the loop invariants
+    of every static procedure. -/
+def inlineLocalVariablesInFunctions (uc : LaurelProgram)
+    : LaurelProgram × List Message :=
+  let results := uc.staticFunctions.map inlineLocalVariablesInFunction
+  let staticFunctions := results.map (·.1)
+  let procResults := uc.staticProcedures.map inlineLocalVariablesInProcedureSpecs
+  let staticProcedures := procResults.map (·.1)
   let diags := results.flatMap (·.2.toList) ++ procResults.flatMap (·.2.toList)
-  ({ uc with functions := functions', coreProcedures := coreProcedures' }, diags)
+  ({ uc with staticFunctions, staticProcedures }, diags)
 
-public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+public def inlineLocalVariablesPass : LaurelPass := .onUnordered {
   name := "InlineLocalVariables"
   removes := [NodeKind.Pseudo.letExpr]
-  unsupported := [NodeKind.StmtExpr.IncrDecr]
+  unsupported := [
+      NodeKind.StmtExpr.IncrDecr
+    ]
   documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core.
 
-  Currently, Core does not support encoding let expression, even using lambda applications, which is why this pass exists. When Core does support encoding let expression, this pass should be removed."
-  run := fun _ p _ =>
+  Currently, Core does not support encoding let expression, even using lambda applications, which is why this pass exists. When Core does support encoding let expression, this pass should be removed." }
+  fun _ p _ =>
     let (uc, diags) := inlineLocalVariablesInFunctions p
     (uc, diags, {})
 

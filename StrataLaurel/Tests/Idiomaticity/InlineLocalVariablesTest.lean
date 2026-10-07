@@ -26,13 +26,13 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 /-- Parse, resolve, run `inlineLocalVariablesPass`, print the rewritten
-    procedures. The pass runs on the resolved procedures placed in the `functions`
-    bucket (it rewrites function copies); the driver drops the prelude wrappers
-    from that bucket before printing. -/
+    procedures. The pass runs on the resolved procedures placed in
+    `staticFunctions` (it rewrites function copies); the driver drops the prelude
+    wrappers from them before printing. -/
 private meta def printInlined : StrataDDM.Program → IO Unit :=
   runCorePassForIdiomaticity inlineLocalVariablesPass
-    (fun p _ => { functions := p.staticProcedures, coreProcedures := [],
-                  datatypes := [], constants := [] })
+    (fun p _ => { staticFunctions := p.staticProcedures, staticProcedures := [],
+                  staticFields := [], types := [], constants := [] })
 
 /-! ## A chain of `let`-style declarations is fully inlined -/
 

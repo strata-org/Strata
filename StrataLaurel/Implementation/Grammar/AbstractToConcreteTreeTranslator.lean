@@ -548,21 +548,21 @@ private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
               optionArg (f.initializer.map fun value =>
                 laurelOp "initializer" #[stmtExprToArg value])] }
 
-/-- Convert a Laurel.Program to a StrataDDM.Program (DDM concrete syntax tree).
+/-- Convert a Laurel.LaurelProgram to a StrataDDM.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
     Note: `constants` are not emitted because the Laurel grammar has no
     top-level command for them. `staticFields` are emitted as `globalVarCommand`s
     so that a program with globals round-trips through source. -/
-def programToStrata (prog : Laurel.Program) : StrataDDM.Program :=
+def programToStrata (prog : Laurel.LaurelProgram) : StrataDDM.Program :=
   let fieldOps := prog.staticFields.map globalVarCommandOp |>.toArray
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
-  let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray
+  let procOps := (prog.staticFunctions ++ prog.staticProcedures).map procedureCommandOp |>.toArray
   StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/
-def formatProgram (prog : Laurel.Program) : Std.Format :=
+def formatProgram (prog : Laurel.LaurelProgram) : Std.Format :=
   let sp := programToStrata prog
   let c := sp.formatContext {}
   let s := sp.formatState
@@ -635,7 +635,7 @@ instance : Std.ToFormat Variable where format := formatVariable
 instance : Std.ToFormat VariableMd where format := formatVariableMd
 instance : Std.ToFormat Constant where format := formatConstant
 instance : Std.ToFormat TypeDefinition where format := formatTypeDefinition
-instance : Std.ToFormat Program where format := formatProgram
+instance : Std.ToFormat LaurelProgram where format := formatProgram
 
 instance : Repr StmtExpr where
   reprPrec r _ := s!"{Std.format r}"

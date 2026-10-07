@@ -23,7 +23,7 @@ open Strata
 open Strata.Laurel
 
 private def run (src : String) : IO Unit := do
-  let p ← (Strata.parseLaurelText "<no-prelude>" src : IO Program)
+  let p ← (Strata.parseLaurelText "<no-prelude>" src : IO LaurelProgram)
   try
     let (_, failures) ← Strata.Laurel.Interpreter.evalProgram {}
       { entryProcedure := "main", dumpState := false, printAsserts := false } p

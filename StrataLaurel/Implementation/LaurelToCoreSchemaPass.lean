@@ -1508,10 +1508,14 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
 
   pure { decls := coreDecls }
 
-public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
+public def laurelToCoreSchemaPass : LaurelPass where
   name := "LaurelToCoreSchema"
-  creates := [NodeKind.Pseudo.core]
-  removes := [NodeKind.Pseudo.orderedDeclarations]
+  removes := [
+      NodeKind.OrderedProgram.WithLaurelTypes
+    ]
+  creates := [
+      NodeKind.OrderedProgram.Core
+    ]
   unsupported := [
       NodeKind.StmtExpr.While.postTest.true,
       NodeKind.StmtExpr.IncrDecr,
@@ -1531,33 +1535,39 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
       NodeKind.StmtExpr.Hole.deterministic.true,
       NodeKind.CompositeType.typeArgs.cons,
       NodeKind.Pseudo.statementExpression,
-      NodeKind.Pseudo.unorderedDeclarations,
       NodeKind.Pseudo.letExpr,
       NodeKind.StmtExpr.InstanceCall,
       NodeKind.CompositeType.instanceProcedures.cons,
-      NodeKind.StmtExpr.This
+      NodeKind.StmtExpr.This,
+      NodeKind.Pseudo.imperativeFunction,
+      NodeKind.Program.Unordered
     ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
   - Laurel parameter definitions are translated to Core ones.
   - Laurel calling conventions are translated to Core ones."
-  run := fun options p fnModel =>
-    let procedureNames : Std.HashSet String := p.decls.foldl (fun r d => match d with
-      | .procedure proc => r.insert proc.name.text
-      | _ => r) {}
-    let initState : TranslateState :=
-      { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
-    let (coreProgramResult, translateState) :=
-      runTranslateM initState (translateLaurelToCore options p)
-    let diagnostics : List Message :=
-      -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-      let d := translateState.diagnostics.eraseDups
-      if d.isEmpty then translateState.coreDiagnostics else d
-    match coreProgramResult with
-    | .ok coreProgram => (coreProgram, diagnostics, {})
-    | .error e =>
-      let diag := Message.fromString s!"Internal error in LaurelToCoreSchema: {e}" .strataBug
-      (default, diagnostics ++ [diag], {})
+  run := fun options input fnModel =>
+    match input with
+    | .Ordered (.WithLaurelTypes p) =>
+      let (output, diags, stats) : _ × List Message × Statistics :=
+        let procedureNames : Std.HashSet String := p.decls.foldl (fun r d => match d with
+          | .procedure proc => r.insert proc.name.text
+          | _ => r) {}
+        let initState : TranslateState :=
+          { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
+        let (coreProgramResult, translateState) :=
+          runTranslateM initState (translateLaurelToCore options p)
+        let diagnostics : List Message :=
+          -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+          let d := translateState.diagnostics.eraseDups
+          if d.isEmpty then translateState.coreDiagnostics else d
+        match coreProgramResult with
+        | .ok coreProgram => (coreProgram, diagnostics, {})
+        | .error e =>
+          let diag := Message.fromString s!"Internal error in LaurelToCoreSchema: {e}" .strataBug
+          (default, diagnostics ++ [diag], {})
+      (.Ordered (.Core output), diags, stats)
+    | other => wrongProgram "LaurelToCoreSchema" other
 
 end -- public section
 end Laurel

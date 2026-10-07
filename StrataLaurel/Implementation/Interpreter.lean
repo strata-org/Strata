@@ -285,7 +285,7 @@ structure ProgramIndex where
 
 structure EvalState where
   stack    : StackFrame
-  program  : Program
+  program  : LaurelProgram
   index    : ProgramIndex := {}
   /-- Composite instances, indexed by the address a `Value.ref` carries.
       A single growable array rather than a map per object, so allocation is a
@@ -973,7 +973,7 @@ private def literalValue? : StmtExpr → Option Value
     | _ => none
   | _ => none
 
-def buildIndex (p : Program) : ProgramIndex :=
+def buildIndex (p : LaurelProgram) : ProgramIndex :=
   let composites : Std.HashMap String CompositeType :=
     p.types.foldl (init := {}) fun acc t =>
       match t with
@@ -2250,7 +2250,7 @@ inductive Outcome where
     top-level `return` is treated as a clean exit just like falling off the end;
     accumulated failures survive it. Runs exactly one entry — the test harness
     iterates over `entry`-marked procedures and calls this once per entry. -/
-def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : Program)
+def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message × Outcome) := do
   try
     let initState : EvalState :=
@@ -2370,7 +2370,7 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : Program
 /-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw` or
     exhausted fuel becomes an `IO` error, and only the display state and
     assertion failures are returned. -/
-def evalProgram (cfg : ExternalBackend) (opts : Options) (p : Program)
+def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message) := do
   let (display, failures, outcome) ← evalProgramWithOutcome cfg opts p
   match outcome with

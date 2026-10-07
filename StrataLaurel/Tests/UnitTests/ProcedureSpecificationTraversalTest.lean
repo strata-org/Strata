@@ -13,6 +13,7 @@ import StrataLaurel.Implementation.LiftInstanceProcedures
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 import StrataLaurel.Implementation.InferHoleTypes
 import StrataLaurel.Implementation.EliminateDeterministicHoles
+import StrataLaurel.Tests.Util.TestLaurel
 /-!
 Focused regressions for compiler traversals over expression-bearing `Procedure`
 specifications. These tests intentionally use no file-scope fields: the only fields
@@ -46,17 +47,17 @@ private def externalProc (name : String) (inputs : List Parameter)
     resolves without the prelude would see every operator as an undefined callee —
     and `InferHoleTypes`, which reads the callee's parameter types to type a hole
     operand, would get nothing. -/
-private def withBuiltins (program : Program) : Program :=
+private def withBuiltins (program : LaurelProgram) : LaurelProgram :=
   { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types }
 
-private def allProcedures (program : Program) : List Procedure :=
+private def allProcedures (program : LaurelProgram) : List Procedure :=
   program.staticProcedures ++ program.types.flatMap fun
     | .Composite composite => composite.instanceProcedures
     | _ => []
 
-private def findProcedure (program : Program) (name : String) : Option Procedure :=
+private def findProcedure (program : LaurelProgram) (name : String) : Option Procedure :=
   program.staticProcedures.find? (·.name.text == name)
 
 /-! ## Resolution and constrained-type elimination
@@ -82,7 +83,7 @@ private def addConstrainedSpecifications (proc : Procedure) : Procedure :=
     invokeOn := some (quantified "triggerValue")
     axioms := [quantified "axiomValue"] }
 
-private def constrainedSpecificationsProgram : Program :=
+private def constrainedSpecificationsProgram : LaurelProgram :=
   let staticProc := addConstrainedSpecifications <|
     externalProc "staticSpecifications" [param "n" (.UserDefined (mkId "nat"))]
   let instanceProc := addConstrainedSpecifications <|
@@ -256,7 +257,7 @@ private def opaqueModifiesResult : AnalysisResult :=
 #guard opaqueModifiesResult.writesHeapDirectly
 #guard opaqueModifiesResult.callees.isEmpty
 
-private def heapSpecificationsProgram : Program :=
+private def heapSpecificationsProgram : LaurelProgram :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let reader := addHeapSpecifications (externalProc "reader" [cellParam])
   let assignment := md (.Assign
@@ -370,7 +371,7 @@ lowering would synthesize an assignment block and obscure the source-level
 "procedure call in a contract" diagnostic.
 -/
 
-private def specificationCallProgram : Program :=
+private def specificationCallProgram : LaurelProgram :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let mutator := {
     externalProc "mutator" [cellParam] [param "$result" .TInt] with
@@ -412,7 +413,7 @@ private def containsAssignment (expr : StmtExprMd) : Bool :=
     | .Assign _ _ => true
     | _ => false) expr
 
-private def impureSpecificationCallProgram : Program :=
+private def impureSpecificationCallProgram : LaurelProgram :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let mutator := {
     externalProc "mutator" [cellParam] [param "$result" .TInt] with
@@ -469,7 +470,7 @@ After lifting, the axiom must contain a static call to the mangled target and
 must pass `self` as its first argument.
 -/
 
-private def instanceAxiomProgram : Program :=
+private def instanceAxiomProgram : LaurelProgram :=
   let selfParam := param "self" (.UserDefined (mkId "Cell"))
   let predicate := externalProc "predicate" [selfParam] [param "$result" .TBool]
   let owner := {
@@ -523,7 +524,7 @@ while its (still empty, modulo those synthesized preconditions) specifications
 remain unchanged.
 -/
 
-private def emptySpecificationsProgram : Program :=
+private def emptySpecificationsProgram : LaurelProgram :=
   let cellParam := param "cell" (.UserDefined (mkId "Cell"))
   let assignment := md (.Assign
     [varMd (.Field (localExpr "cell") (mkId "value"))]
@@ -573,7 +574,7 @@ private def addsOnlyHeapWfPreconds (proc : Procedure) (expected : Nat) : Bool :=
     proc.preconditions.all isHeapWfPrecond &&
     proc.decreases.isNone && proc.invokeOn.isNone && proc.axioms.isEmpty
 
-private def findAnyProcedure (program : Program) (name : String) : Option Procedure :=
+private def findAnyProcedure (program : LaurelProgram) (name : String) : Option Procedure :=
   (allProcedures program).find? (·.name.text == name)
 
 private def checkEmptySpecifications : IO Unit := do
@@ -652,7 +653,7 @@ bare requires, axiom, and abstract postcondition additionally pin the Boolean
 expected type of proposition-valued positions.
 -/
 
-private def contractHoleProgram : Program :=
+private def contractHoleProgram : LaurelProgram :=
   let hole := md (.Hole true none)
   let comparison := md (.StaticCall (mkId Operation.Gt.procName) [localExpr "x", hole] [])
   let decreases := md (.StaticCall (mkId Operation.Add.procName) [localExpr "x", hole] [])
@@ -704,7 +705,7 @@ private def isLocalNamed (expected : String) (expr : StmtExprMd) : Bool :=
   | .Var (.Local name) => name.text == expected
   | _ => false
 
-private def generatedCallMatches (program : Program) (expectedType : HighType)
+private def generatedCallMatches (program : LaurelProgram) (expectedType : HighType)
     (expectedInput : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
   | .StaticCall callee [argument] _ =>
@@ -717,7 +718,7 @@ private def generatedCallMatches (program : Program) (expectedType : HighType)
         | none => false
   | _ => false
 
-private def staticContractPositionsMatch (program : Program) (proc : Procedure) : Bool :=
+private def staticContractPositionsMatch (program : LaurelProgram) (proc : Procedure) : Bool :=
   match proc.preconditions, proc.decreases, proc.invokeOn, proc.body, proc.axioms with
   | [comparison, bareRequires], some decreases, some invokeOn,
       .Opaque [postcondition] none [], [bareAxiom, typedAxiom] =>
@@ -749,7 +750,7 @@ private def staticContractPositionsMatch (program : Program) (proc : Procedure) 
       postconditionMatches && bareAxiomMatches && typedAxiomMatches
   | _, _, _, _, _ => false
 
-private def instanceContractPositionsMatch (program : Program) (proc : Procedure) : Bool :=
+private def instanceContractPositionsMatch (program : LaurelProgram) (proc : Procedure) : Bool :=
   match proc.preconditions, proc.decreases, proc.invokeOn, proc.body, proc.axioms with
   | [requires], none, none, .Abstract [postcondition], [axiomExpr] =>
       generatedCallMatches program .TBool "self" requires.condition &&
@@ -758,8 +759,8 @@ private def instanceContractPositionsMatch (program : Program) (proc : Procedure
   | _, _, _, _, _ => false
 private def checkContractHoles : IO Unit := do
   let resolved := resolve (withBuiltins contractHoleProgram)
-  let (inferred, diagnostics, _) := inferHoleTypes resolved.model resolved.program
-  let (eliminated, _) := eliminateDeterministicHoles inferred
+  let (inferred, diagnostics, _) := inferHoleTypes resolved.model (.Unordered resolved.program)
+  let (eliminated, _) := eliminateDeterministicHoles inferred.laurelProgram!
   let staticProc := (findProcedure eliminated "contractHoles").get!
   let instanceProc := (findAnyProcedure eliminated "instanceContractHoles").get!
   let staticContracts := procedureSpecificationExprs staticProc ++ bodyContractExprs staticProc

@@ -24,12 +24,24 @@ open Strata
 open Strata.Laurel
 open StrataDDM (SourcedProgram)
 
+namespace Strata.Laurel
+
+public section
+
+def Program.laurelProgram! : Program → LaurelProgram
+  | .Unordered p => p
+  | program => panic! s!"expected an unordered Laurel program, got a {program.kind} program"
+
+end
+
+end Strata.Laurel
+
 namespace StrataTest.Util
 
 /-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
-    `Program`. Used by tests that need to plug in a custom post-translation
+    `LaurelProgram`. Used by tests that need to plug in a custom post-translation
     pipeline stage; throws if translation fails. -/
-public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
+public def translateLaurel (program : StrataDDM.Program) : IO Laurel.LaurelProgram := do
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
@@ -44,7 +56,7 @@ public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := 
     `InferHoleTypes` reading its parameter types to type a hole operand) would
     silently get nothing. Any test driving `resolve` on a bare snippet needs
     this. -/
-public def withBuiltins (program : Laurel.Program) : Laurel.Program :=
+public def withBuiltins (program : Laurel.LaurelProgram) : Laurel.LaurelProgram :=
   { program with
     staticProcedures :=
       Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
@@ -57,7 +69,7 @@ public def withBuiltins (program : Laurel.Program) : Laurel.Program :=
     operator wrappers `withBuiltins` prepended. Filtering by NAME rather than by
     `isExternal`, because the operator wrappers (`$add`, `$implies`, …) are
     transparent procedures, not externals. -/
-def dropPrelude (program : Laurel.Program) : Laurel.Program :=
+def dropPrelude (program : Laurel.LaurelProgram) : Laurel.LaurelProgram :=
   let preludeProcNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
   let preludeTypeNames := Laurel.coreDefinitionsForLaurel.types.map (·.name.text)
   { program with
@@ -72,8 +84,8 @@ private def trimLines (fmt : Std.Format) : String :=
   "\n".intercalate (((toString fmt.pretty).splitOn "\n").map (·.trimAsciiEnd.toString))
 
 /-- Render a list of top-level declarations for a golden, each on its own,
-    separated by a SINGLE newline. `formatProgram` and
-    `formatUnorderedCoreWithLaurelTypes` separate declarations with a blank line;
+    separated by a SINGLE newline. `formatProgram` separates declarations with a
+    blank line;
     a single newline keeps the golden compact, while `trimLines` preserves the
     blank line inside an empty body. -/
 private def renderDecls (decls : List Std.Format) : String :=
@@ -82,40 +94,41 @@ private def renderDecls (decls : List Std.Format) : String :=
 /-- Print a Laurel program for an idiomaticity golden: drop the unchanged prelude
     (see `dropPrelude`), then render its declarations — types, constants,
     file-scope fields, procedures — one per line group. The renderer
-    `runPassForIdiomaticity` uses for a `Program`-output pass. -/
-def renderProgramForIdiomaticity (p : Laurel.Program) : IO Unit :=
+    `runPassForIdiomaticity` uses. -/
+def renderProgramForIdiomaticity (p : Laurel.LaurelProgram) : IO Unit :=
   let p := dropPrelude p
   IO.println (renderDecls (
     (p.types.map Std.ToFormat.format) ++ (p.constants.map Std.ToFormat.format)
       ++ (p.staticFields.map Std.ToFormat.format) ++ (p.staticProcedures.map Std.ToFormat.format)))
 
-/-- Print an `UnorderedCoreWithLaurelTypes` for an idiomaticity golden, dropping
-    the prelude operator wrappers (which land in `functions`) and prelude types by
-    name so the golden shows only what the snippet and the pass contribute. The
-    renderer for a pass that outputs core rather than a `Program`. -/
-def renderUnorderedCoreForIdiomaticity (p : Laurel.UnorderedCoreWithLaurelTypes) : IO Unit :=
+/-- Print a `LaurelProgram` that the Transparency pass has split into
+    `staticFunctions` and `staticProcedures`, for an idiomaticity golden. It drops
+    the prelude operator wrappers and prelude types by name so the golden shows
+    only what the snippet and the pass contribute, and prints the types, the
+    constants, the functions, then the procedures. -/
+def renderStaticFunctionsForIdiomaticity (p : Laurel.LaurelProgram) : IO Unit :=
   let procNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
   let typeNames := Laurel.coreDefinitionsForLaurel.types.map (·.name.text)
   IO.println (renderDecls (
-    (p.opaqueTypes.map Std.ToFormat.format)
-      ++ ((p.datatypes.filter (!typeNames.contains ·.name.text)).map Std.ToFormat.format)
+    ((p.types.filter (!typeNames.contains ·.name.text)).map Std.ToFormat.format)
       ++ (p.constants.map Std.ToFormat.format)
-      ++ ((p.functions.filter (!procNames.contains ·.name.text)).map Std.ToFormat.format)
-      ++ ((p.coreProcedures.filter (!procNames.contains ·.name.text)).map Std.ToFormat.format)))
+      ++ ((p.staticFunctions.filter (!procNames.contains ·.name.text)).map Std.ToFormat.format)
+      ++ ((p.staticProcedures.filter (!procNames.contains ·.name.text)).map Std.ToFormat.format)))
 
 /-- The generalized idiomaticity-test core. An idiomaticity test is only allowed
     to parse the program, resolve it, run ONE pass, and compare the result against
     an expected program — this does exactly that and nothing else.
 
-    It is parameterized over the pass's `Input`/`Output` so it covers a
-    `Program → Program` lowering pass, a `Program → UnorderedCore…` pass, and an
-    `UnorderedCore… → UnorderedCore…` pass alike:
+    It covers a pass over a front-end `LaurelProgram` and a pass over one the
+    Transparency pass has already split into `staticFunctions`/`staticProcedures`
+    alike. The pass runs on `.Unordered` of its input, and its output must be
+    `.Unordered` too:
 
     * `toInput` builds the pass-under-test's input from the resolved program and
-      its model. It is `fun p _ => p` for a `Program`-input pass. Where the pass's
+      its model. It is `fun p _ => p` for a pass over the resolved program. Where the pass's
       contract assumes a predecessor has already run (e.g. `EliminateDeterministicHoles`
       assumes `InferHoleTypes` has typed the holes, `LiftImperativeExpressions`
-      takes procedures already grouped into `functions`/`coreProcedures`),
+      takes procedures already split into `staticFunctions`/`staticProcedures`),
       `toInput` runs that predecessor — it prepares the input the pass requires,
       the same role `resolve` plays, so the test still pins ONE pass's output.
     * `render` prints the output for the golden.
@@ -149,8 +162,9 @@ def renderUnorderedCoreForIdiomaticity (p : Laurel.UnorderedCoreWithLaurelTypes)
     procedures it declares itself. Resolution errors are printed either way, so a
     snippet that does need the prelude says so in its golden rather than silently
     running the pass over an unresolved program. -/
-def runPassForIdiomaticityCore {Input Output : Type} (pass : Laurel.LaurelPass Input Output)
-    (toInput : Laurel.Program → Laurel.SemanticModel → Input) (render : Output → IO Unit)
+def runPassForIdiomaticityCore (pass : Laurel.LaurelPass)
+    (toInput : Laurel.LaurelProgram → Laurel.SemanticModel → Laurel.LaurelProgram)
+    (render : Laurel.LaurelProgram → IO Unit)
     (prelude : Bool) (options : Laurel.LaurelTranslateOptions) (program : StrataDDM.Program) :
     IO Unit := do
   let parsed ← translateLaurel program
@@ -158,16 +172,16 @@ def runPassForIdiomaticityCore {Input Output : Type} (pass : Laurel.LaurelPass I
   for e in resolved.errors do
     IO.println s!"resolution diagnostic: {e.message}"
   let (out, messages, _stats) :=
-    pass.run options (toInput resolved.program resolved.model) resolved.model
+    pass.run options (.Unordered (toInput resolved.program resolved.model)) resolved.model
   for m in messages do
     IO.println s!"{pass.name} diagnostic[{m.kind}]: {m.message}"
-  render out
+  render out.laurelProgram!
 
 /-- Idiomaticity driver for a `Program → Program` lowering pass: parse, resolve,
     run the pass, print the resulting program (prelude dropped). The common case;
     see `runPassForIdiomaticityCore` for the general contract, including when to
     pass `prelude := false`. -/
-public def runPassForIdiomaticity (pass : Laurel.LoweringPass) (program : StrataDDM.Program)
+public def runPassForIdiomaticity (pass : Laurel.LaurelPass) (program : StrataDDM.Program)
     (options : Laurel.LaurelTranslateOptions := {}) (prelude : Bool := true) : IO Unit :=
   runPassForIdiomaticityCore pass (fun p _ => p) renderProgramForIdiomaticity prelude options program
 
@@ -176,31 +190,32 @@ public def runPassForIdiomaticity (pass : Laurel.LoweringPass) (program : Strata
     that predecessor on the resolved program+model; the driver then runs `pass` on
     its result. The test still pins ONE pass's output — `prepare` prepares the
     input, as `resolve` does. -/
-public def runPassAfterForIdiomaticity (pass : Laurel.LoweringPass)
-    (prepare : Laurel.Program → Laurel.SemanticModel → Laurel.Program)
+public def runPassAfterForIdiomaticity (pass : Laurel.LaurelPass)
+    (prepare : Laurel.LaurelProgram → Laurel.SemanticModel → Laurel.LaurelProgram)
     (program : StrataDDM.Program) (options : Laurel.LaurelTranslateOptions := {}) : IO Unit :=
   runPassForIdiomaticityCore pass prepare renderProgramForIdiomaticity true options program
 
-/-- Idiomaticity driver for a pass that lowers a `Program` to core
-    (e.g. `transparencyPass`): parse, resolve, run the pass, print the resulting
-    core. -/
+/-- Idiomaticity driver for a pass that splits a program's procedures into
+    `staticFunctions` and `staticProcedures` (e.g. `transparencyPass`): parse,
+    resolve, run the pass, print the resulting functions and procedures. -/
 public def runProgramToCorePassForIdiomaticity
-    (pass : Laurel.LaurelPass Laurel.Program Laurel.UnorderedCoreWithLaurelTypes)
+    (pass : Laurel.LaurelPass)
     (program : StrataDDM.Program) (options : Laurel.LaurelTranslateOptions := {})
     (prelude : Bool := true) : IO Unit :=
-  runPassForIdiomaticityCore pass (fun p _ => p) renderUnorderedCoreForIdiomaticity prelude options program
+  runPassForIdiomaticityCore pass (fun p _ => p) renderStaticFunctionsForIdiomaticity prelude options program
 
-/-- Idiomaticity driver for a core-to-core pass (e.g. `functionalRewritePass`,
-    `liftImperativeExpressionsPass`). The pass's input is assembled from the
-    resolved program by `toCore` — the input-shaping the pass's contract assumes
-    (which bucket the procedures go in, whether returns are already eliminated),
-    not a second semantic pass. -/
+/-- Idiomaticity driver for a pass that runs after Transparency (e.g.
+    `functionalRewritePass`, `liftImperativeExpressionsPass`). The pass's input
+    is assembled from the resolved program by `toCore` — the input-shaping the
+    pass's contract assumes (whether a procedure goes in `staticFunctions` or
+    `staticProcedures`, whether returns are already eliminated), not a second
+    semantic pass. -/
 public def runCorePassForIdiomaticity
-    (pass : Laurel.LaurelPass Laurel.UnorderedCoreWithLaurelTypes Laurel.UnorderedCoreWithLaurelTypes)
-    (toCore : Laurel.Program → Laurel.SemanticModel → Laurel.UnorderedCoreWithLaurelTypes)
+    (pass : Laurel.LaurelPass)
+    (toCore : Laurel.LaurelProgram → Laurel.SemanticModel → Laurel.LaurelProgram)
     (program : StrataDDM.Program) (options : Laurel.LaurelTranslateOptions := {})
     (prelude : Bool := true) : IO Unit :=
-  runPassForIdiomaticityCore pass toCore renderUnorderedCoreForIdiomaticity prelude options program
+  runPassForIdiomaticityCore pass toCore renderStaticFunctionsForIdiomaticity prelude options program
 
 public def printGlobalParameterization (includeStaticFieldCount : Bool)
     (program : StrataDDM.Program) : IO Unit := do
@@ -210,12 +225,13 @@ public def printGlobalParameterization (includeStaticFieldCount : Bool)
   let first := Laurel.resolve laurelProgram
   for diagnostic in first.errors do
     IO.println s!"initial diagnostic: {diagnostic.message}"
-  let prepared := Laurel.eliminateValueInReturnsTransform first.program
+  let prepared := (Laurel.eliminateValueInReturnsTransform (.Unordered first.program)).laurelProgram!
   let preparedResult := Laurel.resolve prepared (some first.model)
   for diagnostic in preparedResult.errors do
     IO.println s!"pre-lowering diagnostic: {diagnostic.message}"
   let (lowered, diagnostics, _) :=
-    Laurel.globalParameterizationPass.run {} preparedResult.program preparedResult.model
+    Laurel.globalParameterizationPass.run {} (.Unordered preparedResult.program) preparedResult.model
+  let lowered := lowered.laurelProgram!
   for diagnostic in diagnostics do
     IO.println s!"lowering diagnostic: {diagnostic.message}"
   let second := Laurel.resolve lowered (some preparedResult.model)

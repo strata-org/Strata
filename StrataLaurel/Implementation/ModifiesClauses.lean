@@ -253,7 +253,7 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List Message :=
+def modifiesClausesTransform (model: SemanticModel) (program : LaurelProgram) (useEnumeratedFrame : Bool) : LaurelProgram × List Message :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
     match transformModifiesClauses model proc useEnumeratedFrame with
     | .ok proc' => (acc ++ [proc'], errs)
@@ -264,7 +264,7 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnum
 end -- public section
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
-public def modifiesClausesTransformPass : LoweringPass where
+public def modifiesClausesTransformPass : LaurelPass := .onUnordered {
   name := "ModifiesClausesTransform"
   creates := [
       NodeKind.Body.postconditions.cons,
@@ -276,11 +276,14 @@ public def modifiesClausesTransformPass : LoweringPass where
       -- Emitting one after the rename would name a wrapper that no longer exists.
       NodeKind.Pseudo.overload
     ]
-  unsupported := [NodeKind.Pseudo.implicitHeap]
+  unsupported := [
+      NodeKind.Pseudo.implicitHeap,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   removes := [NodeKind.Body.modifies.cons, NodeKind.Procedure.throwsOn.cons]
   documentation := "Translate modifies clauses into frame conditions on the contract."
-  needsResolves := true
-  run := fun options p m =>
+  needsResolves := true }
+  fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})
 

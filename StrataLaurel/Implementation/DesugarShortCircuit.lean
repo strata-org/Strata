@@ -52,23 +52,25 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
   | _ => expr
 
 /-- Desugar short-circuit operators in a program. -/
-def desugarShortCircuit (program : Program) : Program :=
+def desugarShortCircuit (program : LaurelProgram) : LaurelProgram :=
   -- Every static procedure is imperative now that Laurel `function`s are gone,
   -- and this pass runs before the lifting pass, so calls to
   -- them are still in expression position here. They therefore all count as
   -- imperative callees whose short-circuited operands must be guarded.
   let imperativeCallees := program.staticProcedures.map (·.name.text)
-  mapProgramStmtExpr (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
+  mapLaurelProgramStmtExpr (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section
 
 /-- Pipeline pass: desugar short-circuit operators. -/
-public def desugarShortCircuitPass : LoweringPass where
+public def desugarShortCircuitPass : LaurelPass := .onUnordered {
   name := "DesugarShortCircuit"
+  unsupported := [
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   creates := [NodeKind.StmtExpr.IfThenElse, NodeKind.Pseudo.statementExpression]
   removes := [NodeKind.Pseudo.imperativeShortCircuit]
-  documentation := "Rewrites a short-circuit boolean operator (`&&`, `||`, `=>`) into a conditional expression when its guarded operand contains an assignment or an imperative call. Short-circuits over pure operands are left alone, and the Core translator handles them. This must precede `LiftImperativeExpressions`, which would otherwise hoist the imperative call out of the branch that guards it."
-  run := fun _ p _ =>
-    (desugarShortCircuit p, [], {})
+  documentation := "Rewrites a short-circuit boolean operator (`&&`, `||`, `=>`) into a conditional expression when its guarded operand contains an assignment or an imperative call. Short-circuits over pure operands are left alone, and the Core translator handles them. This must precede `LiftImperativeExpressions`, which would otherwise hoist the imperative call out of the branch that guards it." }
+  fun _ p _ => (desugarShortCircuit p, [], {})
 
 end Strata.Laurel

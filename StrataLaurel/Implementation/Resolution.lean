@@ -8,7 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.MapStmtExpr
-public import StrataLaurel.Implementation.UnorderedCore
+public import StrataLaurel.Implementation.CoreWithLaurelTypes
 public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import StrataLaurel.Implementation.SemanticModel
@@ -22,7 +22,7 @@ import StrataLaurel.Implementation.PushOldInward
 /-!
 # Name Resolution Pass
 
-Turns a freshly parsed Laurel `Program` (where every `Identifier` has
+Turns a freshly parsed Laurel `LaurelProgram` (where every `Identifier` has
 `uniqueId := none`) into a program where every definition has a fresh numeric
 ID and every reference points to the ID of the definition it names. The pass
 also synthesizes a `HighType` for every `StmtExpr` and emits diagnostics for
@@ -125,7 +125,7 @@ public section
 /-- The output of the resolution pass. -/
 public structure ResolutionResult where
   /-- The program with unique IDs on all definition and reference nodes. -/
-  program : Program
+  program : LaurelProgram
   /-- Map from reference node ID to the definition it resolves to. -/
   model : SemanticModel
   /-- Diagnostics collected during resolution (e.g. unresolved references). -/
@@ -5308,7 +5308,7 @@ private def collectConstant (map : Std.HashMap Nat ResolvedNode) (c : Constant)
   | none => map
 
 /-- Build the refToDef map by walking the fully-resolved program (Phase 2). -/
-def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
+def buildRefToDef (program : LaurelProgram) : Std.HashMap Nat ResolvedNode :=
   let map : Std.HashMap Nat ResolvedNode := {}
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
@@ -5316,6 +5316,7 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
   -- A coroutine's name resolves to a `coroutineType` (it names a type in
   -- `co: c` and a constructor in `c(args)`); regular procedures resolve to
   -- `staticProcedure`.
+  let map := program.staticFunctions.foldl (collectProcedure · · .staticProcedure) map
   program.staticProcedures.foldl
     (collectProcedure · · (fun p => if p.is_coroutine then .coroutineType p else .staticProcedure p)) map
 
@@ -5401,15 +5402,15 @@ private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
 
 /-- One `Message` per diamond-inherited field access — a field reached via >1
     direct-parent path (see `isDiamondInheritedField`).
-    The total `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
+    The total `mapLaurelProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
     collector, so coverage can't silently regress: every procedure position (body,
     preconditions, decreases, invokeOn, axioms) across static AND instance procedures, and
     every sub-expression (quantifiers, `old`, `as`/`is`, ref-equality).
     Not covered: `constrained`-type constraint/witness and constant initializers —
     non-procedure positions that fail loud as `.strataBug` (no silent accept). Promoting to
     `.userError` needs bound-variable scoping verified first. -/
-private def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List Message :=
-  ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
+private def validateDiamondFieldAccesses (model : SemanticModel) (program : LaurelProgram) : List Message :=
+  ((mapLaurelProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
@@ -5529,7 +5530,7 @@ private def preRegisterDefinitions (types : List TypeDefinition)
 
     Idempotent: a re-resolution (`existingModel`) sees binders that already carry ids and leaves
     them alone, which is also what lets a lifted instance procedure keep its composite's ids. -/
-private def stampTypeParamIds (program : Program) : ResolveM Program := do
+private def stampTypeParamIds (program : LaurelProgram) : ResolveM LaurelProgram := do
   let stamp (tvs : List Identifier) : ResolveM (List Identifier) :=
     tvs.mapM fun tv =>
       match tv.uniqueId with
@@ -5547,12 +5548,13 @@ private def stampTypeParamIds (program : Program) : ResolveM Program := do
       let instProcs ← ct.instanceProcedures.mapM stampProc
       return .Composite { ct with typeArgs := typeArgs, instanceProcedures := instProcs }
     | other => pure other
+  let staticFunctions ← program.staticFunctions.mapM stampProc
   let staticProcs ← program.staticProcedures.mapM stampProc
-  return { program with types := types, staticProcedures := staticProcs }
+  return { program with types := types, staticFunctions, staticProcedures := staticProcs }
 
-private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
+private def preRegisterTopLevel (program : LaurelProgram) : ResolveM Unit :=
   preRegisterDefinitions program.types program.constants program.staticFields
-    program.staticProcedures
+    (program.staticFunctions ++ program.staticProcedures)
 
 /-! ## Exception-escape enforcement
 
@@ -6205,7 +6207,7 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
     computed over all procedures (static plus composite instance procedures) so
     the call-graph analysis matches `HeapParameterization`, which runs after
     instance procedures have been lifted into the static list. -/
-def validateOldUsage (model : SemanticModel) (program : Program) : List Message :=
+def validateOldUsage (model : SemanticModel) (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -6221,7 +6223,7 @@ private structure InitialEffectAnalysis where
   globals : GlobalEffectsByProcId
 
 private def analyzeInitialEffects (model : SemanticModel)
-    (program : Program) : InitialEffectAnalysis :=
+    (program : LaurelProgram) : InitialEffectAnalysis :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -6249,7 +6251,7 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
 /-- A file-scope global may not take a name in the compiler's namespace — one starting
     with `$` — because generated qualified global references (`$static.g`) are
     re-resolved after constrained-type lowering. -/
-private def validateGlobalNames (program : Program) : List Message :=
+private def validateGlobalNames (program : LaurelProgram) : List Message :=
   let globalErrors := program.staticFields.filterMap fun field =>
     if field.name.text.startsWith "$" then
       some (diagnosticFromSource field.name.source
@@ -6309,7 +6311,7 @@ private def validateGlobalNames (program : Program) : List Message :=
     so it is empty before resolution has stamped any, and it structurally misses
     type parameters, a constrained type's `valueName`, block labels, and binders
     inside a field initializer. -/
-private def declaredNames (program : Program) : List (String × String × FileRange) :=
+private def declaredNames (program : LaurelProgram) : List (String × String × FileRange) :=
   let ofId (kind : String) (name : Identifier) := (kind, name.text, name.source)
   -- Binders introduced *inside* an expression. Labels are the one name here that
   -- is a bare `String` rather than an `Identifier` (see `StmtExpr.Block`), so they
@@ -6403,7 +6405,7 @@ private def declaredNames (program : Program) : List (String × String × FileRa
 
     The one exception is `$result` as a procedure's *sole* output; see
     `resultOutputName`. -/
-def validateNoDollarNames (program : Program) : List Message :=
+def validateNoDollarNames (program : LaurelProgram) : List Message :=
   (declaredNames program).filterMap fun (kind, name, source) =>
     if !name.startsWith "$" then none
     else some (diagnosticFromSource source
@@ -6416,12 +6418,12 @@ private def globalEffectIdsFor (effects : Std.HashMap Nat (Std.HashSet Nat))
   | some id => effects.getD id {}
   | none => {}
 
-private def globalReaderIds (program : Program) (analysis : InitialEffectAnalysis)
+private def globalReaderIds (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     : Std.HashSet Nat :=
   program.staticFields.foldl (init := {}) fun ids field =>
     ids.union (globalEffectIdsFor analysis.globals.readers field)
 
-private def globalWriterIds (program : Program) (analysis : InitialEffectAnalysis)
+private def globalWriterIds (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     : Std.HashSet Nat :=
   program.staticFields.foldl (init := {}) fun ids field =>
     ids.union (globalEffectIdsFor analysis.globals.writers field)
@@ -6462,7 +6464,7 @@ private def isGlobalTarget (model : SemanticModel) (target : VariableMd) : Bool 
   | .Field _ _ | .Declare _ => false
 
 
-private def globalDependentIds (program : Program) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
+private def globalDependentIds (program : LaurelProgram) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
   (globalReaderIds program analysis).union (globalWriterIds program analysis)
 
 private def isGlobalUse (model : SemanticModel) (dependentIds : Std.HashSet Nat)
@@ -6482,7 +6484,7 @@ private def firstGlobalUseSource (model : SemanticModel) (dependentIds : Std.Has
 /-- Constrained predicates and witnesses are compiled into helper procedures
     before global lowering; those helpers cannot acquire hidden global state. -/
 private def validateConstrainedTypeGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let errorsIn (expr : StmtExprMd) : List Message :=
     match firstGlobalUseSource model dependentIds expr with
@@ -6497,7 +6499,7 @@ private def validateConstrainedTypeGlobalUse (model : SemanticModel)
 /-- Constants have no procedure context through which global lowering can thread
     hidden state, so any direct or transitive global dependency is unsupported. -/
 private def validateConstantInitializerGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   program.constants.filterMap fun constant => do
     let initializer ← constant.initializer
@@ -6823,7 +6825,7 @@ private def oldGlobalErrorsInExpr (model : SemanticModel)
 /-- Reject call shapes that cannot preserve global state and source evaluation
     order during parameterization. -/
 private def validateUnsupportedGlobalCalls (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let writerIds := globalWriterIds program analysis
   let dependentIds := writerIds.union (globalReaderIds program analysis)
   let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
@@ -6849,7 +6851,7 @@ private def validateUnsupportedGlobalCalls (model : SemanticModel)
     whether a postcondition's global denotes a write. Reject that ambiguous
     post-state contract instead of silently lowering it as an input-only read. -/
 private def validateBodilessGlobalPostconditions (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let usesGlobal (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
@@ -6897,7 +6899,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
     file-scope global, or a declaration on a procedure that *has* an
     implementation (where the effects are inferred from its statements, so a
     declaration is either redundant or a lie). -/
-private def validateDeclaredGlobalEffects (program : Program)
+private def validateDeclaredGlobalEffects (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let globalIds : Std.HashSet Nat :=
     program.staticFields.foldl (init := {}) fun ids f =>
@@ -6944,7 +6946,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
       set (some node.source)) expr |>.run none).2
 
 private def validateGlobalInitializers (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   program.staticFields.flatMap fun field =>
     match field.initializer with
@@ -6963,7 +6965,7 @@ private def validateGlobalInitializers (model : SemanticModel)
             MessageKind.userError]
         | none => [])
 
-private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalysis)
+private def entryUsedGlobals (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     (proc : Procedure) : List Field :=
   program.staticFields.filter fun field =>
     containsProcId (globalEffectIdsFor analysis.globals.readers field) proc.name ||
@@ -6987,7 +6989,7 @@ private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
     Covers the complement of `validateEntryContractGlobalUse` below, which reports a
     contract that *names* a global, so each clause yields one diagnostic. -/
 private def validateEntryProcedureContracts (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
@@ -7045,7 +7047,7 @@ private def validateEntryProcedureContracts (model : SemanticModel)
     contractErrors ++ nonWildcardErrors ++ missingWildcardErrors
 
 private def validateEntryContractGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   analysis.allProcs.flatMap fun proc =>
     if !proc.isInterpretEntry then [] else
@@ -7055,7 +7057,7 @@ private def validateEntryContractGlobalUse (model : SemanticModel)
         s!"the contract of entry procedure '{proc.name.text}' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see"
         MessageKind.userError)
 
-private def validateCallsToGlobalEntryProcedures (program : Program)
+private def validateCallsToGlobalEntryProcedures (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let globalEntryIds : Std.HashSet Nat :=
     analysis.allProcs.foldl (init := {}) fun ids proc =>
@@ -7077,7 +7079,7 @@ private def validateCallsToGlobalEntryProcedures (program : Program)
   analysis.allProcs.flatMap fun proc =>
     (entryContractExpressions proc ++ bodyExpressions proc).flatMap errorsIn
 
-private def validateEntryConstrainedGlobalUse (program : Program)
+private def validateEntryConstrainedGlobalUse (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let constrainedNames : Std.HashSet String :=
     program.types.foldl (init := {}) fun names td =>
@@ -7105,7 +7107,7 @@ private def validateEntryConstrainedGlobalUse (program : Program)
     moves them into the static list — the old post-lift `ContractPass` check saw
     them, so scanning static procedures only would miss an instance `invokeOn`
     procedure with an output. -/
-def validateInvokeOnOutputRefs (program : Program) : List Message :=
+def validateInvokeOnOutputRefs (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7133,7 +7135,7 @@ def validateInvokeOnOutputRefs (program : Program) : List Message :=
       at Core translation, so reject it here with a clean user error. Reported
       only for `.Regular` procedures, so legitimate uses inside a coroutine's
       clauses / body (kind `.Coroutine` at initial resolution) are exempt. -/
-def validateCoroutineClauses (program : Program) : List Message :=
+def validateCoroutineClauses (program : LaurelProgram) : List Message :=
   -- `oldGuarantee`/`oldRelies` markers anywhere in a regular procedure's
   -- expressions (body + specs), each pinned to its own source range.
   let oldMarkerErrors (proc : Procedure) : List Message :=
@@ -7244,7 +7246,7 @@ private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
     composite's multi-output `foo`, and no false negative from another
     composite's single-output `foo`. -/
 private def validateMultiOutputCallContexts (model : SemanticModel)
-    (program : Program) : List Message :=
+    (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7298,7 +7300,7 @@ def unannotatedDeclares (n : StmtExprMd) : List Message :=
     silently skip an unannotated declaration. Runs on every resolution, so
     the pipeline's re-resolves after each lowering pass also catch a pass
     that constructs an unannotated declaration. -/
-def validateFullyAnnotated (program : Program) : List Message :=
+def validateFullyAnnotated (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7317,12 +7319,12 @@ def validateFullyAnnotated (program : Program) : List Message :=
     c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
   let staticFieldDiags := program.staticFields.flatMap fun f =>
     f.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
-  (program.staticProcedures ++ instanceProcs).flatMap procDiags
+  (program.staticFunctions ++ program.staticProcedures ++ instanceProcs).flatMap procDiags
     ++ typeDiags ++ constantDiags ++ staticFieldDiags
 
 /-- A global-writing `invokeOn` needs an unbound hidden output unless its trigger
     already invokes a writer, which source validation rejects separately. -/
-private def validateInvokeOnGlobalWrites (program : Program)
+private def validateInvokeOnGlobalWrites (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let writerIds := globalWriterIds program analysis
   let invokeOnCallsWriter (proc : Procedure) : Bool := proc.invokeOn.any fun trigger =>
@@ -7338,13 +7340,13 @@ private def validateInvokeOnGlobalWrites (program : Program)
     else none
 
 /-- Run the full resolution pass on a Laurel program. -/
-public def resolve (program : Program) (existingModel: Option SemanticModel := none)
+public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
-  let phase1 : ResolveM Program := do
+  let phase1 : ResolveM LaurelProgram := do
     -- Type-param binders get their ids first, so pre-registration and `scopeTypeParams`
     -- name the same parameter with the same id (see `stampTypeParamIds`).
     let program ← stampTypeParamIds program
@@ -7352,8 +7354,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField "$static")
+    let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-    return { program with staticProcedures := staticProcs', staticFields := staticFields',
+    return { program with staticFunctions := staticFunctions', staticProcedures := staticProcs',
+                          staticFields := staticFields',
                           types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
@@ -7489,114 +7493,6 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
 
 -- `resolve` establishes the invariant that every `Declare` in its output is
 -- annotated: see `resolve_fullyAnnotated` in `ResolutionProps.lean`.
-
-/-! ## Resolution for UnorderedCoreWithLaurelTypes -/
-
-/--
-Resolve an `UnorderedCoreWithLaurelTypes` by converting to a flat `Program`,
-running the resolution pass, and reconstructing the result. Returns the
-resolved `UnorderedCoreWithLaurelTypes` and the `SemanticModel`.
-
-`additionalTypes` can supply extra type definitions (e.g. composite types) that
-are not part of the `UnorderedCoreWithLaurelTypes` but are needed for resolving
-`UserDefined` type references. These additional types should not be necessary
-but they are because certain type references have incorrectly not been updated.
--/
-public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
-    (existingModel : Option SemanticModel := none)
-    (additionalTypes : List TypeDefinition := [])
-    (gradualTypes : Std.HashSet String := {})
-    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
-    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
-    (reservedNames : Std.HashSet String := {})
-    : UnorderedCoreWithLaurelTypes × SemanticModel × Array Message :=
-  -- Phase 1: register all top-level names, then resolve references
-  let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
-    preRegisterDefinitions
-      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque
-        ++ uc.aliases.map .Alias)
-      uc.constants
-      []
-      (uc.functions ++ uc.coreProcedures)
-
-    -- Build type scopes for additional composite types (for field resolution)
-    for td in additionalTypes do
-      if let .Composite ct := td then
-        let s ← get
-        let mut typeScope : Scope := {}
-        for parent in ct.extending do
-          -- `extending` is `List HighTypeMd`; inherit the parent's field scope by base
-          -- name (`Base<T>` shares `Base`'s fields).
-          match highBaseName? parent.val with
-          | some pname =>
-            match s.typeScopes.get? pname.text with
-            | some parentScope =>
-              for (k, v) in parentScope do
-                typeScope := typeScope.insert k v
-            | none => pure ()
-          | none => pure ()
-        for field in ct.fields do
-          let qualifiedKey := ct.name.text ++ "." ++ field.name.text
-          match s.scope.get? qualifiedKey with
-          | some entry => typeScope := typeScope.insert field.name.text entry
-          | none => pure ()
-        modify fun s => { s with typeScopes := s.typeScopes.insert ct.name.text typeScope }
-
-    -- Resolve datatypes
-    let datatypes' ← uc.datatypes.mapM fun dt => do
-      match ← resolveTypeDefinition (.Datatype dt) with
-      | .Datatype dt' => pure dt'
-      | _ => pure dt -- unreachable
-
-    -- Opaque types carry nothing resolvable but their own name, which
-    -- `preRegisterDefinitions` above has already bound; re-resolve for the uniqueId.
-    let opaqueTypes' ← uc.opaqueTypes.mapM fun ot => do
-      match ← resolveTypeDefinition (.Opaque ot) with
-      | .Opaque ot' => pure ot'
-      | _ => pure ot -- unreachable
-
-    -- Resolve constants
-    let constants' ← uc.constants.mapM resolveConstant
-
-    -- Resolve functions and core procedures
-    let functions' ← uc.functions.mapM resolveProcedure
-    let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
-
-    return { uc with functions := functions', coreProcedures := coreProcedures',
-                     datatypes := datatypes', opaqueTypes := opaqueTypes',
-                     constants := constants' }
-
-  let nextId := existingModel.elim 1 (fun m => m.nextId)
-  -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
-  -- lattice so consistency/coercion treats them as the dynamic top (e.g. Python `Any`) and
-  -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
-  -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
-  -- differ between passes, producing spurious "resolution introduced this diagnostic".
-  -- Aliases go in too, or `unfoldMap` is empty for them: the name would resolve (registered
-  -- above) but never unfold, so a parameter declared with an alias fails to match the
-  -- primitive it expands to.
-  let typeLattice := { TypeLattice.ofTypes
-      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ uc.aliases.map .Alias
-        ++ additionalTypes) with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
-    reservedNames := reservedNames }
-  let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
-
-  -- Phase 2: build refToDef from the resolved unordered core
-  let program' : Program := {
-    staticProcedures := uc'.functions ++ uc'.coreProcedures,
-    staticFields := [],
-    types := uc'.datatypes.map .Datatype ++ uc'.opaqueTypes.map .Opaque ++ additionalTypes,
-    constants := uc'.constants
-  }
-  let refToDef := buildRefToDef program'
-
-  let model : SemanticModel := {
-    compositeCount := additionalTypes.length,
-    refToDef := refToDef,
-    nextId := finalState.nextId
-  }
-  (uc', model, finalState.errors)
 
 end -- public section
 end Strata.Laurel

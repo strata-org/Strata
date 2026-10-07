@@ -56,7 +56,7 @@ private def catchBindingTypes (proc : Procedure) : List String :=
     `$`-prefixed prelude wrapper; resolving a bare snippet would report each as
     undefined and bury the type being pinned. -/
 private def report (src : String) : IO Unit := do
-  let parsed ← (Strata.parseLaurelText "<catch-binding-type-test>" src : IO Program)
+  let parsed ← (Strata.parseLaurelText "<catch-binding-type-test>" src : IO LaurelProgram)
   let resolved := resolve (withBuiltins parsed)
   for p in resolved.program.staticProcedures do
     let tys := catchBindingTypes p

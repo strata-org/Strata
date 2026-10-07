@@ -1343,8 +1343,8 @@ def exceptionalNodeCount (proc : Procedure) : Nat :=
 
 /-- Transform a program by eliminating the exceptional channel from all static
     procedures. -/
-def eliminateExceptionsTransform (model : SemanticModel) (program : Program)
-    : Program × List Message :=
+def eliminateExceptionsTransform (model : SemanticModel) (program : LaurelProgram)
+    : LaurelProgram × List Message :=
   let init : EState := { model, lattice := TypeLattice.ofTypes program.types }
   let (procs, st) := (program.staticProcedures.mapM lowerProc).run init
   -- Backstop for the erasure invariant (see `exceptionalNodeCount`): a leftover
@@ -1380,7 +1380,7 @@ def eliminateExceptionsTransform (model : SemanticModel) (program : Program)
 end -- public section
 
 /-- Pipeline pass: eliminate exceptions. -/
-public def eliminateExceptionsPass : LoweringPass where
+public def eliminateExceptionsPass : LaurelPass := .onUnordered {
   name := "EliminateExceptions"
   creates := [
       NodeKind.StmtExpr.Block,
@@ -1398,7 +1398,10 @@ public def eliminateExceptionsPass : LoweringPass where
       NodeKind.StmtExpr.Try.finally?.some,
       NodeKind.Procedure.throwsType.some
     ]
-  unsupported := [NodeKind.StmtExpr.Return.value.some]
+  unsupported := [
+      NodeKind.StmtExpr.Return.value.some,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   needsResolves := true
   documentation := "Lowers the exceptional channel (throw, try/catch/finally, throws/throwsOn) into ordinary Laurel: labeled blocks, exits, and Result datatype construction. A `throws T` procedure returns a single `Result<Val, T>`; the in-flight exception rides in $thrown and a per-try `$exc_<i>` typed at that try's least-common-ancestor exception type, and the result is assembled after the body. Exception contracts become ordinary postconditions over $result. After this pass no Throw/Try remains and the throws type and the cases' postconditions are gone (each case's guard and frame targets are left for ModifiesClauses, which builds the per-case frames and the exhaustiveness claim)."
   -- The `return`-related and `contractPass` orderings matter because violating them
@@ -1407,7 +1410,8 @@ public def eliminateExceptionsPass : LoweringPass where
   -- making every `throwsOn` case pass vacuously. Neither trips the post-pass
   -- re-resolve gate, so `orderingRespected` is the only thing that catches a
   -- reordering.
-  run := fun _ p m =>
+  }
+  fun _ p m =>
     let (p', diags) := eliminateExceptionsTransform m p
     (p', diags, {})
 

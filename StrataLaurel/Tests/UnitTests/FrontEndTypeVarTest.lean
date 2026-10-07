@@ -50,7 +50,7 @@ private def varMd (v : Variable) : VariableMd := ⟨v, default⟩
     postcondition to ASSERT at the end of a body, and it is the temp's annotation —
     reconstructed from the argument, because the declared parameter type mentions a type
     variable — that carries the unstamped `T` into the helper call. -/
-private def frontEndTypeVarProgram (valueType : HighType) : Program :=
+private def frontEndTypeVarProgram (valueType : HighType) : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "f"
         typeArgs := [mkId "T"]

@@ -69,15 +69,15 @@ def transformProcedurePushOld (proc : Procedure) (inoutNames : List String) : Pu
 
 /-- Push every `StmtExpr.Old` inward until it immediately wraps an inout
     variable. (No-op `old` usage is diagnosed by `Resolution`.) -/
-def pushOldInward (program : Program) : Except String Program := do
-  let procsResult ← program.staticProcedures.foldlM (init := ([], ({}  : PushOldState))) fun (procs, state) proc => do
+def pushOldInward (program : Program) : Except String Program :=
+  (mapProgramProceduresM (m := StateT PushOldState (Except String)) (fun proc => do
     let inoutNames ← procInoutNames proc
-    let (proc', state') := (transformProcedurePushOld proc inoutNames).run state
-    pure (procs ++ [proc'], state')
-  pure { program with staticProcedures := procsResult.1 }
+    let (proc', state') := (transformProcedurePushOld proc inoutNames).run (← get)
+    set state'
+    pure proc') program).run' {}
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
-public def pushOldInwardPass : LoweringPass where
+public def pushOldInwardPass : LaurelPass where
   name := "PushOldInward"
   creates := [NodeKind.StmtExpr.Old.value.Var.Local]
   removes := [NodeKind.Pseudo.oldExpr]

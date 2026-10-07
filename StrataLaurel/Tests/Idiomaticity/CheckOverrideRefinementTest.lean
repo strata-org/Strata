@@ -43,14 +43,14 @@ namespace Strata.Laurel
     procedures (the appended checkers). -/
 private def printChecked := runPassForIdiomaticity checkOverrideRefinementPass
 
-private def methodOn (p : Program) (tyName : String) : Option Procedure :=
+private def methodOn (p : LaurelProgram) (tyName : String) : Option Procedure :=
   p.types.findSome? fun
     | .Composite ct => if ct.name.text == tyName then ct.instanceProcedures.head? else none
     | _ => none
 
 /-- Reproduces what a frontend with no source for a declaration hands the pass, which no Laurel
     source can express. -/
-private def blankMethodNames (tyName : String) (p : Program) : Program :=
+private def blankMethodNames (tyName : String) (p : LaurelProgram) : LaurelProgram :=
   { p with types := p.types.map fun
     | .Composite ct =>
       .Composite (if ct.name.text == tyName then
@@ -69,7 +69,8 @@ private def printAnchors (program : StrataDDM.Program) : IO Unit := do
     (bodyPostconditions p.body).head?.map (·.condition.source)
   for (label, prog) in [("override has a position", result.program),
                         ("override has none    ", blankMethodNames "Child" result.program)] do
-    let (checked, _, _) := checkOverrideRefinementPass.run {} prog result.model
+    let (checked, _, _) := checkOverrideRefinementPass.run {} (.Unordered prog) result.model
+    let checked := checked.laurelProgram!
     let anchor := (checked.staticProcedures.find? (·.name.text.endsWith "refines$post")).bind
       fun proc => (bodyPostconditions proc.body).head?.map (·.condition.source)
     let place :=

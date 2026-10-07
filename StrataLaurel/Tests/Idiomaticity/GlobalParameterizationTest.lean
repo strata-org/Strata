@@ -82,10 +82,11 @@ private def testConstrainedGlobalShadowing (program : StrataDDM.Program) : IO Un
   let first := resolve (withBuiltins parsed)
   let (unconstrained, constrainedDiagnostics) := constrainedTypeElim first.model first.program
   let second := resolve unconstrained (some first.model)
-  let prepared := eliminateValueInReturnsTransform second.program
+  let prepared := (eliminateValueInReturnsTransform (.Unordered second.program)).laurelProgram!
   let preparedResult := resolve prepared (some second.model)
   let (lowered, loweringDiagnostics, _) :=
-    globalParameterizationPass.run {} preparedResult.program preparedResult.model
+    globalParameterizationPass.run {} (.Unordered preparedResult.program) preparedResult.model
+  let lowered := lowered.laurelProgram!
   let finalResult := resolve lowered (some preparedResult.model)
   for diagnostic in first.errors ++ constrainedDiagnostics ++ second.errors ++
       preparedResult.errors ++ loweringDiagnostics ++ finalResult.errors do

@@ -482,9 +482,9 @@ variable
   (masterSynth : ∀ e, PostM (Synth.resolveStmtExpr e) (fun r => Clean r.1))
   (masterCheck : ∀ e ty, PostM (Check.resolveStmtExpr e ty) Clean)
 
-theorem validate_decompose (program : Program) :
+theorem validate_decompose (program : LaurelProgram) :
     validateFullyAnnotated program =
-      (program.staticProcedures ++ program.types.flatMap fun
+      (program.staticFunctions ++ program.staticProcedures ++ program.types.flatMap fun
         | .Composite ct => ct.instanceProcedures
         | _ => []).flatMap (fun proc =>
           (mapProcedureM (m := StateM (List Message))
@@ -1088,24 +1088,27 @@ theorem resolveField_clean (ownerName : Identifier) (f : Field) :
 /-! Final assembly -/
 
 /-- A program is Clean when every tree the validator walks is Clean. -/
-def CleanProgram (program : Program) : Prop :=
+def CleanProgram (program : LaurelProgram) : Prop :=
+  (∀ proc ∈ program.staticFunctions, CleanProcFields proc) ∧
   (∀ proc ∈ program.staticProcedures, CleanProcFields proc) ∧
   (∀ td ∈ program.types, CleanTypeDef td) ∧
   (∀ c ∈ program.constants, ∀ e ∈ c.initializer, Clean e) ∧
   (∀ f ∈ program.staticFields, ∀ e ∈ f.initializer, Clean e)
 
 open CollectEmits in
-theorem validate_nil_of_cleanProgram (program : Program)
+theorem validate_nil_of_cleanProgram (program : LaurelProgram)
     (h : CleanProgram program) : validateFullyAnnotated program = [] := by
-  obtain ⟨hprocs, htypes, hconsts, hfields⟩ := h
+  obtain ⟨hfuncs, hprocs, htypes, hconsts, hfields⟩ := h
   rw [validate_decompose]
   refine List.append_eq_nil_iff.mpr
     ⟨List.append_eq_nil_iff.mpr ⟨List.append_eq_nil_iff.mpr ⟨?_, ?_⟩, ?_⟩, ?_⟩
-  · -- procedures: static ++ instance
+  · -- procedures: static functions ++ static procedures ++ instance
     rw [List.flatMap_eq_nil_iff]
     intro proc hp
-    rcases List.mem_append.mp hp with hstat | hinst
-    · exact procWalk_nil_of_clean proc (hprocs proc hstat)
+    rcases List.mem_append.mp hp with hstatic | hinst
+    · rcases List.mem_append.mp hstatic with hfunc | hstat
+      · exact procWalk_nil_of_clean proc (hfuncs proc hfunc)
+      · exact procWalk_nil_of_clean proc (hprocs proc hstat)
     · rw [List.mem_flatMap] at hinst
       obtain ⟨td, htd, hproc⟩ := hinst
       have := htypes td htd
@@ -1145,15 +1148,16 @@ theorem validate_nil_of_cleanProgram (program : Program)
     exact hfields f hf e (Option.mem_toList.mp (by simpa using he))
 
 include masterSynth masterCheck in
-theorem phase1_clean (program : Program) :
+theorem phase1_clean (program : LaurelProgram) :
     PostM (do
       preRegisterTopLevel program
       let types' ← program.types.mapM resolveTypeDefinition
       let constants' ← program.constants.mapM resolveConstant
       let staticFields' ← program.staticFields.mapM (resolveField "$static")
+      let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
       let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-      return { staticProcedures := staticProcs', staticFields := staticFields',
-               types := types', constants := constants' : Program })
+      return { staticProcedures := staticProcs', staticFunctions := staticFunctions',
+               staticFields := staticFields', types := types', constants := constants' : LaurelProgram })
       CleanProgram := by
   refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun td _ =>
@@ -1163,8 +1167,10 @@ theorem phase1_clean (program : Program) :
   refine postM_bind (postM_mapM _ _ (fun f _ =>
       resolveField_clean masterCheck "$static" f)) fun staticFields' hfields => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
+      resolveProcedure_clean masterSynth masterCheck p)) fun staticFunctions' hfuncs => ?_
+  refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticProcs' hprocs => ?_
-  exact postM_pure ⟨hprocs, htypes, hconsts, hfields⟩
+  exact postM_pure ⟨hfuncs, hprocs, htypes, hconsts, hfields⟩
 
 include masterSynth masterCheck in
 /-- **Resolution establishes the fully-annotated invariant**, conditional on
@@ -1173,7 +1179,7 @@ include masterSynth masterCheck in
     program passes `validateFullyAnnotated` with no diagnostics. Holds for any
     lattice configuration (`gradualTypes`/`realizeCoercion`/`toBool`), since
     `PostM` quantifies over the entire resolve state. -/
-public theorem resolve_fullyAnnotated' (p : Program)
+public theorem resolve_fullyAnnotated' (p : LaurelProgram)
     (existingModel : Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
@@ -1223,7 +1229,7 @@ theorem master :
     program, `validateFullyAnnotated` reports nothing about the resolved
     output — every `Declare` node carries `some ty` (see the Var-Declare and
     Decl-Synth rules in `Resolution.lean`). -/
-theorem resolve_fullyAnnotated (p : Program)
+theorem resolve_fullyAnnotated (p : LaurelProgram)
     (existingModel : Option SemanticModel := none) :
     validateFullyAnnotated (resolve p existingModel).program = [] :=
   resolve_fullyAnnotated' master.1 master.2 p existingModel {} none none

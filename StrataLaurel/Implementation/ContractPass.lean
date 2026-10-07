@@ -533,7 +533,7 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
-def lowerContracts (model : SemanticModel) (program : Program) : Program :=
+def lowerContracts (model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
   let contractInfoMap := collectContractInfo program.staticProcedures
   -- `contractInfoMap` is built from the *original* procedures, before the helpers
   -- exist. That is what keeps a helper from being treated as a contracted
@@ -563,19 +563,19 @@ def lowerContracts (model : SemanticModel) (program : Program) : Program :=
 
   { program with staticProcedures := allProcs }
 
-public def contractPass : LoweringPass where
+public def contractPass : LaurelPass := .onUnordered {
   name := "Contracts"
   creates := [NodeKind.StmtExpr.Assert, NodeKind.StmtExpr.Assume]
   removes := [NodeKind.Procedure.preconditions.cons, NodeKind.Body.postconditions.cons]
   unsupported := [
       NodeKind.StmtExpr.Return,
-      NodeKind.Program.staticFields.cons,
-      NodeKind.Pseudo.overload
+      NodeKind.LaurelProgram.staticFields.cons,
+      NodeKind.Pseudo.overload,
+      NodeKind.LaurelProgram.staticFunctions.cons
     ]
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
-  needsResolves := true
-  run := fun _ p m =>
-    (lowerContracts m p, [], {})
+  needsResolves := true }
+  fun _ p m => (lowerContracts m p, [], {})
 
 end -- public section
 end Strata.Laurel

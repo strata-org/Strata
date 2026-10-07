@@ -253,14 +253,14 @@ def sampleField : Field where
   initializer := some sampleDoWhile
 
 /-- The sample program: one global, whose initializer is that loop. -/
-def sampleProgram : Program where
+def sampleProgram : LaurelProgram where
   staticProcedures := []
   staticFields := [sampleField]
   types := []
   constants := []
 
 /-- Every kind of the sample program is in the universal kind set. -/
-private theorem sampleProgram_contains : Program.Contains (fun _ => True) sampleProgram := by
+private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) sampleProgram := by
   have hleaf : ∀ (v : StmtExpr), stmtExprChildren v = [] → stmtExprTypes v = [] →
       Contains (fun _ => True) (⟨v, .unknown⟩ : StmtExprMd) := fun v hc ht =>
     .node _ (fun _ _ => trivial) (by simp [ht]) (by simp [hc])
@@ -276,7 +276,9 @@ private theorem sampleProgram_contains : Program.Contains (fun _ => True) sample
     rcases hc with hc | hc
     · exact hc ▸ hlit
     · exact hc ▸ hblock
-  refine ⟨⟨by simp [sampleProgram], by simp [sampleProgram]⟩, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨⟨by simp [sampleProgram], by simp [sampleProgram], by simp [sampleProgram]⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro hne; trivial
   · intro hne; trivial
   · intro fld hfld
     simp only [sampleProgram, List.mem_singleton] at hfld
@@ -295,8 +297,8 @@ private theorem sampleProgram_contains : Program.Contains (fun _ => True) sample
 theorem sampleProgram_doWhile_eliminated (opts : LaurelTranslateOptions)
     (model : SemanticModel) :
     Program.Contains (outSet (fun _ => True))
-      (eliminateDoWhilePass.run opts sampleProgram model).1 :=
-  eliminateDoWhile_spec _ opts model sampleProgram sampleProgram_contains
+      (eliminateDoWhilePass.run opts (.Unordered sampleProgram) model).1 :=
+  eliminateDoWhile_spec _ opts model (.Unordered sampleProgram) ⟨trivial, sampleProgram_contains⟩
 
 /-- The removed kind is absent from the output set whenever the input set already
     excludes it — so a `Contains (outSet …)` conclusion states its absence. -/

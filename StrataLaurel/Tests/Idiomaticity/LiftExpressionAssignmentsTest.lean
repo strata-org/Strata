@@ -34,7 +34,7 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseLaurelAndLift (roots : List String) (program : StrataDDM.Program) : IO Program := do
+private def parseLaurelAndLift (roots : List String) (program : StrataDDM.Program) : IO LaurelProgram := do
   let laurelProgram ← translateLaurel program
   let result := resolve (withBuiltins laurelProgram)
   match liftExpressionAssignments result.program result.model roots with
@@ -71,11 +71,11 @@ private def printLiftErrorUnresolved (roots : List String) (program : StrataDDM.
 private def printLiftPassDiagnosticsUnresolved (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let model := (resolve laurelProgram).model
-  let uc : UnorderedCoreWithLaurelTypes :=
-    { functions := [], coreProcedures := laurelProgram.staticProcedures
-      datatypes := [], opaqueTypes := [], constants := [] }
-  let (result, diags, _) := liftImperativeExpressionsPass.run {} uc model
-  IO.println s!"procedures unchanged: {result.coreProcedures.length == uc.coreProcedures.length}"
+  let uc : LaurelProgram :=
+    { staticProcedures := laurelProgram.staticProcedures, staticFields := [], types := [] }
+  let (result, diags, _) := liftImperativeExpressionsPass.run {} (.Unordered uc) model
+  let result := result.laurelProgram!
+  IO.println s!"procedures unchanged: {result.staticProcedures.length == uc.staticProcedures.length}"
   for d in diags do
     IO.println s!"{repr d.kind}: {d.message}"
 

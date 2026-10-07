@@ -2681,9 +2681,11 @@ structure Constant where
 A Laurel program consisting of static procedures, static fields, type
 definitions, and constants.
 -/
-structure Program where
+structure LaurelProgram where
   /-- Top-level procedures not attached to any type. -/
   staticProcedures : List Procedure
+  /-- Top-level functions. Empty in a front end's program; the Transparency pass fills it. -/
+  staticFunctions : List Procedure := []
   /-- Top-level fields (global variables). -/
   staticFields : List Field
   /-- User-defined type definitions (see the `TypeDefinition` constructors). -/

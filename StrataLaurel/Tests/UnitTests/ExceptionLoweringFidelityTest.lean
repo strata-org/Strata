@@ -53,7 +53,7 @@ private def modeName : ConditionMode → String
 /-- A throwing procedure *with a body*, whose single case postcondition is authored
     `.Assume`. With a body the pass computes `.Both` for everything it synthesizes, so
     this is exactly the case where an overwrite is observable. -/
-private def authoredAssume : Program :=
+private def authoredAssume : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "assumeOnly"
         inputs := []
@@ -96,7 +96,7 @@ authored ensures (third): Assume -/
 /-! ## 2. A wildcard case frame contributes no guarded group -/
 
 /-- A throwing procedure whose single case carries the given frame targets. -/
-private def procWithCaseFrame (mods : List StmtExprMd) : Program :=
+private def procWithCaseFrame (mods : List StmtExprMd) : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "caseFrame"
         inputs := []
@@ -143,7 +143,7 @@ wildcard beside a named target: 0 -/
 
 /-- A throwing procedure with two value outputs: unsupported, because the lowering
     packs a procedure's outcomes into one `Result`. -/
-private def twoValueOutputs : Program :=
+private def twoValueOutputs : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "twoOut"
         inputs := []

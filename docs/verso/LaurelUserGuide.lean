@@ -124,7 +124,7 @@ def laurel : Verso.Doc.Elab.CodeBlockExpanderOf LaurelCodeConfig
       else content
     unless config.unchecked do
       try
-        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.Program)
+        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.LaurelProgram)
       catch e =>
         throwErrorAt str m!"Laurel example failed to parse:\n{e.toMessageData}"
     ``(Verso.Doc.Block.code $(Lean.quote source))
@@ -2625,7 +2625,7 @@ Procedures are the main unit of specification and verification in Laurel.
 
 A Laurel program consists of procedures, global variables, type definitions, and constants.
 
-{docstring Strata.Laurel.Program}
+{docstring Strata.Laurel.LaurelProgram}
 
 ### File-scope globals
 
@@ -3983,7 +3983,7 @@ in its diagnostics block while still exiting `0`.
 ## The Lean API
 
 A tool that embeds Laurel rather than shelling out to the CLI uses the `Strata.Languages.Laurel`
-facade. `parseLaurelText` and `readLaurelTextFile` produce a `Laurel.Program`; `readLaurelIonFiles`
+facade. `parseLaurelText` and `readLaurelTextFile` produce a `Laurel.LaurelProgram`; `readLaurelIonFiles`
 and `readLaurelIonProgram` do the same from Ion; `laurelToCore` lowers one; and
 `Laurel.verifyProgram` translates and verifies in one step.
 

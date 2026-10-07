@@ -41,7 +41,7 @@ private def preludeProc (name : String) : Procedure :=
 
 /-- Four candidates; the user program below reaches the first three, each from a
     different part of a `throwsOn` case, and never mentions `unreachedByAnyClause`. -/
-private def prelude : Program :=
+private def prelude : LaurelProgram :=
   { staticProcedures := [
       preludeProc "reachedFromGuard",
       preludeProc "reachedFromEnsures",
@@ -53,7 +53,7 @@ private def prelude : Program :=
 
 /-- One throwing procedure whose *only* references to the prelude sit inside a
     `throwsOn` behavior case: its guard, its postcondition, and its frame. -/
-private def user : Program :=
+private def user : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "throwsAndFrames"
         inputs := []
