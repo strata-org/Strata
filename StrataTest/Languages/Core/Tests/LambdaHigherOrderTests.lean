@@ -409,51 +409,6 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify haveAliasPgm (options := .quiet)
 
-/-! ## Redex inside a locally-declared function (`funcDecl` statement).
-    `betaReduceProgram` recurses into `funcDecl` bodies — unlike
-    `Imperative.Stmt.mapExpr`, which treats `funcDecl` as a leaf. The factory
-    registers local-function bodies verbatim (`collectFuncDecls` in
-    `Verifier.lean`), so a residual redex there would reach the encoder
-    whenever the partial evaluator does not inline the call. The shape pin
-    below is the discriminating check: without the `funcDecl` recursion the
-    body stays `(fun c : int => c + c)(x + x)`. -/
-
-def nestedFuncDeclPgm :=
-#strata
-program Core;
-
-procedure TestNestedFuncDecl(out result : int)
-spec {
-  ensures result == 8;
-}
-{
-  function quad(x : int) : int { have c : int = int.add(x, x) in int.add(c, c) }
-  result := quad(2);
-};
-#end
-
-/-- info:
-Obligation: TestNestedFuncDecl_ensures_0
-Property: assert
-Result: ✅ pass
--/
-#guard_msgs in
-#eval Strata.Core.verify nestedFuncDeclPgm (options := .quiet)
-
--- Pin the reduced shape of the nested function body after the phase.
-/-- info: reduced nested body: int.add(int.add(x, x), int.add(x, x)) -/
-#guard_msgs in
-#eval show Std.Format from
-  match (Core.BetaReduce.betaReduceProgram (translate nestedFuncDeclPgm)).decls with
-  | [.proc proc _] =>
-    match proc.body with
-    | .structured (Imperative.Stmt.funcDecl decl _ :: _) =>
-      match decl.body with
-      | some b => f!"reduced nested body: {b}"
-      | none => f!"NO BODY"
-    | _ => f!"UNEXPECTED body shape"
-  | _ => f!"UNEXPECTED decl shape"
-
 /-! ## Recursive function with function-typed input -/
 
 def recHigherOrderPgm :=

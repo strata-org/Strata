@@ -295,13 +295,14 @@ spec {
 #guard typeChecks (monoBeforeTypeCheck headOfPgm)
 
 ---------------------------------------------------------------------
-/-! ### Example 7: an internal function declaration's types are substituted too
+/-! ### Example 7: a Lambda-valued local's types are substituted too
 
-The pass reuses the type checker's `Statement.subst`, whose `funcDecl` case
-substitutes the internal function's input / output / body types.  So even a
-statement-level `function` referencing the procedure's type parameter is
-monomorphized correctly (in the pipeline `LiftInternalFuncDecls` lifts these to
-the top level before this pass runs, so it does not arise there). -/
+Internal function syntax now translates to an ordinary function-typed `init`.
+The input below intentionally remains `function` syntax so this test covers
+both `funcDecl_statement` lowering and the subsequent monomorphization. The
+pass substitutes both the initializer's declared arrow type and the type
+annotations on its nested abstraction, so a local value referencing the
+procedure's type parameter is monomorphized consistently. -/
 
 private def internalFuncPgm :=
 #strata
@@ -319,7 +320,7 @@ info: program Core;
 type $__opaque_Q_T_0;
 procedure Q (x : $__opaque_Q_T_0, out r : $__opaque_Q_T_0)
 {
-  function f (y : $__opaque_Q_T_0) : $__opaque_Q_T_0 { y }
+  var f : $__opaque_Q_T_0 -> $__opaque_Q_T_0 := fun y : $__opaque_Q_T_0 => y;
   r := f(x);
 };
 -/
