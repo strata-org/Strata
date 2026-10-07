@@ -1865,12 +1865,23 @@ procedure comparisons(x: int, y: int, l: string, r: string)
   assert (x == y) == !(x != y);
   assert (x < y) ==> (x <= y);
   assert (x > y) ==> (x >= y);
-  assert (l ^ r) == (l ^ r)
+  assert (l ^ r) == (l ^ r);
+  assert (l < r) ==> (l <= r)
 };
 ```
 
-Equality requires operands of consistent types and is available at every type. Ordering requires
-numeric operands. `^` concatenates two strings.
+Equality requires operands of consistent types and is available at every type. `^` concatenates two
+strings.
+
+Ordering is available at `int`, `real`, `bv n` for `n` in 1, 8, 16, 32 and 64 — those comparisons are
+*signed* — and at `string`. On strings it is the lexicographic order over code points, so `"ab" < "abc"`
+and `"Z" < "a"`. A comparison whose operands have a *type variable* type selects no overload and is an
+ambiguity error, not a default.
+
+One practical caveat about string ordering: the laws that make it an *order* rather than just a
+relation — antisymmetry, totality, transitivity — are discharged by z3 and time out under cvc5, so a
+proof that leans on them wants `--solver z3`. Everything else about `<` on strings, including every
+counterexample, works under either.
 
 Equality means different things at different types, and the difference matters: on a datatype it
 is structural, and on a composite it is reference identity. See

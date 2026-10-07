@@ -230,7 +230,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
       else
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -244,7 +244,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
 
 open Lean Elab Command in
 /-- Generate safe signed division/modulo operations with both div-by-zero
@@ -283,8 +283,8 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
               intro p hp
               simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
               cases hp with
-              | inl h => subst h; native_decide
-              | inr h => subst h; native_decide)))
+              | inl h => subst h; cbv; grind
+              | inr h => subst h; cbv; grind)))
 
 end -- public meta section
 
@@ -361,11 +361,14 @@ def strReplaceFunc : WFLFunc CoreLParams :=
 def strAtFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
 
+-- `Str.Lt`/`Str.Le` carry concrete evaluators so the interpreter can reduce
+-- string comparisons. The evaluators use code-point lexicographic order and
+-- must agree with the SMT-LIB `str.<`/`str.<=` operators emitted by the encoder.
 def strLtFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.Lt" mty[string] mty[string] mty[bool]
+  binaryOp "Str.Lt" (fun (s t : String) => decide (s < t))
 
 def strLeFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.Le" mty[string] mty[string] mty[bool]
+  binaryOp "Str.Le" (fun (s t : String) => decide (s ≤ t))
 
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
