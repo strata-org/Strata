@@ -1015,3 +1015,164 @@ procedure shortFormThrows()
 -/
 #guard_msgs in
 #eval runExc shortFormThrowsPin
+
+/-! ### 15. A rethrow under a *narrowing* guard, seen by an enclosing `try`
+
+Case 5 also rethrows from a guarded handler, but there the guard type equals the
+`try`'s least-common-ancestor (`NetworkError`), so narrowing is invisible. Here
+the inner `try` throws two siblings of `Base`, so its own `$exc_1` is typed at
+the join `Base`, while the handler's guard is strictly narrower (`c is Narrow`).
+
+What this golden demonstrates is the *outer* try's exception local: `$exc_0` is
+typed `Narrow`, not `Base`. The inner handler's `throw c` runs only when
+`c is Narrow` holds, so it can only ever rethrow a `Narrow`, and that — together
+with the outer body's own `throw n` — is all that reaches the enclosing binding
+`d`. Typing the rethrow at the inner join instead would widen `$exc_0` to `Base`
+and the handler's `d#x` would stop resolving, since `x` is declared on `Narrow`.
+The widening is still visible where it belongs: propagating out of the inner
+`try` into the narrower `$exc_0` is a downcast (`assume … is Narrow` then `as`),
+exactly as in case 11. -/
+
+private def narrowedGuardedRethrow : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite Base {}
+composite Narrow extends Base { var x: int }
+composite Wide extends Base {}
+procedure rethrowUnderNarrowingGuard(pick: bool)
+  returns (r: int)
+  throws (e: Narrow)
+  opaque
+{
+  var n: Narrow := new Narrow;
+  var w: Wide := new Wide;
+  try {
+    try {
+      if pick then {
+        throw n
+      } else {
+        throw w
+      }
+    } catch c when c is Narrow {
+      throw c
+    } catch absorbed {
+      r := 1
+    };
+    throw n
+  } catch d {
+    r := d#x;
+    throw d
+  }
+};
+#end
+
+/--
+info: datatype Result<Val, Err> { Good(value: Val), Bad(err: Err) }
+composite Base { }
+composite Narrow extends Base { var x: int }
+composite Wide extends Base { }
+procedure rethrowUnderNarrowingGuard(pick: bool): (Result<int, Narrow>)
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is Narrow
+  modifies  when Result..isGood($result)
+{
+  var $thrown: bool := false;
+  var $exc: Narrow;
+  var $returning: bool := false;
+  var r: int;
+  {
+    {
+      var n: Narrow := new Narrow;
+      var w: Wide := new Wide;
+      var $exc_0: Narrow;
+      {
+        {
+          {
+            var $exc_1: Base;
+            {
+              {
+                {
+                  if pick
+                    then {
+                      {
+                        $exc_1 := n;
+                        $thrown := true;
+                        exit $try_1
+                      }
+                    }
+                    else {
+                      {
+                        $exc_1 := w;
+                        $thrown := true;
+                        exit $try_1
+                      }
+                    }
+                }
+              }$try_1;
+              if $thrown & $exc_1 is Narrow
+                then {
+                  $thrown := false;
+                  var $exc_c_2: Base := $exc_1;
+                  {
+                    $exc_1 := $exc_c_2;
+                    $thrown := true;
+                    exit $tryfin_1
+                  }
+                };
+              if $thrown & true
+                then {
+                  $thrown := false;
+                  {
+                    r := 1
+                  }
+                }
+            }$tryfin_1;
+            if $thrown
+              then {
+                assume $exc_1 is Narrow;
+                $exc_0 := $exc_1 as Narrow;
+                exit $try_0
+              };
+            if $returning
+              then {
+                exit $tryfin_0
+              };
+            $exc_0 := n;
+            $thrown := true;
+            exit $try_0
+          }
+        }$try_0;
+        if $thrown & true
+          then {
+            $thrown := false;
+            var $exc_d_3: Narrow := $exc_0;
+            {
+              r := $exc_d_3#x;
+              $exc_0 := $exc_d_3;
+              $thrown := true;
+              exit $tryfin_0
+            }
+          }
+      }$tryfin_0;
+      if $thrown
+        then {
+          $exc := $exc_0;
+          exit $exnexit
+        };
+      if $returning
+        then {
+          exit $exnexit
+        }
+    }
+  }$exnexit;
+  if $thrown
+    then {
+      $result := Bad($exc)
+    }
+    else {
+      $result := Good(r)
+    }
+};
+-/
+#guard_msgs in
+#eval runExc narrowedGuardedRethrow

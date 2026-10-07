@@ -1474,7 +1474,14 @@ private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
     can be thrown by the `try` body. Any other guard (`false`, a conjunction, a test
     of something else) is not recognized, so its clause's body is still resolved.
 
-    The mirror image of `catchGuardCatches`. -/
+    The mirror image of `catchGuardCatches`.
+
+    Keyed on the binding's `uniqueId`, so it only applies once the guard has been
+    resolved — `Check.tryCatch`. The pre-resolution walk in `collectThrownTypes`
+    sees a binding that has no `uniqueId` yet and must use the name-keyed
+    `catchGuardNeverHoldsNamed` below instead. Both exist on purpose: this one is
+    the stricter of the two (an `uniqueId` match is immune to shadowing), so the
+    resolved site keeps using it. -/
 private def catchGuardNeverHolds (lattice : TypeLattice) (bindingId : Nat)
     (bindTy : HighTypeMd) (pred : StmtExprMd) : Bool :=
   match _h : pred.val with
@@ -1495,6 +1502,65 @@ private def catchGuardNeverHolds (lattice : TypeLattice) (bindingId : Nat)
     all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
+
+/-- `catchGuardNeverHolds` keyed on the binding's *name* rather than its
+    `uniqueId`, for `collectThrownTypes`: that traversal runs before the clause
+    bindings are defined, so `binding` carries no `uniqueId` to match on and the
+    id-keyed variant above would never fire. The recognized guard shapes and the
+    `TypeLattice.unrelatedToCatchBinding` test are identical.
+
+    Matching a name is the weaker test — an inner declaration could shadow the
+    binding and make a guard look like a test of it — so this is used only where
+    an `uniqueId` is not yet available. -/
+private def catchGuardNeverHoldsNamed (lattice : TypeLattice) (binding : Identifier)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Bool :=
+  match _h : pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local id) => id.text == binding.text && lattice.unrelatedToCatchBinding bindTy ty
+    | _ => false
+  | .StaticCall callee [p1, p2] _ =>
+    match Operation.ofProcName? callee.text with
+    | some .Or | some .OrElse =>
+      catchGuardNeverHoldsNamed lattice binding bindTy p1
+        && catchGuardNeverHoldsNamed lattice binding bindTy p2
+    | _ => false
+  | _ => false
+  termination_by sizeOf pred
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- The type a `catch` guard narrows its binding to, when that is at least as
+    specific as the binding's own type. `c is T` gives `T`; anything else gives
+    `none`, so the caller falls back to the join.
+
+    Used by `collectThrownTypes` to type a guarded clause's view of its binding:
+    the clause only ever runs when the guard holds, so a rethrow inside it can
+    only rethrow the narrowed type, not the whole join of what the `try` body
+    throws.
+
+    Keyed on the binding's *name* for the same reason
+    `catchGuardNeverHoldsNamed` is: that traversal runs before the clause
+    bindings are defined, so there is no `uniqueId` to match on.
+
+    The `isSubtype` test is what keeps this monotone. A guard may be *wider*
+    than the binding (`bindTy = A`, guard `c is Base`), and taking the guard
+    type there would widen the contribution rather than narrow it; the test
+    rejects that case, so the type returned is never wider than the join. Only a
+    single `.IsType` is recognized — a disjunction such as `c is A || c is B`
+    narrows to no single type, so it falls back to the join. -/
+private def catchGuardNarrowedType? (lattice : TypeLattice) (binding : Identifier)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Option HighTypeMd :=
+  match pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local n) =>
+      if n.text == binding.text && isSubtype lattice ty bindTy then some ty else none
+    | _ => none
+  | _ => none
 
 /-- Whether a `catch` clause definitely catches every value of type `ty`.
     An absent guard is a catch-all. -/
@@ -1532,10 +1598,24 @@ private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTy
     rather than letting the clause be dropped quietly. -/
 private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : StmtExprMd)
     : ResolveM (List HighTypeMd) := do
-  -- "Cannot be determined" includes a type that already resolved to `Unknown` (a
-  -- dangling reference, diagnosed elsewhere): it denotes no type, so it must stay
-  -- out of the join — mixed in, it would turn a perfectly good set of thrown
-  -- composites into a spurious "no common ancestor".
+  -- Only `Unknown` stays out of the join: a dangling reference, diagnosed elsewhere,
+  -- denoting no type. Mixed into the join it would make a perfectly good set of thrown
+  -- types look irreconcilable.
+  --
+  -- A type variable is NOT set aside, even though `exceptionEscapes` sets one aside.
+  -- `T` is a real type here — the procedure's own bound parameter — and it is the
+  -- binding's type for a `try` whose body throws only `T`. Deferring it to the
+  -- post-`MonomorphizeComposites` re-resolution would make monomorphization decide the
+  -- semantics, which it must not: it specializes a program, it does not change what the
+  -- program means. It also would not work. Cloning is driven by generic COMPOSITES, so
+  -- a `g<T>(x: T) throws (e: T)` is never cloned, nothing ever makes its binding
+  -- concrete, and the handler would be dropped outright.
+  --
+  -- The consequence is that a `T` alongside a concrete thrown type has no join, and that
+  -- is the honest answer rather than a defect: pre-monomorphization `T` could be
+  -- instantiated at anything, so no single binding type can be known to receive both.
+  -- Picking the concrete one would accept a program in which the handler binds `Err`
+  -- while holding a `T` value.
   let determinate (ty? : Option HighTypeMd) : Option HighTypeMd :=
     ty?.filter (fun t => !(t.val matches .Unknown))
   let operandType (op : StmtExprMd) : ResolveM (Option HighTypeMd) := do
@@ -1613,14 +1693,44 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
   | .ProveBy v pf => pure ((← collectThrownTypes env v) ++ (← collectThrownTypes env pf))
   | .Try body catches finally? =>
     let ff ← match _hf : finally? with | some f => collectThrownTypes env f | none => pure []
-    let cc ← catches.attach.mapM (fun ⟨c, _⟩ => collectThrownTypes env c.body)
     let bodyThrows ← collectThrownTypes env body
+    let lattice := (← get).typeLattice
+    -- A handler sees its own binding, so a rethrow (`catch c { throw c }`) has a type:
+    -- the binding's, which is the join of what this `try`'s body throws — the same type
+    -- `Check.tryCatch` will give it. Without this the rethrow contributes nothing and an
+    -- enclosing `catch` ends up untyped.
+    --
+    -- A clause whose guard can never hold for that binding type is skipped
+    -- entirely: it never runs, so nothing in it (a rethrow included) can reach an
+    -- enclosing `catch`. This mirrors `Check.tryCatch`, which discards such a
+    -- body unresolved (see its `guardNeverHolds`). Keyed on the binding's name,
+    -- not its `uniqueId`, because the clause bindings are not defined yet here.
+    --
+    -- A clause that is NOT skipped but whose guard narrows the binding
+    -- contributes only the NARROWED type: it runs only when the guard holds, so
+    -- that is all a rethrow in it can rethrow. Contributing the whole join
+    -- instead would widen an enclosing `catch`'s binding past what can actually
+    -- reach it — enough to stop a field read on the enclosing binding from
+    -- resolving. `catchGuardNarrowedType?` only ever returns a subtype of the
+    -- join, so this can add precision but never take any away.
+    let cc ← catches.attach.mapM (fun ⟨c, _⟩ =>
+      match lattice.commonAncestorType bodyThrows with
+      | some bindTy =>
+        let neverHolds := match c.predicate with
+          | some p => catchGuardNeverHoldsNamed lattice c.binding bindTy p
+          | none => false
+        if neverHolds then pure []
+        else
+          let clauseTy := match c.predicate with
+            | some p => (catchGuardNarrowedType? lattice c.binding bindTy p).getD bindTy
+            | none => bindTy
+          collectThrownTypes (env.insert c.binding.text clauseTy) c.body
+      | none => collectThrownTypes env c.body)
     -- Only what escapes this nested `try` can reach an outer `catch` binding, so
     -- drop the body throws its own catches provably absorb (mirroring
     -- `exceptionEscapes`); otherwise an inner-handled type would pollute the
     -- outer binding's least-common-ancestor and could spuriously report "no
     -- common ancestor". Handler and `finally` throws still escape outward.
-    let lattice := (← get).typeLattice
     let residual := bodyThrows.filter fun t => !catches.any (fun c => clauseCatches lattice c t)
     pure (residual ++ cc.flatten ++ ff)
   | .Block stmts _ =>
