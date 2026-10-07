@@ -648,8 +648,6 @@ procedure readG() returns (r: int) { return g };
 info: procedure wrapperInput($global_g: int, g: int)
   returns (r: int)
   requires nat$constraint($global_g)
-  opaque
-  ensures nat$constraint(r)
 {
   r := readG($global_g);
   return

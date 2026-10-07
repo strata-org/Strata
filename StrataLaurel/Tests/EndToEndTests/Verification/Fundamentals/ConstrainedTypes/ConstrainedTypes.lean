@@ -71,6 +71,26 @@ procedure reassignInvalid()
 //^^^^^^^ error: assertion does not hold
 };
 
+// Holes in constrained declarations
+
+procedure nondetHoleAtConstrainedType()
+  opaque
+{
+  var x: nat := <??>;
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert x >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure detHoleAtConstrainedType()
+  opaque
+{
+  var x: nat := <?>;
+//^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert x >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
   opaque
@@ -200,6 +220,82 @@ procedure captureTest(y: haslarger)
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold
 };
+
+// A TRANSPARENT procedure returning a constrained type stays transparent, so the
+// caller sees the body and can reason about the VALUE — not merely that it is
+// valid. That is what makes `double(n) == n + n` provable here.
+procedure double(n: nat) : nat
+{
+  return n + n
+};
+procedure callerSeesValue(n: nat)
+  opaque
+{
+  assert double(n) == n + n
+};
+
+// A transparent procedure's constrained output is checked at the definition, by the
+// generated `$constraintLemma_badDouble`: `n - 1` leaves nat's range for n == 0.
+procedure badDouble(n: nat) : nat
+//                            ^^^ error: assertion does not hold
+{
+  return n - 1
+};
+
+// And enforced again wherever the value is relied on. Assigning to a
+// constrained-typed variable asserts it...
+procedure badDoubleAssignCaught(n: nat)
+  opaque
+{
+  var y: nat := badDouble(n)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+// ...and a constrained-typed parameter checks the callee's generated requires.
+procedure badDoubleArgCaught(n: nat) returns (r: int)
+  opaque
+{
+  var x: int := takesNat(badDouble(n));
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+  return x
+};
+
+// A quantifier over a constrained binder in a `requires` keeps its injected
+// constraint, so `p` holds for every `nat` and the body's use of it is sound;
+// without that injection the binder would range over all `int`.
+procedure quantifiedPrecondition(n: nat, p: bool) : nat
+  requires p == forall(m: nat) => m >= 0
+{
+  return n
+};
+procedure quantifiedPreconditionHolds(n: nat) : int
+  opaque
+{
+  var r: int := quantifiedPrecondition(n, true);
+  return r
+};
+
+// The generated lemma binds the source procedure's TYPE PARAMETERS. Its inputs
+// mirror `countOf`'s, so they mention `T`; without `typeArgs := proc.typeArgs` the
+// lemma reaches Core with `T` free and is rejected outright:
+//   type variables [T] appear in the signature but are not declared in typeArgs []
+procedure countOf<T>(x: T) : nat
+{
+  return 0
+};
+procedure usesCountOf(b: bool)
+  opaque
+{
+  assert countOf(b) == 0
+};
+
+// The constraint is still checked for a polymorphic procedure, not merely
+// well-formed: `-1` leaves nat's range regardless of `T`.
+procedure badCountOf<T>(x: T) : nat
+//                              ^^^ error: assertion does not hold
+{
+  return 0 - 1
+};
 #end
 
 -- A constrained type's base can be a generic composite instantiation: `Box<int>` is
@@ -243,4 +339,21 @@ procedure readsConstrainedValue(c: CW) returns (r: int)
 {
   r := c
 };
+#end
+
+-- A virtual method that is TRANSPARENT with a constrained output, reachable only because
+-- a transparent body with a constrained output is not demoted to opaque.
+-- `LiftInstanceProcedures` splits it into `T$m$impl` and a `T$m` dispatcher with
+-- `{ proc with … }`, so the two share their output parameter's `uniqueId`.
+-- `FunctionalRewrite` names an unassigned output's hole after that id, and the hole is a
+-- GLOBAL procedure, so the id alone mints the same name twice and resolution reports a
+-- duplicate definition.
+--
+-- Guards the owner-qualified hole name in `FunctionalRewrite.declHoleName`.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained int32c = v: int where v >= -2147483648 && v <= 2147483647 witness 0
+composite BaseH { procedure compute(self: BaseH) : int32c { return 1 }; }
+composite ChildH extends BaseH { procedure compute(self: ChildH) : int32c { return 2 }; }
 #end

@@ -124,6 +124,10 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     ⟨.Quantifier mode param' trigger injected, source⟩
   | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source⟩
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
+  -- `Resolution.Check.holeNone` records the expected type on an untyped hole in check
+  -- position. Resolve that annotation together with the surrounding declaration so no
+  -- constrained type remains after this pass. This applies to both hole kinds.
+  | .Hole det ty => ⟨.Hole det (ty.map (resolveType ptMap ·)), source⟩
   | _ => expr
 
 /-- Per-node constrained-type elimination, applied bottom-up (with flattening)
@@ -198,11 +202,12 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
   let body' := match proc.body with
-  | .Transparent bodyExpr =>
-    let body := elimStmts ptMap model bodyExpr
-    if outputEnsures.isEmpty then .Transparent body
-    else
-      .Opaque outputEnsures (some body) []
+  -- A transparent body stays transparent: demoting it to `.Opaque` to carry
+  -- `outputEnsures` would hide the body callers need to reason about the value
+  -- produced. `.Transparent` has nowhere to put a postcondition, so the outputs'
+  -- type constraints are discharged separately, by the lemma
+  -- `mkOutputConstraintLemma` generates.
+  | .Transparent bodyExpr => .Transparent (elimStmts ptMap model bodyExpr)
   -- Output type-constraints go FIRST, before the user's own `ensures`. The order
   -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
   -- postcondition is well-formed given its outputs' type constraints --
@@ -238,6 +243,100 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
     preconditions := []
     decreases := none }
+
+/-- `ContractPass` turns an `invokeOn` trigger plus `ensures` into
+
+      forall (o: C) { o#f } => T$constraint(o#f)
+
+    `elimNode` already restates this at each read, as a value-block
+    `{ assume T$constraint(read); read }`. A value-block needs a statement position, so
+    it reaches neither a loop invariant nor across a call -- a caller of a transparent
+    procedure sees the body as an expression. The axiom is a proposition, so it holds in
+    both.
+
+    Built as `invokeOn` + `ensures` rather than by populating `Procedure.axioms`
+    directly, so the heap read reaches `HeapParameterization` in an ordinary spec
+    field of a procedure that has a parameter to thread `$heap` through. Written
+    straight into `axioms` here, the read is in a slot no pass threads the heap into
+    and Core fails with `Cannot find this fvar in the context! $heap`.
+
+    Triggered on the field read itself, so it instantiates where a read appears
+    rather than for every object of type `C`.
+
+    The composite and field names are joined with `$`, not `_`: a `_` separator makes
+    `A_b.c` and `A.b_c` mint the same name, and underscores are common enough in real
+    names for that to collide in ordinary code. `$` only collides for a name that itself
+    contains `$`, which the duplicate-definition diagnostic already tells the author to
+    rename, and matches `MonomorphizeComposites`' `$aN$` tags. -/
+private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
+    (ct : CompositeType) : List Procedure :=
+  let src := ct.name.source
+  let objName : Identifier := mkId "$o"
+  let objRef : StmtExprMd := ⟨.Var (.Local objName), src⟩
+  ct.fields.filterMap fun f =>
+    let fieldRead : StmtExprMd := ⟨.Var (.Field objRef f.name), src⟩
+    (constraintCallForExpr ptMap f.type.val fieldRead (src := src)).map fun constraint =>
+      { name := mkId s!"$fieldConstraint_{ct.name.text}${f.name.text}"
+        inputs := [{ name := objName, type := ⟨.UserDefined ct.name, src⟩ }]
+        outputs := []
+        body := .Opaque [{ condition := constraint }] none []
+        preconditions := []
+        decreases := none
+        invokeOn := some fieldRead }
+
+/-- Discharge a TRANSPARENT procedure's output type-constraints in a separate lemma
+    procedure: call it under its own preconditions and assert each constrained
+    output's constraint on the result.
+
+    A transparent body must stay transparent -- the caller needs it to reason about
+    the value produced, which an `ensures` cannot supply -- so the obligation cannot
+    ride along as a postcondition and is checked here instead, once.
+
+    Depends on the per-field axiom above: without it a body returning a constrained
+    field read cannot be shown to satisfy the constraint from outside.
+
+    Every output is bound, since a call yields all of them, and `none` when no output
+    is constrained so ordinary procedures gain nothing. Assertions are anchored at the
+    output's type, so a bad return is reported on the return type the reader wrote.
+
+    `typeArgs` carries the source procedure's type parameters, for the same reason
+    `ContractPass.mkConditionProc` does: the mirrored inputs of a polymorphic
+    procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
+    "type variables [T] appear in the signature but are not declared in typeArgs". -/
+private def mkOutputConstraintLemma (ptMap : ConstrainedTypeMap)
+    (proc : Procedure) : Option Procedure :=
+  let src := proc.name.source
+  let isConstrained (p : Parameter) : Bool :=
+    (constraintCallFor ptMap p.type.val p.name (src := src)).isSome
+  if !(proc.outputs.any isConstrained) then none else
+  let inputRequires : List Condition := proc.inputs.filterMap fun p =>
+    (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
+      fun c => { condition := c }
+  let lemmaVar (p : Parameter) : Identifier := mkId s!"$lemma_{p.name.text}"
+  let targets : List VariableMd := proc.outputs.map fun p =>
+    ⟨.Declare ⟨lemmaVar p, some (resolveType ptMap p.type)⟩, src⟩
+  let call : StmtExprMd :=
+    ⟨.StaticCall proc.name (proc.inputs.map fun p => ⟨.Var (.Local p.name), src⟩) [], src⟩
+  let bind : StmtExprMd := ⟨.Assign targets call, src⟩
+  let asserts : List StmtExprMd := (proc.outputs.filter isConstrained).filterMap fun p =>
+    (constraintCallFor ptMap p.type.val (lemmaVar p) (src := p.type.source)).map
+      (⟨.Assert · none, p.type.source⟩)
+  some <| mapProcedureM (m := Id) (mapStmtExpr (resolveExprNode ptMap))
+    { name := mkId s!"$constraintLemma_{proc.name.text}"
+      typeArgs := proc.typeArgs
+      inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
+      outputs := []
+      body := .Opaque [] (some ⟨.Block (bind :: asserts) none, src⟩) []
+      preconditions := inputRequires ++ proc.preconditions
+      decreases := none }
+
+/-- The output-constraint lemma for a procedure that needs one: a transparent body
+    with at least one constrained output. -/
+private def outputConstraintLemmaFor (ptMap : ConstrainedTypeMap)
+    (proc : Procedure) : Option Procedure :=
+  match proc.body with
+  | .Transparent _ => mkOutputConstraintLemma ptMap proc
+  | _ => none
 
 /-- Eliminate constrained types within a composite type definition: resolve
     constrained field types to their base types and run constrained type
@@ -299,6 +398,8 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
+  let fieldAxiomProcedures := program.types.flatMap fun
+    | .Composite ct => mkFieldConstraintProcs ptMap ct | _ => []
   let instanceProcedures := program.types.flatMap fun
     | .Composite composite => composite.instanceProcedures
     | _ => []
@@ -306,10 +407,13 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
   let effects := computeGlobalEffectsByProcId model allProcedures program.staticFields
   let addGlobalConditions :=
     addConstrainedGlobalConditions ptMap effects program.staticFields
+  let prepared := program.staticProcedures.map addGlobalConditions
+  let outputConstraintLemmas := prepared.filterMap (outputConstraintLemmaFor ptMap)
   ({ program with
     staticProcedures := constraintProcs ++
-      program.staticProcedures.map (elimProc ptMap model ∘ addGlobalConditions)
-                        ++ witnessProcedures
+      prepared.map (elimProc ptMap model)
+                        ++ witnessProcedures ++ fieldAxiomProcedures
+                        ++ outputConstraintLemmas
     staticFields := program.staticFields.map fun field =>
       { field with
         type := resolveType ptMap field.type
