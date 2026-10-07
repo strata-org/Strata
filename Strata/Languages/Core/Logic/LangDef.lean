@@ -90,6 +90,8 @@ structure InitEnvWF (params : InitEnvWFParams)
   defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every init-type the statement declares has a value witness in `ρ`'s factory. -/
+  initTypesInhabited : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
     statements `bss` from env `ρ`. -/
@@ -111,6 +113,8 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
   defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every init-type the block declares has a value witness in `ρ`'s factory. -/
+  initTypesInhabited : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss
 
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core

@@ -23,7 +23,7 @@ pinned there too.)
 
 Field targets go through Laurel's heap parameterization: `EliminateIncrDecrAndCompoundAssign`
 (pass 1) lowers `(c#n) += e` to `c#n := c#n + e`; `HeapParameterization` (pass 5)
-rewrites the field-assign into `$tmp`/`$heap` local-target sequences, so by the
+rewrites the field-assign into `$writeValue`/`$heap` local-target sequences, so by the
 time `LiftImperativeExpressions` (pass 11) runs every assignment target is a
 local. `c#n += e` parses paren-free because `fieldAccess` (prec 95) binds tighter
 than `+=` (prec 10).

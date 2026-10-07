@@ -2266,23 +2266,22 @@ theorem HavocVarsCons {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' σ'' : S
   rw [Heq]
   exact HavocVarsApp Hv1 Hv2
 
-theorem HavocVarsId {P : PureExpr} [HasVal P] {f : P.Factory} {σ : SemanticStore P} {vs : List P.Ident} :
-  WellFormedStore σ f →
-  isDefined σ vs →
-  HavocVars f σ vs σ := by
-  intros Hwf Hdef
+/-- A store can havoc a list of typed slots to their existing values. -/
+theorem HavocVarsId {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} {vs : List P.Ident}
+    (htyped : ∀ x ∈ vs, ∃ v ty,
+      σ x = some v ∧ HasVal.valueOfTy f v ty) :
+    HavocVars f σ vs σ := by
   induction vs with
   | nil => constructor
-  | cons h t ih =>
-    have Hh := Hdef h List.mem_cons_self
-    rw [Option.isSome_iff_exists] at Hh
-    obtain ⟨v', heq⟩ := Hh
-    apply HavocVars.update_some (σ':=σ) (v:=v')
-    · exact UpdateState.update heq heq (fun y _ => rfl)
-    · exact Hwf h v' heq
+  | cons x xs ih =>
+    obtain ⟨v, ty, hx, hv⟩ := htyped x List.mem_cons_self
+    apply HavocVars.update_some (σ' := σ) (v := v)
+    · exact UpdateState.update hx hx (fun _ _ => rfl)
+    · exact ⟨v, ty, hx, hv, hv⟩
     · apply ih
-      intro v Hin
-      exact Hdef v (List.mem_cons_of_mem _ Hin)
+      intro y hy
+      exact htyped y (List.mem_cons_of_mem x hy)
 
 theorem TouchVarsId :
   isDefined σ vs →
@@ -2437,21 +2436,25 @@ theorem HavocVarsDefMonotone {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' :
   apply UpdateStateDefMonotone <;> assumption
   | update_none => simp_all
 
-theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vars : List P.Ident} : HavocVars f σ vars σ' →
-  ∃ modvals, UpdateStates σ vars modvals σ' ∧ ∀ v, v ∈ modvals → HasVal.value f v := by
+theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] [LawfulHasVal P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {vars : List P.Ident} :
+    HavocVars f σ vars σ' →
+    ∃ modvals, UpdateStates σ vars modvals σ' ∧
+      ∀ v, v ∈ modvals → HasVal.value f v := by
   intros Hhav
   induction Hhav with
   | update_none =>
     exact ⟨[], UpdateStates.update_none, by intro v hv; simp at hv⟩
-  | update_some Hup Hval Hhav ih =>
+  | update_some Hup Htyped Hhav ih =>
     obtain ⟨vs, Hups, Hvals⟩ := ih
+    obtain ⟨_, _, _, _, Hv⟩ := Htyped
     refine ⟨_, UpdateStates.update_some Hup Hups, ?_⟩
     intro w hw
     cases hw with
-    | head => exact Hval
+    | head => exact LawfulHasVal.valueOfTy_isVal _ _ _ Hv
     | tail _ hm => exact Hvals w hm
 
-theorem HavocVarsDefMonotone' {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
+theorem HavocVarsDefMonotone' {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
   isDefined σ' vs →
   HavocVars f σ vs' σ' →
   isDefined σ vs := by
@@ -2505,23 +2508,6 @@ theorem EvalCmdDefMonotone' :
   | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
   | eval_set_nondet Hup Hval Hwf => exact UpdateStateDefMonotone Hdef Hup
   | _ => exact Hdef
-
-theorem UpdateStatesHavocVars {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vars : List P.Ident} {modvals : List P.Expr} :
-  (∀ v, v ∈ modvals → HasVal.value f v) →
-  UpdateStates σ vars modvals σ' → HavocVars f σ vars σ' := by
-  intros Hvals H
-  induction vars generalizing σ modvals
-  case nil =>
-    cases modvals
-    . have Heq := UpdateStatesEmpty H
-      simp [Heq]
-      apply HavocVars.update_none
-    . cases H
-  case cons h t ih =>
-    cases H
-    next mv σmid mvs Hup Hups =>
-    apply HavocVars.update_some Hup (Hvals mv List.mem_cons_self)
-    exact ih (fun v hv => Hvals v (List.mem_cons_of_mem _ hv)) Hups
 
 theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars σ vars σ' := by
   intros H
@@ -2752,7 +2738,7 @@ theorem InvStoresExceptInitStates :
   refine InvStoresExceptUpdated Hinv ?_
   exact InitStatesLength Hup
 
-theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
+theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
   invStoresExcept σ σ' ks →
   HavocVars f σ ks' σ'' →
   invStoresExcept σ'' σ' (ks ++ ks') := by

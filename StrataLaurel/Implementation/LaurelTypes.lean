@@ -18,15 +18,29 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+/-- The type a call has AT THIS CALL SITE. `typeArgs` are the type arguments the call node
+    records; pass `[]` for a call shape that carries none. A constructor's type is its datatype
+    applied to `typeArgs`, and a procedure's is its declared output type with `typeArgs`
+    substituted for the procedure's type parameters. When `typeArgs` is empty the constructor
+    stays the bare datatype head: an applied shape with free type variables in it would read as
+    a wildcard instead of the arity error we want. Arity mismatch on a procedure keeps the
+    declared type. -/
+def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier)
+    (typeArgs : List HighTypeMd) : HighTypeMd :=
   match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .datatypeConstructor t _ =>
+      if typeArgs.isEmpty then ⟨ .UserDefined t, source ⟩
+      else ⟨ .Applied ⟨ .UserDefined t, source ⟩ typeArgs, source ⟩
     | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
-    | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
-      | [] => { val := .TVoid, source := source }
-      | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+    | .staticProcedure proc | .instanceProcedure _ proc =>
+      let declared := match proc.outputs with
+        | [] => { val := .TVoid, source := source }
+        | [singleOutput] => singleOutput.type
+        | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+      let names := proc.typeArgs.map (·.text)
+      if names.isEmpty || typeArgs.length != names.length then declared
+      else substTypeVars ((names.zip typeArgs).foldl (fun m (n, t) => m.insert n t) ∅) declared
     -- A coroutine call (`c(args)`) spawns an instance of the coroutine type;
     -- elaboration later retargets this to the `<c>State` composite.
     | .coroutineType proc => ⟨ .UserDefined proc.name, source ⟩
@@ -82,9 +96,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Var (.Field _ fieldName) => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
-  -- Calls — return the declared output type when available, fall back to Unknown otherwise
-  | .StaticCall callee _ => getCallType source model callee
-  | .InstanceCall _ callee _ => getCallType source model callee
+  -- Calls — the callee's return type at this call site, so a generic callee reports its
+  -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
+  -- argument temp from the argument itself and needs that instantiation.
+  | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
+  | .InstanceCall _ callee _ => getCallType source model callee []
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with

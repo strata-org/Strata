@@ -187,18 +187,21 @@ private def bindEffectfulArgs (model : SemanticModel) (callee : Identifier)
   return (bound.filterMap (·.1), bound.map (·.2))
 
 private def threadedStaticCall (model : SemanticModel) (callee : Identifier)
-    (args : List StmtExprMd) (source : FileRange)
+    (args : List StmtExprMd) (typeArgs : List HighTypeMd) (source : FileRange)
     : GlobalTransformM (List StmtExprMd × StmtExprMd × List Identifier) := do
   let inputs ← inputGlobalsOf callee
   let outputs ← writeGlobalsOf callee
   let (bindings, boundArgs) ← bindEffectfulArgs model callee inputs args
-  let call := ⟨.StaticCall callee ((← globalArgs inputs callee) ++ boundArgs), source⟩
+  -- `typeArgs` is carried onto the rebuilt call. Threading globals prepends arguments but does
+  -- not change the callee's instantiation, and dropping it here would erase a recorded
+  -- instantiation before `LaurelToCoreSchemaPass` can read it.
+  let call := ⟨.StaticCall callee ((← globalArgs inputs callee) ++ boundArgs) typeArgs, source⟩
   return (bindings, call, outputs)
 
 private def emitStaticCall (model : SemanticModel) (original : StmtExprMd)
-    (callee : Identifier) (args : List StmtExprMd) (valueUsed : Bool)
+    (callee : Identifier) (args : List StmtExprMd) (typeArgs : List HighTypeMd) (valueUsed : Bool)
     : GlobalTransformM (List StmtExprMd) := do
-  let (bindings, call, outputs) ← threadedStaticCall model callee args original.source
+  let (bindings, call, outputs) ← threadedStaticCall model callee args typeArgs original.source
   if outputs.isEmpty then
     return bindings ++ [call]
   else
@@ -240,7 +243,7 @@ private def renameTarget (model : SemanticModel) (target : VariableMd)
 private def transformNode (model : SemanticModel) (valueUsed : Bool) (expr : StmtExprMd)
     : GlobalTransformM (List StmtExprMd) := do
   match expr.val with
-  | .StaticCall callee args => emitStaticCall model expr callee args valueUsed
+  | .StaticCall callee args tyArgs => emitStaticCall model expr callee args tyArgs valueUsed
   | .Var (.Local name) =>
       return [{ expr with val := .Var (.Local (← renameGlobalRef model name)) }]
   | .Assign targets rhs =>
@@ -266,7 +269,7 @@ private def transformAssignWithCall (model : SemanticModel)
   match expr.val with
   | .Assign targets rhs =>
     match rhs.val with
-    | .StaticCall callee args =>
+    | .StaticCall callee args tyArgs =>
       if targets.length <= 1 then return none
       let hiddenOutputs ← writeGlobalsOf callee
       if hiddenOutputs.isEmpty && (← inputGlobalsOf callee).isEmpty then
@@ -277,7 +280,7 @@ private def transformAssignWithCall (model : SemanticModel)
       -- effectful argument to a temporary, preserving left-to-right evaluation.
       let args' ← args.mapM transformArg
       let targets' ← targets.mapM (renameTarget model)
-      let (bindings, call, outputs) ← threadedStaticCall model callee args' expr.source
+      let (bindings, call, outputs) ← threadedStaticCall model callee args' tyArgs expr.source
       -- A source target may name a global the callee also writes, which would give that
       -- global's alias both a hidden receiver and a source one. The source assignment
       -- happens after the call, so it wins; the hidden receiver is diverted to a discard

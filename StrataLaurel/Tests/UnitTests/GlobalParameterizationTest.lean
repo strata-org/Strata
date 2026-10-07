@@ -25,7 +25,7 @@ private def testRejectsGlobalConstant (transitive : Bool)
     (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let initializer : StmtExprMd := if transitive then
-    ⟨.StaticCall (mkId "readG") [], default⟩
+    ⟨.StaticCall (mkId "readG") [] [], default⟩
   else
     ⟨.Var (.Local (mkId "g")), default⟩
   let withConstant := { laurelProgram with constants := [{
@@ -81,8 +81,8 @@ private def testConstrainedInvokeOnMetadata (program : StrataDDM.Program) : IO U
   let gRef : StmtExprMd := ⟨.Var (.Local (mkId "g")), default⟩
   let trigger : StmtExprMd := ⟨.Quantifier .Forall parameter none
     ⟨.StaticCall (mkId Operation.And.procName)
-      [⟨.StaticCall (mkId "P") [xRef], default⟩,
-       ⟨.StaticCall (mkId Operation.Eq.procName) [gRef, gRef], default⟩], default⟩, default⟩
+      [⟨.StaticCall (mkId "P") [xRef] [], default⟩,
+       ⟨.StaticCall (mkId Operation.Eq.procName) [gRef, gRef] [], default⟩] [], default⟩, default⟩
   let addTrigger (proc : Procedure) :=
     if proc.name.text == "trigger" || proc.name.text == "instanceTrigger" then
       { proc with invokeOn := some trigger }
@@ -648,8 +648,6 @@ procedure readG() returns (r: int) { return g };
 info: procedure wrapperInput($global_g: int, g: int)
   returns (r: int)
   requires nat$constraint($global_g)
-  opaque
-  ensures nat$constraint(r)
 {
   r := readG($global_g);
   return

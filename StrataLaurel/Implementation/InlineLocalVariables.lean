@@ -171,7 +171,7 @@ def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Messa
     `assert`, and `LiftImperativeExpressions` deliberately does not hoist those out of
     a loop head (doing so would freeze loop-varying operands at their pre-loop
     values). Inlining folds them back into the expression, so
-    `var $cp_1 := 2 * i; … $div$asFunction($cp_1, 2)` becomes
+    `var $inputCopy1 := 2 * i; … $div$asFunction($inputCopy1, 2)` becomes
     `$div$asFunction(2 * i, 2)` — re-evaluated every iteration, as written.
 
     A quantifier body is the same situation one binder deeper: the lifting pass hoists

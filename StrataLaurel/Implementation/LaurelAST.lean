@@ -171,6 +171,28 @@ name per operator while the externals they call do not.
   | "$strConcat" => some .StrConcat
   | _ => none
 
+/-- `Operation.ofProcName?` tolerating the `$ov<digits>$` prefix that
+    `UniqueOverloadNames` puts on an overloaded wrapper: both `$le` and
+    `$ov104$$le` give `.Leq`. Any other prefix is not stripped. -/
+def Operation.ofWrapperName? (name : String) : Option Operation :=
+  match Operation.ofProcName? name with
+  | some op => some op
+  | none =>
+    if name.startsWith "$ov" then
+      match (name.drop 3).toString.splitOn "$" with
+      | digits :: rest =>
+        if !digits.isEmpty && digits.toNat?.isSome
+        then Operation.ofProcName? ("$".intercalate rest)
+        else none
+      | [] => none
+    else none
+
+/-- How many operands the operator's Laurel syntax takes: `Not` and `Neg` are
+    prefix (one operand), every other operator is infix (two). -/
+def Operation.arity : Operation → Nat
+  | .Not | .Neg => 1
+  | _ => 2
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -553,8 +575,24 @@ inductive StmtExpr : Type where
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments.
       Primitive operators are calls too: `x + y` is a `StaticCall` to the
-      built-in wrapper `$add`. See `Operation.procName`. -/
+      built-in wrapper `$add`. See `Operation.procName`.
+
+      `typeArgs` carries the call's INFERRED type arguments, in the callee's
+      declaration order, for a generic callee — `Resolution` stamps them once it
+      has determined every one (and reports the call when it cannot). Empty for a
+      monomorphic callee, and empty on a freshly parsed tree: there is no surface
+      syntax for type arguments at a call, so this is a resolution output, not
+      something the user writes. Deliberately NOT defaulted: a defaulted field is
+      matched against its default in a PATTERN, so `.StaticCall f args` would
+      silently narrow to "no recorded instantiation" and any call carrying one
+      would fall through a non-exhaustive match with no compile error. Recorded rather than re-derived because a
+      downstream pass cannot recover it — `computeExprType` reports the callee's
+      DECLARED return type, without the call-site substitution, so the
+      instantiation of an external generic primitive (`mapConst`, `setEmpty`)
+      would otherwise be lost between resolution and Core translation. Mirrors
+      `New`'s `typeArgs` in purpose. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
+      (typeArgs : List (AstNode HighType))
   /-- Create new object (`new`). `typeArgs` carries explicit instantiation
       arguments for a generic composite, e.g. `new Box<int>` → `ref = Box`,
       `typeArgs = [int]`. Empty for a non-generic `new C` (the common case and the
@@ -1015,6 +1053,25 @@ def anyHighType (p : HighType → Bool) (ty : HighType) : Bool :=
   | .UserDefined _ | .TVar _ | .TBv _ | .Unknown => false
   termination_by ty
   decreasing_by all_goals ast_recursion_decreasing
+
+/-- Every type variable a `HighType` mentions, at any depth, as the `Identifier` that carries its
+    binder identity. Used to ask whether a binding is expressed purely in terms of variables that
+    are actually IN SCOPE: a binding to a `.TVar` the enclosing entity does not declare names
+    nothing, so it cannot count as determining a type argument. The identifier is kept rather than
+    its text because a callee's own parameter may be SPELLED like one the caller declares
+    (`mapEmpty`'s `V` inside `outer<K, V>`); only `uniqueId` separates them. -/
+partial def tvarIdents : HighType → List Identifier
+  | .TVar n => [n]
+  | .Applied b args => tvarIdents b.val ++ args.flatMap (tvarIdents ·.val)
+  | .TMap k v => tvarIdents k.val ++ tvarIdents v.val
+  | .TSet e => tvarIdents e.val
+  | .Intersection ts => ts.flatMap (tvarIdents ·.val)
+  | .MultiValuedExpr ts => ts.flatMap (tvarIdents ·.val)
+  | _ => []
+
+/-- The texts of `tvarIdents`. Only for comparing against a declaring entity's own parameter list,
+    where the names are the keys and no foreign variable can reach. -/
+def tvarNames (ty : HighType) : List String := (tvarIdents ty).map (·.text)
 
 /-- Does a `HighType` mention a type variable (`.TVar`) anywhere — bare, or nested
     inside a generic application / collection / intersection (`Box<T>`, `TotalMap T int`,
@@ -1693,6 +1750,60 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     (ctx.substitutedAncestors subName.text []).any (fun anc => ancestorMatchesTarget anc sup')
   | _, _ => highEq sub' sup'
 
+/-- The least common ancestor (join) of a list of TYPES: the unique most-specific type
+    that every element is a subtype of. The type-level counterpart of the name-keyed
+    `TypeLattice.commonAncestor`, and defined here because it is stated in terms of
+    `isSubtype`.
+
+    Both exist because a NAME cannot express type arguments. `commonAncestor` keys on
+    the `extending` graph's node names, so `Box<int>` and `Box<bool>` both key as `Box`
+    and join there — erasing the very arguments that make them incompatible — and the
+    join of `IntBox extends Box<int>` with `Box<int>` can only come back as the
+    argument-less head `Box`. Stated over types instead, the arguments survive: the walk
+    goes through `substitutedAncestors`, which applies the `extends` type-argument remap
+    (`P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the supertype `Pair<bool,int>`), so
+    an inherited instantiation is reported as the instantiation it actually is.
+
+    Same shape as the name-level version. The candidates are the REFLEXIVE ancestors of
+    the FIRST element — the element itself, plus its `substitutedAncestors` (which
+    deliberately excludes the starting type, so it is prepended here) — narrowed to those
+    every element is a subtype of; the join is the most specific survivor. A primitive,
+    set, map or type variable names no node in the `extending` graph, so its only
+    candidate is itself; since `isSubtype` bottoms out in `highEq`, such a set joins
+    exactly when every member *is* that one type, with no separate case.
+
+    Returns `none` when there is no common ancestor, and when the join is AMBIGUOUS: two
+    equally-specific incomparable common ancestors (possible under multiple inheritance,
+    `extends A, B`) each fail to dominate the other, so no survivor dominates all. Unlike
+    `mostSpecific`'s `find?`, the winner is required to be UNIQUE rather than merely
+    first: with the candidates deduplicated by `highEq` (the same equality
+    `substitutedAncestors` dedups by), a second dominator means two structurally distinct
+    types are mutually subtypes, which needs an `extending` cycle — nothing rejects one
+    today — and picking whichever came first would be silently order-dependent.
+
+    A singleton list joins to itself (a type is its own most-specific ancestor). -/
+def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
+    : Option HighTypeMd :=
+  match tys with
+  | [] => none
+  | first :: _ =>
+    -- Only a composite -- bare (`Box`) or applied (`Box<int>`) -- has an ancestry to
+    -- walk; `highBaseName?` peels the head off either spelling.
+    let ancestry : List HighTypeMd :=
+      match first.val with
+      | .UserDefined r => ctx.substitutedAncestors r.text []
+      | .Applied base args =>
+        match highBaseName? base.val with
+        | some n => ctx.substitutedAncestors n.text args
+        | none => []
+      | _ => []
+    let candidates : List HighTypeMd :=
+      (first :: ancestry).foldl (fun acc c => if acc.any (highEq c) then acc else acc ++ [c]) []
+    let common := candidates.filter fun a => tys.all fun t => isSubtype ctx t a
+    match common.filter (fun a => common.all fun b => isSubtype ctx a b) with
+    | [winner] => some winner
+    | _ => none
+
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    `isConsistent` RECURSES element-wise (with `isConsistent`, not `highEq`) through
    `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/`.TVar` wildcard
@@ -1989,6 +2100,48 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
 
+/-- The substituted-ancestor instantiations of `actual` that reach `declared`'s head, for when the
+    actual's head is a DESCENDANT of the declared one. An INHERITED generic method is lifted to
+    `GBase$get(self: GBase<T>)` and called on a `GDerived` (where `GDerived extends GBase<int>`), so
+    a purely structural `matchTypeArg` compares `GBase<T>` against `GDerived` and gets nothing.
+    `substitutedAncestors` remaps `GDerived` up to `GBase<int>`, which matches head-to-head.
+
+    Empty when the heads already agree, when either side has no head, or when no ancestor reaches
+    the declared head; the caller then uses `actual` unchanged.
+
+    ONE definition for both call-site questions — `callSiteTypeSubst` (what does the call bind) and
+    `callSiteDeterminedTypeParams` (is the parameter determined) — so the two cannot claim
+    different lifts. `MonomorphizeComposites.liftActualToParamHead` is the same operation for
+    cloning. -/
+def ancestorLiftCandidates (ctx : TypeLattice) (declared actual : HighType) : List HighTypeMd :=
+  match highBaseName? declared, highBaseName? actual with
+  | some dHead, some aHead =>
+    if dHead.text == aHead.text then []
+    else
+      let aArgs : List HighTypeMd := match actual with
+        | .Applied _ args => args
+        | _ => []
+      (ctx.substitutedAncestors aHead.text aArgs).filter
+        (fun anc => (highBaseName? anc.val).any (·.text == dHead.text))
+  | _, _ => []
+
+/-- The ancestor instantiation a call site may SUBSTITUTE THROUGH, complete with its type
+    arguments, or `none` to leave the actual as it is.
+
+    `none` also for an ambiguous diamond — two distinct instantiations of the declared head, as
+    when `D` extends both `Base<int>` and `Base<bool>`. Binding off an arbitrary witness would
+    make the call report a type argument the program never fixed, so nothing is bound and the case
+    is left to `MonomorphizeComposites.inferProcInst`, which rejects it with a diagnostic naming
+    both instantiations and the disambiguating upcast. `callSiteDeterminedTypeParams` deliberately
+    differs here: see its own note.
+
+    Distinctness is `highEq`, the equality `substitutedAncestors` already dedups with, so a
+    redundant `extends` edge re-deriving one instantiation is not an ambiguity. -/
+def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Option HighTypeMd :=
+  match ancestorLiftCandidates ctx declared actual with
+  | [] => none
+  | hit :: rest => if rest.all (highEq · hit) then some hit else none
+
 /-- Call-site type-argument inference: the substitution a call makes for its callee's type
     parameters, derived by matching each DECLARED parameter type against the ACTUAL argument
     type. `select<K,V>(map: TotalMap K V, key: K)` applied to a `TotalMap int bool` and an `int` yields
@@ -2000,8 +2153,13 @@ def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     fails to match contributes nothing instead of abandoning the whole call, and a type
     parameter that no argument determines (`mapConst<K,V>(value: V)` never fixes `K`) is left
     unbound — substitution then leaves it the `.TVar` it already was, which `isConsistent`
-    treats as a gradual wildcard. Inference therefore only sharpens a call site; an
-    undetermined parameter is no stricter than an unsubstituted one.
+    treats as a gradual wildcard.
+
+    Best-effort HERE does not mean the call site gets away with it. This function answers only
+    "what do the ARGUMENTS say"; `Synth.staticCall` additionally pairs the declared return type
+    against the expected type, and then requires every type parameter to be determined —
+    reporting the call when one is not (see `callSiteDeterminedTypeParams`, which is what that
+    check must consult, since a `T ↦ T` binding is dropped here yet still counts as determined).
 
     Each parameter matches under its OWN accumulator and the results are merged here, so a
     type variable occurring in two parameters (`$eq<T>(x: T, y: T)`) is reconciled by
@@ -2017,12 +2175,29 @@ def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
 
     Actuals are `unfold`ed first so an alias-typed argument (`type IM = TotalMap int bool`) matches
     a `TotalMap K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
-    `.UserDefined IM` against `.TMap` and fail. -/
+    `.UserDefined IM` against `.TMap` and fail.
+
+    A DESCENDANT actual is lifted to the declared head's instantiation via the shared
+    `callSiteAncestorLift?`, which is the SAME lift `callSiteDeterminedTypeParams` reads to call a
+    parameter determined. The two must share it: matching `Base<T>` structurally against an
+    `IntBox` (where `IntBox extends Base<int>`) binds nothing while determinacy sees `Base<int>`
+    among the ancestors and reports success, so the callee's `T` stays a bare variable that
+    `isConsistent` waves through and Core then rejects. -/
 def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
     : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
   let candidates : List (String × HighTypeMd) :=
     (params.zip actuals).flatMap fun (p, a) =>
-      match matchTypeArg p.val (ctx.unfold a).val {} with
+      -- BOTH sides unfolded. `matchTypeArg` is purely structural, so an alias-declared parameter
+      -- (`m: Map<K,V>`) never matches an unfolded actual (`TotalMap int ($MapEntry bool)`) and
+      -- would bind nothing — leaving the reported result type full of type variables even though
+      -- the call is perfectly determined. `callSiteDeterminedTypeParams` unfolds the same way, so
+      -- the two cannot disagree about which positions bind what.
+      let d := (ctx.unfold p).val
+      let a' := (ctx.unfold a).val
+      let lifted := match callSiteAncestorLift? ctx d a' with
+        | some anc => anc.val
+        | none => a'
+      match matchTypeArg d lifted {} with
       | none => []
       | some bindings =>
         bindings.toList.filterMap fun (name, ty) =>
@@ -2073,6 +2248,74 @@ def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
                 (fun b => (a, b))) with
       | some (a, b) => (subst, (name, a, b) :: conflicts)
       | none => (subst, conflicts)
+
+/-- The type-parameter names a call site DETERMINES, which is a different question from the
+    one `callSiteTypeSubst` answers. That function drops a binding whose type still mentions a
+    type variable, because recording `T ↦ T` sharpens nothing; but the parameter was still
+    determined — by `T`, which is simply not concrete *yet*. Inside a generic body
+    (`mapGet<K,V>`'s `select(m, k)` at `m : TotalMap K ($MapEntry V)`) every binding has that
+    shape, so reading determinacy off `callSiteTypeSubst`'s result would call the whole prelude
+    under-annotated.
+
+    Used only to decide whether to REPORT an un-inferable type argument. Concreteness is
+    separately guaranteed: a `.TVar` binding here means the enclosing entity is itself generic,
+    so `MonomorphizeComposites` re-resolves this call on a concrete clone and the same check
+    runs again with real types.
+
+    `pairs` is the declared/actual list (parameters, plus the return/expected pair when the
+    caller has one), matched with the SAME `matchTypeArg` as the substitution so the two can
+    never disagree about which positions bind what.
+
+    BOTH sides are `unfold`ed, as in `callSiteTypeSubst`. Unfolding only the actual would make
+    every alias-declared signature look undeterminable: `mapContains<K,V>(m: Map<K,V>, k: K)` declares
+    the alias `Map<K,V>`, and `matchTypeArg` is purely structural, so matching it against an
+    unfolded `TotalMap int ($MapEntry bool)` fails outright and reports `K`/`V` as un-inferable.
+    Aliases are only eliminated later (`TypeAliasElim`), so resolution has to see through them
+    itself. -/
+def callSiteDeterminedTypeParams (ctx : TypeLattice)
+    (tvarInScope : Identifier → Bool) (requireInScope : Bool)
+    (pairs : List (HighTypeMd × HighTypeMd)) : List String :=
+  -- The shared `ancestorLiftCandidates`, so determinacy and `callSiteTypeSubst` cannot disagree
+  -- about which ancestor a descendant actual lifts to.
+  --
+  -- An ambiguous diamond (two parents fixing the ancestor's argument differently) counts as
+  -- DETERMINED here, on ANY witness — which is why this reads the raw candidates rather than
+  -- `callSiteAncestorLift?`, whose whole job is to refuse an arbitrary witness. That is
+  -- deliberately not this function's call to make: `MonomorphizeComposites.inferProcInst` already
+  -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
+  -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
+  -- too late to be a clean user error — an inherited call is an `.InstanceCall` at first
+  -- resolution (which does not infer type arguments at all), so the diagnostic would only appear
+  -- on the post-`LiftInstanceProcedures` re-resolution, where the pipeline wraps any newly
+  -- introduced diagnostic as an internal error.
+  let lift (declared actual : HighType) : List HighType :=
+    match ancestorLiftCandidates ctx declared actual with
+    | [] => [actual]
+    | c :: _ => [c.val]
+  (pairs.flatMap fun (declared, actual) =>
+    let d := (ctx.unfold declared).val
+    (lift d (ctx.unfold actual).val).flatMap fun a =>
+      match matchTypeArg d a {} with
+      | none => []
+      | some bindings =>
+        -- `requireInScope` distinguishes the two directions, and the distinction is what keeps this
+        -- both sound and quiet:
+        --
+        -- * from an ARGUMENT (`true`), a binding resting on an OUT-OF-SCOPE type variable is no
+        --   evidence at all. Inside a generic body `T ↦ T` is real — `T` is declared by the
+        --   enclosing entity and cloning makes it concrete later — but `mapContains(mapEmpty(), k)`
+        --   in a monomorphic procedure binds `mapContains`'s `V` to `mapEmpty`'s own unbound
+        --   parameter, which names nothing anywhere. Counting that is what let an un-inferable map
+        --   value type escape to Core translation. Scope membership is decided on binder identity,
+        --   so the same program inside `outer<K, V>` is still rejected: `mapEmpty`'s `V` is a
+        --   different binder from `outer`'s.
+        -- * from the EXPECTED type (`false`), such a binding is DEFERRED, not absent: the slot came
+        --   from an enclosing call that has not finished inferring. `mapEmpty()` under
+        --   `mapSet(mapEmpty(), k, true)` is handed `Map<K,V>` before `mapSet`'s own `V` is fixed by
+        --   `true`, and it has done all it can. Reporting there would reject a valid program;
+        --   staying quiet leaves it to the enclosing call, which reports if IT cannot resolve.
+        bindings.toList.filterMap fun (name, ty) =>
+          if !requireInScope || (tvarIdents ty).all tvarInScope then some name else none).eraseDups
 
 def HighType.isBool : HighType → Bool
   | TBool => true

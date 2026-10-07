@@ -58,8 +58,10 @@ procedure select<K, V>(map: TotalMap K V, key: K) : V
 procedure update<K, V>(map: TotalMap K V, key: K, value: V) : TotalMap K V
   external;
 
-// `K` is not determined by the single value argument; `LaurelToCoreSchemaPass` recovers it
-// from the binding's declared type (`expectedType`), defaulting to `TypeTag`.
+// `K` is not determined by the single value argument, so it comes from the CHECK direction:
+// resolution matches this declared return type against the expected type at the call site
+// (`var m: TotalMap int bool := mapConst(false)` binds `K ↦ int`) and reports an error when
+// nothing determines it. `LaurelToCoreSchemaPass` then reads it off the binding.
 procedure mapConst<K, V>(value: V) : TotalMap K V
   external;
 
@@ -72,8 +74,9 @@ procedure mapConst<K, V>(value: V) : TotalMap K V
 // corresponding Core `Set.*` op by `coreSetOpName?`. The spellings differ (`setInsert` vs
 // `Set.insert`) only because a Laurel identifier cannot contain a `.`.
 //
-// `setEmpty`'s element type is not determined by any argument, so — like `mapConst`'s key —
-// it is recovered from the declared type at the use site (`var s: Set<int> := setEmpty()`).
+// `setEmpty`'s element type is not determined by any argument, so — like `mapConst`'s key — it
+// is bound by resolution's check direction from the declared type at the use site
+// (`var s: Set<int> := setEmpty()`), and is a resolution error when nothing supplies it.
 opaque Set<T>
 
 procedure setEmpty<T>() : Set<T> external;
@@ -228,6 +231,18 @@ procedure $boolAnd(x: bool, y: bool) : bool external;
 procedure $boolOr(x: bool, y: bool) : bool external;
 procedure $boolImplies(x: bool, y: bool) : bool external;
 
+// String ordering. Core has exactly TWO ordering operators on `string`
+// (`Str.Lt`, `Str.Le` — `Factory.lean`), both lowered to the SMT string theory's
+// `str.<` / `str.<=`, i.e. the lexicographic order over code-point sequences.
+// There is no `Str.Gt`/`Str.Ge`, so the `$gt`/`$ge` string overloads below are
+// defined by SWAPPING the operands rather than by a third and fourth delegate:
+// `x > y` is `y < x` and `x >= y` is `y <= x`. That identity is exact for a total
+// order, which `str.<` is (`Fundamentals/StringOrdering.lean` pins totality,
+// irreflexivity and antisymmetry over symbolic operands, so the swap is not
+// taken on faith).
+procedure $strLt(x: string, y: string) : bool external;
+procedure $strLe(x: string, y: string) : bool external;
+
 // Short-circuit boolean operations, string concatenation and equality have no
 // separate delegate: the operator wrapper's own reserved name (`$andThen`,
 // `$orElse`, `$strConcat`, `$eq`, `$neq`) is already the name
@@ -333,6 +348,23 @@ procedure $gt(x: bv 64, y: bv 64) : bool
   return $bv64SGt(x, y);
 procedure $ge(x: bv 64, y: bv 64) : bool
   return $bv64SGe(x, y);
+
+// Comparisons (string overload) — lexicographic over code points, see `$strLt`.
+//
+// Adding these four cannot make an existing `$lt`/`$le`/`$gt`/`$ge` call site
+// ambiguous: overload selection is by operand type, and `string` is disjoint from
+// `int`, `real` and every `bv n`. The one call shape that *is* ambiguous — both
+// before and after — is a comparison whose operands have a TYPE VARIABLE type
+// (`a > b` on `a: T`), because a type variable selects no overload at all; that is
+// a pre-existing property of the overload set, not something this adds.
+procedure $lt(x: string, y: string) : bool
+  return $strLt(x, y);
+procedure $le(x: string, y: string) : bool
+  return $strLe(x, y);
+procedure $gt(x: string, y: string) : bool
+  return $strLt(y, x);
+procedure $ge(x: string, y: string) : bool
+  return $strLe(y, x);
 
 // Boolean
 procedure $not(x: bool) : bool

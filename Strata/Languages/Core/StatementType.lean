@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.Program
 import Strata.DL.Imperative.CmdType
 import Strata.DL.Lambda.LExprT
+import Strata.DL.Lambda.LExprType
 import Strata.Languages.Core.CmdType
 import Strata.Languages.Core.FunctionType
 
@@ -225,11 +226,11 @@ where
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
   match oe with
-  | some e => some (LExpr.applySubst e S)
+  | some e => some (LExpr.applyTypeSubst e S)
   | none => none
 
 private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expression) : Imperative.ExprOrNondet Expression :=
-  e.map (LExpr.applySubst · S)
+  e.map (LExpr.applyTypeSubst · S)
 
 /--
 Apply type substitution `S` to a command.
@@ -242,14 +243,14 @@ def Command.subst (S : Subst) (c : Command) : Command :=
     | .set x e md =>
       .cmd $ .set x (substExprOrNondet S e) md
     | .assert label b md =>
-      .cmd $ .assert label (b.applySubst S) md
+      .cmd $ .assert label (b.applyTypeSubst S) md
     | .assume label b md =>
-      .cmd $ .assume label (b.applySubst S) md
+      .cmd $ .assume label (b.applyTypeSubst S) md
     | .cover label b md =>
-      .cmd $ .cover label (b.applySubst S) md
+      .cmd $ .cover label (b.applyTypeSubst S) md
   | .call pname callArgs md =>
     .call pname (callArgs.map fun
-      | .inArg e => .inArg (e.applySubst S)
+      | .inArg e => .inArg (e.applyTypeSubst S)
       | .inoutArg id => .inoutArg id
       | .outArg id => .outArg id) md
 
@@ -268,18 +269,18 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .block label bss md =>
     .block label (go S bss []) md
   | .ite cond tss ess md =>
-    .ite (cond.map (LExpr.applySubst · S)) (go S tss []) (go S ess []) md
+    .ite (cond.map (LExpr.applyTypeSubst · S)) (go S tss []) (go S ess []) md
   | .loop guard m i bss md =>
-    .loop (guard.map (LExpr.applySubst · S))
-      (m.map (LExpr.applySubst · S))
-      (i.map (fun (l, e) => (l, e.applySubst S))) (go S bss []) md
+    .loop (guard.map (LExpr.applyTypeSubst · S))
+      (m.map (LExpr.applyTypeSubst · S))
+      (i.map (fun (l, e) => (l, e.applyTypeSubst S))) (go S bss []) md
   | .exit _ _ => s
   | .funcDecl decl md =>
     let decl' := { decl with
       inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
       output := Lambda.LTy.subst S decl.output,
-      body := decl.body.map (·.applySubst S),
-      axioms := decl.axioms.map (·.applySubst S) }
+      body := decl.body.map (·.applyTypeSubst S),
+      axioms := decl.axioms.map (·.applyTypeSubst S) }
     .funcDecl decl' md
   | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where

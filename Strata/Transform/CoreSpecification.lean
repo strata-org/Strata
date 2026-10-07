@@ -44,17 +44,23 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 
 /-! ## Well-formed program state at the entry of procedure -/
 
-/-- The list of variables that must have been declared,
-    to make execution of the body of this procedure not stuck.
-    outputs are included because the body refers to the output variables without
-    initialization.
-    Old snapshot variables for in-out parameters (those appearing in both
-    inputs and outputs) are included because the body or spec of the
-    procedure may refer to those with "old g".  -/
-@[expose] def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
-  ListMap.keys proc.header.inputs ++
-  ListMap.keys proc.header.outputs ++
-  (ListMap.keys proc.header.getInoutParams).map (fun id => CoreIdent.mkOld id.name)
+/-- The variables (paired with their declared monomorphic types) that must
+    have been declared to make execution of the body of this procedure not
+    stuck.
+
+    inputs and outputs are included because the body refers to those variables
+    without initialization.  Old snapshot variables for in-out parameters
+    (those appearing in both inputs and outputs) are included because the body
+    or spec of the procedure may refer to those with "old g".
+
+    Each entry pairs the identifier with the type at which its initial value
+    must be well-typed.  For an in-out parameter's old snapshot the type is the
+    parameter's original declared type. -/
+@[expose] def procVerifyInitIdents (proc : Procedure) :
+    List (Expression.Ident × Lambda.LMonoTy) :=
+  proc.header.inputs.toList ++
+  proc.header.outputs.toList ++
+  (proc.header.getInoutParams.toList).map (fun (id, ty) => (CoreIdent.mkOld id.name, ty))
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
@@ -64,7 +70,11 @@ structure ProcEnvWF (proc : Procedure) (ρ : Imperative.Env Expression)
     extends WellFormedSemanticEval (P := Expression) ρ.factory where
   -- The verification env's store holds only values (true of reachable stores).
   storeValues : Imperative.WellFormedStore ρ.store ρ.factory
-  storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
+  -- Every variable required by the body holds a value of its declared type
+  -- in the initial verification environment.
+  storeDefinedAndWellTyped : ∀ id ty, (id, ty) ∈ procVerifyInitIdents proc →
+    ∃ v, ρ.store id = some v ∧
+      HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty)
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.
   oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,

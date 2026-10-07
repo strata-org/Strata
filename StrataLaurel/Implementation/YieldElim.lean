@@ -159,7 +159,7 @@ private def conjoin (andOp : Identifier) (conds : List Condition) (src : FileRan
   | c :: rest =>
     rest.foldl
       (fun acc nxt =>
-        { val := .StaticCall andOp [acc, nxt.condition], source := src })
+        { val := .StaticCall andOp [acc, nxt.condition] [], source := src })
       c.condition
 
 private def mkAssert (cond : StmtExprMd) (summary : Option String) (src : FileRange) : StmtExprMd :=
@@ -176,7 +176,7 @@ private def takeSnapshot (src : FileRange) : StmtExprMd :=
     identifier (uniqueId included) so heap-param recognizes it as a heap writer
     without a re-resolution — resolution is disabled after this pass. -/
 private def havocCall (havocHeap : Identifier) (src : FileRange) : StmtExprMd :=
-  { val := .StaticCall havocHeap [], source := src }
+  { val := .StaticCall havocHeap [] [], source := src }
 
 /-! ### Value-channel bindings
 
@@ -552,7 +552,7 @@ private def resumeReceiver (args : List StmtExprMd) : Option Identifier :=
 private def resumeCallReceiver (h1Resumes : Std.HashSet String)
     (e : StmtExprMd) : Option (Option Identifier) :=
   match e.val with
-  | .StaticCall callee args =>
+  | .StaticCall callee args _ =>
     if h1Resumes.contains callee.text then some (resumeReceiver args) else none
   | _ => none
 
@@ -614,12 +614,12 @@ private def threadCallerNode (h1Resumes : Std.HashSet String)
   -- splices in statement position. Expression-position `z := resume(co)` under
   -- `verifyCoroutine` is not supported (no test exercises it); left untouched, it
   -- surfaces as an arity mismatch against the H1-taking resume.
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
     if !used && h1Resumes.contains callee.text then
       match resumeReceiver args with
       | some co =>
         let h1Read : StmtExprMd := ⟨.Var (.Local (instH1Name co)), .unknown⟩
-        let threaded : StmtExprMd := { e with val := .StaticCall callee (args ++ [h1Read]) }
+        let threaded : StmtExprMd := { e with val := .StaticCall callee (args ++ [h1Read]) tyArgs }
         [threaded, snapshotH1 co]
       | none => [e]
     else [e]

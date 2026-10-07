@@ -46,11 +46,11 @@ Then, rewrite caller-side of `obj#proc` to call the lifted procedure
     is replaced by its lifted name. -/
 private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
     match model.get? callee with
     | some (.instanceProcedure typeName _) =>
       let lifted := liftedProcName typeName callee
-      { expr with val := .StaticCall lifted args }
+      { expr with val := .StaticCall lifted args tyArgs }
     | _ => expr
   | .InstanceCall target callee args =>
     -- `obj#method(args)` surface syntax parses to InstanceCall. Flatten it to
@@ -59,7 +59,7 @@ private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtEx
     match model.get? callee with
     | some (.instanceProcedure typeName _) =>
       let lifted := liftedProcName typeName callee
-      { expr with val := .StaticCall lifted (target :: args) }
+      { expr with val := .StaticCall lifted (target :: args) [] }
     | _ => expr
   | _ => expr
 
@@ -283,9 +283,9 @@ def outputSignatureCompatible (model : SemanticModel) (baseM ovM : Procedure) : 
       ("incompatible types '(Heap,τ)' and 'τ'"). Until a throws-status unification across
       the family exists, reject it up front.
     * RENAMED-TYPE-PARAMS — an overrider whose declared `typeArgs` are not the SAME
-      names (in order) as the base declarer's. `appliedTagType` emits the overrider's own
-      param names in the `is`/`as` tag-test, which the dispatcher's scope (carrying the
-      base's params) cannot relate — a re-resolution `.strataBug`. The idiomatic
+      names (in order) as the base declarer's. The `is`/`as` tag-test is built in the
+      dispatcher's scope, which carries the base's params, so a renamed overrider names a
+      param that scope cannot relate — a re-resolution `.strataBug`. The idiomatic
       same-named form (`SBox<T> extends Box<T>`) is fine; a renamed one is unsupported.
     * OUTPUT-SIGNATURE — an overrider that shares the base's non-`self` INPUT signature (so
       it IS a family member) but has an incompatible OUTPUT signature: a different number of
@@ -354,17 +354,21 @@ end -- public section (shared family predicates)
 /-- The type used in a dispatcher's `is`/`as` tag-test for branch type `ct`: a bare
     `.UserDefined` for a non-generic composite, but an applied `.Applied ct<T…>` for a
     generic one (a bare un-applied generic head is rejected by re-resolution's
-    `Synth.isType`). The generic branch applies `ct` to its OWN declared params as
-    `.TVar`s. For the idiomatic same-named override (`SBox<T> extends Box<T>`) these are
-    exactly the dispatcher's params, so the tag-test resolves; a RENAMED override
-    (`SBox<U> extends Box<U>`) would emit a param the dispatcher doesn't carry and is
-    rejected fail-loud at re-resolution (never mis-verified). The dispatcher body and its
-    tag-conditioned posts share this one constructor so they cannot dispatch on and test
-    different types. -/
-private def appliedTagType (src : FileRange) (ct : CompositeType) : HighTypeMd :=
+    `Synth.isType`). `ct`'s own arity decides the shape, since `ct` is the head being
+    applied; the `.TVar`s are the OWNER's params (`ownerParams`), taken positionally,
+    because the dispatcher is lifted onto the owner and only the owner's binders are in
+    scope where the tag-test resolves. `RENAMED-TYPE-PARAMS` makes the two lists agree by
+    text for every family reaching here, so this fixes only which binder each `.TVar`
+    refers to. The dispatcher body and its tag-conditioned posts share this one
+    constructor so they cannot dispatch on and test different types. -/
+private def appliedTagType (src : FileRange) (ownerParams : List Identifier)
+    (ct : CompositeType) : HighTypeMd :=
   if ct.typeArgs.isEmpty then ⟨ .UserDefined ct.name, src ⟩
-  else ⟨ .Applied ⟨ .UserDefined ct.name, src ⟩
-        (ct.typeArgs.map (fun a => (⟨ .TVar a, src ⟩ : HighTypeMd))), src ⟩
+  else
+    let args := ownerParams.take ct.typeArgs.length
+                  ++ ct.typeArgs.drop ownerParams.length
+    ⟨ .Applied ⟨ .UserDefined ct.name, src ⟩
+      (args.map (fun a => (⟨ .TVar a, src ⟩ : HighTypeMd))), src ⟩
 
 /-- The dispatcher's receiver name: the method's first input. Shared by the dispatcher body
     and its tag-conditioned posts so the `is`/`as` branches and the `self is Oi ==> Oi.post`
@@ -379,8 +383,8 @@ private def dispatchSelfName (method : Procedure) : Identifier :=
     impl. Each branch casts `self` to the branch type (sound: guarded by the
     preceding `is`), then calls that type's `$impl`. Mirrors the hand-verified
     `if self is Sub then (self as Sub)#m_impl else …` dispatcher shape. -/
-private def buildDispatcherBody (ownerType : Identifier) (method : Procedure)
-    (overriders : List CompositeType) : AstNode StmtExpr :=
+private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Identifier)
+    (method : Procedure) (overriders : List CompositeType) : AstNode StmtExpr :=
   let src := method.name.source
   let selfName := dispatchSelfName method
   let restArgs : List (AstNode StmtExpr) :=
@@ -397,7 +401,7 @@ private def buildDispatcherBody (ownerType : Identifier) (method : Procedure)
     ⟨ .Block [callTo (implProcName ownerType method.name) ⟨ .Var (.Local selfName), src ⟩] none, src ⟩
   -- fold the overriders into a most-derived-first `is`/`as` chain
   overriders.foldr (init := fallthrough) fun ov acc =>
-    let ovTy : HighTypeMd := appliedTagType src ov
+    let ovTy : HighTypeMd := appliedTagType src ownerParams ov
     let isCheck : AstNode StmtExpr := ⟨ .IsType ⟨ .Var (.Local selfName), src ⟩ ovTy, src ⟩
     let castName := dispatchCastName ov.name
     let castDecl : AstNode StmtExpr :=
@@ -430,12 +434,12 @@ private def buildDispatcherBody (ownerType : Identifier) (method : Procedure)
     descendant `is` a shallower one — is handled by the body order and the guard; a
     Liskov-valid hierarchy keeps the clauses mutually consistent, since `Oᵢ.post ⟹ Oⱼ.post`
     whenever `Oᵢ <: Oⱼ`.) Overrider posts are renamed (self+outputs, positionally). -/
-private def dispatcherPosts (ownerPosts : List Condition) (method : Procedure)
-    (overriders : List CompositeType) : List Condition :=
+private def dispatcherPosts (ownerParams : List Identifier) (ownerPosts : List Condition)
+    (method : Procedure) (overriders : List CompositeType) : List Condition :=
   let src := method.name.source
   let selfName := dispatchSelfName method
   let isOf (ct : CompositeType) : StmtExprMd :=
-    ⟨ .IsType ⟨ .Var (.Local selfName), src ⟩ (appliedTagType src ct), src ⟩
+    ⟨ .IsType ⟨ .Var (.Local selfName), src ⟩ (appliedTagType src ownerParams ct), src ⟩
   let overriderPosts : List Condition := overriders.filterMap fun ov =>
     -- Pick the genuine override (an overrider may ALSO declare a same-name overload; only
     -- the signature-matching method is the one this dispatcher branch runs).
@@ -503,13 +507,14 @@ def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program
             let overriders := fam.overriders
             let impl := { proc with name := implProcName ct.name proc.name, typeArgs := tyArgs }
             let dispatcherBody : Body := match proc.body with
-              | .Transparent _ => .Transparent (buildDispatcherBody ct.name proc overriders)
+              | .Transparent _ =>
+                  .Transparent (buildDispatcherBody ct.name ct.typeArgs proc overriders)
               | .Opaque posts _ modif =>
-                  .Opaque (dispatcherPosts posts proc overriders)
-                    (some (buildDispatcherBody ct.name proc overriders)) modif
+                  .Opaque (dispatcherPosts ct.typeArgs posts proc overriders)
+                    (some (buildDispatcherBody ct.name ct.typeArgs proc overriders)) modif
               | .Abstract posts =>
-                  .Opaque (dispatcherPosts posts proc overriders)
-                    (some (buildDispatcherBody ct.name proc overriders)) []
+                  .Opaque (dispatcherPosts ct.typeArgs posts proc overriders)
+                    (some (buildDispatcherBody ct.name ct.typeArgs proc overriders)) []
               -- Unreachable for an OVERRIDDEN method: `validateDispatchFamilies`'
               -- EXTERNAL-IN-FAMILY guard rejects a family with an external endpoint before
               -- generation runs. Kept total for the match; an external body has nothing to
