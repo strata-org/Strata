@@ -509,7 +509,11 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
       [Imperative.Stmt.block "" [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
         (Imperative.Cmd.set resultId (.det setE) md))] #[]] ρ := by
   refine Core.Logic.BlockInitEnvWF.of_defUseOk (hf ▸ Core.coreFactory_WellFormedSemanticEval)
-    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_) ?_ (fun _ _ => rfl)
+    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_) ?_
+    (fun _ _ => rfl)
+    (by
+      simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
+        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
       Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars] at hn
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,

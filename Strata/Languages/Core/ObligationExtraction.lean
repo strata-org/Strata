@@ -14,12 +14,10 @@ A Core-to-obligations pass that walks a post-PE program and extracts
 proof obligations with their path conditions reconstructed from the program
 structure.
 
-After partial evaluation and common subexpression elim, a procedure body contains only:
-- `assume` statements (path conditions)
-- `assert` statements (proof obligations)
-- `cover` statements (proof obligations)
-- non-deterministic terminal branching (`if *`)
-- `var` declarations (from CSE or global initialization)
+The input is a body satisfying `Statements.hasObligationForm`, the pipeline fact
+`ProgramFact.hasObligationForm`: only `assume` (path conditions), `assert` and
+`cover` (proof obligations), and `init` (from CSE or global initialization),
+nested under `if *` to any depth.
 
 This pass reconstructs path conditions by tracking `assume` statements
 encountered on the path to each `assert`/`cover`.
@@ -30,22 +28,6 @@ public section
 namespace Core.ObligationExtraction
 
 open Lambda Imperative
-
-mutual
-/-- Check if a single statement is valid for obligation extraction. -/
-def isValidObligationStatement : Statement → Bool
-  | .cmd (.cmd (.assert _ _ _)) | .cmd (.cmd (.assume _ _ _))
-  | .cmd (.cmd (.cover _ _ _)) | .cmd (.cmd (.init _ _ _ _)) => true
-  | .ite .nondet thenSs elseSs _ => isValidObligationInput thenSs && isValidObligationInput elseSs
-  | _ => false
-
-/-- Check if a statement list is a valid input for obligation extraction.
-    Valid inputs contain only: `assume`, `assert`, `cover`, `var` declarations,
-    and non-deterministic branching (`if *`). -/
-def isValidObligationInput : Statements → Bool
-  | [] => true
-  | s :: rest => isValidObligationStatement s && isValidObligationInput rest
-end
 
 mutual
 /-- Core recursive worker for `extractFromStatements`. Walks the statement list,
@@ -140,24 +122,27 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
     extractFromStatements pc ss = extractGo pc ss #[] := by
   unfold extractFromStatements; rfl
 
+/-- `extractGo` succeeds on any body satisfying `hasObligationForm`, for any path
+    conditions and accumulator. -/
 private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statements)
     (acc : Array (ProofObligation Expression))
-    (h : isValidObligationInput ss = true) :
+    (h : Statements.hasObligationForm ss = true) :
     (extractGo pc ss acc).isOk = true := by
   match ss with
   | [] => unfold extractGo; rfl
   | s :: rest =>
-    unfold isValidObligationInput at h
-    simp [Bool.and_eq_true] at h
-    obtain ⟨hs, hrest⟩ := h
+    -- Split into: `s` itself, the statements nested in `s`, and `rest`.
+    unfold Statements.hasObligationForm Imperative.Block.allSubstmts
+      Imperative.Stmt.allSubstmts at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨hs, hsub⟩, hrest⟩ := h
     unfold extractGo; split
     · exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
     · rename_i thenSs elseSs _
-      unfold isValidObligationStatement at hs
-      simp [Bool.and_eq_true] at hs
-      obtain ⟨hthen, helse⟩ := hs
+      simp only [Bool.and_eq_true] at hsub
+      obtain ⟨hthen, helse⟩ := hsub
       simp only [extractFromStatements]
       have h1 := extractGo_ok pc thenSs #[] hthen
       have h2 := extractGo_ok pc elseSs #[] helse
@@ -169,12 +154,12 @@ private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statement
         | error => intro _ h; simp [Except.isOk, Except.toBool] at h
         | ok v2 => intro _ _; simp; exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
-    · unfold isValidObligationStatement at hs; simp at hs
+    · -- `isObligationForm` rejects every statement that reaches this case.
+      unfold Statement.isObligationForm at hs; simp at hs
 
-/-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
-    never returns an error. -/
+/-- `extractFromStatements` succeeds on any body satisfying `hasObligationForm`. -/
 theorem extractFromStatements_ok (pc : RevPathConditions Expression) (ss : Statements)
-    (h : isValidObligationInput ss = true) :
+    (h : Statements.hasObligationForm ss = true) :
     (extractFromStatements pc ss).isOk = true := by
   unfold extractFromStatements; exact extractGo_ok pc ss #[] h
 

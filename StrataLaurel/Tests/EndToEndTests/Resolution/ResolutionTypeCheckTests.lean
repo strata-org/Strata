@@ -172,11 +172,10 @@ procedure readOpt(o: Opt<int>): bool {
 #end
 
 /-! The pairing needs the receiver's type to CARRY an instantiation, and a constructor call used
-directly as the receiver does not: `getCallInfo`'s constructor arm reports the bare
-`.UserDefined Opt` with no type arguments. So this stays gradual and is accepted, where the same
-comparison through a declared `Opt<int>` binding above is rejected. Pinned deliberately — it is
-the remaining gap, and recovering it means making a constructor call report its own
-instantiation, which is a separate change. -/
+directly as the receiver does: a generic constructor reports its own instantiation
+(`Som(5) : Opt<int>`, inferred from the argument) rather than the bare `.UserDefined Opt`. So this
+is rejected with the SAME wording as the comparison through a declared `Opt<int>` binding above —
+the two read alike, which is the point. -/
 
 #eval testLaurelResolution <|
 #strata
@@ -184,6 +183,7 @@ program Laurel;
 datatype Opt<T> { Som(value: T), Non() }
 procedure readCtorDirect(): bool {
   Opt..value!(Som(5)) == true
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'bool' using '=='
 };
 #end
 
@@ -1105,9 +1105,9 @@ procedure mixedSlotsBad() opaque {
 };
 #end
 
--- And the polymorphic slot stays unchecked in the same constructor: an argument
--- whose type has nothing to do with the instantiation is accepted for `value`,
--- while `count` still takes an `int`.
+-- The polymorphic slot is not checked against the DECLARED field type (an erased `T` accepts any
+-- argument), but the argument DETERMINES the instantiation: `Wrap(true, 7)` is a `Box2<bool>`,
+-- which the `Box2<int>` binding rejects. The concrete `count` slot is checked directly.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -1116,6 +1116,7 @@ datatype Box2<T> {
 }
 procedure mixedSlotsOk() opaque {
   var b: Box2<int> := Wrap(true, 7)
+//                    ^^^^^^^^^^^^^ error: expected 'Box2<int>', got 'Box2<bool>'
 };
 #end
 
@@ -1748,5 +1749,308 @@ coroutine counter() yields (x: int)
   {
     x := x + 1; yield
   }
+};
+#end
+
+/-! ## Every type argument must be determined
+
+A type parameter that appears only in the RESULT (`setEmpty<T>() : Set<T>`) is determined by the
+check direction: the declared return type is matched against the expected type. Where nothing
+supplies it, the call is reported here rather than reaching Core as a free type variable. Laurel
+has no syntax for type arguments at a call, so the diagnostic points at the binding. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure noAnnotation() opaque {
+  var s := setEmpty();
+//         ^^^^^^^^^^ error: cannot infer type argument 'T' of 'setEmpty': annotate the variable or output it is assigned to with a concrete type
+  assert 1 == 1
+};
+#end
+
+/-! The positive counterpart: an annotated binding determines `T`, so the same call resolves. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure annotated() opaque {
+  var s: Set<int> := setEmpty();
+  assert setContains(s, 1) == setContains(s, 1)
+};
+#end
+
+/-! A generic CONSTRUCTOR whose parameter no argument determines is reported the same way.
+`Non()` takes no arguments, so only the binding can say what `T` is. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Opt<T> { Som(value: T), Non() }
+procedure bareNon() opaque {
+  var o := Non();
+//         ^^^^^ error: cannot infer type argument 'T' of 'Opt': annotate the variable or output it is assigned to with a concrete type
+  assert 1 == 1
+};
+#end
+
+/-! A bare `new C` on a GENERIC composite has the same requirement, and its message names the
+explicit-instantiation form as well, since `new C<τ…>` is a form the grammar does accept. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+procedure bareNew() opaque {
+  var b := new Box;
+//         ^^^^^^^ error: cannot infer type argument 'T' of 'Box': write the instantiation explicitly (`new Box<…>`) or annotate the variable it is assigned to
+  assert 1 == 1
+};
+#end
+
+/-! ### A supertype expected type does not break a generic call
+
+The argument says `Dog` while the binding says `Animal`, so the return position and the arguments
+disagree about `T`. Either binding satisfies this program, so what this pins is only that the
+disagreement RESOLVES rather than being reported as a conflict — `callSiteTypeSubst` reconciles
+candidates related by subtyping to the more general one.
+
+Which side wins the merge is deliberately NOT claimed here, because it is not observable: the
+expression has a single consumer, and that consumer is what supplied the expected type, so both
+instantiations type-check. Swapping the precedence leaves this whole suite green. It could only
+become observable through a recorded instantiation reaching Core, and recording is confined to
+external callees, which this is not. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { var barks: bool }
+procedure identity<T>(x: T) returns (r: T) opaque;
+procedure supertypeExpectedType() opaque {
+  var d: Dog := new Dog;
+  var a: Animal := identity(d);
+  assert d#barks == d#barks
+};
+#end
+
+/-! ### A SIBLING argument determines a nested generic call
+
+`choose<T>(a: T, b: T)` has nothing in its result to bind `T` from, so the binding is unannotated
+and the only evidence is `known : Set<int>`. That evidence has to reach the `setEmpty()` sibling,
+which is what the two-group staging in the generic path is for. Both orders, since this is not
+left-to-right propagation: the arguments that cannot use a slot go first whichever position they
+sit in. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure choose<T>(a: T, b: T) returns (r: T) opaque;
+procedure siblingDeterminesNested(known: Set<int>) opaque {
+  var s := choose(setEmpty(), known);
+  assert setContains(s, 1) == setContains(s, 1)
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure choose<T>(a: T, b: T) returns (r: T) opaque;
+procedure siblingDeterminesNestedReversed(known: Set<int>) opaque {
+  var s := choose(known, setEmpty());
+  assert setContains(s, 1) == setContains(s, 1)
+};
+#end
+
+/-! The same rule under `==`, whose wrapper `$eq<T>(x: T, y: T)` is a generic call like any other.
+The first operand determines `T`, and the second is the nested call that needs it. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure equalityOperandDeterminesNested() opaque {
+  var s: Set<int> := setEmpty();
+  assert s == setEmpty()
+};
+#end
+
+/-! ### The slot survives a check-capable wrapper
+
+`if` and block are the two expression forms with their own check rules, so the expected type
+reaches a call nested in one just as it reaches a direct one. The synth rules forward the slot to
+the same children the check rules push into — both branches of an `if`, the last statement of a
+block — otherwise `identity(if c then setEmpty() else setEmpty())` reports `T` undetermined once
+per branch while the unwrapped `var s: Set<int> := if c then …` resolves. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure identity2<T>(x: T) returns (r: T) opaque;
+procedure ifWrapperKeepsSlot(c: bool) opaque {
+  var s: Set<int> := identity2(if c then setEmpty() else setEmpty());
+  assert setContains(s, 1) == setContains(s, 1)
+};
+#end
+
+/-! A generic CONSTRUCTOR slot pushes through the same wrapper. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Opt2<T> { Som2(value: T), Non2() }
+procedure ctorSlotThroughIfWrapper(c: bool) opaque {
+  var o: Opt2<Set<int>> := Som2(if c then setEmpty() else setEmpty());
+  assert true
+};
+#end
+
+/-! A block wrapper, whose value is its last statement. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure identity3<T>(x: T) returns (r: T) opaque;
+procedure blockWrapperKeepsSlot() opaque {
+  var s: Set<int> := identity3({ setEmpty() });
+  assert setContains(s, 1) == setContains(s, 1)
+};
+#end
+
+/-! `old`, `oldGuarantee` and `oldRelies` are wrappers of the same kind: each checks its operand
+against the surrounding expectation, so each must forward the slot in synth position too. Only the
+type direction changes — the snapshot each one takes is untouched.
+
+`old` over `setEmpty()` reads no heap, so the no-op warning below is a correct separate diagnostic;
+what this case pins is that the type argument is no longer reported. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure identity4<T>(x: T) returns (r: T) opaque;
+procedure oldWrapperKeepsSlot() returns (r: bool)
+  opaque
+  ensures r == setContains(identity4(old(setEmpty())), 1);
+//                                   ^^^^^^^^^^^^^^^ warning: `old(...)` has no effect
+#end
+
+/-! `oldGuarantee` and `oldRelies` are coroutine-only, so the slot arrives through a loop
+invariant. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure identity5<T>(x: T) returns (r: T) opaque;
+coroutine guaranteeWrapperKeepsSlot() yields (x: int)
+{
+  x := 0;
+  while (true)
+    invariant setContains(identity5(oldGuarantee(setEmpty())), 1)
+  {
+    x := x + 1; yield
+  }
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure identity6<T>(x: T) returns (r: T) opaque;
+coroutine reliesWrapperKeepsSlot() yields (x: int)
+{
+  x := 0;
+  while (true)
+    invariant setContains(identity6(oldRelies(setEmpty())), 1)
+  {
+    x := x + 1; yield
+  }
+};
+#end
+
+/-! ### Spelling does not decide the outcome
+
+`mapEmpty<K, V>()` supplies no `V`, and `mapContains` cannot recover it from a `Map<K, V>` whose
+`V` is itself undetermined, so the call is reported. The pair below is the same program twice with
+the ENCLOSING type parameters spelled differently: `<K, V>`, where the enclosing `V` collides by
+name with `mapEmpty`'s own, and `<A, B>`, where nothing collides. Both report identically, pinning
+that a type parameter is identified by its binder rather than by its text — a by-name comparison
+would let the colliding spelling satisfy `V` and report only one of the two. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure collidingParamNames<K, V>(k: K, v: V) returns (r: bool) opaque ensures true {
+  r := mapContains(mapEmpty(), k)
+//     ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'V' of 'mapContains': the expected type does not determine it either; annotate with a concrete instantiation
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure distinctParamNames<A, B>(k: A, v: B) returns (r: bool) opaque ensures true {
+  r := mapContains(mapEmpty(), k)
+//     ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'V' of 'mapContains': the expected type does not determine it either; annotate with a concrete instantiation
+};
+#end
+
+/-! ### A DESCENDANT actual is lifted to the declared head
+
+`liftExt<T>(x: LiftBase<T>)` applied to a `LiftIntBox` (where `LiftIntBox extends LiftBase<int>`)
+binds `T := int`, because the actual is first lifted to the `LiftBase<int>` among its substituted
+ancestors. A purely structural match of `LiftBase<T>` against `LiftIntBox` binds nothing, and the
+result then stays a bare `T` that every consistency check waves through — while the parameter is
+already counted as determined off the SAME ancestor lift, so nothing reports it either. The pair
+below is the same program with a descendant receiver and with an exact-head one; both must report
+the mismatched assignment here, in Laurel. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite LiftBase<T> { var v: T }
+composite LiftIntBox extends LiftBase<int> { }
+procedure liftExt<T>(x: LiftBase<T>) returns (r: T) opaque ensures true { r := x#v };
+procedure descendantActual() opaque {
+  var b: LiftIntBox := new LiftIntBox;
+  var r := liftExt(b);
+  var s: string := r;
+//                 ^ error: expected 'string', got 'int'
+  assert 1 == 1
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite ExactBase<T> { var v: T }
+procedure exactExt<T>(x: ExactBase<T>) returns (r: T) opaque ensures true { r := x#v };
+procedure exactHeadActual() opaque {
+  var b: ExactBase<int> := new ExactBase<int>;
+  var r := exactExt(b);
+  var s: string := r;
+//                 ^ error: expected 'string', got 'int'
+  assert 1 == 1
+};
+#end
+
+/-! Two parents reaching the ancestor at the SAME instantiation is one candidate, not an ambiguity:
+distinctness is `highEq`, so the lift still applies and the mismatch is still reported. A diamond
+whose parents fix the argument DIFFERENTLY binds nothing instead of picking a witness, and
+`MonomorphizeComposites.inferProcInst` rejects it later naming both instantiations — see
+`DynamicDispatchTest`'s `inherited_generic_diamond_*` cases. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite AgrBase<T> { var v: T }
+composite AgrL extends AgrBase<int> { }
+composite AgrR extends AgrBase<int> { }
+composite AgrD extends AgrL, AgrR { }
+procedure agrExt<T>(x: AgrBase<T>) returns (r: T) opaque ensures true { r := x#v };
+procedure agreeingDiamond() opaque {
+  var d: AgrD := new AgrD;
+  var r := agrExt(d);
+  var s: string := r;
+//                 ^ error: expected 'string', got 'int'
+  assert 1 == 1
 };
 #end

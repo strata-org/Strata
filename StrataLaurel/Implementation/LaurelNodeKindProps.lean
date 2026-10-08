@@ -178,7 +178,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .CompoundAssign op _ _ =>
     NodeKind.StmtExpr.CompoundAssign :: NodeKind.ofOperation op
   | .PureFieldUpdate .. => [NodeKind.StmtExpr.PureFieldUpdate]
-  | .StaticCall callee _ => NodeKind.StmtExpr.StaticCall :: NodeKind.ofCallee callee
+  | .StaticCall callee _ _ => NodeKind.StmtExpr.StaticCall :: NodeKind.ofCallee callee
   | .New .. => [NodeKind.StmtExpr.New]
   | .This => [NodeKind.StmtExpr.This]
   | .AsType .. => [NodeKind.StmtExpr.AsType]
@@ -239,7 +239,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .IncrDecr _ _ target => variableChildren target.val
   | .CompoundAssign _ target rhs => variableChildren target.val ++ [rhs]
   | .PureFieldUpdate target _ newValue => [target, newValue]
-  | .StaticCall _ arguments => arguments
+  | .StaticCall _ arguments _ => arguments
   | .ReferenceEquals lhs rhs => [lhs, rhs]
   | .AsType target _ => [target]
   | .IsType target _ => [target]

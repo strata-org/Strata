@@ -172,10 +172,10 @@ theorem EvalCmd_under_agreement {P : PureExpr}
     ∃ σ_cfg₁, EvalCmd P δ σ_cfg₀ c σ_cfg₁ failed
             ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit htyped hwfvar =>
     -- Constructor: EvalCmd δ σ_struct₀ (.init x ty (.det e) md) σ_struct₁ false
-    -- rename_i introduces in order: ty, md, x, v, e
-    rename_i ty md e v x
+    -- Inaccessible vars in telescope order: e, v, x, ty, md.
+    rename_i e v x ty md
     -- Need δ σ_cfg₀ e = some v. Use congr + agreement on e's vars.
     have h_eval_cfg : P.eval δ σ_cfg₀ e = .some v :=
       h_wf_def e v σ_struct₀ σ_cfg₀
@@ -198,7 +198,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
       rw [if_neg hne]
     have h_init_cfg : InitState P σ_cfg₀ x v σ_cfg₁ :=
       InitState.init h_x_fresh h_cfg_x h_cfg_other
-    refine ⟨σ_cfg₁, EvalCmd.eval_init h_eval_cfg h_init_cfg hwfvar, ?_⟩
+    refine ⟨σ_cfg₁, EvalCmd.eval_init h_eval_cfg h_init_cfg htyped hwfvar, ?_⟩
     -- StoreAgreement σ_struct₁ σ_cfg₁
     intro y h_def_y
     cases hinit with
@@ -218,7 +218,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
           exact h_struct_y ▸ h_y_def_in_σ'
         exact h_agree y h_def_y'
   | eval_init_unconstrained hinit hval hwfvar =>
-    rename_i ty md x v
+    rename_i x v ty md
     let σ_cfg₁ : SemanticStore P := fun y => if y = x then some v else σ_cfg₀ y
     have h_x_fresh : σ_cfg₀ x = none := by
       apply h_fresh x
@@ -254,8 +254,8 @@ theorem EvalCmd_under_agreement {P : PureExpr}
             h_def_y y (List.mem_singleton.mpr rfl)
           exact h_struct_y ▸ h_y_def_in_σ'
         exact h_agree y h_def_y'
-  | eval_set heval hupdate hwfvar =>
-    rename_i md e v x
+  | eval_set heval hupdate htyped hwfvar =>
+    rename_i e v x md
     have h_eval_cfg : P.eval δ σ_cfg₀ e = .some v :=
       h_wf_def e v σ_struct₀ σ_cfg₀
         (storeAgreement_supplies_mono_premise σ_struct₀ σ_cfg₀ h_agree) heval
@@ -281,7 +281,15 @@ theorem EvalCmd_under_agreement {P : PureExpr}
         rw [if_neg hne]
       have h_upd : UpdateState P σ_cfg₀ x v σ_cfg₁ :=
         UpdateState.update h_cfg_x_old h_cfg_x_new h_cfg_other
-      refine ⟨σ_cfg₁, EvalCmd.eval_set h_eval_cfg h_upd hwfvar, ?_⟩
+      -- Replay the stored-type premise on the CFG store: the old value shares
+      -- the type recorded for `σ_struct₀ x`, and the CFG store binds the same
+      -- old value at `x` (via `h_cfg_x_old`).
+      obtain ⟨previous, valueTy, h_previous, h_previous_ty, h_v_ty⟩ := htyped
+      have h_previous_eq : previous = v' := Option.some.inj (h_previous.symm.trans h_xv')
+      subst previous
+      have h_typed_cfg : HasVal.valueOfStoredTy (P := P) δ σ_cfg₀ x v :=
+        ⟨v', valueTy, h_cfg_x_old, h_previous_ty, h_v_ty⟩
+      refine ⟨σ_cfg₁, EvalCmd.eval_set h_eval_cfg h_upd h_typed_cfg hwfvar, ?_⟩
       intro y h_def_y
       by_cases hyx : y = x
       · subst hyx
@@ -298,7 +306,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
           exact h_struct_y ▸ h_y_def_in_σ'
         exact h_agree y h_def_y'
   | eval_set_nondet hupdate hval hwfvar =>
-    rename_i md x v
+    rename_i x v md
     cases hupdate with
     | update h_xv' h_xv h_other =>
       rename_i v'
@@ -321,7 +329,15 @@ theorem EvalCmd_under_agreement {P : PureExpr}
         rw [if_neg hne]
       have h_upd : UpdateState P σ_cfg₀ x v σ_cfg₁ :=
         UpdateState.update h_cfg_x_old h_cfg_x_new h_cfg_other
-      refine ⟨σ_cfg₁, EvalCmd.eval_set_nondet h_upd hval hwfvar, ?_⟩
+      -- Replay the stored-type premise on the CFG store (nondet set): the
+      -- havoc'd value shares the type recorded for `σ_struct₀ x`, and the CFG
+      -- store binds the same old value at `x` (via `h_cfg_x_old`).
+      obtain ⟨previous, valueTy, h_previous, h_previous_ty, h_v_ty⟩ := hval
+      have h_previous_eq : previous = v' := Option.some.inj (h_previous.symm.trans h_xv')
+      subst previous
+      have h_typed_cfg : HasVal.valueOfStoredTy (P := P) δ σ_cfg₀ x v :=
+        ⟨v', valueTy, h_cfg_x_old, h_previous_ty, h_v_ty⟩
+      refine ⟨σ_cfg₁, EvalCmd.eval_set_nondet h_upd h_typed_cfg hwfvar, ?_⟩
       intro y h_def_y
       by_cases hyx : y = x
       · subst hyx
@@ -371,12 +387,13 @@ theorem agreement_helper_unchanged_at_x {P : PureExpr}
     (h_σ_x : σ x = none) :
     σ' x = none := by
   cases h_eval with
-  | eval_init heval hinit hwfvar =>
+  | eval_init heval hinit htyped hwfvar =>
     cases hinit with
     | init h_xn h_xv h_other =>
-      -- After cases on hinit, anonymous vars (from EvalCmd's eval_init constructor):
-      -- `x✝² : P.Ty`, `x✝¹ : MetaData`, `x✝ : P.Ident`, `v✝ e✝ : P.Expr`.
-      rename_i ty md e v x_init
+      -- Inaccessible vars from EvalCmd's eval_init constructor, in order:
+      -- expr `e` : P.Expr, value `v` : P.Expr, ident `x_init` : P.Ident,
+      -- `ty` : P.Ty, metadata `md` : MetaData.
+      rename_i e v x_init ty md
       have h_x_ne : x_init ≠ x := by
         intro h_eq
         apply h_x_not_def
@@ -390,7 +407,7 @@ theorem agreement_helper_unchanged_at_x {P : PureExpr}
   | eval_init_unconstrained hinit hval hwfvar =>
     cases hinit with
     | init h_xn h_xv h_other =>
-      rename_i ty md x_init v
+      rename_i x_init v ty md
       have h_x_ne : x_init ≠ x := by
         intro h_eq
         apply h_x_not_def
@@ -401,10 +418,10 @@ theorem agreement_helper_unchanged_at_x {P : PureExpr}
         rw [h_dv, h_eq]
         exact List.mem_cons_self
       rw [h_other x h_x_ne]; exact h_σ_x
-  | eval_set heval hupdate hwfvar =>
+  | eval_set heval hupdate htyped hwfvar =>
     cases hupdate with
     | update h_xv' h_xv h_other =>
-      rename_i md e v x_set v'
+      rename_i e v x_set md v'
       by_cases h_eq : x_set = x
       · subst h_eq
         rw [h_σ_x] at h_xv'
@@ -413,7 +430,7 @@ theorem agreement_helper_unchanged_at_x {P : PureExpr}
   | eval_set_nondet hupdate hval hwfvar =>
     cases hupdate with
     | update h_xv' h_xv h_other =>
-      rename_i md x_set v v'
+      rename_i x_set v md v'
       by_cases h_eq : x_set = x
       · subst h_eq
         rw [h_σ_x] at h_xv'

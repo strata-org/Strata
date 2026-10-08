@@ -206,7 +206,7 @@ private def addHeapSpecifications (proc : Procedure) : Procedure :=
     axioms := [value] }
 
 private def effectExpr (callee : String) : StmtExprMd :=
-  md (.StaticCall (mkId callee) [fieldRead "cell" "value"])
+  md (.StaticCall (mkId callee) [fieldRead "cell" "value"] [])
 
 private def effectProcedure (body : Body) : Procedure :=
   { name := mkId "effectProcedure"
@@ -281,9 +281,9 @@ private def specificationsHasFieldRead (proc : Procedure) : Bool :=
 
 private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall unbox [read] =>
+  | .StaticCall unbox [read] _ =>
       unbox.text == "$Box..intVal!" && match read.val with
-        | .StaticCall readField [heap, receiver, field] =>
+        | .StaticCall readField [heap, receiver, field] _ =>
             readField.text == "readField" &&
               (match heap.val with
               | .Var (.Local name) => name.text == "$heap"
@@ -292,7 +292,7 @@ private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
               | .Var (.Local name) => name.text == "cell"
               | _ => false) &&
               (match field.val with
-              | .StaticCall name [] => name.text == "Cell.value"
+              | .StaticCall name [] _ => name.text == "Cell.value"
               | _ => false)
         | _ => false
   | _ => false
@@ -378,8 +378,8 @@ private def specificationCallProgram : Program :=
   let reader := {
     externalProc "heapReader" [cellParam] [param "$result" .TInt] with
     body := .Opaque [] (some (fieldRead "cell" "value")) [] }
-  let writerCall := md (.StaticCall (mkId "mutator") [localExpr "cell"])
-  let readerCall := md (.StaticCall (mkId "heapReader") [localExpr "cell"])
+  let writerCall := md (.StaticCall (mkId "mutator") [localExpr "cell"] [])
+  let readerCall := md (.StaticCall (mkId "heapReader") [localExpr "cell"] [])
   let caller := {
     externalProc "specificationCaller" [cellParam] with
     decreases := some writerCall
@@ -400,7 +400,7 @@ private def specificationCallProgram : Program :=
     into something impure. -/
 private def isHeapAwareCall (calleeName : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall callee [cell] =>
+  | .StaticCall callee [cell] _ =>
       callee.text == calleeName &&
         (match cell.val with
         | .Var (.Local name) => name.text == "cell"
@@ -417,7 +417,7 @@ private def impureSpecificationCallProgram : Program :=
   let mutator := {
     externalProc "mutator" [cellParam] [param "$result" .TInt] with
     body := .Opaque [] none [{ targets := [fieldRead "cell" "value"] }] }
-  let writerCall := md (.StaticCall (mkId "mutator") [localExpr "cell"])
+  let writerCall := md (.StaticCall (mkId "mutator") [localExpr "cell"] [])
   let caller := {
     externalProc "caller" [cellParam] [param "$result" .TInt] with
     decreases := some writerCall
@@ -486,7 +486,7 @@ private def instanceAxiomProgram : Program :=
 private def liftedAxiomCallIsStatic (proc : Procedure) : Bool :=
   match proc.axioms with
   | [ax] => match ax.val with
-    | .StaticCall callee [receiver] =>
+    | .StaticCall callee [receiver] _ =>
         callee.text == "Cell$predicate" && match receiver.val with
           | .Var (.Local self) => self.text == "self"
           | _ => false
@@ -558,13 +558,13 @@ private def hasEmptySpecifications (proc : Procedure) : Bool :=
 
 private def isHeapWfPrecond (c : Condition) : Bool :=
   match c.condition.val with
-  | .StaticCall lt [lhs, rhs] =>
+  | .StaticCall lt [lhs, rhs] _ =>
     lt.text == "$intLt" &&
       (match lhs.val with
-       | .StaticCall ref _ => ref.text == "Composite..ref!"
+       | .StaticCall ref _ _ => ref.text == "Composite..ref!"
        | _ => false) &&
       (match rhs.val with
-       | .StaticCall next _ => next.text == "Heap..nextReference!"
+       | .StaticCall next _ _ => next.text == "Heap..nextReference!"
        | _ => false)
   | _ => false
 
@@ -654,9 +654,9 @@ expected type of proposition-valued positions.
 
 private def contractHoleProgram : Program :=
   let hole := md (.Hole true none)
-  let comparison := md (.StaticCall (mkId Operation.Gt.procName) [localExpr "x", hole])
-  let decreases := md (.StaticCall (mkId Operation.Add.procName) [localExpr "x", hole])
-  let invokeOn := md (.StaticCall (mkId "triggerTarget") [hole])
+  let comparison := md (.StaticCall (mkId Operation.Gt.procName) [localExpr "x", hole] [])
+  let decreases := md (.StaticCall (mkId Operation.Add.procName) [localExpr "x", hole] [])
+  let invokeOn := md (.StaticCall (mkId "triggerTarget") [hole] [])
   let staticProc := {
     externalProc "contractHoles" [param "x" .TInt] with
     preconditions := [{ condition := comparison }, { condition := hole }]
@@ -667,7 +667,7 @@ private def contractHoleProgram : Program :=
     -- via `$gt(<?>, 0)`. `is` is composite-target-only, so a primitive `is int` resolves
     -- as an error. `$gt` is bool-valued yet types the hole `int` through the operator's
     -- parameter, preserving the int-hole count this test pins.
-    axioms := [hole, md (.StaticCall (mkId Operation.Gt.procName) [hole, md (.LiteralInt 0)])] }
+    axioms := [hole, md (.StaticCall (mkId Operation.Gt.procName) [hole, md (.LiteralInt 0)] [])] }
   let instanceProc := {
     externalProc "instanceContractHoles"
       [param "self" (.UserDefined (mkId "ContractHolder"))] with
@@ -707,7 +707,7 @@ private def isLocalNamed (expected : String) (expr : StmtExprMd) : Bool :=
 private def generatedCallMatches (program : Program) (expectedType : HighType)
     (expectedInput : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall callee [argument] =>
+  | .StaticCall callee [argument] _ =>
       callee.text.startsWith "$hole_" && isLocalNamed expectedInput argument &&
         match findProcedure program callee.text with
         | some generated =>
@@ -722,25 +722,25 @@ private def staticContractPositionsMatch (program : Program) (proc : Procedure) 
   | [comparison, bareRequires], some decreases, some invokeOn,
       .Opaque [postcondition] none [], [bareAxiom, typedAxiom] =>
     let comparisonMatches := match comparison.condition.val with
-      | .StaticCall callee [lhs, holeCall] =>
+      | .StaticCall callee [lhs, holeCall] _ =>
           callee.text == Operation.Gt.procName &&
             isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
       | _ => false
     let requiresMatches := generatedCallMatches program .TBool "x" bareRequires.condition
     let decreasesMatches := match decreases.val with
-      | .StaticCall callee [lhs, holeCall] =>
+      | .StaticCall callee [lhs, holeCall] _ =>
           callee.text == Operation.Add.procName &&
             isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
       | _ => false
     let invokeOnMatches := match invokeOn.val with
-      | .StaticCall callee [holeCall] =>
+      | .StaticCall callee [holeCall] _ =>
           callee.text == "triggerTarget" && generatedCallMatches program .TInt "x" holeCall
       | _ => false
     let postconditionMatches :=
       generatedCallMatches program .TBool "x" postcondition.condition
     let bareAxiomMatches := generatedCallMatches program .TBool "x" bareAxiom
     let typedAxiomMatches := match typedAxiom.val with
-      | .StaticCall callee [holeCall, rhs] =>
+      | .StaticCall callee [holeCall, rhs] _ =>
           callee.text == Operation.Gt.procName &&
             (match rhs.val with | .LiteralInt 0 => true | _ => false) &&
             generatedCallMatches program .TInt "x" holeCall

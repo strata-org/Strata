@@ -63,10 +63,10 @@ theorem getVars_replaceUserProvidedType (e : LExpr Tbase.mono)
   | eq _ _ _ ih1 ih2 => simp only [LExpr.replaceUserProvidedType, LExpr.LExpr.getVars]; rw [ih1, ih2]
 
 omit [DecidableEq Tbase.IDMeta] in
-/-- `applySubst` does not change the free variables (only type annotations). -/
-theorem getVars_applySubst (e : LExpr Tbase.mono) (S : Subst) :
-    LExpr.LExpr.getVars (e.applySubst S) = LExpr.LExpr.getVars e := by
-  unfold LExpr.applySubst
+/-- `applyTypeSubst` does not change the free variables (only type annotations). -/
+theorem getVars_applyTypeSubst (e : LExpr Tbase.mono) (S : Subst) :
+    LExpr.LExpr.getVars (e.applyTypeSubst S) = LExpr.LExpr.getVars e := by
+  unfold LExpr.applyTypeSubst
   split
   · rfl
   · exact getVars_replaceUserProvidedType e _

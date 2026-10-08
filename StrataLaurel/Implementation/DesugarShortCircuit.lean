@@ -34,7 +34,7 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
   -- The short-circuit operators are calls to their built-in wrappers
   -- (`Operation.procName`); none of them is overloaded, so `UniqueOverloadNames`
   -- leaves the names alone and matching on the callee text is safe.
-  | .StaticCall callee args =>
+  | .StaticCall callee args _ =>
     match Operation.ofProcName? callee.text, args with
     -- With bottom-up traversal, `a` and `b` are already desugared (nested
     -- short-circuits converted to IfThenElse). The check still works because

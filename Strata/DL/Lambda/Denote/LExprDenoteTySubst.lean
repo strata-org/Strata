@@ -6,18 +6,19 @@
 module
 
 import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
 
 /-!
 ## Type Substitution and Denotation
 
-Proves that `applySubst` (applying a type substitution to annotations) commutes
+Proves that `applyTypeSubst` (applying a type substitution to annotations) commutes
 with denotation — changing annotations is equivalent to changing the type variable
 valuation.
 
-- `applySubst_typeCheck` — `applySubst` preserves typing, mapping types through `subst S`
-- `denote_applySubst` — denotation of `applySubst S e` equals denotation of `e` under modified valuation
+- `applyTypeSubst_typeCheck` — `applyTypeSubst` preserves typing, mapping types through `subst S`
+- `denote_applyTypeSubst` — denotation of `applyTypeSubst S e` equals denotation of `e` under modified valuation
 -/
 
 namespace Lambda
@@ -74,12 +75,12 @@ private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty 
   cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.real, LMonoTy.string, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
   apply LMonoTy.subst_bitvec
 
-/-- `applySubst` preserves typing, mapping types through `subst S`. -/
-theorem applySubst_typeCheck (S : Subst)
+/-- `applyTypeSubst` preserves typing, mapping types through `subst S`. -/
+theorem applyTypeSubst_typeCheck (S : Subst)
     {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
     (h : LExpr.HasTypeA Δ e τ)
-    : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ) := by
-  rw [LExpr.applySubst_eq_replaceUserProvidedType]
+    : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applyTypeSubst S) (LMonoTy.subst S τ) := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
   induction h with
   | const =>
     simp only [LExpr.replaceUserProvidedType]
@@ -114,12 +115,12 @@ theorem applySubst_typeCheck (S : Subst)
     rw [LMonoTy.subst_bool]
     exact .eq ih_1 ih_2
 
-/-- `applySubst` transforms `fvars_annotated_by` consistently. -/
-theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
+/-- `applyTypeSubst` transforms `fvars_annotated_by` consistently. -/
+theorem applyTypeSubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
     {e : LExpr T.mono} {tyMap : Map T.Identifier LMonoTy}
     (h : fvars_annotated_by tyMap e)
-    : fvars_annotated_by (tyMap.map (fun (k, v) => (k, LMonoTy.subst S v))) (e.applySubst S) := by
-  rw [LExpr.applySubst_eq_replaceUserProvidedType]
+    : fvars_annotated_by (tyMap.map (fun (k, v) => (k, LMonoTy.subst S v))) (e.applyTypeSubst S) := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
   induction e with
   | fvar m name uty =>
     cases uty with
@@ -152,7 +153,7 @@ theorem applySubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
     exact ⟨ih_tr h.1, ih_body h.2⟩
 
 /-- Extend `h_bvar_compat` when pushing a new bound variable onto the context.
-Used in the `abs` and `quant` cases of `denote_applySubst_gen`. -/
+Used in the `abs` and `quant` cases of `denote_applyTypeSubst_gen`. -/
 private theorem bvar_compat_cons
     {S : Subst} {vt vt' : TyVarVal}
     (hvt' : vt' = fun x => match S.find? x with
@@ -181,16 +182,16 @@ private theorem bvar_compat_cons
     simp only [HList.get]
     exact h_bvar_compat j τ_b hb hb'
 
-/-- Generalized `denote_applySubst` for arbitrary bvar contexts.
+/-- Generalized `denote_applyTypeSubst` for arbitrary bvar contexts.
 The induction for `abs` and `quant` extends the context, so we need this
 generalized form as the workhorse. -/
-private theorem denote_applySubst_gen
+private theorem denote_applyTypeSubst_gen
     {S : Subst} {vt vt' : TyVarVal}
     (hvt' : vt' = fun x => match S.find? x with
       | some t => LMonoTy.substTyVars vt t | none => vt x)
     {Δ : List LMonoTy} {e : LExpr T.mono} {τ : LMonoTy}
     (h_body : LExpr.HasTypeA Δ e τ)
-    (h_subst : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applySubst S) (LMonoTy.subst S τ))
+    (h_subst : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applyTypeSubst S) (LMonoTy.subst S τ))
     (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
     {bvarVal : BVarVal tcInterp vt (Δ.map (LMonoTy.subst S))}
     {bvarVal' : BVarVal tcInterp vt' Δ}
@@ -200,12 +201,12 @@ private theorem denote_applySubst_gen
         cast (congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S τ_b))
           (bvarVal.get i hb') = bvarVal'.get i hb)
     : cast h_td
-        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal (e.applySubst S) (LMonoTy.subst S τ) h_subst) =
+        (LExpr.denote tcInterp opInterp fvarVal vt bvarVal (e.applyTypeSubst S) (LMonoTy.subst S τ) h_subst) =
       LExpr.denote tcInterp opInterp fvarVal vt' bvarVal' e τ h_body := by
-  have h_eq : e.applySubst S = LExpr.replaceUserProvidedType e (LMonoTy.subst S) :=
-    LExpr.applySubst_eq_replaceUserProvidedType e S
+  have h_eq : e.applyTypeSubst S = LExpr.replaceUserProvidedType e (LMonoTy.subst S) :=
+    LExpr.applyTypeSubst_eq_replaceUserProvidedType e S
   revert h_subst h_eq
-  generalize e.applySubst S = e'
+  generalize e.applyTypeSubst S = e'
   intros h_subst h_eq
   subst h_eq
   -- Induct on e
@@ -310,8 +311,8 @@ private theorem denote_applySubst_gen
     have h_subst_arrow : LMonoTy.subst S (aty.arrow τ) = (LMonoTy.subst S aty).arrow (LMonoTy.subst S τ) :=
       LMonoTy.subst_tcons_pair S "arrow" aty τ
     have h_aty_s : aty_s = LMonoTy.subst S aty := by
-      have h_fn_s' := applySubst_typeCheck S h_fn
-      rw [LExpr.applySubst_eq_replaceUserProvidedType, h_subst_arrow] at h_fn_s'
+      have h_fn_s' := applyTypeSubst_typeCheck S h_fn
+      rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType, h_subst_arrow] at h_fn_s'
       have h_unique := HasTypeA_unique h_fn_s h_fn_s'
       cases h_unique; rfl
     subst h_aty_s
@@ -363,9 +364,9 @@ private theorem denote_applySubst_gen
     have ⟨ty_s, h_τ_s, h_1_s, h_2_s⟩ := HasTypeA.eq_inv h_subst
     subst h_τ
     have h_ty_s : ty_s = LMonoTy.subst S ty' := by
-      have h_applySubst := applySubst_typeCheck S h_1
-      rw [LExpr.applySubst_eq_replaceUserProvidedType] at h_applySubst
-      exact HasTypeA_unique h_1_s h_applySubst
+      have h_applyTypeSubst := applyTypeSubst_typeCheck S h_1
+      rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType] at h_applyTypeSubst
+      exact HasTypeA_unique h_1_s h_applyTypeSubst
     subst h_ty_s
     have h_td_ty : TyDenote tcInterp vt (LMonoTy.subst S ty') = TyDenote tcInterp vt' ty' :=
       congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S ty')
@@ -466,18 +467,18 @@ private theorem denote_applySubst_gen
         grind
 
 /-- Applying a type substitution to annotations is equivalent to changing the
-type variable valuation. Specialization of `denote_applySubst_gen` to `Δ = []`. -/
-theorem denote_applySubst
+type variable valuation. Specialization of `denote_applyTypeSubst_gen` to `Δ = []`. -/
+theorem denote_applyTypeSubst
     {S : Subst} {vt vt' : TyVarVal}
     (hvt' : vt' = fun x => match S.find? x with
       | some t => LMonoTy.substTyVars vt t | none => vt x)
     {e : LExpr T.mono} {τ : LMonoTy}
     (h_body : LExpr.HasTypeA [] e τ)
-    (h_subst : LExpr.HasTypeA [] (e.applySubst S) (LMonoTy.subst S τ))
+    (h_subst : LExpr.HasTypeA [] (e.applyTypeSubst S) (LMonoTy.subst S τ))
     (h_td : TyDenote tcInterp vt (LMonoTy.subst S τ) = TyDenote tcInterp vt' τ)
-    : LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applySubst S) (LMonoTy.subst S τ) h_subst =
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil (e.applyTypeSubst S) (LMonoTy.subst S τ) h_subst =
       cast h_td.symm (LExpr.denote tcInterp opInterp fvarVal vt' .nil e τ h_body) := by
-  have h_gen := denote_applySubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
+  have h_gen := denote_applyTypeSubst_gen tcInterp opInterp fvarVal hvt' h_body h_subst h_td
     (bvarVal := .nil) (bvarVal' := .nil)
     (fun i _ hb _ => absurd hb (by simp))
   set_option backward.isDefEq.respectTransparency false in rw [← h_gen, cast_cast, cast_eq]

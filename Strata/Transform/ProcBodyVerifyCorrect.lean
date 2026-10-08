@@ -6,7 +6,7 @@
 module
 
 public import Strata.Transform.ProcBodyVerify
-public import Strata.Transform.CoreSpecification
+public import Strata.Transform.CoreSpecificationProps
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.ProcedureWF
 import Strata.Languages.Core.StatementSemanticsProps
@@ -269,24 +269,21 @@ private theorem PrefixStepsOK_nondet_init_cons
     (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (x : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
-    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_rest : PrefixStepsOK π φ rest ρ)
-    (h_some : ((prefixInitEnv rest ρ).store x).isSome) :
+    (h_ty : ∃ v, (prefixInitEnv rest ρ).store x = some v ∧
+      HasVal.valueOfTy ρ.factory v ty) :
     PrefixStepsOK π φ (Statement.init x ty .nondet #[] :: rest) ρ := by
   constructor
   · exact h_rest
   · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
     have h_none : (prefixInitEnv (Statement.init x ty .nondet #[] :: rest) ρ).store x = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
-    have h_some' := h_some
-    rw [Option.isSome_iff_exists] at h_some'
-    obtain ⟨v, hv⟩ := h_some'
-    have h_wfStore' := prefixInitEnv_store_wf rest ρ h_wfStore
+    obtain ⟨v, hv, hvty⟩ := h_ty
     exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y x rfl hne).symm))
-      (h_wfStore' x v hv)
+      hvty
       h_wfVar)
 
 /-- PrefixStepsOK for a list of nondet init statements from a map. -/
@@ -294,10 +291,10 @@ private theorem PrefixStepsOK_nondet_init_map
     (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
-    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
-    (h_defined : ∀ id ∈ entries.map Prod.fst,
-      (ρ.store id).isSome)
+    (h_typed : ∀ id ty', (id, ty') ∈ entries →
+      ∃ v, ρ.store id = some v ∧
+        HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty'))
     (h_nodup : (entries.map Prod.fst).Nodup)
     : PrefixStepsOK π φ
         (entries.map fun (id, ty) => Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]) ρ := by
@@ -305,15 +302,16 @@ private theorem PrefixStepsOK_nondet_init_map
   | nil => exact trivial
   | cons e rest ih =>
     obtain ⟨id, ty⟩ := e
-    simp only [List.map] at h_defined h_nodup ⊢
+    simp only [List.map] at h_nodup ⊢
     rw [List.nodup_cons] at h_nodup
     apply PrefixStepsOK_nondet_init_cons π φ id (Lambda.LTy.forAll [] ty)
-    · exact h_wfStore
     · exact h_wfVar
-    · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi)) h_nodup.2
-    · -- Need: ((prefixInitEnv (rest.map ...) ρ).store id).isSome
+    · exact ih (fun i t hi => h_typed i t (List.mem_cons_of_mem _ hi)) h_nodup.2
+    · -- typed value for id, transported across the rest's inits
+      obtain ⟨v, hv, hvty⟩ := h_typed id ty List.mem_cons_self
+      refine ⟨v, ?_, hvty⟩
       rw [prefixInitEnv_store_not_init]
-      · exact h_defined id (List.mem_cons_self)
+      · exact hv
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
@@ -330,8 +328,8 @@ private theorem PrefixStepsOK_det_init_cons
     (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_rest : PrefixStepsOK π φ rest ρ)
-    (_h_id_some : ((prefixInitEnv rest ρ).store id).isSome)
-    (h_old_some : ((prefixInitEnv rest ρ).store oldG).isSome)
+    (h_ty : ∃ v, (prefixInitEnv rest ρ).store oldG = some v ∧
+      HasVal.valueOfTy ρ.factory v ty)
     (h_id_eq_old : (prefixInitEnv rest ρ).store id = (prefixInitEnv rest ρ).store oldG)
     (h_ne : oldG ≠ id) :
     PrefixStepsOK π φ
@@ -344,8 +342,7 @@ private theorem PrefixStepsOK_det_init_cons
     have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store id =
         (prefixInitEnv rest ρ).store id := by
       rw [prefixInitEnv_store_other _ _ _ id oldG rfl h_ne]
-    rw [Option.isSome_iff_exists] at h_old_some
-    obtain ⟨v, hv⟩ := h_old_some
+    obtain ⟨v, hv, hvty⟩ := h_ty
     have h_getFvar : HasFvar.getFvar (LExpr.fvar () id none : Expression.Expr) = some id := by
       simp [HasFvar.getFvar]
     have h_eval : Expression.eval ρ.factory (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
@@ -356,6 +353,7 @@ private theorem PrefixStepsOK_det_init_cons
     exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
+      hvty
       h_wfVar)
 
 /-- PrefixStepsOK for a list of det init statements `init (mkOld id.name) ty (.det (fvar id))`. -/
@@ -367,8 +365,9 @@ private theorem PrefixStepsOK_det_init_map
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_defined : ∀ id ∈ entries.map Prod.fst,
       (ρ.store id).isSome)
-    (h_old_defined : ∀ id ∈ entries.map Prod.fst,
-      (ρ.store (CoreIdent.mkOld id.name)).isSome)
+    (h_old_typed : ∀ id ty', (id, ty') ∈ entries →
+      ∃ v, ρ.store (CoreIdent.mkOld id.name) = some v ∧
+        HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty'))
     (h_old_match : ∀ id ∈ entries.map Prod.fst,
       ρ.store id = ρ.store (CoreIdent.mkOld id.name))
     (h_nodup : (entries.map Prod.fst).Nodup)
@@ -382,27 +381,21 @@ private theorem PrefixStepsOK_det_init_map
   | nil => exact trivial
   | cons e rest ih =>
     obtain ⟨id, ty⟩ := e
-    simp only [List.map] at h_defined h_old_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
+    simp only [List.map] at h_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
     rw [List.nodup_cons] at h_nodup h_nodup_old
     apply PrefixStepsOK_det_init_cons π φ id (CoreIdent.mkOld id.name)
       (Lambda.LTy.forAll [] ty) _ ρ h_wfStore h_wfVar
     · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi))
-              (fun i hi => h_old_defined i (List.mem_cons_of_mem _ hi))
+              (fun i t hi => h_old_typed i t (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_match i (List.mem_cons_of_mem _ hi))
               h_nodup.2
               (fun i hi => h_not_old i (List.mem_cons_of_mem _ hi))
               h_nodup_old.2
-    · -- id not init'd by rest's old inits: id is not old-prefixed
+    · -- typed old snapshot for mkOld id.name, transported across rest's old inits
+      obtain ⟨v, hv, hvty⟩ := h_old_typed id ty List.mem_cons_self
+      refine ⟨v, ?_, hvty⟩
       rw [prefixInitEnv_store_not_init]
-      · exact h_defined id List.mem_cons_self
-      · intro s hs
-        simp only [List.mem_map] at hs
-        obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
-        exact (h_not_old id List.mem_cons_self id'.name).symm
-    · -- mkOld id.name not init'd by rest's old inits: nodup of mkOld ids
-      rw [prefixInitEnv_store_not_init]
-      · exact h_old_defined id List.mem_cons_self
+      · exact hv
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
@@ -538,6 +531,20 @@ theorem procToVerifyStmt_structure
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨label, check⟩, _, rfl⟩ := hs; exact ⟨_, rfl⟩
   · intro ρ₀ h_wf
+    -- Derive the typed-store witnesses directly from `ProcEnvWF`.
+    have h_in_typed : ∀ id ty', (id, ty') ∈ proc.header.inputs.toList →
+        ∃ v, ρ₀.store id = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem => h_wf.inputTyped hmem
+    have h_out_typed : ∀ id ty', (id, ty') ∈ proc.header.getOutputOnlyParams.toList →
+        ∃ v, ρ₀.store id = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem =>
+        h_wf.outputTyped (getOutputOnlyParams_subset_outputs proc.header _ hmem)
+    have h_oldinout_typed : ∀ id ty', (id, ty') ∈ proc.header.getInoutParams.toList →
+        ∃ v, ρ₀.store (CoreIdent.mkOld id.name) = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem => h_wf.oldInoutTyped hmem
     refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π φ h_wf.noFailure ?_⟩
     -- Split: (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
     rw [show prefixStmts = (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
@@ -569,18 +576,12 @@ theorem procToVerifyStmt_structure
       apply PrefixStepsOK_det_init_map π φ _ _ h_wf.storeValues h_wf.var
       · -- inout params are defined in store (they are inputs)
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
-        have h_in_inputs := getInoutParams_keys_subset_inputs proc.header id hid
-        exact h_wf.storeDefined id (by
-          unfold Specification.procVerifyInitIdents
-          simp only [List.mem_append]; left; left; exact h_in_inputs)
-      · -- mkOld of inout params are defined in store
-        intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
-        exact h_wf.storeDefined (CoreIdent.mkOld id.name) (by
-          unfold Specification.procVerifyInitIdents
-          simp only [List.mem_append]; right
-          exact List.mem_map.mpr ⟨id, hid, rfl⟩)
+        obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
+        obtain ⟨v, hv, _⟩ :=
+          h_in_typed id' ty' (getInoutParams_subset_inputs proc.header _ hmem)
+        rw [hv]; rfl
+      · -- mkOld of inout params hold typed old snapshots
+        exact h_oldinout_typed
       · -- inout params match their old snapshots
         intro id hid
         rw [← ListMap.keys_eq_map_fst] at hid
@@ -601,59 +602,51 @@ theorem procToVerifyStmt_structure
       have h_wfVar_old : WellFormedSemanticEvalVar (P := Expression)
           (prefixInitEnv oldInoutInits ρ₀).factory := by
         rw [prefixInitEnv_factory]; exact h_wf.var
-      have h_wfStore_old : Imperative.WellFormedStore (prefixInitEnv oldInoutInits ρ₀).store
-          (prefixInitEnv oldInoutInits ρ₀).factory := by
-        rw [prefixInitEnv_factory]; exact prefixInitEnv_store_wf oldInoutInits ρ₀ h_wf.storeValues
       rw [PrefixStepsOK_append]
       constructor
       · -- outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfStore_old h_wfVar_old
-        · intro id hid
-          rw [prefixInitEnv_store_not_init]
-          · rw [← ListMap.keys_eq_map_fst] at hid
-            have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid
-            exact h_wf.storeDefined id (by
-              unfold Specification.procVerifyInitIdents
-              simp only [List.mem_append]; left; right; exact h_in_outputs)
-          · rw [← ListMap.keys_eq_map_fst] at hid
-            have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid
-            exact h_io_not_in_old id (List.mem_append_right _ h_in_outputs)
+        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_old
+        · intro id ty' hmem
+          obtain ⟨v, hv, hvty⟩ := h_out_typed id ty' hmem
+          have hid_keys : id ∈ ListMap.keys proc.header.getOutputOnlyParams := by
+            rw [ListMap.keys_eq_map_fst]
+            exact List.mem_map_of_mem (f := Prod.fst) hmem
+          have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid_keys
+          refine ⟨v, ?_, ?_⟩
+          · rw [prefixInitEnv_store_not_init]
+            · exact hv
+            · exact h_io_not_in_old id (List.mem_append_right _ h_in_outputs)
+          · rw [prefixInitEnv_factory]; exact hvty
         · rw [← ListMap.keys_eq_map_fst]
           exact getOutputOnlyParams_nodup proc.header h_wf_proc.outputsNodup
       · -- inputInits at prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)
         have h_wfVar_out' : WellFormedSemanticEvalVar (P := Expression)
             (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
           rw [prefixInitEnv_factory, prefixInitEnv_factory]; exact h_wf.var
-        have h_wfStore_out' : Imperative.WellFormedStore
-            (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).store
-            (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
-          rw [prefixInitEnv_factory]
-          exact prefixInitEnv_store_wf outputOnlyInits (prefixInitEnv oldInoutInits ρ₀) h_wfStore_old
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfStore_out' h_wfVar_out'
-        · intro id hid
-          rw [prefixInitEnv_store_not_init]
+        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_out'
+        · intro id ty' hmem_in
+          obtain ⟨v, hv, hvty⟩ := h_in_typed id ty' hmem_in
+          have hid_keys : id ∈ ListMap.keys proc.header.inputs := by
+            rw [ListMap.keys_eq_map_fst]
+            exact List.mem_map_of_mem (f := Prod.fst) hmem_in
+          refine ⟨v, ?_, ?_⟩
           · rw [prefixInitEnv_store_not_init]
-            · rw [← ListMap.keys_eq_map_fst] at hid
-              exact h_wf.storeDefined id (by
-                unfold Specification.procVerifyInitIdents
-                simp only [List.mem_append]; left; left; exact hid)
-            · rw [← ListMap.keys_eq_map_fst] at hid
-              exact h_io_not_in_old id (List.mem_append_left _ hid)
-          · -- input id not init'd in outputOnlyInits: by construction,
-            -- getOutputOnlyParams only contains ids NOT in inputs
-            intro s hs heq_s
-            simp only [outputOnlyInits, List.mem_map] at hs
-            obtain ⟨⟨oid, oty⟩, hmem, rfl⟩ := hs
-            simp [stmtInitVar] at heq_s
-            rw [← ListMap.keys_eq_map_fst] at hid
-            -- oid is in getOutputOnlyParams, so oid ∉ inputs
-            have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
-              rw [ListMap.keys_eq_map_fst]
-              simp only [ListMap.toList] at hmem
-              exact List.mem_map_of_mem (f := Prod.fst) hmem
-            have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
-            -- But heq_s says id = oid, so id ∉ inputs, contradiction
-            exact h_oid_not_in_inputs (heq_s ▸ hid)
+            · rw [prefixInitEnv_store_not_init]
+              · exact hv
+              · exact h_io_not_in_old id (List.mem_append_left _ hid_keys)
+            · -- input id not init'd in outputOnlyInits: by construction,
+              -- getOutputOnlyParams only contains ids NOT in inputs
+              intro s hs heq_s
+              simp only [outputOnlyInits, List.mem_map] at hs
+              obtain ⟨⟨oid, oty⟩, hmem2, rfl⟩ := hs
+              simp [stmtInitVar] at heq_s
+              have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
+                rw [ListMap.keys_eq_map_fst]
+                simp only [ListMap.toList] at hmem2
+                exact List.mem_map_of_mem (f := Prod.fst) hmem2
+              have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
+              exact h_oid_not_in_inputs (heq_s ▸ hid_keys)
+          · rw [prefixInitEnv_factory, prefixInitEnv_factory]; exact hvty
         · rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.inputsNodup
 
 /-! ## Postcondition Assert Helpers -/

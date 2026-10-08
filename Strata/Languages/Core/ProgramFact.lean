@@ -112,12 +112,13 @@ inductive ProgramFact where
   /-- No `ite` or `loop` guard is nondeterministic. Established by `NondetElim`,
       which replaces such a guard with a fresh boolean it initializes, and by a
       loop also havocs at the end of the body. Required by symbolic evaluation,
-      which rejects a nondeterministic guard outright.
-
-      Not required by the back end: obligation extraction accepts a
-      nondeterministic `ite`, and symbolic evaluation has removed every guard by
-      the time the program reaches it. -/
+      which rejects a nondeterministic guard outright. -/
   | noNondetGuards
+  /-- Every procedure body contains only `assume`, `assert`, `cover` and `init`,
+      nested under `ite *` to any depth. Established by symbolic evaluation.
+      Required by the back end, whose obligation extraction handles only bodies
+      of this shape. Also required by `UnrollBoundedQuantifiers`. -/
+  | hasObligationForm
   /-- No procedure body declares a function. Established by
       `LiftInternalFuncDecls`, which makes each local function a closed
       top-level one. Required by `MonomorphizeFunctions`, which specializes
@@ -188,6 +189,7 @@ def ProgramFact.name : ProgramFact → String
   | .noBetaRedexes => "noBetaRedexes"
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
   | .noNondetGuards => "noNondetGuards"
+  | .hasObligationForm => "hasObligationForm"
   | .noInternalFuncDecl => "noInternalFuncDecl"
   | .noPolymorphicProcedures => "noPolymorphicProcedures"
   | .noPolymorphicFunctions => "noPolymorphicFunctions"
@@ -203,8 +205,8 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
    .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-   .noInternalFuncDecl, .noPolymorphicProcedures, .noPolymorphicFunctions,
-   .typeAnnotated]
+   .hasObligationForm, .noInternalFuncDecl, .noPolymorphicProcedures,
+   .noPolymorphicFunctions, .typeAnnotated]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
@@ -246,6 +248,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noBetaRedexes    => some (Program.allExprs Lambda.LExpr.noBetaRedex)
   | .noPrecondsFromFuncs => some Program.noFuncPreconditions
   | .noNondetGuards => some (Program.allStatements Imperative.Block.noNondetGuards)
+  | .hasObligationForm => some (Program.allStatements Statements.hasObligationForm)
   | .noInternalFuncDecl => some (Program.allStatements Statements.noFuncDecls)
   | .noPolymorphicProcedures => some Program.noPolymorphicProcedures
   | .noPolymorphicFunctions => some Program.noPolymorphicFunctions
@@ -267,6 +270,8 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noPrecondsFromFuncs => fun p => Program.noFuncPreconditions p = true
   | .noNondetGuards =>
     fun p => Program.allStatements Imperative.Block.noNondetGuards p = true
+  | .hasObligationForm =>
+    fun p => Program.allStatements Statements.hasObligationForm p = true
   | .noInternalFuncDecl =>
     fun p => Program.allStatements Statements.noFuncDecls p = true
   | .noPolymorphicProcedures => fun p => Program.noPolymorphicProcedures p = true

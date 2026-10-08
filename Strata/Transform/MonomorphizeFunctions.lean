@@ -10,7 +10,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.NameMangling
 public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExprTraversal
 import Strata.Util.Worklist
 import all Strata.DL.Imperative.Stmt
@@ -341,10 +341,10 @@ def monomorphizeFunction (f : Function) (newName : CoreIdent) (inst : TypeArgsSu
   { f with
     inputs := f.inputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)),
     output := LMonoTy.subst S f.output,
-    body := f.body.map (·.applySubst S),
-    axioms := f.axioms.map (·.applySubst S),
-    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applySubst S }),
-    measure := f.measure.map (·.applySubst S)
+    body := f.body.map (·.applyTypeSubst S),
+    axioms := f.axioms.map (·.applyTypeSubst S),
+    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applyTypeSubst S }),
+    measure := f.measure.map (·.applyTypeSubst S)
     name := newName,
     typeArgs := [] }
 

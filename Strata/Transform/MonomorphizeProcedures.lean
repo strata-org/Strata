@@ -10,7 +10,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementType
 public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
 import all Strata.DL.Imperative.Stmt
 
 /-! # Monomorphize Procedures
@@ -49,7 +49,7 @@ For each procedure whose `header.typeArgs` is `x₁, …, xₖ`:
 2. A type substitution mapping each `xᵢ` to its opaque nullary type constructor
    is applied to the whole procedure: input/output signatures, precondition and
    postcondition expressions, and every expression *and local declaration type*
-   in the body (`LExpr.applySubst` for expression annotations, `LMonoTy.subst`
+   in the body (`LExpr.applyTypeSubst` for expression annotations, `LMonoTy.subst`
    for signature and declaration types).
 3. `header.typeArgs` is cleared, so the procedure is now monomorphic.
 
@@ -91,9 +91,9 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
       outputs := proc.header.outputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)) },
     spec := { proc.spec with
       preconditions :=
-        proc.spec.preconditions.map (fun (l, c) => (l, { c with expr := c.expr.applySubst S })),
+        proc.spec.preconditions.map (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst S })),
       postconditions :=
-        proc.spec.postconditions.map (fun (l, c) => (l, { c with expr := c.expr.applySubst S })) },
+        proc.spec.postconditions.map (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst S })) },
     body := body }
 
 /-! ### The transformation -/

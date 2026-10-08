@@ -2939,7 +2939,7 @@ continuation `k` (or the resolved exit target), under `StoreAgreement`. -/
 /-- Simulation lemma operating under StoreAgreement: the input accum trace
 runs from `σ_struct_base` (struct side) to `ρ₀.store` (struct side), and
 `StoreAgreement σ_struct_base σ_base` holds at the entry. -/
-private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [DecidableEq P.Ident]
     (extendFactory : ExtendFactory P)
     (pfx : String)
@@ -5465,7 +5465,7 @@ private theorem stmtsToBlocks_simulation_block_arm_body_exits
 /-- Extracted arm of `stmtsToBlocks_simulation` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToCont`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -6165,7 +6165,7 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm_caseB {P : PureExpr} 
 /-- Extracted arm of `stmtsToBlocks_simulation_to_cont` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToCont`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -6833,7 +6833,7 @@ private theorem stmtsToBlocks_simulation_to_exit_block_arm_caseB {P : PureExpr} 
 /-- Extracted arm of `stmtsToBlocks_simulation_to_exit` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToCont`/`simToExit`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_exit_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_exit_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -7398,7 +7398,7 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm_caseB {P : PureExpr} 
 /-- Extracted arm of `stmtsToBlocks_simulation_to_fail` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToCont`/`simToFail`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -9798,7 +9798,7 @@ private def loopArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
 /-- Extracted arm of `stmtsToBlocks_simulation` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -10141,7 +10141,7 @@ private theorem stmtsToBlocks_simulation_loop_arm {P : PureExpr} [HasFvar P] [Ha
 /-- Extracted arm of `stmtsToBlocks_simulation_to_cont` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToCont`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -10533,7 +10533,7 @@ private theorem stmtsToBlocks_simulation_to_cont_loop_arm {P : PureExpr} [HasFva
 /-- Extracted arm of `stmtsToBlocks_simulation_to_exit` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToExit`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -10931,7 +10931,7 @@ private theorem stmtsToBlocks_simulation_to_exit_loop_arm {P : PureExpr} [HasFva
 /-- Extracted arm of `stmtsToBlocks_simulation_to_fail` (see the `stmtsToBlocks_simulation*` dispatchers).
 Takes the sibling dispatchers it recurses into as `sizeOf`-guarded oracle parameters
 (`sim`/`simToFail`), so the heavy body elaborates outside the dispatcher's heartbeat budget. -/
-private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12468,7 +12468,7 @@ The conclusion adds a freshness-preservation conjunct: if `σ_base x = none`
 and `x` is not in either accum's defs or `ss`'s inits, then the CFG-side
 `σ_cfg x = none`.  This propagates freshness through CFG transitions into
 the recursive call on the rest of the program. -/
-private theorem stmtsToBlocks_simulation_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12624,7 +12624,7 @@ Same accum/agreement/freshness preconditions as `stmtsToBlocks_simulation`.
 Used by `.block` simulation when the body exits with the block's matching
 label: body's exitConts contains `(some label, kNext) :: outerExitConts`,
 so the body's exit resolves to a goto to `kNext`. -/
-private theorem stmtsToBlocks_simulation_to_cont_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_cont_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12801,7 +12801,7 @@ private theorem stmtsToBlocks_simulation_to_cont_step {P : PureExpr} [HasFvar P]
 recursion oracle.  Replaces the former 2-way `mutual` + `termination_by`, whose
 well-founded equation compiler packed a ~1.5M-node `._mutual` term (~130s of
 `process pre-definitions`). -/
-private theorem stmtsToBlocks_simulation_and_to_cont {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_and_to_cont {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12825,7 +12825,7 @@ private theorem stmtsToBlocks_simulation_and_to_cont {P : PureExpr} [HasFvar P] 
 /-- The central simulation lemma (canonical name; the proof lives in the helper
 `stmtsToBlocks_simulation_step`, tied by `stmtsToBlocks_simulation_and_to_cont`).
 See `StmtsToBlocksSimSpec` for the full statement. -/
-private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12838,7 +12838,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
 /-- Caught-exit sibling of `stmtsToBlocks_simulation` (canonical name; the proof
 lives in the helper `stmtsToBlocks_simulation_to_cont_step`, tied by
 `stmtsToBlocks_simulation_and_to_cont`).  See `StmtsToBlocksSimSpecToCont`. -/
-private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12866,7 +12866,7 @@ exiting with the propagated uncaught `label` routes through this lemma. -/
 -- equation compiler's unary/`PSigma` packing of this ~50-argument function,
 -- which otherwise dominated this file's compile time.  Same pattern as the
 -- `_to_fail` sibling and the `stmtsToBlocks_simulation_and_to_cont` tie.
-private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -12999,7 +12999,7 @@ recurses on `rest` here. -/
 -- LEVER 2 (build performance): same explicit `WellFounded.induction` pattern as
 -- `stmtsToBlocks_simulation_to_exit` above (avoids the WF equation compiler's
 -- unary/`PSigma` packing of this ~50-argument function).
-private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13223,7 +13223,7 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
     simp [List.lookup, Option.or]
     rfl
 
-private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     (extendFactory : ExtendFactory P)
     (cfg : CFG String (DetBlock String (Cmd P) P))
     (lend : String) (σ : SemanticStore P) (δ : P.Factory) (failed : Bool)
@@ -13259,7 +13259,7 @@ the CFG emits `init` commands whose targets must be undefined for `InitState`
 to fire.  So `σ_ext` must leave the program's `initVars` and the generated
 `Q`-kind names undefined — the same shape as the original precondition with
 `σ_ext` substituted for `ρ₀.store`. -/
-theorem stmtsToCFG_terminal_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_terminal_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13356,7 +13356,7 @@ condition into the consumer-facing `¬ Q s` form via the same `AllMem Q`
 contrapositive (`not_mem_stringGens_of_not_allMem`) that discharges the
 foreign-label obligation: a non-`Q` name cannot appear in the output generator,
 so any non-`Q` ident left undefined by `σ_ext` stays undefined in `σ_cfg`. -/
-theorem stmtsToCFG_terminal_compositional_shape {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_terminal_compositional_shape {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13453,7 +13453,7 @@ external store `σ_ext` (rather than `ρ₀.store`), is matched by the CFG
 store.  This is the `σ_ext`-input restatement the pipeline's exiting-arm
 composition consumes, mirroring `stmtsToCFG_terminal_compositional` but built on
 `stmtsToBlocks_simulation_to_exit`. -/
-theorem stmtsToCFG_exiting_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_exiting_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13548,7 +13548,7 @@ theorem stmtsToCFG_exiting_compositional {P : PureExpr} [HasFvar P] [HasFvars P]
     (through the single `endPrefix` generate and `stmtsToBlocks`) and discharging by
     contraposition, so no universal-over-all-WF-states freshness assumption is
     needed. -/
-theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13638,7 +13638,7 @@ When the structured run of `ss` escapes via `.exiting label` (no enclosing block
 catches `label` — at the top level `exitConts = []`, so every label is uncaught),
 the CFG `stmtsToCFG ss` escapes at the matching `.exiting label` with an
 agreeing final store.  Built on `stmtsToBlocks_simulation_to_exit`. -/
-theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13742,7 +13742,7 @@ delegates to the `stmtsToBlocks_simulation_to_fail` sibling dispatcher.  The sou
 must start non-failing (`h_ρ₀_nofail`) so the failure genuinely arises within
 the run rather than being inherited at entry; this matches the pipeline's clean
 initial store. -/
-theorem stmtsToCFG_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem stmtsToCFG_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13922,7 +13922,7 @@ contain non-`s2uKind` labels.  It is instead discharged *internally* by
 pass produces satisfies `Q`, and any label that is not `Q` is absent by
 contraposition.  The caller therefore supplies only `hQgen` (via `s2uKind_gen` at
 `Q := s2uKind`) — there is no separate foreign hypothesis to discharge. -/
-theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -13975,7 +13975,7 @@ vacuously there.  That is sound and intended: a `[]`-covered program never
 reaches a top-level exit, so its (empty) escaping behaviour is trivially
 overapproximated.  The recursive core `stmtsToCFG_exiting` is *not* vacuous —
 it runs at non-empty covering labels where a body genuinely can escape. -/
-theorem structuredToUnstructured_sound_kind_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem structuredToUnstructured_sound_kind_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -14019,7 +14019,7 @@ unstructured CFG `stmtsToCFG ss`, run from an overapproximating external store
 `σ_ext`, reaches a failing configuration.  A thin forwarder to
 `stmtsToCFG_to_fail`; the foreign-label obligation is discharged internally from
 `hQgen`. -/
-theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P]
@@ -14076,7 +14076,7 @@ variable {P : PureExpr}
 
 /-- `stmtsToCFG` per-pass overapproximation up to `EnvStoreAgree`.  The final pass:
 the structured `Lang.imperativeBlock` (post-hoist, no nondeterministic guard) → `Lang.cfg`. -/
-theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+theorem stmtsToCFG_overapproximates_upto [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [LawfulHasVal P]
     [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [LawfulHasFvar P]
     [LawfulHasIdent P] [HasSubstFvar P] (extendFactory : ExtendFactory P) :
     Specification.Transform.OverapproximatesUptoWhen

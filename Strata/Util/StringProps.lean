@@ -19,6 +19,11 @@ import all Init.Data.Repr
 * `isPrefixOf_append_self` — a list is a prefix of itself appended with any suffix
 * `hexVal_hexDigit` — reading back a hex digit recovers the value it names
 * `isHexDigit_hexDigit` — every character `hexDigit` produces is a hex digit
+* `char_toNat_lt` — every code point is below `0x110000`
+* `hexDigit_isAlphanum` — a hex digit is alphanumeric
+* `length_hexDigits`, `hexDigits_all_isHexDigit`, `mem_hexDigits` — the shape of a
+  fixed-width hex body
+* `hexValue_append_digit`, `hexValue_hexDigits` — reading a hex body back
 -/
 
 public section
@@ -65,7 +70,7 @@ theorem digitLoop_extra (fuel₁ fuel₂ n : Nat) (ds : List Char)
 theorem digitChar_val {n : Nat} (h : n < 10) :
     n.digitChar.toNat - '0'.toNat = n := by
   have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> native_decide
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
 
 
 theorem readBack_digitLoop (n : Nat) :
@@ -118,8 +123,7 @@ theorem isPrefixOf_append_self (pfx sfx : List Char) :
 theorem digitChar_is_digit (n : Nat) (h : n < 10) :
     '0' ≤ n.digitChar ∧ n.digitChar ≤ '9' := by
   have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    exact ⟨by native_decide, by native_decide⟩
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
 
 
 theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)
@@ -200,5 +204,67 @@ theorem hexVal_hexDigit (n : Nat) (h : n < 16) : hexVal (hexDigit n) = n := by
 theorem isHexDigit_hexDigit (n : Nat) : isHexDigit (hexDigit n) = true := by
   unfold hexDigit
   split <;> decide
+
+/-- Every character's code point is below `0x110000`, the bound Unicode sets, which
+    is what makes six hex digits enough to name any character. -/
+theorem char_toNat_lt (c : Char) : c.toNat < 0x110000 := by
+  have h : c.val.toNat < 0xd800 ∨ (0xdfff < c.val.toNat ∧ c.val.toNat < 0x110000) := c.valid
+  show c.val.toNat < 0x110000
+  rcases h with h | ⟨_, h⟩ <;> omega
+
+/-- A hex digit is alphanumeric. -/
+theorem hexDigit_isAlphanum (n : Nat) : (hexDigit n).isAlphanum = true := by
+  unfold hexDigit
+  split <;> decide
+
+/-- `hexDigits` emits exactly `w` digits, which is what lets a decoder read a
+    fixed-width body without a terminator. -/
+theorem length_hexDigits (w n : Nat) : (hexDigits w n).length = w := by
+  induction w generalizing n with
+  | zero => rfl
+  | succ w ih => simp [hexDigits, ih]
+
+/-- Every digit `hexDigits` emits is one `isHexDigit` accepts, so a decoder that
+    guards on it never rejects a body an encoder wrote. -/
+theorem hexDigits_all_isHexDigit (w n : Nat) :
+    (hexDigits w n).all isHexDigit = true := by
+  induction w generalizing n with
+  | zero => rfl
+  | succ w ih => simp [hexDigits, ih, isHexDigit_hexDigit]
+
+/-- Every character of a hex body is one of the digits `hexDigit` produces, which
+    is how a per-digit fact lifts to the whole body. -/
+theorem mem_hexDigits (w n : Nat) {c : Char} (h : c ∈ hexDigits w n) :
+    ∃ k, k < 16 ∧ c = hexDigit k := by
+  induction w generalizing n with
+  | zero => simp [hexDigits] at h
+  | succ w ih =>
+    simp [hexDigits] at h
+    rcases h with h | h
+    · exact ih _ h
+    · exact ⟨n % 16, by omega, h⟩
+
+/-- Extending a hex body by one digit multiplies the value read so far by sixteen
+    and adds the new digit, which is what makes `hexValue` read a body
+    most-significant digit first. -/
+theorem hexValue_append_digit (l : List Char) (d : Char) :
+    hexValue (l ++ [d]) = hexValue l * 16 + hexVal d := by
+  simp [hexValue, List.foldl_append]
+
+/-- `hexValue` inverts `hexDigits` on a value `w` digits can name. -/
+theorem hexValue_hexDigits (w n : Nat) (h : n < 16 ^ w) :
+    hexValue (hexDigits w n) = n := by
+  induction w generalizing n with
+  | zero =>
+    have h0 : n = 0 := by simp at h; omega
+    subst h0
+    rfl
+  | succ w ih =>
+    have hpow : 16 ^ (w + 1) = 16 ^ w * 16 := by rw [Nat.pow_succ]
+    have hlt : n / 16 < 16 ^ w := by omega
+    have hd : hexVal (hexDigit (n % 16)) = n % 16 := hexVal_hexDigit _ (by omega)
+    show hexValue (hexDigits w (n / 16) ++ [hexDigit (n % 16)]) = n
+    rw [hexValue_append_digit, ih _ hlt, hd]
+    omega
 
 end

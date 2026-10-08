@@ -8,6 +8,9 @@ module
 public import StrataDDM.Parser
 public import Strata.Util.Name
 public import Strata.Util.String
+-- `import all` so a scheme's `hexDigit_not_mustEscape` can unfold `hexDigit`,
+-- here and in a consumer defining its own scheme.
+import all Strata.Util.String
 
 public section
 
@@ -107,6 +110,21 @@ Parsing SMT-LIB *into* Strata does not unescape, so a parse-then-emit round trip
 adds a level rather than reproducing its input: `|a%b|` denotes `a%b` and is
 re-emitted as `` |a`25b| ``. That is intentional. Correctness needs injectivity, not
 idempotence.
+
+## One escaping, several targets
+
+The rules above are SMT-LIB text's, and they are not the only possible ones: a
+target with a different bare-symbol alphabet needs a different must-escape set, and
+with it a different escape character, since an escape character outside the target's
+bare alphabet would leave every escaped name needing to be quoted, which is what
+escaping is there to avoid.
+
+`EscapeScheme` is therefore the parameter — escape character, must-escape set,
+must-escape-first set — and `smtScheme` is the instance for SMT-LIB text.
+`escapeWith` and `unescapeWith` take a scheme; `escapeForSMT` and `unescapeFromSMT`
+are those at `smtScheme`. The round trip and injectivity are proved once for any
+scheme from the three laws a scheme carries, while legality and readability are
+stated per target, since only the target knows its alphabet.
 -/
 
 namespace Symbol
@@ -116,12 +134,50 @@ open StrataDDM.Parser (strataIsIdFirst strataIsIdRest)
 /-- The escape character; see the module docstring for why it is a backtick. -/
 def smtEscapeChar : Char := '`'
 
-/-! The escaping algorithm, on character lists. The `String` entry points
-`escapeForSMT` and `unescapeFromSMT` are thin wrappers over these; the proofs
-live here, where the recursion is. -/
+/-- How names are escaped for one emission target: the character that introduces
+    an escape, how many hex digits name an escaped character, which characters
+    cannot be emitted as themselves, and which cannot *start* a symbol.
+    `smtScheme` is the instance for SMT-LIB text.
+
+    The three laws are what the round trip and injectivity need. Carrying them
+    here means an instance discharges them once, at construction, instead of
+    every theorem restating them as hypotheses. -/
+structure EscapeScheme where
+  /-- Introduces an escape sequence: this character, then `hexWidth` hex digits
+      naming the escaped character. -/
+  escapeChar : Char
+  /-- How many hex digits name an escaped character. Two suffice for a target that
+      escapes only ASCII, which is what SMT-LIB text needs since quoting covers
+      the rest; a target with no quoting to fall back on has to be able to name an
+      arbitrary code point, and needs six. -/
+  hexWidth : Nat
+  /-- Characters that cannot be emitted as themselves, at any position. -/
+  mustEscape : Char → Bool
+  /-- Characters that cannot *start* a symbol. Read as an addition to
+      `mustEscape`, which applies at every position including the first. -/
+  mustEscapeFirst : Char → Bool
+  /-- `escapeChar` is itself escaped, so one appearing in an escaped name can
+      only begin an escape sequence. Without this the decoding is ambiguous and
+      two names can escape alike. -/
+  escapeChar_mustEscape : mustEscape escapeChar = true
+  /-- `hexWidth` digits have to be enough to name what is escaped. -/
+  mustEscape_inRange : ∀ c, mustEscape c = true → c.toNat < 16 ^ hexWidth
+  /-- The same bound for the first position, escaped by the same sequence. -/
+  mustEscapeFirst_inRange : ∀ c, mustEscapeFirst c = true → c.toNat < 16 ^ hexWidth
+  /-- A hex digit is emitted as itself. This is what keeps an escape sequence
+      from being escaped again, and what lets a target conclude that an escaped
+      name stays inside its alphabet: the only characters the escaping
+      introduces are `escapeChar` and hex digits. -/
+  hexDigit_not_mustEscape : ∀ n, n < 16 → mustEscape (hexDigit n) = false
+
+/-! The escaping algorithm, on character lists, parameterised by an
+`EscapeScheme`. The `String` entry points `escapeWith` and `unescapeWith` are thin
+wrappers over these; the proofs live here, where the recursion is. -/
 namespace Chars
 
-/-! Tab, newline and carriage return count as whitespace to SMT-LIB and are escaped
+/-! ### The SMT-LIB text alphabet
+
+Tab, newline and carriage return count as whitespace to SMT-LIB and are escaped
 anyway, which is stricter than the standard on purpose: a newline inside a symbol
 would break the line-oriented reading of solver output.
 
@@ -132,7 +188,7 @@ mirrored here: a copy could drift from the lexer it is supposed to describe, and
 the drift would be silent, costing a counterexample rather than failing.
 
 The lexer has two rules, one for the first character and a wider one for the rest,
-and `escape` answers to both. -/
+which is why a scheme has both `mustEscape` and `mustEscapeFirst`. -/
 
 /-- Characters SMT-LIB admits in a *bare* simple symbol. A solver echoes a symbol
     bare exactly when every character is one of these, and pipe-quoted
@@ -146,53 +202,93 @@ def isSmtBare (c : Char) : Bool :=
      c == '^' || c == '&' || c == '*' || c == '_' || c == '-' || c == '+' ||
      c == '=' || c == '<' || c == '>' || c == '.' || c == '?' || c == '/')
 
-/-- A character that cannot be emitted as itself, for one of three reasons: SMT-LIB
-    forbids it outright (`|`, `\`, the controls) and offers no escape for it; it is
-    the escape character; or a solver would echo it *bare* while DDM cannot read it
-    bare, which is the `~ ^ & * - + = < > / %` gap, where leaving it alone costs the
-    counterexample silently.
+/-- A character that cannot be emitted as itself into SMT-LIB text, for one of
+    three reasons: SMT-LIB forbids it outright (`|`, `\`, the controls) and offers
+    no escape for it; it is the escape character; or a solver would echo it *bare*
+    while DDM cannot read it bare, which is the `~ ^ & * - + = < > / %` gap, where
+    leaving it alone costs the counterexample silently.
 
     Bounded to ASCII by construction, which is what lets two hex digits name it. -/
-def mustEscape (c : Char) : Bool :=
+def smtMustEscape (c : Char) : Bool :=
   c.toNat ≤ 0x7F &&
     (c == '`' || c == '|' || c == '\\' || isControlChar c || (isSmtBare c && !strataIsIdRest c))
 
-/-- Escape one character: the escape character, then two hex digits naming it. -/
-def esc (c : Char) (rest : List Char) : List Char :=
-  '`' :: hexDigit (c.toNat / 16) :: hexDigit (c.toNat % 16) :: rest
+/-- A character SMT-LIB text cannot *start* a symbol with: one a solver echoes
+    bare that DDM will not accept first, which covers the `@` and `.` SMT-LIB
+    reserves there as well as `?`, `!` and the digits. -/
+def smtMustEscapeFirst (c : Char) : Bool :=
+  isSmtBare c && !strataIsIdFirst c
+
+/-! ### The algorithm
+
+Parameterised by the scheme, so a target with a different alphabet reuses the
+recursion, the decoder and the proofs. -/
+
+/-- Escape one character: the scheme's escape character, then the hex digits
+    naming it. -/
+def esc (s : EscapeScheme) (c : Char) (rest : List Char) : List Char :=
+  s.escapeChar :: (hexDigits s.hexWidth c.toNat ++ rest)
 
 /-- Escape the characters that cannot be emitted as themselves. Applies at every
-    position, so it does not handle the reserved first position; see `escape`. -/
-def escapeAfterFirst : List Char → List Char
+    position, so it does not handle the first position; see `escape`. -/
+def escapeAfterFirst (s : EscapeScheme) : List Char → List Char
   | [] => []
   | c :: cs =>
-    if mustEscape c then esc c (escapeAfterFirst cs) else c :: escapeAfterFirst cs
+    if s.mustEscape c then esc s c (escapeAfterFirst s cs) else c :: escapeAfterFirst s cs
 
-/-- Escape a name. The first character additionally has to be one DDM admits
-    first, which covers the `@` and `.` SMT-LIB reserves there as well as `?`, `!`
-    and the digits. See the module docstring for why that position is special. -/
-def escape : List Char → List Char
+/-- Escape a name. The first character additionally has to be one the target
+    admits first. See the module docstring for why that position is special. -/
+def escape (s : EscapeScheme) : List Char → List Char
   | [] => []
   | c :: cs =>
-    if mustEscape c || (isSmtBare c && !strataIsIdFirst c) then esc c (escapeAfterFirst cs)
-    else c :: escapeAfterFirst cs
+    if s.mustEscape c || s.mustEscapeFirst c then esc s c (escapeAfterFirst s cs)
+    else c :: escapeAfterFirst s cs
 
 /-- Inverse of both `escape` and `escapeAfterFirst`. One function suffices
     because the hex body names the character outright, so there is no positional
     rule to invert and no mnemonic to disambiguate.
 
-    An escape character not followed by two hex digits is passed through, so this
-    is total rather than defined only on the image. -/
-def unescape : List Char → List Char
+    An escape character not followed by `hexWidth` hex digits is passed through,
+    so this is total rather than defined only on the image. -/
+def unescape (s : EscapeScheme) (cs : List Char) : List Char :=
+  match cs with
   | [] => []
-  | '`' :: d1 :: d2 :: cs =>
-    if isHexDigit d1 && isHexDigit d2 then
-      Char.ofNat (hexVal d1 * 16 + hexVal d2) :: unescape cs
+  | c :: rest =>
+    let body := rest.take s.hexWidth
+    if c == s.escapeChar && body.length == s.hexWidth && body.all isHexDigit then
+      have : (rest.drop s.hexWidth).length < (c :: rest).length := by
+        simp only [List.length_cons, List.length_drop]
+        omega
+      Char.ofNat (hexValue body) :: unescape s (rest.drop s.hexWidth)
     else
-      '`' :: unescape (d1 :: d2 :: cs)
-  | c :: cs => c :: unescape cs
+      have : rest.length < (c :: rest).length := by simp
+      c :: unescape s rest
+termination_by cs.length
 
 end Chars
+
+/-- Escaping for SMT-LIB text: a backtick escape, two hex digits (the escaped
+    characters are all ASCII, since quoting covers the rest), the characters
+    SMT-LIB cannot emit as themselves, and the first-position rule DDM's lexer
+    imposes. -/
+def smtScheme : EscapeScheme where
+  escapeChar := smtEscapeChar
+  hexWidth := 2
+  mustEscape := Chars.smtMustEscape
+  mustEscapeFirst := Chars.smtMustEscapeFirst
+  escapeChar_mustEscape := by decide
+  mustEscape_inRange := by
+    intro c h
+    simp [Chars.smtMustEscape] at h
+    omega
+  mustEscapeFirst_inRange := by
+    intro c h
+    simp [Chars.smtMustEscapeFirst, Chars.isSmtBare] at h
+    omega
+  hexDigit_not_mustEscape := by
+    intro n _
+    unfold hexDigit
+    split <;> decide
 
 /-- What SMT-LIB legality requires beyond what quoting supplies: none of `|`, `\`
     or an ASCII control character, and no reserved first character.
@@ -224,15 +320,29 @@ def isReadableBack (cs : List Char) : Bool :=
 
 /-! ### The `String` interface -/
 
-/-- Escape `name` into the SMT-LIB symbol alphabet. Injective, and its result is
-    always a legal symbol; both are proved in `Strata.DL.SMT.SymbolProps` as
-    `escapeForSMT_injective` and `escapeForSMT_isLegalSMTSymbol`. -/
+/-- Escape `name` for the target `s` describes. Distinct names escape to distinct
+    symbols, and every character of the result is either the escape character or
+    one `s` does not escape. Both hold for any scheme, from the laws a scheme
+    carries.
+
+    Whether the result is *legal*, and whether it can be read back, depends on the
+    alphabet and so is a claim each target makes about its own scheme. -/
+def escapeWith (s : EscapeScheme) (name : String) : String :=
+  String.ofList (Chars.escape s name.toList)
+
+/-- Inverse of `escapeWith` for the same scheme. -/
+def unescapeWith (s : EscapeScheme) (symbol : String) : String :=
+  String.ofList (Chars.unescape s symbol.toList)
+
+/-- Escape `name` into the SMT-LIB symbol alphabet. Distinct names escape to
+    distinct symbols, and the result is always a legal symbol: no `|`, no `\`, no
+    ASCII control character, and no reserved first character. -/
 def escapeForSMT (name : String) : String :=
-  String.ofList (Chars.escape name.toList)
+  escapeWith smtScheme name
 
 /-- Inverse of `escapeForSMT`. -/
 def unescapeFromSMT (symbol : String) : String :=
-  String.ofList (Chars.unescape symbol.toList)
+  unescapeWith smtScheme symbol
 
 /-- Whether `s` may be emitted without pipe delimiters: every character is one
     SMT-LIB admits in a bare simple symbol, and the first may also start one, so not

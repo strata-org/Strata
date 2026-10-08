@@ -109,12 +109,14 @@ inductive InitVars : SemanticStore P → List P.Ident → SemanticStore P → Pr
     InitVars σ' xs σ'' →
     InitVars σ (x :: xs) σ''
 
+/-- Nondeterministically updates existing slots while preserving each slot's
+monomorphic runtime type. -/
 inductive HavocVars {P : PureExpr} [HasVal P] : P.Factory → SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | update_none :
     HavocVars f σ [] σ
   | update_some :
     UpdateState P σ x v σ' →
-    HasVal.value f v →
+    HasVal.valueOfStoredTy (P := P) f σ x v →
     HavocVars f σ' xs σ'' →
     HavocVars f σ (x :: xs) σ''
 
@@ -328,6 +330,7 @@ inductive EvalCommand (π : String → Option Procedure) (φ : Expression.Factor
       `p.header.outputs`; and `getOutArgs callArgs` ↔
       `ListMap.keys p.header.getOutputOnlyParams`. The third alignment follows
       from the second because every inout formal is passed as `.inoutArg`. -/
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
   | call_sem {σ n p callArgs σ' σ_final fac_final
       bodyFailed preFailed postFailed md fac σAO} :
     π n = .some p →
@@ -386,6 +389,7 @@ inductive EvalCommandE
       ----
       EvalCommandE π φ fac σ (.cmd c) σ' emitted
 
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
   | call_sem {σ n p callArgs σ' σ_final
       fac_final bodyEvents md fac σAO} :
       π n = .some p →
@@ -470,6 +474,7 @@ inductive EvalCommandContract : (String → Option Procedure)  →
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
       body execution with havoc + postcondition assumptions.
       Same positional matching as `EvalCommand.call_sem`. -/
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
   | call_sem {π σ σO n p callArgs σ' preFailed md fac σAO} :
     π n = .some p →
     CallEntry fac σ p callArgs σAO →
@@ -494,6 +499,7 @@ inductive EvalCommandContractE (π : String → Option Procedure) :
       ----
       EvalCommandContractE π fac σ (.cmd c) σ' emitted
 
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
   | call_sem {σ σO n p callArgs σ' md fac σAO} :
       π n = .some p →
       CallEntry fac σ p callArgs σAO →

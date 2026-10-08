@@ -90,6 +90,39 @@ private def operationName : Operation → String
   | .DivT => "divT" | .ModT => "modT" | .Lt => "lt" | .Leq => "le"
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
+/-- Recognize a type-specific Core primitive (`$intLe`, `$realAdd`, `$bv32SLt`, …)
+    as the operator it implements, so a pass-generated call to one prints as
+    `a <= b` rather than `$intLe(a, b)`.
+
+    Printing only, and suppressed while printing an operator wrapper's own body:
+    there the delegate name is the only thing saying which primitive that overload
+    bottoms out in. Re-parsing the printed text yields the wrapper, not the
+    delegate, so print→parse→print still converges on the same text but does not
+    preserve the delegate.
+
+    The `Div`/`Mod`/`DivT`/`ModT` family is deliberately absent: for `int` the
+    plain and the `Safe` delegate would both print as `/`, hiding which one a dump
+    actually holds. Reals have no `Safe` counterpart, so excluding them too is
+    conservative. Those keep printing as calls. -/
+private def operationOfDelegate? : String → Option Operation
+  | "$intAdd"  | "$realAdd"  => some .Add
+  | "$intSub"  | "$realSub"  => some .Sub
+  | "$intMul"  | "$realMul"  => some .Mul
+  | "$intNeg"  | "$realNeg"  => some .Neg
+  | "$intLt"   | "$realLt"   => some .Lt
+  | "$intLe"   | "$realLe"   => some .Leq
+  | "$intGt"   | "$realGt"   => some .Gt
+  | "$intGe"   | "$realGe"   => some .Geq
+  | "$boolNot"     => some .Not
+  | "$boolAnd"     => some .And
+  | "$boolOr"      => some .Or
+  | "$boolImplies" => some .Implies
+  | "$bv1SLt" | "$bv8SLt" | "$bv16SLt" | "$bv32SLt" | "$bv64SLt" => some .Lt
+  | "$bv1SLe" | "$bv8SLe" | "$bv16SLe" | "$bv32SLe" | "$bv64SLe" => some .Leq
+  | "$bv1SGt" | "$bv8SGt" | "$bv16SGt" | "$bv32SGt" | "$bv64SGt" => some .Gt
+  | "$bv1SGe" | "$bv8SGe" | "$bv16SGe" | "$bv32SGe" | "$bv64SGe" => some .Geq
+  | _ => none
+
 /-- Emit a chained-field-write target as a `FieldPath` op-chain, inverse of
     `translateFieldPath`. A pure identifier / field-access chain (`w#b#val`) maps to
     `fieldPathStep (… (fieldPathRoot w) …)`; returns `none` for any other shape (the
@@ -103,7 +136,9 @@ partial def fieldPathToArg : StmtExprMd → Option Arg
 -- Internal-only: public because `partial` prevents `private` in this section
 -- Printing never consults source locations, so this is defined on the bare
 -- `StmtExpr`; `stmtExprToArg` below is the `StmtExprMd` wrapper.
-partial def stmtExprValToArg (e : StmtExpr) : Arg :=
+-- `mapDelegates := false` keeps a type-specific delegate (`$intLe`) printing as a
+-- call; it stays constant across the whole recursion.
+partial def stmtExprValToArg (e : StmtExpr) (mapDelegates : Bool := true) : Arg :=
   go e
 where
   stmtExprToArg (s : StmtExprMd) : Arg := go s.val
@@ -187,10 +222,17 @@ where
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
       laurelOp opName #[targetArg, stmtExprToArg rhs]
-    | .StaticCall callee args =>
+    -- The inferred `typeArgs` are DROPPED when printing: the grammar's `call` op has no
+    -- type-argument slot (unlike `new`), so there is nothing to print them as. Nothing is lost —
+    -- they are a resolution output, and re-resolving the printed program re-infers them.
+    | .StaticCall callee args _ =>
       -- A call to a built-in operator wrapper (`$add`, `$lt`, …) came from
-      -- operator syntax, so print it back as an operator to round-trip.
-      match Operation.ofProcName? callee.text, args with
+      -- operator syntax, so print it back as an operator to round-trip. A
+      -- type-specific delegate (`$intLe`, …) prints as its operator too, unless
+      -- delegate mapping is off.
+      match (Operation.ofWrapperName? callee.text
+              <|> (if mapDelegates then operationOfDelegate? callee.text else none)).filter
+              (·.arity == args.length), args with
       | some op, [a] => laurelOp (operationName op) #[stmtExprToArg a]
       | some op, [a, b] => laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
       | _, _ =>
@@ -275,6 +317,11 @@ where
 
 -- Internal-only: public because `partial` prevents `private` in this section
 def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
+
+/-- `stmtExprToArg` for the body of an operator wrapper: a type-specific delegate
+    keeps printing as `$intLe(x, y)`, so each overload still shows its primitive. -/
+def stmtExprToArgKeepDelegates (s : StmtExprMd) : Arg :=
+  stmtExprValToArg s.val (mapDelegates := false)
 
 private def parameterToArg (p : Parameter) : Arg :=
   laurelOp "parameter" #[ident p.name.text, highTypeToArg p.type]
@@ -377,13 +424,18 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     else #[laurelOp opName #[commaSep (globals.map (ident ·.text) |>.toArray)]]
   let readsArgs := globalsClauseArgs "readsGlobalsClause" proc.readsGlobals
   let writesArgs := globalsClauseArgs "writesGlobalsClause" proc.writesGlobals
+  -- This procedure IS an operator wrapper: its body names the primitive the
+  -- overload bottoms out in, so do not print that name as an operator.
+  let bodyToArg :=
+    if (Operation.ofWrapperName? proc.name.text).isSome
+    then stmtExprToArgKeepDelegates else stmtExprToArg
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      (optionArg none, optionArg (some (laurelOp "body" #[bodyToArg body])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies
-      let body := optionArg (impl.map fun e => laurelOp "body" #[stmtExprToArg e])
+      let body := optionArg (impl.map fun e => laurelOp "body" #[bodyToArg e])
       (optionArg (some (laurelOp "opaqueSpec"
         #[seqArg ens, seqArg mods, seqArg throwsOnArgs,
           seqArg readsArgs, seqArg writesArgs])), body)

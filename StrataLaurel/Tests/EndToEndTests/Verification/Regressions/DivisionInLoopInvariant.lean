@@ -25,13 +25,13 @@ temporaries plus a precondition `assert`, and `$div` keeps a procedural twin (se
 procedure call out of the invariant:
 
 ```
-var $cp_1 : int := $ov68$$mul(2, i);   -- i == 0 here
-var $cp_2 : int := 2;
-assert $ov69$$div$pre0($cp_1, $cp_2);  -- checked once, before the loop
-while (...) invariant $ov69$$div$asFunction($cp_1, $cp_2) == i
+var $inputCopy1 : int := $ov68$$mul(2, i);   -- i == 0 here
+var $inputCopy2 : int := 2;
+assert $ov69$$div$pre0($inputCopy1, $inputCopy2);  -- checked once, before the loop
+while (...) invariant $ov69$$div$asFunction($inputCopy1, $inputCopy2) == i
 ```
 
-The invariant then read `$cp_1 / 2 == i` with a numerator frozen at `2 * 0`, so it was
+The invariant then read `$inputCopy1 / 2 == i` with a numerator frozen at `2 * 0`, so it was
 not merely harder to prove — it no longer expressed what was written, and held only on
 entry. The precondition was checked at the wrong program point too.
 
@@ -42,7 +42,7 @@ Three passes cooperate to keep an invariant intact:
 - `TransparencyPass` rewrites calls in those positions to their pure `$asFunction`
   twins and strips the injected `assert`, exactly as it does for quantifier bodies —
   so what remains is a pure expression rather than a procedure call.
-- `InlineLocalVariables` folds the leftover `var $cp_… :=` temporaries back into that
+- `InlineLocalVariables` folds the leftover `var $inputCopy… :=` temporaries back into that
   expression, since a Core invariant can no more carry a declaration than a function
   body can.
 

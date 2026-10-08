@@ -5,8 +5,8 @@
 -/
 module
 
-public import Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
+import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 
 /-!
