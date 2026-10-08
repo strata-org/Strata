@@ -40,8 +40,8 @@ phase                                   O   I   Ic  In  Co  Tr  Ts  Tf  Sc  pI  
  6 EliminateDoWhile                   | | | : : | : | | : : : : : : : : : : : V : : : : : | : : | | : : | | | : | : : | : :
  7 EliminateIncrDecrAndCompoundAssign | | | V V | : | | : : : : : : : : : : : |   : : : : | : : | | : : | | | : | : : | : :
  8 CopyMutatedInputs                  | | | + + | : | | : : : : : : : : : : : | : : : : : | : : | | : : | | | : | : V | : :
- 9 ConstrainedTypeElim                + + | | | | : | | V : : : : : : : : : : | : : : : : | : : | | : : | | | : | : | | : :
-10 EliminateValueInReturns            | | | | | + V | | | : : : : : :   : : : | : : : : : | : : | | : : | | | : | : | | : :
+ 9 EliminateValueInReturns            | | | | | + V | | : : : : : : :   : : : | : : : : : | : : | | : : | | | : | : | | : :
+10 ConstrainedTypeElim                + + | | | | + | | V : : : : : : : : : : | : : : : : | : : | | : : | | | : | : | | : :
 11 EliminateExceptions                + + | | | | + | | | V V : V : V : : : : | : : : : : | : : | | : : | | | : | : | | : :
 12 YieldElim                          + + | | | | | + | | | | : | : | : :   : | : : : : : ' : V | | : : | | | : | : | | V V
 13 HeapParameterization               + + | | | | + | + + + + V | : | :   : : | V V : V : V   | | | :   | | | : | : | | | |

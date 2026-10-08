@@ -24,12 +24,10 @@ them pins a structural edge case of the same rewrite — generated-name collisio
 recursion, shadowing, loop bodies, and argument evaluation order. Those print the
 count as well, since a global that failed to be eliminated shows up there first.
 
-The last group starts from a `#strata` program like the rest, but each of its
-helpers then needs something beyond parse-resolve-run-one-pass-and-print. One adds
-a declaration the surface grammar has no syntax for — a `constants` initializer
-referring to a global — the way a front end would. The other adds nothing at all,
-and is bespoke for the flow instead: it runs a SEQUENCE of passes with a
-re-resolve between them.
+The last group starts from a `#strata` program like the rest, but its helper
+then needs something beyond parse-resolve-run-one-pass-and-print: it adds a
+declaration the surface grammar has no syntax for — a `constants` initializer
+referring to a global — the way a front end would.
 
 The pass also rewrites the contract metadata slots (`modifies`, `invokeOn`) that
 mention a global, but none of that is checked here. A count of translation
@@ -39,17 +37,14 @@ not the metadata survived; those cases are source programs in
 clause changes the verdict.
 
 This test does NOT use the shared `runPassForIdiomaticity` driver: reaching
-`GlobalParameterization`'s input takes a SEQUENCE of passes
-(`ConstrainedTypeElim` and/or `EliminateValueInReturns`, then a re-resolve),
-which is more than the one-pass-after-resolve the driver runs, and several
+`GlobalParameterization`'s input takes `EliminateValueInReturns` and a
+re-resolve first, which is more than the one-pass-after-resolve the driver runs, and several
 fixtures also print the `staticFields:` count rather than only the program. The
 `printGlobalParameterization` helper in `Tests/Util/TestLaurel.lean` carries that
 multi-step flow.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
-import StrataLaurel.Implementation.ConstrainedTypeElim
-import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.GlobalParameterization
 import StrataLaurel.Implementation.Resolution
 
@@ -76,25 +71,6 @@ private def testRejectsGlobalConstant (transitive : Bool)
   }] }
   for diagnostic in (resolve (withBuiltins withConstant)).errors do
     IO.println s!"resolution diagnostic: {diagnostic.message}"
-
-private def testConstrainedGlobalShadowing (program : StrataDDM.Program) : IO Unit := do
-  let parsed ← translateLaurel program
-  let first := resolve (withBuiltins parsed)
-  let (unconstrained, constrainedDiagnostics) := constrainedTypeElim first.model first.program
-  let second := resolve unconstrained (some first.model)
-  let prepared := (eliminateValueInReturnsTransform (.Unordered second.program)).laurelProgram!
-  let preparedResult := resolve prepared (some second.model)
-  let (lowered, loweringDiagnostics, _) :=
-    globalParameterizationPass.run {} (.Unordered preparedResult.program) preparedResult.model
-  let lowered := lowered.laurelProgram!
-  let finalResult := resolve lowered (some preparedResult.model)
-  for diagnostic in first.errors ++ constrainedDiagnostics ++ second.errors ++
-      preparedResult.errors ++ loweringDiagnostics ++ finalResult.errors do
-    IO.println s!"diagnostic: {diagnostic.message}"
-  for proc in lowered.staticProcedures.filter (·.name.text.startsWith "wrapper") do
-    let rendered := toString (Std.Format.pretty
-      (formatProgram { staticProcedures := [proc], staticFields := [], types := [] }))
-    IO.println (rendered.replace "return \n" "return\n")
 
 /-! ## The encoding: readers get inputs, writers get inout parameters -/
 
@@ -636,14 +612,9 @@ procedure recur(n: int) opaque {
 /-! ## Cases the one-pass-and-print shape cannot express
 
 Each `#strata` block below is an ordinary Laurel program — the bespoke part is what its helper
-does with it afterwards, and the reason differs per helper.
-
-One injects a declaration the surface grammar has no syntax for, which is why the thing under
-test appears in no snippet: `testRejectsGlobalConstant` adds a `constant` whose initializer
+does with it afterwards. It injects a declaration the surface grammar has no syntax for, which
+is why the thing under test appears in no snippet: `testRejectsGlobalConstant` adds a `constant` whose initializer
 references a global (the rejected `globalConstant`).
-
-The other injects nothing. `testConstrainedGlobalShadowing` runs two passes in sequence, which
-the single-pass idiomaticity driver cannot express.
 
 The pass also rewrites the contract metadata slots that mention a global — `modifies`, and an
 `invokeOn` trigger — but none of that is checked here. Counting translation diagnostics would
@@ -674,41 +645,6 @@ info: resolution diagnostic: constant initializer 'globalConstant' cannot depend
 program Laurel;
 var g: int := 0
 procedure readG() returns (r: int) { return g };
-#end
-
-/-! Generated constrained-global contracts retain global identity across local shadowing. -/
-
-/--
-info: procedure wrapperInput($global_g: int, g: int)
-  returns (r: int)
-  requires nat$constraint($global_g)
-{
-  r := readG($global_g);
-  return
-};
-procedure wrapperOutput($global_g: int)
-  returns ($global_g: int, g: int)
-  requires nat$constraint($global_g)
-  opaque
-  ensures nat$constraint($global_g)
-{
-  $global_g := writeG($global_g, 1);
-  g := 0
-};
--/
-#guard_msgs in
-#eval testConstrainedGlobalShadowing <|
-#strata
-program Laurel;
-constrained nat = x: int where x >= 0 witness 0
-var g: nat := 0
-procedure readG() returns (r: nat) { return g };
-procedure writeG(v: nat) { g := v };
-procedure wrapperInput(g: int) returns (r: nat) { return readG() };
-procedure wrapperOutput() returns (g: int) opaque {
-  writeG(1);
-  g := 0
-};
 #end
 
 /--

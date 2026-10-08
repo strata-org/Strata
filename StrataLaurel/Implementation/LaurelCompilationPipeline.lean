@@ -145,16 +145,16 @@ def laurelPipeline : Array LaurelPass := #[
   eliminateIncrDecrAndCompoundAssignPass,
   -- Placement rationale in the pass's module header.
   copyMutatedInputsPass,
-  constrainedTypeElimPass,
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
+  eliminateValueInReturnsPass,
+  constrainedTypeElimPass,
   -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
   -- `validateExceptionLowerability` in `Resolution.lean`.
-  eliminateValueInReturnsPass,
   eliminateExceptionsPass,
   -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
   -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
