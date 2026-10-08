@@ -801,9 +801,11 @@ structure Procedure : Type where
   axioms : List (AstNode StmtExpr) := []
   /-- Optional declared exception type: the single type this procedure may
       throw, drawn from the front end's own hierarchy (no built-in upper bound).
-      Catch-or-declare *is* enforced against it, by `validateExceptionEscapes`
-      during resolution (only a subtype of this type may escape; a procedure with
-      no `throwsType` may let nothing escape). Not lowered until
+      Its upper bound *is* enforced, by `validateExceptionEscapes` during
+      resolution: only a subtype of this type may escape. A procedure with no
+      `throwsType` may let nothing escape, but that is a verification obligation
+      (`EliminateExceptions` asserts it where an exception would escape), not a
+      static check. Not lowered until
       `EliminateExceptions`, which turns it into the `Err` argument of the
       procedure's `Result<Val, Err>`. -/
   throwsType : Option (AstNode HighType) := none

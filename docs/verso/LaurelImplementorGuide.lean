@@ -486,13 +486,22 @@ running later would therefore have nothing but `Composite` to type the in-flight
 every handler's field access would need a downcast. Running first, the pass can read each `catch`
 binding's resolved least-common-ancestor type and use it directly.
 
-*One rule the analysis and the lowering have to share.* Catch-or-declare is checked during resolution
-(`validateExceptionEscapes`), not by a pass, following the rule above that user errors are reported
-only by `resolve`. It has to agree with the lowering on one point: a `finally` arm that definitely
-completes abruptly discards whatever completion was pending. So the escape analysis treats a body or
-handler `throw` as *not* escaping through such an arm — otherwise it would reject
-`try { throw e } finally { return }`, a program whose lowering swallows the exception. The analysis
+*One rule the analysis and the lowering have to share.* The declared `throws` upper bound is checked
+during resolution (`validateExceptionEscapes`), not by a pass, following the rule above that user
+errors are reported only by `resolve`. It has to agree with the lowering on one point: a `finally` arm
+that definitely completes abruptly discards whatever completion was pending. So the escape analysis
+treats a body or handler `throw` as *not* escaping through such an arm — otherwise it would reject
+a `throws T` procedure whose `finally { return }` swallows an exception outside `T`. The analysis
 stays an under-approximation: only completions it can prove abrupt count.
+
+*Escapes from a procedure with no `throws` are assertions, not errors.* The pass emits them where the
+exception would leave the procedure, so they are reported only when reachable: `assert false` for a
+`throw` outside every `try`, `assert Result..isGood(tmp)` for a throwing call outside every `try`, and
+`assert !$thrown` on the re-dispatch edge of an outermost `try`. The last is placed on the edge rather
+than at the original `throw` because the `try` may still intercept the exception — a `catch` guard
+that matches at run time, or a `finally` that completes abruptly. Each assertion is followed by an
+`assume` of the same condition, because a Core assertion is not assumed by later checks and the path
+past a failed one would otherwise report follow-on failures.
 
 *Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
 resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or

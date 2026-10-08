@@ -2324,12 +2324,10 @@ procedure div(a: int, b: int) returns (r: int)
 `throws` is part of the signature — it changes what callers have to deal with — so
 it sits with `returns`, before `opaque`.
 
-### Catch or declare
+### Uncaught exceptions
 
-Laurel enforces *catch-or-declare*, the discipline Java applies to its checked
-exceptions. A procedure that declares no `throws` may not let an exception escape,
-whether thrown directly or propagated from a callee, and a procedure declaring
-`throws T` may only let exceptions escape whose type is a subtype of `T`.
+A procedure declaring `throws T` may only let exceptions escape whose type is a
+subtype of `T`. This is checked statically:
 
 ```laurel
 composite ArithError {}
@@ -2346,11 +2344,35 @@ procedure wrongThrows()
 };
 ```
 
-The check is about the program as you wrote it rather than about how it lowers, so
-it runs during resolution and reports at the offending `throw` or call. Whether the
-*source* language requires catch-or-declare is a separate question: procedures
-coming from Python or JavaScript carry a `throws` clause too, even though neither
-language has that surface construct.
+A procedure that declares no `throws` may not let any exception escape, whether
+thrown directly or propagated from a callee. This is checked by the verifier, so it
+is an error only if the exception can actually escape: an uncaught `throw` is
+asserted to be unreachable, and an uncaught call to a throwing procedure is asserted
+not to throw, which the callee's `throwsOn` cases decide.
+
+```laurel
+composite Boom {}
+
+procedure checked(x: int) returns (r: int)
+  requires x >= 0
+  opaque
+{
+  if x < 0 then {
+    var b: Boom := new Boom;
+    throw b   // verifies: unreachable under the precondition
+  };
+  r := x
+};
+```
+
+Without the precondition the `throw` is reported as
+`uncaught exception 'Boom' is not thrown does not hold`. An exception that reaches
+the end of an outermost `try` uncaught — no `catch` matched — is reported at that
+`try` instead, since the `try` could still have intercepted it.
+
+Whether the *source* language requires declaring exceptions is a separate question:
+procedures coming from Python or JavaScript can carry a `throws` clause too, even
+though neither language has that surface construct.
 
 ### Handling: try, catch, finally
 

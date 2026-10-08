@@ -20,14 +20,14 @@ Lowering: a `throw` in a procedure that declares `throws` lowers to a
 `Result<Val, Composite>`-returning Core procedure — an in-flight exception sets
 the synthesized `$thrown`/`$exc` locals and exits, and the procedure's result is
 constructed as `Bad(exc)`. A `throw` whose exception would escape a procedure
-that does *not* declare `throws` is the no-escape case, rejected during the
-resolution-time exception checks (see `validateExceptionEscapes` in `Resolution.lean`).
+that does *not* declare `throws` is asserted not to happen where it would escape
+(`assert false` at an uncaught `throw`; see `UncaughtExceptions.lean`).
 
 What may be thrown is also covered here, because it is a property of `throw`'s
 operand rather than of any combination: a composite, and — since there is no built-in
 root — a bare primitive. Each case pairs its throwing procedure with a caller
 that catches, marked `entry`, so it runs under the verifier and both interpreters;
-the no-escape rejection is a resolution error and stays verification-only.
+the uncaught case stays verification-only.
 
 Front-end *boxing* — wrapping an arbitrary value in a carrier composite so a single
 `catch` can see values of unrelated kinds — is an idiom rather than a rule about
@@ -61,9 +61,10 @@ procedure runAll() entry
 };
 #end
 
--- No-escape enforcement: a `throw` whose exception would escape a procedure
--- that does not declare `throws` is rejected during resolution.
--- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+-- An uncaught `throw` in a procedure that does not declare `throws` is a
+-- verification obligation (`assert false` at the `throw`), reported here because
+-- the `throw` is reachable. See `UncaughtExceptions.lean`.
+-- No interpreters: verifier-only (no `entry`).
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -74,7 +75,7 @@ procedure throwsWithoutDeclaring()
 {
   var e: Exception := new Exception;
   throw e
-//^^^^^^^ error: procedure 'throwsWithoutDeclaring' may let an exception of type 'Exception' escape; catch it with a `try`/`catch` or declare a `throws` clause
+//^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
 };
 #end
 
