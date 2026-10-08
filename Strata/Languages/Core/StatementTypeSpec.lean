@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.CommandTypeSpec
-public import Strata.Languages.Core.FunctionTypeSpec
 
 /-! ## Declarative Typing Specification for Statements
 
@@ -26,9 +25,9 @@ enclosing block). The relations are 6-place: `C Γ L stmt C' Γ'`.
 ### Scoping (lexical)
 
 A block (and each `ite`/`loop` branch) is lexically scoped: bindings and
-`typeDecl`/`funcDecl`s made inside it are block-local and its output context is
-its input `C, Γ`. Only top-level `funcDecl`/`typeDecl` statements extend `C` for
-subsequent statements.
+`typeDecl`s made inside it are block-local and its output context is its input
+`C, Γ`. Only top-level `typeDecl` statements extend `C` for subsequent
+statements. Legacy `funcDecl` statement nodes have no typing rule.
 
 ### Labels
 
@@ -109,16 +108,6 @@ inductive StatementHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       label ∈ L →
       TContext.Equiv (T := CoreLParams) Δ Γ →
       StatementHasType' τ P C Γ L (.exit label md) C Δ
-
-  /-- Local function declaration. The declaration must be non-recursive, and
-      every declared type must be a monotype. The resulting function is added to
-      `C` for subsequent statements. -/
-  | funcDecl : ∀ C Γ L decl func md Δ,
-      ¬ decl.isRecursive →
-      Function.ofPureFunc decl = .ok func →
-      FuncHasType' τ C Γ func →
-      TContext.Equiv (T := CoreLParams) Δ Γ →
-      StatementHasType' τ P C Γ L (.funcDecl decl md) (C.addFactoryFunction func.toLFunc) Δ
 
   /-- Local type declaration. The new type is added to `C` and must not clash
       with an existing known type. -/

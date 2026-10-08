@@ -11,7 +11,6 @@ import Strata.DL.Imperative.CmdType
 import Strata.DL.Lambda.LExprT
 import Strata.DL.Lambda.LExprType
 import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.FunctionType
 
 public section
 
@@ -194,18 +193,9 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .funcDecl decl md => do try
-          -- Recursive functions are only allowed as top-level declarations
-          if decl.isRecursive then
-            .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
-          -- Type check the function declaration using the shared helper
-          -- which returns both the type-checked PureFunc and the Function
-          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError Message.fromFormat
-          let C := C.addFactoryFunction func.toLFunc
-          .ok (.funcDecl decl' md, Env, C)
-          catch e =>
-            .error (errorWithSourceLoc e md)
-
+        | .funcDecl _ md =>
+          .error <| md.toDiagnosticF
+            "Internal function declaration statements are not supported by Core statement type checking."
         | .typeDecl tc md => do try
           -- Add the type to the context. Shadowing is not allowed: if a
           -- type with the same name was already declared (at the program

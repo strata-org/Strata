@@ -119,11 +119,13 @@ inductive ProgramFact where
       Required by the back end, whose obligation extraction handles only bodies
       of this shape. Also required by `UnrollBoundedQuantifiers`. -/
   | hasObligationForm
-  /-- No procedure body declares a function. Established by
-      `LiftInternalFuncDecls`, which makes each local function a closed
-      top-level one. Required by `MonomorphizeFunctions`, which specializes
-      top-level function declarations, and by the back end, which has no
-      encoding for a function declared inside a body. -/
+  /-- No procedure body declares a function. Checked by the default pipeline's
+      `assertNoInternalFuncDecl` phase: Core concrete syntax lowers local
+      functions to Lambda-valued initializations, while a direct AST caller may
+      still construct the legacy `Stmt.funcDecl` node. Required by
+      `MonomorphizeFunctions`, which specializes only top-level function
+      declarations, and by the back end, which has no encoding for a function
+      declared inside a body. -/
   | noInternalFuncDecl
   /-- No procedure carries type parameters. Established by
       `MonomorphizeProcedures`, which specializes each polymorphic procedure and

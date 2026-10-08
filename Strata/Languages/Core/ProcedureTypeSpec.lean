@@ -68,7 +68,7 @@ inductive ProcBodyHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
 /--
 Declarative typing for procedures, parameterized over `ExprTypingSpec`.
 `P` is the enclosing program (threaded to the body's `StatementsHasType'` for
-`funcDecl`); `C` and `Γ` are the ambient context and type-scope the procedure
+command typing); `C` and `Γ` are the ambient context and type-scope the procedure
 declaration is checked in.
 -/
 structure ProcHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]

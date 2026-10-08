@@ -240,6 +240,13 @@ def assertNoCFGBodiesPhase : PipelinePhase :=
   assertFactPhase "assertNoCFGBodies" .noCFGBodies
     "❌ Expected every procedure body to be structured, but at least one is a CFG."
 
+/-- Rejects a program whose procedure bodies contain legacy internal function
+    declarations. Core concrete syntax lowers local functions to Lambda-valued
+    initializations, so such nodes can only arrive from direct AST construction. -/
+def assertNoInternalFuncDeclPhase : PipelinePhase :=
+  assertFactPhase "assertNoInternalFuncDecl" .noInternalFuncDecl
+    "❌ Expected noInternalFuncDecl, but the program does not satisfy it."
+
 /-! ## Validated pipelines
 
 A `ValidatedPipeline` is a pipeline known to be well-formed: every phase's

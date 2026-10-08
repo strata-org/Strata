@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Core.FunctionTypeSpec
 public import Strata.Languages.Core.ProcedureTypeSpec
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.DatatypeTypeSpec

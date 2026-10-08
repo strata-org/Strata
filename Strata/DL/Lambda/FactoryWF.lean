@@ -72,10 +72,10 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
     generic `FuncClosed`: the body and preconditions have no free variables
     beyond the function's inputs.
 
-    In Imperative, a local `funcDecl` statement's body may legitimately reference
-    variables from the surrounding lexical context, so its raw `LFunc` is not
-    closed. The `LiftInternalFuncDecls` pass lifts all internal function
-    declarations and makes every function declaration closed. -/
+    A legacy local `funcDecl` statement's body may reference variables from the
+    surrounding lexical context, so its raw `LFunc` need not be closed. Pipeline
+    consumers that require closed top-level functions first reject programs
+    containing those legacy statement nodes. -/
 structure LFuncClosed {T : LExprParams} (f : LFunc T) extends
     FuncClosed
       (fun id => id.name) -- getName

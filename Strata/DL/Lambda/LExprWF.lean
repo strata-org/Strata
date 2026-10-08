@@ -547,8 +547,6 @@ on free variables).
 
 Like `substFvars`, this does NOT lift de Bruijn indices when going under
 binders, so it is safe only when the replacement expressions contain no bvars.
-(This holds for the closure-conversion use in `LiftInternalFuncDecls`, where a
-replacement is an operator reference applied to free snapshot variables.)
 -/
 def substOps [Hashable T.IDMeta] (e : LExpr ⟨T, GenericTy⟩)
     (sm : HMap T.Identifier (Option GenericTy → LExpr ⟨T, GenericTy⟩))

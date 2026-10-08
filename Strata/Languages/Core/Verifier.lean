@@ -16,7 +16,6 @@ import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.FunctionInlining
 import Strata.Transform.InsertLoopInvariantAsserts
-import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
 import Strata.Transform.MonomorphizeProcedures
 import Strata.Transform.MonomorphizeFunctions
@@ -1510,9 +1509,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT.
 
-    The procedure filter comes first, then `assertNoCFGBodiesPhase` — which
-    turns a throw from inside `runProgram` into a rejection naming the fact —
-    so every statement-level transform after it may rely on `noCFGBodies`. -/
+    The procedure filter comes first, then the entry shape assertions — which
+    turn throws from inside `runProgram` into rejections naming the facts — so
+    every statement-level transform after them may rely on structured bodies
+    with no legacy internal function declarations. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
@@ -1521,18 +1521,15 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
-      -- The obligation procedures are named by convention, so this misses
-      -- functions whose preconditions were factored out of internal
-      -- declarations by `liftInternalFuncDeclsPipelinePhase`.
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  -- The filter runs before the entry assertion, because `noCFGBodies` is a
-  -- property of every declaration: a caller naming structured procedures to
-  -- verify would otherwise be refused for a CFG body it asked to drop.
-  filterPhases ++ assertNoCFGBodiesPhase
-    :: [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
-      termCheckPipelinePhase, precondElimPipelinePhase]
+  -- The filter runs before the entry assertions, because both facts are
+  -- properties of every declaration: a caller naming structured procedures to
+  -- verify should not be refused for an excluded CFG body or legacy internal
+  -- function declaration.
+  filterPhases ++ [assertNoCFGBodiesPhase, assertNoInternalFuncDeclPhase,
+      callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against

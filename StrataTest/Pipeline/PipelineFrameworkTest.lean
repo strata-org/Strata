@@ -609,7 +609,7 @@ LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrec
                               CF  Lo  LM  BR  NG  IF  Po
 phase                           Ca  LI  SS  PF  HO  PP  TA
  1 assertNoCFGBodies          V : : : : : : : : : : : : :
- 2 liftInternalFuncDecls      | : : : : : : : :   V :
+ 2 assertNoInternalFuncDecl   | : : : : : : : : : V : : :
  3 callElim                   + V : : :     : :   | : :
  4 termCheck                  + | : : : :   : :   |   : :
  5 precondElim                + | : : : :   V :   |   : :
@@ -669,7 +669,7 @@ preserves all: {assertNoCFGBodiesPhase.preserves.facts == ProgramFact.all}"
 /-- info: accepted
 phases:
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -690,7 +690,7 @@ exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSin
 phases:
   filterProcedures
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -717,7 +717,7 @@ because the assertion has established the structured bodies it requires. -/
 phases:
   assertNoCFGBodies
   inlineProcedures
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -750,7 +750,7 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+/-- info: [assertNoCFGBodies, assertNoInternalFuncDecl, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
@@ -779,7 +779,7 @@ private def withInliningAndUnrolling : List PipelinePhase :=
 /-- info: accepted
 phases:
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -800,7 +800,7 @@ exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSin
 /-- info: accepted
 phases:
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -822,7 +822,7 @@ exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSin
 /-- info: accepted
 phases:
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -924,11 +924,11 @@ has an executable check. These pin that resolution, and that the resulting list
 is validated the same way the default one is. The helpers live in the curated
 `Strata.Core` API surface, so they are named in full here. -/
 
-/-- info: [assertNoCFGBodies, liftInternalFuncDecls, inlineProcedures] -/
+/-- info: [assertNoCFGBodies, assertNoInternalFuncDecl, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.resolvePhases
     (corePipelinePhases ++ [Strata.Core.passInlineAll])
-    ["assertNoCFGBodies", "liftInternalFuncDecls", "inlineProcedures"] with
+    ["assertNoCFGBodies", "assertNoInternalFuncDecl", "inlineProcedures"] with
   | .ok ps => toString (ps.map Strata.Core.phaseName)
   | .error e => e)
 
@@ -1038,7 +1038,7 @@ back end needs. -/
 /-- info: accepted
 phases:
   assertNoCFGBodies
-  liftInternalFuncDecls
+  assertNoInternalFuncDecl
   callElim
   termCheck
   precondElim
@@ -1070,7 +1070,7 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases assertNoCFGBodies,liftInternalFuncDecls,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+  --phases assertNoCFGBodies,assertNoInternalFuncDecl,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
@@ -1127,6 +1127,23 @@ private def runAsserter (phase : PipelinePhase) (p : Program) : String :=
 /-- info: accepted -/
 #guard_msgs in
 #eval IO.println (runAsserter assertNoCFGBodiesPhase { decls := [] })
+
+private def internalFuncDeclProgram : Program :=
+  { decls := [.proc
+      { (default : Procedure) with
+        body := .structured [.funcDecl
+          { name := ⟨"legacy", ()⟩, inputs := [],
+            output := .forAll [] .int }
+          .empty] }
+      default] }
+
+/-- info: rejected: ❌ Expected noInternalFuncDecl, but the program does not satisfy it. -/
+#guard_msgs in
+#eval IO.println (runAsserter assertNoInternalFuncDeclPhase internalFuncDeclProgram)
+
+/-- info: accepted -/
+#guard_msgs in
+#eval IO.println (runAsserter assertNoInternalFuncDeclPhase { decls := [] })
 
 /-! ### Requirements are enforced on the program, not only on the contracts
 

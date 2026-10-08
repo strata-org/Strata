@@ -29,8 +29,9 @@ This pass runs in `corePipelinePhases` after:
   type annotation the type checker attaches to the `.op` node.  Before type
   checking, `f`'s call sites carry `f`'s generic arrow (e.g. `a → a`); only after
   it do they carry the instantiated arrow (e.g. `int → int`).
-- `LiftInternalFuncDecls` has also already hoisted every function to the top level,
-  so all functions are `Decl.func` / `Decl.recFuncBlock` declarations.
+- `assertNoInternalFuncDecl`: rejects legacy internal function AST nodes, so all
+  functions reaching this pass are `Decl.func` / `Decl.recFuncBlock`
+  declarations at the top level.
 
 ## How it works (worklist)
 
