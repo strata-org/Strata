@@ -112,6 +112,8 @@ import Strata.Pipeline.PhaseContractProps
 import Strata.SimpleAPI
 
 /- CLI -/
+import Strata.Cli.CoreCommands
+import Strata.Cli.DialectCommands
 import Strata.Cli.Framework
 import Strata.Cli.VerifyOptions
 

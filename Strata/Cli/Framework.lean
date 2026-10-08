@@ -37,7 +37,12 @@ namespace ExitCode
   def knownLimitation  : UInt8 := 4
 end ExitCode
 
-def exitFailure {α} (message : String) (hint : String := "strata --help") : IO α := do
+initialize progNameRef : IO.Ref String ← IO.mkRef "strata"
+
+def exitFailure {α} (message : String) (hint : Option String := none) : IO α := do
+  let hint ← match hint with
+    | some h => pure h
+    | none => pure s!"{← progNameRef.get} --help"
   IO.eprintln s!"Exception: {message}\n\nRun {hint} for additional help."
   IO.Process.exit ExitCode.userError
 
@@ -62,8 +67,8 @@ def exitKnownLimitation {α} (message : String) : IO α := do
   IO.Process.exit ExitCode.knownLimitation
 
 /-- Like `exitFailure` but tailors the help hint to a specific subcommand. -/
-def exitCmdFailure {α} (cmdName : String) (message : String) : IO α :=
-  exitFailure message (hint := s!"strata {cmdName} --help")
+def exitCmdFailure {α} (cmdName : String) (message : String) : IO α := do
+  exitFailure message (hint := some s!"{← progNameRef.get} {cmdName} --help")
 
 /-! ## Flags and parsed args -/
 
@@ -159,7 +164,7 @@ private def printFlag (indent : Nat) (flag : Flag) : IO Unit := do
 
 /-- Print help for all command groups. -/
 def printGlobalHelp (groups : List CommandGroup) : IO Unit := do
-  IO.println "Usage: strata <command> [flags]...\n"
+  IO.println s!"Usage: {← progNameRef.get} <command> [flags]...\n"
   IO.println "Command-line utilities for working with Strata.\n"
   for group in groups do
     IO.println s!"{group.name}:"
@@ -183,7 +188,8 @@ def printGlobalHelp (groups : List CommandGroup) : IO Unit := do
 
 /-- Print help for a single command. -/
 def printCommandHelp (cmd : Command) : IO Unit := do
-  let cmdLine := cmd.args.foldl (init := s!"strata {cmd.name}") fun s a => s!"{s} <{a}>"
+  let progName ← progNameRef.get
+  let cmdLine := cmd.args.foldl (init := s!"{progName} {cmd.name}") fun s a => s!"{s} <{a}>"
   let flagSummary := cmd.flags.foldl (init := "") fun s f =>
     match f.takesArg with
     | .arg argName | .repeat argName => s!"{s} [--{f.name} <{argName}>]"
@@ -258,7 +264,8 @@ def runParsedCommand (cmd : Command) (args : Array String) (pflags : ParsedFlags
 
 /-- Run a single command directly (for per-command executables).
     Parses `args` against the command's flag set, then invokes the callback. -/
-def runCommand (cmd : Command) (args : List String) : IO Unit := do
+def runCommand (cmd : Command) (args : List String) (progName : String := "strata") : IO Unit := do
+  progNameRef.set progName
   try do
     if args.contains "--help" then
       printCommandHelp cmd
@@ -273,7 +280,9 @@ def runCommand (cmd : Command) (args : List String) : IO Unit := do
 /-- Dispatch CLI arguments against a command map. This is the shared entry point
     used by the unified `strata` binary. -/
 def runCommandMap (map : Std.HashMap String Command)
-    (groups : List CommandGroup) (args : List String) : IO Unit := do
+    (groups : List CommandGroup) (args : List String) (progName : String := "strata") :
+    IO Unit := do
+  progNameRef.set progName
   try do
     match args with
     | ["--help"] => printGlobalHelp groups
@@ -292,5 +301,15 @@ def runCommandMap (map : Std.HashMap String Command)
       exitFailure "Expected subcommand."
   catch e =>
     exitFailure e.toString
+
+namespace Strata.Cli
+
+def deriveBaseName (suffixes : List String) (file : String) : String :=
+  let name := System.FilePath.fileName file |>.getD file
+  match suffixes.find? (name.endsWith ·) with
+  | some sfx => (name.dropEnd sfx.length).toString
+  | none     => name
+
+end Strata.Cli
 
 end -- public section

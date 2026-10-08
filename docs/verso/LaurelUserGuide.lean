@@ -3829,13 +3829,13 @@ This section is about telling those apart.
 
 ## Running a program
 
-The Laurel commands live in the `strata` CLI, from the `StrataCLI` package. The three that matter
+The Laurel commands are in Strata's `strataLaurel` binary; StrataCLI's `strata` has them too. The three that matter
 for everyday work take a textual Laurel file and go progressively further:
 
 ```
-lake exe strata -- laurelParse file.lr.st
-lake exe strata -- laurelToCore file.lr.st
-lake exe strata -- laurelAnalyze file.lr.st
+lake exe strataLaurel laurelParse file.lr.st
+lake exe strataLaurel laurelToCore file.lr.st
+lake exe strataLaurel laurelAnalyze file.lr.st
 ```
 
 `laurelParse` only parses and builds the AST, so it separates a syntax problem from everything

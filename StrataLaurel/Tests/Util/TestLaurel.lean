@@ -309,7 +309,8 @@ very same inline `// ^^^` annotations the verifier is checked against. This runs
 default, so a block marks a parameterless procedure `entry` or opts out with
 `skipCoreInterpreter := true`; having neither is an error rather than a silent skip.
 
-This shares its implementation with `laurelInterpretCommand` in `StrataMainLib`:
+This shares its implementation with `laurelInterpretCommand` in
+`StrataLaurel.Implementation.Cli`:
 translate to Core and type-check here, then hand off to
 `Core.Program.interpretEntries`, which the CLI command also calls. So the parts
 that define what interpretation means — inlining bodied functions, the evaluator

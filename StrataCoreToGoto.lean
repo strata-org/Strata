@@ -5,6 +5,7 @@
 -/
 
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Cli.Framework
 import Strata.Languages.Core.Verifier
 import StrataDDM.Util.IO
 
@@ -35,13 +36,6 @@ def parseOptions (args : List String) : Except Std.Format (GotoOptions × String
     | _, [] => .error "StrataCoreToGoto requires a .core.st file as input"
     | _, args => .error f!"Unknown options: {args}"
 
-def deriveBaseName (file : String) : String :=
-  let name := System.FilePath.fileName file |>.getD file
-  -- Strip .core.st or .st suffix
-  if name.endsWith ".core.st" then (name.dropEnd 8).toString
-  else if name.endsWith ".st" then (name.dropEnd 3).toString
-  else name
-
 def main (args : List String) : IO UInt32 := do
   match parseOptions args with
   | .ok (opts, file) =>
@@ -49,7 +43,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println "Error: expected a .core.st file"
       IO.println f!"{usageMessage}"
       return 1
-    let baseName := deriveBaseName file
+    let baseName := Strata.Cli.deriveBaseName [".core.st", ".st"] file
     let programName := opts.programName.getD baseName
     if programName.any "/" || programName.any ".." then
       IO.println "Error: --program-name must be a simple filename without path separators"
