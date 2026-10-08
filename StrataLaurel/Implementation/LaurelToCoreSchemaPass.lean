@@ -1569,7 +1569,12 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.imperativeFunction,
-      NodeKind.Program.Unordered
+      NodeKind.Program.Unordered,
+      NodeKind.TypeDefinition.Alias,
+      NodeKind.Pseudo.needsLoopInvariantChecks,
+      NodeKind.Procedure.contracts.Coroutine,
+      NodeKind.StmtExpr.OldGuarantee,
+      NodeKind.StmtExpr.OldRelies
     ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
