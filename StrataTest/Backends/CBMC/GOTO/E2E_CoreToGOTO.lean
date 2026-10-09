@@ -334,8 +334,10 @@ procedure caller(x : int) {
 
 -------------------------------------------------------------------------------
 
--- Test: local function declarations (funcDecl) are lifted to top-level GOTO functions
-def E2E_FuncDecl :=
+-- Test: internal function syntax becomes a Lambda-valued local. Core-to-GOTO
+-- does not yet support function-typed local variables, so it must reject this
+-- form rather than treating it as a liftable `funcDecl`.
+def E2E_LambdaValuedLocalFunction :=
 #strata
 program Core;
 procedure test(x : int) {
@@ -344,11 +346,11 @@ procedure test(x : int) {
 };
 #end
 
-#eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_FuncDecl | IO.throwServerError "translation failed"
-  let symStr := symtab.pretty
-  -- The lifted function "double" should appear in the symbol table
-  assert! (symStr.splitOn "double").length > 1
+#guard
+  match coreToGotoJson E2E_LambdaValuedLocalFunction with
+  | .error e =>
+    toString e == "[toGotoType] Function types not supported in GOTO translation"
+  | .ok _ => false
 
 -------------------------------------------------------------------------------
 

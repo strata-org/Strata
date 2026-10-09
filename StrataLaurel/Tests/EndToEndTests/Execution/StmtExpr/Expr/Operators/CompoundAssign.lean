@@ -29,6 +29,7 @@ local. `c#n += e` parses paren-free because `fieldAccess` (prec 95) binds tighte
 than `+=` (prec 10).
 -/
 
+-- No Core interpreter: real `+=` etc. do not reduce, so `realOperators`' asserts fail with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -138,9 +139,22 @@ procedure rightAssocChain()
   assert b == 5;
   assert a == 6
 };
+
+procedure runAll() entry opaque {
+  intOperators();
+  exprYieldsNewValue();
+  exprYieldsNewValueNonPlus();
+  intDivMod();
+  nestedRhs();
+  realOperators();
+  stringConcat();
+  constrainedInt();
+  rightAssocChain()
+};
 #end
 
 -- Compound assignment on composite-type fields, including chained targets.
+-- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -241,5 +255,36 @@ procedure intFieldDiv()
   c#n := 7;
   c#n /= 2;
   assert c#n == 3
+};
+
+procedure runAll() entry opaque modifies * {
+  fieldStatement();
+  fieldInExpression();
+  chainedFieldStatement();
+  chainedFieldInExpression();
+  realFieldDiv();
+  stringFieldConcat();
+  intFieldDiv()
+};
+#end
+
+/-! `x /= d` is `x := x / d`, so a zero divisor violates the same precondition. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure divideBy(d: int)
+  opaque
+{
+  var x: int := 10;
+  x /= d
+//^^^^^^ error: divisor is non-zero does not hold
+};
+
+procedure runAll()
+  entry
+  opaque
+{
+  divideBy(0)
 };
 #end

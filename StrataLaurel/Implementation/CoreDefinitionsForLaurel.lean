@@ -225,6 +225,80 @@ procedure $bv64SLe(x: bv 64, y: bv 64) : bool external;
 procedure $bv64SGt(x: bv 64, y: bv 64) : bool external;
 procedure $bv64SGe(x: bv 64, y: bv 64) : bool external;
 
+// Bitvector bitwise operations and int<->bv conversions, per width.
+//
+// Core's `Bv{W}.And/Or/Xor/Not/Shl/UShr/SShr` operations and the three casts
+// `Bv{W}.ToInt` (signed), `Bv{W}.ToUInt` (unsigned) and `Int.ToBv{W}` are
+// exposed here for widths 1 through 128 -- the full set Core supports, unlike
+// the comparison wrappers above which stop at 64.
+//
+// `$intToBv{W}` is TRUNCATING: it is SMT-LIB's `(_ int_to_bv W)`, i.e.
+// `x mod 2^W`, so an out-of-range operand wraps silently rather than being
+// rejected. The int-level wrappers below carry the range `requires` that
+// makes the round trip exact; a caller using these primitives directly owns
+// that obligation itself.
+procedure $intToBv1(x: int) : bv 1 external;
+procedure $bv1ToInt(b: bv 1) : int external;
+procedure $bv1ToUInt(b: bv 1) : int external;
+procedure $intToBv8(x: int) : bv 8 external;
+procedure $bv8ToInt(b: bv 8) : int external;
+procedure $bv8ToUInt(b: bv 8) : int external;
+procedure $intToBv16(x: int) : bv 16 external;
+procedure $bv16ToInt(b: bv 16) : int external;
+procedure $bv16ToUInt(b: bv 16) : int external;
+procedure $intToBv32(x: int) : bv 32 external;
+procedure $bv32ToInt(b: bv 32) : int external;
+procedure $bv32ToUInt(b: bv 32) : int external;
+procedure $intToBv64(x: int) : bv 64 external;
+procedure $bv64ToInt(b: bv 64) : int external;
+procedure $bv64ToUInt(b: bv 64) : int external;
+procedure $intToBv128(x: int) : bv 128 external;
+procedure $bv128ToInt(b: bv 128) : int external;
+procedure $bv128ToUInt(b: bv 128) : int external;
+
+procedure $bv1And(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1Or(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1Xor(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1Shl(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1UShr(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1SShr(x: bv 1, y: bv 1) : bv 1 external;
+procedure $bv1Not(x: bv 1) : bv 1 external;
+procedure $bv8And(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8Or(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8Xor(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8Shl(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8UShr(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8SShr(x: bv 8, y: bv 8) : bv 8 external;
+procedure $bv8Not(x: bv 8) : bv 8 external;
+procedure $bv16And(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16Or(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16Xor(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16Shl(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16UShr(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16SShr(x: bv 16, y: bv 16) : bv 16 external;
+procedure $bv16Not(x: bv 16) : bv 16 external;
+procedure $bv32And(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32Or(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32Xor(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32Shl(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32UShr(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32SShr(x: bv 32, y: bv 32) : bv 32 external;
+procedure $bv32Not(x: bv 32) : bv 32 external;
+procedure $bv64And(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64Or(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64Xor(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64Shl(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64UShr(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64SShr(x: bv 64, y: bv 64) : bv 64 external;
+procedure $bv64Not(x: bv 64) : bv 64 external;
+procedure $bv128And(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128Or(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128Xor(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128Shl(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128UShr(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128SShr(x: bv 128, y: bv 128) : bv 128 external;
+procedure $bv128Not(x: bv 128) : bv 128 external;
+
 // Boolean operations
 procedure $boolNot(x: bool) : bool external;
 procedure $boolAnd(x: bool, y: bool) : bool external;
@@ -242,6 +316,213 @@ procedure $boolImplies(x: bool, y: bool) : bool external;
 // taken on faith).
 procedure $strLt(x: string, y: string) : bool external;
 procedure $strLe(x: string, y: string) : bool external;
+
+// --- Integer bitwise operations, as width- and signedness-explicit procedures ---
+//
+// These are the bounded-integer surface. They are PROCEDURES, not operator
+// overloads, and deliberately so: `&`, `|` and `^` already have Laurel meanings
+// (`$and` and `$or` at `bool`, `$strConcat` at `string`), and an `int` overload
+// of `&` could carry no width, while a bitwise operation on a bounded integer
+// needs one. A spelling that silently picked a width would be exactly the quiet
+// semantic choice these names avoid.
+//
+// Semantics. `$bit<Op><Sign><W>(x, y)` is the two's-complement bitwise <Op> of
+// `x` and `y` at width `W`, read back SIGNED (`S`) or UNSIGNED (`U`). The
+// `requires` pins the operands to the width's range, which is what makes the
+// `$intToBv<W>` round trip exact rather than truncating; a caller outside that
+// range is REJECTED, not wrapped.
+//
+// There is no overflow question: a bitwise and/or/xor of two values in a width's
+// range is itself in that range, so unlike `+`/`*` these carry no overflow
+// obligation and no wraparound. The `ensures`-free contract is deliberate --
+// the range of the result follows from the encoding (`$bv<W>ToUInt`'s result is
+// in `[0, 2^W)` by its sort, and the signed form re-centres that interval with
+// arithmetic), so a caller gets it without the prelude asserting it.
+//
+// The signed forms do NOT use `$bv<W>ToInt`. Measured: `sbv_to_int` at width 32
+// and above is a solver cliff for cvc5 1.3.4 -- even the FALSE property
+// `sbv_to_int(b) >= 0` times out at 60 s rather than yielding a countermodel,
+// and the true lower bound `sbv_to_int(b) >= -2^31` times out in three different
+// phrasings. `ubv_to_int` has no such problem in either direction. So the signed
+// value is recovered from the UNSIGNED one by re-centring:
+//
+//     s = ((u + 2^(W-1)) mod 2^W) - 2^(W-1)
+//
+// which is exact (`mod` here is `Int.Mod`, Euclidean, so non-negative for a
+// positive modulus) and whose range is an arithmetic consequence the solver
+// discharges. `$intMod` is called directly rather than through `%` so the
+// literal modulus does not add a `divisor is non-zero` obligation to every
+// program that uses a bitwise operation.
+//
+// NOT provided, each because it needs no primitive:
+//   * complement -- `-x - 1` signed, `2^W - 1 - x` unsigned. Pure arithmetic.
+//   * AND-NOT -- `$bitAnd...(x, <complement of y>)` with the above.
+//   * `x >> k` and `x << k` for a CONSTANT k -- `x / 2^k` (Laurel's `/` is floor
+//     division for a positive divisor, matching arithmetic shift right) and
+//     `x * 2^k`. Keeping `<<` as a multiplication is what preserves the
+//     "overflow is a reported obligation, not wraparound" posture; a bitvector
+//     `<<` WRAPS (`$bv8Shl` of 128 by 1 is 0, measured), which is a different
+//     semantics and is not silently substituted here.
+//   * `x >> s` for a VARIABLE s -- composable from `$bv<W>SShr`/`$bv<W>UShr` and
+//     the conversions above, including `2^s` itself as `$bv<W>Shl` of 1 by s.
+//     Left to the caller because the shift amount's own range obligation and
+//     the semantics for `s >= W` are front-end decisions.
+
+procedure $bitAndU8(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint8"
+  requires x <= 255 summary "left operand fits uint8"
+  requires y >= 0 summary "right operand fits uint8"
+  requires y <= 255 summary "right operand fits uint8"
+  return $bv8ToUInt($bv8And($intToBv8(x), $intToBv8(y)));
+procedure $bitAndS8(x: int, y: int) : int
+  requires x >= -128 summary "left operand fits int8"
+  requires x <= 127 summary "left operand fits int8"
+  requires y >= -128 summary "right operand fits int8"
+  requires y <= 127 summary "right operand fits int8"
+  return $intMod($bv8ToUInt($bv8And($intToBv8(x), $intToBv8(y))) + 128, 256) - 128;
+
+procedure $bitOrU8(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint8"
+  requires x <= 255 summary "left operand fits uint8"
+  requires y >= 0 summary "right operand fits uint8"
+  requires y <= 255 summary "right operand fits uint8"
+  return $bv8ToUInt($bv8Or($intToBv8(x), $intToBv8(y)));
+procedure $bitOrS8(x: int, y: int) : int
+  requires x >= -128 summary "left operand fits int8"
+  requires x <= 127 summary "left operand fits int8"
+  requires y >= -128 summary "right operand fits int8"
+  requires y <= 127 summary "right operand fits int8"
+  return $intMod($bv8ToUInt($bv8Or($intToBv8(x), $intToBv8(y))) + 128, 256) - 128;
+
+procedure $bitXorU8(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint8"
+  requires x <= 255 summary "left operand fits uint8"
+  requires y >= 0 summary "right operand fits uint8"
+  requires y <= 255 summary "right operand fits uint8"
+  return $bv8ToUInt($bv8Xor($intToBv8(x), $intToBv8(y)));
+procedure $bitXorS8(x: int, y: int) : int
+  requires x >= -128 summary "left operand fits int8"
+  requires x <= 127 summary "left operand fits int8"
+  requires y >= -128 summary "right operand fits int8"
+  requires y <= 127 summary "right operand fits int8"
+  return $intMod($bv8ToUInt($bv8Xor($intToBv8(x), $intToBv8(y))) + 128, 256) - 128;
+
+procedure $bitAndU16(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint16"
+  requires x <= 65535 summary "left operand fits uint16"
+  requires y >= 0 summary "right operand fits uint16"
+  requires y <= 65535 summary "right operand fits uint16"
+  return $bv16ToUInt($bv16And($intToBv16(x), $intToBv16(y)));
+procedure $bitAndS16(x: int, y: int) : int
+  requires x >= -32768 summary "left operand fits int16"
+  requires x <= 32767 summary "left operand fits int16"
+  requires y >= -32768 summary "right operand fits int16"
+  requires y <= 32767 summary "right operand fits int16"
+  return $intMod($bv16ToUInt($bv16And($intToBv16(x), $intToBv16(y))) + 32768, 65536) - 32768;
+
+procedure $bitOrU16(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint16"
+  requires x <= 65535 summary "left operand fits uint16"
+  requires y >= 0 summary "right operand fits uint16"
+  requires y <= 65535 summary "right operand fits uint16"
+  return $bv16ToUInt($bv16Or($intToBv16(x), $intToBv16(y)));
+procedure $bitOrS16(x: int, y: int) : int
+  requires x >= -32768 summary "left operand fits int16"
+  requires x <= 32767 summary "left operand fits int16"
+  requires y >= -32768 summary "right operand fits int16"
+  requires y <= 32767 summary "right operand fits int16"
+  return $intMod($bv16ToUInt($bv16Or($intToBv16(x), $intToBv16(y))) + 32768, 65536) - 32768;
+
+procedure $bitXorU16(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint16"
+  requires x <= 65535 summary "left operand fits uint16"
+  requires y >= 0 summary "right operand fits uint16"
+  requires y <= 65535 summary "right operand fits uint16"
+  return $bv16ToUInt($bv16Xor($intToBv16(x), $intToBv16(y)));
+procedure $bitXorS16(x: int, y: int) : int
+  requires x >= -32768 summary "left operand fits int16"
+  requires x <= 32767 summary "left operand fits int16"
+  requires y >= -32768 summary "right operand fits int16"
+  requires y <= 32767 summary "right operand fits int16"
+  return $intMod($bv16ToUInt($bv16Xor($intToBv16(x), $intToBv16(y))) + 32768, 65536) - 32768;
+
+procedure $bitAndU32(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint32"
+  requires x <= 4294967295 summary "left operand fits uint32"
+  requires y >= 0 summary "right operand fits uint32"
+  requires y <= 4294967295 summary "right operand fits uint32"
+  return $bv32ToUInt($bv32And($intToBv32(x), $intToBv32(y)));
+procedure $bitAndS32(x: int, y: int) : int
+  requires x >= -2147483648 summary "left operand fits int32"
+  requires x <= 2147483647 summary "left operand fits int32"
+  requires y >= -2147483648 summary "right operand fits int32"
+  requires y <= 2147483647 summary "right operand fits int32"
+  return $intMod($bv32ToUInt($bv32And($intToBv32(x), $intToBv32(y))) + 2147483648, 4294967296) - 2147483648;
+
+procedure $bitOrU32(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint32"
+  requires x <= 4294967295 summary "left operand fits uint32"
+  requires y >= 0 summary "right operand fits uint32"
+  requires y <= 4294967295 summary "right operand fits uint32"
+  return $bv32ToUInt($bv32Or($intToBv32(x), $intToBv32(y)));
+procedure $bitOrS32(x: int, y: int) : int
+  requires x >= -2147483648 summary "left operand fits int32"
+  requires x <= 2147483647 summary "left operand fits int32"
+  requires y >= -2147483648 summary "right operand fits int32"
+  requires y <= 2147483647 summary "right operand fits int32"
+  return $intMod($bv32ToUInt($bv32Or($intToBv32(x), $intToBv32(y))) + 2147483648, 4294967296) - 2147483648;
+
+procedure $bitXorU32(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint32"
+  requires x <= 4294967295 summary "left operand fits uint32"
+  requires y >= 0 summary "right operand fits uint32"
+  requires y <= 4294967295 summary "right operand fits uint32"
+  return $bv32ToUInt($bv32Xor($intToBv32(x), $intToBv32(y)));
+procedure $bitXorS32(x: int, y: int) : int
+  requires x >= -2147483648 summary "left operand fits int32"
+  requires x <= 2147483647 summary "left operand fits int32"
+  requires y >= -2147483648 summary "right operand fits int32"
+  requires y <= 2147483647 summary "right operand fits int32"
+  return $intMod($bv32ToUInt($bv32Xor($intToBv32(x), $intToBv32(y))) + 2147483648, 4294967296) - 2147483648;
+
+procedure $bitAndU64(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint64"
+  requires x <= 18446744073709551615 summary "left operand fits uint64"
+  requires y >= 0 summary "right operand fits uint64"
+  requires y <= 18446744073709551615 summary "right operand fits uint64"
+  return $bv64ToUInt($bv64And($intToBv64(x), $intToBv64(y)));
+procedure $bitAndS64(x: int, y: int) : int
+  requires x >= -9223372036854775808 summary "left operand fits int64"
+  requires x <= 9223372036854775807 summary "left operand fits int64"
+  requires y >= -9223372036854775808 summary "right operand fits int64"
+  requires y <= 9223372036854775807 summary "right operand fits int64"
+  return $intMod($bv64ToUInt($bv64And($intToBv64(x), $intToBv64(y))) + 9223372036854775808, 18446744073709551616) - 9223372036854775808;
+
+procedure $bitOrU64(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint64"
+  requires x <= 18446744073709551615 summary "left operand fits uint64"
+  requires y >= 0 summary "right operand fits uint64"
+  requires y <= 18446744073709551615 summary "right operand fits uint64"
+  return $bv64ToUInt($bv64Or($intToBv64(x), $intToBv64(y)));
+procedure $bitOrS64(x: int, y: int) : int
+  requires x >= -9223372036854775808 summary "left operand fits int64"
+  requires x <= 9223372036854775807 summary "left operand fits int64"
+  requires y >= -9223372036854775808 summary "right operand fits int64"
+  requires y <= 9223372036854775807 summary "right operand fits int64"
+  return $intMod($bv64ToUInt($bv64Or($intToBv64(x), $intToBv64(y))) + 9223372036854775808, 18446744073709551616) - 9223372036854775808;
+
+procedure $bitXorU64(x: int, y: int) : int
+  requires x >= 0 summary "left operand fits uint64"
+  requires x <= 18446744073709551615 summary "left operand fits uint64"
+  requires y >= 0 summary "right operand fits uint64"
+  requires y <= 18446744073709551615 summary "right operand fits uint64"
+  return $bv64ToUInt($bv64Xor($intToBv64(x), $intToBv64(y)));
+procedure $bitXorS64(x: int, y: int) : int
+  requires x >= -9223372036854775808 summary "left operand fits int64"
+  requires x <= 9223372036854775807 summary "left operand fits int64"
+  requires y >= -9223372036854775808 summary "right operand fits int64"
+  requires y <= 9223372036854775807 summary "right operand fits int64"
+  return $intMod($bv64ToUInt($bv64Xor($intToBv64(x), $intToBv64(y))) + 9223372036854775808, 18446744073709551616) - 9223372036854775808;
 
 // Short-circuit boolean operations, string concatenation and equality have no
 // separate delegate: the operator wrapper's own reserved name (`$andThen`,

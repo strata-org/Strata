@@ -416,7 +416,7 @@ theorem updatedStatesDefMonotone
       simp_all [isDefined]
     | inr Hin =>
       apply ih <;> assumption
-  
+
 theorem updatedStatesUpdate {P : PureExpr}
   {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
   hs.length = vs.length →

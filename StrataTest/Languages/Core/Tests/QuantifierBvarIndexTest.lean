@@ -83,4 +83,44 @@ spec {
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck .default (translate quantifierApplyBoundVar).stripMetaData)))
 
+/-! ## Applied local-function parameters under nested binders
+
+Local-function parameters are stored as placeholder bvars while translating the
+body. An applied parameter must be re-indexed to its current DDM binder index,
+just like a zero-argument parameter reference. Otherwise, a binder introduced
+by `have`, `fun`, or a quantifier can make an application select a later
+parameter instead.
+-/
+
+def localFunctionAppliedBvar :=
+#strata
+program Core;
+
+procedure Check()
+{
+  function underHave(g : int -> int, h : int -> int, x : int) : int
+    { have c : int = x in g(c) }
+  function underLambda(g : int -> int, h : int -> int, x : int) : int
+    { (fun c : int => g(c))(x) }
+  function underQuantifier(p : int -> bool, q : int -> bool) : bool
+    { forall x : int :: p(x) }
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure Check ()
+{
+  var underHave : (int -> int) -> (int -> int) -> int -> int := fun g : (int -> int) => fun h : (int -> int) => fun x : int => (fun c : int => g(c))(x);
+  var underLambda : (int -> int) -> (int -> int) -> int -> int := fun g : (int -> int) => fun h : (int -> int) => fun x : int => (fun c : int => g(c))(x);
+  var underQuantifier : (int -> bool) -> (int -> bool) -> bool := fun p : (int -> bool) => fun q : (int -> bool) => forall x : int :: p(x);
+};
+-/
+#guard_msgs in
+#eval (Std.format ((Core.typeCheck .default (translate localFunctionAppliedBvar).stripMetaData)))
+
 end

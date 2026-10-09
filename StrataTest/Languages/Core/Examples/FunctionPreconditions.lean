@@ -433,7 +433,8 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify funcInQuantifierPgm
 
--- Inline function declaration (funcDecl) with precondition
+-- Internal function preconditions are rejected: Lambda-valued locals cannot
+-- carry a precondition contract.
 def funcDeclPgm :=
 #strata
 program Core;
@@ -451,29 +452,8 @@ procedure test()
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: init_calls_$__liftfncl_addPositive_1_0
-Property: assert
-Obligation:
-true
-
-Label: assert_0
-Property: assert
-Obligation:
-$__liftfncl_addPositive_1(5, 3) == 8
-
----
-info:
-Obligation: init_calls_$__liftfncl_addPositive_1_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_0
-Property: assert
-Result: ✅ pass
+error: Core DDM translation errors:
+local function 'addPositive': preconditions are not supported
 -/
 #guard_msgs in
 #eval Core.verify funcDeclPgm

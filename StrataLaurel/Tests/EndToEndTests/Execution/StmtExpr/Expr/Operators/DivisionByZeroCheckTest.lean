@@ -51,10 +51,7 @@ procedure callPureDivSafe()
 -- Error ranges are too wide because Core does not use expression locations.
 -- `/` is a call to the `$div` wrapper, which declares `requires y != 0`, so the
 -- unconstrained divisor surfaces as that precondition rather than an assertion.
--- Verify-only: `x` is an unconstrained parameter and nothing marks an `entry`,
--- so there is no concrete path for the interpreter to walk. The failure is
--- inherently symbolic — it says the precondition cannot be proved for *all* `x`.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -62,6 +59,10 @@ procedure unsafeDivision(x: int)
 {
   var z: int := 10 / x
 //^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+};
+
+procedure runAll() entry opaque {
+  unsafeDivision(0)
 };
 #end
 
@@ -78,7 +79,7 @@ procedure unsafeDivision(x: int)
 -- discharges `$div`'s. Only the unsatisfied precondition at the *call site* is
 -- common to both. Per `TestLaurelExecution`'s rule, a block whose negatives are
 -- phase-asymmetric stays verification-only.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure pureDiv(x: int, y: int): int

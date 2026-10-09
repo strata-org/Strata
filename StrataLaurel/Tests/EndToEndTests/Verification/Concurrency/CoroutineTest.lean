@@ -33,11 +33,11 @@ open StrataTest.Util Strata StrataDDM
     boilerplate options block every concurrency test would otherwise
     repeat.
 
-    Verification only: a coroutine's `resume`/`yield` schedule is what these tests
-    are about, and the concrete interpreter has no coroutine support, so no block
-    here marks an `entry`. -/
+    Verification only: a coroutine's `resume`/`yield` schedule over all
+    interleavings is what these tests are about, which one concrete run cannot
+    show, so no block here marks an `entry`. -/
 def testCoroutine (block : SourcedProgram) : IO Unit :=
-  testLaurelExecution { skipCoreInterpreter := true }
+  testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true }
     (options := { defaultLaurelTestOptions with
       translateOptions := { defaultLaurelTestOptions.translateOptions with
         verifyCoroutine := true } })

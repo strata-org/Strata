@@ -370,6 +370,16 @@ private def appliedTagType (src : FileRange) (ownerParams : List Identifier)
     ⟨ .Applied ⟨ .UserDefined ct.name, src ⟩
       (args.map (fun a => (⟨ .TVar a, src ⟩ : HighTypeMd))), src ⟩
 
+/-- Replace every reference to `selfName` in `e` with `selfName as ovTy`. References are matched
+    by `uniqueId` rather than by name. -/
+private def castSelfTo (selfName : Identifier) (ovTy : HighTypeMd) (e : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun n => match n.val with
+    | .Var (.Local r) =>
+      if r.uniqueId.isSome && r.uniqueId == selfName.uniqueId
+      then ⟨ .AsType n ovTy, n.source ⟩
+      else n
+    | _ => n) e
+
 /-- The dispatcher's receiver name: the method's first input. Shared by the dispatcher body
     and its tag-conditioned posts so the `is`/`as` branches and the `self is Oi ==> Oi.post`
     posts cannot drift onto different receiver names. The `mkId "self"` fallback is unreachable
@@ -425,9 +435,10 @@ private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Ide
       per-override guarantee without the weaker `D.post` masking them. (The guard uses
       ancestor-membership `is`; since branches are checked most-derived-first the body still
       picks the right impl.)
-    * each overrider `Oᵢ`'s posts, `(self is Oᵢ) ==> Oᵢ.post` — so a caller that knows
-      the runtime tag (after `is`/`as`, or via a more-derived static type) recovers the
-      override's STRONGER guarantee through a `D`-typed reference.
+    * each overrider `Oᵢ`'s posts, `(self is Oᵢ) ==> Oᵢ.post[self := self as Oᵢ]` — so a
+      caller that knows the runtime tag recovers the override's STRONGER guarantee through a
+      `D`-typed reference. The cast lets `Oᵢ.post` read a field only `Oᵢ` declares, and it is
+      the receiver the `Oᵢ` branch passes to `Oᵢ$m$impl`, so that branch discharges the clause.
 
     SOUND: each clause is discharged by the matching dispatcher branch, whose `$impl`
     postcondition is exactly that type's post. (Cross-branch `is`-overlap — a deeper
@@ -450,7 +461,9 @@ private def dispatcherPosts (ownerParams : List Identifier) (ownerPosts : List C
       match nonFreeConditions (bodyPostconditions ovProc.body) with
       | [] => none
       | ovPosts =>
-        let conj := conjoinAnd src (ovPosts.map (fun c => rename c.condition))
+        let ovTy := appliedTagType src ownerParams ov
+        let conj := conjoinAnd src
+          (ovPosts.map (fun c => castSelfTo selfName ovTy (rename c.condition)))
         some { condition := impliesMd src (isOf ov) conj }
   let notAnyOverrider : StmtExprMd := conjoinAnd src (overriders.map (fun ov => notMd src (isOf ov)))
   let guardedOwnerPosts : List Condition := (nonFreeConditions ownerPosts).map fun c =>

@@ -24,6 +24,7 @@ This file covers, end-to-end:
 
 /-! ### Tautologies over a nondet value hold -/
 
+-- No Core interpreter: "<??>" does not reduce in the Core interpreter ("condition did not reduce to bool").
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -40,10 +41,16 @@ procedure nondetBoolExcludedMiddle()
   var b: bool := <??>;
   assert b || !b
 };
+
+procedure runAll() entry opaque {
+  nondetIntReflexive();
+  nondetBoolExcludedMiddle()
+};
 #end
 
 /-! ### A nondet value is arbitrary: specific-value assertions fail -/
 
+-- No Core interpreter: "<??>" does not reduce in the Core interpreter ("condition did not reduce to bool").
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -54,8 +61,13 @@ procedure nondetIntIsArbitrary()
   assert x == 5
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
+
+procedure runAll() entry opaque {
+  nondetIntIsArbitrary()
+};
 #end
 
+-- No Core interpreter: "<??>" does not reduce in the Core interpreter ("condition did not reduce to bool").
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -66,11 +78,16 @@ procedure nondetBoolIsArbitrary()
   assert b
 //^^^^^^^^ error: assertion does not hold
 };
+
+procedure runAll() entry opaque {
+  nondetBoolIsArbitrary()
+};
 #end
 
 /-! ### Two distinct nondet holes need not agree -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: "<??>" does not reduce in the Core interpreter ("condition did not reduce to bool"); the Laurel interpreter gives both holes the default 0, so the assert holds.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure nondetHolesAreIndependent()
@@ -85,6 +102,7 @@ procedure nondetHolesAreIndependent()
 
 /-! ### `<??>` directly in a boolean position is arbitrary -/
 
+-- No Core interpreter: "<??>" does not reduce in the Core interpreter ("condition did not reduce to bool").
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -93,5 +111,9 @@ procedure nondetHoleInAssert()
 {
   assert <??>
 //^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure runAll() entry opaque {
+  nondetHoleInAssert()
 };
 #end

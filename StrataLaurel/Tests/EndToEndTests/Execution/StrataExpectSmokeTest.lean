@@ -40,7 +40,7 @@ procedure foo() opaque {
 
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -48,5 +48,11 @@ procedure unsafeDivision(x: int)
 {
   var z: int := 10 / x
 //^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+};
+
+procedure runAll() entry
+  opaque
+{
+  unsafeDivision(0)
 };
 #end

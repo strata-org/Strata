@@ -314,6 +314,24 @@ def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
     | .cover_def => { gen with cover_def := gen.cover_def + 1 }
   { b with gen := new_gen }
 
+/-- Choose the Core local-variable name used for a lowered internal function.
+
+DDM resolves the source name positionally through `boundVars`, so the stored
+binding may use a different Core identifier. Keep the source name when it is
+available for readable output; on shadowing, mint a reserved-prefix name that
+is fresh among variables already in lexical scope. -/
+private partial def localFunctionBindingName
+    (bindings : TransBindings) (sourceName : Core.CoreIdent) : Core.CoreIdent :=
+  let used (name : Core.CoreIdent) := bindings.boundVars.any fun
+    | .fvar _ boundName _ => boundName == name
+    | _ => false
+  if !used sourceName then sourceName
+  else
+    let rec findFresh (n : Nat) : Core.CoreIdent :=
+      let candidate : Core.CoreIdent := ⟨s!"$__localfn_{sourceName.name}_{n}", ()⟩
+      if used candidate then findFresh (n + 1) else candidate
+    findFresh 0
+
 /-- Generate a default label and increment the counter for the given kind. -/
 def nextLabel (namePrefix : String) (kind : GenKind) (labelArg : Arg)
     (bindings : TransBindings) : TransM (String × TransBindings) := do
@@ -1398,8 +1416,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
         | .bvar m _ => return .bvar m i
         | _ => return expr
       | _ =>
+        let fn := match expr with
+          | .bvar m _ => LExpr.bvar m i
+          | e => e
         let args ← translateExprs p bindings argsa.toArray
-        return .mkApp () expr args.toList
+        return .mkApp () fn args.toList
     else
       -- Bound variable index exceeds boundVars - check if it's a local function
       let funcIndex := i - bindings.boundVars.size
@@ -1698,46 +1719,64 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let md ← getMetaDataWithAnn op annotsArg
     return ([.exit l md], bindings)
-  | q`Core.funcDecl_statement, #[annotsArg, namea, _typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
+  | q`Core.funcDecl_statement, #[annotsArg, namea, typeArgsa, bindingsa, returna, precondsa, bodya, _inlinea] =>
     let name ← translateIdent Core.CoreIdent namea
+    let typeArgs ← translateTypeArgs typeArgsa
+    if !typeArgs.isEmpty then
+      return ← TransM.recordError
+        s!"local function '{name.name}': polymorphism in local functions is not supported"
+        ([], bindings)
+
+    let .seq _ sep precondArgs := precondsa
+      | return ← TransM.error s!"translateStmt expected local-function preconditions, got {repr precondsa}"
+    if sep != .none && sep != .spacePrefix then
+      return ← TransM.error s!"translateStmt unexpected local-function precondition separator {repr sep}"
+    if !precondArgs.isEmpty then
+      return ← TransM.recordError
+        s!"local function '{name.name}': preconditions are not supported"
+        ([], bindings)
+
     let inputs ← translateMonoDeclList bindings bindingsa
     let outputMono ← translateLMonoTy bindings returna
-    let output : Core.Expression.Ty := .forAll [] outputMono
-    let inputsConverted : ListMap Core.Expression.Ident Core.Expression.Ty :=
-      inputs.map (fun (id, mty) => (id, .forAll [] mty))
-
-    -- The DDM parser's @[scope(b)] on the body adds only the parameters.
-    -- The function name is NOT in scope inside the body (declareFn adds it
-    -- for subsequent statements only). So body bindings = outer + parameters.
     let funcType := Lambda.LMonoTy.mkArrow' outputMono inputs.values
-    let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
-    let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+    let bindingName := localFunctionBindingName bindings name
 
-    let bodyBindings := { bindings with boundVars := bindings.boundVars ++ in_bindings }
-    -- Translate preconditions
-    let preconds ← translateFnPreconds p name bodyBindings precondsa
-
+    /-
+    Translation argument:
+      1. The concrete function parameters are in declaration order. Bind the
+         body to de Bruijn variables in that same order, with the final
+         parameter at index zero, as `translateLambda` does.
+      2. Folding abstractions right over the parameters therefore gives the
+         arrow type `inputs → output` while preserving every parameter lookup.
+      3. Outer statement bindings remain free variables in the abstraction, so
+         ordinary `init` evaluation provides the existing lexical capture.
+      4. Registering the initialized name as a typed free variable makes every
+         subsequent call an ordinary application of the Lambda-valued local.
+      5. done: no `Stmt.funcDecl` node or evaluator extension is needed.
+    -/
+    let n := inputs.size
+    let paramBindings := List.toArray <|
+      inputs.mapIdx (fun i _ => LExpr.bvar () (n - 1 - i))
+    let bodyBindings :=
+      { bindings with boundVars := bindings.boundVars ++ paramBindings }
     let body ← match bodya with
-      | .option _ (.some bodyExpr) => do
-        let expr ← translateExpr p bodyBindings bodyExpr
-        pure (some expr)
-      | .option _ .none => pure none
-      | _ => do
-        let expr ← translateExpr p bodyBindings bodya
-        pure (some expr)
+      | .option _ (.some bodyExpr) => translateExpr p bodyBindings bodyExpr
+      | .option _ .none =>
+        -- Unreachable from Core concrete syntax: `funcDecl_statement` requires
+        -- `body : r`. Keep this legacy defensive arm for manually constructed
+        -- or stale CST values that still wrap the body in an `Option`.
+        TransM.error s!"local function '{name.name}': body is required"
+      | _ => translateExpr p bodyBindings bodya
+    let lambda := inputs.foldr
+      (fun (param, ty) body => LExpr.abs () param.name (some ty) body)
+      body
 
-    let decl : PureFunc Core.Expression := {
-      name := name,
-      inputs := inputsConverted,
-      output := output,
-      body := body,
-      axioms := [],
-      preconditions := preconds
-    }
     let md ← getMetaDataWithAnn op annotsArg
-    -- Add the function to boundVars for subsequent statements.
-    let updatedBindings := { bindings with boundVars := bindings.boundVars.push funcBinding }
-    return ([.funcDecl decl md], updatedBindings)
+    let funcBinding : LExpr Core.CoreLParams.mono :=
+      .fvar () bindingName (some funcType)
+    let updatedBindings :=
+      { bindings with boundVars := bindings.boundVars.push funcBinding }
+    return ([.init bindingName (.forAll [] funcType) (.det lambda) md], updatedBindings)
   | q`Core.typeDecl_statement, #[annotsArg, namea, argsa] =>
     let name ← translateIdent String namea
     let (typeParams : List String) ← match argsa with

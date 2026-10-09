@@ -9,13 +9,11 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
--- Verification only. `IntList..head`'s guard is a *function* precondition, which only
--- the verifier turns into an obligation (`ObligationExtraction`); the concrete
--- evaluator never checks one. Marking `unsafeDestructor` an `entry` therefore does not
--- help: the interpreter reaches it, the destructor's `concreteEval` declines to reduce
--- a `head` of `Nil`, and the call is simply left unevaluated with no diagnostic. So the
--- safe and unsafe destructors are indistinguishable at runtime, and the annotation below
--- can only fire under the verifier.
+-- No Core interpreter. `IntList..head`'s guard is a *function* precondition, which the
+-- verifier turns into an obligation (`ObligationExtraction`) and the Laurel interpreter
+-- checks when the safe destructor meets the wrong constructor; the Core concrete
+-- evaluator never checks one, so it leaves the `head` of `Nil` unevaluated with no
+-- diagnostic.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -51,7 +49,7 @@ procedure testNested() entry opaque {
   assert IntList..isNil(IntList..tail(IntList..tail(xs)))
 };
 
-procedure unsafeDestructor() opaque {
+procedure unsafeDestructor() entry opaque {
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)

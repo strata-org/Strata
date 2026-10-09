@@ -246,16 +246,21 @@ private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 1
     Core interpret path.
 
     Unlike `runLaurelInterpretRaw`, this does *not* go through Laurel→Core: it
-    drives the Laurel-level evaluator directly. The evaluator supports only a
-    subset of Laurel today, so an unsupported construct surfaces as a thrown
-    `IO.userError` from `evalProgram` — enable this path (`skipLaurelInterpreter
-    := false`) only on blocks whose constructs are all supported.
+    drives the Laurel-level evaluator directly. An unsupported construct
+    surfaces as a thrown `IO.userError` from `evalProgram`.
+
+    The program is resolved first, against the prelude, because resolution is what
+    tells overloads apart: a resolved call carries its overload's id, and the
+    prelude is where the partial operators' preconditions live. A program
+    resolution rejects is an error, as it is for the Core path; a warning resolution
+    reports is one of this path's diagnostics, as it is the verifier's.
 
     Entry selection mirrors `runLaurelInterpretRaw`: the `entry` markers are read
     off the parsed Laurel program. `none` means no entry is marked (verify-only,
     skip). Otherwise each `entry` procedure is run once from a fresh evaluator
     (the evaluator itself never iterates), and their failures are concatenated in
-    entry order. -/
+    entry order with repeats dropped, as `Core.Program.interpretEntries` does, so
+    an assert failing on every loop iteration is reported once. -/
 private def runLaurelEvalRaw (program : StrataDDM.Program) :
     IO (Option (Array Strata.Message)) := do
   let uri := Strata.Uri.file "<#strata>"
@@ -265,13 +270,24 @@ private def runLaurelEvalRaw (program : StrataDDM.Program) :
   let entries := laurelProgram.staticProcedures.filter (·.isInterpretEntry)
   if entries.isEmpty then
     return none
-  let mut allMessages : Array Strata.Message := #[]
+  let resolved := Laurel.resolve (withBuiltins laurelProgram)
+  let fatal := resolved.errors.filter (·.kind.impact.isFatal)
+  unless fatal.isEmpty do
+    throw (IO.userError
+      s!"laurel-interpret: resolution failed: {fatal.map (·.message)}")
+  let program := resolved.program
+  let mut allMessages : Array Strata.Message := resolved.errors
+  let mut seen : Std.HashSet Strata.Message := Std.HashSet.ofArray resolved.errors
   for p in entries do
     let (_, failures) ← Strata.Laurel.Interpreter.evalProgram
       ({} : Strata.Laurel.Interpreter.ExternalBackend)
-      { entryProcedure := p.name.text, dumpState := false }
-      laurelProgram
-    allMessages := allMessages ++ failures
+      { entryProcedure := p.name.text, dumpState := false, printAsserts := false,
+        fuel := 1000000 }
+      program
+    for f in failures do
+      unless seen.contains f do
+        allMessages := allMessages.push f
+        seen := seen.insert f
   return some allMessages
 
 /-! ## Inline-annotation matcher
@@ -587,15 +603,14 @@ private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOption
       interpreter cannot reproduce (see below), or its program never reaches Core.
     - `skipLaurelInterpreter` — skip the standalone Laurel interpreter path
       (`Strata.Laurel.Interpreter.evalProgram`, driven directly on the
-      Laurel program without going through Core). `true` by default (off),
-      because the standalone evaluator supports only a subset of Laurel; enable
-      it on a block only when every construct it uses is supported. Like the Core
-      path it requires a parameterless `entry` procedure and is held to the same
-      annotations. -/
+      Laurel program without going through Core). `false` by default, like the
+      Core path, so a block is run by both interpreters and the verifier, all held
+      to the same annotations. Like the Core path it requires a parameterless
+      `entry` procedure, so a block with none says `skipLaurelInterpreter := true`. -/
 public structure MultiplePathTestOptions where
   skipVerification : Bool := false
   skipCoreInterpreter : Bool := false
-  skipLaurelInterpreter : Bool := true
+  skipLaurelInterpreter : Bool := false
   deriving Inhabited
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -662,14 +677,11 @@ public def testLaurelVerification (block : SourcedProgram)
     error: mark one, or opt out with `skipCoreInterpreter := true`. A silent skip
     would let a block lose its interpreter coverage without anything noticing.
 
-    Set `skipLaurelInterpreter := false` to *also* run the standalone Laurel
-    interpreter (`Evaluator.evalProgram`, driven directly on the Laurel program
-    without going through Core) and hold it to the *same* annotations. This third
-    path is off by default because the standalone evaluator supports only a subset
-    of Laurel; enable it on a block only when every construct it uses is
-    supported, otherwise the evaluator throws on the first unsupported construct.
-    Like the Core path it requires a parameterless `entry` procedure and throws if
-    none is marked.
+    The standalone Laurel interpreter (`Evaluator.evalProgram`, driven directly
+    on the Laurel program without going through Core) is a third path, on by
+    default and held to the *same* annotations. Like the Core path it requires a
+    parameterless `entry` procedure and throws if none is marked, so a block that
+    cannot be interpreted says `skipLaurelInterpreter := true` as well.
 
     `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
     solver). Pass an explicit value to override the solver, timeout, etc. — for

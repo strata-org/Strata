@@ -9,28 +9,24 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! A `return` short-circuits the rest of the body: the `assert false == true`
-    after the `return` must never be evaluated, so no assertion failure fires on
-    either interpreter (no annotation).
+/-! A `return` short-circuits the rest of the body: on the `b` path the
+    `assert !b` after the `return` must never be evaluated, so no assertion failure
+    fires (no annotation). The `return` sits in a branch so the statements after it
+    are reachable on the other path; resolution rejects code after an
+    unconditional `return` as dead. -/
 
-    Only the standalone Laurel interpreter runs this. Both verification and the
-    Laurel→Core interpret path statically reject `assert false == true` as `dead
-    code after 'return'` (verify as a diagnostic, translate as a hard error), a
-    static check the runtime never reaches — so this test, which is about the
-    interpreter's runtime short-circuiting, runs the Laurel interpreter only.
-
-    Verification would fail here: it statically flags the `assert false == true`
-    after the `return` as a `dead code after 'return'` diagnostic, which has no
-    matching annotation in this file and so is why `skipVerification := true`. -/
-
-#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure earlyReturn(b: bool) returns (r: bool)
   opaque
+  ensures r == b
 {
-  return b;
-  assert false == true
+  if b then {
+    return b
+  };
+  assert !b;
+  r := b
 };
 
 procedure runEarlyReturn()

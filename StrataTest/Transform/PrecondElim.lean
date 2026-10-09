@@ -29,6 +29,9 @@ section PrecondElimTests
 def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
+private def translationErrors (t : StrataDDM.Program) : Array String :=
+  (TransM.run Inhabited.default (translateProgram t)).snd
+
 def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
   match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
@@ -223,7 +226,12 @@ spec {
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
 
-/-! ### Test 5: Function decl statement with precondition referencing local variable -/
+/-! ### Tests 5–7: local function preconditions are rejected during translation
+
+Lambda abstractions cannot represent function preconditions, so the Core DDM
+translator rejects these declarations before `PrecondElim` runs. Keep coverage
+for a declaration in a straight-line body, in conditional branches, and in
+separate procedures. -/
 
 def funcDeclPrecondPgm :=
 #strata
@@ -240,30 +248,8 @@ procedure test()
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure test ()
-{
-  var x : int := 1;
-  safeDiv$$wf: {
-    var y : int;
-    assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
-    assume [precond_safeDiv_0]: int.gt(int.safeDiv(y, x), 0);
-    assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-  }
-  function safeDiv (y : int) : int { int.safeDiv(y, x) }
-  assert [init_calls_safeDiv_0]: int.gt(int.safeDiv(5, x), 0);
-  var z : int := safeDiv(5);
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram funcDeclPrecondPgm))
-
-/-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
+#guard (translationErrors funcDeclPrecondPgm).any
+  (· == "local function 'safeDiv': preconditions are not supported")
 
 def inlineFuncInIteSimplePgm :=
 #strata
@@ -286,39 +272,8 @@ procedure test(cond : bool, x : int, y : int)
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure test (cond : bool, x : int, y : int)
-{
-  if (cond) {
-    f$$wf: {
-      var a : int;
-      assume [precond_f_0]: !(x == 0);
-      assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
-    function f (a : int) : int { int.safeDiv(a, x) }
-    assert [init_calls_f_0]: !(x == 0);
-    var r1 : int := f(10);
-  } else {
-    f$$wf: {
-      var a : int;
-      assume [precond_f_0]: !(y == 0);
-      assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }
-    function f (a : int) : int { int.safeDiv(a, y) }
-    assert [init_calls_f_0]: !(y == 0);
-    var r2 : int := f(20);
-  }
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
-
-/-! ### Test 7: Same function name in multiple procedures with different preconditions -/
+#guard (translationErrors inlineFuncInIteSimplePgm).any
+  (· == "local function 'f': preconditions are not supported")
 
 def funcInMultipleProcsPgm :=
 #strata
@@ -342,37 +297,8 @@ procedure proc2(y : int)
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure proc1 (x : int)
-{
-  f$$wf: {
-    var a : int;
-    assume [precond_f_0]: !(x == 0);
-    assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-  }
-  function f (a : int) : int { int.safeDiv(a, x) }
-  assert [init_calls_f_0]: !(x == 0);
-  var r : int := f(10);
-};
-procedure proc2 (y : int)
-{
-  f$$wf: {
-    var a : int;
-    assume [precond_f_0]: !(y == 0);
-    assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-  }
-  function f (a : int) : int { int.safeDiv(a, y) }
-  assert [init_calls_f_0]: !(y == 0);
-  var r : int := f(20);
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram funcInMultipleProcsPgm))
+#guard (translationErrors funcInMultipleProcsPgm).any
+  (· == "local function 'f': preconditions are not supported")
 
 /-! ### Test 8: Division in if-then-else condition generates precondition -/
 
@@ -604,14 +530,12 @@ function bug (p : Outer) : bool {
 #guard_msgs in
 #eval (Std.format (transformProgram nestedExistsSingleConstrPgm))
 
-/-! ### Test: `changed` flag for a nested function whose body calls a
-    precondition-carrying function (regression)
+/-! ### Test: `changed` flag for a nullary internal function whose body calls a
+    precondition-carrying function
 
-A nested `function` declaration with no preconditions of its own, but whose
-body invokes a precondition-carrying function (`int.safeModT`), gets rewritten
-to gain a `$$wf` block with an `assert`. The pass must report `changed := true`
-whenever such a `$$wf` block is emitted, even when the function itself has no
-preconditions. -/
+A nullary internal function has no abstraction binders, so it translates
+straight to an initialized value. Its partial-call obligation is asserted at
+the initialization site, and the pass reports `changed := true`. -/
 
 /-- Run `PrecondElim` and return only its `changed` flag (`none` if the pass
     errors). -/
@@ -632,12 +556,10 @@ procedure P0()
 
 #end
 
--- The rewrite adds a `bB$$wf` block with an `assert`, so `changed` is `true`.
 /-- info: some true -/
 #guard_msgs in
 #eval transformChanged nestedFuncCallsPartialPgm
 
--- The rewritten program itself (shows the emitted `$$wf` block).
 /--
 info: [Strata.Core] Type checking succeeded.
 
@@ -646,10 +568,8 @@ info: program Core;
 
 procedure P0 ()
 {
-  bB$$wf: {
-    assert [bB_body_calls_Int.SafeModT_0]: !(2 == 0);
-  }
-  function bB () : int { int.safeModT(0, 2) }
+  assert [init_calls_Int.SafeModT_0]: !(2 == 0);
+  var bB : int := int.safeModT(0, 2);
 };
 -/
 #guard_msgs in

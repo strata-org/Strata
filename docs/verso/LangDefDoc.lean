@@ -192,9 +192,11 @@ well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two contexts:
 
 1. {name LContext}`LContext`: information that is typically constant during
-   expression type checking, but may be extended during statement type checking
-   (e.g., when a `funcDecl` statement adds a new function to the factory).
-   This includes information about built-in functions, using the
+   expression type checking, but may be extended during statement type checking.
+   For example, a legacy `funcDecl` AST statement adds a function to the factory.
+   This constructor is deprecated and is planned to be removed from the statement
+   AST; new Core concrete syntax no longer translates to it. This context also
+   includes information about built-in functions, using the
    {name Lambda.Factory}`Factory` type, and built-in types, using the
    {name TypeFactory}`TypeFactory` type. Built-in functions optionally include
    concrete evaluation functions, which can be used in the semantics described
@@ -251,9 +253,20 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label. In addition, statements include
-`funcDecl` for local function declarations (which extend the expression
-evaluator within a scope) and `typeDecl` for local type declarations.
+enclosing block with a matching label. Statements also include `typeDecl` for
+local type declarations. The `funcDecl` constructor for internal function
+declarations remains in the statement AST only for compatibility: it is
+deprecated and planned to be removed. Core concrete syntax may still use an
+internal `function` declaration, but translation lowers that syntax to an
+ordinary local variable initialization whose value is a `Lambda` abstraction,
+rather than producing a `funcDecl` AST node. Internal declarations with type
+parameters or preconditions are not supported by this lowering because Lambda
+abstractions do not represent those features. Consequently,
+`print(parse(coreProgram))` intentionally does not preserve the original text
+when `coreProgram` contains internal function declaration syntax: the printer
+emits the lowered local-variable and Lambda form instead. This round-trip break
+is accepted so that existing programs using the old concrete syntax remain
+parseable for backward compatibility.
 
 {docstring Imperative.Stmt}
 

@@ -28,7 +28,7 @@ open Strata
     `SubX.val(AA)` (nearest declarer) and its `r == 42`. Asserting the value only
     that contract justifies records which one bound: with the argument-matching
     overload, `r` would be 0 and this fails. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite AA { }
@@ -47,6 +47,14 @@ procedure c1(s: SubX, b: BB)
   var v: int := s#val(b);
   assert v == 42
 };
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var s: SubX := new SubX;
+  var b: BB := new BB;
+  c1(s, b)
+};
 #end
 
 /-! C2: the same blindness as a TYPE ERROR rather than a wrong contract. `SubZ`'s
@@ -54,7 +62,8 @@ procedure c1(s: SubX, b: BB)
     argument cannot check against it -- selection ran before, and independently of,
     argument checking. A signature-aware rule would have picked `BaseZ.val(BB3)` and
     verified. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a type error, not a runtime failure.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite AA3 { }
@@ -81,7 +90,7 @@ procedure c2(s: SubZ, b: BB3)
     declarer IS the argument-matching one. Verifies cleanly, confirming C1/C2 are
     about argument-blindness in selection, not inherited calls being broken
     generally. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite AA4 { }
@@ -99,5 +108,13 @@ procedure c3(s: SubW, b: BB4)
 {
   var v: int := s#val(b);
   assert v == 9
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var s: SubW := new SubW;
+  var b: BB4 := new BB4;
+  c3(s, b)
 };
 #end
