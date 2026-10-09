@@ -196,6 +196,10 @@ structure ResolveState where
   overloads : Std.HashMap String (List (Nat × Procedure)) := {}
   /-- UniqueIds of static procedures rejected as conflicting duplicates. -/
   conflictingOverloads : Std.HashSet Nat := {}
+  /-- While resolving a `catch` clause's guard: the uniqueId of that clause's
+      binding. `Synth.isType` reads it to accept a guard testing the caught
+      exception against an unrelated type (always false); `none` everywhere else. -/
+  catchGuardBinding : Option Nat := none
 
 abbrev ResolveM := StateM ResolveState
 
@@ -1468,6 +1472,35 @@ private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
     match Operation.ofProcName? callee.text with
     | some .Or | some .OrElse =>
       catchGuardCatches lattice binding p1 ty || catchGuardCatches lattice binding p2 ty
+    | _ => false
+  | _ => false
+  termination_by sizeOf pred
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Whether a resolved `catch` guard `pred` can never hold for the clause's binding
+    (`bindingId`, typed `bindTy`): it tests the binding against a type unrelated to
+    `bindTy` (`TypeLattice.unrelatedToCatchBinding`), or it is a disjunction of such
+    tests. That is the shape a Java multi-catch takes when none of its alternatives
+    can be thrown by the `try` body. Any other guard (`false`, a conjunction, a test
+    of something else) is not recognized, so its clause's body is still resolved.
+
+    The mirror image of `catchGuardCatches`. -/
+private def catchGuardNeverHolds (lattice : TypeLattice) (bindingId : Nat)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Bool :=
+  match _h : pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local id) => id.uniqueId == some bindingId && lattice.unrelatedToCatchBinding bindTy ty
+    | _ => false
+  | .StaticCall callee [p1, p2] _ =>
+    match Operation.ofProcName? callee.text with
+    | some .Or | some .OrElse =>
+      catchGuardNeverHolds lattice bindingId bindTy p1
+        && catchGuardNeverHolds lattice bindingId bindTy p2
     | _ => false
   | _ => false
   termination_by sizeOf pred
@@ -2803,9 +2836,23 @@ def Check.tryCatch (exprMd : StmtExprMd)
         pure { val := .Unknown, source := body.source }
   let catches' ← catches.attach.mapM fun ⟨c, _⟩ => withScope do
     let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+    let savedGuard := (← get).catchGuardBinding
+    modify fun s => { s with catchGuardBinding := binding'.uniqueId }
     let predicate' ← c.predicate.attach.mapM fun ⟨p, _⟩ =>
       Check.resolveStmtExpr p { val := .TBool, source := p.source }
-    let cbody' ← Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
+    modify fun s => { s with catchGuardBinding := savedGuard }
+    -- A clause whose guard can never hold (see `catchGuardNeverHolds`: e.g. a Java
+    -- multi-catch for unchecked types the body never throws) is dead: its body is
+    -- discarded unresolved. A front end may read the binding at the arm's type
+    -- there (`c as T`), which would otherwise be rejected as a cast between
+    -- unrelated types.
+    let lattice := (← get).typeLattice
+    let guardNeverHolds := match predicate', binding'.uniqueId with
+      | some p, some bid => catchGuardNeverHolds lattice bid bindTy p
+      | _, _ => false
+    let cbody' ← if guardNeverHolds then
+        pure { val := .Block [] none, source := c.body.source }
+      else Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
     pure ({ binding := binding', predicate := predicate', body := cbody', bindingType := bindTy } : CatchClause)
   let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
     Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
@@ -3976,9 +4023,21 @@ def Synth.isType (exprMd : StmtExprMd)
     let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
   else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
-    let diag := diagnosticFromSource target.source
-      s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
-    modify fun s => { s with errors := s.errors.push diag }
+    -- In a `catch` guard, testing the caught exception against an unrelated type
+    -- is legitimate (a Java multi-catch names an unchecked type the `try` body
+    -- never throws): the test is simply never true, and `EliminateExceptions`
+    -- lowers it to `false`. It is accepted silently: front ends emit such guards
+    -- for valid source programs, so any diagnostic would surface to their users as
+    -- a spurious report. A type sharing a descendant with the binding's type
+    -- (multiple inheritance) is still rejected: the test may be true there, so it
+    -- cannot be lowered to `false`.
+    let isCaughtBinding := match target'.val, (← get).catchGuardBinding with
+      | .Var (.Local ref), some bid => ref.uniqueId == some bid
+      | _, _ => false
+    unless isCaughtBinding && ctx.unrelatedToCatchBinding targetTy ty' do
+      let diag := diagnosticFromSource target.source
+        s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
+      modify fun s => { s with errors := s.errors.push diag }
   pure (.IsType target' ty', { val := .TBool, source := source })
   termination_by (exprMd, 1)
   decreasing_by
