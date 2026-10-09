@@ -212,12 +212,26 @@ structure VerifyOptions where
       phases restrict the program to them and to the obligation procedures
       generated for them. An empty list verifies nothing. -/
   proceduresToVerify : Option (List String) := none
+  /-- When set, discharge only the obligations with these labels; the others
+      are skipped (no solver call, no result).  Lets a client re-query a subset
+      of obligations, e.g. those a first pass left `unknown`, under different
+      options. -/
+  obligationsToVerify : Option (List String) := none
   /-- When set, the program state after each pipeline phase is written to
       `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
       `--keep-all-files <dir>`, where the CLI derives the prefix as
       `<dir>/<baseName>` so all intermediate files land inside the directory.
       Threaded automatically into `Core.verify`; see `Cli/VerifyOptions.lean`. -/
   keepAllFilesPrefix : Option String := none
+  /-- Emit recursive functions as SMT-LIB `define-fun-rec` definitions instead
+      of uninterpreted functions with per-constructor axioms.  Opt-in: the
+      axiom form (with its patterns) is the better encoding for proving; the
+      recursive definition is what lets cvc5 find models for recursively
+      defined functions (`--fmf-fun`, via `solverOptions`), e.g. to produce a
+      counterexample whose value must be computed through the function.
+      Self-recursive functions only: a body reaching another recursive
+      function that is not yet emitted (mutual recursion) is an error. -/
+  recursiveFnsAsDefineFunRec : Bool := false
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -241,6 +255,8 @@ def VerifyOptions.default : VerifyOptions := {
   pathCap := .none
   parallelWorkers := 1
   keepAllFilesPrefix := none
+  recursiveFnsAsDefineFunRec := false
+  obligationsToVerify := none
 }
 
 instance : Inhabited VerifyOptions where

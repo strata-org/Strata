@@ -248,6 +248,8 @@ structure IF where
   args : List TermVar
   out : TermType
   body : Term
+  /-- The body refers to the function itself: emit as `define-fun-rec`. -/
+  isRec : Bool := false
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 @[expose] def IF.toUF (f : IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
