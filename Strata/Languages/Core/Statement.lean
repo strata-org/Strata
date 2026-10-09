@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdCallFormals
 import all Strata.DL.Imperative.Stmt
 import Std.Tactic.BVDecide.Normalize.Prop
 
@@ -27,12 +28,9 @@ abbrev Command := CmdExt Expression
 namespace CallArg
 
 /-- The expressions passed at a call: each `inArg`, plus a variable reference
-    for every `inoutArg`. -/
-def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
-  args.filterMap fun
-    | .inArg e => some e
-    | .inoutArg id => some (Lambda.LExpr.fvar () id none)
-    | .outArg _ => none
+    for every `inoutArg`.  The generic `Calls.getInputExprs` at `Expression`. -/
+abbrev getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
+  Calls.getInputExprs args
 
 end CallArg
 ---------------------------------------------------------------------

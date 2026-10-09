@@ -13,7 +13,11 @@ import all Strata.Util.RelationsProps
 /-! # Properties of Kleene (nondeterministic) small-step semantics
 
 Generic helpers for `StepKleene` / `StepKleeneStar` that are independent
-of any particular program transformation. -/
+of any particular program transformation, and properties of the event-trace
+relation `StepKleeneE`.
+
+Key theorems:
+* `StepKleeneE.imp` — `StepKleeneE` is monotone in its command relation. -/
 
 namespace Imperative
 
@@ -97,6 +101,18 @@ theorem kleene_assume_then
     (ReflTrans_Transitive _ _ _ _
       (kleene_seq_inner_star _ _ b h_assume)
       (.step _ _ _ .step_seq_done (.refl _)))
+
+/-- Monotonicity of `StepKleeneE` in the command relation: if `EvalCmd` implies
+`EvalCmd'` pointwise, every `StepKleeneE` step for `EvalCmd` is a `StepKleeneE`
+step for `EvalCmd'`.  The control-flow rules are command-agnostic; only
+`step_cmd` uses the hypothesis. -/
+theorem StepKleeneE.imp
+    {CmdT EventT : Type} {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {EvalCmd EvalCmd' : EvalCmdParamE P CmdT EventT}
+    (h_imp : ∀ fac σ c σ' emitted, EvalCmd fac σ c σ' emitted → EvalCmd' fac σ c σ' emitted)
+    {c tr c'}
+    (h : StepKleeneE P EvalCmd c tr c') :
+    StepKleeneE P EvalCmd' c tr c' := by induction h <;> solve_by_elim
 
 end -- public section
 end Imperative

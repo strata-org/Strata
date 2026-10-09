@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.HoareCall
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.BitVecEvalProps
 import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -396,12 +397,15 @@ private theorem bv16_callentry_facts
     (∃ vr, σAO resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true) ∧
     Imperative.WellFormedStore σAO fac := by
   obtain ⟨inputVals, outOnlyVals, hEE, hRV, σA, σIO, hIA, hIO, hSnap⟩ := h
-  rw [hIn] at hEE
+  rw [show Imperative.Calls.getInputExprs callArgs = _ from hIn] at hEE
   rw [hOutArgs] at hRV
-  rw [hInKeys] at hIA
-  rw [hOutOnly] at hIO
+  rw [show Imperative.ProcedureHeader.inputParams (P := Core.Expression) proc.header = _
+    from hInKeys] at hIA
+  rw [← Core.Procedure.Header.keys_getOutputOnlyParams, hOutOnly] at hIO
   have hAOeq : σAO = σIO := by
-    rw [hSnap, hInout]; funext id; simp [Core.withOldSnapshots]
+    rw [hSnap, ← Core.Procedure.Header.keys_getInoutParams, hInout]
+    funext id
+    simp [Imperative.Calls.withOldSnapshots]
   cases hEE with
   | eval_some _hd1 he1 hEE2 =>
     cases hEE2 with
@@ -413,7 +417,7 @@ private theorem bv16_callentry_facts
         have hcx := hsem.val.outputsAreValues _ _ _ hwfσ he1
         have hcy := hsem.val.outputsAreValues _ _ _ hwfσ he2
         have hwfA : Imperative.WellFormedStore σA fac :=
-          Core.initStates_preserves_wf hIA
+          Imperative.initStates_preserves_wf hIA
             (by intro w v hv; simp [Imperative.emptyStore] at hv)
             (by intro v hv
                 simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
@@ -421,7 +425,7 @@ private theorem bv16_callentry_facts
                 · exact hcx
                 · exact hcy)
         have hwfIO : Imperative.WellFormedStore σIO fac :=
-          Core.initStates_preserves_wf hIO hwfA
+          Imperative.initStates_preserves_wf hIO hwfA
             (by intro v hv; simp only [List.mem_singleton] at hv; subst hv; exact hrcanon)
         cases hIA with
         | init_some hix hIA2 =>
@@ -457,7 +461,8 @@ private theorem bv16_callexit_facts
     ∃ vr, σEnd resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true ∧
       σ' outVar = some vr ∧ (∀ k, k ≠ outVar → σ' k = σ k) := by
   obtain ⟨outputVals, hRV, hUpd⟩ := h
-  rw [hOutKeys] at hRV
+  rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) proc.header = _
+    from hOutKeys] at hRV
   rw [hLhs] at hUpd
   cases hRV with
   | read_some hres hrcanon hRV2 =>

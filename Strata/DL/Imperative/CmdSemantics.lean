@@ -294,6 +294,45 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
     ----
     InitState σ x v σ'
 
+/-- Evaluate a list of expressions with the language evaluator `P.eval`; every
+    free variable of each expression must be bound. -/
+inductive EvalExpressions {P : PureExpr} [HasFvars P] :
+    P.Factory → SemanticStore P → List P.Expr → List P.Expr → Prop where
+  | eval_none : EvalExpressions f σ [] []
+  | eval_some :
+    isDefined σ (HasFvars.getFvars e) →
+    P.eval f σ e = .some v →
+    EvalExpressions f σ es vs →
+    EvalExpressions f σ (e :: es) (v :: vs)
+
+/-- Read values from store slots.  Every returned expression is a value in `f`. -/
+inductive ReadValues {P : PureExpr} [HasVal P] (f : P.Factory) :
+    SemanticStore P → List P.Ident → List P.Expr → Prop where
+  | read_none : ReadValues f σ [] []
+  | read_some :
+      σ x = .some v →
+      HasVal.value f v →
+      ReadValues f σ xs vs →
+      ReadValues f σ (x :: xs) (v :: vs)
+
+/-- A positional fold of `UpdateState`: each target must already be bound. -/
+inductive UpdateStates {P : PureExpr} :
+    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+  | update_none : UpdateStates σ [] [] σ
+  | update_some :
+    UpdateState P σ x v σ' →
+    UpdateStates σ' xs vs σ'' →
+    UpdateStates σ (x :: xs) (v :: vs) σ''
+
+/-- A positional fold of `InitState`: each target must be unbound beforehand. -/
+inductive InitStates {P : PureExpr} :
+    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+  | init_none : InitStates σ [] [] σ
+  | init_some :
+    InitState P σ x v σ' →
+    InitStates σ' xs vs σ'' →
+    InitStates σ (x :: xs) (v :: vs) σ''
+
 /-- `v` has the same type as the value currently stored at `x`. -/
 @[expose] def HasVal.valueOfStoredTy [HasVal P]
     (f : P.Factory) (σ : SemanticStore P) (x : P.Ident)

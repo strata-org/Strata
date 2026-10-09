@@ -59,6 +59,8 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   completion inversions used by the event loop rule.
 - `Config.varsDefined_star_ofE` and `Config.storeWellDefined_star_ofE`
   preserve store-domain properties across traced runs.
+- `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
+  monotone in their command relation.
 -/
 
 variable {P : PureExpr} {CmdT : Type}
@@ -4512,6 +4514,26 @@ theorem Config.storeWellDefined_star_ofE
       (Config.storeWellDefined_stepE_of h_cmd h_step hnofd h_inv)
 
 end EventInvariantEngines
+
+/-! ## Monotonicity in the command relation -/
+
+section EventCmdMonotonicity
+
+variable {P : PureExpr} {CmdT EventT : Type} [HasBool P] [HasBoolOps P]
+
+/-- `StepStmtE` is monotone in its command relation. -/
+theorem StepStmtE.imp {E E' : EvalCmdParamE P CmdT EventT} {δ : ExtendFactory P}
+    (h : ∀ f σ c σ' evs, E f σ c σ' evs → E' f σ c σ' evs) :
+    ∀ {c evs c'}, StepStmtE P E δ c evs c' → StepStmtE P E' δ c evs c' :=
+  (by induction · <;> solve_by_elim)
+
+/-- `StepStmtStarE` is monotone in its command relation. -/
+theorem StepStmtStarE.imp {E E' : EvalCmdParamE P CmdT EventT} {δ : ExtendFactory P}
+    (h : ∀ f σ c σ' evs, E f σ c σ' evs → E' f σ c σ' evs) :
+    ∀ {c evs c'}, StepStmtStarE P E δ c evs c' → StepStmtStarE P E' δ c evs c' :=
+  ReflTransTrace.imp fun _ _ _ => (·.imp h)
+
+end EventCmdMonotonicity
 
 end -- public section
 end Imperative

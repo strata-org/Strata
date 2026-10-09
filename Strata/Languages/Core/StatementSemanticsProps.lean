@@ -28,9 +28,17 @@ public section
 /-! ## Theorems related to StatementSemantics
 
 Metatheory of Core's own statement semantics (`EvalCommand`, `CoreStepStar`).  Key
-results include `initStates_preserves_wf` and `withOldSnapshots_preserves_wf` for
-constructing well-formed call frames, beyond the remaining
-`InitStates`/`UpdateStates`/`HavocVars` plumbing:
+results include `withOldSnapshots_preserves_wf` for constructing well-formed call
+frames, beyond the remaining `updatedStates`/`InitVars`/`HavocVars` plumbing:
+
+- Core's call semantics is the generic one at `Expression`: `callEntry_iff`,
+  `callExit_iff`, `havocVars_iff` and `evalCommandContractE_iff` (each `Iff.rfl`)
+  identify Core's `CallEntry`, `CallExit`, `HavocVars` and `EvalCommandContractE`
+  with `Calls.CallEntry`, `Calls.CallExit`, `Calls.HavocVars` and
+  `EvalCmdExtContractE`; `HavocVars.update_none` / `update_some`,
+  `EvalCommandE.cmd_sem` / `call_sem`, `CoreBodyExecE.structured` and
+  `EvalCommandContractE.cmd_sem` / `call_sem` are the generic constructors under
+  Core's names.
 
 - Store-domain characterization of a run: `evalCommand_preserves_none_of_not_def`
   and `evalCommand_preserves_isSome` at the command level, lifted to
@@ -71,29 +79,100 @@ constructing well-formed call frames, beyond the remaining
 namespace Core
 open Imperative
 
-/-- Initializing distinct store slots with values preserves store well-formedness. -/
-theorem initStates_preserves_wf {P : PureExpr} [HasVal P] {fac : P.Factory} :
-    ∀ {ids : List P.Ident} {vals : List P.Expr} {σ σ' : SemanticStore P},
-      InitStates σ ids vals σ' →
-      WellFormedStore σ fac →
-      (∀ v ∈ vals, HasVal.value fac v) →
-      WellFormedStore σ' fac := by
-  intro ids vals σ σ' h
-  induction h with
-  | init_none => intro hσ _; exact hσ
-  | @init_some σ0 x v σ1 xs vs σ2 hinit hrest ih =>
-    intro hσ hvals
-    refine ih ?_ (fun w hw => hvals w (List.mem_cons_of_mem _ hw))
-    intro w vw hw
-    cases hinit with
-    | init _hxnone hxv hxoth =>
-      by_cases hwx : w = x
-      · subst hwx
-        rw [hxv] at hw
-        obtain rfl := Option.some.inj hw
-        exact hvals _ List.mem_cons_self
-      · rw [hxoth w (Ne.symm hwx)] at hw
-        exact hσ w vw hw
+/-! ## Core's call semantics is the generic one at `Expression`
+
+Core's call components and event relations are abbreviations of the generic ones at
+`Expression`: the equivalences hold by `Iff.rfl`, and the generic constructors are
+restated under Core's names. -/
+
+/-- Core's call-entry relation is the generic `Calls.CallEntry` at `Expression`. -/
+theorem callEntry_iff (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σAO : CoreStore) :
+    CallEntry fac σ p callArgs σAO ↔ Calls.CallEntry fac σ p callArgs σAO := .rfl
+
+/-- Core's call-exit relation is the generic `Calls.CallExit` at `Expression`. -/
+theorem callExit_iff (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σEnd σ' : CoreStore) :
+    CallExit fac σ p callArgs σEnd σ' ↔ Calls.CallExit fac σ p callArgs σEnd σ' := .rfl
+
+/-- Core's havoc relation is the generic `Calls.HavocVars` at `Expression`. -/
+theorem havocVars_iff (fac : Expression.Factory) (σ : CoreStore) (xs : List Expression.Ident)
+    (σ' : CoreStore) : HavocVars fac σ xs σ' ↔ Calls.HavocVars fac σ xs σ' := .rfl
+
+/-- Core's event contract relation is the generic `EvalCmdExtContractE` at `Expression`. -/
+theorem evalCommandContractE_iff (π : String → Option Procedure) (fac : Expression.Factory)
+    (σ : CoreStore) (c : Command) (σ' : CoreStore) (emitted : Trace Expression) :
+    EvalCommandContractE π fac σ c σ' emitted ↔ EvalCmdExtContractE π fac σ c σ' emitted :=
+  .rfl
+
+/-- No slot to havoc: the store is unchanged. -/
+theorem HavocVars.update_none {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} : HavocVars f σ [] σ := Calls.HavocVars.update_none
+
+/-- Havoc the first slot `x` to a value `v` of its stored type, then the rest. -/
+theorem HavocVars.update_some {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ σ' σ'' : SemanticStore P} {x : P.Ident} {v : P.Expr} {xs : List P.Ident}
+    (hup : UpdateState P σ x v σ') (hty : HasVal.valueOfStoredTy (P := P) f σ x v)
+    (hrest : HavocVars f σ' xs σ'') : HavocVars f σ (x :: xs) σ'' :=
+  Calls.HavocVars.update_some hup hty hrest
+
+/-- Base-command step of Core's event command relation. -/
+theorem EvalCommandE.cmd_sem
+    {π : String → Option Procedure}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Imperative.Cmd Expression}
+    {emitted : Trace Expression}
+    (h : Imperative.EvalCmdE (P := Expression) fac σ c σ' emitted) :
+    EvalCommandE π φ fac σ (.cmd c) σ' emitted := EvalCmdExtE.cmd_sem h
+
+/-- Call step of Core's event command relation, stated with Core's `CallEntry` /
+    `CallExit` / `defaultAssertEvents`. -/
+theorem EvalCommandE.call_sem
+    {π : String → Option Procedure}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
+    {σ : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {σ' σ_final : CoreStore} {fac_final : Expression.Factory} {bodyEvents : Trace Expression}
+    {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
+    (hπ : π n = some p)
+    (hentry : CallEntry fac σ p callArgs σAO)
+    (hbody : CoreBodyExecE π φ p.body σAO fac σ_final fac_final bodyEvents)
+    (hexit : CallExit fac σ p callArgs σ_final σ') :
+    EvalCommandE π φ fac σ (.call n callArgs md) σ'
+      (defaultAssertEvents fac σAO p.spec.preconditions ++
+        bodyEvents ++
+        defaultAssertEvents fac_final σ_final p.spec.postconditions) :=
+  EvalCmdExtE.call_sem hπ hentry hbody hexit
+
+/-- Structured-body run of Core's event body relation. -/
+theorem CoreBodyExecE.structured
+    {π : String → Option Procedure}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
+    {ss : List Statement} {σ : CoreStore} {fac : Expression.Factory} {ρ' : Env Expression}
+    {emitted : Trace Expression}
+    (h : CoreStepStarE π φ
+      (.stmt (Stmt.block "" ss #[]) ⟨σ, fac, false⟩) emitted (.terminal ρ')) :
+    CoreBodyExecE π φ (.structured ss) σ fac ρ'.store ρ'.factory emitted := ⟨h⟩
+
+/-- Base-command step of Core's event contract relation. -/
+theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Imperative.Cmd Expression}
+    {emitted : Trace Expression}
+    (h : EvalCmdE (P := Expression) fac σ c σ' emitted) :
+    EvalCommandContractE π fac σ (.cmd c) σ' emitted := EvalCmdExtContractE.cmd_sem h
+
+/-- Call step of Core's event contract relation, stated with Core's `CallEntry` /
+`HavocVars` / `CallExit` / `defaultAssertEvents` / `assumeEvents`. -/
+theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
+    {σ σO : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {σ' : CoreStore} {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
+    (hπ : π n = .some p)
+    (hentry : CallEntry fac σ p callArgs σAO)
+    (hhavoc : HavocVars fac σAO (ListMap.keys p.header.outputs) σO)
+    (hexit : CallExit fac σ p callArgs σO σ') :
+    EvalCommandContractE π fac σ (.call n callArgs md) σ'
+      (defaultAssertEvents fac σAO p.spec.preconditions ++
+        assumeEvents fac σO p.spec.postconditions) :=
+  EvalCmdExtContractE.call_sem hπ hentry hhavoc hexit
 
 /-- Adding `old` snapshots only copies existing bindings, so it preserves store
 well-formedness. -/
@@ -102,18 +181,10 @@ theorem withOldSnapshots_preserves_wf {fac : Expression.Factory}
     (hσ : WellFormedStore σ fac) :
     WellFormedStore (withOldSnapshots snap σ) fac := by
   intro w vw hw
-  simp only [withOldSnapshots] at hw
+  simp only [withOldSnapshots, Calls.withOldSnapshots] at hw
   split at hw
   · exact hσ _ _ hw
   · exact hσ _ _ hw
-
-theorem InitStatesEmpty :
-  @InitStates P σ [] [] σ' → σ = σ' := by
-  intros H; cases H <;> simp
-
-theorem UpdateStatesEmpty :
-  @UpdateStates P σ [] [] σ' → σ = σ' := by
-  intros H; cases H <;> simp
 
 theorem HavocVarsEmpty {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} :
   HavocVars f σ [] σ' → σ = σ' := by
@@ -150,75 +221,6 @@ theorem EvalStatementsContractEmpty :
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
-theorem UpdateStateNotDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ vs →
-  UpdateState P σ v e σ' →
-  isNotDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isNotDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesNotDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ vs →
-  UpdateStates σ vs' es' σ' →
-  isNotDefined σ' vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply ih
-  exact UpdateStateNotDefMonotone Hdef Hup
-  assumption
-
-theorem UpdateStateNotDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ' vs →
-  UpdateState P σ v e σ' →
-  isNotDefined σ vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isNotDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesNotDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ' vs →
-  UpdateStates σ vs' es' σ' →
-  isNotDefined σ vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply UpdateStateNotDefMonotone' (ih Hdef) Hup
-  exact Hv
-
 theorem InitStateDefined
   {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
   @InitState P σ v e σ' →
@@ -227,127 +229,6 @@ theorem InitStateDefined
   cases Hup with
   | init Hold Hsome Hall =>
   simp [isDefined, Option.isSome, Hsome]
-
-theorem UpdateStateDefined
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
-  @UpdateState P σ v e σ' →
-  isDefined σ' [v] := by
-  intros Hup
-  cases Hup with
-  | update Hold Hsome Hall =>
-  simp [isDefined, Option.isSome, Hsome]
-
-theorem UpdateStateDefined'
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
-  @UpdateState P σ v e σ' →
-  isDefined σ [v] := by
-  intros Hup
-  cases Hup with
-  | update Hold Hsome Hall =>
-  simp [isDefined, Option.isSome]
-  split <;> simp_all
-
-theorem UpdateStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  UpdateState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ vs →
-  UpdateStates σ vs' es' σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply ih
-  exact UpdateStateDefMonotone Hdef Hup
-  assumption
-
-theorem UpdateStateDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ' vs →
-  UpdateState P σ v e σ' →
-  isDefined σ vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ' vs →
-  UpdateStates σ vs' es' σ' →
-  isDefined σ vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply UpdateStateDefMonotone' (ih Hdef) Hup
-  exact Hv
-
-theorem UpdateStatesDefined :
-  UpdateStates σ vs es σ' →
-  isDefined σ' vs := by
-  intros Hhavoc
-  induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
-  case cons h t ih =>
-    cases Hhavoc with
-    | @update_some _ _ v σ₁ _ _ Hup Hhav =>
-    apply isDefinedCons
-    apply UpdateStatesDefMonotone <;> try assumption
-    exact UpdateStateDefined Hhav
-    apply ih <;> assumption
-
-theorem UpdateStatesDefined' :
-  UpdateStates σ vs es σ' →
-  isDefined σ vs := by
-  intros Hhavoc
-  induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
-  case cons h t ih =>
-    cases Hhavoc with
-    | update_some Hup Hups =>
-    apply isDefinedCons
-    exact UpdateStateDefined' Hup
-    apply UpdateStatesDefMonotone'
-    apply ih Hups
-    exact UpdateStates.update_some Hup UpdateStates.update_none
 
 theorem updatedStateUpdate {P : PureExpr}
   {σ : SemanticStore P} {h : P.Ident} {v v' : P.Expr} :
@@ -502,96 +383,6 @@ theorem InitStatesInits :
   constructor
   exact InitStatesInitVars Hinit
 
-theorem InitStatesNotDefined :
-  InitStates σ hs vs σ' → isNotDefined σ hs := by
-  intros Hinit
-  induction Hinit <;> simp [isNotDefined]
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp [isNotDefined] at *
-    cases Hinit with
-    | init Hnone Hsome Heq =>
-    refine ⟨Hnone, ?_⟩
-    intros x' Hin
-    by_cases Heqx : x = x' <;> simp_all
-    specialize Heq x' Heqx
-    specialize ih x' Hin
-    simp_all
-
-theorem InitStatesNodup :
-  InitStates σ hs vs σ' → hs.Nodup := by
-  intros Hinit
-  induction Hinit <;> simp_all
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-  apply Not.intro
-  intros Hin
-  cases Hinit with
-  | init Hnone Hsome Heq =>
-    have Hnd := InitStatesNotDefined Hinits
-    specialize Hnd x Hin
-    simp_all
-
-theorem InitStateInjective :
-  InitState P σ k1 k2 σ' →
-  InitState P σ k1 k2 σ'' →
-  σ' = σ'' := by
-  intros Hinit1 Hinit2
-  cases Hinit1
-  case init Hnone1 Heq1 Hsome1 =>
-  cases Hinit2
-  case init Hnone2 Heq2 Hsome2 =>
-  funext x
-  by_cases H : k1 = x
-  . simp_all
-  . rw [Heq1, Heq2] <;> simp_all
-
-theorem InitStatesInjective :
-  InitStates σ k1 k2 σ' →
-  InitStates σ k1 k2 σ'' →
-  σ' = σ'' := by
-  intros Hinit1 Hinit2
-  induction Hinit1 generalizing σ''
-  case init_none =>
-    have Heq := InitStatesEmpty Hinit2
-    simp_all
-  case init_some Hinit Hinits ih =>
-    cases Hinit2 with
-    | init_some Hinit2 Hinits2 =>
-    apply ih
-    have Hinj := InitStateInjective Hinit Hinit2
-    simp_all
-/-- Every expression returned by `ReadValues` is a value in its factory. -/
-private theorem ReadValues.all_values
-    {P : PureExpr} [HasVal P] {f : P.Factory} {σ : SemanticStore P}
-    {ks : List P.Ident} {vs : List P.Expr} (h : ReadValues f σ ks vs) :
-    ∀ v ∈ vs, HasVal.value f v := by
-  induction h with
-  | read_none => simp
-  | read_some _ hval _ ih =>
-    intro v hv
-    cases hv with
-    | head => exact hval
-    | tail _ hmem => exact ih v hmem
-
-
-/-- Reading the same keys from the same store yields the same value list. -/
-theorem ReadValuesInjective {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs vs' : List P.Expr} :
-  ReadValues f σ ks vs →
-  ReadValues f σ ks vs' →
-  vs = vs' := by
-  intros Hrd1 Hrd2
-  induction Hrd1 generalizing vs'
-  case read_none =>
-    cases Hrd2
-    rfl
-  case read_some Hrd Hrds ih =>
-    cases Hrd2 with
-    | read_some Hrd2 _ Hrds2 =>
-    congr
-    . simp_all
-    . apply ih
-      simp_all
-
 /-- Evaluating the same expression list in the same factory and store yields the
 same value list. -/
 theorem EvalExpressionsInjective {f : Expression.Factory} {σ : CoreStore}
@@ -606,7 +397,6 @@ theorem EvalExpressionsInjective {f : Expression.Factory} {σ : CoreStore}
       have hv := Option.some.inj (heval₁.symm.trans heval₂)
       subst hv
       exact congrArg (fun tail => _ :: tail) (ih hrest₂)
-
 
 /-- Evaluating the same check list in the same factory and store yields the same
 aggregate failure flag. -/
@@ -753,7 +543,7 @@ theorem EvalCommandE.store_eq_of_call_getLhs_nil
     (hLhs : CallArg.getLhs callArgs = [])
     (h : EvalCommandE π φ fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
   cases h with
-  | call_sem _ _ _ hExit => exact hExit.store_eq_of_getLhs_nil hLhs
+  | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
 
 /-- Executing an abstract contract call with no left-hand-side arguments leaves
 the caller store unchanged. -/
@@ -775,7 +565,7 @@ theorem EvalCommandContractE.store_eq_of_call_getLhs_nil
     (hLhs : CallArg.getLhs callArgs = [])
     (h : EvalCommandContractE π fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
   cases h with
-  | call_sem _ _ _ hExit => exact hExit.store_eq_of_getLhs_nil hLhs
+  | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
 
 /-- Abstract contract calls for a procedure with no outputs have a unique caller
 store and failure result. -/
@@ -827,7 +617,7 @@ theorem EvalCommandContractE.call_unique_of_outputs_nil
       subst p₂
       have hframe : frame₁ = frame₂ := CallEntryUniqueResult entry₁ entry₂
       subst frame₂
-      rw [hOutputs] at havoc₁ havoc₂
+      rw [show ProcedureHeader.outputParams p.header = [] from hOutputs] at havoc₁ havoc₂
       cases havoc₁
       cases havoc₂
       exact ⟨CallExitUniqueResult exit₁ exit₂, rfl⟩
@@ -1355,7 +1145,8 @@ theorem EvalCommandE.empty_body_call_store_unique
     have hFrame : frame = σAO := CallEntryUniqueResult hEntry' hEntry
     subst frame
     rw [hBody] at hBodyExec
-    obtain ⟨rfl, _, _⟩ := hBodyExec.empty_unique π φ σAO σFinal fac facFinal bodyEvents
+    obtain ⟨rfl, _, _⟩ :=
+      CoreBodyExecE.empty_unique π φ σAO σFinal fac facFinal bodyEvents hBodyExec
     exact CallExitUniqueResult hExit' hExit
 
 theorem InitStatesApp' :
@@ -1389,215 +1180,12 @@ theorem InitStatesApp' :
   . simp [InitStateUpdated Hinit']
     exact Hup
 
-/-- Concatenating two reads from one store reads the concatenated keys and values. -/
-theorem ReadValuesApp {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {k1 k2 : List P.Ident} {v1 v2 : List P.Expr} :
-  ReadValues f σ k1 v1 →
-  ReadValues f σ k2 v2 →
-  ReadValues f σ (k1 ++ k2) (v1 ++ v2) := by
-  intros Hrd1 Hrd2
-  induction Hrd1 <;> simp_all
-  case read_some Hsome Hrd Hrds =>
-  constructor <;> assumption
-
-/-- A read over appended key lists splits into corresponding value lists and reads. -/
-theorem ReadValuesAppKeys' {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {k1 k2 : List P.Ident} {vs : List P.Expr} :
-  ReadValues f σ (k1 ++ k2) vs →
-  exists v1 v2,
-  v1 ++ v2 = vs ∧
-  ReadValues f σ k1 v1 ∧
-  ReadValues f σ k2 v2 := by
-  intros Hrd
-  induction vs generalizing k1 k2
-  case nil =>
-    exists [],[]
-    generalize Hk12 : k1 ++ k2 = k12 at Hrd
-    cases Hrd
-    simp_all
-    constructor
-  case cons vh vt vih =>
-    cases k1
-    case nil =>
-      exists [],vh :: vt
-      simp_all
-      constructor
-    case cons kh kt =>
-      cases Hrd with
-      | read_some Hsome _ Hrd =>
-        specialize vih Hrd
-        cases vih with
-        | intro v1' vih =>
-        cases vih with
-        | intro v2 vih =>
-        exists vh::v1',v2
-        simp_all
-        constructor <;> simp_all
-
-/-- A read returns exactly one value for each requested key. -/
-theorem ReadValuesLength {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Expr} :
-  ReadValues f σ ks vs →
-  ks.length = vs.length := by
-  intros Hrd
-  induction Hrd <;> simp_all
-
+/-- Evaluating a list of expressions yields exactly one value per expression. -/
 theorem EvalExpressionsLength :
-  EvalExpressions fac σ ks vs →
+  EvalExpressions (P := Expression) fac σ ks vs →
   ks.length = vs.length := by
   intros Hrd
   induction Hrd <;> simp_all
-
-theorem InitStatesLength :
-  InitStates σ ks vs σ' →
-  ks.length = vs.length := by
-  intros Hinit
-  induction Hinit <;> simp_all
-
-theorem UpdateStatesLength {P : PureExpr}
-  {σ σ' : Imperative.SemanticStore P}
-  {ks : List P.Ident}
-  {vs : List P.Expr}
-  :
-  UpdateStates (P:=P) σ ks vs σ' →
-  List.length ks = List.length vs := by
-  intros Hup
-  induction Hup <;> simp_all
-
-/-- Initializing a fresh slot preserves every existing `ReadValues` derivation. -/
-theorem InitStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
-  ReadValues f σ ks vs →
-  InitState P σ v e σ' →
-  ReadValues f σ' ks vs := by
-  intros Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  induction Hdef
-  case read_none => constructor
-  case read_some xs vs' x v' Hsome' Hrd Hrds =>
-  constructor <;> simp_all
-  rw [Hsome] <;> try simp_all
-  apply Not.intro
-  intros Heq
-  simp_all
-
-/-- Initializing several fresh slots preserves every existing `ReadValues` derivation. -/
-theorem InitStatesReadValuesMonotone
-  {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
-  ReadValues f σ ks vs →
-  InitStates σ vs' es' σ' →
-  ReadValues f σ' ks vs := by
-  intros Hdef Heval
-  induction Heval with
-  | init_none => assumption
-  | init_some Hinit Hinits ih =>
-    apply ih
-    apply InitStateReadValuesMonotone <;> assumption
-
-/-- Updating a slot outside the requested keys preserves a `ReadValues` derivation. -/
-theorem UpdateStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
-  ¬ v ∈ ks →
-  ReadValues f σ ks vs →
-  UpdateState P σ v e σ' →
-  ReadValues f σ' ks vs := by
-  intros Hnin Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  induction Hdef
-  case read_none => constructor
-  case read_some xs vs' x v' Hsome' Hrd Hrds =>
-  constructor <;> simp_all
-
-/-- Updating distinct slots disjoint from the requested keys preserves a `ReadValues`
-derivation. -/
-theorem UpdateStatesReadValuesMonotone
-  {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
-  (ks ++ vs').Nodup →
-  ReadValues f σ ks vs →
-  UpdateStates σ vs' es' σ' →
-  ReadValues f σ' ks vs := by
-  intros Hnd Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hinit Hinits ih =>
-    have Hnd' := nodup_middle Hnd
-    simp_all
-    apply ih
-    apply UpdateStateReadValuesMonotone _ Hdef Hinit <;> try assumption
-    simp_all
-
-/-- Initializing one slot with a canonical expression makes that expression readable
-    from the slot in the resulting store. -/
-theorem InitStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
-  HasVal.value f e →
-  InitState P σ v e σ' →
-  ReadValues f σ' [v] [e] := by
-  intro hval Hinit
-  cases Hinit with
-  | init _ Hsome _ => exact .read_some Hsome hval .read_none
-
-/-- Updating one slot with a canonical expression makes that expression readable
-    from the slot in the resulting store. -/
-theorem UpdateStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
-  HasVal.value f e →
-  UpdateState P σ v e σ' →
-  ReadValues f σ' [v] [e] := by
-  intro hval Hupdate
-  cases Hupdate with
-  | update _ Hsome _ => exact .read_some Hsome hval .read_none
-
-/-- Initializing slots from canonical expressions makes the expressions readable
-    at the corresponding slots in the resulting store. -/
-theorem InitStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
-  (∀ v ∈ es, HasVal.value f v) →
-  InitStates σ vs es σ' →
-  ReadValues f σ' vs es := by
-  intro hvals Hinit
-  induction Hinit with
-  | init_none => exact .read_none
-  | init_some Hinit Hinits ih =>
-    rename_i x v σ₁ xs es' σ''
-    have hv : HasVal.value f v := hvals v List.mem_cons_self
-    have hrd : ReadValues f σ'' [x] [v] :=
-      InitStatesReadValuesMonotone (σ := σ₁)
-        (InitStateReadValues hv Hinit) Hinits
-    cases hrd with
-    | read_some hx _ _ =>
-      exact .read_some hx hv
-        (ih (fun w hw => hvals w (List.mem_cons_of_mem _ hw)))
-
-/-- Updating distinct slots from canonical expressions makes the expressions
-    readable at the corresponding slots in the resulting store. -/
-theorem UpdateStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
-  vs.Nodup →
-  (∀ v ∈ es, HasVal.value f v) →
-  UpdateStates σ vs es σ' →
-  ReadValues f σ' vs es := by
-  intro hnd hvals Hupdates
-  induction Hupdates with
-  | update_none => exact .read_none
-  | update_some Hupdate Hupdates ih =>
-    rename_i x v σ₁ xs es' σ''
-    have hv : HasVal.value f v := hvals v List.mem_cons_self
-    have hrd : ReadValues f σ'' [x] [v] :=
-      UpdateStatesReadValuesMonotone (σ := σ₁) hnd
-        (UpdateStateReadValues hv Hupdate) Hupdates
-    cases hrd with
-    | read_some hx _ _ =>
-      exact .read_some hx hv
-        (ih hnd.tail (fun w hw => hvals w (List.mem_cons_of_mem _ hw)))
 
 theorem InitVarsInitStates : InitVars σ vars σ' →
   ∃ modvals, InitStates σ vars modvals σ' := by
@@ -1676,85 +1264,6 @@ theorem updatedStatesComm
     . simp at *
       refine List.Disj.mono_right ?_ Hnd
       simp_all
-
-theorem UpdateStateSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  v ≠ k' →
-  σ k' = some v' →
-  UpdateState P σ v e σ' →
-  σ' k' = some v' := by
-  intro hne hdef hupdate
-  cases hupdate with
-  | update _ _ hother => simpa [hother k' hne] using hdef
-
-theorem UpdateStatesSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  ¬ k' ∈ ks' →
-  σ k' = some v' →
-  UpdateStates σ ks' vs' σ' →
-  σ' k' = some v' := by
-  intros Hnin Hsome Hinit
-  induction Hinit <;> try simp_all
-  next Hinit Hinits ih =>
-  apply ih
-  apply UpdateStateSomeMonotone ?_ Hsome Hinit
-  exact fun a => Hnin.1 (Eq.symm a)
-
-theorem InitStateSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  σ k' = some v' →
-  InitState P σ v e σ' →
-  σ' k' = some v' := by
-  intro hdef hinit
-  cases hinit with
-  | init hnone _ hother =>
-    by_cases h : v = k'
-    · subst h; simp_all
-    · simpa [hother k' h] using hdef
-
-theorem InitStateSomeMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  k' ≠ v →
-  σ' k' = some v' →
-  InitState P σ v e σ' →
-  σ k' = some v' := by
-  intro hne hdef hinit
-  cases hinit with
-  | init _ _ hother => simpa [hother k' (Ne.symm hne)] using hdef
-
-theorem InitStatesSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  σ k' = some v' →
-  InitStates σ ks' vs' σ' →
-  σ' k' = some v' := by
-  intros Hsome Hinit
-  induction Hinit <;> try simp_all
-  next Hinit Hinits ih =>
-  apply ih
-  apply InitStateSomeMonotone Hsome Hinit
-
-theorem InitStatesSomeMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  ¬ k' ∈ ks' →
-  σ' k' = some v' →
-  InitStates σ ks' vs' σ' →
-  σ k' = some v' := by
-  intros Hnin Hsome Hinit
-  induction Hinit
-  case init_none => simp_all
-  case init_some Hinit Hinits ih =>
-  apply InitStateSomeMonotone' ?_ ?_ Hinit
-  . simp_all
-  . apply ih <;> simp_all
 
 theorem InitsUpdatesComm
   {P : PureExpr} {σ σ' σ'' : SemanticStore P}
@@ -1843,39 +1352,6 @@ theorem InitUpdateComm
     simp [UpdateStatesEmpty Hups, updatedStates, updatedStates'] at Hup
     assumption
 
-/-- If a store defines every requested key and all of its bindings are canonical
-    values, those keys admit a corresponding `ReadValues` derivation. -/
-theorem isDefinedReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} :
-  WellFormedStore σ f →
-  isDefined σ ks →
-  ∃ vs, ReadValues f σ ks vs := by
-  intro hwf hdef
-  induction ks with
-  | nil => exact ⟨[], .read_none⟩
-  | cons x xs ih =>
-    have hx := hdef x List.mem_cons_self
-    rw [Option.isSome_iff_exists] at hx
-    obtain ⟨v, hx⟩ := hx
-    obtain ⟨vs, hvs⟩ := ih (fun y hy => hdef y (List.mem_cons_of_mem _ hy))
-    exact ⟨v :: vs, .read_some hx (hwf x v hx) hvs⟩
-
-/-- Successfully reading a key list implies that every requested key is defined in
-the store. -/
-theorem ReadValuesIsDefined {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Expr} :
-  ReadValues f σ ks vs →
-  isDefined σ ks := by
-  intros Hrd
-  induction Hrd <;> simp [isDefined, Option.isSome]
-  apply And.intro
-  . split <;> simp_all
-  . intros a Hin
-    split <;> simp_all
-    next ih ex Hnone =>
-    specialize ih a Hin
-    simp_all
-
 theorem substStoresInitInv :
 substDefined σ σ' substs →
 substStores σ σ' substs →
@@ -1894,97 +1370,6 @@ substStores σ σ'' substs := by
   specialize Hdef k1 k2 Hin
   simp [Option.isSome] at Hdef
   split at Hdef <;> simp_all
-
-theorem substStoresInitsInv :
-substDefined σ σ' substs →
-substStores σ σ' substs →
-InitStates σ' ks vs σ'' →
-substStores σ σ'' substs := by
-  intros Hdef Hsubst Hinit
-  simp [substStores, substDefined] at *
-  intros k1 k2 Hin
-  induction Hinit generalizing σ
-  case init_none =>
-    exact Hsubst k1 k2 Hin
-  case init_some Hinit Hinits ih =>
-    simp [Hsubst k1 k2 Hin]
-    specialize Hdef k1 k2 Hin
-    simp [Option.isSome] at Hdef
-    split at Hdef <;> simp_all
-    split at Hdef <;> simp_all
-    next x val Hsome =>
-    have Hsome' := InitStateSomeMonotone Hsome Hinit
-    have Hsome'' := InitStatesSomeMonotone Hsome' Hinits
-    simp_all
-
-theorem substStoresInitsInv' :
-substDefined σ σ' substs →
-substStores σ σ' substs →
-InitStates σ ks vs σ'' →
-substStores σ'' σ' substs := by
-  intros k1 k2 Hin
-  rw [← substSwapId _ substs]
-  apply substStoresFlip
-  apply substStoresInitsInv <;> try assumption
-  . exact substDefinedFlip k1
-  . exact substStoresFlip k2
-
-theorem substStoresUpdateInv {k : P.Ident} {substs : List (P.Ident × P.Ident)}:
-¬ k ∈ substs.unzip.2 →
-substStores (P:=P) σ σ' substs →
-UpdateState (P:=P) σ' k v σ'' →
-substStores (P:=P) σ σ'' substs := by
-  intros Hnin Hsubst Hinit
-  simp [substStores] at *
-  intros k1 k2 Hin
-  cases Hinit with
-  | update Hnone Hsome' Heq =>
-  rw [Heq] <;> simp_all
-  rw [Hsubst] <;> simp_all
-  intros Heq'
-  specialize Hnin k1
-  simp_all
-
-theorem substStoresUpdatesInv :
-ks.Disj substs.unzip.2 →
-substStores σ σ' substs →
-UpdateStates σ' ks vs σ'' →
-substStores σ σ'' substs := by
-  intros Hnin Hsubst Hup
-  simp [substStores] at *
-  intros k1 k2 Hin
-  induction Hup generalizing σ
-  case update_none =>
-    exact Hsubst k1 k2 Hin
-  case update_some σ x v σ' xs vs σ₁ Hup Hinits ih =>
-    have Hnin : ¬ x ∈ substs.unzip.2 := by
-      simp [List.Disj] at Hnin
-      intros Hin
-      have Hprod := List.mem_zip_2 (l₁:=substs.unzip.fst) (by simp) Hin
-      rw [List.zip_unzip] at Hprod
-      cases Hprod with
-      | intro w Hprod =>
-      have HH := Hnin.1 w
-      contradiction
-    have HH := substStoresUpdateInv (σ:=σ) Hnin Hsubst Hup
-    apply ih HH
-    simp [List.Disj] at *
-    simp_all
-
-theorem substStoresUpdatesInv' :
-ks.Disj substs.unzip.1 →
-substStores σ σ' substs →
-UpdateStates σ ks vs σ'' →
-substStores σ'' σ' substs := by
-  intros Hdisj Hsubst Hup
-  rw [← substSwapId _ substs]
-  apply substStoresFlip
-  apply substStoresUpdatesInv <;> try assumption
-  . intros a Hin Hin'
-    specialize Hdisj Hin
-    simp [substSwap] at Hin'
-    simp_all
-  . exact substStoresFlip Hsubst
 
 theorem substDefinedIsDefined :
   substDefined σ σ' substs →
@@ -2050,50 +1435,6 @@ theorem substStoresCons' :
     next hne =>
       apply Hsubst
       exact Or.inr Hin
-
-theorem substStoresCons :
-  substStores σ σ' [(h,h')] →
-  substStores σ σ' (List.zip t t') →
-  substStores σ σ' ((h,h') :: (List.zip t t')) := by
-  intros Hh Ht
-  intros k1 k2 Hin
-  simp at Hin
-  cases Hin with
-  | inl Hin =>
-    apply Hh
-    simp_all
-  | inr Hin =>
-    apply Ht
-    simp_all
-
-/-- If two stores read the same values at respective key lists, the stores agree
-under the substitution that zips those keys. -/
-theorem ReadValuesSubstStores {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {ks ks' : List P.Ident} {vs : List P.Expr} :
-  ReadValues f σ ks vs →
-  ReadValues f σ' ks' vs →
-  Imperative.substStores σ σ' (List.zip ks ks') := by
-  intros H1 H2
-  induction vs generalizing ks ks'
-  case nil =>
-    cases H1
-    cases H2
-    intros h1 h2 Hin
-    cases Hin
-  case cons h t ih =>
-    cases ks
-    cases H1
-    cases ks'
-    cases H2
-    cases H1 with
-    | read_some Hh _ Ht =>
-    cases H2 with
-    | read_some Hh' _ Ht' =>
-    simp
-    apply substStoresCons
-    . simp [substStores]
-      simp_all
-    . exact ih Ht Ht'
 
 theorem EvalStatementsContractApp' {φ : Expression.Factory → PureFunc Expression → Expression.Factory} :
   EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' →
@@ -2301,39 +1642,6 @@ theorem TouchVarsId :
   intros v Hin
   apply Hdef.2 v Hin
 
-theorem InitStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  InitState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem InitStatesDefMonotone :
-  isDefined σ vs →
-  InitStates σ vs' es' σ' →
-  isDefined σ' vs := by
-  intros Hdef Hhavoc
-  induction Hhavoc with
-  | init_some Hup Hhav ih =>
-  apply ih
-  apply InitStateDefMonotone <;> assumption
-  | init_none => simp_all
-
 theorem InitVarsDefMonotone :
   isDefined σ vs →
   InitVars σ vs' σ' →
@@ -2344,48 +1652,6 @@ theorem InitVarsDefMonotone :
   apply ih
   apply InitStateDefMonotone <;> assumption
   | init_none => simp_all
-
-theorem InitStateDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  ¬ v ∈ vs →
-  isDefined σ' vs →
-  InitState P σ v e σ' →
-  isDefined σ vs := by
-  intros Hnin Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem InitStatesDefMonotone' :
-  vs.Disj vs' →
-  isDefined σ' vs →
-  InitStates σ vs' es' σ' →
-  isDefined σ vs := by
-  intros Hdisj Hdef Hhavoc
-  induction Hhavoc with
-  | init_none => assumption
-  | init_some Hup Hhav ih =>
-  next σ x v σ' xs' ys' σ'' =>
-  apply InitStateDefMonotone' (σ':=σ') <;> try assumption
-  . intros Hin
-    apply Hdisj Hin
-    exact List.mem_cons_self
-  . apply ih
-    . apply List.Disj.mono_right _ Hdisj
-      exact List.sublist_cons_self x xs'
-    . assumption
 
 theorem InitVarsDefMonotone' :
   vs.Disj vs' →
@@ -2408,22 +1674,6 @@ theorem InitVarsDefMonotone' :
 --   cases Hinit with
 --   | intro es Hinit =>
 --   exact InitStatesDefMonotone' Hdisj Hdef Hinit
-
-theorem InitStatesDefined :
-  InitStates σ hs vs σ' → isDefined σ' hs := by
-  intros Hinit
-  induction Hinit <;> simp [isDefined]
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp [isDefined] at *
-    cases Hinit with
-    | init Hnone Hsome Heq =>
-    refine ⟨?_, by simp_all⟩
-    have Hdef : isDefined σ'' [x] := by
-      apply InitStatesDefMonotone ?_ Hinits
-      simp [isDefined, Option.isSome]
-      split <;> simp_all
-    simp [isDefined] at Hdef
-    assumption
 
 theorem HavocVarsDefMonotone {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
   isDefined σ vs →
@@ -2718,26 +1968,6 @@ theorem InvStoresExceptUpdatedMem :
   exact List.Disjoint_Subset_right Hdisj Hsub
   exact Hinv _ Hdisj
 
-theorem InvStoresExceptUpdateStates :
-  invStoresExcept σ σ' ks →
-  UpdateStates σ ks' vs' σ'' →
-  invStoresExcept σ'' σ' (ks ++ ks') := by
-  intros Hinv Hup
-  have Hup' := UpdateStatesUpdated Hup
-  simp [Hup']
-  refine InvStoresExceptUpdated Hinv ?_
-  exact UpdateStatesLength Hup
-
-theorem InvStoresExceptInitStates :
-  invStoresExcept σ σ' ks →
-  InitStates σ ks' vs' σ'' →
-  invStoresExcept σ'' σ' (ks ++ ks') := by
-  intros Hinv Hup
-  have Hup' := InitStatesUpdated Hup
-  simp [Hup']
-  refine InvStoresExceptUpdated Hinv ?_
-  exact InitStatesLength Hup
-
 theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
   invStoresExcept σ σ' ks →
   HavocVars f σ ks' σ'' →
@@ -2765,7 +1995,6 @@ theorem InvStoresExceptInvStores :
   apply Hinv ks'
   exact List.Disj.symm Hdis
   assumption
-
 
 /-- A structured body consisting of one `assert` preserves its entry store on every
 completed event run. The assertion does not write, and leaving the procedure block
@@ -3038,7 +2267,6 @@ theorem core_seq_reaches_terminal
   obtain ⟨ρ₁, h₁, h₂⟩ := h
   exact ⟨ρ₁, StepStmtStar_to_CoreStepStar h₁, StepStmtStar_to_CoreStepStar h₂⟩
 
-
 /-! ## Well-formed evaluator extension -/
 
 variable (π : String → Option Procedure)
@@ -3239,7 +2467,7 @@ theorem evalCommandE_preserves_none_of_not_def
     exact Imperative.evalCmdE_preserves_none_of_not_def h h_none
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem _ _ _ hexit =>
-    unfold CallExit at hexit
+    unfold Calls.CallExit at hexit
     obtain ⟨_, _, hupd⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
@@ -3408,7 +2636,7 @@ theorem evalCommandE_preserves_isSome
   cases h_eval with
   | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
   | call_sem _ _ _ hexit =>
-    unfold CallExit at hexit
+    unfold Calls.CallExit at hexit
     obtain ⟨_, _, hupd⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
@@ -3425,7 +2653,7 @@ theorem evalCommandE_storeWellDefined
     exact Imperative.evalCmdE_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ hexit =>
-    unfold CallExit at hexit
+    unfold Calls.CallExit at hexit
     obtain ⟨_, hread, hupd⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv

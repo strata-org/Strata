@@ -146,11 +146,11 @@ private theorem initCallFrame_oneInout (v : Expression.Expr) :
   refine ⟨calleeFrame v, calleeFrame v, ?_, ?_, ?_⟩
   · show InitStates emptyStore [calleeY] [v] (calleeFrame v)
     exact .init_some (updatedStateInit rfl) .init_none
-  · simpa [oneInoutProc, Procedure.Header.getOutputOnlyParams,
-      ListMap.keys_eq_map_fst, List.contains_eq_mem] using
+  · simpa [oneInoutProc, Calls.outputOnlyParams, ProcedureHeader.inputParams,
+      ProcedureHeader.outputParams, ListMap.keys_eq_map_fst, List.contains_eq_mem] using
       (InitStates.init_none : InitStates (calleeFrame v) [] [] (calleeFrame v))
-  · simp [inoutFrame, oneInoutProc, Procedure.Header.getInoutParams,
-      getInoutParams, ListMap.keys_eq_map_fst, List.contains_eq_mem]
+  · simp [inoutFrame, oneInoutProc, Calls.inoutParams, ProcedureHeader.inputParams,
+      ProcedureHeader.outputParams, ListMap.keys_eq_map_fst, List.contains_eq_mem]
 
 /-- Reading the inout actual from the caller evaluates to its stored value. -/
 private theorem evalExpressions_inout
@@ -306,8 +306,8 @@ private theorem true_not_int (fac : Expression.Factory) :
 /-- The current inout formal keeps its incoming value in the snapshotted frame. -/
 private theorem inoutFrame_current :
     inoutFrame (intVal 7) calleeY = some (intVal 7) := by
-  simp [inoutFrame, withOldSnapshots, calleeFrame, updatedState,
-    calleeY, CoreIdent.mkOld, CoreIdent.oldStr]
+  simp [inoutFrame, Calls.withOldSnapshots, calleeFrame, updatedState,
+    calleeY, HasOldIdent.mkOld, CoreIdent.mkOld, CoreIdent.oldStr]
 
 /-- Havocing the integer inout slot preserves its integer type. -/
 private theorem havocVars_inout_int_typed (fac : Expression.Factory) {σ' : CoreStore}
@@ -341,8 +341,8 @@ private theorem havocVars_inout_not_true (fac : Expression.Factory) :
 /-- The old identifier reads the inout formal's incoming value. -/
 private theorem inoutFrame_old :
     inoutFrame (intVal 7) oldCalleeY = some (intVal 7) := by
-  simp [inoutFrame, withOldSnapshots, oldCalleeY, calleeY, calleeFrame,
-    updatedState, CoreIdent.mkOld, CoreIdent.oldStr]
+  simp [inoutFrame, Calls.withOldSnapshots, oldCalleeY, calleeY, calleeFrame,
+    updatedState, HasOldIdent.mkOld, CoreIdent.mkOld, CoreIdent.oldStr]
 
 /-- The old-value postcondition holds whenever the old slot contains seven. -/
 private theorem oldYIs7_eval (fac : Expression.Factory) (σ : CoreStore)
@@ -608,7 +608,7 @@ example
       ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
       .eval_none (emptyBodyExec _ _ _ _) .eval_none ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, oneInputProc] using
+    simpa [Calls.defaultAssertEvents, oneInputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
         (emptyBodyExecE _ _ _ _) ⟨_, .read_none, .update_none⟩
@@ -617,7 +617,7 @@ example
       ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
       .eval_none .update_none (by trivial) ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, oneInputProc] using
+    simpa [Calls.defaultAssertEvents, Calls.assumeEvents, oneInputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
         .update_none ⟨_, .read_none, .update_none⟩
@@ -671,12 +671,12 @@ example
         "old" oldYIs7] := by
   have hframe : InitCallFrame oneInoutOldProc [intVal 7] []
       (inoutFrame (intVal 7)) := by
-    simpa [oneInoutOldProc, InitCallFrame] using initCallFrame_oneInout (intVal 7)
+    simpa [oneInoutOldProc, Calls.InitCallFrame] using initCallFrame_oneInout (intVal 7)
   have hentry : CallEntry fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] (inoutFrame (intVal 7)) := by
     unfold CallEntry
     refine ⟨[intVal 7], [], ?_, .read_none, hframe⟩
-    simpa [CallArg.getInputExprs] using
+    simpa [Calls.getInputExprs, HasFvar.mkFvar] using
       evalExpressions_inout fac (intVal 7) (intVal_value fac 7)
   have hcaller : calleeFrame (intVal 7) calleeY = some (intVal 7) := by
     simp [calleeFrame, updatedState]
@@ -685,7 +685,7 @@ example
   have hexit : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] (inoutFrame (intVal 7)) (calleeFrame (intVal 7)) := by
     refine ⟨[intVal 7], ?_, updateStates_id_single hcaller⟩
-    simpa [oneInoutOldProc, oneInoutProc, ListMap.keys] using hread
+    simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hread
   let σO := updatedState (inoutFrame (intVal 7)) calleeY (intVal 9)
   have hupd : UpdateState Expression (inoutFrame (intVal 7)) calleeY
       (intVal 9) σO := updatedStateUpdate inoutFrame_current
@@ -710,7 +710,7 @@ example
   have hexitO : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] σO inoutResultStore := by
     refine ⟨[intVal 9], ?_, hcallerUpdate⟩
-    simpa [oneInoutOldProc, oneInoutProc, ListMap.keys] using hreadO
+    simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hreadO
   have hassume : AssumeExprs fac σO [oldYIs7] := by
     exact ⟨oldYIs7_defined σO holdO, oldYIs7_eval fac σO holdO⟩
   refine ⟨?_, ?_, ?_, ?_⟩
@@ -720,13 +720,13 @@ example
         (oldYIs7_defined _ inoutFrame_old)
         (oldYIs7_eval fac _ inoutFrame_old) .eval_none) hexit
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInoutOldProc] using
+    simpa [MetaData.empty, Calls.defaultAssertEvents, assertEvent, oneInoutOldProc] using
       EvalCommandE.call_sem (calleeEnv_callee _) hentry
         (emptyBodyExecE _ _ _ _) hexit
   · exact EvalCommandContract.call_sem (calleeEnv_callee _) hentry
       .eval_none hhavoc hassume hexitO
-  · simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assumeEvent, oneInoutOldProc,
-      σO] using
+  · simpa [MetaData.empty, Calls.defaultAssertEvents, Calls.assumeEvents, assumeEvent,
+      oneInoutOldProc, σO] using
       EvalCommandContractE.call_sem (calleeEnv_callee _) hentry hhavoc hexitO
 
 /-! ## Example 3.
@@ -815,13 +815,13 @@ example
     exact EvalCommand.call_sem (calleeEnv_callee _) hentry
       .eval_none (emptyBodyExec _ _ _ _) .eval_none hexit
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, oneOutputProc] using
+    simpa [Calls.defaultAssertEvents, oneOutputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _) hentry
         (emptyBodyExecE _ _ _ _) hexit
   · exact EvalCommandContract.call_sem (calleeEnv_callee _)
       ⟨_, _, .eval_none, hcopied, hframe⟩
       .eval_none hhavoc (by trivial) ⟨_, hcontractResult, hcontractUpdate⟩
-  · simpa [defaultAssertEvents, assumeEvents, oneOutputProc] using
+  · simpa [Calls.defaultAssertEvents, Calls.assumeEvents, oneOutputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, .eval_none, hcopied, hframe⟩
         hhavoc ⟨_, hcontractResult, hcontractUpdate⟩
@@ -890,8 +890,8 @@ example
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [passingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
-    simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, assertEvent, oneInputContractBodyProc,
-      oneInputContractProc] using
+    simpa [MetaData.empty, passingBodyProc, Calls.defaultAssertEvents, assertEvent,
+      oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         hbodyE ⟨_, .read_none, .update_none⟩
@@ -901,9 +901,8 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
-      oneInputContractBodyProc,
-      oneInputContractProc] using
+    simpa [MetaData.empty, passingBodyProc, Calls.defaultAssertEvents, Calls.assumeEvents,
+      assertEvent, assumeEvent, oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         .update_none ⟨_, .read_none, .update_none⟩
@@ -965,7 +964,7 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none)
       ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInputContractProc] using
+    simpa [MetaData.empty, Calls.defaultAssertEvents, assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _ _) ⟨_, .read_none, .update_none⟩
@@ -983,7 +982,7 @@ example
         Option.some.inj ((eval_boolConst fac _ false).symm.trans hassume.2)
       simp [Lambda.LExpr.boolConst] at hff
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
+    simpa [MetaData.empty, Calls.defaultAssertEvents, Calls.assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
@@ -1054,8 +1053,8 @@ example
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [failingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
-    simpa [MetaData.empty, defaultAssertEvents, assertEvent, failingBodyProc, oneInputContractBodyProc,
-      oneInputContractProc] using
+    simpa [MetaData.empty, Calls.defaultAssertEvents, assertEvent, failingBodyProc,
+      oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         hbodyE ⟨_, .read_none, .update_none⟩
@@ -1065,8 +1064,8 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent, failingBodyProc,
-      oneInputContractBodyProc, oneInputContractProc] using
+    simpa [MetaData.empty, Calls.defaultAssertEvents, Calls.assumeEvents, assertEvent, assumeEvent,
+      failingBodyProc, oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         .update_none ⟨_, .read_none, .update_none⟩
@@ -1126,7 +1125,7 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none)
       ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInputContractProc] using
+    simpa [MetaData.empty, Calls.defaultAssertEvents, assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _ _) ⟨_, .read_none, .update_none⟩
@@ -1136,7 +1135,7 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
+    simpa [MetaData.empty, Calls.defaultAssertEvents, Calls.assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
@@ -1209,7 +1208,7 @@ example
   -- so its call emits no events.
   have hleafE : EvalCommandE nestedProcEnv φ fac emptyStore
       (.call "leaf" [] .empty) emptyStore [] := by
-    simpa [defaultAssertEvents, leafProc, noArgProc] using
+    simpa [Calls.defaultAssertEvents, leafProc, noArgProc] using
       EvalCommandE.call_sem (π := nestedProcEnv) (by simp [nestedProcEnv, leafProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "leaf" []⟩
         (emptyBodyExecE nestedProcEnv φ emptyStore fac)
@@ -1294,7 +1293,7 @@ example
       ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
       .eval_none hmiddleBody .eval_none ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (p := middleProc) (by simp [nestedProcEnv, middleProc]) hmiddleBodyEUnique
-    simpa [defaultAssertEvents, middleProc, noArgProc] using
+    simpa [Calls.defaultAssertEvents, middleProc, noArgProc] using
       EvalCommandE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
         hmiddleBodyE ⟨_, .read_none, .update_none⟩
@@ -1305,7 +1304,7 @@ example
       .eval_none .update_none (by trivial) ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (p := middleProc)
       (by simp [nestedProcEnv, middleProc]) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, middleProc, noArgProc] using
+    simpa [Calls.defaultAssertEvents, Calls.assumeEvents, middleProc, noArgProc] using
       EvalCommandContractE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
         .update_none ⟨_, .read_none, .update_none⟩

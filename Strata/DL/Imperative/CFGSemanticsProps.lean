@@ -15,12 +15,16 @@ namespace Imperative
 
 /-! # CFG small-step semantics: properties
 
-Property lemmas about `StepCFG`/`StepCFGStar` and the `EvalCmds` command-replay
-bridge, kept separate from any single transform's correctness proof so they can
-be reused by any CFG client.
+Property lemmas about `StepCFG`/`StepCFGStar`, `StepCFGE`, and the `EvalCmds`
+command-replay bridge, kept separate from any single transform's correctness
+proof so they can be reused by any CFG client.
 
 Key theorems:
   * `StepCFG.deterministic` — one-step determinism of `StepCFG`.
+  * `StepCFGE.fetch` / `goto_true` / `goto_false` / `finish` — the control-flow
+    rules of `StepCFGE`, derived from `StepCFGE.step_admin`.
+  * `StepCFGE.casesRules` — case analysis on a `StepCFGE` step by CFG rule.
+  * `StepCFGE.imp` — `StepCFGE` is monotone in its command relation.
   * `StepDetCFGStar_trans` — transitivity of the deterministic-CFG multi-step run.
   * `EvalCmds_prefix_to_StepCFG_chain` / `EvalCmds_to_StepCFG_chain` — lift an
     `EvalCmds` command-replay into a `StepCFG` chain.
@@ -628,5 +632,88 @@ theorem run_block_finish {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   exact ReflTrans.step _ _ _ h_fetch
     (ReflTrans_Transitive _ _ _ _ h_chain
       (ReflTrans.step _ _ _ h_finish (ReflTrans.refl _)))
+
+/-! ## `StepCFGE`: rule-level constructors, case eliminator, monotonicity -/
+
+section StepCFGE
+
+variable {l CmdT EventT : Type} [BEq l] {P : PureExpr}
+  {EvalCmd : EvalCmdParamE P CmdT EventT} {extendFactory : ExtendFactory P}
+  {fac : P.Factory} [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
+  {cfg : CFG l (DetBlock l CmdT P)}
+
+/-- Fetch: look up block `t` in the CFG and start executing its commands. -/
+theorem StepCFGE.fetch {t : l} {b : DetBlock l CmdT P} {σ : SemanticStore P} {f : Bool}
+    (h : List.lookup t cfg.blocks = .some b) :
+    StepCFGE P EvalCmd extendFactory fac cfg
+      (.atBlock t σ f) []
+      (.inBlock t b.cmds b.transfer σ f) := .step_admin (.fetch h)
+
+/-- Empty residual + true branch: jump to `.atBlock` of the true label. -/
+theorem StepCFGE.goto_true {σ : SemanticStore P} {c : P.Expr} {t tlbl elbl : l}
+    {md : MetaData P} {f : Bool}
+    (h : P.eval fac σ c = .some HasBool.tt)
+    (hb : WellFormedSemanticEvalBool (P := P) fac)
+    (hc : WellFormedSemanticEvalExprCongr (P := P) fac) :
+    StepCFGE P EvalCmd extendFactory fac cfg
+      (.inBlock t [] (.condGoto c tlbl elbl md) σ f) []
+      (.atBlock tlbl σ f) := .step_admin (.goto_true h hb hc)
+
+/-- Empty residual + false branch: jump to `.atBlock` of the false label. -/
+theorem StepCFGE.goto_false {σ : SemanticStore P} {c : P.Expr} {t tlbl elbl : l}
+    {md : MetaData P} {f : Bool}
+    (h : P.eval fac σ c = .some HasBool.ff)
+    (hb : WellFormedSemanticEvalBool (P := P) fac)
+    (hc : WellFormedSemanticEvalExprCongr (P := P) fac) :
+    StepCFGE P EvalCmd extendFactory fac cfg
+      (.inBlock t [] (.condGoto c tlbl elbl md) σ f) []
+      (.atBlock elbl σ f) := .step_admin (.goto_false h hb hc)
+
+/-- Empty residual + `finish`: halt at `.terminal`. -/
+theorem StepCFGE.finish {t : l} {md : MetaData P} {σ : SemanticStore P} {f : Bool} :
+    StepCFGE P EvalCmd extendFactory fac cfg
+      (.inBlock t [] (.finish md) σ f) []
+      (.terminal σ f) := .step_admin .finish
+
+/-- Case analysis on a `StepCFGE` step by CFG rule: `step_cmd` and the four
+control-flow rules `fetch`, `goto_true`, `goto_false`, `finish`, each with its own
+premises.  Usable as `cases h using StepCFGE.casesRules`. -/
+theorem StepCFGE.casesRules
+    {motive : ∀ c tr c', StepCFGE P EvalCmd extendFactory fac cfg c tr c' → Prop}
+    {c : CFGConfig l CmdT P} {tr : List EventT} {c' : CFGConfig l CmdT P}
+    (h : StepCFGE P EvalCmd extendFactory fac cfg c tr c')
+    (step_cmd : ∀ {σ c σ' emitted t cs tr f} (h : EvalCmd fac σ c σ' emitted),
+      motive (.inBlock t (c :: cs) tr σ f) emitted (.inBlock t cs tr σ' f) (.step_cmd h))
+    (fetch : ∀ {t b σ f} (h : List.lookup t cfg.blocks = .some b),
+      motive (.atBlock t σ f) [] (.inBlock t b.cmds b.transfer σ f) (.fetch h))
+    (goto_true : ∀ {σ c t tlbl elbl md f} (h : P.eval fac σ c = .some HasBool.tt)
+      (hb : WellFormedSemanticEvalBool (P := P) fac)
+      (hc : WellFormedSemanticEvalExprCongr (P := P) fac),
+      motive (.inBlock t [] (.condGoto c tlbl elbl md) σ f) [] (.atBlock tlbl σ f)
+        (.goto_true h hb hc))
+    (goto_false : ∀ {σ c t tlbl elbl md f} (h : P.eval fac σ c = .some HasBool.ff)
+      (hb : WellFormedSemanticEvalBool (P := P) fac)
+      (hc : WellFormedSemanticEvalExprCongr (P := P) fac),
+      motive (.inBlock t [] (.condGoto c tlbl elbl md) σ f) [] (.atBlock elbl σ f)
+        (.goto_false h hb hc))
+    (finish : ∀ {t md σ f},
+      motive (.inBlock t [] (.finish md) σ f) [] (.terminal σ f) .finish) :
+    motive c tr c' h := by
+  rcases h with h | h
+  · exact step_cmd h
+  · cases h <;> first | apply_assumption <;> assumption | contradiction
+
+/-- Monotonicity of `StepCFGE` in the command relation: if `EvalCmd` implies
+`EvalCmd'` pointwise, every `StepCFGE` step for `EvalCmd` is a `StepCFGE` step
+for `EvalCmd'`.  The control-flow rules are command-agnostic; only `step_cmd`
+uses the hypothesis. -/
+theorem StepCFGE.imp
+    {EvalCmd' : EvalCmdParamE P CmdT EventT}
+    (h_imp : ∀ fac σ c σ' emitted, EvalCmd fac σ c σ' emitted → EvalCmd' fac σ c σ' emitted)
+    {c tr c'}
+    (h : StepCFGE P EvalCmd extendFactory fac cfg c tr c') :
+    StepCFGE P EvalCmd' extendFactory fac cfg c tr c' := by grind [StepCFGE]
+
+end StepCFGE
 
 end Imperative

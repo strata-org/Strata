@@ -147,6 +147,48 @@ def StepCFGStar
     CFGConfig l CmdT P → CFGConfig l CmdT P → Prop :=
   ReflTrans (StepCFG P EvalCmd extendFactory fac cfg)
 
+/-- `StepCFG` with events.  Command steps use `EvalCmdParamE` and emit the
+command's events; the control-flow steps (fetch, conditional jump, finish) are the
+`StepCFG` rules, reused through `noCommandEvalE` and emitting no events.  The
+config's `Bool` flag is carried unchanged: a failing assert is an event, not a flag
+change.  Since `StepCFG` over `noCommandEvalE` has no command step, the two
+constructors never derive the same transition. -/
+inductive StepCFGE
+    {l CmdT EventT : Type} [BEq l] (P : PureExpr)
+    (EvalCmd   : EvalCmdParamE P CmdT EventT)
+    (extendFactory : ExtendFactory P)
+    (fac : P.Factory)
+    [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] :
+    CFG l (DetBlock l CmdT P) → CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop where
+  /-- Run one command from the residual list. -/
+  | step_cmd :
+      EvalCmd fac σ c σ' emitted →
+      StepCFGE P EvalCmd extendFactory fac cfg
+        (.inBlock t (c :: cs) tr σ f) emitted
+        (.inBlock t cs tr σ' f)
+  /-- Reuse a command-free control-flow `StepCFG` step; it emits no events. -/
+  | step_admin :
+      StepCFG P (noCommandEvalE P CmdT) extendFactory fac cfg c c' →
+      StepCFGE P EvalCmd extendFactory fac cfg c [] c'
+
+/--
+Event-trace multi-step execution for a deterministic CFG — the reflexive,
+transitive closure of `StepCFGE`, concatenating each step's event list
+chronologically.
+-/
+@[expose]
+def StepCFGStarE
+    {l CmdT EventT : Type}
+    [BEq l]
+    (P : PureExpr)
+    (EvalCmd : EvalCmdParamE P CmdT EventT)
+    (extendFactory : ExtendFactory P)
+    (fac : P.Factory)
+    [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
+    (cfg : CFG l (DetBlock l CmdT P)) :
+    CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop :=
+  ReflTransTrace (StepCFGE P EvalCmd extendFactory fac cfg)
+
 /-! ## Bridge: EvalCmds and connector to per-command StepCFG
 
 `EvalCmds` is a structured-side helper inductive used by every simulation
