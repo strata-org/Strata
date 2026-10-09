@@ -128,6 +128,8 @@ structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
 structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
+structure WFLemmaDeclarationProp (p : Program) (l : Lemma) : Prop where
+
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
 -- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
@@ -158,6 +160,7 @@ structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .type t _ => WFTypeDeclarationProp p t
   | .ax a _ => WFAxiomDeclarationProp p a
+  | .lemma l _ => WFLemmaDeclarationProp p l
   | .distinct l es _ => WFDistinctDeclarationProp p l es
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f

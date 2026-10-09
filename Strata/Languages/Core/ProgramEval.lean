@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Env
 public import Strata.Util.Statistics
 import Strata.Languages.Core.ProcedureEval
 import Strata.Languages.Core.StatementEval
+import Strata.DL.Lambda.LExprWF
 
 ---------------------------------------------------------------------
 
@@ -24,6 +25,28 @@ open Strata (Message MessageKind FileRange)
 
 public section
 
+
+/-- Replace the outermost universal binders of `e` by fresh free variables.
+`forall x :: P(x)` is valid exactly when `P(x)` is valid for a fresh `x`, and
+stating a lemma's obligation over free variables lets a counterexample report
+their values. -/
+private def openForalls (E : Env) (e : Expression.Expr) : Expression.Expr × Env :=
+  go (numForalls e) E e
+where
+  numForalls : Expression.Expr → Nat
+    | .quant _ .all _ _ _ body => numForalls body + 1
+    | _ => 0
+  go : Nat → Env → Expression.Expr → Expression.Expr × Env
+    | n + 1, E, .quant _ .all name ty _ body =>
+      -- Mark the binder's name as used so that the fresh variable gets a
+      -- suffix and cannot coincide with a global constant or function of the
+      -- same name, which the solver would treat as the same symbol.
+      let config := E.exprEnv.config
+      let E := { E with exprEnv := { E.exprEnv with
+        config := { config with usedNames := config.usedNames.insert name } } }
+      let (x, E) := E.genFVar (⟨name, ()⟩, ty)
+      go n E (Lambda.LExpr.subst (fun _ => x) body)
+    | _, E, e => (e, E)
 
 def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
   -- Push a path condition scope to store axioms
@@ -49,6 +72,21 @@ def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
         let declsE := { declsE with pathConditions :=
                       declsE.pathConditions.prepend (.assumption (toString a.name) a.e) }
         go rest declsE stats
+
+    | .lemma l md =>
+      -- A lemma is proved under the axioms declared before it, like an
+      -- assertion in a procedure. It is never assumed, so the path condition
+      -- is left unchanged.
+      let (obligation, declsE) := openForalls declsE l.e
+      -- Simplify the obligation with the partial evaluator, as an assertion is.
+      let obligation := CmdEval.eval declsE obligation
+      let ob : Imperative.ProofObligation Expression :=
+        { label := toString l.name
+          property := Imperative.convertMetaDataPropertyType md
+          assumptions := declsE.pathConditions.consume
+          obligation
+          metadata := md }
+      go rest { declsE with deferred := declsE.deferred.push ob } stats
 
     | .distinct _ es _ =>
         let declsE := { declsE with distinct := es :: declsE.distinct }

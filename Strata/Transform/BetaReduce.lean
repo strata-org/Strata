@@ -109,6 +109,7 @@ def betaReduceProgram (p : Program) : Program :=
       | .func f md => .func (reduceFunction f) md
       | .recFuncBlock fs md => .recFuncBlock (fs.map reduceFunction) md
       | .ax a md => .ax { a with e := LExpr.betaReduceRedexes a.e } md
+      | .lemma l md => .lemma { l with e := LExpr.betaReduceRedexes l.e } md
       | .distinct n es md => .distinct n (es.map LExpr.betaReduceRedexes) md
       | d => d }
 

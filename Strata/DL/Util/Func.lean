@@ -58,6 +58,9 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   axioms   : List ExprT := []  -- For axiomatic definitions
   preconditions : List (FuncPrecondition ExprT MetadataT) := []
   measure  : Option ExprT := .none -- Termination measure expression (from `decreases` clause)
+  /-- Names of the top-level lemmas this function depends on, such as its
+      well-formedness lemma. -/
+  lemmas   : List String := []
   deriving DecidableEq
 
 /-- All expressions `f` carries: body, axioms, preconditions, and measure. -/

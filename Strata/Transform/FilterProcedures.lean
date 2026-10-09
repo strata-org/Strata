@@ -30,12 +30,15 @@ to them and pruning away all other procedures.
 Caches the updated CallGraph (which is just dropping unreachable procedure
 entries from the HashMap) to save computation.
 
-When `respectNoFilter` is true (default), procedures with `noFilter := true`
-are always retained. Set to false for post-transform passes where only
-explicitly listed targets and their call-graph dependencies should survive.
+A lemma listed in a procedure's `lemmas` is kept exactly when that procedure
+is, and one listed in a function's `lemmas` is kept when the function is named
+in `targetProcs`. Any other lemma, such as one the user wrote, is kept only when
+`keepUnlistedLemmas` is true. Selective verification therefore checks only the
+requested procedures and functions and their lemmas: its second pass, which
+sets `keepUnlistedLemmas` to false, drops every other lemma.
 -/
 def run (prog : Program) (targetProcs : List String)
-    (respectNoFilter : Bool := true) :
+    (keepUnlistedLemmas : Bool := true) :
     CoreTransformM (Bool × Program) := do
   let cg := match (← get).cachedAnalyses.callGraph with
     | .some cg => cg
@@ -47,10 +50,19 @@ def run (prog : Program) (targetProcs : List String)
 
   -- Create a program with target procedures + dependencies.
   let numProcsBefore := prog.decls.countP (fun | .proc _ _ => true | _ => false)
+  let keepProc (p : Procedure) := isNeededProc (CoreIdent.toPretty p.header.name)
+  let procLemmas := prog.decls.flatMap fun | .proc p _ => p.header.lemmas | _ => []
+  let funcLemmas (f : Function) := if targetProcs.contains f.name.name then f.lemmas else []
+  let keptLemmas := prog.decls.flatMap fun
+    | .proc p _ => if keepProc p then p.header.lemmas else []
+    | .func f _ => funcLemmas f
+    | .recFuncBlock fs _ => fs.flatMap funcLemmas
+    | _ => []
   let prunedDecls := prog.decls.filter (fun decl =>
     match decl with
-    | .proc p _ => (respectNoFilter && p.header.noFilter) || isNeededProc (CoreIdent.toPretty p.header.name)
-    | _ => true) -- Keep all non-procedure declarations
+    | .proc p _ => keepProc p
+    | .lemma l _ => keptLemmas.contains l.name || (keepUnlistedLemmas && !procLemmas.contains l.name)
+    | _ => true) -- Keep all other declarations
   let numProcsAfter := prunedDecls.countP (fun | .proc _ _ => true | _ => false)
   incrementStat s!"{Stats.visitedProcedures}" numProcsBefore
   incrementStat s!"{Stats.erasedProcedures}" (numProcsBefore - numProcsAfter)
@@ -67,8 +79,8 @@ def run (prog : Program) (targetProcs : List String)
   modify (fun σ => { σ with
     cachedAnalyses := { σ.cachedAnalyses with callGraph := .some cg_new }})
 
-  -- The program changed iff at least one procedure was filtered out.
-  let changed := numProcsAfter < numProcsBefore
+  -- The program changed iff at least one procedure or lemma was filtered out.
+  let changed := prunedDecls.length < prog.decls.length
   return (changed, { prog with decls := prunedDecls })
 
 end FilterProcedures
@@ -78,7 +90,7 @@ end FilterProcedures
     only removes procedures without changing the semantics of the
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String)
-    (respectNoFilter : Bool := true) : PipelinePhase :=
+    (keepUnlistedLemmas : Bool := true) : PipelinePhase :=
   -- Every fact is a property of *all* declarations, so dropping some cannot
   -- break one.
   modelPreservingPipelinePhase "filterProcedures"
@@ -88,7 +100,7 @@ def filterProceduresPipelinePhase (procs : List String)
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog => do
-      let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)
+      let (changed, filtered) ← FilterProcedures.run prog procs (keepUnlistedLemmas := keepUnlistedLemmas)
       return (changed, filtered)
 
 end Core

@@ -948,7 +948,7 @@ function t () : Sequence int;
 procedure P ()
 {
   assume [ls]: Sequence.length(s) == 2;
-  assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> forall j : int :: int.le(0, j) && int.lt(j, Sequence.length(t)) ==> int.le(Sequence.select!(s, i), Sequence.select!(t, j));
+  assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> (forall j : int :: int.le(0, j) && int.lt(j, Sequence.length(t)) ==> int.le(Sequence.select!(s, i), Sequence.select!(t, j)));
 };
 -/
 #guard_msgs in
@@ -1290,7 +1290,7 @@ procedure P ()
   assume [ls]: Sequence.length(s) == 42;
   assume [lt]: Sequence.length(t) == 42;
   assume [lu]: Sequence.length(u) == 42;
-  assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> forall j : int :: int.le(0, j) && int.lt(j, Sequence.length(t)) ==> forall k : int :: int.le(0, k) && int.lt(k, Sequence.length(u)) ==> int.le(Sequence.select!(s, i), int.add(Sequence.select!(t, j), Sequence.select!(u, k)));
+  assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> (forall j : int :: int.le(0, j) && int.lt(j, Sequence.length(t)) ==> (forall k : int :: int.le(0, k) && int.lt(k, Sequence.length(u)) ==> int.le(Sequence.select!(s, i), int.add(Sequence.select!(t, j), Sequence.select!(u, k)))));
 };
 -/
 #guard_msgs in
@@ -2252,7 +2252,7 @@ function m () : int;
 procedure P ()
 {
   assume [ln]: n == 2;
-  assert [a]: forall i : int :: int.le(0, i) && int.lt(i, n) ==> int.le(0, i) && forall j : int :: int.le(0, j) && int.lt(j, m) ==> int.le(0, j);
+  assert [a]: (forall i : int :: int.le(0, i) && int.lt(i, n) ==> int.le(0, i)) && (forall j : int :: int.le(0, j) && int.lt(j, m) ==> int.le(0, j));
 };
 -/
 #guard_msgs in

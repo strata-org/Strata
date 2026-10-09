@@ -75,7 +75,7 @@ function apply (f : int -> int, x : int) : int {
 }
 procedure Check (out result : bool)
 spec {
-  ensures [Check_ensures_0]: result == forall f : (int -> int) :: forall x : int :: apply(f, x) == f(x);
+  ensures [Check_ensures_0]: result == (forall f : (int -> int) :: forall x : int :: apply(f, x) == f(x));
   } {
   result := true;
 };

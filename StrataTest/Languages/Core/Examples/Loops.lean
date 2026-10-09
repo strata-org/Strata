@@ -175,10 +175,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-sum_requires_0: int.ge(n@1, 0)
 Obligation:
-true
+int.ge(n@1, 0) ==> true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check

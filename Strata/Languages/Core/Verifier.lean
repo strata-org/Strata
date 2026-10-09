@@ -679,6 +679,7 @@ def buildEnv (options : VerifyOptions) (program : Program)
     match d with
     | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
     | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .lemma _ _         => s.increment s!"{Evaluator.Stats.lemmas}"
     | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
     | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
     | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
@@ -751,9 +752,12 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | _ => throw (Message.fromString s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
   -- The procedure name is only used for the obligation procedure header;
   -- downstream phases (ObligationExtraction) walk the body and ignore it.
-  -- We pick the first procedure name as a representative label.
+  -- We pick the first procedure name as a representative label, or the first
+  -- lemma name when a program has lemmas but no procedure.
   let procName := program.decls.findSome? fun
     | .proc p _ => some p.header.name | _ => none
+  let procName := procName <|> program.decls.findSome? fun
+    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
   let blocks := postEvalEnv.deferred.toList.map fun ob =>
     let assumes := ob.assumptions.reverse.flatten.filterMap fun
       | .assumption label e =>
@@ -1473,11 +1477,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     the requested procedures, keeping their transitive callees because
     `CallElim` still needs the callees' contracts. The second, after
     `CallElim`, `TermCheck` and `PrecondElim`, discards those callees now that
-    their contracts have been inlined; it names the requested procedures
-    together with the obligation procedures generated for them (via
-    `PrecondElim.wfProcName` and `TermCheck.termProcName`) so those survive,
-    and disables `noFilter` so that WF procedures for prelude functions are
-    pruned too.
+    their contracts have been inlined; it names the requested procedures and
+    drops the lemmas no declaration lists. The well-formedness and termination lemmas of a
+    requested procedure or function survive because it lists them in its
+    `lemmas`; those of other functions are pruned.
 
     A single filter would suffice if the first pass kept each callee as its
     contract alone, with the body removed: `CallElim` would consume those
@@ -1499,8 +1502,7 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
-      let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
-      [filterProceduresPipelinePhase targets (respectNoFilter := false)]
+      [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
     | none => []
   -- The filter runs before the entry assertions, because both facts are
   -- properties of every declaration: a caller naming structured procedures to

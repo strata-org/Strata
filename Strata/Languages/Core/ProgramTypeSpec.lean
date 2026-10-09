@@ -110,6 +110,12 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       S.exprTyped C Γ a.e (S.embed .bool) →
       DeclHasType' τ P C Γ (.ax a md) C Γ
 
+  /-- A lemma declaration: its expression is a `bool` in the current context.
+      Contexts are unchanged. -/
+  | lemma : ∀ C Γ l md,
+      S.exprTyped C Γ l.e (S.embed .bool) →
+      DeclHasType' τ P C Γ (.lemma l md) C Γ
+
   /-- A `distinct` declaration: each listed expression is well-typed at some
       monotype. Contexts are unchanged. -/
   | distinct : ∀ C Γ l es md,

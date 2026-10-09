@@ -31,10 +31,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 ---
 info:
@@ -164,18 +162,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_foo_0: int.gt(y@1, 0)
 Obligation:
-!(y@1 == 0)
+int.gt(y@1, 0) ==> !(y@1 == 0)
 
 Label: foo_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_foo_0: int.gt(y@1, 0)
-precond_foo_1: int.gt(int.safeDiv(x@1, y@1), 0)
 Obligation:
-!(y@1 == 0)
+int.gt(y@2, 0) ==> int.gt(int.safeDiv(x@2, y@2), 0) ==> !(y@2 == 0)
 
 ---
 info:
@@ -211,19 +204,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: doubleDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_doubleDiv_0: !(y@1 == 0)
-precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(z@1 == 0) ==> !(y@1 == 0)
 
 Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: division by zero check
-Assumptions:
-precond_doubleDiv_0: !(y@1 == 0)
-precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(z@1 == 0)
+!(y@2 == 0) ==> !(z@2 == 0) ==> !(z@2 == 0)
 
 ---
 info:
@@ -359,10 +346,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 Label: init_calls_safeDiv_0
 Property: assert
@@ -408,17 +393,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
-Assumptions:
-precond_allPositiveDiv_0: int.ge(y@2, 0)
 Obligation:
-forall x : int :: int.gt(x, 0) ==> !(x == 0)
+int.ge(y@2, 0) ==> (forall x : int :: int.gt(x, 0) ==> !(x == 0))
 
 ---
 info:
