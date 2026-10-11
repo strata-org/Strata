@@ -275,7 +275,7 @@ spec {
 procedure Test(inout g : int, out r : int) spec { ensures true; }
 {
   g := 5;
-  call bump(g, out g, out r);
+  call bump(inout g, out r);
   assert (r == 5);
 };
 #end

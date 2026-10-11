@@ -1499,9 +1499,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT.
 
-    The procedure filter comes first, then the entry shape assertions — which
-    turn throws from inside `runProgram` into rejections naming the facts — so
-    every statement-level transform after them may rely on structured bodies. -/
+    `assertWellFormedCalls` comes first, so an ill-formed call is reported in
+    every procedure, including ones the procedure filter then drops. The filter
+    follows, and then `assertNoCFGBodies`, which turns a throw from inside
+    `runProgram` into a rejection naming the fact, so every statement-level
+    transform after it may rely on structured bodies. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
@@ -1512,10 +1514,10 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | some ps =>
       [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
     | none => []
-  -- The filter runs before the entry assertions, because both facts are
-  -- properties of every declaration: a caller naming structured procedures to
-  -- verify should not be refused for an excluded CFG body.
-  filterPhases ++ [assertNoCFGBodiesPhase,
+  -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
+  -- procedures to verify is not refused for an excluded CFG body.
+  [ProgramFact.assertPhase .wellFormedCalls] ++ filterPhases ++
+    [ProgramFact.assertPhase .noCFGBodies,
       callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 

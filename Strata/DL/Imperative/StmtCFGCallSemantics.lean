@@ -129,10 +129,12 @@ variable [HasFvar P] [HasFvars P] [HasVal P]
     InitCallFrame p inputVals outOnlyVals σAO
 
 /-- Shared epilogue of the call rule: read the callee's output formals in its final
-    store and write them back positionally to the caller's `out`/`inout` variables. -/
+    store and write them back positionally to the caller's `out`/`inout` variables,
+    which must be distinct. -/
 @[expose] def CallExit (fac : P.Factory) (σ : SemanticStore P)
     (p : Procedure P (CmdExt P) Hdr) (callArgs : List (CallArg P))
     (σEnd σ' : SemanticStore P) : Prop :=
+  (CallArg.getLhs callArgs).Nodup ∧
   ∃ outputVals,
     ReadValues fac σEnd (ProcedureHeader.outputParams (P := P) p.header) outputVals ∧
     UpdateStates σ (CallArg.getLhs callArgs) outputVals σ'

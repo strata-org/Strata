@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWF
 import Strata.DL.Imperative.CmdType
 import Strata.DL.Lambda.LExprT
 import Strata.DL.Lambda.LExprType
@@ -21,13 +22,6 @@ open Lambda Imperative
 open Std (ToFormat Format format)
 open Strata (Message FileRange)
 ---------------------------------------------------------------------
-
--- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
--- matched with a simple variable of the same name
-private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
-  (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
-    !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
-    match arg with | .fvar _ id _ => id == paramId | _ => false  -- … is fvar with same name
 
 /--
 Type checker for Strata Core commands.
@@ -48,19 +42,12 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
-     | none => .error <| md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!"
+     | none => .error <| md.toDiagnosticF f!"[{c}]: {illFormedCallText (undeclaredProcedureMessage pname)}"
      | some proc =>
-       if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
+       if let some msg := callArgsError? pname proc callArgs then
+         .error <| md.toDiagnosticF f!"[{c}]: {illFormedCallText msg}"
+       else if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
          .error <| md.toDiagnosticF f!"[{c}]: All the return variables {lhs} must exist in the context!"
-       else if lhs.length != proc.header.outputs.length then
-         .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's return values!\
-                   Here is the expected signature: {proc.header.inputs}"
-       else if args.length != proc.header.inputs.length then
-         .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
-                   Here is the expected signature: {proc.header.inputs}"
-       else if !areInoutArgsValid proc args then
-         .error <| md.toDiagnosticF f!"[{c}]: In-out arguments (parameters appearing in \
-                   both inputs and outputs) must be simple variable references"
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.

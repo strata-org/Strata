@@ -132,7 +132,7 @@ private theorem callCmd_sem (fac : Expression.Factory) :
       .read_some (by simp [σ0, bind]) (HasBool.boolIsVal fac).2 .read_none,
       ⟨emptyStore, frame, .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩
     hbody
-    ⟨[HasBool.tt],
+    ⟨(by simp [Imperative.CallArg.getLhs]), [HasBool.tt],
       .read_some (by simp [projectStore, frame, σ2, bind, yId])
         (HasBool.boolIsVal fac).1 .read_none,
       .update_some (updateState_bind (v' := HasBool.ff) (by simp [σ0, bind])) .update_none⟩

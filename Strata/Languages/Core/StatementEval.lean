@@ -7,6 +7,8 @@ module
 
 import all Strata.Languages.Core.Statement
 import Strata.DL.Lambda.LExprType
+import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.CallWF
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Imperative.StmtEval
@@ -208,6 +210,9 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call pname callArgs md =>
+    if let some msg := callError? E.program pname callArgs then
+      (c, CmdEval.updateError E (.Misc (illFormedCallText msg)))
+    else
     let lhs := CallArg.getLhs callArgs
     let inArgs := CallArg.getInputExprs callArgs
     Command.inlineCallContract E lhs pname inArgs md
@@ -799,6 +804,9 @@ def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   | .cmd c =>
     Imperative.Cmd.run E c
   | .call pname args _md =>
+    if let some msg := callError? E.program pname args then
+      CmdEval.updateError E (.Misc (illFormedCallText msg))
+    else
     Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end

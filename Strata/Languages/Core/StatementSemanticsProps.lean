@@ -502,7 +502,7 @@ caller result store. -/
 theorem CallExitUniqueResult {fac : Expression.Factory} {σ : CoreStore}
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ₁ σ₂ : CoreStore} :
     CallExit fac σ p callArgs σEnd σ₁ → CallExit fac σ p callArgs σEnd σ₂ → σ₁ = σ₂ := by
-  rintro ⟨outputs₁, hRead₁, hUpdate₁⟩ ⟨outputs₂, hRead₂, hUpdate₂⟩
+  rintro ⟨_, outputs₁, hRead₁, hUpdate₁⟩ ⟨_, outputs₂, hRead₂, hUpdate₂⟩
   have hOutputs : outputs₁ = outputs₂ := ReadValuesInjective hRead₁ hRead₂
   subst outputs₂
   exact (UpdateStatesUpdated hUpdate₁).trans (UpdateStatesUpdated hUpdate₂).symm
@@ -512,7 +512,7 @@ theorem CallExit.store_eq_of_getLhs_nil {fac : Expression.Factory} {σ : CoreSto
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ' : CoreStore}
     (hLhs : CallArg.getLhs callArgs = [])
     (h : CallExit fac σ p callArgs σEnd σ') : σ' = σ := by
-  obtain ⟨outputs, _, hUpdate⟩ := h
+  obtain ⟨_, outputs, _, hUpdate⟩ := h
   rw [hLhs] at hUpdate
   cases hUpdate
   rfl
@@ -2435,7 +2435,7 @@ theorem evalCommand_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
 /-- Event-trace analogue of `evalCommand_preserves_none_of_not_def`: an
@@ -2453,7 +2453,7 @@ theorem evalCommandE_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
 /-- An `EvalCommand` step never undefines a store slot. -/
@@ -2467,7 +2467,7 @@ theorem evalCommand_preserves_isSome
   | cmd_sem h => exact EvalCmd_preserves_isSome h h_some
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
 /-- An `EvalCommand` step leaves a store that holds only values. -/
@@ -2484,7 +2484,7 @@ theorem evalCommand_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, hread, hupd⟩ := hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv
 
@@ -2622,7 +2622,7 @@ theorem evalCommandE_preserves_isSome
   | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
 /-- An `EvalCommandE` step preserves the property that every store binding is
@@ -2639,7 +2639,7 @@ theorem evalCommandE_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, hread, hupd⟩ := hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv
 

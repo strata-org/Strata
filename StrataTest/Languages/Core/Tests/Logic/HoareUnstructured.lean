@@ -1257,7 +1257,7 @@ theorem copy_call_triple :
     have hxFinal : ρ'.store xIdC = some (Lambda.LExpr.intConst () av) := by
       have hf := hframeRel [xIdC] hdisjx xIdC xIdC (by simp)
       rw [← hf]; exact hAOx
-    obtain ⟨outputVals, hRV, hUpd⟩ := hcallexit
+    obtain ⟨_, outputVals, hRV, hUpd⟩ := hcallexit
     rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) copyProc.header
       = [resultId] from by native_decide] at hRV
     rw [show Imperative.CallArg.getLhs copyCall = [zIdC] from rfl] at hUpd

@@ -458,7 +458,7 @@ private theorem bv16_callexit_facts
     (h : Core.CallExit fac σ proc callArgs σEnd σ') :
     ∃ vr, σEnd resultId = some vr ∧ Lambda.LExpr.isValue fac vr = true ∧
       σ' outVar = some vr ∧ (∀ k, k ≠ outVar → σ' k = σ k) := by
-  obtain ⟨outputVals, hRV, hUpd⟩ := h
+  obtain ⟨_, outputVals, hRV, hUpd⟩ := h
   rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) proc.header = _
     from hOutKeys] at hRV
   rw [hLhs] at hUpd

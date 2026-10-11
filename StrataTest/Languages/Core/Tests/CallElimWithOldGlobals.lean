@@ -34,7 +34,7 @@ spec {
 }
 {
   g := true;
-  call f(i, g, out g, out r);
+  call f(i, inout g, out r);
 };
 
 procedure h_incorrect(inout g : bool, i : bool, out r : bool)
@@ -44,7 +44,7 @@ spec {
 }
 {
   g := true;
-  call f(i, g, out g, out r);
+  call f(i, inout g, out r);
 };
 #end
 

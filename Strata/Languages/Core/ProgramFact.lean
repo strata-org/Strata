@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWFProps
 public import Strata.DL.Lambda.LExprWF
 public import Strata.Pipeline.FactSet
 
@@ -33,7 +34,7 @@ namespace Core
 public section
 
 /-- Property of a program tracked by the pipeline framework.
-    Closed enum, kept in sync with `ProgramFact.holds` and `ProgramFact.check`
+    Closed enum, kept in sync with `ProgramFact.holds` and `ProgramFact.check?`
     below and the list `ProgramFact.all`.
 
     **Constraint: nullary constructors only.** The framework's
@@ -45,6 +46,10 @@ public section
     conflate them. If parameterised facts are ever needed, the
     reflection layer must be redesigned. -/
 inductive ProgramFact where
+  /-- Every call is well-formed (`Program.callsWellFormed`): it names a declared
+      procedure, its arguments match the procedure's signature in number and mode,
+      and its result variables are distinct. Established by `assertWellFormedCalls`. -/
+  | wellFormedCalls
   /-- Every procedure body is `.structured _` (not `.cfg _`).
       Required by every statement-level transform, because
       `Transform.runProgram` throws on a CFG body, and by symbolic
@@ -182,6 +187,7 @@ predicate its soundness theorem is stated over. -/
     messages produced by the pipeline-composition check and by
     `canon_fact_set`. -/
 def ProgramFact.name : ProgramFact → String
+  | .wellFormedCalls => "wellFormedCalls"
   | .noCFGBodies => "noCFGBodies"
   | .noCalls => "noCalls"
   | .noLoops => "noLoops"
@@ -205,8 +211,8 @@ def ProgramFact.name : ProgramFact → String
     set's proof obligation — reduces in importing modules, which is what
     lets `canon_facts` discharge it statically. -/
 @[expose] def ProgramFact.all : List ProgramFact :=
-  [.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
-   .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+  [.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+   .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
    .hasObligationForm, .noProcedureContracts, .noPolymorphicProcedures,
    .noPolymorphicFunctions, .typeAnnotated]
 
@@ -240,6 +246,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     the fact is still perfectly usable in a contract — it just cannot be
     asserted, since there is nothing to run. -/
 @[expose] def ProgramFact.check? : ProgramFact → Option (Program → Bool)
+  | .wellFormedCalls  => some fun p => (illFormedCalls p).isEmpty
   | .noCFGBodies      => some Program.allStructured
   | .noCalls          => some (Program.allStatements Statements.noCalls)
   | .noLoops          => some (Program.allStatements Imperative.Block.noLoops)
@@ -259,6 +266,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
 /-- What a fact asserts about a program: the `Prop` that a phase claiming
     the fact will have to prove of its output. -/
 @[expose] def ProgramFact.holds : ProgramFact → Program → Prop
+  | .wellFormedCalls  => Program.callsWellFormed
   | .noCFGBodies      => fun p => Program.allStructured p = true
   | .noCalls          => fun p => Program.allStatements Statements.noCalls p = true
   | .noLoops          => fun p => Program.allStatements Imperative.Block.noLoops p = true

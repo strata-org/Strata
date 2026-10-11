@@ -447,6 +447,16 @@ def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.F
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
 
+/-- The calls in a declaration: a procedure's calls, and nothing for any other
+    declaration. -/
+def Decl.callSites : Decl → List CallSite
+  | .proc q _ => Procedure.callSites q
+  | _ => []
+
+/-- Every call in `p`, in declaration order and then in order within each body. -/
+def Program.callSites (p : Program) : List CallSite :=
+  p.decls.flatMap Decl.callSites
+
 end Core
 
 ---------------------------------------------------------------------

@@ -794,6 +794,15 @@ call ProcName([out/inout] e₁, ..., [out/inout] eₙ);
 
 Note that `out` and `inout` keywords can only be attached when `eᵢ` is a variable.
 
+A call's arguments must match the procedure's parameters, in order: an argument
+without a keyword for each input parameter, `inout x` for each `inout` parameter
+and `out x` for each `out` parameter. An `inout` parameter is passed as one
+variable, as in `call P(inout x)`, not as a value and a separate result, as in
+`call P(x, out x)`. The variables passed for a call's `out` and `inout` parameters
+must be distinct: a variable may not be passed for two results of the same call,
+as in `call P(out x, out x)` or `call P(inout x, out x)`. Strata rejects any other
+call.
+
 ### Body and verification
 
 If a procedure has a non-empty body, the preconditions are assumed to hold on

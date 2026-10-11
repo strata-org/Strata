@@ -395,6 +395,36 @@ facts. -/
 
 ---------------------------------------------------------------------
 
+/-! ## The calls of statements -/
+
+/-- A call: the callee's name, the arguments and the call's metadata. -/
+structure CallSite where
+  procName : String
+  args : List (CallArg Expression)
+  md : MetaData Expression
+
+/-- The call that a command is, if it is one. -/
+def Command.callSites : Command → List CallSite
+  | .call procName args md => [{ procName, args, md }]
+  | .cmd _ => []
+
+mutual
+/-- The calls in a statement, at any nesting depth, in order. -/
+def Statement.callSites : Statement → List CallSite
+  | .cmd c => Command.callSites c
+  | .block _ body _ => Statements.callSites body
+  | .ite _ thenBody elseBody _ => Statements.callSites thenBody ++ Statements.callSites elseBody
+  | .loop _ _ _ body _ => Statements.callSites body
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+
+/-- The calls in statements, at any nesting depth, in order. -/
+def Statements.callSites : Statements → List CallSite
+  | [] => []
+  | s :: rest => Statement.callSites s ++ Statements.callSites rest
+end
+
+---------------------------------------------------------------------
 
 end
 end Core

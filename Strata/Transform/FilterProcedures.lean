@@ -91,10 +91,13 @@ end FilterProcedures
     remaining ones. -/
 def filterProceduresPipelinePhase (procs : List String)
     (keepUnlistedLemmas : Bool := true) : PipelinePhase :=
-  -- Every fact is a property of *all* declarations, so dropping some cannot
-  -- break one.
+  -- The filter removes procedures and lemmas and leaves the rest unchanged, so a
+  -- fact that is checked one declaration at a time, like `noLoops`, still holds
+  -- afterwards. `wellFormedCalls` checks each call against its callee, and still
+  -- holds because the filter keeps every callee of a procedure it keeps: every call
+  -- in the input names a declared procedure, so the callee closure is complete.
   modelPreservingPipelinePhase "filterProcedures"
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+    (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
