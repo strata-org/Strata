@@ -27,7 +27,7 @@ abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Exp
 abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
 /--
 Evaluation relation of an Imperative command `Cmd`.
-Commands do not modify the evaluator - only `funcDecl` statements do.
+Commands do not modify the evaluator.
 
 The Bool flag reports whether the command observed
 a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
@@ -345,7 +345,7 @@ inductive InitStates {P : PureExpr} :
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`P.eval`) functions.
-Commands do not modify the evaluator - only `funcDecl` statements do.
+Commands do not modify the evaluator.
 
 The `Bool` output parameter is a *failure flag*: `true` when the command
 signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`

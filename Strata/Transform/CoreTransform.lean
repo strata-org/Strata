@@ -359,8 +359,6 @@ def runStmtsRec (f : Statement → CoreTransformM (Option (List Statement)))
         | .loop guard measure invariant body md => do
           let (changed, body') ← runStmtsRec f body
           return (changed, [.loop guard measure invariant body' md])
-        | .funcDecl _ _ =>
-          return (false, [s])  -- Function declarations pass through unchanged
         | .typeDecl _ _ =>
           return (false, [s])  -- Type declarations pass through unchanged
         | .exit _lbl _md =>

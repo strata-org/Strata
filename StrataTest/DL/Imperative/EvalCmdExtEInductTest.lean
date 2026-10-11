@@ -27,22 +27,22 @@ variable {P : PureExpr}
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
 
-example {π π' : String → Option (Procedure P (CmdExt P) Hdr)} {δ : ExtendFactory P}
+example {π π' : String → Option (Procedure P (CmdExt P) Hdr)}
     (hπ : ∀ n p, π n = some p → π' n = some p)
     {fac : P.Factory} {σ σ' : SemanticStore P} {c : CmdExt P} {evs : Trace P}
-    (h : EvalCmdExtE π δ fac σ c σ' evs) : EvalCmdExtE π' δ fac σ c σ' evs := by
+    (h : EvalCmdExtE π fac σ c σ' evs) : EvalCmdExtE π' fac σ c σ' evs := by
   induction h using EvalCmdExtE.induct with
   | cmd_sem h => exact .cmd_sem h
   | call_sem hn hentry _ hexit ih =>
-    obtain ⟨ss, ρ', hss, rfl, rfl, hrun⟩ := ih
+    obtain ⟨ss, ρ', hss, rfl, hrun⟩ := ih
     exact .call_sem (hπ _ _ hn) hentry
       (hss ▸ .structured (hrun.imp fun _ _ _ _ _ ⟨_, h⟩ => h)) hexit
 
 example {l CmdT EventT : Type} [BEq l] [HasVal P]
-    {EvalCmd : EvalCmdParamE P CmdT EventT} {δ : ExtendFactory P} {fac : P.Factory}
+    {EvalCmd : EvalCmdParamE P CmdT EventT} {fac : P.Factory}
     {cfg : CFG l (DetBlock l CmdT P)} {t : l} {σ : SemanticStore P} {f : Bool}
     {tr : List EventT} {c' : CFGConfig l CmdT P}
-    (h : StepCFGE P EvalCmd δ fac cfg (.atBlock t σ f) tr c') : tr = [] := by
+    (h : StepCFGE P EvalCmd fac cfg (.atBlock t σ f) tr c') : tr = [] := by
   generalize hc : CFGConfig.atBlock t σ f = c at h
   cases h using StepCFGE.casesRules <;> first | rfl | cases hc
 

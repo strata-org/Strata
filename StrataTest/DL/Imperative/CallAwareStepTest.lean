@@ -59,8 +59,8 @@ private def callTrace (fac : Expression.Factory) : Trace Expression :=
 
 /-- The callee body, wrapped as `BigStepE` wraps it, runs from the empty frame to
     termination, emitting the `body` assertion event. -/
-private theorem body_run (δ : ExtendFactory Expression) (fac : Expression.Factory) :
-    StepStmtExtStarE calleeEnv δ
+private theorem body_run (fac : Expression.Factory) :
+    StepStmtExtStarE calleeEnv
       (.stmt (Stmt.block "" [bodyStmt] #[]) ⟨emptyStore, fac, false⟩)
       [trueEvent fac "body"]
       (.terminal ⟨emptyStore, fac, false⟩) :=
@@ -73,14 +73,14 @@ private theorem body_run (δ : ExtendFactory Expression) (fac : Expression.Facto
   .step _ [] _ [] _ (.step_admin .step_block_done) (.refl _)
 
 /-- `callCmd` takes any store `σ` to itself, emitting `callTrace fac`. -/
-private theorem callCmd_sem (δ : ExtendFactory Expression) (fac : Expression.Factory)
+private theorem callCmd_sem (fac : Expression.Factory)
     (σ : CoreStore) :
-    EvalCmdExtE calleeEnv δ fac σ callCmd σ (callTrace fac) := by
-  have hbody : BigStepE calleeEnv δ callee.body emptyStore fac emptyStore fac
+    EvalCmdExtE calleeEnv fac σ callCmd σ (callTrace fac) := by
+  have hbody : BigStepE calleeEnv callee.body ⟨emptyStore, fac, false⟩ emptyStore
       [trueEvent fac "body"] :=
-    .structured (ρ' := ⟨emptyStore, fac, false⟩) (body_run δ fac)
+    .structured (ρ' := ⟨emptyStore, fac, false⟩) (body_run fac)
   have h := EvalCmdExtE.call_sem (n := "callee") (callArgs := []) (md := .empty)
-    (π := calleeEnv) (δ := δ) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
+    (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨[], .read_none, .update_none⟩
@@ -90,14 +90,13 @@ private theorem callCmd_sem (δ : ExtendFactory Expression) (fac : Expression.Fa
 /-- The same call step, derived through Core's abbreviations: `CoreBodyExecE.structured`
     and `EvalCommandE.call_sem` with Core's `CallEntry` / `CallExit` premises. -/
 private theorem callCmd_semCore
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (fac : Expression.Factory) (σ : CoreStore) :
-    EvalCommandE calleeEnv φ fac σ callCmd σ (callTrace fac) := by
-  have hbody : CoreBodyExecE calleeEnv φ callee.body emptyStore fac emptyStore fac
+    EvalCommandE calleeEnv fac σ callCmd σ (callTrace fac) := by
+  have hbody : CoreBodyExecE calleeEnv callee.body ⟨emptyStore, fac, false⟩ emptyStore
       [trueEvent fac "body"] :=
-    CoreBodyExecE.structured (ρ' := ⟨emptyStore, fac, false⟩) (body_run _ fac)
+    CoreBodyExecE.structured (ρ' := ⟨emptyStore, fac, false⟩) (body_run fac)
   have h := EvalCommandE.call_sem (n := "callee") (callArgs := []) (md := .empty)
-    (π := calleeEnv) (φ := φ) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
+    (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨[], .read_none, .update_none⟩
@@ -111,31 +110,30 @@ private def callCFG : CFG String (DetBlock String Command Expression) :=
 
 /-- The CFG run fetches `"entry"`, steps the call, and finishes: the store and
     failure flag are unchanged and the trace is the call's pre / body / post events. -/
-example (δ : ExtendFactory Expression) (fac : Expression.Factory) (σ : CoreStore)
+example (fac : Expression.Factory) (σ : CoreStore)
     (f : Bool) :
-    StepCFGExtStarE calleeEnv δ fac callCFG
+    StepCFGExtStarE calleeEnv fac callCFG
       (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
-  .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_sem δ fac σ)) <|
+  .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_sem fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)
 
-/-- The same CFG run at Core's `EvalPureFunc φ`, with the call step from
+/-- The same CFG run derived through Core's abbreviations, with the call step from
     `callCmd_semCore`. -/
-example (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
-    (fac : Expression.Factory) (σ : CoreStore) (f : Bool) :
-    StepCFGExtStarE calleeEnv (EvalPureFunc φ) fac callCFG
+example (fac : Expression.Factory) (σ : CoreStore) (f : Bool) :
+    StepCFGExtStarE calleeEnv fac callCFG
       (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
-  .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_semCore φ fac σ)) <|
+  .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_semCore fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)
 
 /-- The Kleene command `callCmd` runs to `.terminal` with the same environment,
     emitting the call's pre / body / post events. -/
-example (δ : ExtendFactory Expression) (ρ : Env Expression) :
-    StepKleeneExtStarE calleeEnv δ
+example (ρ : Env Expression) :
+    StepKleeneExtStarE calleeEnv
       (.stmt (.cmd callCmd) ρ) (callTrace ρ.factory) (.terminal ρ) := by
-  have h := StepKleeneE.step_cmd (P := Expression) (EvalCmd := EvalCmdExtE calleeEnv δ)
-    (ρ := ρ) (callCmd_sem δ ρ.factory ρ.store)
+  have h := StepKleeneE.step_cmd (P := Expression) (EvalCmd := EvalCmdExtE calleeEnv)
+    (ρ := ρ) (callCmd_sem ρ.factory ρ.store)
   simpa using ReflTransTrace.step _ _ _ [] _ h (.refl _)
 
 end CallAwareStepTest

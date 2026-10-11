@@ -54,7 +54,6 @@ partial def unwrapStmt : Core.Statement → List (Stmt Expression (Cmd Expressio
   | .ite g t e md => [.ite g (t.flatMap unwrapStmt) (e.flatMap unwrapStmt) md]
   | .loop g m inv body md => [.loop g m inv (body.flatMap unwrapStmt) md]
   | .exit lbl md => [.exit lbl md]
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
 
 /-- The bare imperative body of the first procedure of a `#strata` Core program,

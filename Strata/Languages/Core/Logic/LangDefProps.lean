@@ -55,7 +55,6 @@ namespace Core.Logic
 open Core Imperative Strata.Logic Imperative.Logic
 
 variable (π : String → Option Procedure)
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-! ## Builders that discharge `readWritesDefined` from `defUseOk` -/
 
@@ -74,8 +73,6 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
     (hdefs : ∀ n ∈ Stmt.definedVars s false, (ρ.store n).isNone)
     (hdnr : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
-    (hfnr : ∀ n ∈ Stmt.funcDeclNames s false, ∀ p ∈ params.prefixIdents,
-      ¬ p.toList.isPrefixOf n.name.toList)
     (hres : ∀ n, (ρ.store n).isSome → ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true)
@@ -88,7 +85,6 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
     Imperative.Stmt.defined_of_mem_touchedVars cmdDefinedVarsFlagIrrelevant hdu hn hnd
   defsUndefined := hdefs
   definedVarsNotReserved := hdnr
-  funcDeclNamesNotReserved := hfnr
   reservedFresh := hres
   defUseOk := hdu
   factoryDeclared := hfd
@@ -103,8 +99,6 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
     (hdefs : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone)
     (hdnr : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
-    (hfnr : ∀ n ∈ Block.funcDeclNames bss false, ∀ p ∈ params.prefixIdents,
-      ¬ p.toList.isPrefixOf n.name.toList)
     (hres : ∀ n, (ρ.store n).isSome → ∀ p ∈ params.prefixIdents,
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true)
@@ -117,7 +111,6 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
     Imperative.Block.defined_of_mem_touchedVars cmdDefinedVarsFlagIrrelevant hdu hn hnd
   defsUndefined := hdefs
   definedVarsNotReserved := hdnr
-  funcDeclNamesNotReserved := hfnr
   reservedFresh := hres
   defUseOk := hdu
   factoryDeclared := hfd
@@ -141,7 +134,6 @@ theorem blockInitEnvWF_cons_head {params : InitEnvWFParams} {s : Statement} {ss 
   refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => h.defsUndefined n (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
     (fun n hn => h.definedVarsNotReserved n (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
-    (fun n hn => h.funcDeclNamesNotReserved n (by rw [Block.funcDeclNames]; exact List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh hdu.1 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
@@ -173,13 +165,10 @@ theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Sta
     BlockInitEnvWF params ss₁ ρ := by
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
-  have hfnr := h.funcDeclNamesNotReserved
   rw [Imperative.Block.definedVars_append] at hdefs hdnr
-  rw [Imperative.Block.funcDeclNames_append] at hfnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inl hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
-    (fun n hn => hfnr n (List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh (Imperative.Block.defUseWellFormed_of_append_left h.defUseOk)
     h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
@@ -194,11 +183,9 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   have hdu := h.defUseOk
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
-  have hfnr := h.funcDeclNamesNotReserved
   simp only [Stmt.defUseWellFormed] at hdu
   simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
-  simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
-  exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr hfnr
+  exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
 
@@ -211,14 +198,11 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
   have hdu := h.defUseOk
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
-  have hfnr := h.funcDeclNamesNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
   simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
-  simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inl hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
-    (fun n hn => hfnr n (List.mem_append.mpr (Or.inl hn)))
     h.reservedFresh hdu.1.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
@@ -232,14 +216,11 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
   have hdu := h.defUseOk
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
-  have hfnr := h.funcDeclNamesNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
   simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
-  simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inr hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inr hn)))
-    (fun n hn => hfnr n (List.mem_append.mpr (Or.inr hn)))
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
@@ -253,11 +234,9 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   have hdu := h.defUseOk
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
-  have hfnr := h.funcDeclNamesNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
   simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
-  simp only [Stmt.funcDeclNames, Bool.false_eq_true, if_false] at hfnr
-  exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr hfnr
+  exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
 
@@ -266,10 +245,8 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
 Every field of the conditions transfers structurally except `storeWellDefined`, which
 is a statement about *values* rather than about the store's domain, and so is the one
 field a run has to be shown to preserve.  Both lemmas below get it from
-`Imperative.Config.storeWellDefined_star_of`, whose only side condition is
-`Stmt.noFuncDecl s = true` (resp. `Block.noFuncDecl ss = true`) — syntactic and
-decidable.  It makes the factory constant across the run
-(`Imperative.noFuncDecl_preserves_factory`), so value-hood is trivially preserved.
+`Imperative.Config.storeWellDefined_star_of`.  The factory `fac` is immutable
+across a run, so value-hood is preserved given the command evaluator preserves it.
 
 The call needs no recursion into the callee: every rule that writes to the store,
 `call` included, supplies a value of the factory in force. -/
@@ -277,20 +254,12 @@ The call needs no recursion into the callee: every rule that writes to the store
 /-- Tail of a statement list: after the head `s` runs to `ρ'`, the block condition
     holds on the tail `ss` at `ρ'`.
 
-    `hnofd` is the strong "no `funcDecl` anywhere" rather than "none at top level"
-    because it also has to keep the factory and the declared-function set constant
-    across the run. -/
+-/
 theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss : Statements}
     {ρ ρ' : Imperative.Env Expression}
-    (hnofd : Stmt.noFuncDecl (P := Expression) (C := Command) s = Bool.true)
     (h : BlockInitEnvWF params (s :: ss) ρ)
-    (hrun : CoreStepStar π φ (.stmt s ρ) (.terminal ρ')) :
+    (hrun : CoreStepStar π (.stmt s ρ) (.terminal ρ')) :
     BlockInitEnvWF params ss ρ' := by
-  have hfdn : Stmt.funcDeclNames (P := Expression) (C := Command) s true = [] :=
-    Imperative.Stmt.funcDeclNames_eq_nil_of_noFuncDecl s true hnofd
-  have hfac : ρ'.factory = ρ.factory :=
-    Imperative.stmt_noFuncDecl_preserves_factory Expression (EvalCommand π φ) (EvalPureFunc φ)
-      s ρ ρ' hnofd (Core.CoreStepStar_to_StepStmtStar hrun)
   -- The tail was checked against `defined ∪ Stmt.definedVars s true` …
   have hdu := h.defUseOk
   simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
@@ -298,12 +267,7 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
   have hstore : (fun n => (ρ'.store n).isSome)
       = (fun n => (ρ.store n).isSome ||
           decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
-    funext n; exact core_stmt_run_terminal_store_isSome_eq π φ hrun n
-  -- `declaredFuncs` accumulates too, but `hnofd` makes that extension inert.
-  have hdecl : (fun n => params.declaredFuncs n ||
-      decide (n ∈ Stmt.funcDeclNames (P := Expression) (C := Command) s true))
-      = params.declaredFuncs := by
-    funext n; simp [hfdn]
+    funext n; exact core_stmt_run_terminal_store_isSome_eq π hrun n
   -- Names the tail defines are fresh in that predicate, hence undefined in `ρ`
   -- and not defined at the head's top level — so they survive `s` undefined.
   have hfresh : ∀ n ∈ Block.definedVars (P := Expression) (C := Command) ss false,
@@ -315,24 +279,30 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
     cases hq : ρ.store n with
     | none => rfl
     | some v => rw [hq] at h1; simp at h1
+  have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool},
+      EvalCommand π f σ c σ' fl →
+      Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
+    fun hc hs => Core.evalCommand_storeWellDefined π hc hs
+  -- The run preserves the immutable factory, so the enclosing condition's
+  -- evaluator- and init-type witnesses transfer to `ρ'`'s factory unchanged.
+  have hfac : ρ.factory = ρ'.factory :=
+    Imperative.star_preserves_factory Expression (EvalCommand π)
+      (Core.CoreStepStar_to_StepStmtStar hrun)
   refine BlockInitEnvWF.of_defUseOk
-    (by rw [hfac]; exact h.toWellFormedSemanticEval)
+    (hfac ▸ h.toWellFormedSemanticEval)
     (Imperative.Config.storeWellDefined_star_of
-      (evalCmd := EvalCommand π φ) (extendFactory := EvalPureFunc φ)
-      (fun hc hs => Core.evalCommand_storeWellDefined π φ hc hs)
-      (Core.CoreStepStar_to_StepStmtStar hrun) hnofd h.storeWellDefined)
+      (evalCmd := EvalCommand π) hpres
+      (Core.CoreStepStar_to_StepStmtStar hrun)
+      h.storeWellDefined)
     (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
-    (fun n hn => h.funcDeclNamesNotReserved n ?_) (fun n hn => ?_) ?_ h.factoryDeclared
-    (by
-      rw [hfac]
-      exact fun ty hty => h.initTypesInhabited ty
-        (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
+    (fun n hn => ?_) ?_ h.factoryDeclared
+    (fun ty hty => hfac ▸ h.initTypesInhabited ty
+      (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
   · -- defsUndefined on the tail
     obtain ⟨hnone, hnotdef⟩ := hfresh n hn
-    rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π φ hnotdef hnone hrun]
+    rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π hnotdef hnone hrun]
     rfl
   · rw [Block.definedVars]; exact List.mem_append.mpr (Or.inr hn)
-  · rw [Block.funcDeclNames]; exact List.mem_append.mpr (Or.inr hn)
   · -- reservedFresh at `ρ'`: a name defined there was defined in `ρ`, or is one
     -- of the head's top-level definitions (which the enclosing condition covers).
     have hn' : ((ρ.store n).isSome ||
@@ -345,8 +315,8 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
       exact List.mem_append.mpr (Or.inl
         (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
           (by simpa using hnew)))
-  · -- defUseOk on the tail, by rewriting both predicates
-    rw [hstore, ← hdecl]; exact hdu.2
+  · -- defUseOk on the tail, by rewriting the definedness predicate
+    rw [hstore]; exact hdu.2
 
 /-- Suffix of a statement list: after the prefix `ss₁` runs to `ρ'`, the block
     condition holds on `ss₂` at `ρ'`.
@@ -356,39 +326,36 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
     `s :: (rest ++ ss₂)` that the cons lemma consumes. -/
 theorem blockInitEnvWF_append_tail {params : InitEnvWFParams} {ss₁ ss₂ : Statements}
     {ρ ρ' : Imperative.Env Expression}
-    (hnofd : Block.noFuncDecl (P := Expression) (C := Command) ss₁ = Bool.true)
     (h : BlockInitEnvWF params (ss₁ ++ ss₂) ρ)
-    (hrun : CoreStepStar π φ (.stmts ss₁ ρ) (.terminal ρ')) :
+    (hrun : CoreStepStar π (.stmts ss₁ ρ) (.terminal ρ')) :
     BlockInitEnvWF params ss₂ ρ' := by
   suffices hgen : ∀ (pfx : Statements) (ρ₀ : Imperative.Env Expression),
-      Block.noFuncDecl (P := Expression) (C := Command) pfx = Bool.true →
       BlockInitEnvWF params (pfx ++ ss₂) ρ₀ →
-      CoreStepStar π φ (.stmts pfx ρ₀) (.terminal ρ') →
-      BlockInitEnvWF params ss₂ ρ' from hgen ss₁ ρ hnofd h hrun
+      CoreStepStar π (.stmts pfx ρ₀) (.terminal ρ') →
+      BlockInitEnvWF params ss₂ ρ' from hgen ss₁ ρ h hrun
   intro pfx
   induction pfx with
   | nil =>
-    intro ρ₀ _ hb hr
+    intro ρ₀ hb hr
     have heq : ρ₀ = ρ' :=
-      Imperative.stmts_nil_terminal (EvalCommand π φ) (EvalPureFunc φ) ρ₀ ρ'
+      Imperative.stmts_nil_terminal (EvalCommand π) ρ₀ ρ'
         (Core.CoreStepStar_to_StepStmtStar hr)
     subst heq; simpa using hb
   | cons s rest ih =>
-    intro ρ₀ hnofd' hb hr
-    simp only [Imperative.Block.noFuncDecl, Bool.and_eq_true] at hnofd'
+    intro ρ₀ hb hr
     have hsplit : ∃ ρ_mid,
-        Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        Imperative.StepStmtStar Expression (EvalCommand π)
           (.stmt s ρ₀) (.terminal ρ_mid) ∧
-        Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+        Imperative.StepStmtStar Expression (EvalCommand π)
           (.stmts rest ρ_mid) (.terminal ρ') := by
       cases Core.CoreStepStar_to_StepStmtStar hr with
       | step _ _ _ hstep hrest => cases hstep with
         | step_stmts_cons =>
-          exact Imperative.seq_reaches_terminal Expression (EvalCommand π φ)
-            (EvalPureFunc φ) hrest
+          exact Imperative.seq_reaches_terminal Expression (EvalCommand π)
+            hrest
     obtain ⟨ρ_mid, hs, hrest⟩ := hsplit
-    exact ih ρ_mid hnofd'.2
-      (blockInitEnvWF_cons_tail π φ hnofd'.1 hb (Core.StepStmtStar_to_CoreStepStar hs))
+    exact ih ρ_mid
+      (blockInitEnvWF_cons_tail π hb (Core.StepStmtStar_to_CoreStepStar hs))
       (Core.StepStmtStar_to_CoreStepStar hrest)
 
 /-! ## Event-trace preservation
@@ -401,28 +368,17 @@ lemmas above, so the event Hoare rule `Core.Logic.Hoare.seq` can re-establish
 along the event semantics, the block condition holds on the tail `ss` at `ρ'`. -/
 theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss : Statements}
     {ρ ρ' : Imperative.Env Expression} {tr : Imperative.Trace Expression}
-    (hnofd : Stmt.noFuncDecl (P := Expression) (C := Command) s = Bool.true)
     (h : BlockInitEnvWF params (s :: ss) ρ)
-    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π)
       (.stmt s ρ) tr (.terminal ρ')) :
     BlockInitEnvWF params ss ρ' := by
-  have hfdn : Stmt.funcDeclNames (P := Expression) (C := Command) s true = [] :=
-    Imperative.Stmt.funcDeclNames_eq_nil_of_noFuncDecl s true hnofd
-  have hfac : ρ'.factory = ρ.factory := by
-    have := Imperative.noFuncDecl_preserves_factoryE
-      (show Config.noFuncDecl (.stmt s ρ) from by simpa [Config.noFuncDecl] using hnofd) hrun
-    simpa [Config.getEnv] using this
   have hdu := h.defUseOk
   simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
   -- The tail's definedness predicate is exactly `ρ'`'s.
   have hstore : (fun n => (ρ'.store n).isSome)
       = (fun n => (ρ.store n).isSome ||
           decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
-    funext n; exact core_stmt_run_terminal_store_isSome_eqE π φ hrun n
-  have hdecl : (fun n => params.declaredFuncs n ||
-      decide (n ∈ Stmt.funcDeclNames (P := Expression) (C := Command) s true))
-      = params.declaredFuncs := by
-    funext n; simp [hfdn]
+    funext n; exact core_stmt_run_terminal_store_isSome_eqE π hrun n
   have hfresh : ∀ n ∈ Block.definedVars (P := Expression) (C := Command) ss false,
       ρ.store n = none ∧ n ∉ Stmt.definedVars (P := Expression) (C := Command) s true := by
     intro n hn
@@ -432,23 +388,26 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
     cases hq : ρ.store n with
     | none => rfl
     | some v => rw [hq] at h1; simp at h1
+  have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {emitted : Imperative.Trace Expression},
+      EvalCommandE π f σ c σ' emitted →
+      Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
+    fun hc hs => Core.evalCommandE_storeWellDefined π hc hs
+  -- The run preserves the immutable factory.
+  have hfac : ρ.factory = ρ'.factory := Imperative.starE_preserves_factory hrun
   refine BlockInitEnvWF.of_defUseOk
-    (by rw [hfac]; exact h.toWellFormedSemanticEval)
+    (hfac ▸ h.toWellFormedSemanticEval)
     (Imperative.Config.storeWellDefined_star_ofE
-      (fun hc hs => Core.evalCommandE_storeWellDefined π φ hc hs)
-      hrun (show Config.noFuncDecl (.stmt s ρ) from by simpa [Config.noFuncDecl] using hnofd)
+      (EvalCmd := EvalCommandE π) hpres
+      hrun
       h.storeWellDefined)
     (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
-    (fun n hn => h.funcDeclNamesNotReserved n ?_) (fun n hn => ?_) ?_ h.factoryDeclared
-    (by
-      rw [hfac]
-      exact fun ty hty => h.initTypesInhabited ty
-        (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
+    (fun n hn => ?_) ?_ h.factoryDeclared
+    (fun ty hty => hfac ▸ h.initTypesInhabited ty
+      (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
   · obtain ⟨hnone, hnotdef⟩ := hfresh n hn
-    rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π φ hnotdef hnone hrun]
+    rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π hnotdef hnone hrun]
     rfl
   · rw [Block.definedVars]; exact List.mem_append.mpr (Or.inr hn)
-  · rw [Block.funcDeclNames]; exact List.mem_append.mpr (Or.inr hn)
   · have hn' : ((ρ.store n).isSome ||
         decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) = Bool.true := by
       rw [← congrFun hstore n]; exact hn
@@ -459,7 +418,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
       exact List.mem_append.mpr (Or.inl
         (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
           (by simpa using hnew)))
-  · rw [hstore, ← hdecl]; exact hdu.2
+  · rw [hstore]; exact hdu.2
 
 /-- Event analogue of `blockInitEnvWF_append_tail`: after the prefix `ss₁` runs to
     `ρ'` along the event semantics, the block condition holds on `ss₂` at `ρ'`.
@@ -467,36 +426,33 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
     `seq_reaches_terminalE`. -/
 theorem blockInitEnvWF_append_tailE {params : InitEnvWFParams} {ss₁ ss₂ : Statements}
     {ρ ρ' : Imperative.Env Expression} {tr : Imperative.Trace Expression}
-    (hnofd : Block.noFuncDecl (P := Expression) (C := Command) ss₁ = Bool.true)
     (h : BlockInitEnvWF params (ss₁ ++ ss₂) ρ)
-    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π)
       (.stmts ss₁ ρ) tr (.terminal ρ')) :
     BlockInitEnvWF params ss₂ ρ' := by
   suffices hgen : ∀ (pfx : Statements) (ρ₀ : Imperative.Env Expression)
       (tr₀ : Imperative.Trace Expression),
-      Block.noFuncDecl (P := Expression) (C := Command) pfx = Bool.true →
       BlockInitEnvWF params (pfx ++ ss₂) ρ₀ →
-      Imperative.StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+      Imperative.StepStmtStarE Expression (EvalCommandE π)
         (.stmts pfx ρ₀) tr₀ (.terminal ρ') →
-      BlockInitEnvWF params ss₂ ρ' from hgen ss₁ ρ tr hnofd h hrun
+      BlockInitEnvWF params ss₂ ρ' from hgen ss₁ ρ tr h hrun
   intro pfx
   induction pfx with
   | nil =>
-    intro ρ₀ tr₀ _ hb hr
-    obtain ⟨_, hcfg⟩ := Imperative.stmts_nil_runE (EvalCommandE π φ) (EvalPureFunc φ) hr
+    intro ρ₀ tr₀ hb hr
+    obtain ⟨_, hcfg⟩ := Imperative.stmts_nil_runE (EvalCommandE π) hr
     rcases hcfg with hcfg | hcfg
     · exact absurd hcfg (by simp)
     · injection hcfg with hρ; subst hρ; simpa using hb
   | cons s rest ih =>
-    intro ρ₀ tr₀ hnofd' hb hr
-    simp only [Imperative.Block.noFuncDecl, Bool.and_eq_true] at hnofd'
-    rcases Imperative.stmts_cons_headE (EvalCommandE π φ) (EvalPureFunc φ) hr with
+    intro ρ₀ tr₀ hb hr
+    rcases Imperative.stmts_cons_headE (EvalCommandE π) hr with
       ⟨hcfg, _⟩ | hseq
     · exact absurd hcfg (by simp)
     · obtain ⟨ρ_mid, _, _, _, hs, hrest⟩ :=
-        Imperative.seq_reaches_terminalE (EvalCommandE π φ) (EvalPureFunc φ) hseq
-      exact ih ρ_mid _ hnofd'.2
-        (blockInitEnvWF_cons_tailE π φ hnofd'.1 hb hs) hrest
+        Imperative.seq_reaches_terminalE (EvalCommandE π) hseq
+      exact ih ρ_mid _
+        (blockInitEnvWF_cons_tailE π hb hs) hrest
 
 /-- One loop iteration: the loop's own condition is re-established at the environment
     the body's block leaves behind.
@@ -510,16 +466,15 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
     {m : Option Expression.Expr} {inv : List (String × Expression.Expr)}
     {body : Statements} {md : Imperative.MetaData Expression}
     {ρ ρ_inner : Imperative.Env Expression}
-    (hnofd : Block.noFuncDecl (P := Expression) (C := Command) body = Bool.true)
     (h : InitEnvWF params (.loop (.det g) m inv body md) ρ)
-    (hrun : CoreStepStar π φ (.stmts body ρ) (.terminal ρ_inner)) :
+    (hrun : CoreStepStar π (.stmts body ρ) (.terminal ρ_inner)) :
     InitEnvWF params (.loop (.det g) m inv body md)
-      { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory } := by
+      { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
     · simp only [projectStore, hn, if_true]
-      exact core_stmts_preserves_isSome π φ hrun hn
+      exact core_stmts_preserves_isSome π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with
         | none => rfl
@@ -527,26 +482,30 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
       simp [projectStore, hnone]
   have hfun : (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome)
       = (fun n => (ρ.store n).isSome) := funext hstore
-  -- `noFuncDecl` keeps the factory constant, so the inner store holds only values of
-  -- `ρ.factory`; and `projectStore` only ever keeps a binding or drops it.
-  have hproj : Imperative.WellFormedStore (projectStore ρ.store ρ_inner.store) ρ.factory := by
-    have hfac : ρ_inner.factory = ρ.factory :=
-      Imperative.block_noFuncDecl_preserves_factory Expression (EvalCommand π φ)
-        (EvalPureFunc φ) body ρ ρ_inner hnofd (Core.CoreStepStar_to_StepStmtStar hrun)
-    have hinner : Imperative.WellFormedStore ρ_inner.store ρ.factory := by
-      rw [← hfac]
-      exact Imperative.Config.storeWellDefined_star_of
-        (evalCmd := EvalCommand π φ) (extendFactory := EvalPureFunc φ)
-        (fun hc hs => Core.evalCommand_storeWellDefined π φ hc hs)
-        (Core.CoreStepStar_to_StepStmtStar hrun) hnofd h.storeWellDefined
+  -- The body run preserves the immutable factory.
+  have hfac : ρ.factory = ρ_inner.factory :=
+    Imperative.star_preserves_factory Expression (EvalCommand π)
+      (Core.CoreStepStar_to_StepStmtStar hrun)
+  -- The inner store holds only values of `ρ_inner.factory`; and `projectStore` only ever
+  -- keeps a binding or drops it.
+  have hproj : Imperative.WellFormedStore (projectStore ρ.store ρ_inner.store) ρ_inner.factory := by
+    have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool},
+        EvalCommand π f σ c σ' fl →
+        Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
+      fun hc hs => Core.evalCommand_storeWellDefined π hc hs
+    have hinner : Imperative.WellFormedStore ρ_inner.store ρ_inner.factory :=
+      Imperative.Config.storeWellDefined_star_of
+        (evalCmd := EvalCommand π) hpres
+        (Core.CoreStepStar_to_StepStmtStar hrun)
+        h.storeWellDefined
     intro x w hx
     simp only [projectStore] at hx
     split at hx
     · exact hinner x w hx
     · exact absurd hx (by simp)
-  refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval hproj (fun n hn => ?_)
-    h.definedVarsNotReserved h.funcDeclNamesNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
-    h.initTypesInhabited
+  refine InitEnvWF.of_defUseOk (hfac ▸ h.toWellFormedSemanticEval) hproj (fun n hn => ?_)
+    h.definedVarsNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
+    (hfac ▸ h.initTypesInhabited)
   · -- defsUndefined: `isNone` is `¬ isSome`, and the predicate is unchanged.
     have := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
@@ -569,17 +528,16 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
     {m : Option Expression.Expr} {inv : List (String × Expression.Expr)}
     {body : Statements} {md : Imperative.MetaData Expression}
     {ρ ρ_inner : Imperative.Env Expression} {tr : Imperative.Trace Expression}
-    (hnofd : Block.noFuncDecl (P := Expression) (C := Command) body = Bool.true)
     (h : InitEnvWF params (.loop (.det g) m inv body md) ρ)
-    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π φ) (EvalPureFunc φ)
+    (hrun : Imperative.StepStmtStarE Expression (EvalCommandE π)
       (.stmts body ρ) tr (.terminal ρ_inner)) :
     InitEnvWF params (.loop (.det g) m inv body md)
-      { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory } := by
+      { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
     · simp only [projectStore, hn, if_true]
-      exact core_stmts_preserves_isSomeE π φ hrun hn
+      exact core_stmts_preserves_isSomeE π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with
         | none => rfl
@@ -587,22 +545,25 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
       simp [projectStore, hnone]
   have hfun : (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome)
       = (fun n => (ρ.store n).isSome) := funext hstore
-  have hproj : Imperative.WellFormedStore (projectStore ρ.store ρ_inner.store) ρ.factory := by
-    have hfac : ρ_inner.factory = ρ.factory :=
-      Imperative.block_noFuncDecl_preserves_factoryE body ρ ρ_inner hnofd (.inl hrun)
-    have hinner : Imperative.WellFormedStore ρ_inner.store ρ.factory := by
-      rw [← hfac]
-      exact Imperative.Config.storeWellDefined_star_ofE
-        (fun hc hs => Core.evalCommandE_storeWellDefined π φ hc hs)
-        hrun (show Config.noFuncDecl (.stmts body ρ) from hnofd) h.storeWellDefined
+  have hfac : ρ.factory = ρ_inner.factory := Imperative.starE_preserves_factory hrun
+  have hproj : Imperative.WellFormedStore (projectStore ρ.store ρ_inner.store) ρ_inner.factory := by
+    have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {emitted : Imperative.Trace Expression},
+        EvalCommandE π f σ c σ' emitted →
+        Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
+      fun hc hs => Core.evalCommandE_storeWellDefined π hc hs
+    have hinner : Imperative.WellFormedStore ρ_inner.store ρ_inner.factory :=
+      Imperative.Config.storeWellDefined_star_ofE
+        (EvalCmd := EvalCommandE π) hpres
+        hrun
+        h.storeWellDefined
     intro x w hx
     simp only [projectStore] at hx
     split at hx
     · exact hinner x w hx
     · exact absurd hx (by simp)
-  refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval hproj (fun n hn => ?_)
-    h.definedVarsNotReserved h.funcDeclNamesNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
-    h.initTypesInhabited
+  refine InitEnvWF.of_defUseOk (hfac ▸ h.toWellFormedSemanticEval) hproj (fun n hn => ?_)
+    h.definedVarsNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
+    (hfac ▸ h.initTypesInhabited)
   · have hdef := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
     rw [Option.isNone_iff_eq_none] at hdef ⊢
@@ -631,11 +592,10 @@ theorem blockInitEnvWF_nil {params : InitEnvWFParams} {ρ : Imperative.Env Expre
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true →
       params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
     BlockInitEnvWF params [] ρ := by
-  refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_)
+  refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
     (fun n _ p hp => ?_) rfl hfd (by intro ty hty; simp [Block.initTypes] at hty)
   · simp [Block.definedVars] at hn
   · simp [Block.definedVars] at hn
-  · simp [Block.funcDeclNames] at hn
   · rw [hpref] at hp; simp at hp
 
 /-- The block condition for an empty procedure body wrapped as its procedure block:
@@ -648,11 +608,10 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true →
       params.declaredFuncs ⟨nm, ()⟩ = Bool.true) :
     BlockInitEnvWF params [Imperative.Stmt.block l [] md] ρ := by
-  refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_)
+  refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
     (fun n _ p hp => ?_) ?_ hfd (by intro ty hty; simp [Block.initTypes, Stmt.initTypes] at hty)
   · simp [Block.definedVars, Stmt.definedVars] at hn
   · simp [Block.definedVars, Stmt.definedVars] at hn
-  · simp [Block.funcDeclNames, Stmt.funcDeclNames] at hn
   · rw [hpref] at hp; simp at hp
   · simp [Block.defUseWellFormed, Stmt.defUseWellFormed]
 

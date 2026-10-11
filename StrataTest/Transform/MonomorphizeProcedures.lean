@@ -297,7 +297,7 @@ spec {
 ---------------------------------------------------------------------
 /-! ### Example 7: a Lambda-valued local's types are substituted too
 
-Internal function syntax now translates to an ordinary function-typed `init`.
+Internal function syntax translates to an ordinary function-typed `init`.
 The input below intentionally remains `function` syntax so this test covers
 both `funcDecl_statement` lowering and the subsequent monomorphization. The
 pass substitutes both the initializer's declared arrow type and the type

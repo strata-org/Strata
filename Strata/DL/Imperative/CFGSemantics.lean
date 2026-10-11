@@ -92,20 +92,19 @@ most one of `goto_true` / `goto_false` applies.
 inductive StepCFG
     {l CmdT : Type} [BEq l] (P : PureExpr)
     (EvalCmd   : EvalCmdParam P CmdT)
-    (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] :
     CFG l (DetBlock l CmdT P) → CFGConfig l CmdT P → CFGConfig l CmdT P → Prop where
   /-- Fetch: turn `.atBlock t` into `.inBlock t b.cmds b.transfer`. -/
   | fetch :
       List.lookup t cfg.blocks = .some b →
-      StepCFG P EvalCmd extendFactory fac cfg
+      StepCFG P EvalCmd fac cfg
         (.atBlock t σ f)
         (.inBlock t b.cmds b.transfer σ f)
   /-- Run one command from the residual list. -/
   | step_cmd :
       EvalCmd fac σ c σ' f' →
-      StepCFG P EvalCmd extendFactory fac cfg
+      StepCFG P EvalCmd fac cfg
         (.inBlock t (c :: cs) tr σ f)
         (.inBlock t cs tr σ' (f || f'))
   /-- Empty residual + true branch: jump to `.atBlock` of the true label. -/
@@ -113,7 +112,7 @@ inductive StepCFG
       P.eval fac σ c = .some HasBool.tt →
       WellFormedSemanticEvalBool (P := P) fac →
       WellFormedSemanticEvalExprCongr (P := P) fac →
-      StepCFG P EvalCmd extendFactory fac cfg
+      StepCFG P EvalCmd fac cfg
         (.inBlock t [] (.condGoto c tlbl elbl md) σ f)
         (.atBlock tlbl σ f)
   /-- Empty residual + false branch: jump to `.atBlock` of the false label. -/
@@ -121,12 +120,12 @@ inductive StepCFG
       P.eval fac σ c = .some HasBool.ff →
       WellFormedSemanticEvalBool (P := P) fac →
       WellFormedSemanticEvalExprCongr (P := P) fac →
-      StepCFG P EvalCmd extendFactory fac cfg
+      StepCFG P EvalCmd fac cfg
         (.inBlock t [] (.condGoto c tlbl elbl md) σ f)
         (.atBlock elbl σ f)
   /-- Empty residual + `finish`: halt at `.terminal`. -/
   | finish :
-      StepCFG P EvalCmd extendFactory fac cfg
+      StepCFG P EvalCmd fac cfg
         (.inBlock t [] (.finish md) σ f)
         (.terminal σ f)
 
@@ -140,12 +139,11 @@ def StepCFGStar
     [BEq l]
     (P : PureExpr)
     (EvalCmd : EvalCmdParam P CmdT)
-    (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
     (cfg : CFG l (DetBlock l CmdT P)) :
     CFGConfig l CmdT P → CFGConfig l CmdT P → Prop :=
-  ReflTrans (StepCFG P EvalCmd extendFactory fac cfg)
+  ReflTrans (StepCFG P EvalCmd fac cfg)
 
 /-- `StepCFG` with events.  Command steps use `EvalCmdParamE` and emit the
 command's events; the control-flow steps (fetch, conditional jump, finish) are the
@@ -156,20 +154,19 @@ constructors never derive the same transition. -/
 inductive StepCFGE
     {l CmdT EventT : Type} [BEq l] (P : PureExpr)
     (EvalCmd   : EvalCmdParamE P CmdT EventT)
-    (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] :
     CFG l (DetBlock l CmdT P) → CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop where
   /-- Run one command from the residual list. -/
   | step_cmd :
       EvalCmd fac σ c σ' emitted →
-      StepCFGE P EvalCmd extendFactory fac cfg
+      StepCFGE P EvalCmd fac cfg
         (.inBlock t (c :: cs) tr σ f) emitted
         (.inBlock t cs tr σ' f)
   /-- Reuse a command-free control-flow `StepCFG` step; it emits no events. -/
   | step_admin :
-      StepCFG P (noCommandEvalE P CmdT) extendFactory fac cfg c c' →
-      StepCFGE P EvalCmd extendFactory fac cfg c [] c'
+      StepCFG P (noCommandEvalE P CmdT) fac cfg c c' →
+      StepCFGE P EvalCmd fac cfg c [] c'
 
 /--
 Event-trace multi-step execution for a deterministic CFG — the reflexive,
@@ -182,12 +179,11 @@ def StepCFGStarE
     [BEq l]
     (P : PureExpr)
     (EvalCmd : EvalCmdParamE P CmdT EventT)
-    (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
     (cfg : CFG l (DetBlock l CmdT P)) :
     CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop :=
-  ReflTransTrace (StepCFGE P EvalCmd extendFactory fac cfg)
+  ReflTransTrace (StepCFGE P EvalCmd fac cfg)
 
 /-! ## Bridge: EvalCmds and connector to per-command StepCFG
 
@@ -209,7 +205,6 @@ inductive EvalCmds
     EvalCmds P EvalCmdR δ σ (c :: cs) σ'' (failed || failed')
 
 abbrev StepDetCFGStar {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    (extendFactory : ExtendFactory P)
     (fac : P.Factory)
     (cfg : CFG String (DetBlock String (Cmd P) P)) :=
-  StepCFGStar P (EvalCmd P) extendFactory fac cfg
+  StepCFGStar P (EvalCmd P) fac cfg

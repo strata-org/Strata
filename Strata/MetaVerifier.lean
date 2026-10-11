@@ -90,9 +90,9 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
                  insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
                   ++ preSymbolicEvalPipelinePhases options
   -- Validate phase composition from Boole's guaranteed invariants (structured
-  -- bodies, no calls, no internal func decls).
+  -- bodies, no calls).
   let _ ← (ValidatedPipeline.ofListFrom
-              (factSet![.noCFGBodies, .noCalls, .noInternalFuncDecl]) phases).toOption
+              (factSet![.noCFGBodies, .noCalls]) phases).toOption
   -- The factory is seeded with Core.Factory so monomorphizeFunctions can look
   -- up built-in polymorphic functions.
   let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }

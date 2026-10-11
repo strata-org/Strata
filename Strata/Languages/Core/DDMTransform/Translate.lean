@@ -1752,7 +1752,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
          ordinary `init` evaluation provides the existing lexical capture.
       4. Registering the initialized name as a typed free variable makes every
          subsequent call an ordinary application of the Lambda-valued local.
-      5. done: no `Stmt.funcDecl` node or evaluator extension is needed.
+      5. done: no special statement node or evaluator extension is needed.
     -/
     let n := inputs.size
     let paramBindings := List.toArray <|
@@ -1762,9 +1762,9 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let body ← match bodya with
       | .option _ (.some bodyExpr) => translateExpr p bodyBindings bodyExpr
       | .option _ .none =>
-        -- Unreachable from Core concrete syntax: `funcDecl_statement` requires
-        -- `body : r`. Keep this legacy defensive arm for manually constructed
-        -- or stale CST values that still wrap the body in an `Option`.
+        -- Not reachable from Core concrete syntax: `funcDecl_statement` requires
+        -- `body : r`. This arm rejects a directly constructed CST value whose
+        -- body is `Option.none`.
         TransM.error s!"local function '{name.name}': body is required"
       | _ => translateExpr p bodyBindings bodya
     let lambda := inputs.foldr

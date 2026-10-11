@@ -252,9 +252,7 @@ def transformStmts (ss : List Statement)
   decreasing_by all_goals term_by_mem
 
 /-- Eliminate function preconditions from statement, adding assertions
-  at call sites (including in existing assertions and loop invariants).
-  Function declaration statements produce a well-formedness check block
-  mirroring the procedure created for top-level functions. -/
+  at call sites (including in existing assertions and loop invariants). -/
 def transformStmt (s : Statement)
     : CoreTransformM (Bool × List Statement) := do
   let F ← getFactory
@@ -316,30 +314,6 @@ def transformStmt (s : Statement)
       [.loop guard measure invariant (body' ++ measureAssertsEnd ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])
-  | .funcDecl decl md => do
-    let funcName := decl.name.name
-    -- Add function to factory before processing its preconditions/body
-    let func ← liftDiag ((Function.ofPureFunc decl).mapError Message.fromFormat)
-
-    let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-      | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-    let F' := F.push func.toLFunc notMem
-    setFactory F'
-    let decl' := { decl with preconditions := [] }
-    let hasPreconds := !decl.preconditions.isEmpty
-    if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
-
-    match mkFuncWFStmts F' funcName decl.preconditions decl.body md with
-    | none => return (hasPreconds, [.funcDecl decl' md])
-    | some wfStmts =>
-      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}" wfStmts.length
-      -- Add init statements for function parameters so they're in scope
-      let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty .nondet md
-      -- A `$$wf` block is always emitted here, so the program changed even when
-      -- the function itself had no preconditions (its body still calls a
-      -- precondition-carrying function).
-      return (true, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
@@ -493,9 +467,9 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- A CFG-bodied procedure is passed through untouched, so its
   -- well-formedness checks would go missing rather than fail; declaring the
   -- requirement turns that into a rejected pipeline.
-  -- A `funcDecl` statement becomes a block declaring the function's
-  -- parameters, which declares rather than reassigns, so
-  -- `staticSingleAssignment` survives. `noBetaRedexes` is not claimed: a
+  -- The pass only inserts assertion commands ahead of existing statements and
+  -- never introduces new assignments, so `staticSingleAssignment` survives.
+  -- `noBetaRedexes` is not claimed: a
   -- precondition is instantiated by substituting the call's arguments into it,
   -- and a function-typed parameter applied to an abstraction argument would
   -- leave a redex behind.
@@ -504,7 +478,7 @@ def precondElimPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       PrecondElim.precondElim prog
 

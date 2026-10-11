@@ -162,56 +162,6 @@ abbrev assumeEvents
     (checks : ListMap CoreLabel Procedure.Check) : Trace Expression :=
   Calls.assumeEvents fac σ checks
 
-/-! ### Closure Capture for Function Declarations -/
-
-/--
-Build a list of substitutions from the store for the given identifiers.
-Returns pairs of (identifier, value) for each identifier that has a value in the store.
--/
-@[expose] def buildSubstitutions (σ : CoreStore) (ids : List Expression.Ident) : List (Expression.Ident × Expression.Expr) :=
-  ids.filterMap (fun id =>
-    match σ id with
-    | some v => some (id, v)
-    | none => none)
-
-/--
-Apply closure capture to a function declaration by substituting current variable
-values into the function body and axioms. Variables that are function parameters
-are not substituted (they are bound, not free in the closure sense).
--/
-@[expose] def closureCapture
-    (σ : CoreStore) (decl : PureFunc Expression) : PureFunc Expression :=
-  let paramNames := decl.inputs.map (·.1)
-  -- Get free variables from body (if it exists), excluding parameters
-  let bodyFreeVars := match decl.body with
-    | some body => (HasFvars.getFvars body).filter (· ∉ paramNames)
-    | none => []
-  -- Get free variables from axioms, excluding parameters
-  let axiomFreeVars := decl.axioms.flatMap (fun ax =>
-    (HasFvars.getFvars ax).filter (· ∉ paramNames))
-  -- Combine and deduplicate
-  let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
-  -- Build substitutions from the store
-  let substs := buildSubstitutions σ allFreeVars
-  -- The replacement expressions must be closed (no dangling bvars).
-  { decl with
-    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
-    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
-
-/--
-Extend the factory with a new function definition by capturing the closure.
-The closure capture substitutes current variable values from the store into
-the function body and axioms. The returned factory handles applications of
-the newly declared function by substituting arguments into the captured body.
-
-Takes a parameter `φ` that specifies how to extend the factory with a captured
-closure (without the store, since closure capture is handled here).
--/
-@[expose] def EvalPureFunc (φ : Expression.Factory → PureFunc Expression → Expression.Factory) : Imperative.ExtendFactory Expression :=
-  fun fac σ decl =>
-    let capturedDecl := closureCapture σ decl
-    φ fac capturedDecl
-
 /-- Core-level small-step configuration. -/
 abbrev CoreConfig := Imperative.Config Expression Command
 
@@ -243,43 +193,49 @@ place `EvalCommand` in a non-strictly-positive position.
 
 mutual
 
-/-- IsReflexive-transitive closure of `StepStmt` for the Core language,
-    defined mutually with `EvalCommand` to satisfy strict positivity. -/
+/-- Reflexive-transitive closure of `StepStmt` for the Core language,
+    defined mutually with `EvalCommand` to satisfy strict positivity. The
+    immutable factory is carried by each configuration's environment and read
+    there by every step. -/
 inductive CoreStepStar
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     CoreConfig → CoreConfig → Prop where
-  | refl : CoreStepStar π φ c c
+  | refl : CoreStepStar π c c
   | step :
-    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    CoreStepStar π φ c₂ c₃ →
+    Imperative.StepStmt Expression (EvalCommand π) c₁ c₂ →
+    CoreStepStar π c₂ c₃ →
     ----
-    CoreStepStar π φ c₁ c₃
+    CoreStepStar π c₁ c₃
 
 /-- Execution of a procedure body. Only structured bodies have an executable
     semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
     `CoreBodyExec`.
 
+    The initial execution environment `ρ` is an explicit argument carrying the
+    store, active factory, and entry failure flag. The factory is immutable
+    during execution, so the body's output factory equals `ρ.factory`.
+
     For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
-    `funcDecl` extensions and other inner scoping introduced by the body do not
-    leak past the procedure boundary.  This wrapping mirrors
+    variable scoping introduced by the body does not leak past the procedure
+    boundary.  This wrapping mirrors
     `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline. -/
 inductive CoreBodyExec
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
-    Procedure.Body → CoreStore → Expression.Factory → CoreStore → Expression.Factory → Bool → Prop where
-  | structured :
-    CoreStepStar π φ
-      (.stmt (Stmt.block "" ss #[]) ⟨σ, fac, false⟩)
+    (π : String → Option Procedure) :
+    Procedure.Body → Env Expression → CoreStore → Bool → Prop where
+  | structured {ss ρ ρ'} :
+    CoreStepStar π
+      (.stmt (Stmt.block "" ss #[]) ρ)
       (.terminal ρ') →
-    CoreBodyExec π φ (.structured ss) σ fac ρ'.store ρ'.factory ρ'.hasFailure
+    CoreBodyExec π (.structured ss) ρ ρ'.store ρ'.hasFailure
 
-inductive EvalCommand (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+/-- Core command semantics. The first relation index `g` is the active
+    expression factory. -/
+inductive EvalCommand (π : String → Option Procedure) :
   Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {fac σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
+  | cmd_sem {g σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) g σ c σ' f →
     ----
-    EvalCommand π φ fac σ (CmdExt.cmd c) σ' f
+    EvalCommand π g σ (CmdExt.cmd c) σ' f
 
   /-- Arguments are matched positionally in three alignments: `inArgs`
       (`getInputExprs`) ↔ `p.header.inputs`; `lhs` (`getLhs`) ↔
@@ -287,18 +243,18 @@ inductive EvalCommand (π : String → Option Procedure) (φ : Expression.Factor
       `ListMap.keys p.header.getOutputOnlyParams`. The third alignment follows
       from the second because every inout formal is passed as `.inoutArg`. -/
   -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {σ n p callArgs σ' σ_final fac_final
-      bodyFailed preFailed postFailed md fac σAO} :
+  | call_sem {g σ n p callArgs σ' σ_final
+      bodyFailed preFailed postFailed md σAO} :
     π n = .some p →
-    CallEntry fac σ p callArgs σAO →
-    EvalChecks fac σAO
+    CallEntry g σ p callArgs σAO →
+    EvalChecks g σAO
       (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
-    CoreBodyExec π φ p.body σAO fac σ_final fac_final bodyFailed →
-    EvalChecks fac_final σ_final
+    CoreBodyExec π p.body ⟨σAO, g, false⟩ σ_final bodyFailed →
+    EvalChecks g σ_final
       (Procedure.Spec.getDefaultCheckExprs p.spec.postconditions) postFailed →
-    CallExit fac σ p callArgs σ_final σ' →
+    CallExit g σ p callArgs σ_final σ' →
     ----
-    EvalCommand π φ fac σ (CmdExt.call n callArgs md) σ'
+    EvalCommand π g σ (CmdExt.call n callArgs md) σ'
       ((preFailed || bodyFailed) || postFailed)
 
 end
@@ -310,47 +266,43 @@ end
 /-- Event-producing execution of a structured Core procedure body: the generic
     `BigStepE` at `Expression`. -/
 abbrev CoreBodyExecE
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
-    Procedure.Body → CoreStore → Expression.Factory → CoreStore →
-      Expression.Factory → Trace Expression → Prop :=
-  BigStepE π (EvalPureFunc φ)
+    (π : String → Option Procedure) :
+    Procedure.Body → Env Expression → CoreStore → Trace Expression → Prop :=
+  BigStepE π
 
 /-- Event-producing Core command semantics: the generic `EvalCmdExtE` at
     `Expression`.  Base commands delegate to `EvalCmdE`; a procedure call emits
     its non-free preconditions as assertions, runs its body run-to-completion,
-    and emits its non-free postconditions as assertions. -/
+    and emits its non-free postconditions as assertions.  The expression factory
+    is immutable, so a call runs its body from the entry environment and
+    interprets every contract clause at the active factory. -/
 abbrev EvalCommandE
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
-  EvalCmdExtE π (EvalPureFunc φ)
+  EvalCmdExtE π
 
 /-- Reflexive-transitive Core statement execution with chronological events. -/
 abbrev CoreStepStarE
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
-  StepStmtExtStarE π (EvalPureFunc φ)
+    (π : String → Option Procedure) :=
+  StepStmtExtStarE π
 
 /-- Core-level event-producing single-step relation. -/
 abbrev CoreStepE
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
-  StepStmtExtE π (EvalPureFunc φ)
+    (π : String → Option Procedure) :=
+  StepStmtExtE π
 
 /-- Core-level single-step relation. -/
 abbrev CoreStep
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
-  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+    (π : String → Option Procedure) :=
+  Imperative.StepStmt Expression (EvalCommand π)
 
-abbrev EvalStatement (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatement (π : String → Option Procedure) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommand π)
 
-abbrev EvalStatements (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatements (π : String → Option Procedure) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommand π)
 
 /-! ## Old-variable environment augmentation -/
 
@@ -374,7 +326,7 @@ def withOldBindings
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .block _ _ _ inner, aid => coreIsAtAssert inner aid
+  | .block _ _ inner, aid => coreIsAtAssert inner aid
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False
 
@@ -413,13 +365,13 @@ abbrev EvalCommandContractE (π : String → Option Procedure) :
     Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
   EvalCmdExtContractE π
 
-abbrev EvalStatementContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatementContract (π : String → Option Procedure) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommandContract π)
 
-abbrev EvalStatementsContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatementsContract (π : String → Option Procedure) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommandContract π)
 
 end Core
 

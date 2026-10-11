@@ -152,28 +152,30 @@ mutual
     bodies have an execution; the body is wrapped in `Stmt.block "" ss #[]` so
     that inner scoping (e.g. `funcDecl`s) does not leak past the call. -/
 inductive BigStepE
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (δ : ExtendFactory P) :
-    Body P (CmdExt P) → SemanticStore P → P.Factory → SemanticStore P → P.Factory →
-      Trace P → Prop where
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
+    Body P (CmdExt P) → Env P → SemanticStore P → Trace P → Prop where
   | structured :
-      ReflTransTrace (StepStmtE P (EvalCmdExtE π δ) δ)
-        (.stmt (Stmt.block "" ss #[]) ⟨σ, fac, false⟩)
+      ReflTransTrace (StepStmtE P (EvalCmdExtE π))
+        (.stmt (Stmt.block "" ss #[]) ρ)
         emitted
         (.terminal ρ') →
       ----
-      BigStepE π δ (.structured ss) σ fac ρ'.store ρ'.factory emitted
+      BigStepE π (.structured ss) ρ ρ'.store emitted
 
 /-- Event-producing command semantics of `CmdExt P`.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the
     callee entry frame, executes its body from that frame, and emits its non-free
-    postconditions as assertions at the callee's final frame. -/
+    postconditions as assertions at the callee's final frame.  The expression
+    factory is immutable, so a call runs its body from the entry environment
+    `⟨σAO, fac, false⟩` and interprets every contract clause at the active
+    factory `fac`. -/
 inductive EvalCmdExtE
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (δ : ExtendFactory P) :
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     P.Factory → SemanticStore P → CmdExt P → SemanticStore P → Trace P → Prop where
   | cmd_sem {fac σ c σ' emitted} :
       EvalCmdE (P := P) fac σ c σ' emitted →
       ----
-      EvalCmdExtE π δ fac σ (.cmd c) σ' emitted
+      EvalCmdExtE π fac σ (.cmd c) σ' emitted
 
   /-- Arguments are matched positionally in three alignments:
       `Calls.getInputExprs callArgs` ↔ `ProcedureHeader.inputParams p.header`;
@@ -182,16 +184,16 @@ inductive EvalCmdExtE
       alignment follows from the second because every inout formal is passed as
       `.inoutArg`. -/
   -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {σ n p callArgs σ' σ_final fac_final bodyEvents md fac σAO} :
+  | call_sem {σ n p callArgs σ' σ_final bodyEvents md fac σAO} :
       π n = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
-      BigStepE π δ p.body σAO fac σ_final fac_final bodyEvents →
+      BigStepE π p.body ⟨σAO, fac, false⟩ σ_final bodyEvents →
       Calls.CallExit fac σ p callArgs σ_final σ' →
       ----
-      EvalCmdExtE π δ fac σ (.call n callArgs md) σ'
+      EvalCmdExtE π fac σ (.call n callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO p.spec.preconditions ++
           bodyEvents ++
-          Calls.defaultAssertEvents fac_final σ_final p.spec.postconditions)
+          Calls.defaultAssertEvents fac σ_final p.spec.postconditions)
 
 end
 
@@ -226,13 +228,13 @@ inductive EvalCmdExtContractE [HasVal P]
 /-- Reflexive-transitive statement execution over the call-aware command relation,
     with chronological events. -/
 abbrev StepStmtExtStarE
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (δ : ExtendFactory P) :=
-  ReflTransTrace (StepStmtE P (EvalCmdExtE π δ) δ)
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :=
+  ReflTransTrace (StepStmtE P (EvalCmdExtE π))
 
 /-- One statement step over the call-aware command relation. -/
 abbrev StepStmtExtE
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) (δ : ExtendFactory P) :=
-  StepStmtE P (EvalCmdExtE π δ) δ
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :=
+  StepStmtE P (EvalCmdExtE π)
 
 end
 

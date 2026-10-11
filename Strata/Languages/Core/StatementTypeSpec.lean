@@ -27,7 +27,7 @@ enclosing block). The relations are 6-place: `C Γ L stmt C' Γ'`.
 A block (and each `ite`/`loop` branch) is lexically scoped: bindings and
 `typeDecl`s made inside it are block-local and its output context is its input
 `C, Γ`. Only top-level `typeDecl` statements extend `C` for subsequent
-statements. Legacy `funcDecl` statement nodes have no typing rule.
+statements.
 
 ### Labels
 

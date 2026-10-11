@@ -80,7 +80,6 @@ def Stmt.liftInitsInLoopBody {P : PureExpr}
       (ths ++ ehs, [.ite g tss' ess' md])
   | .loop g m inv body md => ([], [.loop g m inv body md])
   | .exit lbl md => ([], [.exit lbl md])
-  | .funcDecl d md => ([], [.funcDecl d md])
   | .typeDecl t md => ([], [.typeDecl t md])
   termination_by sizeOf s
 
@@ -117,7 +116,6 @@ def Stmt.hoistLoopPrefixInits {P : PureExpr}
       let (havocs, body₂) := Block.liftInitsInLoopBody body₁
       havocs.map Stmt.cmd ++ [.loop g m inv body₂ md]
   | .exit lbl md => [.exit lbl md]
-  | .funcDecl d md => [.funcDecl d md]
   | .typeDecl t md => [.typeDecl t md]
   termination_by sizeOf s
 
@@ -179,7 +177,6 @@ private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
       simp only [Stmt.initVars_loop]
       exact Block.initVars_eq_nil_of_noInitsAnywhere bss h
   | .exit lbl md => simp [Stmt.initVars]
-  | .funcDecl d md => simp [Stmt.initVars]
   | .typeDecl t md => simp [Stmt.initVars]
   termination_by sizeOf s
 
@@ -216,7 +213,6 @@ theorem Stmt.noInitsAnywhere_of_initVars_nil [HasFvars P]
       rw [Stmt.initVars_loop] at h; simp only [Stmt.noInitsAnywhere]
       exact Block.noInitsAnywhere_of_initVars_nil bss h
   | .exit lbl md => simp [Stmt.noInitsAnywhere]
-  | .funcDecl d md => simp [Stmt.noInitsAnywhere]
   | .typeDecl t md => simp [Stmt.noInitsAnywhere]
   termination_by sizeOf s
 

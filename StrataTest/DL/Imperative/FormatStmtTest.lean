@@ -152,15 +152,6 @@ info: while
 /-- info: exit target -/
 #guard_msgs in #eval format (Stmt.exit "target" .empty : S)
 
--- 15. funcDecl
-/-- info: funcDecl <function> -/
-#guard_msgs in
-#eval format (Stmt.funcDecl
-  ({ name := ⟨"f", ()⟩,
-     inputs := [("a", LTy.forAll [] .int)],
-     output := LTy.forAll [] .int,
-     body := some x } : PureFunc Expression) .empty : S)
-
 -- 16. formatBlock: empty
 /-- info: {} -/
 #guard_msgs in #eval format ([] : Ss)

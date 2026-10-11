@@ -29,9 +29,8 @@ This pass runs in `corePipelinePhases` after:
   type annotation the type checker attaches to the `.op` node.  Before type
   checking, `f`'s call sites carry `f`'s generic arrow (e.g. `a → a`); only after
   it do they carry the instantiated arrow (e.g. `int → int`).
-- `assertNoInternalFuncDecl`: rejects legacy internal function AST nodes, so all
-  functions reaching this pass are `Decl.func` / `Decl.recFuncBlock`
-  declarations at the top level.
+- Functions are represented by top-level `Decl.func` / `Decl.recFuncBlock`
+  declarations.
 
 ## How it works (worklist)
 
@@ -551,12 +550,12 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
     -- A call inside a polymorphic procedure can instantiate a function at that
     -- procedure's type parameter, which is not a concrete type to specialize at,
     -- so the procedures must be monomorphic first.
-    (requires := factSet![.noInternalFuncDecl, .noPolymorphicProcedures])
+    (requires := factSet![.noPolymorphicProcedures])
     (establishes := factSet![.noPolymorphicFunctions])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .typeAnnotated])
     fun prog => monomorphizeFunctions prog
 

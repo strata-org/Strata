@@ -652,9 +652,8 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
 
 /-- Build an evaluation environment from a program.
     Loads the factory, datatypes, and processes all declarations.
-    When `registerCustomFunctions` is true, also loads function declarations,
-    distinct constraints, and local function declarations from procedure
-    bodies into the factory (needed for SMT encoding). -/
+    When `registerCustomFunctions` is true, also loads function declarations
+    and distinct constraints into the factory (needed for SMT encoding). -/
 def buildEnv (options : VerifyOptions) (program : Program)
     (factory : Lambda.Factory CoreLParams)
     (registerCustomFunctions : Bool := false) :
@@ -673,16 +672,6 @@ def buildEnv (options : VerifyOptions) (program : Program)
         validateCasesTypes funcs E.datatypes
         for func in funcs do E ← E.addFactoryFunc func.toLFunc
       | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
-      | .proc proc _ =>
-        let stmts := match proc.body with
-          | .structured ss => ss
-          -- CFG bodies cannot contain local function declarations;
-          -- funcDecl is a structured statement-level construct only.
-          | .cfg _ => []
-        for stmt in stmts.flatMap collectFuncDecls do
-          match E.exprEnv.addFactoryFunc stmt with
-          | .ok σ' => E := { E with exprEnv := σ' }
-          | .error _ => pure ()
       | _ => pure ()
 
   -- Collect declaration statistics
@@ -697,17 +686,6 @@ def buildEnv (options : VerifyOptions) (program : Program)
     ({} : Statistics)
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
   return (E, stats)
-where
-  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
-    | .funcDecl decl _ => [{
-        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
-        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-        body := decl.body, attr := decl.attr, axioms := decl.axioms }]
-    | .block _ ss _ => ss.flatMap collectFuncDecls
-    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
-    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
-    | _ => []
 
 /-- Pre-compute the per-constructor axioms for a recursive function with a
     `@[cases]` parameter and store them in the function's `axioms` field.
@@ -1512,8 +1490,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 
     The procedure filter comes first, then the entry shape assertions — which
     turn throws from inside `runProgram` into rejections naming the facts — so
-    every statement-level transform after them may rely on structured bodies
-    with no legacy internal function declarations. -/
+    every statement-level transform after them may rely on structured bodies. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
@@ -1527,9 +1504,8 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | none => []
   -- The filter runs before the entry assertions, because both facts are
   -- properties of every declaration: a caller naming structured procedures to
-  -- verify should not be refused for an excluded CFG body or legacy internal
-  -- function declaration.
-  filterPhases ++ [assertNoCFGBodiesPhase, assertNoInternalFuncDeclPhase,
+  -- verify should not be refused for an excluded CFG body.
+  filterPhases ++ [assertNoCFGBodiesPhase,
       callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -1547,7 +1523,7 @@ def typeCheckPipelinePhase
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog => do
       match Core.typeCheck options prog factory with
@@ -1572,7 +1548,7 @@ def symbolicEvalPipelinePhase
     (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
@@ -1629,7 +1605,7 @@ def corePipelinePhases
 def backEndRequiredFacts : ProgramFactSet :=
   factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
            .noBetaRedexes, .noPrecondsFromFuncs, .hasObligationForm,
-           .noInternalFuncDecl, .noPolymorphicProcedures, .noPolymorphicFunctions,
+           .noPolymorphicProcedures, .noPolymorphicFunctions,
            .typeAnnotated]
 
 /-- The Core pipeline, checked as it is assembled: the phase list built from

@@ -165,29 +165,6 @@ end Tests
 
 ---------------------------------------------------------------------
 
-section FuncDeclTests
-
-open Std (ToFormat Format format)
-open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
-open Imperative (PureFunc)
-
-private def legacyIdentityFunc : PureFunc Expression :=
-  { name := ⟨"identity", ()⟩,
-    inputs := [(⟨"x", ()⟩, .forAll [] .int)],
-    output := .forAll [] .int,
-    body := some eb[x] }
-
-/- Legacy `.funcDecl` AST nodes are rejected rather than type-checked or added
-   to the ambient function context. Core concrete syntax lowers local functions
-   to Lambda-valued variable initializations before statement type checking. -/
-/-- info: error: Internal function declaration statements are not supported by Core statement type checking. -/
-#guard_msgs in
-#eval do
-  let ans ← typeCheck LContext.default TEnv.default Program.init none
-    [.funcDecl legacyIdentityFunc .empty]
-  return format ans.fst
-
-end FuncDeclTests
 
 section NondetCondTests
 

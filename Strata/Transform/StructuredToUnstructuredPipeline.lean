@@ -46,7 +46,6 @@ structure PipelinePre {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) : Prop where
-  h_nofd : Block.noFuncDecl ss = true
   h_lhni : Block.loopHasNoInvariants ss = true
   h_nml : Block.noMeasureLoops ss = true
   h_unique : Block.uniqueInits ss

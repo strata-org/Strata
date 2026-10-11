@@ -119,14 +119,6 @@ inductive ProgramFact where
       Required by the back end, whose obligation extraction handles only bodies
       of this shape. Also required by `UnrollBoundedQuantifiers`. -/
   | hasObligationForm
-  /-- No procedure body declares a function. Checked by the default pipeline's
-      `assertNoInternalFuncDecl` phase: Core concrete syntax lowers local
-      functions to Lambda-valued initializations, while a direct AST caller may
-      still construct the legacy `Stmt.funcDecl` node. Required by
-      `MonomorphizeFunctions`, which specializes only top-level function
-      declarations, and by the back end, which has no encoding for a function
-      declared inside a body. -/
-  | noInternalFuncDecl
   /-- No procedure carries type parameters. Established by
       `MonomorphizeProcedures`, which specializes each polymorphic procedure and
       clears `header.typeArgs`. Required by the back end: SMT has no
@@ -192,7 +184,6 @@ def ProgramFact.name : ProgramFact → String
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
   | .noNondetGuards => "noNondetGuards"
   | .hasObligationForm => "hasObligationForm"
-  | .noInternalFuncDecl => "noInternalFuncDecl"
   | .noPolymorphicProcedures => "noPolymorphicProcedures"
   | .noPolymorphicFunctions => "noPolymorphicFunctions"
   | .typeAnnotated => "typeAnnotated"
@@ -207,7 +198,7 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
    .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-   .hasObligationForm, .noInternalFuncDecl, .noPolymorphicProcedures,
+   .hasObligationForm, .noPolymorphicProcedures,
    .noPolymorphicFunctions, .typeAnnotated]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
@@ -251,7 +242,6 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noPrecondsFromFuncs => some Program.noFuncPreconditions
   | .noNondetGuards => some (Program.allStatements Imperative.Block.noNondetGuards)
   | .hasObligationForm => some (Program.allStatements Statements.hasObligationForm)
-  | .noInternalFuncDecl => some (Program.allStatements Statements.noFuncDecls)
   | .noPolymorphicProcedures => some Program.noPolymorphicProcedures
   | .noPolymorphicFunctions => some Program.noPolymorphicFunctions
   | .typeAnnotated => none
@@ -274,8 +264,6 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     fun p => Program.allStatements Imperative.Block.noNondetGuards p = true
   | .hasObligationForm =>
     fun p => Program.allStatements Statements.hasObligationForm p = true
-  | .noInternalFuncDecl =>
-    fun p => Program.allStatements Statements.noFuncDecls p = true
   | .noPolymorphicProcedures => fun p => Program.noPolymorphicProcedures p = true
   | .noPolymorphicFunctions => fun p => Program.noPolymorphicFunctions p = true
   | .typeAnnotated => fun p => Program.allExprs Lambda.LExpr.fullyAnnotated p = true

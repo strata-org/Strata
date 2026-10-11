@@ -193,9 +193,6 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .funcDecl _ md =>
-          .error <| md.toDiagnosticF
-            "Internal function declaration statements are not supported by Core statement type checking."
         | .typeDecl tc md => do try
           -- Add the type to the context. Shadowing is not allowed: if a
           -- type with the same name was already declared (at the program
@@ -247,11 +244,7 @@ def Command.subst (S : Subst) (c : Command) : Command :=
 /--
 Apply type substitution `S` to a statement.
 
-Note: This substitutes type variables in types, not term variables. For
-`funcDecl`, the input identifiers (term-level names like `x`, `y`) are
-unchanged; only the types of those inputs are substituted. There is no
-name collision concern between type variables in `S` and term-level
-input identifiers.
+Note: This substitutes type variables in types, not term variables.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
@@ -265,13 +258,6 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       (m.map (LExpr.applyTypeSubst · S))
       (i.map (fun (l, e) => (l, e.applyTypeSubst S))) (go S bss []) md
   | .exit _ _ => s
-  | .funcDecl decl md =>
-    let decl' := { decl with
-      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
-      output := Lambda.LTy.subst S decl.output,
-      body := decl.body.map (·.applyTypeSubst S),
-      axioms := decl.axioms.map (·.applyTypeSubst S) }
-    .funcDecl decl' md
   | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=

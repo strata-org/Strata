@@ -389,7 +389,6 @@ statement. -/
      | Core.Decl.func f _md => f.preconditions.isEmpty
      | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
      | _ => true)
-    && Statements.funcDeclsNoPreconditions d.statements
 
 /-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
     `header.typeArgs`, which is what `MonomorphizeProcedures` clears; the opaque
@@ -409,7 +408,6 @@ statement. -/
      | Core.Decl.func f _md => f.typeArgs.isEmpty
      | Core.Decl.recFuncBlock fs _md => fs.all (·.typeArgs.isEmpty)
      | _ => true)
-    && Statements.funcDeclsMonomorphic d.statements
 
 /-- Is `d` a procedure with a structured body, or not a procedure at all? -/
 @[expose] def Decl.isStructuredOrNonProc (d : Decl) : Bool :=

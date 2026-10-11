@@ -81,12 +81,12 @@ theorem Lambda.LExpr.evalFully_outputs_canonical (f : Expression.Factory)
     agree on all free variables of an expression, `evalFully` produces the same
     result. This is the `WellFormedSemanticEvalExprCongr` property for Core. -/
 theorem coreEvaluator_WellFormedSemanticEvalExprCongr (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f) :
+    (hWF : Lambda.FactoryWF f) :
     WellFormedSemanticEvalExprCongr (P := Expression) f := by
   intro e σ σ' _h_wfs h_wfs' hagree
   exact Lambda.evalFully_env_congr
     (fun a b h => by cases a; cases b; simp_all)
-    f σ σ' hWF hClosed
+    f σ σ' hWF
     (fun x v hx => Lambda.isCanonicalValue_getVars_nil f v (h_wfs' x v hx))
     e hagree
 
@@ -754,7 +754,7 @@ theorem coreEval_intAdd_numeral (σ : CoreStore) (yv : Expression.Expr) (n : Int
     (phrased via the `fvar` pattern) for Core, because
     `HasFvar.getFvar (.fvar _ v _) = some v`. -/
 theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f) :
+    (hWF : Lambda.FactoryWF f) :
     WellFormedSemanticEvalRename (P := Expression) f := by
   intro e σ' sm hwfs hVarsDef
   have hIdent : ∀ a b : CoreIdent, a.name = b.name → a = b := by
@@ -783,31 +783,31 @@ theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
   show Lambda.LExpr.evalFully f σ' (Lambda.LExpr.substFvars e sm)
       = Lambda.LExpr.evalFully f (substStoreExpr σ' sm) e
   rw [hpb]
-  exact Lambda.rename_commute hIdent f σ' hWF hClosed hwfs' sm hVar' hTgt' e
+  exact Lambda.rename_commute hIdent f σ' hWF hwfs' sm hVar' hTgt' e
 
 /-!
 ## Instance of the full `WellFormedSemanticEval` bundle
 --/
 
 def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f)
+    (hWF : Lambda.FactoryWF f)
     (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func)
     (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func) :
     Imperative.WellFormedSemanticEval (P := Expression) f where
   bool := coreEvaluator_WellFormedSemanticEvalBool f hBN
   val := coreEvaluator_WellFormedSemanticEvalVal f
   var := coreEvaluator_WellFormedSemanticEvalVar f
-  exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF hClosed
+  exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF
   int := coreEvaluator_WellFormedSemanticEvalInt f hILt
   mono := coreEvaluator_WellFormedSemanticEvalMono f
-  rename := coreEvaluator_WellFormedSemanticEvalRename f hWF hClosed
+  rename := coreEvaluator_WellFormedSemanticEvalRename f hWF
 
 /-- Specialization of `coreEvaluator_WellFormedSemanticEval` to the concrete
     `Core.Factory`, which is unconditionally well-formed and resolves
     `Bool.Not` to `boolNotFunc` and `Int.Lt` to `intLtFunc`. -/
 theorem coreFactory_WellFormedSemanticEval :
     Imperative.WellFormedSemanticEval (P := Expression) Core.Factory :=
-  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf Core.Factory_closed
+  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf
     coreFactory_boolNot coreFactory_intLt
 
 end Core

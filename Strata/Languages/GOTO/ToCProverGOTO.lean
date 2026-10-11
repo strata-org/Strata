@@ -23,7 +23,10 @@ The following Imperative constructs are not yet fully translated to GOTO:
 - (none — all commands are now handled)
 
 ### Statements (`Stmt`)
-- **`funcDecl`**: Returns an error. Local function declarations are not supported.
+- **function-typed local variables**: An `init` whose value is a `Lambda`
+  abstraction — as produced when internal `function` syntax is lowered —
+  returns an error; GOTO has no first-class functions. Translating the
+  abstraction value (`.abs`) or its arrow type fails.
 - **`loop` invariant/measure**: Loop invariants are emitted as
   `#spec_loop_invariant` and decreases clauses as `#spec_decreases`
   named sub-expressions on the backward-edge GOTO instruction's guard,
@@ -380,9 +383,6 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let (trans, idx) := emitUncondGoto srcLoc trans
     return { trans with pendingExits := (idx, label) :: trans.pendingExits }
 
-  | .funcDecl _decl _md =>
-    -- Function declarations are not yet supported in GOTO translation
-    .error "funcDecl: Unimplemented statement."
   | .typeDecl _tc _md =>
     -- Type declarations are not yet supported in GOTO translation
     .error "typeDecl: Unimplemented statement."
