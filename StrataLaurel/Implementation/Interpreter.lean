@@ -2173,13 +2173,19 @@ partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Proced
     | b => match b.implementation with
       | some body => pure body
       | none => do
-          -- No body: every output is unconstrained, so it answers its type's
-          -- default, except an in-out parameter, which keeps its argument.
-          let index := (← get).index
-          return proc.outputs.toArray.map fun o =>
-            match (proc.inputs.zip argVals).find? (·.1.name.text == o.name.text) with
-            | some (_, v) => v
-            | none => defaultValue index o.type.val
+          -- The procedure stands for code outside the program, so whatever a call to it
+          -- could change is that code's to determine, not this interpreter's to pick as it
+          -- picks an unassigned local.
+          let undetermined :=
+            (proc.outputs.head?.map fun o => s!"its output '{o.name.text}'") <|>
+            (if (bodyModifies b).any (!·.targets.isEmpty) then
+              some "the state its `modifies` clause names" else none) <|>
+            (proc.writesGlobals.head?.map fun g => s!"the global '{g.text}' it writes") <|>
+            (if proc.throwsType.isSome then some "whether it throws" else none)
+          if let some what := undetermined then
+            evalError s!"procedure '{proc.name.text}' has no implementation, so {what} is \
+                         undetermined"
+          return #[]
   let withParams : StackFrame :=
     (proc.inputs.zip argVals).foldl
       (fun acc (param, v) => acc.insert param.name.text v) {}

@@ -8,7 +8,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
--- No interpreters: `multipleReturns` has no body; the Laurel interpreter returns 0s that violate its `ensures`, and Core says "condition did not reduce to bool".
+-- No interpreters: `multipleReturns` has no body, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
