@@ -131,7 +131,6 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          # search/ pages resolve their assets through <base href>, which lychee ignores.
           args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/search/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
           fail: true
       - name: Check for broken links (html-multi)
