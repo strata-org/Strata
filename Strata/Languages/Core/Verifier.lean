@@ -1713,8 +1713,10 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     else
-      let counterVal ← counter.get
-      counter.set (counterVal + 1)
+      -- Claim the number atomically: under `--parallel N` several worker tasks call this
+      -- concurrently with the same `counter`, and a separate `get`/`set` lets two of them
+      -- read the same value, write the same file and solve each other's query.
+      let counterVal ← counter.modifyGet fun n => (n, n + 1)
       let filename := tempDir / s!"{SMT.sanitizeFilenameCapped label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
@@ -1846,7 +1848,18 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     return .ok result
 
 /-- Dispatch solver jobs using a bounded worker pool. Workers pull from a shared
-    queue; results returned in original order. -/
+    queue; results returned in original order.
+
+    Each worker task gets its own `PipelineContext.fork` of `pctx`: the context's
+    phase-tracking refs are not thread-safe (see `Strata/Pipeline/Context.lean`),
+    so sharing `pctx` itself lets concurrent `withPhase` calls corrupt its phase
+    stack. A fork shares `pctx`'s messages and metrics handle, so diagnostics and
+    JSONL metrics from discharge still reach the caller, tagged with the caller's
+    phase path. Forks do not print phase lines, so per-obligation phases are not
+    printed under `--profile` (a `--verbose` caller still sees worker diagnostics
+    on stderr). After the pool finishes, `joinForks` credits the pool's
+    wall-clock time to the caller's enclosing phase (`vcDischarge`), so its
+    metrics have the same shape as a sequential run's. -/
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
@@ -1856,7 +1869,7 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
   let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
   let resultMap ← IO.mkRef ({} : Std.HashMap Nat (Except Message VCResult))
   let shouldStop ← IO.mkRef false
-  let workerFn : IO Unit := do
+  let workerFn (workerCtx : PipelineContext) : IO Unit := do
     let mut running := true
     while running do
       if ← shouldStop.get then break
@@ -1867,21 +1880,27 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
       match entry with
       | none => running := false
       | some (job, idx) =>
-        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge pctx
+        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge workerCtx
         resultMap.modify (·.insert idx result)
         if options.stopOnFirstError then
           match result with
           | .ok r => if r.isNotSuccess then shouldStop.set true
           | .error _ => shouldStop.set true
   let numWorkers := min workers jobs.length
-  let workerTasks ← (List.range numWorkers).mapM fun _ =>
-    IO.asTask (prio := .dedicated) workerFn
+  -- Fork on this thread, before any worker starts, so the forks see a stable
+  -- phase on `pctx`.
+  let workerCtxs ← (List.range numWorkers).mapM fun _ => (pctx.fork : BaseIO _)
+  let poolStartNs ← IO.monoNanosNow
+  let workerTasks ← workerCtxs.mapM fun workerCtx =>
+    IO.asTask (prio := .dedicated) (workerFn workerCtx)
   -- Join all tasks before throwing to prevent orphaned processes
   let mut firstError : Option IO.Error := none
   for task in workerTasks do
     match task.get with
     | .ok () => pure ()
     | .error e => if firstError.isNone then firstError := some e
+  let poolElapsedNs := (← IO.monoNanosNow) - poolStartNs
+  pctx.joinForks workerCtxs poolElapsedNs
   if let some e := firstError then throw e
   let rmap ← resultMap.get
   let mut results : List (Option (Except Message VCResult)) := []
