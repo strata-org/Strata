@@ -38,6 +38,7 @@ preserves it, and leaving a block projects only the store. -/
 structure Env (P : PureExpr) where
   /-- The current variable store. -/
   store : SemanticStore P
+  /-- The read-only expression factory used to evaluate expressions. -/
   factory : P.Factory
   /-- Cumulative failure flag — `true` once any command has signalled failure. -/
   hasFailure : Bool := false

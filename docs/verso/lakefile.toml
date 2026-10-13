@@ -1,6 +1,9 @@
 name = "StrataDoc"
 defaultTargets = ["ddm", "langdef", "langsem", "laureldesign", "laurelimpl", "laurelguide", "transforms", "irtranslation"]
 
+[leanOptions]
+warningAsError = true
+
 [[require]]
 name = "Strata"
 path = "../.."
