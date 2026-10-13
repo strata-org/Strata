@@ -36,8 +36,9 @@ Also here:
     rather than a combination of its own: a transparent body is restricted to the
     statement language `MergeAndLiftReturns` accepts, which has no `throw`.
 
-The escape rules for the declaration — no-escape and the subtype upper bound —
-are rejections, so they live in `Resolution/Exceptions/ThrowsEscape.lean`.
+The subtype upper bound of the declaration is a rejection, so it lives in
+`Resolution/Exceptions/ThrowsEscape.lean`; an escape from a procedure without one
+is in `UncaughtExceptions.lean`.
 
 Each case that can be run has an `entry` and runs under the verifier and the Laurel
 interpreter. A case that throws a composite skips the Core interpreter, which does

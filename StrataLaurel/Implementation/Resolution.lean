@@ -5516,9 +5516,10 @@ private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
       | _ => pure n)
     operand |>.run []).2
 Static "check, don't trust" analysis: a procedure
-that does not declare `throws` must not let any exception escape, and one that
-declares `throws T` must only let exceptions whose type is a subtype of `T`
-escape.
+that declares `throws T` must only let exceptions whose type is a subtype of `T`
+escape. (A procedure that declares no `throws` is not checked statically: an
+exception escaping it is a verification obligation, asserted by
+`EliminateExceptions` at the escape site.)
 
 `exceptionEscapes` over-approximates the set of exception types that can leave a
 statement uncaught. A `try` removes a body type only when some `catch` clause
@@ -5776,8 +5777,8 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
 
-/-- Stable substrings that identify the two `checkProcedureThrows` escape
-    diagnostics. Referenced BOTH by the producer below (woven into each message)
+/-- Stable substring that identifies the `checkProcedureThrows` escape
+    diagnostic. Referenced BOTH by the producer below (woven into the message)
     and by the pipeline's re-resolution classifier (`isExceptionContract` in
     `LaurelCompilationPipeline`), which must recognize a deferred poly-throws
     escape surfacing post-monomorphization and pass it through as the user error
@@ -5785,13 +5786,13 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
     literal makes that cross-module match a compile-time guarantee: rewording a
     message can't silently desync the classifier (the alternative — matching by
     `MessageKind` — can't work, since a genuine dangling-ref error is also a
-    `.userError`). Both fragments are interpolation-free, so they survive changes
+    `.userError`). The fragment is interpolation-free, so it survives changes
     to the surrounding prose. -/
-def escapeUndeclaredMarker : String := "may let an exception of type"
 def escapeNotSubtypeMarker : String := "is not a subtype of its declared"
 
-/-- Check one procedure's body against its `throws` declaration:
-    no-escape when nothing is declared, subtype upper-bound when `throws T` is. -/
+/-- Check one procedure's body against its `throws` declaration: the subtype
+    upper-bound when `throws T` is declared. (Without one, `EliminateExceptions`
+    asserts at each escape that it does not happen.) -/
 private def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
     (displayName : String) (proc : Procedure) : List Message :=
   let body? := match proc.body with
@@ -5801,14 +5802,10 @@ private def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
   match body? with
   | none => []
   | some body =>
-    let escs := exceptionEscapes model lattice body
     match proc.throwsType with
-    | none =>
-      escs.map (fun (ty, src) =>
-        diagnosticFromSource src
-          s!"procedure '{displayName}' {escapeUndeclaredMarker} '{formatType ty}' escape; catch it with a `try`/`catch` or declare a `throws` clause"
-          MessageKind.userError)
+    | none => []
     | some declared =>
+      let escs := exceptionEscapes model lattice body
       escs.filterMap (fun (ty, src) =>
         if isSubtype lattice ty declared then none
         else some (diagnosticFromSource src
@@ -7392,8 +7389,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- `validateFullyAnnotated`). Unconditional: re-resolutions check that
   -- lowering passes preserve the invariant too.
   let annotationBugs := validateFullyAnnotated program'
-  -- Exception contract enforcement: catch-or-declare (`validateExceptionEscapes`)
-  -- plus the "not yet lowerable" source-shape guards
+  -- Exception contract enforcement: the declared `throws` upper bound
+  -- (`validateExceptionEscapes`) plus the "not yet lowerable" source-shape guards
   -- (`validateExceptionLowerability`).
   --
   -- The escape check (`validateExceptionEscapes`) runs on EVERY resolution, not

@@ -142,7 +142,7 @@ def laurelPipeline : Array LoweringPass := #[
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
-  -- Note: the exception contract checks (catch-or-declare, plus the
+  -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
@@ -284,14 +284,13 @@ private def runLaurelPasses
         -- post-`MonomorphizeComposites`, where the clone's throws type is concrete and an
         -- `int </: bool` escape surfaces as a NEW `.userError` (from `checkProcedureThrows`).
         -- Wrapping it as an internal `.strataBug` would misblame the compiler for the user's
-        -- unsound throws contract, so pass these through unchanged. The two markers are the
-        -- SAME string constants `checkProcedureThrows` weaves into its two diagnostics, so this
+        -- unsound throws contract, so pass these through unchanged. The marker is the
+        -- SAME string constant `checkProcedureThrows` weaves into its diagnostic, so this
         -- cross-module match is compile-time-guaranteed to stay in sync — rewording a message
         -- can't silently desync the classifier. (Matching on `MessageKind` instead cannot work:
         -- a genuine dangling-ref failure is also a `.userError`.)
         let isExceptionContract (d : Message) : Bool :=
           (d.message.splitOn escapeNotSubtypeMarker).length > 1
-            || (d.message.splitOn escapeUndeclaredMarker).length > 1
         let asStrataBug (d : Message) : Message :=
           { d with
               message :=

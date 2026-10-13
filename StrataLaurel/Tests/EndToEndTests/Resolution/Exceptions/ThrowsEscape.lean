@@ -10,24 +10,23 @@ open StrataTest.Util
 open Strata
 
 /-
-Catch-or-declare enforcement — the "check, don't trust" half of the exceptional
+Declared-`throws` enforcement — the "check, don't trust" half of the exceptional
 contract. Clause typing is `ThrowsContractTyping.lean`; the same analysis applied to
 instance methods is `ThrowsEscapeMethods.lean`.
 
-The rule has two directions, and both are checked on the program as authored, during
-resolution:
-  * a procedure that declares no `throws` may not let any exception escape, whether
-    thrown directly or propagated from a callee;
-  * a procedure that declares `throws T` may only let subtypes of `T` escape, so `T`
-    is an upper bound rather than an exact type — which is how a Java
-    `throws Exception` covering a more specific throw is represented.
+A procedure that declares `throws T` may only let subtypes of `T` escape, so `T` is
+an upper bound rather than an exact type — which is how a Java `throws Exception`
+covering a more specific throw is represented. This is checked on the program as
+authored, during resolution. Catching discharges it: a `throw` inside a `try` whose
+`catch` handles the type does not count as an escape.
 
-Catching discharges the obligation: a `throw` inside a `try` whose `catch` handles
-the type needs no declaration. Java-style declare-or-catch *at call sites* remains
-front-end policy.
+A procedure that declares no `throws` is not checked here: an exception escaping it
+is a verification obligation, asserted where it would escape (see
+`Execution/Exceptions/UncaughtExceptions.lean`). Java-style declare-or-catch *at call
+sites* remains front-end policy.
 -/
 
-/-! ## Enforcement: no-escape and the throws upper-bound -/
+/-! ## Enforcement: the throws upper-bound -/
 
 -- Upper-bound violation: declares `throws ArithError` but throws a sibling
 -- `ParseError`, which is not a subtype of the declared type.
@@ -46,8 +45,10 @@ procedure wrongThrows()
 };
 #end
 
--- No-escape via a propagated call: `callsThrower` invokes a throwing procedure
--- without catching it and without declaring `throws` itself.
+-- No static error for a propagated call: `callsThrower` invokes a throwing
+-- procedure without catching it and without declaring `throws` itself. The escape
+-- is a verification obligation at the call instead, which fails here because the
+-- callee always throws.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -65,7 +66,7 @@ procedure callsThrower()
   opaque
 {
   r := thrower()
-//     ^^^^^^^^^ error: procedure 'callsThrower' may let an exception of type 'Exception' escape; catch it with a `try`/`catch` or declare a `throws` clause
+//     ^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
 };
 #end
 
@@ -86,15 +87,17 @@ procedure coarsenedThrows()
 };
 #end
 
--- Allowed (no-escape via catch): `handled` throws inside a `try` whose `catch`
--- handles the thrown type, so nothing escapes and no `throws` declaration is
--- required. Must produce no diagnostics.
+-- Allowed (caught): `handled` throws a `ParseError`, outside its declared `throws`
+-- type, inside a `try` whose `catch` handles it, so nothing outside `Other` escapes.
+-- Must produce no diagnostics.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite ParseError {}
+composite Other {}
 procedure handled()
   returns (r: int)
+  throws (e: Other)
   opaque
 {
   var e: ParseError := new ParseError;

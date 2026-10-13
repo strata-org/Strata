@@ -248,33 +248,43 @@ procedure runAll() entry opaque modifies * {
 };
 #end
 
--- The escape check must agree with the supersede rule: because the `finally`'s
--- `return` provably swallows the in-flight `throw`, nothing escapes and the
--- procedure needs no `throws` clause at all. (The analysis discards a pending
--- body/handler completion when the `finally` arm definitely completes abruptly;
--- without that it reported a spurious "may let an exception ... escape" here and
--- rejected this legal program.)
+-- The `throws` check must agree with the supersede rule: the `catch` does not match
+-- the `MyError`, but the `finally`'s `return` provably swallows it, so nothing outside
+-- the declared `Other` escapes. (The analysis discards a pending body/handler
+-- completion when the `finally` arm definitely completes abruptly; without that it
+-- reports "may throw 'MyError', which is not a subtype of its declared `throws` type
+-- 'Other'" here and rejects this legal program.)
 -- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
 composite MyError {}
-procedure swallowedNeedsNoThrowsDecl()
+composite SubError extends MyError {}
+composite Other {}
+procedure swallowedPastCatch()
   returns (y: int)
+  throws (e: Other)
   opaque
   ensures y == 7
+  throwsOn false {
+  }
 {
   var e: MyError := new MyError;
   y := 7;
   try {
     throw e
+  } catch c when c is SubError {
+    y := 8
   } finally {
     return
   }
 };
 
 procedure runAll() entry opaque modifies * {
-  var r: int := swallowedNeedsNoThrowsDecl()
+  try {
+    var r: int := swallowedPastCatch()
+  } catch c {
+  }
 };
 #end
 

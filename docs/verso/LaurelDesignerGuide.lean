@@ -623,13 +623,14 @@ construct for it: a frontend expresses the tiering by which parent a type extend
 written as a guard over the catchable tier is simply `false` for a fatal type. The distinction falls
 out of ordinary subtyping.
 
-*Declared throwing behavior, checked.* A procedure that may throw says so with `throws`, and Laurel
-enforces catch-or-declare during resolution: a procedure with no `throws` may not let an exception
-escape, and one declaring `throws T` may only let subtypes of `T` escape. This is a direct fit for
-Java's checked exceptions, and procedures from Python and JavaScript carry a `throws` too even though
-those languages have no such surface construct. The gain is that failures which are silent at runtime
-in the source language become statically visible: a frontend emits an explicit guarded `throw` where
-the source language would have failed implicitly.
+*Declared throwing behavior, checked.* A procedure that may let an exception escape to its callers
+says so with `throws`. One declaring `throws T` may only let subtypes of `T` escape, which resolution
+checks statically. A procedure with no `throws` may let nothing escape, but that is checked by the
+verifier rather than statically: an uncaught `throw` becomes `assert false`, and an uncaught call to a
+throwing procedure asserts that the call did not throw, so the escape is an error only if it can
+actually happen. That lets a frontend model the source language's implicit failures faithfully: it
+emits an explicit guarded `throw` where the source language would have failed implicitly, which is a
+verification failure when nothing catches it and ordinary control flow when something does.
 
 :::table +header
  *
@@ -1342,10 +1343,11 @@ To enable proving that contracts terminate, Laurel uses decreases clauses to ena
 termination of procedure calls.
 
 ## Exception inference
-Laurel enforces catch-or-declare, so a frontend must currently declare every exception a procedure
-may let escape. For the unchecked exceptions of Python and JavaScript — and for Java's — that means
-nearly every procedure ends up with a `throws` clause, and every call site pays to propagate and
-unwrap a result that almost never carries an exception.
+An exception may escape to callers only through a declared `throws`; one that would escape a
+procedure without it is asserted not to happen. So a frontend that wants an unchecked exception of
+Python or JavaScript — or Java — to *propagate* must currently declare it. Doing that everywhere would
+give nearly every procedure a `throws` clause, and every call site would pay to propagate and unwrap
+a result that almost never carries an exception.
 
 The planned refinement is to infer a procedure's throwable types from its body: a bottom-up analysis
 over the call graph combining the types a procedure throws directly, the types its callees may throw,
