@@ -417,6 +417,48 @@ theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k1 k2 
       cases h <;> try simp_all
 
 
+/-! Equations for `Map.remove`, `Map.erase` and `Map.insert` on a cons cell,
+one per outcome of the key comparison. Rewriting with these avoids `split`ting
+the `if` in the definitions, whose `else` branch is a `List` rather than a
+`Map` and so does not type-check at the transparency `split`/`simp` use. -/
+
+/-- Removing a key from a cons cell whose head key equals it drops the head,
+leaving the tail. -/
+theorem Map.remove_cons_of_eq [DecidableEq α] {a a' : α} {b : β} {m : List (α × β)}
+    (h : a = a') : Map.remove ((a, b) :: m) a' = m := by
+  grind [Map.remove]
+
+/-- Removing a key from a cons cell whose head key differs keeps the head and
+recurses into the tail. -/
+theorem Map.remove_cons_of_ne [DecidableEq α] {a a' : α} {b : β} {m : List (α × β)}
+    (h : a ≠ a') : Map.remove ((a, b) :: m) a' = (a, b) :: Map.remove m a' := by
+  grind [Map.remove]
+
+/-- Erasing a key from a cons cell whose head key equals it drops the head and
+continues erasing in the tail. -/
+theorem Map.erase_cons_of_eq [DecidableEq α] {a a' : α} {b : β} {m : List (α × β)}
+    (h : a = a') : Map.erase ((a, b) :: m) a' = Map.erase m a' := by
+  grind [Map.erase]
+
+/-- Erasing a key from a cons cell whose head key differs keeps the head and
+recurses into the tail. -/
+theorem Map.erase_cons_of_ne [DecidableEq α] {a a' : α} {b : β} {m : List (α × β)}
+    (h : a ≠ a') : Map.erase ((a, b) :: m) a' = (a, b) :: Map.erase m a' := by
+  grind [Map.erase]
+
+/-- Inserting at a key that equals the head key overwrites the head's value in
+place. -/
+theorem Map.insert_cons_of_eq [DecidableEq α] {a a' : α} {b b' : β} {m : List (α × β)}
+    (h : a = a') : Map.insert ((a, b) :: m) a' b' = (a', b') :: m := by
+  grind [Map.insert]
+
+/-- Inserting at a key that differs from the head key keeps the head and
+recurses into the tail. -/
+theorem Map.insert_cons_of_ne [DecidableEq α] {a a' : α} {b b' : β} {m : List (α × β)}
+    (h : a ≠ a') : Map.insert ((a, b) :: m) a' b' = (a, b) :: Map.insert m a' b' := by
+  grind [Map.insert]
+
+
 theorem Map.mem_keys_remove_of_ne [DecidableEq α] (m : Map α β) (k a : α)
     (h_mem : a ∈ Map.keys m) (h_ne : a ≠ k) :
     a ∈ Map.keys (Map.remove m k) := by
@@ -424,18 +466,17 @@ theorem Map.mem_keys_remove_of_ne [DecidableEq α] (m : Map α β) (k a : α)
   | nil => simp [Map.keys] at h_mem
   | cons hd tl ih =>
     obtain ⟨fst, snd⟩ := hd
-    simp [Map.remove]
-    split
-    · rename_i h_eq
-      simp [Map.keys] at h_mem
-      cases h_mem with
-      | inl h => exact absurd (h ▸ h_eq) h_ne
-      | inr h => exact h
-    · simp [Map.keys] at h_mem ⊢
-      cases h_mem with
-      | inl h => left; exact h
-      | inr h => right; exact ih h
-
+    simp only [keys, List.mem_cons] at h_mem
+    by_cases h : fst = k
+    · rw [Map.remove_cons_of_eq h]
+      rcases h_mem with rfl | h_mem
+      · exact absurd h h_ne
+      · exact h_mem
+    · rw [Map.remove_cons_of_ne h]
+      simp only [keys, List.mem_cons]
+      rcases h_mem with rfl | h_mem
+      · exact .inl rfl
+      · exact .inr (ih h_mem)
 
 theorem Map.mem_values_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k : α) (v : β)
   (h : v ∈ (Map.remove m k).values) : v ∈ m.values := by
@@ -455,10 +496,12 @@ theorem Map.insert_keys [DecidableEq α] (m : Map α β) :
   induction m
   case nil => simp_all [Map.insert, Map.keys]
   case cons hd tl ih =>
-    simp_all [Map.insert]
-    split
-    · simp_all [Map.keys]
-    · simp_all [Map.keys]
+    obtain ⟨a, b⟩ := hd
+    by_cases h : a = key
+    · rw [Map.insert_cons_of_eq h]
+      simp_all [Map.keys]
+    · rw [Map.insert_cons_of_ne h]
+      simp_all [Map.keys]
       grind
   done
 
@@ -468,10 +511,12 @@ theorem Map.insert_values [DecidableEq α] (m : Map α β) :
   induction m
   case nil => simp_all [Map.insert, Map.values]
   case cons hd tl ih =>
-    simp_all [Map.insert]
-    split
-    · simp_all [Map.values]
-    · simp_all [Map.values]
+    obtain ⟨a, b⟩ := hd
+    by_cases h : a = key
+    · rw [Map.insert_cons_of_eq h]
+      simp_all [Map.values]
+    · rw [Map.insert_cons_of_ne h]
+      simp_all [Map.values]
       grind
   done
 
@@ -531,13 +576,13 @@ theorem Map.erase_of_find?_none [DecidableEq α]
     (m : Map α β) (x : α) (h : Map.find? m x = none) :
     Map.erase m x = m := by
   induction m with
-  | nil => simp [Map.erase]
+  | nil => rfl
   | cons p ps ih =>
     obtain ⟨a, b⟩ := p
     simp only [Map.find?] at h; split at h
     · simp at h
     · rename_i h_ne
-      simp only [Map.erase, h_ne, ↓reduceIte]
+      rw [Map.erase_cons_of_ne h_ne]
       exact congrArg ((a, b) :: ·) (ih h)
 
 
@@ -546,16 +591,15 @@ theorem Map.erase_append_singleton [DecidableEq α]
     (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
     Map.erase (List.append m [(x, v)]) x = m := by
   induction m with
-  | nil => simp [Map.erase]
+  | nil => exact Map.erase_cons_of_eq rfl
   | cons p ps ih =>
     obtain ⟨a, b⟩ := p
     simp only [Map.find?] at h; split at h
     · simp at h
     · rename_i h_ne
       show Map.erase ((a, b) :: (List.append ps [(x, v)])) x = (a, b) :: ps
-      unfold Map.erase; split
-      · exact absurd ‹_› h_ne
-      · exact congrArg ((a, b) :: ·) (ih h)
+      rw [Map.erase_cons_of_ne h_ne]
+      exact congrArg ((a, b) :: ·) (ih h)
 
 
 /-- `Map.find?` on a map appended with a singleton map: either the new entry
@@ -587,7 +631,7 @@ theorem Map.insert_fresh_eq_append [DecidableEq α]
     (m : Map α β) (x : α) (v : β) (h : Map.find? m x = none) :
     Map.insert m x v = List.append m [(x, v)] := by
   induction m with
-  | nil => unfold Map.insert; rfl
+  | nil => rfl
   | cons hd tl ih =>
     obtain ⟨a, b⟩ := hd
     simp only [Map.find?] at h
@@ -596,7 +640,7 @@ theorem Map.insert_fresh_eq_append [DecidableEq α]
     · rename_i h_ne
       show (if a = x then (x, v) :: tl else (a, b) :: Map.insert tl x v) =
            (a, b) :: List.append tl [(x, v)]
-      rw [if_neg h_ne]
+      rw [ite_eq_right h_ne]
       congr 1
       exact ih h
 
@@ -608,10 +652,11 @@ theorem Map.find?_erase_self [DecidableEq α]
   induction m with
   | nil => simp [Map.erase, Map.find?]
   | cons p ps ih =>
-    simp only [Map.erase]; split
-    · exact ih
-    · simp only [Map.find?]; split
-      · rename_i h_ne h_eq; exact absurd h_eq h_ne
+    obtain ⟨a, b⟩ := p
+    by_cases h : a = x
+    · rw [Map.erase_cons_of_eq h]; exact ih
+    · rw [Map.erase_cons_of_ne h]; simp only [Map.find?]; split
+      · rename_i h_eq; exact absurd h_eq h
       · exact ih
 
 
@@ -622,11 +667,12 @@ theorem Map.find?_erase_ne [DecidableEq α]
   induction m with
   | nil => simp [Map.erase, Map.find?]
   | cons p ps ih =>
-    simp only [Map.erase]; split
-    · rename_i h_eq; simp only [Map.find?]; split
+    obtain ⟨a, b⟩ := p
+    by_cases h_eq : a = x
+    · rw [Map.erase_cons_of_eq h_eq]; simp only [Map.find?]; split
       · rename_i h_py; exact absurd (h_eq ▸ h_py.symm) h_ne
       · exact ih
-    · simp only [Map.find?]; split
+    · rw [Map.erase_cons_of_ne h_eq]; simp only [Map.find?]; split
       · rfl
       · exact ih
 
@@ -659,7 +705,7 @@ theorem Map.find?_remove_ne [DecidableEq α]
 
 
 /-- Keys of `List.zip l1 l2` (viewed as a `Map`) are a subset of `l1`. -/
-theorem Map.keys_zip_subset {α β : Type} [DecidableEq α]
+theorem Map.keys_zip_subset {α β : Type}
     (l1 : List α) (l2 : List β) {x : α} (h : x ∈ Map.keys (l1.zip l2)) : x ∈ l1 := by
   induction l1 generalizing l2 with
   | nil => simp [List.zip, Map.keys] at h
@@ -696,9 +742,12 @@ theorem Map.keys_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
   intro k hk; induction m with
   | nil => simp [Map.erase, Map.keys] at hk
   | cons pair rest ih =>
-    obtain ⟨a, b⟩ := pair; simp only [Map.erase] at hk; split at hk
-    · simp [Map.keys]; right; exact ih hk
-    · simp [Map.keys] at hk ⊢
+    obtain ⟨a, b⟩ := pair
+    by_cases h : a = x
+    · rw [Map.erase_cons_of_eq h] at hk
+      simp [Map.keys]; right; exact ih hk
+    · rw [Map.erase_cons_of_ne h] at hk
+      simp [Map.keys] at hk ⊢
       grind
 
 
@@ -718,9 +767,12 @@ theorem Map.values_erase_subset [DecidableEq α] (m : Map α β) (x : α) :
   induction m with
   | nil => simp [Map.erase, Map.values]
   | cons pair rest ih =>
-    obtain ⟨k, val⟩ := pair; simp only [Map.erase]; split
-    · intro v hv; simp [Map.values]; right; exact ih v hv
-    · intro v hv; simp [Map.values] at hv ⊢
+    obtain ⟨k, val⟩ := pair
+    by_cases h : k = x
+    · rw [Map.erase_cons_of_eq h]
+      intro v hv; simp [Map.values]; right; exact ih v hv
+    · rw [Map.erase_cons_of_ne h]
+      intro v hv; simp [Map.values] at hv ⊢
       grind
 
 
@@ -730,13 +782,15 @@ theorem Map.keys_erase_mem_of_ne [DecidableEq α] (m : Map α β) {a x : α}
   induction m with
   | nil => simp [Map.keys] at h_key
   | cons pair rest ih =>
-    obtain ⟨k, v⟩ := pair; simp only [Map.erase]; simp [Map.keys] at h_key
-    rcases h_key with rfl | h
-    · split
-      · exact absurd (by assumption) h_ne
-      · simp [Map.keys]
-    · split
+    obtain ⟨k, v⟩ := pair; simp [Map.keys] at h_key
+    by_cases h_eq : k = x
+    · rw [Map.erase_cons_of_eq h_eq]
+      rcases h_key with rfl | h
+      · exact absurd h_eq h_ne
       · exact ih h
+    · rw [Map.erase_cons_of_ne h_eq]
+      rcases h_key with rfl | h
+      · simp [Map.keys]
       · simp [Map.keys]; right; exact ih h
 
 
@@ -779,7 +833,11 @@ theorem Map.find?_insert_self [DecidableEq α]
     (m : Map α β) (x : α) (v : β) : Map.find? (Map.insert m x v) x = some v := by
   induction m with
   | nil => simp [Map.insert, Map.find?]
-  | cons hd rest ih => simp only [Map.insert]; split <;> simp_all [Map.find?]
+  | cons hd rest ih =>
+    obtain ⟨a, b⟩ := hd
+    by_cases h : a = x
+    · rw [Map.insert_cons_of_eq h]; simp [Map.find?]
+    · rw [Map.insert_cons_of_ne h]; simp_all [Map.find?]
 
 
 /-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
@@ -789,18 +847,19 @@ theorem Map.find?_insert_ne [DecidableEq α]
   induction m with
   | nil => simp [Map.insert, Map.find?, Ne.symm h]
   | cons hd rest ih =>
-    simp only [Map.insert]
-    split
-    · rename_i h_eq  -- hd.fst = y
-      -- Map.insert replaced hd with (y, v); hd.fst = y, so the if in find? checks y = x
+    obtain ⟨a, b⟩ := hd
+    by_cases h_eq : a = y
+    · rw [Map.insert_cons_of_eq h_eq]
+      -- Map.insert replaced (a, b) with (y, v); a = y, so the if in find? checks y = x
       simp only [Map.find?]
       -- In the new list: first element is (y, v), check y = x
       have h_ne : ¬(y = x) := Ne.symm h
       simp [h_ne]
-      -- In the old list: first element is hd, check hd.fst = x
-      have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
+      -- In the old list: first element is (a, b), check a = x
+      have h_ne2 : ¬(a = x) := by rw [h_eq]; exact h_ne
       simp [h_ne2]
-    · simp only [Map.find?]; split <;> simp_all
+    · rw [Map.insert_cons_of_ne h_eq]
+      simp only [Map.find?]; split <;> simp_all
 
 /-- `ListMap.keys` of a key-filtered list is the filtered key list. -/
 theorem listMap_keys_filter {α β : Type} (q : α → Bool) :

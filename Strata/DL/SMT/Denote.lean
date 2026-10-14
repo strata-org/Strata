@@ -49,7 +49,7 @@ def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
   | 0     => Nonempty us
   | _ + 1 => ∀ (α : Type), mkNonemptyPred (applyTypeArg us α)
 
-@[reducible] def applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
+theorem applyNonemptyPred {n : Nat} {fα : mkTypeFunType n} (hfα : mkNonemptyPred fα) (αs : List Type) (h : αs.length = n) :
     Nonempty (applyTypeArgs fα αs h) :=
   match n, αs with
   | 0, []          => hfα
@@ -266,7 +266,10 @@ theorem isSome_denoteSortOption (h : (denoteSort sctx ty).isSome) :
 
 theorem denoteSortOption_Some :
   (denoteSort sctx (.option ty)).get h sΓ = Option ((denoteSort sctx ty).get (denoteSortOption_isSome h) sΓ) := by
-  simp [denoteSort]
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp (denoteSortOption_isSome h)
+  have hopt : denoteSort sctx (.option ty) = some fun sΓ => Option (v sΓ) := by
+    simp [denoteSort, hv]
+  simp only [Option.get_of_eq_some h hopt, Option.get_of_eq_some _ hv]
 
 theorem denoteSortArray_isSome_key (h : (denoteSort sctx (.constr "Array" [kTy, vTy])).isSome) :
     (denoteSort sctx kTy).isSome := by
@@ -304,7 +307,13 @@ theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out
     have has := denoteFunSortCons_isSome h
     (denoteFunSort sctx (a :: as) out).get h sΓ =
     ((denoteSort sctx a).get has.left sΓ → (denoteFunSort sctx as out).get has.right sΓ) := by
-  simp [*, denoteFunSort] at *
+  intro has
+  obtain ⟨va, ha⟩ := Option.isSome_iff_exists.mp has.left
+  obtain ⟨vas, has'⟩ := Option.isSome_iff_exists.mp has.right
+  have hfun : denoteFunSort sctx (a :: as) out = some fun sΓ => va sΓ → vas sΓ := by
+    simp [denoteFunSort, ha, has']
+  simp only [Option.get_of_eq_some h hfun, Option.get_of_eq_some _ ha,
+             Option.get_of_eq_some _ has']
 
 theorem denoteSortOut_isSome_of_denoteFunSort_isSome (h : (denoteFunSort sctx as out).isSome) :
     (denoteSort sctx out).isSome := by
@@ -729,7 +738,7 @@ and semantics when successful.
     return ⟨.prim .int, rfl, fun Γ => @HMod.hMod Int Int Int _ (x Γ) (y Γ)⟩
   | .app .abs [x] _ =>
     let ⟨.prim .int, _, x⟩ ← denoteTerm ctx x | none
-    return ⟨.prim .int, rfl, fun Γ => if @LT.lt Int _ (x Γ) 0 then @Neg.neg Int _ (x Γ) else x Γ⟩
+    return ⟨.prim .int, rfl, fun Γ => @ite Int (@LT.lt Int _ (x Γ) 0) (Int.decLt (x Γ) 0) (@Neg.neg Int _ (x Γ)) (x Γ)⟩
   -- SMT-Lib theory of bitvectors
   | .prim (.bitvec (n := n) bv) =>
     return ⟨.prim (.bitvec n), rfl, fun _ => bv⟩
@@ -1048,14 +1057,14 @@ Interpret a ground boolean term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
   let some ⟨.prim .bool, _, fi⟩ := denoteTerm {} t | none
-  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := Prop) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Interpret a ground integer term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
-  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := Int) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Interpret a ground bitvector term in the empty context.
@@ -1072,7 +1081,7 @@ Interpret a ground string term in the empty context.
 -/
 @[expose, simp] noncomputable def denoteStringTermAux (t : Term) : Option String := do
   let some ⟨.prim .string, _, fi⟩ := denoteTerm {} t | none
-  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  pure (α := String) <| fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Eliminate one uninterpreted sort binder by quantifying over all of its
@@ -1268,7 +1277,7 @@ where
   -/
   @[simp]
   bindUSs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨[], iss⟩ → Prop) :=
-    do match uss with
+    do match (dependent := true) uss with
     | [] => return ft'
     | _ :: uss =>
       let ft ← bindUS uss iss ft'
@@ -1285,7 +1294,7 @@ where
   -/
   @[simp]
   bindUFs sctx vs ufs (ft' : TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) : Option (TermDenoteInput ⟨sctx, ⟨vs, []⟩⟩ → Prop) :=
-    do match ufs with
+    do match (dependent := true) ufs with
     | [] => return ft'
     | _ :: ufs =>
       let ft ← bindUF { sctx, tctx := { vs, ufs } } ft'
@@ -1296,7 +1305,7 @@ where
   @[simp]
   bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map IF.toUF ++ ufs⟩⟩ → Prop) :
       Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
-    do match ifs with
+    do match (dependent := true) ifs with
     | [] => return ft'
     | iF :: ifs =>
       let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map IF.toUF ++ ufs } } ft'

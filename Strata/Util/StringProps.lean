@@ -123,7 +123,8 @@ theorem isPrefixOf_append_self (pfx sfx : List Char) :
 theorem digitChar_is_digit (n : Nat) (h : n < 10) :
     '0' ≤ n.digitChar ∧ n.digitChar ≤ '9' := by
   have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
+  -- Decide call can be safely replaced with `cbv` in `4.35.0`
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
 
 theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)

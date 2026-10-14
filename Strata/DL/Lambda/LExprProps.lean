@@ -368,8 +368,7 @@ theorem lfunc_body_getVars_subset_keys
     apply hbf
     rw [List.mem_map]
     exact ⟨p, hp_mem, by rw [hp_eq]⟩
-  rw [List.mem_map] at hname
-  obtain ⟨q, hq_mem, hq_eq⟩ := hname
+  obtain ⟨q, hq_mem, hq_eq⟩ := List.mem_map.mp hname
   have hyq : y = q.fst := (hIdent q.1 y hq_eq).symm
   rw [hyq, ListMap.keys_eq_map_fst]
   exact List.mem_map_of_mem hq_mem

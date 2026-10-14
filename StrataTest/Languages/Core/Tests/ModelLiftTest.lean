@@ -22,7 +22,7 @@ deliberately failing assertion, runs `verify`, and checks the
 -/
 
 namespace Strata.ModelLiftTest
-open Core Lambda
+open Lambda
 
 ---------------------------------------------------------------------
 -- Integer model

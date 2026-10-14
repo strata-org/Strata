@@ -23,7 +23,7 @@ format them via `Core.formatStatement`. -/
 
 namespace Strata.Test.GenericCallFallback
 
-open Strata Core Lambda
+open Strata Lambda
 
 private def mkOp (name : String) : Core.Expression.Expr :=
   LExpr.op () ⟨name, ()⟩ none

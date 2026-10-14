@@ -2090,8 +2090,8 @@ private theorem invStoresExcept_projectStore_of_update
     refine invStoresExcept_singleton_of_agree_off (fun y hy => ?_)
     unfold Imperative.projectStore
     by_cases hs : (σ y).isSome
-    · rw [if_pos hs]; exact (hother y hy).symm
-    · rw [if_neg hs]; exact Option.not_isSome_iff_eq_none.mp hs
+    · rw [ite_eq_left hs]; exact (hother y hy).symm
+    · rw [ite_eq_right hs]; exact Option.not_isSome_iff_eq_none.mp hs
 
 /-- **A one-`set` structured body respects the write set `[x]`.** Every completed
 event run of `{ x := e }` from `σ_entry` leaves a procedure-exit store that agrees

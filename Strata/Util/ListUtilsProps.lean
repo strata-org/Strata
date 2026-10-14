@@ -1183,7 +1183,7 @@ theorem foldl_zip_congr
           exact this
 
 
-theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
+theorem nodup_map_injOn {α β : Type} {f : α → β} {l : List α}
     (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
   induction l with
   | nil => exact nomatch ha

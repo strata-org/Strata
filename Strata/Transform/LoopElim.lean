@@ -12,7 +12,7 @@ import Strata.Languages.Core.StatementSemantics
 import Strata.Transform.CoreTransform
 
 namespace Core
-open Imperative Lambda
+open Imperative
 
 public section
 

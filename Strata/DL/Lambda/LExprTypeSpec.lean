@@ -1542,7 +1542,7 @@ private theorem generated_name_fresh (k : Nat) (state : TState)
 private theorem isFutureGenVar_of_tyPrefix (n : Nat) (state : TState)
     (hn : n ≥ state.tyGen) :
     TState.isFutureGenVar state (TState.tyPrefix ++ toString n) = true := by
-  simp only [TState.isFutureGenVar, TState.tyPrefix]
+  simp only [TState.isFutureGenVar]
   rw [String.toList_append, isPrefixOf_append_self]
   simp only [ite_true]
   rw [List.drop_left, listCharToNat?_roundtrip]
@@ -6221,7 +6221,7 @@ theorem resolve_HasType_core :
   simp only [Bind.bind, Except.bind] at h
   cases h_empty : Env.context.types.isEmpty with
   | true =>
-    simp only [h_empty, if_true] at h
+    simp only [h_empty, ite_true] at h
     elim_err h
     rename_i v h_aux
     obtain ⟨et, Env_r⟩ := v
@@ -6300,7 +6300,7 @@ theorem resolve_HasType_core :
     have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht'
     rw [h_ctx_empty]; exact h_result
   | false =>
-    rw [if_neg (by simp [h_empty])] at h
+    rw [ite_eq_right (by simp [h_empty])] at h
     elim_err h
     rename_i v h_aux
     obtain ⟨et, Env_r⟩ := v
@@ -6337,7 +6337,7 @@ theorem resolve_preserves_context
     cases ht : Env.context.types with
     | nil => exact absurd ht h_ne
     | cons _ _ => simp [HMaps.isEmpty]
-  rw [if_neg (by simp [h_ne'])] at h
+  rw [ite_eq_right (by simp [h_ne'])] at h
   elim_err h
   rename_i v h_aux
   obtain ⟨et, Env_r⟩ := v
@@ -6375,7 +6375,7 @@ theorem resolve_HasType :
     simp only [Bind.bind, Except.bind] at h
     cases h_empty : Env.context.types.isEmpty with
     | true =>
-      simp only [h_empty, if_true] at h
+      simp only [h_empty, ite_true] at h
       elim_err h
       rename_i v h_aux
       obtain ⟨et, Env_r⟩ := v
@@ -6425,7 +6425,7 @@ theorem resolve_HasType :
         exact ctx_closed_of_check Env_r h_check'
       exact ⟨h_check', h_all_fresh'⟩
     | false =>
-      rw [if_neg (by simp [h_empty])] at h
+      rw [ite_eq_right (by simp [h_empty])] at h
       elim_err h
       rename_i v h_aux
       obtain ⟨et, Env_r⟩ := v

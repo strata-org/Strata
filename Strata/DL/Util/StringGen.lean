@@ -130,14 +130,10 @@ theorem nodup_implies_injective (H: List.Nodup a) (Hl1: x < a.length) (Hl2: y < 
     grind
 
 theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar → n = m := by
-  intro H1 H2
-  simp [Nat_digitChar_index]
-  have: min n 16 = n := by omega
-  simp [this]
-  have: min m 16 = m := by omega
-  simp [this]
-  intro H
-  apply nodup_implies_injective (by simp) _ _ H
+  intro _ _
+  have h1 : min n 16 = n := by omega
+  have h2 : min m 16 = m := by omega
+  simp [Nat_digitChar_index, h1, h2]
 
 theorem Nat_toDigitsCore_list_suffix : l <:+ Nat.toDigitsCore 10 x n l := by
   induction x generalizing n l <;> simp [Nat.toDigitsCore]
@@ -291,7 +287,7 @@ theorem StringGenState.WFMono :
   · rename_i H
     simp only [H.right, H.left, String.IsSuffixOf, String.toList_append, List.append_assoc]
     apply List.suffix_append
-  · apply Hwf.right.right.right <;> assumption
+  · apply Hwf.right.right.right ; assumption
 
 /-! ## Convenience helpers for the list of generated string labels -/
 

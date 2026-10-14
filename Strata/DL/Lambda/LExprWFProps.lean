@@ -156,7 +156,7 @@ theorem lcAt_substK_inv (he: lcAt k (substK i s e)) (hik: k ≤ i) : lcAt (i + 1
   case bvar id j =>
     by_cases j = i
     case pos hji => omega
-    case neg hji => rw[if_neg hji] at he; simp[lcAt] at he; omega
+    case neg hji => rw [ite_eq_right hji] at he; simp [lcAt] at he; omega
 
 theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i + 1) e := by
   unfold varOpen at hs; exact (lcAt_substK_inv hs hik)
@@ -793,7 +793,7 @@ private theorem getOps_arg_subset_betaReduceK {T : LExprParamsT} (arg : LExpr T)
     intro k h
     simp only [bvarUsed, beq_iff_eq] at h
     subst h
-    simp only [betaReduceK, beq_self_eq_true, if_true]
+    simp only [betaReduceK, beq_self_eq_true, ite_true]
     rw [getOps_liftBVars]
     exact List.Subset.refl _
   | abs _ _ _ b ih =>

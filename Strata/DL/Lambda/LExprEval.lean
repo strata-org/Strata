@@ -481,8 +481,13 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     fully-reduced `.value true`.
 
     Thanks to `partial_fixpoint`, this function is `.none` when no amount of fuel
-    ever yields a `.value true`. -/
-def evalFullyAux (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
+    ever yields a `.value true`.
+
+    TODO: Remove `expose` once `Strata` gets bumped to `Lean-4.36.0` is cut.
+    `expose` is used to prevent a panic in the `partial_fixpoint` code that always
+    assumes the visibility of the body, that eventually got fixed,
+    but the release was not cut yet. -/
+@[expose] def evalFullyAux (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
     (fuel : Nat) : Option (LExpr TBase.mono) :=
   let (e', res) := eval fuel F env e
   match res with

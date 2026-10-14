@@ -536,7 +536,7 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     refine postM_bind_any fun fieldName' => ?_
     by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold tp.snd).val
-    · simp only [hheap, if_true]
+    · simp only [hheap, ite_true]
       exact postM_pure (by
         intro x hx
         simp only [Option.mem_def, Option.some.injEq] at hx
@@ -549,7 +549,7 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
     obtain ⟨e', ty⟩ := tp
     simp only [] at htp ⊢
     by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold ty).val
-    · simp only [hheap, if_true]
+    · simp only [hheap, ite_true]
       exact postM_pure (by
         intro x hx
         simp only [Option.mem_def, Option.some.injEq] at hx
@@ -1052,10 +1052,14 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
     · exact hr
   · -- Datatype
     refine postM_bind_any fun dtName' => ?_
-    -- the duplicate-type-parameter `unless` is an `if` whose branches each
-    -- bind one action (`pure ()` / `modify`) before the shared continuation
-    refine postM_ite ?_ ?_ <;>
-      exact postM_bind_any fun _ =>
+    -- the duplicate-type-parameter `unless` elaborates to an `if` whose branches
+    -- share the continuation through a `have`-bound join point `__do_jp`:
+    -- `if dupParams.isEmpty then __do_jp () else modify .. >>= __do_jp`.
+    -- Zeta-reduce the join point so each branch exposes its binds directly.
+    dsimp only
+    refine postM_ite ?_ ?_
+    · exact postM_bind_any fun ctors' => postM_pure trivial
+    · exact postM_bind_any fun _ =>
         postM_bind_any fun ctors' => postM_pure trivial
   · -- Alias
     refine postM_bind_any fun target' => ?_

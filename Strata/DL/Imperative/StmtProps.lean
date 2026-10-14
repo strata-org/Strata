@@ -749,12 +749,12 @@ private theorem Stmt.defined_of_mem_modifiedVars_getVars
   | .block l bss md =>
     simp only [Stmt.defUseWellFormed] at h
     simp only [Stmt.modifiedVars, Stmt.getVars] at hn
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hnd
     exact Block.defined_of_mem_modifiedVars_getVars h_flag h hn hnd
   | .ite cond tbss ebss md =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
     simp only [Stmt.modifiedVars, Stmt.getVars] at hn
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hnd
     have hnd_t : n ∉ Block.definedVars (P := P) (C := C) tbss false :=
       fun hc => hnd (List.mem_append.mpr (Or.inl hc))
     have hnd_e : n ∉ Block.definedVars (P := P) (C := C) ebss false :=
@@ -777,7 +777,7 @@ private theorem Stmt.defined_of_mem_modifiedVars_getVars
   | .loop guard measure invariants bss md =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
     simp only [Stmt.modifiedVars, Stmt.getVars] at hn
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hnd
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hnd
     have hb : ∀ (_ : n ∈ Block.modifiedVars (P := P) (C := C) bss ++
         Block.getVars (P := P) (C := C) bss), defined n = true :=
       fun hx => Block.defined_of_mem_modifiedVars_getVars h_flag h.2 hx hnd
@@ -866,17 +866,17 @@ theorem Stmt.not_defined_of_mem_definedVars
     exact h.1.2 _ hn
   | .block l bss md =>
     simp only [Stmt.defUseWellFormed] at h
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hn
     exact Block.not_defined_of_mem_definedVars h hn
   | .ite cond tbss ebss md =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at h
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hn
     rcases List.mem_append.mp hn with ht | he
     · exact Block.not_defined_of_mem_definedVars h.1.2 ht
     · exact Block.not_defined_of_mem_definedVars h.2 he
   | .loop guard measure invariants bss md =>
     simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at h
-    simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
+    simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hn
     exact Block.not_defined_of_mem_definedVars h.2 hn
   | .exit l md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
   | .typeDecl tc md => simp only [Stmt.definedVars, List.not_mem_nil] at hn

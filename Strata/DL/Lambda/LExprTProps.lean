@@ -362,7 +362,7 @@ theorem resolve_getVars_mem_knownVars (C) (Env Env' : TEnv T.IDMeta) (e) (et)
     | nil => exact absurd hEq h_ne
     | cons _ _ => rfl
   unfold LExpr.resolve at h
-  simp only [h_isEmpty, if_false, Bool.false_eq_true, Bind.bind, Except.bind] at h
+  simp only [h_isEmpty, ite_false, Bool.false_eq_true, Bind.bind, Except.bind] at h
   split at h
   · simp at h
   · rename_i r h_aux; obtain ⟨et_aux, Env_aux⟩ := r

@@ -46,7 +46,7 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   rw[beq_iff_eq] at name_eq
   rename_i m_contains
   have name_notin : ¬ x.name ∈ m := by grind
-  simp; rw[if_neg name_notin]
+  simp; rw[ite_eq_right name_notin]
   cases meta_eq: (x.metadata == y.metadata); grind
   rw[beq_iff_eq] at meta_eq
   constructor

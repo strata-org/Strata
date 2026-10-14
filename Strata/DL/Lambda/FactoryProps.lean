@@ -328,7 +328,7 @@ theorem get?_pushIfNew_stable {T} (F : Factory T) (g fn : LFunc T)
   split
   · exact hpres
   · rename_i hnew
-    rw [push_mem_match, if_neg (fun h => hne h.symm)]
+    rw [push_mem_match, ite_eq_right (fun h => hne h.symm)]
     exact hpres
 
 /-- Folding `pushIfNew` over functions whose names all differ from `fn`'s name
@@ -368,9 +368,9 @@ theorem get?_foldl_pushIfNew_of_mem {T} (fn : LFunc T) :
     · rw [heq]
       have hnew_g : g.name.name ∉ F := by rw [← heq]; exact hnew
       have hpush : F.pushIfNew g = F.push g hnew_g := by
-        unfold Factory.pushIfNew; rw [dif_neg hnew_g]
+        unfold Factory.pushIfNew; rw [dite_eq_right hnew_g]
       have hpres : (F.pushIfNew g)[g.name.name]? = some g := by
-        rw [hpush, push_mem_match, if_pos rfl]
+        rw [hpush, push_mem_match, ite_eq_left rfl]
       exact get?_foldl_pushIfNew_stable g rest (F.pushIfNew g) hpres hg_notin
     · have hne : fn.name.name ≠ g.name.name := by
         intro h

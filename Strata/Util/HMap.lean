@@ -270,8 +270,8 @@ public theorem find?_ofList_map_snd [LawfulBEq α] [LawfulHashable α]
     obtain ⟨a, b⟩ := p
     simp only [List.map_cons, List.findSome?_cons]
     by_cases hk : (a == k) = true
-    · simp only [hk, if_true, Option.map_some]
-    · simp only [hk, Bool.false_eq_true, if_false, ih]
+    · simp only [hk, ite_true, Option.map_some]
+    · simp only [hk, Bool.false_eq_true, ite_false, ih]
 
 /-- Every value of `HMap.ofList l` comes from a value in `l`. -/
 public theorem mem_values_ofList [LawfulBEq α] [LawfulHashable α]
@@ -322,8 +322,8 @@ public theorem find?_ofList_self_map [LawfulBEq α] [LawfulHashable α]
     | cons a rest ih =>
       simp only [List.map_cons, List.findSome?_cons]
       by_cases h : (a == k) = true
-      · simp only [h, if_true]; rw [beq_iff_eq] at h; rw [h]
-      · simp only [h, Bool.false_eq_true, if_false]
+      · simp only [h, ite_true]; rw [beq_iff_eq] at h; rw [h]
+      · simp only [h, Bool.false_eq_true, ite_false]
         apply ih; simp only [List.mem_cons] at hL
         rcases hL with h' | h'
         · rw [h'] at h; simp at h
@@ -360,7 +360,7 @@ public theorem find?_ofList_cons_eq_find?_insert [LawfulBEq α] [LawfulHashable 
     · right; simpa using hk
   rcases hnone with h | h
   · rw [h]; simp
-  · simp only [h, Bool.false_eq_true, if_false, Option.or_none]
+  · simp only [h, Bool.false_eq_true, ite_false, Option.or_none]
 
 /-- If `find?` returns `none`, the key is not in `keys`. -/
 public theorem find?_of_not_mem_keys [LawfulBEq α] [LawfulHashable α]

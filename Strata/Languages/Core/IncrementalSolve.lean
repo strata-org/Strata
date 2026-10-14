@@ -1527,9 +1527,11 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
     let alone := if sendAlone then some sendOne else none
     let walked ← try
         pure (Sum.inl (← match session with
-          | some f => verifyProgramWith f oblProgram sessions options factory
+          | some f =>
+            verifyProgramWith f oblProgram sessions options factory
               (axiomProgram := axiomProgram) (sendAlone := alone)
-          | none => verifyProgram oblProgram sessions options factory
+          | none =>
+            verifyProgram oblProgram sessions options factory
               (axiomProgram := axiomProgram) (sendAlone := alone)))
       catch e => pure (Sum.inr e)
     match walked with

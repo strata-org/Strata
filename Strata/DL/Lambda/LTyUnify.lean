@@ -101,8 +101,8 @@ theorem SubstWF_of_popScope (S : Subst) (h : SubstWF S) :
   | cons m rest =>
     simp only [SubstWF, Subst.freeVars, HMaps.pop, HMaps.keys, HMaps.values,
       List.all_eq_true, List.mem_append, List.flatMap_append, decide_eq_true_eq] at h ⊢
-    intro k hk hmem
-    exact h k (Or.inr hk) (Or.inr hmem)
+    intro k hk
+    grind
 
 /-- The single-scope substitution `[single id ty]` and its key/value/freeVars. -/
 @[expose] def Subst.singleton (tv : TyIdentifier) (ty : LMonoTy) : Subst :=
@@ -234,13 +234,13 @@ theorem LMonoTys.substCore_eq_map (S : Subst) (mtys : LMonoTys) :
 theorem LMonoTy.subst_of_hasEmptyScopes
     (h : Subst.hasEmptyScopes S) (ty : LMonoTy) :
     LMonoTy.subst S ty = ty := by
-  simp only [LMonoTy.subst, h, if_true]
+  simp only [LMonoTy.subst, h, ite_true]
 
 /-- `subst` reduces to `substCore` when `S` has a non-empty scope. -/
 theorem LMonoTy.subst_eq_substCore (S : Subst) (ty : LMonoTy)
     (h : Subst.hasEmptyScopes S = false) :
     LMonoTy.subst S ty = LMonoTy.substCore S ty := by
-  simp only [LMonoTy.subst, h, Bool.false_eq_true, if_false]
+  simp only [LMonoTy.subst, h, Bool.false_eq_true, ite_false]
 
 /-- `subst` distributes into `tcons` (short-circuit handled). -/
 theorem LMonoTy.subst_tcons (S : Subst) (name : String) (args : LMonoTys) :
@@ -1355,11 +1355,11 @@ substitution `S`. See `Constraints.unify` for the top-level function.
 def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
     Except UnifyError (ValidSubstRelation cs S) := do
   match _h0 : cs with
-  | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
+  | [] => .ok { newS := S, goodSubset := by grind [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
     let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
-    .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }
+    .ok { newS := new_relS.newS, goodSubset := by grind [Subst.freeVars_subset_prop_mk_cons] }
   termination_by ((((Constraints.freeVars cs) ++ S.subst.freeVars).uniq.length),
                   Constraints.size cs,
                   1)
