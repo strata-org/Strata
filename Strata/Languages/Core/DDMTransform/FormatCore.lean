@@ -1160,44 +1160,6 @@ def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (Type
       TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
     ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
 
-/-- Convert a function declaration to a statement -/
-def funcDeclToStatement {M} [Inhabited M] (annotsAnn : Ann (Option (MetadataAnn M)) M)
-    (decl : Imperative.PureFunc Expression)
-    : ToCSTM M (CoreDDM.Statement M) := do
-  modify ToCSTContext.pushScope
-  let name : Ann String M := ⟨default, decl.name.name⟩
-  let typeArgs := mkTypeArgsAnn decl.typeArgs
-  let processInput (id : CoreLParams.Identifier) (ty : Lambda.LTy) :
-          ToCSTM M (Binding M × String) := do
-    let paramName : Ann String M := ⟨default, id.name⟩
-    let paramType ← lTyToCoreType ty
-    let binding := Binding.mkBinding default paramName (TypeP.expr paramType)
-    pure (binding, id.name)
-  let results ← decl.inputs.toArray.mapM (fun (id, ty) => processInput id ty)
-  let bindings := results.map (·.1)
-  let paramNames := results.map (·.2)
-  let b : Bindings M := .mkBindings default ⟨default, bindings⟩
-  let r ← lTyToCoreType decl.output
-  let inline? : Ann (Option (Inline M)) M :=
-    if decl.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
-    else ⟨default, none⟩
-  -- Add formals to the context
-  modify (·.addScopedBoundVars (reverse? := false) paramNames)
-  -- Convert preconditions
-  let preconds ← precondsToSpecElts decl.preconditions
-  let bodyExpr ← match decl.body with
-  | none =>
-    -- Dummy expr for the body.
-    let bodyExpr := Expr.fvar default (1 + (←get).allFreeVars.size)
-    ToCSTM.logError "funcDeclToStatement" "funcDecl without body not supported in statements" name.val
-    pure bodyExpr
-  | some body => lexprToExpr body 0
-  modify ToCSTContext.popScope
-  -- Register function name as a scoped bound variable in the parent scope,
-  -- matching DDM's @[declareFn] which makes the name a bvar.
-  modify (·.pushBoundVar name.val)
-  pure (.funcDecl_statement default annotsAnn name typeArgs b r preconds bodyExpr inline?)
-
 /-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
     with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
     in left-to-right order, or `none` if the expression is not this pattern. -/
@@ -1323,9 +1285,6 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let labelAnn : Ann String M := ⟨default, label⟩
     let annotsAnn ← metadataToAnn md (← get).annFilter
     pure (.exit_statement default annotsAnn labelAnn)
-  | .funcDecl decl md =>
-    let annotsAnn ← metadataToAnn md (← get).annFilter
-    funcDeclToStatement annotsAnn decl
   | .typeDecl tc md =>
     let nameAnn : Ann String M := ⟨default, tc.name⟩
     let args := typeConArgsToCST (M := M) tc

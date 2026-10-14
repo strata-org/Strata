@@ -18,7 +18,8 @@ jobs:
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
-          build-args: '--wfail'
+          # No --wfail: it also fails on warnings in dependencies (Verso).
+          # docs/verso/lakefile.toml sets warningAsError for the docs' own modules.
           lake-package-directory: 'docs/verso'
       - name: Build documentation
         run: ./generate.sh

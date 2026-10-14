@@ -192,9 +192,9 @@ well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two contexts:
 
 1. {name LContext}`LContext`: information that is typically constant during
-   expression type checking, but may be extended during statement type checking
-   (e.g., when a `funcDecl` statement adds a new function to the factory).
-   This includes information about built-in functions, using the
+   expression type checking, but may be extended during statement type checking.
+   For example, a `typeDecl` statement adds a new type. This context also
+   includes information about built-in functions, using the
    {name Lambda.Factory}`Factory` type, and built-in types, using the
    {name TypeFactory}`TypeFactory` type. Built-in functions optionally include
    concrete evaluation functions, which can be used in the semantics described
@@ -251,9 +251,12 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label. In addition, statements include
-`funcDecl` for local function declarations (which extend the expression
-evaluator within a scope) and `typeDecl` for local type declarations.
+enclosing block with a matching label. Statements also include `typeDecl` for
+local type declarations. Core concrete syntax may use an internal `function`
+declaration; translation lowers that syntax to an ordinary local variable
+initialization whose value is a `Lambda` abstraction. Internal declarations with
+type parameters or preconditions are not supported by this lowering, because
+`Lambda` abstractions do not represent those features.
 
 {docstring Imperative.Stmt}
 

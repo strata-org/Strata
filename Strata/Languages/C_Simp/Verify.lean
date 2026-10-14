@@ -60,7 +60,6 @@ def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Core.
   | .loop guard measure invariant body _md =>
     .loop (guard.map translate_expr) (translate_opt_expr measure)
       (invariant.map (fun (l, e) => (l, translate_expr e))) (body.map translate_stmt) {}
-  | .funcDecl _ _ => panic! "C_Simp does not support function declarations"
   | .typeDecl _ _ => panic! "C_Simp does not support type declarations"
   | .exit label _md => .exit label {}
 

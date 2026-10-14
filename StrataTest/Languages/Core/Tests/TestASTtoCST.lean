@@ -542,7 +542,7 @@ info: program Core;
 
 procedure testFuncDecl (c : int)
 {
-  function double (x : int) : int { int.add(int.add(x, x), c) }
+  var double : int -> int := fun x : int => int.add(int.add(x, x), c);
   var y : int := 5;
   var result : int := double(y);
   assert [assert_0]: result == 12;

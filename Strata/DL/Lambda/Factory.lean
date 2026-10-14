@@ -63,7 +63,7 @@ open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 /--
 The AST-facing Lambda function structure - instantiation of the base `Func` for
 Lambda expressions. It is used for functions that appear in the Strata AST
-(e.g. `Core.Function`, `funcDecl`), and carries only plain data — the base
+(e.g. `Core.Function`), and carries only plain data — the base
 `Func` excludes the function-typed `concreteEval`, so it has decidable equality.
 
 Universally quantified type identifiers, if any, appear before this signature and can

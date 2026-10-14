@@ -802,4 +802,10 @@ theorem Map.find?_insert_ne [DecidableEq α]
       simp [h_ne2]
     · simp only [Map.find?]; split <;> simp_all
 
+/-- `ListMap.keys` of a key-filtered list is the filtered key list. -/
+theorem listMap_keys_filter {α β : Type} (q : α → Bool) :
+    ∀ l : List (α × β),
+      ListMap.keys (l.filter fun (a, _) => q a) = (ListMap.keys l).filter q :=
+  (by induction · <;> grind [ListMap.keys])
+
 end

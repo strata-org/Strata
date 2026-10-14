@@ -91,10 +91,10 @@ partial def diagnoseFailureGeneric
     if isFailure result.result then
       -- Check if provably false (not just unprovable)
       let _ ← push checkState
-      let runCheck : SolverM Decision := do
+      let runCheck : SolverEncodingM Decision := do
         Solver.assert convResult.term
         Solver.checkSat []
-      let (decision, _) ← runCheck.run checkState.smtState.solver
+      let decision ← runEncoding checkState.smtState.solver runCheck
       let _ ← pop checkState
       let isProvablyFalse := decision == .unsat
 

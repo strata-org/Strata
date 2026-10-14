@@ -39,7 +39,7 @@ private def coreToGotoJson (p : StrataDDM.Program) :
   let p := procs[0]!
   let pname := Core.CoreIdent.toPretty p.header.name
   let ctx ← procedureToGotoCtx Env p (axioms := axioms) (distincts := distincts)
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -201,7 +201,7 @@ private def coreToGotoJsonByName (p : StrataDDM.Program) (name : String) :
     | .error f!"procedure {name} not found"
   let pname := Core.CoreIdent.toPretty proc.header.name
   let ctx ← procedureToGotoCtx Env proc (axioms := axioms) (distincts := distincts)
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -334,8 +334,10 @@ procedure caller(x : int) {
 
 -------------------------------------------------------------------------------
 
--- Test: local function declarations (funcDecl) are lifted to top-level GOTO functions
-def E2E_FuncDecl :=
+-- Test: internal function syntax becomes a Lambda-valued local. Core-to-GOTO
+-- does not yet support function-typed local variables, so it must reject this
+-- form.
+def E2E_LambdaValuedLocalFunction :=
 #strata
 program Core;
 procedure test(x : int) {
@@ -344,11 +346,11 @@ procedure test(x : int) {
 };
 #end
 
-#eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_FuncDecl | IO.throwServerError "translation failed"
-  let symStr := symtab.pretty
-  -- The lifted function "double" should appear in the symbol table
-  assert! (symStr.splitOn "double").length > 1
+#guard
+  match coreToGotoJson E2E_LambdaValuedLocalFunction with
+  | .error e =>
+    toString e == "[toGotoType] Function types not supported in GOTO translation"
+  | .ok _ => false
 
 -------------------------------------------------------------------------------
 
@@ -396,7 +398,7 @@ private def coreToGotoJsonWithSummary (p : StrataDDM.Program) (summary : String)
   let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   return (json.symtab, json.goto)
 
 def E2E_PropertySummary :=

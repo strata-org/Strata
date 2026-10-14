@@ -6,11 +6,15 @@
 module
 
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Pipeline.LifelineTable
 
 /-! # Rendering a phase list's contracts as a table
 
 Presentation only: it reads the phases' declared contracts and formats them, so
-it needs the phase vocabulary and nothing from the verifier. -/
+it needs the phase vocabulary and nothing from the verifier. The rendering
+itself is `Strata.Pipeline.lifelineTable`, shared with every other pipeline that
+declares contracts; what belongs here is only the Core-specific part, namely how
+a `ProgramFact` earns its column label. -/
 
 public section
 
@@ -19,123 +23,58 @@ namespace Core
 /-! ### Rendering a pipeline's contracts as a table
 
 `phaseTable` renders a phase list as a dependency table: one numbered row per
-phase in run order, one column
-per fact, each cell a lifeline symbol read against the facts holding at that
-point in the pipeline. `entryFacts` seeds the facts assumed to hold on entry; a
-`consumer` (a name and the facts it requires, e.g. the verification back end)
-becomes a final requirements-only row. Unlike the composition checker, the walk
-does not stop at an unmet requirement, so every breakage shows at once. -/
+phase in run order, one column per fact, each cell a lifeline symbol read
+against the facts holding at that point in the pipeline. `entryFacts` seeds the
+facts assumed to hold on entry; a `consumer` (a name and the facts it requires,
+e.g. the verification back end) becomes a final requirements-only row. -/
 
-/-- Lifeline symbol for a fact at one phase: `+`/`-` required, holds, and still
-    holds / is dropped after, `#` required and does not hold, `V` established,
-    `|`/`:` preserved and holds / would hold, `'` dropped, blank neither. -/
-private def phaseCellChar (req est pres held : Bool) : Char :=
-  if req then (if !held then '#' else if est || pres then '+' else '-')
-  else if est then 'V'
-  else if pres then (if held then '|' else ':')
-  else if held then '\''
-  else ' '
-
-/-- `#`, `+` and `-` mark exactly the required facts, `#` exactly the unmet
-    ones, and otherwise `V`, `+` and `|` exactly the facts that hold after. -/
-private theorem phaseCellChar_spec : ∀ req est pres held : Bool,
-    let c := phaseCellChar req est pres held
-    (['#', '+', '-'].contains c = req) ∧ ((c == '#') = (req && !held)) ∧
-    (!(req && !held) → ['V', '+', '|'].contains c = (est || pres && held)) := by
-  decide
-
-/-- Two-character column label for a fact: drop a leading `no`, capitalize the
-    first letter, and follow it with the next capital (an acronym like
-    `CFGBodies` → `CF`) or the initial of the next word (`BetaRedexes` → `BR`). -/
-private def phaseTableLabelOf (name : String) : String :=
+/-- Column label for a fact: drop a leading `no`, capitalize the first letter,
+    and follow it with the next capital (an acronym like `CFGBodies` → `CF`) or
+    the initial of the next word (`BetaRedexes` → `BR`). -/
+private def phaseTableLabelOf (name : String) : Strata.Pipeline.ColumnLabel :=
   let cs := name.toList
   match (if cs.take 2 == ['n', 'o'] then cs.drop 2 else cs) with
-  | [] => "?"
+  | [] => { first := '?' }
   | c :: rest =>
     let second := match rest with
       | [] => c
       | d :: _ => if d.isUpper then d else (rest.find? (·.isUpper)).getD d
-    String.ofList [c.toUpper, second]
+    { first := c.toUpper, second := some second }
 
-/-- `phaseTableLabelOf` for every fact, widening a collision to three letters so
-    `noPolymorphicFunctions` reads `PoF` beside `noPrecondsFromFuncs`' `PF`. -/
-private def phaseTableLabels : List String :=
-  (ProgramFact.all.foldl (init := ([] : List String)) fun taken f =>
+/-- `phaseTableLabelOf` for every fact, falling back to the name's first two
+    letters and then to a generated letter, taking the first candidate no
+    earlier label used, so `noPolymorphicFunctions` reads `Po` beside
+    `noPrecondsFromFuncs`' `PF`. Mirrors `Strata.Laurel.shapeLabels`, which does
+    the same for shape paths. -/
+private def phaseTableLabels : List Strata.Pipeline.ColumnLabel :=
+  (ProgramFact.all.foldl (init := ([] : List Strata.Pipeline.ColumnLabel)) fun taken f =>
     let base := phaseTableLabelOf f.name
-    let widened :=
-      let cs := (if f.name.toList.take 2 == ['n', 'o'] then f.name.toList.drop 2
-                 else f.name.toList)
-      match cs with
-      | c :: d :: _ => String.ofList [c.toUpper, d] ++ base.drop 1
-      | _ => base
-    (if base ∈ taken then widened else base) :: taken).reverse
-
-private def phTblPadR (w : Nat) (s : String) : String :=
-  s ++ String.ofList (List.replicate (w - s.length) ' ')
-
-private def phTblPadL (w : Nat) (s : String) : String :=
-  String.ofList (List.replicate (w - s.length) ' ') ++ s
-
-private def phTblRStrip (s : String) : String :=
-  String.ofList (s.toList.reverse.dropWhile (· == ' ')).reverse
-
-/-- One character per fact (in `ProgramFact.all` order) for the cells of a row. -/
-private def phTblBody (cells : List Char) : String :=
-  String.join (cells.map fun c => String.ofList [c] ++ " ")
-
-/-- Each phase's row string paired with its cells, threading the facts that hold
-    on entry to it. -/
-private def phaseTableDataRows (nameW : Nat) :
-    Nat → ProgramFactSet → List PipelinePhase → List (String × List Char)
-  | _, _, [] => []
-  | pos, σ, p :: rest =>
-    let cells := ProgramFact.all.map fun f =>
-      phaseCellChar (f ∈ p.requires) (f ∈ p.establishes) (f ∈ p.preserves) (f ∈ σ)
-    let row := phTblRStrip (phTblPadL 2 (toString pos) ++ " " ++
-                            phTblPadR nameW p.phase.name ++ phTblBody cells)
-    let σ' := Strata.Pipeline.applyPhase p.establishes p.preserves σ
-    (row, cells) :: phaseTableDataRows nameW (pos + 1) σ' rest
+    let cs := (if f.name.toList.take 2 == ['n', 'o'] then f.name.toList.drop 2
+               else f.name.toList)
+    let letters := (List.range 26).map fun i => Char.ofNat ('a'.toNat + i)
+    let cands : List Strata.Pipeline.ColumnLabel :=
+      [ base,
+        { first := base.first, second := cs[1]? } ]
+      ++ letters.map (fun c => { first := base.first, second := some c })
+    ((cands.find? (· ∉ taken)).getD
+      { first := base.first,
+        second := some (Char.ofNat ('a'.toNat + taken.length % 26)) } :: taken)).reverse
 
 /-- Render `phases` as the dependency table. See the section comment. -/
 def phaseTable (phases : List PipelinePhase)
     (entryFacts : ProgramFactSet := ProgramFactSet.empty)
     (consumer : Option (String × ProgramFactSet) := none) : String :=
-  let labels := phaseTableLabels
-  let consumerName := (consumer.map (·.1)).getD ""
-  let nameW := (phases.map (·.phase.name) ++ [consumerName]).foldl
-                 (fun w s => max w s.length) 5 + 1
-  let indent := 3 + nameW
-  let dataRows := phaseTableDataRows nameW 1 entryFacts phases
-  let finalσ := phases.foldl (fun σ p =>
-      Strata.Pipeline.applyPhase p.establishes p.preserves σ) entryFacts
-  let consumerRow : Option (String × List Char) := consumer.map fun (nm, needed) =>
-    let cells := ProgramFact.all.map fun f =>
-      if f ∈ needed then (if f ∈ finalσ then '+' else '#') else ' '
-    (phTblRStrip ("   " ++ phTblPadR nameW nm ++ phTblBody cells), cells)
-  let hdr1 := phTblRStrip (String.ofList (List.replicate indent ' ') ++
-    String.join (labels.zipIdx.map fun (l, i) => if i % 2 == 0 then l else "  "))
-  let hdr2 := phTblRStrip (phTblPadR indent "phase" ++
-    String.join (labels.zipIdx.map fun (l, i) => if i % 2 == 1 then l else "  "))
-  let allCells := (dataRows.map (·.2)).flatten ++ ((consumerRow.map (·.2)).getD [])
-  -- `#` is the cell a reader is looking for — a requirement that does not hold —
-  -- so it is explained before the symbols that report business as usual.
-  let legendEntries : List (Char × String) :=
-    [('#', "# required here, and does not hold"),
-     ('V', "V starts holding here"),
-     ('|', "| holds, and is carried on"),
-     ('+', "+ required here, holds, and is carried on"),
-     ('-', "- required here, holds, and is dropped here"),
-     ('\'', "' was holding, and is dropped here"),
-     (':', ": not holding, but would be carried"),
-     (' ', "(blank) not holding, and would not be carried")]
-  let usedEntries := (legendEntries.filter (fun (c, _) => allCells.contains c)).map (·.2)
-  let legendLines := ([("   ".intercalate (usedEntries.take 3)),
-                       ("   ".intercalate ((usedEntries.drop 3).take 3)),
-                       ("   ".intercalate (usedEntries.drop 6))]).filter (· != "")
-  let named := (labels.zip (ProgramFact.all.map (·.name))).map (fun (l, n) => s!"{l}: {n}")
-  let namedLines := [("   ".intercalate (named.take 4)), ("   ".intercalate (named.drop 4))]
-  let rows := dataRows.map (·.1) ++ (consumerRow.map (·.1)).toList
-  "\n".intercalate (legendLines ++ namedLines ++ ["", hdr1, hdr2] ++ rows)
+  Strata.Pipeline.lifelineTable
+    (facts := ProgramFact.all)
+    (labels := phaseTableLabels)
+    (factNames := ProgramFact.all.map (·.name))
+    (rows := phases.map fun p =>
+      { name := p.phase.name
+        requires := fun f => decide (f ∈ p.requires)
+        establishes := fun f => decide (f ∈ p.establishes)
+        preserves := fun f => decide (f ∈ p.preserves) })
+    (entryHolds := fun f => decide (f ∈ entryFacts))
+    (consumer := consumer.map fun (nm, needed) => (nm, fun f => decide (f ∈ needed)))
 
 end Core
 

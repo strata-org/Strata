@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Core.FunctionTypeSpec
 public import Strata.Languages.Core.ProcedureTypeSpec
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.DatatypeTypeSpec
@@ -66,7 +67,7 @@ Declarative typing for a single declaration, parameterized over `ExprTypingSpec`
 `DeclHasType' τ P C Γ decl C' Γ'` reads: "under program `P`, in ambient context
 `C` and type-scope `Γ`, declaration `decl` is well-typed and yields output
 context `C'` and type-scope `Γ'`." `P` is threaded to `ProcHasType'` (so
-procedure bodies can resolve `call`s and local `funcDecl`s).
+procedure bodies can resolve `call`s).
 
 Only `type` synonyms extend `Γ` (with a new alias); type constructors/datatypes
 and function/procedure declarations extend `C` (with a known type, datatype

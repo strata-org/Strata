@@ -154,7 +154,6 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
     typeArgs_no_gen_prefix := h_ta_no_gen
-  }, {
     body_freevars := by intro b hb; simp at hb
     precond_freevars := h_precond
   }⟩
@@ -291,7 +290,6 @@ def unaryOp (n : T.Identifier)
           simp only [hc2]
           simp only [hc1, Option.some.injEq] at heval; subst heval
           exact ⟨mkConst md2 (op a), rfl, hOut.mkConst_eraseMetadata T md1 md2 (op a)⟩
-  }, {
     body_freevars := by intro b hb; simp at hb
     precond_freevars := by
       intro p hp
@@ -389,7 +387,6 @@ def binaryOp (n : T.Identifier)
               simp only [Option.some.injEq] at heval; subst heval
               exact ⟨mkConst md2 (op a b), by simp [hg], hOut.mkConst_eraseMetadata T md1 md2 (op a b)⟩
             · simp at heval
-  }, {
     body_freevars := by intro b hb; simp at hb
     precond_freevars := h_precond
   }⟩

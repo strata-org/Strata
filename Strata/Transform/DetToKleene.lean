@@ -10,7 +10,7 @@ public import Strata.DL.Imperative.KleeneStmt
 
 /-! # Deterministic-to-Kleene Transformation
 
-Returns `none` if the input contains `.exit`, `.funcDecl`, or `.typeDecl`
+Returns `none` if the input contains `.exit` or `.typeDecl`
 statements, which have no Kleene counterpart. -/
 
 public section
@@ -49,7 +49,6 @@ def StmtToKleeneStmt {P : PureExpr} [Imperative.HasBool P] [HasBoolOps P]
       | .nondet => return .loop b
   | .typeDecl _ _ => none
   | .exit _ _ => none
-  | .funcDecl _ _ => none
 
 /-- Deterministic-to-Kleene transformation for a block.
     Returns `none` if any statement is unsupported. -/

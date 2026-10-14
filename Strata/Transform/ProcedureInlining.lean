@@ -44,7 +44,6 @@ def Statement.labelsOfBlocksAndAssertAssumes (s : Core.Statement) : List String 
   | .exit _ _ => []
   -- No other labeled commands.
   | .cmd _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
 end
 
@@ -70,7 +69,6 @@ def Statement.replaceLabelsOfBlocksAndAssertAssumes
   | .assert lbl e m => .assert (app lbl) e m
   | .cover lbl e m => .cover (app lbl) e m
   | .cmd _ => s
-  | .funcDecl _ _ => s
   | .typeDecl _ _ => s
 end
 
@@ -358,7 +356,7 @@ def procedureInliningPipelinePhase
     (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog =>
       runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters

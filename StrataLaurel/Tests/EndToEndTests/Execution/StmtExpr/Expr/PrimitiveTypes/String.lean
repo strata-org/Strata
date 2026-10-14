@@ -10,7 +10,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipLaurelInterpreter := false } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure testStringKO()
@@ -88,13 +88,9 @@ and the solver rejects it as a non-printable character in a string literal), whi
 is a pre-existing limitation of the SMT string-literal emitter and not of these
 operators.
 
-These blocks keep the default `skipLaurelInterpreter := true`, unlike the concat
-blocks above: the standalone Laurel evaluator (`Interpreter.lean`'s `evalOp`) has
-no ordering arm for ANY type — not `.Lt` on `int` either — so enabling it reports
-`unsupported op Strata.Laurel.Operation.Lt`. That is the documented subset of that
-evaluator, not a gap these operators introduce. -/
+These blocks run on the verifier and on both interpreters; the standalone Laurel
+interpreter compares strings by code point too. -/
 
--- `{}` = Core interpreter + verifier; the standalone evaluator has no `.Lt`.
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;

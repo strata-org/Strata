@@ -18,7 +18,8 @@ open Strata
 
 /-! S1: candidates disagree on ARITY (LS.m takes only self; RS.m takes self + n).
     Must not add "expects 0 argument(s) but 1 were provided". -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite LS {
@@ -41,7 +42,8 @@ procedure goS(d: DS)
 
 /-! S2: candidates disagree on PARAMETER TYPE (int vs bool).
     Must not add "expected 'bool', got 'int'". -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite LT {
@@ -65,7 +67,8 @@ procedure goT(d: DT)
 /-! S3: candidates disagree on RETURN type (int vs bool). No candidate's result type
     may propagate: the enclosing expression would report "expected 'bool', got
     'int'" instead of the ambiguity, hiding the cause. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite LR {
@@ -89,7 +92,8 @@ procedure goR(d: DR)
 /-! S4: a genuine error INSIDE an argument of an ambiguous call is still reported.
     Arguments are resolved against `Unknown` rather than skipped, so the ambiguity
     does not mask an undefined name. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite LU {

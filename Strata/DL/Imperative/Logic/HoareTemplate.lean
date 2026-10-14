@@ -162,7 +162,6 @@ variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
 variable {CmdT : Type}
 local notation "I" => EvaluatorBasedInterp P
 variable (evalCmd : EvalCmdParamE P CmdT (Event P))
-variable (extendFactory : ExtendFactory P)
 variable {ParamsTy : Type}
 variable (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop)
 variable {BParamsTy : Type}
@@ -172,11 +171,11 @@ variable (bparams : BParamsTy)
 /-- Empty statement list is skip.  Holds at every block condition: the empty list
     cannot step anywhere but its own terminal. -/
 theorem skip_block (Pre : Env P → Prop) :
-    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [] Pre := by
   intro ρ₀ ρ' trace hpre _ hrun
   rcases hrun with hterm | ⟨label, hexit⟩
-  · obtain ⟨htrace, hcfg⟩ := stmts_nil_runE evalCmd extendFactory hterm
+  · obtain ⟨htrace, hcfg⟩ := stmts_nil_runE evalCmd hterm
     subst htrace
     refine ⟨True.intro, fun _ => ?_⟩
     rcases hcfg with hcfg | hcfg
@@ -184,7 +183,7 @@ theorem skip_block (Pre : Env P → Prop) :
     · injection hcfg with hρ
       subst hρ
       exact hpre
-  · obtain ⟨_, hcfg⟩ := stmts_nil_runE evalCmd extendFactory hexit
+  · obtain ⟨_, hcfg⟩ := stmts_nil_runE evalCmd hexit
     rcases hcfg with hcfg | hcfg <;> simp at hcfg
 
 section
@@ -199,16 +198,15 @@ private theorem while_genE
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
-    (hnofd : Block.noFuncDecl (P := P) (C := CmdT) body = true)
     (hbodyDefs : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) body true, ρ.store x = none)
     (hloopBodyWF : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       blockInitEnvWF bparams body ρ)
     (hloopWF : ∀ ρ ρ_inner tr, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
-      StepStmtStarE P evalCmd extendFactory (.stmts body ρ) tr (.terminal ρ_inner) →
+      StepStmtStarE P evalCmd (.stmts body ρ) tr (.terminal ρ_inner) →
       initEnvWF params (.loop (.det guard) measure inv body md)
-        { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory })
-    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+        { ρ_inner with store := projectStore ρ.store ρ_inner.store })
+    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
@@ -216,7 +214,7 @@ private theorem while_genE
     (ρ₀ ρ' : Env P) (trace : Trace P) (n : Nat)
     (hInv : Inv ρ₀)
     (hwf : initEnvWF params (.loop (.det guard) measure inv body md) ρ₀)
-    (hrunT : ReflTransTraceT (StepStmtE P evalCmd extendFactory)
+    (hrunT : ReflTransTraceT (StepStmtE P evalCmd)
       (.stmt (.loop (.det guard) measure inv body md) ρ₀) trace (.terminal ρ'))
     (hlen : hrunT.len ≤ n) :
     Trace.AssertionsValid P I trace ∧
@@ -244,15 +242,15 @@ private theorem while_genE
       -- the body block reaches terminal; `hcov` rules out an escaping body.
       obtain ⟨ρ_inner, hbody_disj, heq_ρ_mid⟩ :=
         block_reaches_doneE (.inl (reflTransTraceT_to_prop h_block_term))
-      have hbody_run : StepStmtStarE P evalCmd extendFactory (.stmts body ρ₀) tr₁ (.terminal ρ_inner) := by
+      have hbody_run : StepStmtStarE P evalCmd (.stmts body ρ₀) tr₁ (.terminal ρ_inner) := by
         rcases hbody_disj with hterm | ⟨lbl, hexit⟩
         · exact hterm
-        · exact absurd hexit (stmts_exitsCoveredByBlocks_noEscapeE evalCmd extendFactory
+        · exact absurd hexit (stmts_exitsCoveredByBlocks_noEscapeE evalCmd
             body hcov ρ₀ lbl ρ_inner)
       -- the loop tail `[loop]` reaches terminal; its `[]` continuation pins ρ' and tr.
       obtain ⟨ρ_x, tr_l, tr_nil, htr2, h_loop_head, h_nil, hlen_cons⟩ :=
         stmtsT_cons_terminalE h_loop_rest
-      obtain ⟨htail_nil, htail_cfg⟩ := stmts_nil_runE evalCmd extendFactory
+      obtain ⟨htail_nil, htail_cfg⟩ := stmts_nil_runE evalCmd
         (reflTransTraceT_to_prop h_nil)
       subst htail_nil
       have hρx : ρ_x = ρ' := by
@@ -265,14 +263,12 @@ private theorem while_genE
       rw [htr]
       -- reusable facts for lifting `Inv` across the body block's projection.
       have hbodyTriple := hbody ρ₀ ρ_inner tr₁ ⟨hInv, hg⟩ (hloopBodyWF ρ₀ hwf) (.inl hbody_run)
-      have hfac : ρ_inner.factory = ρ₀.factory :=
-        block_noFuncDecl_preserves_factoryE body ρ₀ ρ_inner hnofd (.inl hbody_run)
       have hproj : projectStore ρ₀.store ρ_inner.store
           = dropVars (Block.definedVars (P := P) (C := CmdT) body true) ρ_inner.store :=
         projectStore_eq_dropVarsE h_cmd (hbodyDefs ρ₀ hwf) (.inl hbody_run)
-      have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P)
+      have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store } : Env P)
           = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) body true) ρ_inner.store } := by
-        rw [hproj, ← hfac]
+        rw [hproj]
       have hwf_mid : initEnvWF params (.loop (.det guard) measure inv body md) ρ_mid := by
         rw [heq_ρ_mid]; exact hloopWF ρ₀ ρ_inner tr₁ hwf hbody_run
       -- the tail is proved only when the body prefix is reachable
@@ -309,7 +305,7 @@ theorem cmd (params : ParamsTy) (c : CmdT)
       evalCmd ρ₀.factory ρ₀.store c σ' emitted →
       Trace.AssertionsValid P I emitted ∧
         (Trace.Reachable P I emitted → Post { ρ₀ with store := σ' })) :
-    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre (.cmd c) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   rcases hrun with hterm | ⟨label, hexit⟩
@@ -346,20 +342,20 @@ theorem seq_append
     (hheadWF : ∀ ρ, blockInitEnvWF bparams (ss₁ ++ ss₂) ρ →
       blockInitEnvWF bparams ss₁ ρ)
     (htailWF : ∀ ρ ρ' tr, blockInitEnvWF bparams (ss₁ ++ ss₂) ρ →
-      StepStmtStarE P evalCmd extendFactory (.stmts ss₁ ρ) tr (.terminal ρ') →
+      StepStmtStarE P evalCmd (.stmts ss₁ ρ) tr (.terminal ρ') →
       blockInitEnvWF bparams ss₂ ρ')
-    (h₁ : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    (h₁ : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss₁ Mid)
-    (h₂ : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    (h₂ : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Mid ss₂ Post)
     (hSs1NoExit : Block.exitsCoveredByBlocks [] ss₁) :
-    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (ss₁ ++ ss₂) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
-  rcases stmts_append_doneE evalCmd extendFactory ss₁ ss₂ ρ₀ ρ' hrun with
+  rcases stmts_append_doneE evalCmd ss₁ ss₂ ρ₀ ρ' hrun with
     ⟨lbl, hexit₁⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm₁, htail⟩
   · -- the prefix cannot escape, so this case is impossible
-    exact (stmts_exitsCoveredByBlocks_noEscapeE evalCmd extendFactory ss₁ hSs1NoExit
+    exact (stmts_exitsCoveredByBlocks_noEscapeE evalCmd ss₁ hSs1NoExit
       ρ₀ lbl ρ' hexit₁).elim
   · subst htr
     obtain ⟨hvalid₁, hmid⟩ := h₁ ρ₀ ρ₁ tr₁ hpre (hheadWF ρ₀ hinit) (.inl hterm₁)
@@ -383,14 +379,14 @@ theorem seq_append
     catches the exit and continues from the projected environment. -/
 theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
     {Pre : Env P → Prop} :
-    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (.exit lbl md :: ss) Pre := by
   intro ρ₀ ρ' trace hpre _hinit hrun
   rcases hrun with hterm | ⟨elbl, hexit⟩
-  · rcases stmts_cons_headE evalCmd extendFactory hterm with hinitial | hseq
+  · rcases stmts_cons_headE evalCmd hterm with hinitial | hseq
     · simp at hinitial
     · obtain ⟨ρ₁, tr₁, tr₂, _, hhead, _⟩ :=
-        seq_reaches_terminalE evalCmd extendFactory hseq
+        seq_reaches_terminalE evalCmd hseq
       -- the head is an `exit`, so it reaches `.exiting`, never `.terminal`
       cases hhead with
       | step _ _ _ _ _ hstep hrest =>
@@ -399,9 +395,9 @@ theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
           | step_exit =>
             obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
             simp at hc
-  · rcases stmts_cons_headE evalCmd extendFactory hexit with hinitial | hseq
+  · rcases stmts_cons_headE evalCmd hexit with hinitial | hseq
     · simp at hinitial
-    · rcases seq_reaches_exitingE evalCmd extendFactory hseq with
+    · rcases seq_reaches_exitingE evalCmd hseq with
         hhead | ⟨ρ₁, tr₁, tr₂, _, hterm_head, _⟩
       · -- the head exited: the label and environment are those of the `exit`
         cases hhead with
@@ -434,35 +430,32 @@ variable [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
 
     `hbodyWF` lowers the statement condition on `.block l ss md` to the block condition
     on the body `ss`, and `hbodyDefs` extracts from it that those names start undefined —
-    which is what makes leaving the block a *drop*.  `hnofd` keeps the factory constant
-    across the body, so the exit restores nothing. -/
+    which is what makes leaving the block a *drop*.  No statement step mutates the
+    factory, so the exit restores nothing. -/
 theorem block (params : ParamsTy)
     {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
-    (hnofd : Block.noFuncDecl (P := P) (C := CmdT) ss = true)
     (hbodyWF : ∀ ρ, initEnvWF params (.block l ss md) ρ → blockInitEnvWF bparams ss ρ)
     (hbodyDefs : ∀ ρ, initEnvWF params (.block l ss md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ.store x = none)
-    (h : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    (h : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss Post)
     (hpost_proj : PostWF ss Post) :
-    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre (.block l ss md) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   obtain ⟨ρ_inner, hrun_inner, heq⟩ := stmt_block_reaches_doneE hrun
   have ⟨hvalid, hpost⟩ := h ρ₀ ρ_inner trace hpre (hbodyWF ρ₀ hinit) hrun_inner
-  have hfac : ρ_inner.factory = ρ₀.factory :=
-    block_noFuncDecl_preserves_factoryE ss ρ₀ ρ_inner hnofd hrun_inner
   have hproj : projectStore ρ₀.store ρ_inner.store
       = dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ_inner.store :=
     projectStore_eq_dropVarsE h_cmd (hbodyDefs ρ₀ hinit) hrun_inner
   subst heq
   refine ⟨hvalid, fun hf => ?_⟩
-  have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ_inner.store } := by
-    rw [hproj, ← hfac]
+  have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ_inner.store } := by
+    rw [hproj]
   rw [hrec]
   exact hpost_proj ρ_inner (hpost hf)
 
@@ -476,29 +469,29 @@ theorem singleton (params : ParamsTy)
     {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
     (hstmtWF : ∀ ρ, blockInitEnvWF bparams [s] ρ → initEnvWF params s ρ)
-    (h : Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    (h : Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre s Post) :
-    Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [s] Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   rcases hrun with hterm | ⟨label, hexit⟩
-  · rcases stmts_cons_headE evalCmd extendFactory hterm with hinitial | hseq
+  · rcases stmts_cons_headE evalCmd hterm with hinitial | hseq
     · simp at hinitial
     · obtain ⟨ρ₁, headTrace, tailTrace, htrace, hhead, htail⟩ :=
-        seq_reaches_terminalE evalCmd extendFactory hseq
-      obtain ⟨htailTrace, htailCfg⟩ := stmts_nil_runE evalCmd extendFactory htail
+        seq_reaches_terminalE evalCmd hseq
+      obtain ⟨htailTrace, htailCfg⟩ := stmts_nil_runE evalCmd htail
       subst htailTrace
       rcases htailCfg with hcfg | hcfg
       · simp at hcfg
       · cases hcfg
         rw [htrace, List.append_nil]
         exact h ρ₀ ρ' headTrace hpre (hstmtWF ρ₀ hinit) (.inl hhead)
-  · rcases stmts_cons_headE evalCmd extendFactory hexit with hinitial | hseq
+  · rcases stmts_cons_headE evalCmd hexit with hinitial | hseq
     · simp at hinitial
-    · rcases seq_reaches_exitingE evalCmd extendFactory hseq with hhead | htail
+    · rcases seq_reaches_exitingE evalCmd hseq with hhead | htail
       · exact h ρ₀ ρ' trace hpre (hstmtWF ρ₀ hinit) (.inr ⟨label, hhead⟩)
       · obtain ⟨ρ₁, headTrace, tailTrace, htrace, hhead, htailRun⟩ := htail
-        obtain ⟨_, htailCfg⟩ := stmts_nil_runE evalCmd extendFactory htailRun
+        obtain ⟨_, htailCfg⟩ := stmts_nil_runE evalCmd htailRun
         rcases htailCfg with hcfg | hcfg <;> simp at hcfg
 
 /-- Empty block is skip.  No well-formedness side condition: `skip_block` holds
@@ -508,12 +501,12 @@ theorem skip (params : ParamsTy)
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (l : String) (md : MetaData P) (Pre : Env P → Prop) :
-    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre (.block l [] md) Pre :=
-  block evalCmd extendFactory initEnvWF (fun (_ : Unit) _ _ => True) () params
-    h_cmd (by simp [Block.noFuncDecl]) (fun _ _ => trivial)
+  block evalCmd initEnvWF (fun (_ : Unit) _ _ => True) () params
+    h_cmd (fun _ _ => trivial)
     (fun _ _ x hx => absurd hx (by simp))
-    (skip_block evalCmd extendFactory (fun (_ : Unit) _ _ => True) () Pre)
+    (skip_block evalCmd (fun (_ : Unit) _ _ => True) () Pre)
     (postWF_of_definedVars_nil Pre (by simp))
 
 /-- If-then-else rule.  `hthenWF`/`helseWF` lower the statement condition on the
@@ -524,7 +517,6 @@ theorem ite (params : ParamsTy)
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
-    (hnofd : Stmt.noFuncDecl (P := P) (C := CmdT) (.ite (.det cond) tss ess md) = true)
     (hthenWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
       blockInitEnvWF bparams tss ρ)
     (helseWF : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
@@ -533,45 +525,39 @@ theorem ite (params : ParamsTy)
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) tss true, ρ.store x = none)
     (helseDefs : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ess true, ρ.store x = none)
-    (ht : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    (ht : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.tt) tss Post)
-    (he : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+    (he : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.ff) ess Post)
     (hthen_proj : PostWF tss Post) (helse_proj : PostWF ess Post) :
-    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre (.ite (.det cond) tss ess md) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
-  have hnofd' : Block.noFuncDecl (P := P) (C := CmdT) tss = true ∧
-      Block.noFuncDecl (P := P) (C := CmdT) ess = true := by
-    simpa only [Stmt.noFuncDecl, Bool.and_eq_true] using hnofd
   -- Both branches, and both ways the `ite`'s block finishes, reduce to the same
   -- shape: the taken branch ran to terminal-or-exiting and the block projected.
   have hbranch : ∀ (bss : List (Stmt P CmdT)) (Pre' : Env P → Prop) (tr : Trace P),
       Pre' ρ₀ → blockInitEnvWF bparams bss ρ₀ →
-      Block.noFuncDecl (P := P) (C := CmdT) bss = true →
       (∀ x ∈ Block.definedVars (P := P) (C := CmdT) bss true, ρ₀.store x = none) →
       PostWF bss Post →
-      Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+      Triple (EventLang.imperativeBlockE P CmdT evalCmd
         ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre' bss Post →
-      (StepStmtStarE P evalCmd extendFactory
-          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) tr (.terminal ρ') ∨
-       ∃ lbl, StepStmtStarE P evalCmd extendFactory
-          (.block .none ρ₀.store ρ₀.factory (.stmts bss ρ₀)) tr (.exiting lbl ρ')) →
+      (StepStmtStarE P evalCmd
+          (.block .none ρ₀.store (.stmts bss ρ₀)) tr (.terminal ρ') ∨
+       ∃ lbl, StepStmtStarE P evalCmd
+          (.block .none ρ₀.store (.stmts bss ρ₀)) tr (.exiting lbl ρ')) →
       Trace.AssertionsValid P I tr ∧ (Trace.Reachable P I tr → Post ρ') := by
-    intro bss Pre' tr hpre' hbwf hbnofd hbdefs hbproj hb hdone_b
+    intro bss Pre' tr hpre' hbwf hbdefs hbproj hb hdone_b
     obtain ⟨ρ_inner, hrun_inner, heq⟩ := block_reaches_doneE hdone_b
     have ⟨hvalid, hpost⟩ := hb ρ₀ ρ_inner tr hpre' hbwf hrun_inner
-    have hfac : ρ_inner.factory = ρ₀.factory :=
-      block_noFuncDecl_preserves_factoryE bss ρ₀ ρ_inner hbnofd hrun_inner
     have hproj : projectStore ρ₀.store ρ_inner.store
         = dropVars (Block.definedVars (P := P) (C := CmdT) bss true) ρ_inner.store :=
       projectStore_eq_dropVarsE h_cmd hbdefs hrun_inner
     subst heq
     refine ⟨hvalid, fun hf => ?_⟩
-    have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store, factory := ρ₀.factory } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) bss true) ρ_inner.store } := by
-      rw [hproj, ← hfac]
+    have hrec : ({ ρ_inner with store := projectStore ρ₀.store ρ_inner.store } : Env P) = { ρ_inner with store := dropVars (Block.definedVars (P := P) (C := CmdT) bss true) ρ_inner.store } := by
+      rw [hproj]
     rw [hrec]
     exact hbproj ρ_inner (hpost hf)
   rcases hrun with hterm | ⟨lbl, hexit⟩
@@ -580,20 +566,20 @@ theorem ite (params : ParamsTy)
       cases hstep with
       | step_admin hadmin => cases hadmin with
         | step_ite_true hc _ =>
-          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1
+          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
             (hthenDefs ρ₀ hinit) hthen_proj ht (.inl (by simpa using hrest))
         | step_ite_false hc _ =>
-          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2
+          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
             (helseDefs ρ₀ hinit) helse_proj he (.inl (by simpa using hrest))
   · cases hexit with
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
       | step_admin hadmin => cases hadmin with
         | step_ite_true hc _ =>
-          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit) hnofd'.1
+          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
             (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, by simpa using hrest⟩)
         | step_ite_false hc _ =>
-          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit) hnofd'.2
+          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
             (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, by simpa using hrest⟩)
 
 /-- **While rule.**  An invariant that the body re-establishes on every iteration
@@ -616,30 +602,29 @@ theorem while_rule (params : ParamsTy)
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
-    (hnofd : Block.noFuncDecl (P := P) (C := CmdT) body = true)
     (hbodyDefs : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) body true, ρ.store x = none)
     (hloopBodyWF : ∀ ρ, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
       blockInitEnvWF bparams body ρ)
     (hloopWF : ∀ ρ ρ_inner tr, initEnvWF params (.loop (.det guard) measure inv body md) ρ →
-      StepStmtStarE P evalCmd extendFactory (.stmts body ρ) tr (.terminal ρ_inner) →
+      StepStmtStarE P evalCmd (.stmts body ρ) tr (.terminal ρ_inner) →
       initEnvWF params (.loop (.det guard) measure inv body md)
-        { ρ_inner with store := projectStore ρ.store ρ_inner.store, factory := ρ.factory })
-    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd extendFactory
+        { ρ_inner with store := projectStore ρ.store ρ_inner.store })
+    (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv) :
-    Triple (EventLang.imperativeE P CmdT evalCmd extendFactory
+    Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Inv (.loop (.det guard) measure inv body md)
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.ff) := by
   intro ρ₀ ρ' trace hInv hinit hrun
   rcases hrun with hterm | ⟨lbl, hexit⟩
-  · exact while_genE evalCmd extendFactory initEnvWF blockInitEnvWF bparams params
-      h_cmd hnofd hbodyDefs hloopBodyWF hloopWF hbody hcov hInv_proj
+  · exact while_genE evalCmd initEnvWF blockInitEnvWF bparams params
+      h_cmd hbodyDefs hloopBodyWF hloopWF hbody hcov hInv_proj
       ρ₀ ρ' trace _ hInv hinit (reflTransTrace_to_T hterm) (Nat.le_refl _)
   · -- a loop's only exits are its body's, which `hcov` catches, so it never exits.
-    exact absurd hexit (exitsCoveredByBlocks_noEscapeE evalCmd extendFactory
+    exact absurd hexit (exitsCoveredByBlocks_noEscapeE evalCmd
       (.loop (.det guard) measure inv body md) hcov ρ₀ lbl ρ')
 
 end StructuredRules

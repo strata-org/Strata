@@ -272,7 +272,8 @@ procedure whileInBranch(b: bool)
 #end
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated failure is "could not be proved", which a concrete run cannot produce.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 // Regression: a loop with no assignment in a guarded branch must stay under its

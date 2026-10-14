@@ -15,11 +15,24 @@ Key results:
 
 - `Procedure.mapExprs_id` — `Procedure.mapExprs` with the identity is the
   identity (the procedure-level analog of `Statements.mapExprs_id`).
+- `Procedure.Header.keys_getInoutParams`, `Procedure.Header.keys_getOutputOnlyParams` —
+  the keys of Core's inout and output-only formals are the generic
+  `Calls.inoutParams` / `Calls.outputOnlyParams`.
 -/
 
 public section
 
 namespace Core
+
+/-- The keys of Core's inout formals are the generic `Calls.inoutParams`. -/
+theorem Procedure.Header.keys_getInoutParams (h : Procedure.Header) :
+    ListMap.keys h.getInoutParams = Imperative.Calls.inoutParams (P := Expression) h :=
+  listMap_keys_filter _ _
+
+/-- The keys of Core's output-only formals are the generic `Calls.outputOnlyParams`. -/
+theorem Procedure.Header.keys_getOutputOnlyParams (h : Procedure.Header) :
+    ListMap.keys h.getOutputOnlyParams = Imperative.Calls.outputOnlyParams (P := Expression) h :=
+  listMap_keys_filter (fun _ => !_) _
 
 /-- `Procedure.mapExprs` with the identity is the identity. -/
 theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := by

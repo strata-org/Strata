@@ -9,6 +9,7 @@ public import Strata.DL.SMT.AbstractSolver
 import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.DL.SMT.Factory
+import Strata.DL.SMT.StringLit
 
 /-!
 # Incremental SMT-LIB Backend
@@ -44,6 +45,14 @@ structure IncrementalSolverState where
 /-- The monad for the incremental solver backend. -/
 abbrev IncrementalSolverM := StateT IncrementalSolverState IO
 
+/-- Incremental solver actions that preserve SMT text serialization failures
+as structured values while ordinary process IO errors remain exceptions. -/
+abbrev IncrementalEncodingM := ExceptT StringLit.EncodingError IncrementalSolverM
+
+instance : MonadExceptOf IO.Error IncrementalEncodingM where
+  throw e := ExceptT.mk <| throwThe IO.Error e
+  tryCatch x handle := ExceptT.mk <| tryCatchThe IO.Error x handle
+
 namespace IncrementalSolver
 
 /-- Write `str` followed by a newline to the solver input stream. -/
@@ -67,23 +76,23 @@ def readln : IncrementalSolverM String := do
   | .some stdout => return (← stdout.getLine).trimAscii.toString
   | .none => throw (IO.userError "no output stream available")
 
-private def termToStr (t : Term) : IncrementalSolverM String := do
+private def termToStr (t : Term) : IncrementalEncodingM String := do
   let st ← get
   if let .some s := st.termStrings.get? t then return s
   match Strata.SMTDDM.termToString t with
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
     return s
-  | .error msg => throw (IO.userError s!"term serialization failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.termSerialization msg)
 
-private def typeToStr (ty : TermType) : IncrementalSolverM String := do
+private def typeToStr (ty : TermType) : IncrementalEncodingM String := do
   let st ← get
   if let .some s := st.typeStrings.get? ty then return s
   match Strata.SMTDDM.termTypeToString ty with
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
     return s
-  | .error msg => throw (IO.userError s!"type serialization failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.typeSerialization msg)
 
 /-- Get the disambiguated SMT-LIB name for a variable, handling shadowing. -/
 private def disambiguatedName (name : String) (depth : Nat) : String :=
@@ -178,8 +187,8 @@ def spawn (path : String) (args : Array String) : IO IncrementalSolverState := d
 /-- Shared helper for constructing quantified terms. -/
 private def mkQuantHelper (qk : QuantifierKind)
     (bindings : List (String × TermType))
-    (callback : List Term → IncrementalSolverM (Term × List (List Term)))
-    : IncrementalSolverM Term := do
+    (callback : List Term → IncrementalEncodingM (Term × List (List Term)))
+    : IncrementalEncodingM Term := do
   let vars := bindings.map fun (name, ty) => TermVar.mk name ty
   let varTerms := vars.map Term.var
   let (body, triggers) ← callback varTerms
@@ -187,7 +196,7 @@ private def mkQuantHelper (qk : QuantifierKind)
 
 /-- Shared helper for binary comparison operations. -/
 private def mkBinCmp (op : Op) (opName : String) (ts : List Term)
-    : IncrementalSolverM Term :=
+    : IncrementalEncodingM Term :=
   match ts with
     | [] | [_] => throw (IO.userError s!"{opName}: need at least two arguments")
     | [t1, t2] => return (Term.app op [t1, t2] .bool)
@@ -195,7 +204,7 @@ private def mkBinCmp (op : Op) (opName : String) (ts : List Term)
 
 /-- Shared helper for variadic arithmetic operations. -/
 private def mkVarArith (op : Op) (opName : String) (ts : List Term)
-    : IncrementalSolverM Term :=
+    : IncrementalEncodingM Term :=
   match ts with
     | [] => throw (IO.userError s!"{opName}: empty argument list")
     | [t] => return t
@@ -227,7 +236,7 @@ def parseDecision (line : String) : Except String Decision :=
 
 /-- Format datatype constructors as SMT-LIB strings. -/
 private def formatConstrs (constrs : List (String × List (String × TermType)))
-    : IncrementalSolverM (List String) := do
+    : IncrementalEncodingM (List String) := do
   let mut result := []
   for (cname, fields) in constrs.reverse do
     let cStr := Symbol.toSMTString cname
@@ -257,7 +266,7 @@ private def mkConstructorHandles (selfSort : TermType)
         Term.app (.datatype_op .selector fname) [] fty }
 
 /-- Build the `AbstractSolver` implementation for incremental SMT-LIB. -/
-def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
+def mkIncrementalSolver : AbstractSolver Term TermType IncrementalEncodingM where
   setLogic logic := emitln s!"(set-logic {logic})"
   setOption name value := emitln s!"(set-option :{name} {value})"
   comment c := emitln s!"; {c.replace "\n" " "}"

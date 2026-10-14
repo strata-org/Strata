@@ -97,7 +97,6 @@ def collectAssumeIntFacts (s : Statement) : IntFactEnv :=
   | .ite _ _ _ _ => []
   | .loop _ _ _ _ _ => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
   termination_by structural s
 
@@ -171,7 +170,6 @@ def collectAssumeSelectFacts (s : Statement) : SelectEnv :=
   | .ite _ _ _ _ => []
   | .loop _ _ _ _ _ => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
   termination_by structural s
 
@@ -692,7 +690,6 @@ def unrollStmt (env : UEnv) (s : Statement) : Statement × Counts :=
   -- `noCFGBodies`, so neither shape reaches this traversal.
   | .loop g measure inv body md => (.loop g measure inv body md, {})
   | .exit l md => (.exit l md, {})
-  | .funcDecl decl md => (.funcDecl decl md, {})
   | .typeDecl tc md => (.typeDecl tc md, {})
   termination_by Imperative.Stmt.sizeOf s
 
@@ -750,7 +747,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       let baseF ← Core.Transform.getFactory

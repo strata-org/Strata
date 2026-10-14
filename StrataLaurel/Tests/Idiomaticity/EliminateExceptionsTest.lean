@@ -203,6 +203,8 @@ procedure loadUser(id: int)
             }
           }
       }$tryfin_0;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -266,6 +268,8 @@ info: procedure closeAndReturn()
       };
       $thrown := $fin_thrown_1;
       $returning := $fin_returning_1;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -462,6 +466,8 @@ info: procedure nested()
       };
       $thrown := $fin_thrown_3;
       $returning := $fin_returning_3;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -557,6 +563,8 @@ procedure parseDocument(input: int)
       $thrown := $fin_thrown_2;
       $returning := $fin_returning_2;
       $exc_0 := $fin_exc_2;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -633,6 +641,8 @@ info: procedure releaseAndBreak()
         $thrown := $fin_thrown_1;
         $returning := $fin_returning_1;
         $exiting_out := $fin_exiting_out_1;
+        assert !$thrown summary "no exception escapes this `try` uncaught";
+        assume !$thrown;
         if $thrown
           then {
             exit $exnexit
