@@ -263,9 +263,10 @@ The semantics of the {name Stmt}`Stmt` type is defined in terms of
 
 The {name StepStmt}`StepStmt` relation describes how each type of statement
 transforms configurations. It is parameterized by a command evaluator (because
-statements are parameteric to the list of defined commands) and an
-`extendFactory` function (used by `funcDecl` to add new function definitions to
-the expression evaluator within a scope).
+statements are parameteric to the list of defined commands). The expression
+factory is immutable during execution: it is carried in the environment to
+evaluate expressions, and a `.block` snapshots and restores it for scoping, but
+no statement step mutates it.
 
 {docstring Imperative.StepStmt}
 

@@ -22,10 +22,10 @@ only `_ . ? ! @ $` beyond alphanumerics. Every character in the gap
 (`%`, `-`, `+`, `*`, `^`, `&`, `=`, `<`, `>`, `/`, `~`) is one a solver may echo bare and
 this parser cannot read.
 
-A key that fails to lex takes the whole response with it: `parseModelDDM` catches
-the parse error and returns `[]`, so the model is silently empty rather than
-wrong. That is why these are pinned: the failure is invisible at the call site,
-and the count is the only signal.
+A key that fails to lex takes the whole response with it: the parse error is caught and
+the model comes back empty rather than wrong. This best-effort path stays silent because
+model absence must not change or obscure the solver verdict; callers that need the parse
+failure use `parseModelDDMExcept`.
 
 Pipe-quoted keys always parse, whatever they contain. That is the property worth
 relying on: forcing a quoted echo is what makes a name readable back, not

@@ -10,7 +10,7 @@ open Strata
 
 /-! D1: SHARED-BASE diamond. D extends L,R; both extend A; ONLY A declares m.
     One declaration reached by two paths => resolves to A.m (NOT ambiguous). -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A1 {
@@ -26,12 +26,21 @@ procedure go(d: D1)
   var x: int := d#m();
   assert x == 7
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var d: D1 := new D1;
+  go(d)
+};
 #end
 
 /-! D2: ASYMMETRIC. C extends L,R; L extends A (A declares m); R ALSO declares m.
     R (dist 1) and A (dist 2) are incomparable => ambiguity ERROR.
     A naive nearest-BFS would silently pick R here; dominance must reject. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite A2 {
@@ -59,7 +68,8 @@ procedure go(c: C2b)
     from collapsing a genuine diamond into a false winner: P and Q both extend Root
     and declare m; Z extends P, Q. Despite the common Root, {P, Q} are distinct
     incomparable declarers => ambiguous. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Root { }
@@ -82,7 +92,8 @@ procedure go(z: Z3)
 /-! D4 (INTERACTION): a call to a method NO ancestor declares stays "not defined"
     even though the empty shared Root is a universal ancestor -- the Object edge
     must not silently absorb an undeclared call. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Root4 { }
@@ -125,7 +136,8 @@ procedure go(a: A4b)
     that wrongly RESOLVED instead of reporting ambiguity fails on the unfired annotation,
     whatever the assert says. An assert matching one candidate would leave a reader
     unable to see that. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite C5d {
@@ -158,7 +170,8 @@ procedure go(t: T5)
     This also pins that dominance is quantified over ALL candidates rather than a
     prefix: with three declarers of which one is dominated, a check that looked at only
     the first two would report a different set. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite A6 {
@@ -192,7 +205,8 @@ procedure go(t: T6)
     the distinction. `mostSpecific`'s own behaviour on a cycle (an order-dependent pick,
     since mutual reachability makes both names dominate) is a separate pre-existing gap;
     rejecting cycles belongs where composites are defined. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Ac extends Bc {

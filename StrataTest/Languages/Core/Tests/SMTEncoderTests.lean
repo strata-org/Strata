@@ -10,6 +10,7 @@ meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Transform.BetaReduce
 import Strata.Languages.Core.ObligationExtraction
+meta import StrataTest.DL.SMT.EncodingTestUtils
 
 meta section
 
@@ -18,6 +19,7 @@ meta section
 namespace Core
 open Lambda
 open Strata.SMT
+open Strata.SMT.TestUtils
 
 /--
 info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
@@ -223,10 +225,11 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
     | _, _ => false
   | _ => false
 
--- Test string literal containing double quotes is properly escaped for SMT-LIB 2.7
--- In SMT-LIB 2.7, double quotes inside strings are escaped by doubling: "a""b" represents a"b
+-- Test string literal containing double quotes is properly escaped for SMT-LIB.
+-- SMT-LIB's own spelling for an embedded quote is a doubled `""`; `\u{22}` denotes the
+-- same single character and is what `Strata.SMT.StringLit` emits.
 /--
-info: "; x\n(declare-const x String)\n(assert (= x \"{\"\"key\"\":\"\"val\"\"}\"))\n"
+info: "; x\n(declare-const x String)\n(assert (= x \"{\\u{22}key\\u{22}:\\u{22}val\\u{22}}\"))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
@@ -358,11 +361,10 @@ private def binMinusUF (a b : Strata.SMT.Term) : Strata.SMT.Term :=
   let md : Imperative.MetaData Core.Expression := #[]
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
-  let ((ids, _estate), _) ←
-    Strata.SMT.SolverM.run solver
-      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "test")
-        (pctx := pctx))
+  let (ids, _estate) ← runSolverEncoding solver
+    (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+      (satisfiabilityCheck := false) (validityCheck := true) (label := "test")
+      (pctx := pctx))
   -- ids should contain "c" but not "f"
   let hasF := ids.any (· == "f")
   return (ids, !hasF)
@@ -384,11 +386,10 @@ info: (set-logic ALL)
   let md : Imperative.MetaData Core.Expression := #[]
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
-  let _ ←
-    Strata.SMT.SolverM.run solver
-      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
-        (pctx := pctx))
+  let _ ← runSolverEncoding solver
+    (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+      (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
+      (pctx := pctx))
   let contents ← b.get
   let smt :=
     if h : contents.data.IsValidUTF8
@@ -414,11 +415,10 @@ info: (set-logic ALL)
     Imperative.MetaData.empty.withPropertySummary "Division by zero is impossible"
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
-  let _ ←
-    Strata.SMT.SolverM.run solver
-      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
-        (pctx := pctx))
+  let _ ← runSolverEncoding solver
+    (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+      (satisfiabilityCheck := false) (validityCheck := true) (label := "assert_bounds_check")
+      (pctx := pctx))
   let contents ← b.get
   let smt :=
     if h : contents.data.IsValidUTF8
@@ -447,11 +447,10 @@ private def captureEncodeCore (md : Imperative.MetaData Core.Expression)
   let obligationTerm := Term.prim (.bool true)
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Strata.SMT.Solver.bufferWriter b
-  let _ ←
-    Strata.SMT.SolverM.run solver
-      (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
-        (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label)
-        (pctx := pctx))
+  let _ ← runSolverEncoding solver
+    (Strata.SMT.Encoder.encodeCore ctx (pure ()) [] obligationTerm md
+      (satisfiabilityCheck := satCheck) (validityCheck := validityCheck) (label := label)
+      (pctx := pctx))
   let contents ← b.get
   return if h : contents.data.IsValidUTF8
          then String.fromUTF8 contents.data h
@@ -466,13 +465,14 @@ private def summaryMd (summary : String) : Imperative.MetaData Core.Expression :
 private def fileRangeMd (file : String) : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange (.file file) StrataDDM.SourceRange.none)
 
-/-! Embedded double quotes in the property summary must be doubled (`""`). -/
+/-! Embedded double quotes in the property summary must be escaped — as `\u{22}`, which
+    denotes the same character as SMT-LIB's doubled `""`. -/
 /--
 info: (set-logic ALL)
 ; Validity
 (assert false)
 (check-sat)
-(set-info :final-message "Expected len(kwargs[""JobName""]) >= 1, got stringLen(kwargs[JobName])")
+(set-info :final-message "Expected len(kwargs[\u{22}JobName\u{22}]) >= 1, got stringLen(kwargs[JobName])")
 -/
 #guard_msgs in
 #eval show IO _ from do
@@ -481,10 +481,10 @@ info: (set-logic ALL)
     false true
   IO.print smt
 
-/-! A backslash in the property summary is a *literal* character in SMT-LIB
-    2.6+ strings (no special meaning), so no escape is needed. -/
+/-! A backslash in the property summary is escaped as `\u{5c}` so it cannot begin an
+    SMT-LIB `\u{...}` escape in the surrounding string literal. -/
 /--
-info: (set-info :final-message "path/with\backslash")
+info: (set-info :final-message "path/with\u{5c}backslash")
 -/
 #guard_msgs in
 #eval show IO _ from do
@@ -493,13 +493,25 @@ info: (set-info :final-message "path/with\backslash")
     if line.startsWith "(set-info :final-message" then
       IO.println line
 
+/-! A metadata character outside SMT-LIB's semantic string alphabet is rendered
+    as a visible code-point marker. It must not turn a valid VC into an encoding
+    failure merely because its diagnostic summary cannot be represented
+    literally. -/
+/--
+info: (set-info :final-message "before<U+30000>after")
+-/
+#guard_msgs in
+#eval show IO _ from do
+  let summary := String.ofList ("before".toList ++ [Char.ofNat 0x30000] ++ "after".toList)
+  let smt ← captureEncodeCore (summaryMd summary) false true
+  for line in smt.splitOn "\n" do
+    if line.startsWith "(set-info :final-message" then
+      IO.println line
+
 /-! In full-check mode (both satisfiability and validity), `addLocationInfo`
     emits `:sat-message` and `:unsat-message`. These values must not carry
-    pre-wrapping literal quote characters — before the fix, the
-    `bothChecks` branch passed `"\"Property can be satisfied\""` which, once
-    `setInfoString` re-quoted it, rendered as `"""Property..."""` (a
-    well-formed SMT-LIB string whose content has literal leading and
-    trailing `"`). -/
+    pre-wrapping literal quote characters because `setInfoString` supplies the
+    SMT-LIB quotes. -/
 /--
 info: (set-info :sat-message "Property can be satisfied")
 (set-info :unsat-message "Property is always true")

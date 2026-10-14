@@ -11,7 +11,6 @@ import Strata.DL.Imperative.CmdType
 import Strata.DL.Lambda.LExprT
 import Strata.DL.Lambda.LExprType
 import Strata.Languages.Core.CmdType
-import Strata.Languages.Core.FunctionType
 
 public section
 
@@ -194,18 +193,6 @@ where
             -- Add source location to error messages.
             .error (errorWithSourceLoc e md)
 
-        | .funcDecl decl md => do try
-          -- Recursive functions are only allowed as top-level declarations
-          if decl.isRecursive then
-            .error (md.toDiagnosticF f!"recursive functions are not allowed as local declarations")
-          -- Type check the function declaration using the shared helper
-          -- which returns both the type-checked PureFunc and the Function
-          let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError Message.fromFormat
-          let C := C.addFactoryFunction func.toLFunc
-          .ok (.funcDecl decl' md, Env, C)
-          catch e =>
-            .error (errorWithSourceLoc e md)
-
         | .typeDecl tc md => do try
           -- Add the type to the context. Shadowing is not allowed: if a
           -- type with the same name was already declared (at the program
@@ -257,11 +244,7 @@ def Command.subst (S : Subst) (c : Command) : Command :=
 /--
 Apply type substitution `S` to a statement.
 
-Note: This substitutes type variables in types, not term variables. For
-`funcDecl`, the input identifiers (term-level names like `x`, `y`) are
-unchanged; only the types of those inputs are substituted. There is no
-name collision concern between type variables in `S` and term-level
-input identifiers.
+Note: This substitutes type variables in types, not term variables.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
@@ -275,13 +258,6 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
       (m.map (LExpr.applyTypeSubst · S))
       (i.map (fun (l, e) => (l, e.applyTypeSubst S))) (go S bss []) md
   | .exit _ _ => s
-  | .funcDecl decl md =>
-    let decl' := { decl with
-      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.subst S ty)),
-      output := Lambda.LTy.subst S decl.output,
-      body := decl.body.map (·.applyTypeSubst S),
-      axioms := decl.axioms.map (·.applyTypeSubst S) }
-    .funcDecl decl' md
   | .typeDecl _ _ => s  -- Type declarations don't contain type variables to substitute
   where
     go S ss acc : List Statement :=

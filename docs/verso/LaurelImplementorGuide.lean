@@ -12,6 +12,7 @@ import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.LiftImperativeExpressions
 import StrataLaurel.Implementation.ModifiesClauses
+import StrataLaurel.Implementation.LaurelPipelinePrinter
 
 open Strata.Laurel
 
@@ -42,6 +43,18 @@ def laurelPipelineDocsMarkdown : String :=
     if decls.isEmpty then base
     else base ++ "\n" ++ "\n".intercalate decls
   "\n".intercalate entries.toList
+
+def mdBlockCommand (what : String) (md : String) : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let some ast := MD4Lean.parse md
+    | Lean.throwError s!"Failed to parse {what} as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command rendering the shape lifeline table.
+    Usage inside a `#doc` block: `{laurelShapeTable}` -/
+@[block_command]
+def laurelShapeTable : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "shapeLifelineTableMarkdown" shapeLifelineTableMarkdown
 
 /-- Markdown dependency graph for the Laurel passes, observed by folding the live shape set
     over the pipeline (`passDependencies`). Nothing here is hand-written: each edge names the
@@ -85,34 +98,22 @@ Every edge is derived from the passes' declared node kinds:\n\n"
 /-- Block command that generates documentation for all Laurel pipeline passes.
     Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
 @[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDocsMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "laurelPipelineDocsMarkdown" laurelPipelineDocsMarkdown
 
 /-- Block command that generates a dependency graph for the Laurel pipeline passes
     derived from the passes' declared node kinds.
     Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
 @[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDependencyGraphMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "laurelPipelineDependencyGraphMarkdown" laurelPipelineDependencyGraphMarkdown
 
 
 /-- Block command that includes the Laurel test README as subsections.
     Usage inside a `#doc` block: `{testingStrategyDocs}` -/
 @[block_command]
-def testingStrategyDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := include_str "../../StrataLaurel/Tests/README.md"
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse testingStrategyDocs as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
+def testingStrategyDocs : Verso.Doc.Elab.BlockCommandOf Unit :=
+  mdBlockCommand "testingStrategyDocs" (include_str "../../StrataLaurel/Tests/README.md")
 
 
 #doc (Manual) "The Laurel Implementor Guide" =>
@@ -292,6 +293,16 @@ carry an ordering constraint, and the intent is to remove them as the AST grows 
 structure to express them directly.
 
 {laurelPipelineDocs}
+
+### Shape lifelines
+
+One row per pass and one column per shape, tracking for each shape the fact that it is
+*absent*. Read a column downwards: the fact starts holding where a pass removes the shape,
+is dropped where a pass creates it again, and is required where a pass declares it
+`unsupported`. Only shapes some pass declares `unsupported` have a column, since a shape
+nothing rejects cannot constrain the order.
+
+{laurelShapeTable}
 
 ## Pass Dependency Graph
 
@@ -475,13 +486,22 @@ running later would therefore have nothing but `Composite` to type the in-flight
 every handler's field access would need a downcast. Running first, the pass can read each `catch`
 binding's resolved least-common-ancestor type and use it directly.
 
-*One rule the analysis and the lowering have to share.* Catch-or-declare is checked during resolution
-(`validateExceptionEscapes`), not by a pass, following the rule above that user errors are reported
-only by `resolve`. It has to agree with the lowering on one point: a `finally` arm that definitely
-completes abruptly discards whatever completion was pending. So the escape analysis treats a body or
-handler `throw` as *not* escaping through such an arm — otherwise it would reject
-`try { throw e } finally { return }`, a program whose lowering swallows the exception. The analysis
+*One rule the analysis and the lowering have to share.* The declared `throws` upper bound is checked
+during resolution (`validateExceptionEscapes`), not by a pass, following the rule above that user
+errors are reported only by `resolve`. It has to agree with the lowering on one point: a `finally` arm
+that definitely completes abruptly discards whatever completion was pending. So the escape analysis
+treats a body or handler `throw` as *not* escaping through such an arm — otherwise it would reject
+a `throws T` procedure whose `finally { return }` swallows an exception outside `T`. The analysis
 stays an under-approximation: only completions it can prove abrupt count.
+
+*Escapes from a procedure with no `throws` are assertions, not errors.* The pass emits them where the
+exception would leave the procedure, so they are reported only when reachable: `assert false` for a
+`throw` outside every `try`, `assert Result..isGood(tmp)` for a throwing call outside every `try`, and
+`assert !$thrown` on the re-dispatch edge of an outermost `try`. The last is placed on the edge rather
+than at the original `throw` because the `try` may still intercept the exception — a `catch` guard
+that matches at run time, or a `finally` that completes abruptly. Each assertion is followed by an
+`assume` of the same condition, because a Core assertion is not assumed by later checks and the path
+past a failed one would otherwise report follow-on failures.
 
 *Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
 resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or

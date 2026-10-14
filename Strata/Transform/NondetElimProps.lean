@@ -26,7 +26,7 @@ Key results:
     `Stmt.nondetElimM_loop_det_out`, `Stmt.nondetElimM_loop_nondet_out`,
     `Block.nondetElimM_cons_out`: equational normal forms for one pass step.
   * Shape preservation — `nondetElim_loopHasNoInvariants`,
-    `nondetElim_noMeasureLoops`, `nondetElim_noFuncDecl` (top-level, over
+    `nondetElim_noMeasureLoops` (top-level, over
     `Block.nondetElim`), each built from the mutual
     `Stmt`/`Block.nondetElimM_*` pair.
   * Generator advance — `Stmt.nondetElimM_genStep` / `Block.nondetElimM_genStep`:
@@ -143,7 +143,6 @@ theorem Stmt.nondetElimM_loopHasNoInvariants {P : PureExpr} [HasIdent P] [HasFva
                  Stmt.loopHasNoInvariants, Bool.and_true, h.1,
                  Block.nondetElimM_loopHasNoInvariants body _ h.2]
   | .exit lbl md => simp [Stmt.nondetElimM, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants]
-  | .funcDecl d md => simp [Stmt.nondetElimM, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants]
   | .typeDecl t md => simp [Stmt.nondetElimM, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants]
   termination_by sizeOf s
 
@@ -199,7 +198,6 @@ theorem Stmt.nondetElimM_noMeasureLoops {P : PureExpr} [HasIdent P] [HasFvar P] 
                  Stmt.noMeasureLoops, Bool.and_true, h.1,
                  Block.nondetElimM_noMeasureLoops body _ h.2]
   | .exit lbl md => simp [Stmt.nondetElimM, Block.noMeasureLoops, Stmt.noMeasureLoops]
-  | .funcDecl d md => simp [Stmt.nondetElimM, Block.noMeasureLoops, Stmt.noMeasureLoops]
   | .typeDecl t md => simp [Stmt.nondetElimM, Block.noMeasureLoops, Stmt.noMeasureLoops]
   termination_by sizeOf s
 
@@ -217,63 +215,6 @@ theorem Block.nondetElimM_noMeasureLoops {P : PureExpr} [HasIdent P] [HasFvar P]
   termination_by sizeOf ss
 end
 
-mutual
-/-- `Stmt.nondetElimM` preserves `noFuncDecl`: the rewrite never emits a
-function declaration and passes `.funcDecl` through unchanged (so under the
-hypothesis the `.funcDecl` arm is vacuous). -/
-theorem Stmt.nondetElimM_noFuncDecl {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (s : Stmt P (Cmd P)) (σ : StringGenState)
-    (h : Stmt.noFuncDecl s = true) :
-    Block.noFuncDecl (Stmt.nondetElimM s σ).1 = true := by
-  match s with
-  | .cmd c => simp [Stmt.nondetElimM, Block.noFuncDecl, Stmt.noFuncDecl]
-  | .block lbl bss md =>
-      rw [Stmt.nondetElimM_block_out]
-      simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
-      rw [Stmt.noFuncDecl] at h
-      exact Block.nondetElimM_noFuncDecl bss σ h
-  | .ite (.det e) tss ess md =>
-      rw [Stmt.nondetElimM_ite_det_out]
-      rw [Stmt.noFuncDecl, Bool.and_eq_true] at h
-      simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true,
-                 Block.nondetElimM_noFuncDecl tss σ h.1,
-                 Block.nondetElimM_noFuncDecl ess _ h.2]
-  | .ite .nondet tss ess md =>
-      rw [Stmt.nondetElimM_ite_nondet_out]
-      rw [Stmt.noFuncDecl, Bool.and_eq_true] at h
-      simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true,
-                 Block.nondetElimM_noFuncDecl tss _ h.1,
-                 Block.nondetElimM_noFuncDecl ess _ h.2]
-  | .loop (.det e) m inv body md =>
-      rw [Stmt.nondetElimM_loop_det_out]
-      simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_true]
-      rw [Stmt.noFuncDecl] at h
-      exact Block.nondetElimM_noFuncDecl body σ h
-  | .loop .nondet m inv body md =>
-      rw [Stmt.nondetElimM_loop_nondet_out]
-      rw [Stmt.noFuncDecl] at h
-      simp only [Block.noFuncDecl_append, Block.noFuncDecl,
-                 Stmt.noFuncDecl, Bool.and_true,
-                 Block.nondetElimM_noFuncDecl body _ h]
-  | .exit lbl md => simp [Stmt.nondetElimM, Block.noFuncDecl, Stmt.noFuncDecl]
-  | .funcDecl d md => exact absurd h (by simp [Stmt.noFuncDecl])
-  | .typeDecl t md => simp [Stmt.nondetElimM, Block.noFuncDecl, Stmt.noFuncDecl]
-  termination_by sizeOf s
-
-theorem Block.nondetElimM_noFuncDecl {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
-    (h : Block.noFuncDecl ss = true) :
-    Block.noFuncDecl (Block.nondetElimM ss σ).1 = true := by
-  match ss with
-  | [] => simp [Block.nondetElimM, Block.noFuncDecl]
-  | s :: rest =>
-      rw [Block.noFuncDecl, Bool.and_eq_true] at h
-      rw [Block.nondetElimM_cons_out, Block.noFuncDecl_append]
-      simp only [Stmt.nondetElimM_noFuncDecl s σ h.1,
-                 Block.nondetElimM_noFuncDecl rest _ h.2, Bool.and_true]
-  termination_by sizeOf ss
-end
-
 /-- Top-level preservation: `Block.nondetElim` preserves `loopHasNoInvariants`. -/
 theorem nondetElim_loopHasNoInvariants {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (h : Block.loopHasNoInvariants ss = true) :
@@ -285,12 +226,6 @@ theorem nondetElim_noMeasureLoops {P : PureExpr} [HasIdent P] [HasFvar P] [HasBo
     (ss : List (Stmt P (Cmd P))) (h : Block.noMeasureLoops ss = true) :
     Block.noMeasureLoops (Block.nondetElim ss) = true :=
   Block.nondetElimM_noMeasureLoops ss StringGenState.emp h
-
-/-- Top-level preservation: `Block.nondetElim` preserves `noFuncDecl`. -/
-theorem nondetElim_noFuncDecl {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (h : Block.noFuncDecl ss = true) :
-    Block.noFuncDecl (Block.nondetElim ss) = true :=
-  Block.nondetElimM_noFuncDecl ss StringGenState.emp h
 
 mutual
 /-- The pass advances the generator state by a `GenStep`: it only ever calls
@@ -345,7 +280,6 @@ theorem Stmt.nondetElimM_genStep {P : PureExpr} [HasIdent P] [HasFvar P] [HasBoo
       rw [h] at g₁
       exact StringGenState.GenStep.trans g₀ g₁
   | .exit lbl md => simp only [Stmt.nondetElimM]; exact StringGenState.GenStep.refl _
-  | .funcDecl d md => simp only [Stmt.nondetElimM]; exact StringGenState.GenStep.refl _
   | .typeDecl t md => simp only [Stmt.nondetElimM]; exact StringGenState.GenStep.refl _
   termination_by sizeOf s
 

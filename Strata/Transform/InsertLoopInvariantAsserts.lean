@@ -208,7 +208,7 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
   establishes := factSet![.noLoopInvariants, .noLoopMeasures]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                       .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated]
 
 end -- public section

@@ -96,7 +96,8 @@ procedure noInvariant()
 Confirms the `while(true)` desugar isn't vacuous: the body's effect reaches the
 assertion, so an unprovable assert is reported (not discharged vacuously). -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated failure is "could not be proved", which a concrete run cannot produce.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure falsePostRejected()
@@ -122,6 +123,7 @@ invariant's own source range. -/
 
 /-! ### The initial invariant fails on entry -/
 
+-- No Core interpreter: it does not check loop invariants, so the annotated invariant failure never fires.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -135,10 +137,18 @@ procedure doWhileBadInitialInvariant()
       invariant i >= 0
 //              ^^^^^^ error: assertion does not hold
 };
+
+procedure runAll()
+  entry
+  opaque
+{
+    doWhileBadInitialInvariant()
+};
 #end
 
 /-! ### A later invariant fails while earlier ones hold -/
 
+-- No Core interpreter: it does not check loop invariants, so the annotated invariant failure never fires.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -154,5 +164,12 @@ procedure doWhileSecondInvFails()
       invariant i >= 0
       invariant j >= 0
 //              ^^^^^^ error: assertion does not hold
+};
+
+procedure runAll()
+  entry
+  opaque
+{
+    doWhileSecondInvFails()
 };
 #end

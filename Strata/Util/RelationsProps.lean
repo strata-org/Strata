@@ -24,6 +24,7 @@ import all Strata.Util.Relations
   concatenation
 * `ReflTransTrace.toReflTrans` — erasing each step's emitted events recovers an
   ordinary reflexive-transitive execution
+* `ReflTransTrace.imp` — a traced closure is monotone in its step relation
 -/
 
 public section
@@ -125,6 +126,12 @@ noncomputable def reflTransTrace_to_T {A E : Type} {r : A → List E → A → P
     {a b : A} {trace : List E} :
     ReflTransTrace r a trace b → ReflTransTraceT r a trace b :=
   fun h => Classical.choice (reflTransTrace_nonempty_T h)
+
+/-- A traced closure is monotone in its step relation. -/
+theorem ReflTransTrace.imp {A E : Type} {r r' : A → List E → A → Prop}
+    (h : ∀ x evs y, r x evs y → r' x evs y) :
+    ∀ {x evs y}, ReflTransTrace r x evs y → ReflTransTrace r' x evs y :=
+  (by induction · <;> solve_by_elim)
 
 end Relation
 end

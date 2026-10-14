@@ -20,6 +20,4 @@ namespace Core
 
 public theorem Factory_wf : Lambda.FactoryWF Factory := by simp [Factory]
 
-public theorem Factory_closed : Lambda.FactoryClosed Factory := by simp [Factory]
-
 end Core

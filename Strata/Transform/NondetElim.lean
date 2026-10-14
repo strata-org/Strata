@@ -75,7 +75,6 @@ constructs and atomic commands pass through, recursing into sub-bodies. -/
         .loop (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) m inv
           (body' ++ [.cmd (HasHavoc.havoc ident md)]) md], σ₂)
   | .exit lbl md => fun σ => ([.exit lbl md], σ)
-  | .funcDecl d md => fun σ => ([.funcDecl d md], σ)
   | .typeDecl t md => fun σ => ([.typeDecl t md], σ)
   termination_by sizeOf s
 
@@ -139,7 +138,7 @@ def nondetElimPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noNondetGuards])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
 
 end Core

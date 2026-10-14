@@ -675,7 +675,7 @@ procedure conditionalWriter(flag: bool) returns ($static.g: int) opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -726,7 +726,7 @@ procedure caller() opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -743,7 +743,7 @@ procedure caller(c: GlobalPair) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -762,7 +762,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var floor: int := 0
@@ -809,7 +809,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: bool := false
@@ -819,7 +819,7 @@ constrained MutatesGlobal = x: bool where (g := true) witness false
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -837,7 +837,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -851,7 +851,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -866,7 +866,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -883,7 +883,7 @@ procedure caller() opaque
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -900,7 +900,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: bool := false
@@ -912,7 +912,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -926,7 +926,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var $result: int := 0
@@ -939,7 +939,7 @@ composite InitialErrorInstance {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -951,7 +951,7 @@ constrained GlobalWitness = x: int where x >= 0 witness readG()
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -963,7 +963,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -978,7 +978,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1026,7 +1026,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1048,7 +1048,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1060,7 +1060,7 @@ procedure setG(v: int)
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1076,7 +1076,7 @@ procedure trigger()
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1097,7 +1097,7 @@ procedure caller(c: bool) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1110,7 +1110,7 @@ procedure setG(v: int) returns (r: int)
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1126,7 +1126,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1152,7 +1152,7 @@ procedure reader() returns (r: int) opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1171,7 +1171,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1192,7 +1192,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1207,7 +1207,7 @@ procedure assertCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1222,7 +1222,7 @@ procedure assumeCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0

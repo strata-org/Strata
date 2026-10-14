@@ -1289,6 +1289,17 @@ DefBVOpFuncExprs [1, 8, 16, 32, 64, 128]
 DefBVSafeOpFuncExprs [1, 8, 16, 32, 64, 128]
 DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64, 128]
 
+/-- The three Bv↔Int cast operators, as width-parameterized `opExpr`s.
+
+    Unlike the bitwise and comparison operators (whose per-width names
+    `DefBVOpFuncExprs` generates) these take the width as an argument, because
+    `bvToUIntFunc`/`bvToIntFunc`/`intToBvFunc` are already width-generic. A
+    caller that needs a name rather than an application can use these directly
+    instead of rebuilding an `.op` expression with a hand-written arrow type. -/
+def bvToUIntOp (size : Nat) : Expression.Expr := (bvToUIntFunc size).opExpr
+def bvToIntOp (size : Nat) : Expression.Expr := (bvToIntFunc size).opExpr
+def intToBvOp (size : Nat) : Expression.Expr := (intToBvFunc size).opExpr
+
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
 def bv32ConcatOp : Expression.Expr := bv32ConcatFunc.opExpr

@@ -27,7 +27,6 @@ open Core Imperative Strata.Logic Imperative.Logic
 
 namespace Hoare
 
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-! ### A contract-aware rule for procedure calls
 
@@ -49,10 +48,10 @@ the permitted write set. -/
 specified by its signature. -/
 @[expose] def Procedure.bodyFrame
     (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
+
     (proc : Procedure) : Prop :=
-  ∀ σ_entry fac σ_exit fac_exit emitted,
-    CoreBodyExecE π φ proc.body σ_entry fac σ_exit fac_exit emitted →
+  ∀ σ_entry fac σ_exit emitted,
+    CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
     Procedure.storeFrame proc σ_entry σ_exit
 
 /-- **A procedure call meets a Hoare triple built from its callee's contract.**
@@ -69,17 +68,16 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) (callArgs : List (Imperative.CallArg Expression))
     (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
-    (hcontract : Procedure.contractTriple φ p params procName)
+    (hcontract : Procedure.contractTriple p params procName)
     (hframe : ∀ proc, p.findProcByString? procName = some proc →
-      Procedure.bodyFrame p.findProcByString? φ proc)
+      Procedure.bodyFrame p.findProcByString? proc)
     (hentry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure) (bss : Statements)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
       p.findProcByString? procName = some proc → proc.body = .structured bss →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       (Procedure.preAsPredicate proc { store := σAO, factory := ρ₀.factory, hasFailure := false } ∧
-          ({ store := σAO, factory := ρ₀.factory, hasFailure := false } :
-            Imperative.Env Expression).factory = Core.Factory ∧
+          ρ₀.factory = Core.Factory ∧
           Procedure.oldInoutAsPredicate proc
             { store := σAO, factory := ρ₀.factory, hasFailure := false } ∧
           Procedure.inputAsPredicate proc
@@ -91,34 +89,31 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
       Procedure.postAsPredicate proc ρ' →
+      ρ'.factory = ρ₀.factory →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Procedure.storeFrame proc σAO ρ'.store →
       CallExit ρ₀.factory ρ₀.store proc callArgs ρ'.store σ' →
-      ρ'.factory = ρ₀.factory →
       Post { ρ₀ with store := σ' }) :
-    Triple p.findProcByString? φ params Pre
+    Triple p.findProcByString? params Pre
       [Statement.call procName callArgs md] Post := by
   obtain ⟨cproc, cbss, hcproc, hcbody, htriple⟩ := hcontract
-  refine cmd p.findProcByString? φ params (Imperative.CmdExt.call procName callArgs md)
+  refine cmd p.findProcByString? params (Imperative.CmdExt.call procName callArgs md)
     Pre Post (fun ρ₀ σ' emitted hpre hwf hstep => ?_)
   cases hstep with
   | call_sem hlookup hcallentry hbodyE hcallexit =>
     -- The resolved callee is the one the contract names.
     obtain rfl : cproc = _ := Option.some.inj (hcproc.symm.trans hlookup)
-    have hframeRel := hframe cproc hcproc _ _ _ _ _ hbodyE
+    have hframeRel := hframe cproc hcproc _ _ _ _ hbodyE
     rw [hcbody] at hbodyE
     cases hbodyE with
     | structured hrun =>
       rename_i ρ'
-      have hfac' : ρ'.factory = ρ₀.factory := by
-        obtain ⟨ρ_inner, _hinner, hρ'⟩ :=
-          Imperative.stmt_block_reaches_doneE
-            (P := Expression) (EvalCmd := EvalCommandE p.findProcByString? φ)
-            (extendFactory := EvalPureFunc φ) (.inl hrun)
-        simpa using congrArg Imperative.Env.factory hρ'
+      -- The body run preserves the active factory, so `ρ'.factory = ρ₀.factory`.
+      have hρ'fac : ρ'.factory = ρ₀.factory :=
+        (Imperative.starE_preserves_factory hrun).symm
       -- Move the callee-body run into the singleton-list run the contract triple consumes.
       have hrun' := Imperative.stmtRun_to_singletonE
-        (EvalCommandE p.findProcByString? φ) (EvalPureFunc φ) hrun
+        (EvalCommandE p.findProcByString?) hrun
       obtain ⟨⟨hpreC, hfacC, holdC, hinputsC⟩, hbwf⟩ :=
         hentry ρ₀ cproc cbss _ hpre hwf hcproc hcbody hcallentry
       -- The contract triple validates the body trace and yields the callee postcondition.
@@ -131,10 +126,10 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (fun label check hmem _ => hpreC label check hmem)
       have hvalidB : ∀ _ : Procedure.postAsPredicate cproc ρ',
           Trace.AssertionsValid Expression I
-            (defaultAssertEvents ρ'.factory ρ'.store cproc.spec.postconditions) :=
+            (defaultAssertEvents ρ₀.factory ρ'.store cproc.spec.postconditions) :=
         fun hpostC =>
-          assertionsValid_defaultAssertEvents ρ'.factory ρ'.store cproc.spec.postconditions
-            (fun label check hmem hattr => hpostC label check hmem hattr)
+          assertionsValid_defaultAssertEvents ρ₀.factory ρ'.store cproc.spec.postconditions
+            (fun label check hmem hattr => hρ'fac ▸ hpostC label check hmem hattr)
       refine ⟨?_, ?_⟩
       · refine Trace.AssertionsValid.append_of_reachable_left I
           (Trace.AssertionsValid.append_of_reachable_left I hvalidA (fun _ => htb.1)) ?_
@@ -143,7 +138,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         exact hexit ρ₀ cproc ρ' σ' _ hpre hwf hcproc
           (htb.2 (Trace.Reachable.right_of_append I
             (Trace.Reachable.left_of_append I hreach)))
-          hcallentry hframeRel hcallexit hfac'
+          hρ'fac hcallentry hframeRel hcallexit
 
 end Hoare
 

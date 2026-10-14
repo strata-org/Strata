@@ -132,7 +132,7 @@ def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
   isFunUninterp := {}
   usedNames := names.union smtReservedKeywordsSet
 
-abbrev EncoderM (α) := StateT EncoderState SolverM α
+abbrev EncoderM (α) := StateT EncoderState SolverEncodingM α
 
 
 namespace Encoder
@@ -279,8 +279,11 @@ def encodeFunctionDef (f : IF) : EncoderM String := do
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
-  let (_, text, _) ← Solver.recordToString ((Encoder.encodeTerm e).run EncoderState.init)
-  pure text
+  let (result, text, _) ←
+    Solver.recordToString (((Encoder.encodeTerm e).run EncoderState.init).run)
+  match result with
+  | .ok _ => pure text
+  | .error err => throw (IO.userError (toString err))
 
 /--
 Once you've generated `Asserts` with one of the functions in Verifier.lean, you
@@ -294,7 +297,7 @@ Then you can run any `SolverM` action `act` with `act |>.run solver`, where
 Solver.lean.
 
 -/
-def encode (ts : List Term) : SolverM Unit := do
+def encode (ts : List Term) : SolverEncodingM Unit := do
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]

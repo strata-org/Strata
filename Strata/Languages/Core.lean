@@ -15,7 +15,6 @@ import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
-import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.TerminationCheck
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.FunctionInlining
@@ -193,10 +192,6 @@ A pipeline other than the default order is written as a list of phases, so every
 the default order runs is named here. A phase absent from this surface cannot be named
 by a caller, which is what makes adding one a deliberate act. -/
 
-/-- Lift preconditions factored out of internal function declarations. -/
-def Core.passLiftInternalFuncDecls : Core.PipelinePhase :=
-  _root_.Core.liftInternalFuncDeclsPipelinePhase
-
 /-- Emit the termination obligations of recursive functions. -/
 def Core.passTermCheck : Core.PipelinePhase :=
   _root_.Core.termCheckPipelinePhase
@@ -264,13 +259,13 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
 /-! ### Standard Core verification pipeline phases
 
 The verification pipeline performs a sequence of program-to-program transforms
-(`transformPipelinePhases`), the first of which decides what the rest assume
-about the program they are handed. `coreAbstractedPhases` exposes only the
-abstracted (model-validation) view used downstream.
+(`transformPipelinePhases`), whose initial shape checks decide what the rest
+may assume about the program they are handed. `coreAbstractedPhases` exposes
+only the abstracted (model-validation) view used downstream.
 -/
 
 /-- The program-to-program transform phases applied before type checking.
-    Shape assertion, inlining/loop-elim/call-elim/filtering, in the order
+    Shape assertions, inlining/loop-elim/call-elim/filtering, in the order
     required by the verification pipeline. See the underlying definition for
     ordering rationale. -/
 def Core.transformPipelinePhases (options : Core.VerifyOptions := Core.VerifyOptions.default)
@@ -438,8 +433,8 @@ necessary.
 The basic call form passes just `program` and `options`.
 
 Verifying only some procedures requires two `filterProcedures` phases at specific
-positions — one before the entry assertion, one after precondition lifting, which
-targets the procedures generated from those named. `options.proceduresToVerify`
+positions — one before the entry assertions, one after precondition elimination,
+which targets the procedures generated from those named. `options.proceduresToVerify`
 puts those phases into the phase list, so a caller supplying its own `pipeline`
 gets the same filtering by building that pipeline from the options it verifies
 with.

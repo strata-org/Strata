@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Procedures with postconditions -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 

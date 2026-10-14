@@ -185,7 +185,7 @@ that genuinely cannot be interpreted opts out with `skipCoreInterpreter := true`
 /-- error: testLaurelExecution: no `entry` procedure is marked, so the interpreter has nothing to run. Mark a parameterless procedure `entry`, or say `skipCoreInterpreter := true` if this block cannot be interpreted.
 -/
 #guard_msgs in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure noEntryMarked()
@@ -197,7 +197,7 @@ procedure noEntryMarked()
 
 -- Opting out is how a block with no `entry` stays silent.
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure noEntryOptedOut()

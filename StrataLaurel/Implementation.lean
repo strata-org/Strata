@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core
 public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataLaurel.Implementation.LaurelPipelinePrinter
 import StrataLaurel.Implementation.Grammar.ConcreteToAbstractTreeTranslator
 import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import StrataLaurel.Implementation.Grammar.LaurelGrammar

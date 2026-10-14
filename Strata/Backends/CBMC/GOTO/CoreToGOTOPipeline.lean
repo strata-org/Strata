@@ -94,8 +94,6 @@ private partial def unwrapCmdExt
     .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
       (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
-  | .funcDecl _d _md =>
-    .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
   | .typeDecl _tc _md => .error f!"[unwrapCmdExt] Unexpected typeDecl."
 
 /--
@@ -108,34 +106,6 @@ private def hasCallStmt : List Core.Statement → Bool
   | .ite _ t e _ :: rest => hasCallStmt t || hasCallStmt e || hasCallStmt rest
   | .loop _ _ _ body _ :: rest => hasCallStmt body || hasCallStmt rest
   | _ :: rest => hasCallStmt rest
-
-/--
-Collect all funcDecl statements from a procedure body (recursively)
-and return them as Core.Functions, stripping them from the body.
--/
-def collectFuncDecls : List Core.Statement →
-    Except Std.Format (List Core.Function × List Core.Statement)
-  | [] => return ([], [])
-  | .funcDecl decl _ :: rest => do
-    let f ← Core.Function.ofPureFunc decl
-    let (fs, rest') ← collectFuncDecls rest
-    return (f :: fs, rest')
-  | .block l stmts md :: rest => do
-    let (fs1, stmts') ← collectFuncDecls stmts
-    let (fs2, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2, .block l stmts' md :: rest')
-  | .ite c t e md :: rest => do
-    let (fs1, t') ← collectFuncDecls t
-    let (fs2, e') ← collectFuncDecls e
-    let (fs3, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2 ++ fs3, .ite c t' e' md :: rest')
-  | .loop g m i body md :: rest => do
-    let (fs1, body') ← collectFuncDecls body
-    let (fs2, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2, .loop g m i body' md :: rest')
-  | s :: rest => do
-    let (fs, rest') ← collectFuncDecls rest
-    return (fs, s :: rest')
 
 /--
 Translate Core statements to GOTO instructions, handling calls at
@@ -267,9 +237,7 @@ private partial def coreStmtsToGoto
     coreStmtsToGoto Env pname rn rest trans
 
 /--
-Translate a Core procedure into a CProver GOTO context.
-Returns the GOTO context together with any local function declarations
-that were lifted out of the procedure body. Axioms and distinct
+Translate a Core procedure into a CProver GOTO context. Axioms and distinct
 declarations are emitted as ASSUME instructions at the start of the
 body. Procedure contracts (requires/ensures) are attached
 as named sub-expressions on the code type.
@@ -280,14 +248,11 @@ def procedureToGotoCtx
     (axioms : List Core.Axiom := [])
     (distincts :
       List (Core.Expression.Ident × List Core.Expression.Expr) := [])
-    : Except Std.Format
-        (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
-  -- Lift local function declarations out of the body
-  -- TODO: This pass could be split into a two-stage transformation:
+    : Except Std.Format CoreToGOTO.CProverGOTO.Context := do
+  -- TODO: This translation could be split into a two-stage transformation:
   -- 1. structured → cfg (via StructuredToUnstructured)
   -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
-  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
-  let (liftedFuncs, body) ← collectFuncDecls bodyStmts
+  let body ← p.body.getStructured.mapError fun s => f!"{s}"
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
@@ -399,7 +364,7 @@ def procedureToGotoCtx
     { program := pgm, formals := formals_tys, ret := ret_ty,
       locals := outputs ++ locals, contracts := contracts,
       localTypes := localTypes }
-  return (ctx, liftedFuncs)
+  return ctx
 
 /--
 Translate a Core function into a CProver GOTO context.
@@ -432,34 +397,18 @@ def functionToGotoCtx
   return { program := pgm, formals := formals_tys, ret := ret_ty, locals := [] }
 
 /--
-Emit a procedure context and its lifted functions as combined
-symtab/goto JSON.
+Emit a procedure context as combined symtab/goto JSON.
 -/
-def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
-    (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
+def emitProc (procName : String)
+    (ctx : CoreToGOTO.CProverGOTO.Context)
     (extraSyms : Lean.Json) (moduleName : String)
     : IO (Lean.Json × Lean.Json) := do
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
-  let mut gotoFns := match json.goto with
+  let gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
       | some (_, .arr fns) => fns | _ => #[]
     | _ => #[]
-  for f in liftedFuncs do
-    let funcName := Core.CoreIdent.toPretty f.name
-    match functionToGotoCtx Env f with
-    | .error e => throw (.userError s!"{e}")
-    | .ok fctx =>
-      let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
-      match fjson.symtab with
-      | .obj m => for (k, v) in m.toList do
-          symtabObj := symtabObj.insert k v
-      | _ => pure ()
-      match fjson.goto with
-      | .obj m => match m.toList.find? (·.1 == "functions") with
-        | some (_, .arr fns) => gotoFns := gotoFns ++ fns
-        | _ => pure ()
-      | _ => pure ()
   match extraSyms with
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
@@ -510,12 +459,12 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
   match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
         with
   | .error e => throw s!"{e}"
-  | .ok (ctx, liftedFuncs) =>
+  | .ok ctx =>
     let extraSyms ← match collectExtraSymbols tcPgm with
       | .ok s => pure (Lean.toJson s)
       | .error e => throw s!"{e}"
     let (symtab, goto) ←
-      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms (moduleName := baseName) |>.toBaseIO with
+      match ← emitProc procName ctx extraSyms (moduleName := baseName) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"

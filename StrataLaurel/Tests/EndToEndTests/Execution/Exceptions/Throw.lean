@@ -20,17 +20,14 @@ Lowering: a `throw` in a procedure that declares `throws` lowers to a
 `Result<Val, Composite>`-returning Core procedure — an in-flight exception sets
 the synthesized `$thrown`/`$exc` locals and exits, and the procedure's result is
 constructed as `Bad(exc)`. A `throw` whose exception would escape a procedure
-that does *not* declare `throws` is the no-escape case, rejected during the
-resolution-time exception checks (see `validateExceptionEscapes` in `Resolution.lean`).
+that does *not* declare `throws` is asserted not to happen where it would escape
+(`assert false` at an uncaught `throw`; see `UncaughtExceptions.lean`).
 
 What may be thrown is also covered here, because it is a property of `throw`'s
 operand rather than of any combination: a composite, and — since there is no built-in
-root — a bare primitive. The primitive section at the end pairs each throwing
-procedure with a caller that catches, so it has a parameterless `entry` for the
-interpreter to invoke and runs both ways: verifier *and* interpreter. The composite
-cases above it let the exception escape uncaught and have no such caller, so nothing
-there is an `entry` and they stay verification-only. The other file that runs both
-ways is `TryCatchThrow.lean`, whose smoke cases throw nothing at all.
+root — a bare primitive. Each case pairs its throwing procedure with a caller
+that catches, marked `entry`, so it runs under the verifier and both interpreters;
+the uncaught case stays verification-only.
 
 Front-end *boxing* — wrapping an arbitrary value in a carrier composite so a single
 `catch` can see values of unrelated kinds — is an idiom rather than a rule about
@@ -39,7 +36,7 @@ Front-end *boxing* — wrapping an arbitrary value in a carrier composite so a s
 
 -- Well-typed and declared `throws`: lowers to a `Result`-returning procedure
 -- and verifies — there are no proof obligations to discharge.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -51,11 +48,24 @@ procedure throwsException()
   var e: Exception := new Exception;
   throw e
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    throwsException()
+  } catch e {
+    assert true
+  }
+};
 #end
 
--- No-escape enforcement: a `throw` whose exception would escape a procedure
--- that does not declare `throws` is rejected during resolution.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- An uncaught `throw` in a procedure that does not declare `throws` is a
+-- verification obligation (`assert false` at the `throw`), reported here because
+-- the `throw` is reachable. See `UncaughtExceptions.lean`.
+-- No interpreters: verifier-only (no `entry`).
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 
@@ -65,14 +75,14 @@ procedure throwsWithoutDeclaring()
 {
   var e: Exception := new Exception;
   throw e
-//^^^^^^^ error: procedure 'throwsWithoutDeclaring' may let an exception of type 'Exception' escape; catch it with a `try`/`catch` or declare a `throws` clause
+//^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
 };
 #end
 
 -- Throw a value of a declared subtype of the `throws` type. The procedure
 -- declares `throws`, so this lowers to a `Result`-returning Core procedure
 -- and verifies (no proof obligations).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -81,6 +91,17 @@ procedure throwsSubtype() throws (e: Exception) opaque {
   var e: ParseError := new ParseError;
   throw e
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    throwsSubtype()
+  } catch e {
+    assert true
+  }
+};
 #end
 
 /-! ### Unboxed primitives
@@ -88,8 +109,7 @@ procedure throwsSubtype() throws (e: Exception) opaque {
 Laurel imposes no root exception type, so a primitive is a legal `throws` type and a
 legal `throw` operand. Both guides say so; these two cases are the evidence. Each pairs
 its throwing procedure with a caller that catches, so it has a parameterless `entry` and
-runs both ways — verifier *and* interpreter. The composite cases above let the exception
-escape uncaught, so nothing there is an `entry`. -/
+runs under the verifier and both interpreters. -/
 
 -- `throws int` with a bare `throw 3`, caught by the caller.
 #eval testLaurelExecution {} <|

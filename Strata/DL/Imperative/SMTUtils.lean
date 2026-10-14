@@ -6,6 +6,7 @@
 module
 
 import Strata.DL.SMT.DDMTransform.Translate
+import Strata.DL.SMT.StringLit
 import Strata.DL.SMT.Symbol
 import StrataDDM.Elab
 public import Strata.Pipeline.Context
@@ -119,13 +120,15 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
-/-- Classifies the error when the solver fails to produce a valid verdict. -/
+/-- Classifies a per-obligation encoding or solver failure. -/
 inductive SolverError where
+  | encoding (error : Strata.SMT.StringLit.EncodingError)
   | timeout (detail : String)
   | crash (detail : String)
 
 instance : ToString SolverError where
   toString
+    | .encoding e => toString e
     | .timeout d => s!"Solver timeout: {d}"
     | .crash d   => s!"Solver crash: {d}"
 
@@ -168,19 +171,25 @@ Uses `parseCategoryFromDialect` targeting `SMTResponse.GetValueResponse`
 directly, which avoids the ambiguity that arises when parsing at the
 `Command` level.
 
-Returns a list of (key-string, value-Term) pairs on success.
+Returns the (key-string, value-Term) pairs, or a message saying why the response could not
+be read.
+
+The response dialect installs an SMT-LIB decoder for its `Str` category, so the parser
+handles the response structure first and string values reach the term translation already
+decoded.
 
 `declaredNames` are the names the program already uses. A symbol the solver
 invented for an element of an uninterpreted sort is renamed if it would collide
 with one of them; see `Strata.SMT.Symbol.ofSolverSymbol`.
 -/
-def parseModelDDM (modelStr : String) (declaredNames : Std.HashSet String := {}) :
-    IO (List (String × Strata.SMT.Term)) := do
+def parseModelDDMExcept (modelStr : String) (declaredNames : Std.HashSet String := {}) :
+    IO (Except String (List (String × Strata.SMT.Term))) := do
   let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
   let op ←
     try StrataDDM.Elab.parseCategoryFromDialect
           Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
-    catch _ => return []
+    catch e =>
+      return .error s!"the response does not parse as a (get-value ...) response: {e}"
   match Strata.SMTResponseDDM.GetValueResponse.ofAst op with
   | .ok (.get_value_response _ vps) =>
     let pairs ← vps.val.toList.filterMapM fun vp =>
@@ -195,7 +204,31 @@ def parseModelDDM (modelStr : String) (declaredNames : Std.HashSet String := {})
           -- be represented in Strata.SMT.Term. Filter out this variable from
           -- the model.
           return .none
-    return pairs
+    return .ok pairs
+  | .error _ =>
+    return .error "the response parses but is not a (get-value ...) valuation list"
+
+/--
+Return true when a solver response carries no `(get-value …)` valuation to parse.
+
+Empty output, an SMT-LIB `(error …)` response, and a bare verdict token can all represent
+the absence of a model. Classifying them before parsing prevents a missing model from
+being reported as a malformed counterexample.
+-/
+def noModelOffered (modelStr : String) : Bool :=
+  let t := modelStr.trimAscii.toString
+  t.isEmpty || t.startsWith "(error" || t == "sat" || t == "unsat" || t == "unknown"
+
+/--
+Best-effort parsing for solver-result paths where model absence must not change the verdict.
+Returns an empty model when no model was offered or the response cannot be read. Call
+`parseModelDDMExcept` when the caller needs the parse failure.
+-/
+def parseModelDDM (modelStr : String) (declaredNames : Std.HashSet String := {}) :
+    IO (List (String × Strata.SMT.Term)) := do
+  if noModelOffered modelStr then return []
+  match ← parseModelDDMExcept modelStr declaredNames with
+  | .ok pairs => return pairs
   | .error _ => return []
 
 /--
@@ -332,15 +365,15 @@ structure EncodedObligation where
     and assertions; this helper orchestrates check-sat calls and model parsing. -/
 def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     (encodeDecl : Strata.SMT.AbstractSolver Strata.SMT.Term Strata.SMT.TermType
-                    Strata.SMT.IncrementalSolverM →
-                  Strata.SMT.IncrementalSolverM EncodedObligation)
+                    Strata.SMT.IncrementalEncodingM →
+                  Strata.SMT.IncrementalEncodingM EncodedObligation)
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent)
     (smtsolver : String) (solverFlags : Array String)
     (satisfiabilityCheck validityCheck : Bool) :
     IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
   let solverState ← Strata.SMT.IncrementalSolver.spawn smtsolver solverFlags
-  let action : Strata.SMT.IncrementalSolverM
+  let action : Strata.SMT.IncrementalEncodingM
       (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
     let solver := Strata.SMT.IncrementalSolver.mkIncrementalSolver
     let { obligationId, assumptionIds := _, estate } ← encodeDecl solver
@@ -355,7 +388,7 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
           match estate.functions[key]? with
           | none => none
           | some encodedId => some (Strata.SMT.Term.var ⟨encodedId, termType⟩)
-    let getModelForVars : Strata.SMT.IncrementalSolverM (Model P.Ident) := do
+    let getModelForVars : Strata.SMT.IncrementalEncodingM (Model P.Ident) := do
       if userVarTerms.isEmpty then return []
       try
         let pairs ← solver.getValue userVarTerms
@@ -368,7 +401,7 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
         | _ => return []
       catch _ => return []
     let decisionToResult (decision : Strata.SMT.Decision) :
-        Strata.SMT.IncrementalSolverM (Except SolverError (Result P.Ident)) := do
+        Strata.SMT.IncrementalEncodingM (Except SolverError (Result P.Ident)) := do
       match decision with
       | .sat => return .ok (.sat (← getModelForVars))
       | .unknown =>
@@ -381,28 +414,43 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
     let mut valResult : Result P.Ident := .unknown
     if bothChecks then
       match ← decisionToResult (← solver.checkSatAssuming [obligationId]) with
-      | .error e => solver.close; return .error e
+      | .error e => return .error e
       | .ok r => satResult := r
       let negObligation ← solver.mkNot obligationId
       match ← decisionToResult (← solver.checkSatAssuming [negObligation]) with
-      | .error e => solver.close; return .error e
+      | .error e => return .error e
       | .ok r => valResult := r
     else
       if satisfiabilityCheck then
         solver.assert obligationId
         match ← decisionToResult (← solver.checkSat) with
-        | .error e => solver.close; return .error e
+        | .error e => return .error e
         | .ok r => satResult := r
       else if validityCheck then
         let negObligation ← solver.mkNot obligationId
         solver.assert negObligation
         match ← decisionToResult (← solver.checkSat) with
-        | .error e => solver.close; return .error e
+        | .error e => return .error e
         | .ok r => valResult := r
-    solver.close
     return .ok (satResult, valResult, estate)
-  let (result, _) ← action.run solverState
-  return result
+  let closeSolver (state : Strata.SMT.IncrementalSolverState) : IO Unit := do
+    let _ ← (Strata.SMT.IncrementalSolver.mkIncrementalSolver.close).run.run state
+    pure ()
+  let (result, state) ←
+    try
+      action.run.run solverState
+    catch e =>
+      try closeSolver solverState catch _ => pure ()
+      throw e
+  match result with
+  | .ok result =>
+    closeSolver state
+    return result
+  | .error error =>
+    -- Serialization failed after the child process was spawned. Closing is
+    -- best-effort here so the original typed error remains the VC result.
+    try closeSolver state catch _ => pure ()
+    return .error (.encoding error)
 
 /--
 Writes the proof obligation to file, discharge the obligation using SMT solver,
@@ -413,7 +461,7 @@ When two-sided checking is enabled, the generated SMT file will contain two
 and the return value includes both decisions.
 -/
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
-  (encodeSMT : Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
+  (encodeSMT : Strata.SMT.SolverEncodingM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent)
   (smtsolver filename : String)
@@ -429,11 +477,14 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     match termCache with
     | some ref => do let m ← ref.get; pure { termStrings := m }
     | none => pure {}
-  let ((_ids, estate), solverState) ← pctx.withPhase "writeSMTLib" do
+  let (encoded, solverState) ← pctx.withPhase "writeSMTLib" do
     Strata.SMT.Solver.withFileWriter filename (state := initState) do
-      let r ← encodeSMT
+      let r ← encodeSMT.run
       pctx.withRepeatedPhase "flushFile" Strata.SMT.Solver.flush
       pure r
+  let (_ids, estate) ← match encoded with
+    | .ok value => pure value
+    | .error error => return .error (.encoding error)
   -- Persist newly produced strings back to the shared ref.
   match termCache with
   | some ref => ref.set solverState.termStrings
