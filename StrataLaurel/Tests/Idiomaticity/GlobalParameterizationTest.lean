@@ -187,4 +187,43 @@ procedure reader() returns (r: int) {
 };
 #end
 
+/--
+info: procedure bump<T>(g: int, x: T)
+  returns (g: int, r: T)
+{
+  g := g + 1;
+  r := x;
+  return
+};
+procedure useTwo(g: int)
+  returns (g: int, r: int)
+{
+  var a: int := {
+    assign g, var $g_tmp0: int := bump(g, 5);
+    $g_tmp0
+  };
+  var b: bool := {
+    assign g, var $g_tmp1: bool := bump(g, true);
+    $g_tmp1
+  };
+  r := a;
+  return
+};
+-/
+#guard_msgs in
+#eval printGlobalParam <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump<T>(x: T) returns (r: T) {
+  g := g + 1;
+  return x
+};
+procedure useTwo() returns (r: int) {
+  var a: int := bump(5);
+  var b: bool := bump(true);
+  return a
+};
+#end
+
 end Strata.Laurel

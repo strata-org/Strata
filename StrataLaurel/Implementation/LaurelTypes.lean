@@ -18,29 +18,45 @@ no inference is performed.
 
 namespace Strata.Laurel
 
+/-- `declared`, a type in a declaration with type parameters `params`, at the type arguments
+    `typeArgs`. Matching by name is sound here, since a declaration's types mention only its own
+    parameters. An arity mismatch keeps the declared type rather than a half-applied one. -/
+private def instantiateDeclared (params : List Identifier) (typeArgs : List HighTypeMd)
+    (declared : HighTypeMd) : HighTypeMd :=
+  if params.isEmpty || typeArgs.length != params.length then declared
+  else substTypeVars ((params.zip typeArgs).foldl (fun m (p, t) => m.insert p.text t) ∅) declared
+
+/-- A procedure's declared result type at `typeArgs`: `TVoid` with no outputs, the single output's
+    type, or a `MultiValuedExpr` of all of them — with the procedure's type parameters
+    substituted. -/
+def procResultTypeAt (source : FileRange) (proc : Procedure)
+    (typeArgs : List HighTypeMd) : HighTypeMd :=
+  instantiateDeclared proc.typeArgs typeArgs <| match proc.outputs with
+    | [] => { val := .TVoid, source := source }
+    | [singleOutput] => singleOutput.type
+    | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+
 /-- The type a call has AT THIS CALL SITE. `typeArgs` are the type arguments the call node
     records; pass `[]` for a call shape that carries none. A constructor's type is its datatype
-    applied to `typeArgs`, and a procedure's is its declared output type with `typeArgs`
-    substituted for the procedure's type parameters. When `typeArgs` is empty the constructor
-    stays the bare datatype head: an applied shape with free type variables in it would read as
-    a wildcard instead of the arity error we want. Arity mismatch on a procedure keeps the
-    declared type. -/
+    applied to `typeArgs`, a destructor's is its field's declared type with `typeArgs`
+    substituted for the datatype's type parameters, and a procedure's is its declared output
+    type with `typeArgs` substituted for the procedure's type parameters. When `typeArgs` is
+    empty the constructor stays the bare datatype head: an applied shape with free type variables
+    in it would read as a wildcard instead of the arity error we want. -/
 def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier)
     (typeArgs : List HighTypeMd) : HighTypeMd :=
   match model.get callee with
     | .datatypeConstructor t _ =>
       if typeArgs.isEmpty then ⟨ .UserDefined t, source ⟩
       else ⟨ .Applied ⟨ .UserDefined t, source ⟩ typeArgs, source ⟩
-    | .datatypeDestructor _ fld => fld.type
+    | .datatypeDestructor t fld =>
+      let params := match model.get t with
+        | .datatypeDefinition dt => dt.typeArgs
+        | _ => []
+      instantiateDeclared params typeArgs fld.type
     | .parameter p => p.type
     | .staticProcedure proc | .instanceProcedure _ proc =>
-      let declared := match proc.outputs with
-        | [] => { val := .TVoid, source := source }
-        | [singleOutput] => singleOutput.type
-        | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
-      let names := proc.typeArgs.map (·.text)
-      if names.isEmpty || typeArgs.length != names.length then declared
-      else substTypeVars ((names.zip typeArgs).foldl (fun m (n, t) => m.insert n t) ∅) declared
+      procResultTypeAt source proc typeArgs
     -- A coroutine call (`c(args)`) spawns an instance of the coroutine type;
     -- elaboration later retargets this to the `<c>State` composite.
     | .coroutineType proc => ⟨ .UserDefined proc.name, source ⟩
@@ -160,6 +176,17 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .HasNext _ => ⟨ .TBool, source ⟩
   -- Snapshot artifact: `Snapshot` is a statement, so it types as `TVoid`.
   | .Snapshot _ => ⟨ .TVoid, source ⟩
+
+/-- `ty`, a type in `callee`'s signature, at the instantiation `typeArgs` a call to it records. A
+    pass that introduces a local for one of the call's outputs declares it at this type: the callee's
+    declared type variable is the same at every call site, so declaring that would make two
+    instantiations collide. -/
+def typeAtCall (model : SemanticModel) (callee : Identifier) (typeArgs : List HighTypeMd)
+    (ty : HighTypeMd) : HighTypeMd :=
+  match model.get callee with
+  | .staticProcedure proc | .instanceProcedure _ proc =>
+    instantiateDeclared proc.typeArgs typeArgs ty
+  | _ => ty
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where

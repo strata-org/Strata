@@ -127,6 +127,56 @@ procedure test() {
 };
 #end
 
+/-! ## A polymorphic callee's result local carries the call's instantiation -/
+
+/--
+info: procedure idp<T>(x: T)
+  returns (r: T)
+  opaque
+{
+  r := x
+};
+procedure test(k: int)
+{
+  var $cndtn_0: bool := idp(true);
+  assert $cndtn_0 || true;
+  var $cndtn_1: int := idp(k);
+  assert $cndtn_1 == k || true
+};
+-/
+#guard_msgs in
+#eval printLifted ["idp"] <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque { r := x };
+procedure test(k: int) {
+  assert idp(true) || true;
+  assert idp(k) == k || true
+};
+#end
+
+/-! ## A nullary callee's instantiation comes from the expected type -/
+
+/--
+info: procedure mk<T>()
+  returns (r: T)
+  opaque;
+procedure test()
+{
+  var $cndtn_0: int := mk();
+  assert $cndtn_0 == 1 || true
+};
+-/
+#guard_msgs in
+#eval printLifted ["mk"] <|
+#strata
+program Laurel;
+procedure mk<T>() returns (r: T) opaque;
+procedure test() {
+  assert mk() == 1 || true
+};
+#end
+
 /-! ## Assignments in assert are NOT lifted (rejected downstream) -/
 
 /--

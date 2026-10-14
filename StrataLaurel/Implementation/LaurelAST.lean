@@ -579,7 +579,8 @@ inductive StmtExpr : Type where
 
       `typeArgs` carries the call's INFERRED type arguments, in the callee's
       declaration order, for a generic callee — `Resolution` stamps them once it
-      has determined every one (and reports the call when it cannot). Empty for a
+      has determined every one (and reports the call when it cannot); a generic
+      destructor carries its receiver's, in its datatype's order. Empty for a
       monomorphic callee, and empty on a freshly parsed tree: there is no surface
       syntax for type arguments at a call, so this is a resolution output, not
       something the user writes. Deliberately NOT defaulted: a defaulted field is
