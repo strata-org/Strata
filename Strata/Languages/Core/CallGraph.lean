@@ -247,7 +247,6 @@ def extractCallsFromStatement (stmt : Statement) : List String :=
     extractCallsFromStatements elseBody
   | .loop _ _ _ body _ => extractCallsFromStatements body
   | .exit _ _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
 
 /-- Extract procedure calls from a list of statements -/

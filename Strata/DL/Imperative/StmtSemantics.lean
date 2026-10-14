@@ -29,63 +29,19 @@ from.  It is planned for removal once the event-trace small-step semantics is
 adopted as the primary semantics.
 -/
 
-/-- Execution environment: store and cumulative failure flag. -/
+/-- Execution environment: store, expression factory, and cumulative failure
+flag.
+
+The expression `factory` is read-only execution context. Commands, guards, and
+events read it from the active configuration as `ρ.factory`; every statement step
+preserves it, and leaving a block projects only the store. -/
 structure Env (P : PureExpr) where
   /-- The current variable store. -/
   store : SemanticStore P
-  /-- The expression factory used by the evaluator. -/
+  /-- The read-only expression factory used to evaluate expressions. -/
   factory : P.Factory
   /-- Cumulative failure flag — `true` once any command has signalled failure. -/
   hasFailure : Bool := false
-
-/-- Type of a function that extends the factory with a new function definition. -/
-abbrev ExtendFactory (P : PureExpr) := P.Factory → SemanticStore P → PureFunc P → P.Factory
-
-/-- A factory `f` is reachable from `f_parent` by a chain of `extendFactory`
-    extensions.  Since `step_funcDecl` is the only rule that mutates
-    `Env.factory` (it tacks on `extendFactory ρ.factory ρ.store decl`), the
-    factory at any reachable config is related to the factory at the source
-    config by this predicate. -/
-inductive FactoryExtensionOf {P : PureExpr} (extendFactory : ExtendFactory P) :
-    P.Factory → P.Factory → Prop where
-  /-- Reflexivity: `f_parent` extends itself. -/
-  | refl {f : P.Factory} : FactoryExtensionOf extendFactory f f
-  /-- Step: if `f` extends `f_parent`, then `extendFactory f σ decl` does too. -/
-  | step {f_parent f : P.Factory}
-         (σ : SemanticStore P) (decl : PureFunc P) :
-      FactoryExtensionOf extendFactory f_parent f →
-      FactoryExtensionOf extendFactory f_parent (extendFactory f σ decl)
-
-/-- A well-formed factory extension preserves all `WellFormedSemanticEval*`
-    predicates through funcDecl steps.  This is the only step that modifies the
-    factory (`step_funcDecl`); all other small-step rules leave it unchanged. -/
-structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P] [HasSubstFvar P]
-    (extendFactory : ExtendFactory P) : Prop where
-  /-- The whole `WellFormedSemanticEval` bundle is preserved through
-      `funcDecl` extensions. -/
-  preserves_wfEval : ∀ f σ decl, WellFormedSemanticEval (P := P) f →
-    WellFormedSemanticEval (P := P) (extendFactory f σ decl)
-  /-- If the base factory `f` already evaluated expression `e` to some value `v`,
-    `extendFactory` shouldn't change the returned value. -/
-  preserves_eval_some_on_disjoint_op : ∀ f σ decl σ' e v,
-    decl.name ∉ HasOps.getOps (P := P) e →
-    P.eval f σ' e = some v →
-    P.eval (extendFactory f σ decl) σ' e = some v
-  /-- The backward (reverse) direction of `preserves_eval_some_on_disjoint_op`:
-      if the extended factory reduces `e` to `some v`, and `e` didn't contain
-      any operation using `decl`, then the original factory already did `e` .
-      This is supposed to hold by case analysis. Let's assume that `decl` is
-      some function `f`.
-      (1) If `e` directly used `.op f`: contradicts with `decl.name ∉ HasOps.getOps`
-      (2) If `e` didn't use `.op f`, but say use `.op g` and the definition of `g`
-          transitively uses `f`: this is impossible because definition of `g`
-          couldn't have seen `f` before `f` is declared.
-  -/
-  preserves_eval_some_on_disjoint_op_back : ∀ f σ decl σ' e v,
-    decl.name ∉ HasOps.getOps (P := P) e →
-    P.eval (extendFactory f σ decl) σ' e = some v →
-    P.eval f σ' e = some v
 
 /-- `Env.varsUndefined Q ρ` says the environment `ρ` leaves every `Q`-kind slot
 undefined: for each string `s` satisfying the label-kind predicate `Q` (the
@@ -136,11 +92,8 @@ inductive Config (P : PureExpr) (CmdT : Type) : Type where
         used for scoping of variables; no explicit exit statement can reach this block.
       - The `SemanticStore P` is the parent store at
         block entry; on exit, the result is projected through it so that
-        variables initialized inside the block are not visible outside.
-      - The `P.Factory` is the parent factory at block entry; on exit,
-        the factory is restored so that any internal function declarations
-        introduced inside the block are not visible outside. -/
-  | block : Option String → SemanticStore P → P.Factory → Config P CmdT → Config P CmdT
+        variables initialized inside the block are not visible outside. -/
+  | block : Option String → SemanticStore P → Config P CmdT → Config P CmdT
   /-- A sequence context: execute the first statement (as a sub-config), then
       continue with the remaining statements. -/
   | seq : Config P CmdT → List (Stmt P CmdT) → Config P CmdT
@@ -155,7 +108,7 @@ variable {P : PureExpr} {CmdT : Type}
   | .stmts _ ρ => ρ
   | .terminal ρ => ρ
   | .exiting _ ρ => ρ
-  | .block _ _ _ inner => inner.getEnv
+  | .block _ _ inner => inner.getEnv
   | .seq inner _ => inner.getEnv
 
 /-- Extract the store from a configuration. -/
@@ -163,21 +116,23 @@ variable {P : PureExpr} {CmdT : Type}
   := cfg.getEnv.store
 
 /-- Replace the active environment's cumulative failure flag, preserving the
-configuration's control shape, stores, and factories. -/
+configuration's control shape and stores. -/
 @[expose] def Config.withFailure (hasFailure : Bool) : Config P CmdT → Config P CmdT
   | .stmt statement ρ => .stmt statement { ρ with hasFailure := hasFailure }
   | .stmts statements ρ => .stmts statements { ρ with hasFailure := hasFailure }
   | .terminal ρ => .terminal { ρ with hasFailure := hasFailure }
   | .exiting label ρ => .exiting label { ρ with hasFailure := hasFailure }
-  | .block label parentStore parentFactory inner =>
-      .block label parentStore parentFactory (inner.withFailure hasFailure)
+  | .block label parentStore inner =>
+      .block label parentStore (inner.withFailure hasFailure)
   | .seq inner statements => .seq (inner.withFailure hasFailure) statements
 
 /-- Events emitted by the active base command in the next statement step.
-Administrative configurations and non-command statements are silent. -/
+Administrative configurations and non-command statements are silent.  The
+immutable factory is read from the active configuration's environment
+(`ρ.factory`). -/
 @[expose] def Config.emittedEvents : Config P (Cmd P) → Trace P
   | .stmt (.cmd command) ρ => Cmd.emittedEvents P command ρ.factory ρ.store
-  | .block _ _ _ inner => inner.emittedEvents
+  | .block _ _ inner => inner.emittedEvents
   | .seq inner _ => inner.emittedEvents
   | _ => []
 
@@ -209,7 +164,6 @@ a given label.  This is specific to `Cmd P`. -/
     (∀ (le : String × P.Expr), le ∈ inv → le.1 ≠ label) ∧
     Stmts.noMatchingAssert body label
   | .exit _ _, _ => True
-  | .funcDecl _ _, _ => True
   | .typeDecl _ _, _ => True
 where
   /-- Helper for lists of statements. -/
@@ -223,34 +177,9 @@ where
   | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
   | .terminal _, _ => True
   | .exiting _ _, _ => True
-  | .block _ _ _ inner, label => inner.noMatchingAssert label
+  | .block _ _ inner, label => inner.noMatchingAssert label
   | .seq inner ss, label =>
     inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
-
-/-- Config-level noFuncDecl predicate.
-
-    For `.block` we additionally require that the snapshotted parent factory
-    `f_parent` matches the inner config's current factory.  Together with
-    no-funcDecl-inside, this ensures that on `step_block_done` the factory
-    restoration is a no-op (it puts back the same factory that was already
-    there), so factory is preserved throughout. -/
-def Config.noFuncDecl : Config P CmdT → Prop
-  | .stmt s _ => Stmt.noFuncDecl s = true
-  | .stmts ss _ => Block.noFuncDecl ss = true
-  | .terminal _ => True
-  | .exiting _ _ => True
-  | .block _ _ f_parent inner => Config.noFuncDecl inner ∧ f_parent = inner.getEnv.factory
-  | .seq inner ss => Config.noFuncDecl inner ∧ Block.noFuncDecl ss = true
-
-/-- Config-level `funcDeclNames`: collects all `decl.name`s from `funcDecl`
-    AST nodes syntactically present anywhere in the config. -/
-@[expose] def Config.funcDeclNames : Config P CmdT → List P.Ident
-  | .stmt s _ => Stmt.funcDeclNames s false
-  | .stmts ss _ => Block.funcDeclNames ss false
-  | .terminal _ => []
-  | .exiting _ _ => []
-  | .block _ _ _ inner => Config.funcDeclNames inner
-  | .seq inner ss => Config.funcDeclNames inner ++ Block.funcDeclNames ss false
 
 /-- Extend `exitsCoveredByBlocks` to configurations.
 
@@ -263,8 +192,8 @@ def Config.noFuncDecl : Config P CmdT → Prop
   | labels, .stmts ss _ => Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting l _ => l ∈ labels
-  | labels, .block none _ _ inner => Config.exitsCoveredByBlocks labels inner
-  | labels, .block (some l) _ _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
+  | labels, .block none _ inner => Config.exitsCoveredByBlocks labels inner
+  | labels, .block (some l) _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Block.exitsCoveredByBlocks labels ss
 
@@ -321,7 +250,7 @@ threaded through a run to track store contents across the execution stack:
   | .stmts _ ρ => ρ.store.varsDefined Q
   | .terminal ρ => ρ.store.varsDefined Q
   | .exiting _ ρ => ρ.store.varsDefined Q
-  | .block _ σ_parent _ inner => σ_parent.varsDefined Q ∧ Config.varsDefined Q inner
+  | .block _ σ_parent inner => σ_parent.varsDefined Q ∧ Config.varsDefined Q inner
   | .seq inner _ => Config.varsDefined Q inner
 
 /-- Single-identifier specialisation of `Config.varsDefined`. -/
@@ -338,7 +267,7 @@ abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
       ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
   | .terminal ρ => ρ.store.varsUndefined Q
   | .exiting _ ρ => ρ.store.varsUndefined Q
-  | .block _ σ_parent _ inner =>
+  | .block _ σ_parent inner =>
       match excludeScoped with
       | true => σ_parent.varsUndefined Q
       | false => σ_parent.varsUndefined Q ∧ Config.varsUndefined false Q inner
@@ -346,16 +275,16 @@ abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
       ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
 
 /-- Every store reachable from `c` — its operative store and the saved parent store
-    of every enclosing block — holds only values, each measured against the factory
-    that will be in force when that store becomes operative again. -/
+    of every enclosing block — holds only values, measured against the immutable
+    factory carried in the active environment (`ρ.factory`). -/
 @[expose] def Config.storeWellDefined {P : PureExpr} [HasVal P] {CmdT : Type} :
     Config P CmdT → Prop
   | .stmt _ ρ => WellFormedStore ρ.store ρ.factory
   | .stmts _ ρ => WellFormedStore ρ.store ρ.factory
   | .terminal ρ => WellFormedStore ρ.store ρ.factory
   | .exiting _ ρ => WellFormedStore ρ.store ρ.factory
-  | .block _ σ_parent f_parent inner =>
-      WellFormedStore σ_parent f_parent ∧ Config.storeWellDefined inner
+  | .block _ σ_parent inner =>
+      WellFormedStore σ_parent inner.getEnv.factory ∧ Config.storeWellDefined inner
   | .seq inner _ => Config.storeWellDefined inner
 
 /-! ## Single-step relation -/
@@ -366,13 +295,15 @@ variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
-The expression evaluator is `P.eval` (part of the `PureExpr` bundle).
-The cumulative failure flag in `Env.hasFailure` is OR-ed with the per-command
-failure flag at each `step_cmd`.
+The expression evaluator is `P.eval` (part of the `PureExpr` bundle), applied
+against the immutable factory carried in the active configuration's environment
+(`ρ.factory`).  The cumulative failure flag in `Env.hasFailure` is OR-ed with
+the per-command failure flag at each `step_cmd`.  Every step preserves the
+environment factory; blocks project only the store.
 -/
 inductive StepStmt
   (EvalCmd : EvalCmdParam P CmdT)
-  (extendFactory : ExtendFactory P) :
+  :
   Config P CmdT → Config P CmdT → Prop where
 
   /-- A command steps to terminal configuration if it evaluates successfully.
@@ -381,19 +312,19 @@ inductive StepStmt
   | step_cmd :
     EvalCmd ρ.factory ρ.store c σ' hasAssertFailure →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.cmd c) ρ)
       (.terminal { ρ with store := σ', hasFailure := ρ.hasFailure || hasAssertFailure })
 
   /-- A labeled block steps to a block context that wraps its body as `.stmts`.
       The AST label `label : String` is lifted into `.some label` for the
       `Config.block` wrapper (whose label is `Option String`).
-      The parent store `ρ.store` and parent factory are saved so that
-      block-local variables and function declarations can be popped on exit. -/
+      The parent store `ρ.store` is saved so that block-local variables can be
+      popped on exit. -/
   | step_block :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.block label ss _) ρ)
-      (.block (.some label) ρ.store ρ.factory (.stmts ss ρ))
+      (.block (.some label) ρ.store (.stmts ss ρ))
 
   /-- If the condition of an `ite` statement evaluates to true, step to the
       then branch.  The branch is wrapped in a block so that variables
@@ -403,9 +334,9 @@ inductive StepStmt
     P.eval ρ.factory ρ.store c = .some HasBool.tt →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store ρ.factory (.stmts tss ρ))
+      (.block .none ρ.store (.stmts tss ρ))
 
   /-- If the condition of an `ite` statement evaluates to false, step to the
       else branch (scoped via block wrapper). -/
@@ -413,21 +344,21 @@ inductive StepStmt
     P.eval ρ.factory ρ.store c = .some HasBool.ff →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store ρ.factory (.stmts ess ρ))
+      (.block .none ρ.store (.stmts ess ρ))
 
   /-- Non-deterministic ite: step to the then branch (scoped). -/
   | step_ite_nondet_true :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store ρ.factory (.stmts tss ρ))
+      (.block .none ρ.store (.stmts tss ρ))
 
   /-- Non-deterministic ite: step to the else branch (scoped). -/
   | step_ite_nondet_false :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store ρ.factory (.stmts ess ρ))
+      (.block .none ρ.store (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
       Loop invariants are not evaluated during execution: they are treated
@@ -443,10 +374,10 @@ inductive StepStmt
     P.eval ρ.factory ρ.store g = .some HasBool.tt →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body ρ))
+        (.block .none ρ.store (.stmts body ρ))
         [.loop (.det g) m inv body md])
 
   /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
@@ -455,7 +386,7 @@ inductive StepStmt
     P.eval ρ.factory ρ.store g = .some HasBool.ff →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.loop (.det g) m inv body _) ρ)
       (.terminal ρ)
 
@@ -464,111 +395,103 @@ inductive StepStmt
       wrapped in an unnamed `.block` and sequenced with the recursive loop,
       giving each iteration its own block scope. -/
   | step_loop_nondet_enter :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.loop .nondet m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body ρ))
+        (.block .none ρ.store (.stmts body ρ))
         [.loop .nondet m inv body md])
 
   /-- Non-deterministic loop: exit the loop. -/
   | step_loop_nondet_exit :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.loop .nondet m inv body _) ρ)
       (.terminal ρ)
 
   /-- An exit statement produces an exiting configuration. -/
   | step_exit :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.exit label _) ρ)
       (.exiting label ρ)
 
-  /-- A function declaration extends the factory with the new function. -/
-  | step_funcDecl :
-    StepStmt EvalCmd extendFactory
-      (.stmt (.funcDecl decl md) ρ)
-      (.terminal { ρ with factory := extendFactory ρ.factory ρ.store decl })
-
   /-- A type declaration is a no-op at runtime. -/
   | step_typeDecl :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmt (.typeDecl _tc _md) ρ)
       (.terminal ρ)
 
   /-- An empty list of statements steps to `.terminal` with no state changes. -/
   | step_stmts_nil :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmts [] ρ)
       (.terminal ρ)
 
   /-- To evaluate a non-empty sequence, enter a seq context that processes
       the first statement while remembering the remaining statements. -/
   | step_stmts_cons :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.stmts (s :: ss) ρ)
       (.seq (.stmt s ρ) ss)
 
   /-- A seq context steps its inner config forward. -/
   | step_seq_inner :
-    StepStmt EvalCmd extendFactory inner inner' →
+    StepStmt EvalCmd inner inner' →
     ----
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.seq inner ss)
       (.seq inner' ss)
 
   /-- When the inner config of a seq reaches terminal, continue with the
       remaining statements. -/
   | step_seq_done :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.seq (.terminal ρ') ss)
       (.stmts ss ρ')
 
   /-- When the inner config of a seq exits, propagate the exit
       (skip remaining statements). -/
   | step_seq_exit :
-    StepStmt EvalCmd extendFactory
+    StepStmt EvalCmd
       (.seq (.exiting label ρ') ss)
       (.exiting label ρ')
 
   /-- A block context steps its inner body one step forward.
       The inner body can be any config (stmts, seq, etc.). -/
   | step_block_body :
-    StepStmt EvalCmd extendFactory inner inner' →
+    StepStmt EvalCmd inner inner' →
     ----
-    StepStmt EvalCmd extendFactory
-      (.block label σ_parent f_parent inner)
-      (.block label σ_parent f_parent inner')
+    StepStmt EvalCmd
+      (.block label σ_parent inner)
+      (.block label σ_parent inner')
 
   /-- When a block's inner body reaches terminal, the block terminates.
       The resulting store is projected through the parent store: only variables
       that existed before the block keep their (possibly updated) values;
-      variables initialized inside the block are discarded.  The evaluator is
-      restored to the parent's: function declarations introduced inside the
-      block are not visible outside. -/
+      variables initialized inside the block are discarded.  The failure flag and
+      factory are preserved. -/
   | step_block_done :
-    StepStmt EvalCmd extendFactory
-      (.block label σ_parent f_parent (.terminal ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, factory := f_parent })
+    StepStmt EvalCmd
+      (.block label σ_parent (.terminal ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
 
   /-- When a block's inner body exits with a matching label, the block consumes it.
-      Store and factory are projected/restored. -/
+      The store is projected; the failure flag and factory are preserved. -/
   | step_block_exit_match :
     label = .some l →
     ----
-    StepStmt EvalCmd extendFactory
-      (.block label σ_parent f_parent (.exiting l ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store, factory := f_parent })
+    StepStmt EvalCmd
+      (.block label σ_parent (.exiting l ρ'))
+      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
 
   /-- When a block's inner body exits with a non-matching label, the exit propagates.
       Includes the case where the block's own label is `.none` (anonymous loop/ite
       wrapper, which never matches a labeled exit) as well as any other mismatched
-      `.some` label.  Store and factory are projected/restored since we're leaving
-      this block. -/
+      `.some` label.  The store is projected since we're leaving this block. -/
   | step_block_exit_mismatch :
     label ≠ .some l →
     ----
-    StepStmt EvalCmd extendFactory
-      (.block label σ_parent f_parent (.exiting l ρ'))
-      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store, factory := f_parent })
+    StepStmt EvalCmd
+      (.block label σ_parent (.exiting l ρ'))
+      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store })
 
 
 /-- Command relation with no possible command step, used to reuse the existing
@@ -590,13 +513,13 @@ such as nondeterministic conditionals and loops, remain nondeterministic. -/
 inductive StepStmtE
     {EventT : Type}
     (EvalCmd : EvalCmdParamE P CmdT EventT)
-    (extendFactory : ExtendFactory P) :
+    :
     Config P CmdT → List EventT → Config P CmdT → Prop where
   /-- Execute one command and expose exactly the event list produced by its
   command semantics. -/
   | step_cmd :
       EvalCmd ρ.factory ρ.store cmd σ' emitted →
-      StepStmtE EvalCmd extendFactory
+      StepStmtE EvalCmd
         (.stmt (.cmd cmd) ρ) emitted
         (.terminal { ρ with store := σ' })
 
@@ -604,21 +527,21 @@ inductive StepStmtE
   emit no events. This may overlap with the explicit wrapper constructors, but
   only as an alternative derivation of the same transition. -/
   | step_admin :
-      StepStmt P (noCommandEvalE P CmdT) extendFactory c c' →
-      StepStmtE EvalCmd extendFactory c [] c'
+      StepStmt P (noCommandEvalE P CmdT) c c' →
+      StepStmtE EvalCmd c [] c'
 
   /-- Lift one inner sequence step. -/
   | step_seq_inner :
-      StepStmtE EvalCmd extendFactory inner emitted inner' →
-      StepStmtE EvalCmd extendFactory
+      StepStmtE EvalCmd inner emitted inner' →
+      StepStmtE EvalCmd
         (.seq inner ss) emitted (.seq inner' ss)
 
   /-- Lift one inner block step. -/
   | step_block_body :
-      StepStmtE EvalCmd extendFactory inner emitted inner' →
-      StepStmtE EvalCmd extendFactory
-        (.block label σ_parent f_parent inner) emitted
-        (.block label σ_parent f_parent inner')
+      StepStmtE EvalCmd inner emitted inner' →
+      StepStmtE EvalCmd
+        (.block label σ_parent inner) emitted
+        (.block label σ_parent inner')
 
 /-- Structured multi-step execution with a chronological event trace.
 `ReflTransTrace` concatenates the event list from each successive step as
@@ -627,9 +550,9 @@ concatenation. -/
 abbrev StepStmtStarE
     {EventT : Type}
     (EvalCmd : EvalCmdParamE P CmdT EventT)
-    (extendFactory : ExtendFactory P) :
+    :
     Config P CmdT → List EventT → Config P CmdT → Prop :=
-  ReflTransTrace (StepStmtE P EvalCmd extendFactory)
+  ReflTransTrace (StepStmtE P EvalCmd)
 
 end
 
@@ -642,72 +565,55 @@ variable
   (P : PureExpr)
   [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
-  (extendFactory : ExtendFactory P)
 
 /-- A multi-step execution of Imperative. -/
 abbrev StepStmtStar :
     Config P CmdT → Config P CmdT → Prop :=
-  ReflTrans (StepStmt P EvalCmd extendFactory)
+  ReflTrans (StepStmt P EvalCmd)
 
 /-- A statement evaluates successfully if it steps to a terminal configuration. -/
 abbrev EvalStmtSmall
     (ρ : Env P) (s : Stmt P CmdT)
     (ρ' : Env P) : Prop :=
-  StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.terminal ρ')
+  StepStmtStar P EvalCmd (.stmt s ρ) (.terminal ρ')
 
 /-- A list of statements evaluates successfully if it steps to a terminal
     configuration. -/
 abbrev EvalStmtsSmall
     (ρ : Env P) (ss : List (Stmt P CmdT))
     (ρ' : Env P) : Prop :=
-  StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) (.terminal ρ')
+  StepStmtStar P EvalCmd (.stmts ss ρ) (.terminal ρ')
 
 ---------------------------------------------------------------------
 
 /-- Configuration is terminal if no further steps are possible. -/
 def IsTerminal
     (c : Config P CmdT) : Prop :=
-  ∀ c', ¬ StepStmt P EvalCmd extendFactory c c'
+  ∀ c', ¬ StepStmt P EvalCmd c c'
 
 /-! ## Config-level WF predicates -/
 
 variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
-/-- Config-level `WellFormedSemanticEval` invariant: the whole bundle holds on
-    the current factory AND on every captured `f_parent` snapshot stored inside
-    enclosing blocks (recursively).  Required because `step_block_done`
-    restores the factory to `f_parent`, so we need to know `f_parent` itself
-    was WF. -/
+/-- Config-level `WellFormedSemanticEval` invariant on the immutable factory
+    carried in the active environment.  Since the factory is immutable during
+    execution, this reads it from the configuration's environment
+    (`ρ.factory`). The recursive definition supports proofs by configuration
+    shape. -/
 def Config.wfEval : Config P CmdT → Prop
   | .stmt _ ρ => WellFormedSemanticEval (P := P) ρ.factory
   | .stmts _ ρ => WellFormedSemanticEval (P := P) ρ.factory
   | .terminal ρ => WellFormedSemanticEval (P := P) ρ.factory
   | .exiting _ ρ => WellFormedSemanticEval (P := P) ρ.factory
-  | .block _ _ f_parent inner =>
-    WellFormedSemanticEval (P := P) f_parent ∧ Config.wfEval inner
+  | .block _ _ inner =>
+    WellFormedSemanticEval (P := P) inner.getEnv.factory ∧ Config.wfEval inner
   | .seq inner _ => Config.wfEval inner
-
-/-! ## Factory preservation on disjoint expressions -/
-
-/-- All captured `f_parent` snapshots in the config agree **bidirectionally**
-    with the inner factory on `(σ', e)` in `some`-monotone form. -/
-def Config.factorySnapAgrees (σ' : SemanticStore P) (e : P.Expr) :
-    Config P CmdT → Prop
-  | .stmt _ _ => True
-  | .stmts _ _ => True
-  | .terminal _ => True
-  | .exiting _ _ => True
-  | .block _ _ f_p inner =>
-    (∀ v, P.eval f_p σ' e = some v ↔ P.eval inner.getEnv.factory σ' e = some v) ∧
-      Config.factorySnapAgrees σ' e inner
-  | .seq inner _ => Config.factorySnapAgrees σ' e inner
 
 end -- section
 
 section
 
 variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
-variable (extendFactory : ExtendFactory P)
 
 /-! ## Detecting an assert in a configuration -/
 
@@ -720,7 +626,7 @@ variable (extendFactory : ExtendFactory P)
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .block _ _ _ inner, aid => isAtAssert inner aid
+  | .block _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False
 

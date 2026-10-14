@@ -232,7 +232,7 @@ def callElimPipelinePhase : PipelinePhase where
   -- so a fully annotated input does not stay one.
   preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
                       .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions]
 
 end Core

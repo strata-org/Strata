@@ -109,7 +109,7 @@ procedure test ()
 #eval (Std.format (Core.typeCheck .default (translatePgm blockScopePgm).stripMetaData))
 
 ---------------------------------------------------------------------
--- Regression test for issue #445: function declaration statement
+-- Regression test for issue #445: internal `function` declaration syntax
 -- had wrong arg order and scope, causing the body, subsequent
 -- variable references, and function calls to resolve incorrectly.
 ---------------------------------------------------------------------

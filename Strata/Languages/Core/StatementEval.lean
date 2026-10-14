@@ -226,7 +226,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
+  | .exit _ _ | .typeDecl _ _ => false  -- Type declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -265,7 +265,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
+  | .exit _ _ | .typeDecl _ _ => []  -- Type declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -289,7 +289,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
+  | .exit _ _ | .typeDecl _ _ => []  -- Type declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -330,13 +330,12 @@ private def createUnreachableAssertObligations
       (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
 
 /--
-Substitute free variables in an expression with their current values from the environment,
-excluding the given parameter names (which are bound by the function, not free).
-This implements value capture semantics for local function declarations (`funcDecl`).
+Substitute free variables in an expression with their current values from the
+environment, excluding the given parameter names (which are treated as bound,
+not free). The replacement values come from the environment state and must be
+closed (no dangling bvars).
 
-Unlike global functions (which are evaluated at the top level with no local state),
-local functions capture the values of free variables at the point of declaration.
-Parameters are excluded because they are bound by the function definition and should
+Parameters are excluded because they are bound within the expression and should
 not be substituted with values from the enclosing scope.
 -/
 def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
@@ -614,23 +613,6 @@ private def evalOneStmt (old_var_subst : SubstMap)
     ([{ Ewn with env := { Ewn.env with error := some (.Misc
         f!"cannot evaluate a `loop` statement: eliminate loops before symbolic \
            evaluation") } }], noStats, nextSplitId)
-  | .funcDecl decl _ =>
-    let paramNames := decl.inputs.map (·.1)
-    -- Lift the AST funcDecl into an evaluator-facing `LFunc` (concreteEval defaults to none).
-    let func : Lambda.LFunc CoreLParams := {
-      name := decl.name,
-      typeArgs := decl.typeArgs,
-      isConstr := decl.isConstr,
-      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-      output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-      body := decl.body.map (captureFreevars Ewn.env paramNames),
-      attr := decl.attr,
-      axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
-    }
-    match Ewn.env.addFactoryFunc func with
-    | .ok env' => ([{ Ewn with env := env' }], noStats, nextSplitId)
-    | .error e =>
-      ([{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }], noStats, nextSplitId)
   | .typeDecl _ _ => ([Ewn], noStats, nextSplitId)
   | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, nextSplitId)
 
@@ -801,19 +783,6 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               evalExpr := fun E e =>
                 some (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
               evalCmd := Command.run fuel'
-              extendFactory := fun E decl =>
-                match E.addFactoryFunc {
-                  name := decl.name
-                  typeArgs := decl.typeArgs
-                  isConstr := decl.isConstr
-                  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
-                  output := Lambda.LTy.toMonoTypeUnsafe decl.output
-                  body := decl.body
-                  attr := decl.attr
-                  axioms := decl.axioms
-                } with
-                | .ok E' => E'
-                | .error _ => E
               pushScope := fun E => E.pushEmptyScope
               popScope := fun E => E.popScope
               hasError := fun E => E.error.isSome

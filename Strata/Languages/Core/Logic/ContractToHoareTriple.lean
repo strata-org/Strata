@@ -60,7 +60,6 @@ open Core Imperative Strata.Logic Imperative.Logic
 
 namespace Hoare
 
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-- A procedure's preconditions, as a predicate on the initial environment. -/
 @[expose] def Procedure.preAsPredicate (proc : Procedure)
@@ -120,7 +119,7 @@ width-matching literals; other values must type-check as closed expressions. -/
     (procName : String) : Prop :=
   ∃ proc bss, p.findProcByString? procName = some proc ∧
     proc.body = .structured bss ∧
-    Triple p.findProcByString? φ params
+    Triple p.findProcByString? params
       (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
         Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)

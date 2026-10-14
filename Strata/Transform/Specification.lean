@@ -301,10 +301,10 @@ formulations, each described below. -/
     There exists a reachable config from `(.stmts ss ρ₀)` whose env has
     `hasFailure = true`. -/
 @[expose] public def CanFailBlock
-    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT)
     (ss : List (Stmt P CmdT)) (ρ₀ : Env P) : Prop :=
   ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
-    StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) cfg
+    StepStmtStar P evalCmd (.stmts ss ρ₀) cfg
 
 /-! ## Overapproximation up to a mapping relation of program states
 
@@ -516,13 +516,12 @@ exhibits *at most* them (target ⊆ source)
 
 /-- The output relation shared by the structured-pass overapproximation
 instances: the target environment's store agrees with the source's on every
-source-defined name, the failure flags match, and the factory is preserved.
-`nondetElim`, `hoistLoopPrefixInits`/`stmtsToCFG`, and the whole pipeline all
-overapproximate up to this same relation. -/
+source-defined name, and the failure flags match. `nondetElim`,
+`hoistLoopPrefixInits`/`stmtsToCFG`, and the whole pipeline all overapproximate
+up to this same relation. -/
 @[expose] def EnvStoreAgree {P : PureExpr} (ρ₀ ρ₀' : Env P) : Prop :=
   StoreAgreement ρ₀.store ρ₀'.store
   ∧ ρ₀.hasFailure = ρ₀'.hasFailure
-  ∧ ρ₀'.factory = ρ₀.factory
 
 end Transform
 

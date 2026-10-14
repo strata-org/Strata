@@ -38,8 +38,6 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   evalExpr : S → P.Expr → Option P.Expr
   /-- Execute a command, producing a new state. -/
   evalCmd : S → CmdT → S
-  /-- Extend the evaluator with a function declaration. -/
-  extendFactory : S → PureFunc P → S
   /-- Push a new variable scope (for blocks). -/
   pushScope : S → S := id
   /-- Pop a variable scope (for blocks). -/
@@ -81,8 +79,6 @@ def runStep [BEq P.Expr] [HasBool P]
       | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 
   | .stmt (.exit label _) ρ => .exiting label ρ
-
-  | .stmt (.funcDecl decl _) ρ => .terminal (ops.extendFactory ρ decl)
 
   | .stmt (.typeDecl _ _) ρ => .terminal ρ
 

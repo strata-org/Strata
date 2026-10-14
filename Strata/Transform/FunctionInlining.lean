@@ -194,7 +194,7 @@ def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhas
     (requires := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
-                         .noNondetGuards, .hasObligationForm, .noInternalFuncDecl,
+                         .noNondetGuards, .hasObligationForm,
                          .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       -- The program's functions are in the factory for this pass alone: the encoder

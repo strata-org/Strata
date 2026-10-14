@@ -14,10 +14,9 @@ open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
--- Test that DDM can parse function declaration statements
--- Note: SMT verification of locally declared functions is not yet supported
--- (function axioms are not generated for SMT). This test verifies parsing
--- and type checking work correctly.
+-- Test that DDM can parse an internal `function` declaration, which translation
+-- lowers to a local variable initialized with a `Lambda` abstraction. This test
+-- verifies that parsing and type checking work correctly.
 def funcDeclStmtPgm : Program :=
 #strata
 program Core;
@@ -45,7 +44,8 @@ procedure testFuncDecl (c : int)
 #guard_msgs in
 #eval IO.println funcDeclStmtPgm
 
--- SMT verification is not yet supported for locally declared functions
+-- Parsing and type checking only; SMT verification of internal functions is
+-- not exercised here.
 -- #eval verify "z3" funcDeclStmtPgm
 
 ---------------------------------------------------------------------

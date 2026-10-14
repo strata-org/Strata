@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.SMT.Term
-import StrataDDM.Util.String
+public import Strata.DL.SMT.StringLit
 import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.Languages.Core.Options
@@ -25,8 +25,6 @@ works purely with `Term` values and delegates string rendering to the Solver via
 -/
 
 namespace Strata.SMT
-
-open StrataDDM (escapeSMTStringLit)
 
 public section
 
@@ -86,6 +84,14 @@ abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 /-- Backward-compatible alias for `SMTLibSolverM`. -/
 abbrev SolverM := SMTLibSolverM
+
+/-- SMT-LIB actions that distinguish serialization failures from ordinary IO
+errors. The underlying `SolverM` still carries process and filesystem errors. -/
+abbrev SolverEncodingM := ExceptT StringLit.EncodingError SolverM
+
+instance : MonadExceptOf IO.Error SolverEncodingM where
+  throw e := ExceptT.mk <| throwThe IO.Error e
+  tryCatch x handle := ExceptT.mk <| tryCatchThe IO.Error x handle
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
@@ -201,22 +207,22 @@ def flush : SolverM Unit := do
   (← read).smtLibInput.flush
 
 /-- Convert a `Term` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
-def termToSMTString (t : Term) : SolverM String := do
+def termToSMTString (t : Term) : SolverEncodingM String := do
   if let (.some s) := (← get).termStrings.get? t then return s
   match Strata.SMTDDM.termToString t with
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
     return s
-  | .error msg => throw (IO.userError s!"Solver.termToSMTString failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.termSerialization msg)
 
 /-- Convert a `TermType` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
-def typeToSMTString (ty : TermType) : SolverM String := do
+def typeToSMTString (ty : TermType) : SolverEncodingM String := do
   if let (.some s) := (← get).typeStrings.get? ty then return s
   match Strata.SMTDDM.termTypeToString ty with
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
     return s
-  | .error msg => throw (IO.userError s!"Solver.typeToSMTString failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.typeSerialization msg)
 
 /-! ## String-based commands (less critical, kept as-is) -/
 
@@ -230,13 +236,12 @@ def setInfo (name value : String) : SolverM Unit :=
   emitln s!"(set-info :{name} {value})"
 
 /-- Emit `(set-info :name "...")` with the given *raw* Lean string as the
-    attribute value. The string is quoted and escaped per SMT-LIB 2.6+ rules
-    (via `Strata.escapeSMTStringLit`): embedded double quotes are doubled
-    (`""`) and non-printable characters use `\u{XXXX}` escapes. Callers must
-    NOT pre-quote or pre-escape the argument — use `setInfo` for already-
-    formatted attribute values (integers, s-expressions, etc.). -/
+    attribute value. Callers must not pre-quote or pre-escape the argument; use
+    `setInfo` for already-formatted attribute values. Because `set-info` is
+    diagnostic metadata rather than a semantic string term, code points outside
+    SMT-LIB's `String` alphabet are rendered as visible `<U+...>` markers. -/
 def setInfoString (name value : String) : SolverM Unit :=
-  emitln s!"(set-info :{name} {escapeSMTStringLit value})"
+  emitln s!"(set-info :{name} {StringLit.toDiagnosticSMTString value})"
 
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
@@ -250,7 +255,7 @@ def declareSort (id : String) (arity : Nat) : SolverM Unit :=
   emitln s!"(declare-sort {Symbol.toSMTString id} {arity})"
 
 /-- Convert a single constructor to its SMT-LIB string representation. -/
-private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
+private def constructorToSMTString (c : SMTConstructor) : SolverEncodingM String := do
   let cName := Symbol.toSMTString c.name
   if c.args.isEmpty then return s!"({cName})"
   else
@@ -259,7 +264,8 @@ private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
       return s!"({Symbol.toSMTString name} {tyStr})"
     return s!"({cName} {String.intercalate " " fieldStrs})"
 
-def declareDatatype (id : String) (params : List String) (constructors : List SMTConstructor) : SolverM Unit := do
+def declareDatatype (id : String) (params : List String)
+    (constructors : List SMTConstructor) : SolverEncodingM Unit := do
   let cStrs ← constructors.mapM constructorToSMTString
   let cInline := "\n  " ++ String.intercalate "\n  " cStrs
   let pInline := String.intercalate " " (params.map Symbol.toSMTString)
@@ -268,7 +274,8 @@ def declareDatatype (id : String) (params : List String) (constructors : List SM
   else emitln s!"(declare-datatype {Symbol.toSMTString id} (par ({pInline}) ({cInline})))"
 
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
-def declareDatatypes (dts : List (String × List String × List SMTConstructor)) : SolverM Unit := do
+def declareDatatypes (dts : List (String × List String × List SMTConstructor)) :
+    SolverEncodingM Unit := do
   if dts.isEmpty then return
   let sortDecls := dts.map fun (name, params, _) => s!"({Symbol.toSMTString name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
@@ -292,7 +299,7 @@ def assertRendered (s : String) : SolverM Unit := do
   solver.smtLibInput.putStr ")\n"
 
 /-- Assert a `Term` (must be Bool-typed). Converts via the cached `termToSMTString`. -/
-def assert (t : Term) : SolverM Unit := do
+def assert (t : Term) : SolverEncodingM Unit := do
   assertRendered (← termToSMTString t)
 
 /-- Assert a raw SMT-LIB identifier string (e.g. an abbreviated name like `"t0"`).
@@ -302,12 +309,13 @@ def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"
 
 /-- Declare a constant with a typed `TermType`. -/
-def declareConst (id : String) (ty : TermType) : SolverM Unit := do
+def declareConst (id : String) (ty : TermType) : SolverEncodingM Unit := do
   let tyStr ← typeToSMTString ty
   emitln s!"(declare-const {Symbol.toSMTString id} {tyStr})"
 
 /-- Declare a function with typed argument and return types. -/
-def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
+def declareFun (id : String) (argTys : List TermType) (retTy : TermType) :
+    SolverEncodingM Unit := do
   let retStr ← typeToSMTString retTy
   if argTys.isEmpty then
     emitln s!"(declare-const {Symbol.toSMTString id} {retStr})"
@@ -319,7 +327,7 @@ def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : Solve
 /-- Define a function with typed return type and a raw SMT-LIB string body.
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
 def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType)
-    (body : String) : SolverM Unit := do
+    (body : String) : SolverEncodingM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do
     let tyStr ← typeToSMTString ty
     return s!"({Symbol.toSMTString name} {tyStr})"
@@ -329,7 +337,7 @@ def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
-    (body : Term) : SolverM Unit := do
+    (body : Term) : SolverEncodingM Unit := do
   let bodyStr ← termToSMTString body
   defineFun id args retTy bodyStr
 

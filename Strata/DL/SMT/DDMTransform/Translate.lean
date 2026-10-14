@@ -10,6 +10,8 @@ public import Strata.DL.SMT.Term
 public import Strata.Util.Provenance
 public import StrataDDM.Elab.LoadedDialects
 import StrataDDM.BuiltinDialects.Init
+import StrataDDM.Util.String
+import Strata.DL.SMT.StringLit
 import Strata.DL.SMT.Symbol
 import Strata.Util.Tactics
 
@@ -121,6 +123,10 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     return (.qual_identifier smtProv
       (.qi_ident smtProv (.iden_indexed smtProv bvty (smtAnn #[val]))))
   | .string s =>
+    -- Keep the AST value unchanged. The formatter owns the concrete SMT-LIB
+    -- spelling. Validation can fail, so unsupported strings remain on the
+    -- `Except` path instead of being sent to the solver.
+    SMT.StringLit.validate s
     return .spec_constant_term smtProv (.sc_str smtProv s)
 
 -- List of SMTSort to Array.
@@ -323,14 +329,18 @@ private def dummy_prg_for_toString :=
 def termToString (t:SMT.Term): Except String String := do
   let ddm_term <- translateFromTerm t
   let ddm_ast := SMTDDM.Term.toAst ddm_term
-  let ctx := dummy_prg_for_toString.formatContext { smtStringEscaping := true }
+  let ctx := dummy_prg_for_toString.formatContext {
+    customStringEscaper := some SMT.StringLit.escapeSMTStringLit
+  }
   let s := dummy_prg_for_toString.formatState
   return ddm_ast.render ctx s |>.fst
 
 def termTypeToString (t:SMT.TermType): Except String String := do
   let ddm_term <- translateFromTermType t
   let ddm_ast := SMTDDM.SMTSort.toAst ddm_term
-  let ctx := dummy_prg_for_toString.formatContext { smtStringEscaping := true }
+  let ctx := dummy_prg_for_toString.formatContext {
+    customStringEscaper := some SMT.StringLit.escapeSMTStringLit
+  }
   let s := dummy_prg_for_toString.formatState
   return ddm_ast.render ctx s |>.fst
 
@@ -340,8 +350,12 @@ namespace SMTResponseDDM
 
 /-- The loaded dialects needed to parse SMTResponse commands. -/
 def smtResponseDialects : StrataDDM.Elab.LoadedDialects :=
-  .ofDialects! #[initDialect, Strata.smtReservedKeywordsDialect,
-                 Strata.SMTCore, Strata.SMTResponse]
+  let pctx : StrataDDM.Parser.ParsingContext := {
+    StrataDDM.Elab.initParsers with
+    stringLiteralDecoder := some fun input pos => SMT.StringLit.decodeSMTStringLit input pos
+  }
+  .ofDialectsWith! pctx #[initDialect, Strata.smtReservedKeywordsDialect,
+                          Strata.SMTCore, Strata.SMTResponse]
 
 /-- Format context for rendering SMTResponse `Arg` values back to strings. -/
 private def smtFormatContext : FormatContext :=
