@@ -43,8 +43,6 @@ import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
-import Strata.Transform.LiftInternalFuncDecls
-import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
@@ -150,4 +148,5 @@ import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData
 
 -- noimport: Strata.Util.IOTests (used for tests)
+-- noimport: Strata.CodeGen.TypeShape (meta module, used by the code generators)
 -- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)

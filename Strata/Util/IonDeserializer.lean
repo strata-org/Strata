@@ -8,6 +8,7 @@ module
 public meta import Lean.Elab.Term.TermElabM
 public meta import Lean.Meta.Reduce
 public meta import Lean.PrettyPrinter.Delaborator
+public meta import Strata.CodeGen.TypeShape
 public import StrataDDM.Util.Ion
 public import StrataDDM.Util.Decimal
 
@@ -148,17 +149,6 @@ def deserializeWith {α : Type} (f : Ion SymbolId → SymbolTable → Except Std
 end Strata.Util.IonDeserializer
 end -- public section
 
-/-- Leaf type names that should not be treated as nested inductives. -/
-private meta def isLeafTypeName (name : Name) : Bool :=
-  name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
-  name == ``StrataDDM.Decimal
-
-/-- Check if a type name refers to a non-leaf inductive or structure in the environment. -/
-private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
-  !isLeafTypeName name &&
-    ((getStructureInfo? env name).isSome ||
-      match env.find? name with | some (.inductInfo _) => true | _ => false)
-
 /-- Canonical string key for a fully-applied type expression: "Name arg1 arg2 ...". -/
 private meta partial def typeKey (t : Expr) : String :=
   let fn := t.getAppFn
@@ -204,7 +194,7 @@ private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term
       `(Strata.Util.IonDeserializer.readOption (fun _elemVal tbl => $elemReader) $valExpr tbl)
     else throwError "getIonDeserializer%: Option without type argument"
   | some n =>
-    if isCompoundType (← getEnv) n then
+    if Strata.CodeGen.isCompoundType (← getEnv) n then
       let readerId := mkIdent (readerNameExpr fieldType')
       `($readerId $valExpr tbl)
     else
@@ -382,7 +372,7 @@ private meta partial def extractCompoundExprs (env : Environment) (t : Expr) : T
     if h : args.size > 0 then extractCompoundExprs env args[0]
     else return #[]
   | some n =>
-    if isCompoundType env n then
+    if Strata.CodeGen.isCompoundType env n then
       -- Return the full applied type, and recurse into type arguments
       let mut result := #[t]
       for arg in t.getAppArgs do
@@ -505,7 +495,7 @@ meta def getIonDeserializerElab : TermElab := fun stx _expectedType? => do
             match ty with
             | .forallE _ t b _ =>
               if let some n := t.getAppFn.constName? then
-                if isCompoundType env n then hasCompoundFields := true
+                if Strata.CodeGen.isCompoundType env n then hasCompoundFields := true
               ty := b.instantiate1 (mkSort Level.zero)
             | _ => break
       if !hasCompoundFields then

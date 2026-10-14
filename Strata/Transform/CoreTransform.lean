@@ -102,7 +102,7 @@ def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdent
     (the caller supplies its reserved prefix, e.g. `freshTyVarPrefix` in
     `CallElim.lean`), for per-call-site contract instantiation in call
     elimination. Returns the empty substitution (a verified identity for
-    `LMonoTy.subst`/`LExpr.applySubst`, which short-circuit on
+    `LMonoTy.subst`/`LExpr.applyTypeSubst`, which short-circuit on
     `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
     exact no-op for monomorphic procedures. -/
 def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)
@@ -359,8 +359,6 @@ def runStmtsRec (f : Statement → CoreTransformM (Option (List Statement)))
         | .loop guard measure invariant body md => do
           let (changed, body') ← runStmtsRec f body
           return (changed, [.loop guard measure invariant body' md])
-        | .funcDecl _ _ =>
-          return (false, [s])  -- Function declarations pass through unchanged
         | .typeDecl _ _ =>
           return (false, [s])  -- Type declarations pass through unchanged
         | .exit _lbl _md =>

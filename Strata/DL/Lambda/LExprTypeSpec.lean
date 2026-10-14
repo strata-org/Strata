@@ -345,8 +345,10 @@ The proof is structured in three layers:
    `WellScoped` — no `checkContextTypesClosed`/`allKeysFresh`). This is the form
    consumed by callers that compose substitutions themselves (e.g. `CmdType.inferType_HasType`).
 
-   Note: we require only `FactoryWF`, not `FactoryClosed` — the latter does not hold of
-   typechecked terms in general (a `funcDecl` body may capture surrounding-scope variables).
+   `FactoryWF` includes closedness of the factory's own functions through
+   `LFuncWF.body_freevars` and `LFuncWF.precond_freevars`. It does not require
+   arbitrary typechecked terms to be closed: a local function lowered to a
+   `Lambda` value may capture surrounding-scope variables.
 
 3. **`resolve_HasType`**: The top-level theorem. Building on `resolve_HasType_core`, it adds
    the composability postconditions (`checkContextTypesClosed Env'`,

@@ -22,6 +22,7 @@ open Strata
 
 /-! ## 1. Basic instance method call: `c#reset()` -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -43,12 +44,20 @@ procedure useCounter()
   c#reset();
   assert c#count == 0
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useCounter()
+};
 #end
 
 /-! ## 2. Two composites with the same method name resolve independently.
     Without per-composite scoping, `tick` would collide in the global scope
     during pre-registration. -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -89,10 +98,19 @@ procedure runClock()
   k#tick();
   assert k#time == 1
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  runCounter();
+  runClock()
+};
 #end
 
 /-! ## 3. Method with multiple parameters: `c#setTo(v)` -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -114,11 +132,19 @@ procedure useCell(x: int)
   b#setTo(x);
   assert b#value == x
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useCell(7)
+};
 #end
 
 /-! ## 4. Boolean-typed field updated through an instance method, and read
     back via field access in the caller's `assert`. -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -140,6 +166,13 @@ procedure useWidget()
   w#activate();
   assert w#enabled == true
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useWidget()
+};
 #end
 
 /-! ## 5. Calling an instance method from a top-level procedure that takes
@@ -147,6 +180,7 @@ procedure useWidget()
     only `a`; the unused `b` parameter is included to confirm method
     dispatch picks the right receiver. -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -168,12 +202,22 @@ procedure resetTwoCounters(a: Counter, b: Counter)
 {
   a#reset()
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var a: Counter := new Counter;
+  var b: Counter := new Counter;
+  resetTwoCounters(a, b)
+};
 #end
 
 /-! ## 6. Instance method whose extra parameter is unused in the body:
     confirms an extra (unused) method parameter doesn't break call
     dispatch or framing. -/
 
+-- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -195,12 +239,20 @@ procedure useAccount()
   a#deposit(100);
   assert a#balance == 1
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  useAccount()
+};
 #end
 
 /-! ## 7. Instance method called through a field-selected receiver:
     `obj#field#method()`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: `o#inner` is never written, so a concrete run reads an unset field.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Inner {
@@ -225,7 +277,8 @@ procedure useOuter()
 
 /-! ## 8. Chained field read: `obj#field#x`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: `o#inner` is never written, so a concrete run reads an unset field.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Inner { var x: int }

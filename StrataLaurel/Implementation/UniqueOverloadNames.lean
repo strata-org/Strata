@@ -28,14 +28,14 @@ private def mangledOverloadName (name : Identifier) (uniqueId : Nat) : Identifie
 private def rewriteCallNode (renames : Std.HashMap Nat Identifier)
     (overloadedNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
     match callee.uniqueId.bind renames.get? with
-    | some mangled => { expr with val := .StaticCall { mangled with source := callee.source } args }
+    | some mangled => { expr with val := .StaticCall { mangled with source := callee.source } args tyArgs }
     | none =>
       -- Unresolved (`uniqueId := none`) call to an overloaded name → mark it so
       -- re-resolution doesn't mistake it for an undefined reference.
       if callee.uniqueId.isNone && overloadedNames.contains callee.text then
-        { expr with val := .StaticCall (overloadFailureName callee) args }
+        { expr with val := .StaticCall (overloadFailureName callee) args tyArgs }
       else expr
   | _ => expr
 

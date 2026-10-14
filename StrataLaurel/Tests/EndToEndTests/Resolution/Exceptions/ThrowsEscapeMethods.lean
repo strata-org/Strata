@@ -10,17 +10,19 @@ open StrataTest.Util
 open Strata
 
 /-
-Escape enforcement for *instance methods*. The escape analysis runs from
+Escapes from *instance methods*. The static `throws` upper-bound check runs from
 `resolve`, on the initial resolution — so method bodies are still inside their
 composites and are walked there, and a method that calls another throwing method
 resolves that callee's `throws` (the model records an instance procedure just as
-it does a static one). Diagnostics name the method with a dot
-(`Composite.method`), supplied by the walk since the method has not been lifted.
+it does a static one).
+
+A method that declares no `throws` gets the same verification obligations as a
+static procedure (see `Execution/Exceptions/UncaughtExceptions.lean`): they are
+emitted after the method is lifted, so they apply to methods too.
 -/
 
--- A method that throws without declaring `throws` is rejected (the hole that
--- existed while the check only scanned top-level procedures).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- A method that throws without declaring `throws`: the reachable `throw` is reported.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Exception {}
@@ -31,7 +33,7 @@ composite Account {
   {
     var e: Exception := new Exception;
     throw e
-//  ^^^^^^^ error: procedure 'Account.risky' may let an exception of type 'Exception' escape; catch it with a `try`/`catch` or declare a `throws` clause
+//  ^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
   };
 }
 procedure useIt() opaque {
@@ -41,7 +43,7 @@ procedure useIt() opaque {
 #end
 
 -- A method that declares `throws` and throws it: allowed (verifies).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Exception {}
@@ -58,9 +60,9 @@ composite Account2 {
 #end
 
 -- method -> method propagation: `caller` invokes a throwing method without
--- catching it and without declaring `throws`. This is caught only because the
--- check runs after lifting, when `self#risky()`'s callee `throws` resolves.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- catching it and without declaring `throws`, so the call is asserted not to throw
+-- (and fails: `risky` always throws).
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Exception {}
@@ -77,7 +79,7 @@ composite Account3 {
     opaque
   {
     self#risky()
-//  ^^^^^^^^^^^^ error: procedure 'Account3.caller' may let an exception of type 'Exception' escape; catch it with a `try`/`catch` or declare a `throws` clause
+//  ^^^^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
   };
 }
 #end

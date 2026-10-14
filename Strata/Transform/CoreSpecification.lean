@@ -44,17 +44,23 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 
 /-! ## Well-formed program state at the entry of procedure -/
 
-/-- The list of variables that must have been declared,
-    to make execution of the body of this procedure not stuck.
-    outputs are included because the body refers to the output variables without
-    initialization.
-    Old snapshot variables for in-out parameters (those appearing in both
-    inputs and outputs) are included because the body or spec of the
-    procedure may refer to those with "old g".  -/
-@[expose] def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
-  ListMap.keys proc.header.inputs ++
-  ListMap.keys proc.header.outputs ++
-  (ListMap.keys proc.header.getInoutParams).map (fun id => CoreIdent.mkOld id.name)
+/-- The variables (paired with their declared monomorphic types) that must
+    have been declared to make execution of the body of this procedure not
+    stuck.
+
+    inputs and outputs are included because the body refers to those variables
+    without initialization.  Old snapshot variables for in-out parameters
+    (those appearing in both inputs and outputs) are included because the body
+    or spec of the procedure may refer to those with "old g".
+
+    Each entry pairs the identifier with the type at which its initial value
+    must be well-typed.  For an in-out parameter's old snapshot the type is the
+    parameter's original declared type. -/
+@[expose] def procVerifyInitIdents (proc : Procedure) :
+    List (Expression.Ident × Lambda.LMonoTy) :=
+  proc.header.inputs.toList ++
+  proc.header.outputs.toList ++
+  (proc.header.getInoutParams.toList).map (fun (id, ty) => (CoreIdent.mkOld id.name, ty))
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
@@ -63,8 +69,13 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 structure ProcEnvWF (proc : Procedure) (ρ : Imperative.Env Expression)
     extends WellFormedSemanticEval (P := Expression) ρ.factory where
   -- The verification env's store holds only values (true of reachable stores).
+  -- The factory is read from the environment (`ρ.factory`).
   storeValues : Imperative.WellFormedStore ρ.store ρ.factory
-  storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
+  -- Every variable required by the body holds a value of its declared type
+  -- in the initial verification environment.
+  storeDefinedAndWellTyped : ∀ id ty, (id, ty) ∈ procVerifyInitIdents proc →
+    ∃ v, ρ.store id = some v ∧
+      HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty)
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.
   oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,
@@ -110,7 +121,6 @@ program. -/
 
 /-! ## Procedure correctness -/
 
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-- Common shape of Core-level assertion specifications on a procedure named
     `entryProcName` in program `p`. -/
@@ -134,8 +144,7 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
     (a : Imperative.AssertId Expression) : Prop :=
   AssertSpecInProcedure
     (fun Pre _ss s =>
-      Imperative.Specification.AssertValidWhen
-        (Core.Logic.Lang.core p.findProcByString? φ) Pre s a)
+      Specification.AssertValidWhen (Core.Logic.Lang.core p.findProcByString?) Pre s a)
     entryProcName p
 
 /-- A specific assertion `a` in the procedure named `entryProcName` of program
@@ -151,8 +160,9 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
   AssertSpecInProcedure
     (fun Pre ss s =>
       a ∈ Statements.collectAssertIds ss →
-      Imperative.Specification.AssertSatisfiableWhen
-        (Core.Logic.Lang.core p.findProcByString? φ) Pre s a)
+      -- `AssertSatisfiableWhen` checks the witnessing run's assert under its
+      -- own reached-configuration factory (`(L.getEnv cfg).factory`).
+      Specification.AssertSatisfiableWhen (Core.Logic.Lang.core p.findProcByString?) Pre s a)
     entryProcName p
 
 /-- The procedure named `entryProcName` (looked up in `p` via
@@ -217,23 +227,21 @@ structure ProcedureAssertsValid (entryProcName : String) (p : Program) : Prop wh
   /-- (0) The procedure name resolves in `p`. -/
   procedureExists : ∃ proc, p.findProcByString? entryProcName = some proc
   /-- (1) The asserts in the body of the procedure are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure φ entryProcName p a
+  assertsValid : ∀ a, AssertValidInProcedure entryProcName p a
   /-- (2) The postconditions hold on termination.
       Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
-      For structured bodies, the terminal factory `fac'` comes from the terminal
-      `Env` (may differ from `fac` due to `funcDecl` extensions). For CFG
-      bodies, `fac' = fac` since `CoreCFGStepStar` does not track factory changes. -/
+      The factory is the initial environment's own `ρ₀.factory`. -/
   postconditionsValid : ∀ proc, p.findProcByString? entryProcName = some proc →
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ : Imperative.Env Expression),
       ProcEnvWF proc ρ₀ →
       AxiomsBeforeProcedureDecl entryProcName p ρ₀ →
-      ∀ (σ' : CoreStore) (fac' : Expression.Factory) (failed : Bool),
-        CoreBodyExec (p.findProcByString?) φ proc.body ρ₀.store ρ₀.factory σ' fac' failed →
+      ∀ (σ' : CoreStore) (failed : Bool),
+        CoreBodyExec (p.findProcByString?) proc.body ρ₀ σ' failed →
         (∀ (label : CoreLabel) (check : Procedure.Check),
           (label, check) ∈ proc.spec.postconditions.toList →
           check.attr = Procedure.CheckAttr.Default →
-          Expression.eval fac' σ' check.expr = some HasBool.tt) ∧
+          Expression.eval ρ₀.factory σ' check.expr = some HasBool.tt) ∧
         failed = Bool.false
 
 /-- The existential dual of `ProcedureAssertsValid`, intended as the target
@@ -261,7 +269,7 @@ structure ProcedureAssertsSatisfiable (entryProcName : String) (p : Program) : P
       Instead, if call is defined as a statement, not command, we can now describe
       reachability & validity & satisfiability of the assertions in subprocedures.
   -/
-  assertsSatisfiable : ∀ a, AssertSatisfiableInProcedure φ entryProcName p a
+  assertsSatisfiable : ∀ a, AssertSatisfiableInProcedure entryProcName p a
   /-- (2) Some terminating run satisfies all postconditions.
       Note that postconditionsSatisfiable doesn't have to describe the satisfiability of postconditions
       of other procedures called during execution of entryProcName because call_sem of EvalCommand
@@ -270,14 +278,14 @@ structure ProcedureAssertsSatisfiable (entryProcName : String) (p : Program) : P
   -/
   postconditionsSatisfiable : ∀ proc, p.findProcByString? entryProcName = some proc →
     WF.WFProcedureProp p proc →
-    ∃ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (fac' : Expression.Factory),
+    ∃ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore),
       ProcEnvWF proc ρ₀ ∧
       AxiomsBeforeProcedureDecl entryProcName p ρ₀ ∧
-      CoreBodyExec (p.findProcByString?) φ proc.body ρ₀.store ρ₀.factory σ' fac' false ∧
+      CoreBodyExec (p.findProcByString?) proc.body ρ₀ σ' false ∧
       (∀ (label : CoreLabel) (check : Procedure.Check),
         (label, check) ∈ proc.spec.postconditions.toList →
         check.attr = Procedure.CheckAttr.Default →
-        Expression.eval fac' σ' check.expr = some HasBool.tt)
+        Expression.eval ρ₀.factory σ' check.expr = some HasBool.tt)
 
 /-! ## Analysis -/
 
@@ -303,7 +311,7 @@ structure CoreVerifierInput where
     obligations it produces, and `pass` reports success on every `VCResult`
     under the given mode. -/
 def CoreVerifierModel
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
+
     (mode : VerificationMode)
     (analyze : VerificationMode → CoreVerifierInput → VCResults) :
     Imperative.Specification.Analysis CoreVerifierInput VCResults :=
@@ -311,10 +319,10 @@ def CoreVerifierModel
       match mode with
       | .deductive =>
         ∀ procName ∈ input.entryPoints,
-          ProcedureAssertsValid φ procName input.prog
+          ProcedureAssertsValid procName input.prog
       | .bugFinding =>
         ∀ procName ∈ input.entryPoints,
-          ProcedureAssertsSatisfiable φ procName input.prog
+          ProcedureAssertsSatisfiable procName input.prog
       | .bugFindingAssumingCompleteSpec =>
         -- bugFinding, but postcondition being checked with validity
         -- TODO!

@@ -85,7 +85,7 @@ def filterProceduresPipelinePhase (procs : List String)
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog => do
       let (changed, filtered) ← FilterProcedures.run prog procs (respectNoFilter := respectNoFilter)

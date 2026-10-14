@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 import all Strata.DL.Lambda.LExprWFProps
 
 public import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 
 /-! ## Partial evaluator for Lambda expressions
@@ -273,7 +274,7 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
           -- Apply type substitution to instantiate polymorphic type variables.
           match LFunc.computeTypeSubst lfunc op_expr args with
           | some tySubst =>
-            let body := body.applySubst tySubst
+            let body := body.applyTypeSubst tySubst
             let input_map := lfunc.inputs.keys.zip args
             let new_e := substFvarsLifting body input_map
             combineEvalResValueFlag argsAllFull (eval n' F env new_e)

@@ -21,12 +21,12 @@ Why field-IncrDecr in expression position works: the pipeline runs
 `(c#n := c#n + 1) - 1`. `HeapParameterization` then runs and rewrites the
 inner `c#n := c#n + 1` field-assign into a sequence:
 
-  $tmp_i := readField(...) + 1
-  $heap  := updateField($heap, c, Counter.n, BoxInt($tmp_i))
-  $tmp_i        -- yields the new field value
+  $writeValue_i := readField(...) + 1
+  $heap  := updateField($heap, c, Counter.n, BoxInt($writeValue_i))
+  $writeValue_i        -- yields the new field value
 
 By the time `LiftImperativeExpressions` runs, every assignment target is a
-local (`$tmp_i` or `$heap`), so its snapshot mechanism — which is keyed on
+local (`$writeValue_i` or `$heap`), so its snapshot mechanism — which is keyed on
 `Variable.Local` — handles the increment correctly. The Field-target arm of
 `liftAssignExpr` (which falls through `| _ => pure ()`) is defensive but
 never reached in this pipeline order.

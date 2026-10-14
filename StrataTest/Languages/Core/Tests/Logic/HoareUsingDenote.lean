@@ -193,46 +193,45 @@ private theorem forallExpr_ty : Lambda.LExpr.HasTypeA [] forallExpr .bool :=
 
 section
 variable (π : String → Option Core.Procedure)
-variable (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
 
 /-- Invert a singleton statement-list run: a finished traced run of `.stmts [s] ρ` is a
     finished traced run of `.stmt s ρ` with the same trace. -/
 private theorem singleton_run_inv {s : Core.Statement} {ρ ρ' : Imperative.Env Core.Expression}
     {tr : List (Event Core.Expression)}
-    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmts [s] ρ) tr (.terminal ρ') ∨
-      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmts [s] ρ) tr (.exiting lbl ρ')) :
-    StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+    StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt s ρ) tr (.terminal ρ') ∨
-      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt s ρ) tr (.exiting lbl ρ') := by
   rcases h with hterm | ⟨lbl, hexit⟩
-  · rcases stmts_cons_headE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) hterm with ⟨hcfg, _⟩ | hseq
+  · rcases stmts_cons_headE (Core.EvalCommandE π) hterm with ⟨hcfg, _⟩ | hseq
     · simp at hcfg
     · obtain ⟨ρ₁, tr₁, tr₂, htr, hhead, htail⟩ :=
-        seq_reaches_terminalE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) hseq
-      obtain ⟨htr₂, hcfg⟩ := stmts_nil_runE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) htail
+        seq_reaches_terminalE (Core.EvalCommandE π) hseq
+      obtain ⟨htr₂, hcfg⟩ := stmts_nil_runE (Core.EvalCommandE π) htail
       subst htr₂
       rcases hcfg with hcfg | hcfg
       · simp at hcfg
       · injection hcfg with hρ; subst hρ
         rw [htr, List.append_nil]; exact .inl hhead
-  · rcases stmts_cons_headE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) hexit with ⟨hcfg, _⟩ | hseq
+  · rcases stmts_cons_headE (Core.EvalCommandE π) hexit with ⟨hcfg, _⟩ | hseq
     · simp at hcfg
-    · rcases seq_reaches_exitingE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) hseq with
+    · rcases seq_reaches_exitingE (Core.EvalCommandE π) hseq with
         hhead | ⟨ρ₁, tr₁, tr₂, _, _, htail⟩
       · exact .inr ⟨lbl, hhead⟩
-      · obtain ⟨_, hcfg⟩ := stmts_nil_runE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ) htail
+      · obtain ⟨_, hcfg⟩ := stmts_nil_runE (Core.EvalCommandE π) htail
         rcases hcfg with hcfg | hcfg <;> simp at hcfg
 
 /-- An `assert l e md` statement's traced run emits exactly the captured assertion. -/
 private theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
     {md : Imperative.MetaData Core.Expression}
     {ρ ρ' : Imperative.Env Core.Expression} {tr : List (Event Core.Expression)}
-    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt (Core.Statement.assert l e md) ρ) tr (.terminal ρ') ∨
-      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt (Core.Statement.assert l e md) ρ) tr (.exiting lbl ρ')) :
     tr = [Event.assert ⟨ρ.factory, ρ.store, l, e, md⟩] := by
   rcases h with hterm | ⟨lbl, hexit⟩
@@ -264,9 +263,9 @@ private theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
 private theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
     {md : Imperative.MetaData Core.Expression}
     {ρ ρ' : Imperative.Env Core.Expression} {tr : List (Event Core.Expression)}
-    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt (Core.Statement.assume l e md) ρ) tr (.terminal ρ') ∨
-      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt (Core.Statement.assume l e md) ρ) tr (.exiting lbl ρ')) :
     tr = [Event.assume ⟨ρ.factory, ρ.store, l, e, md⟩] ∧ ρ' = ρ := by
   rcases h with hterm | ⟨lbl, hexit⟩
@@ -302,9 +301,9 @@ private theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
     corresponding singleton assert event. -/
 private theorem ite_run_inv {ρ ρ' : Imperative.Env Core.Expression}
     {tr : List (Event Core.Expression)}
-    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+    (h : StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt iteStmt ρ) tr (.terminal ρ') ∨
-      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+      ∃ lbl, StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.stmt iteStmt ρ) tr (.exiting lbl ρ')) :
     (Core.Expression.eval ρ.factory ρ.store xExpr = some HasBool.tt ∧
       tr = [Event.assert ⟨ρ.factory, ρ.store, "t", forallExpr, #[]⟩]) ∨
@@ -317,13 +316,13 @@ private theorem ite_run_inv {ρ ρ' : Imperative.Env Core.Expression}
       | step_admin hadmin => cases hadmin with
         | step_ite_true hc _ =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-          have htr := assert_run_inv π φ (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π φ hin)
+          have htr := assert_run_inv π (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
+            (ρ' := ρi) (singleton_run_inv π hin)
           exact .inl ⟨hc, by simpa using htr⟩
         | step_ite_false hc _ =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-          have htr := assert_run_inv π φ (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π φ hin)
+          have htr := assert_run_inv π (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
+            (ρ' := ρi) (singleton_run_inv π hin)
           exact .inr ⟨hc, by simpa using htr⟩
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
@@ -331,13 +330,13 @@ private theorem ite_run_inv {ρ ρ' : Imperative.Env Core.Expression}
       | step_admin hadmin => cases hadmin with
         | step_ite_true hc _ =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-          have htr := assert_run_inv π φ (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π φ hin)
+          have htr := assert_run_inv π (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
+            (ρ' := ρi) (singleton_run_inv π hin)
           exact .inl ⟨hc, by simpa using htr⟩
         | step_ite_false hc _ =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-          have htr := assert_run_inv π φ (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π φ hin)
+          have htr := assert_run_inv π (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
+            (ρ' := ρi) (singleton_run_inv π hin)
           exact .inr ⟨hc, by simpa using htr⟩
 
 end
@@ -384,30 +383,30 @@ end
 
 /-! ## Example 1 — `{True} pAssume {True}` is valid -/
 
-/-- **Valid.**  `{ρ.factory = Core.Factory}
+/-- **Valid.**  `{fac = Core.Factory}
     (assume x; if x then assert (∀ y, y = y) else assert false) {True}` under the
     denotational interpretation, proved directly from `StepStmtStarE`. -/
 theorem pAssume_triple_valid
     (model : Lambda.Interp Core.Factory)
     (π : String → Option Core.Procedure)
-    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+
     (params : Core.Logic.InitEnvWFParams) :
-    Core.Logic.Hoare.TripleWith π φ (Core.Logic.DenoteBasedInterp model) params
+    Core.Logic.Hoare.TripleWith π (Core.Logic.DenoteBasedInterp model) params
       (fun ρ => ρ.factory = Core.Factory) pAssumeBody (fun _ => True) := by
   intro ρ₀ ρ' trace hfac hwf hrun
   rw [pAssumeBody_eq] at hrun
   refine ⟨?_, fun _ => trivial⟩
-  rcases stmts_append_doneE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+  rcases stmts_append_doneE (Core.EvalCommandE π)
     [assumeXStmt] [iteStmt] ρ₀ ρ' hrun with
     ⟨lbl, hexit₁⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm₁, hfin₂⟩
-  · exact absurd hexit₁ (stmts_exitsCoveredByBlocks_noEscapeE (Core.EvalCommandE π φ)
-      (Core.EvalPureFunc φ) [assumeXStmt]
+  · exact absurd hexit₁ (stmts_exitsCoveredByBlocks_noEscapeE (Core.EvalCommandE π)
+      [assumeXStmt]
       (by simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]) ρ₀ lbl ρ')
   · -- the prefix is a single `assume x`, so `tr₁ = [assume x]` and `ρ₁ = ρ₀`
-    obtain ⟨htr₁, hρ₁⟩ := assume_run_inv π φ (l := "a") (e := xExpr) (md := #[]) (ρ := ρ₀)
-      (ρ' := ρ₁) (singleton_run_inv π φ (.inl hterm₁))
+    obtain ⟨htr₁, hρ₁⟩ := assume_run_inv π (l := "a") (e := xExpr) (md := #[]) (ρ := ρ₀)
+      (ρ' := ρ₁) (singleton_run_inv π (.inl hterm₁))
     subst ρ₁; subst htr; subst htr₁
-    rcases ite_run_inv π φ (ρ := ρ₀) (ρ' := ρ') (singleton_run_inv π φ hfin₂) with
+    rcases ite_run_inv π (ρ := ρ₀) (ρ' := ρ') (singleton_run_inv π hfin₂) with
       ⟨_hc, htr₂⟩ | ⟨hc, htr₂⟩
     · -- then branch: `∀ y, y = y` is discharged by the model tautology
       subst htr₂
@@ -443,7 +442,7 @@ private def xFalseEnv : Imperative.Env Core.Expression :=
 
 /-- `xFalseEnv` holds only values (every binding is the `false` literal). -/
 private theorem xFalseEnv_storeWellDefined :
-    Imperative.WellFormedStore xFalseEnv.store xFalseEnv.factory := by
+    Imperative.WellFormedStore xFalseEnv.store Core.Factory := by
   intro n v hn
   simp only [xFalseEnv] at hn
   injection hn with hv; subst hv
@@ -452,7 +451,7 @@ private theorem xFalseEnv_storeWellDefined :
 
 /-- Reading `x` from `xFalseEnv` yields `false`. -/
 private theorem xFalseEnv_eval_x :
-    Core.Expression.eval xFalseEnv.factory xFalseEnv.store xExpr = some HasBool.ff := by
+    Core.Expression.eval Core.Factory xFalseEnv.store xExpr = some HasBool.ff := by
   have hvar := Core.coreFactory_WellFormedSemanticEval.var xExpr xIdent xFalseEnv.store
     xFalseEnv_storeWellDefined rfl
   exact hvar.trans rfl
@@ -465,32 +464,34 @@ private theorem coreFactory_wfBool :
 /-- The completed event run of the assumeless body on `xFalseEnv`: it takes the else
     branch and emits exactly the `assert false` event. -/
 private theorem xFalseEnv_run (π : String → Option Core.Procedure)
-    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory) :
-    StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+ :
+    StepStmtStarE Core.Expression (Core.EvalCommandE π)
       (.stmts pNoAssumeBody xFalseEnv)
       [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, #[]⟩]
       (.terminal xFalseEnv) := by
   rw [pNoAssumeBody_eq]
   -- inner: `[assert false]` emits the assert event and stays put
-  have hassert : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+  have hassert : StepStmtStarE Core.Expression (Core.EvalCommandE π)
       (.stmts [assertFalseStmt] xFalseEnv)
-      [Event.assert ⟨xFalseEnv.factory, xFalseEnv.store, "f", ff0, #[]⟩]
+      [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, #[]⟩]
       (.terminal xFalseEnv) := by
     refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
-    refine .step _ [Event.assert ⟨xFalseEnv.factory, xFalseEnv.store, "f", ff0, #[]⟩] _ _ _
-      (.step_seq_inner (.step_cmd (.cmd_sem Imperative.EvalCmdE.eval_assert))) ?_
+    refine .step _ _ _ _ _
+      (StepStmtE.step_seq_inner (.step_cmd (Core.EvalCommandE.cmd_sem Imperative.EvalCmdE.eval_assert))) ?_
     refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
     exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
   -- lift through the anonymous block wrapper and take `step_block_done`
-  have hblock := block_inner_starE (EvalCmd := Core.EvalCommandE π φ)
-    (extendFactory := Core.EvalPureFunc φ) (label := .none)
-    (σ_parent := xFalseEnv.store) (f_parent := xFalseEnv.factory) hassert
+  have hblock : StepStmtStarE Core.Expression (Core.EvalCommandE π)
+      (.block .none xFalseEnv.store (.stmts [assertFalseStmt] xFalseEnv))
+      [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, #[]⟩]
+      (.block .none xFalseEnv.store (.terminal xFalseEnv)) :=
+    block_inner_starE hassert
   have heq : ({ xFalseEnv with
-      store := projectStore xFalseEnv.store xFalseEnv.store, factory := xFalseEnv.factory }
+      store := projectStore xFalseEnv.store xFalseEnv.store }
       : Imperative.Env Core.Expression) = xFalseEnv := by
     simp [projectStore_self]
-  have hblock_done : StepStmtStarE Core.Expression (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
-      (.block .none xFalseEnv.store xFalseEnv.factory (.stmts [assertFalseStmt] xFalseEnv))
+  have hblock_done : StepStmtStarE Core.Expression (Core.EvalCommandE π)
+      (.block .none xFalseEnv.store (.stmts [assertFalseStmt] xFalseEnv))
       [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, #[]⟩]
       (.terminal xFalseEnv) := by
     refine ReflTransTrace.trans _ hblock ?_
@@ -499,7 +500,7 @@ private theorem xFalseEnv_run (π : String → Option Core.Procedure)
   refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
   refine .step _ [] _ _ _
     (.step_admin (.step_seq_inner (.step_ite_false xFalseEnv_eval_x coreFactory_wfBool))) ?_
-  refine ReflTransTrace.trans _ (seq_inner_starE (Core.EvalCommandE π φ) (Core.EvalPureFunc φ)
+  refine ReflTransTrace.trans _ (seq_inner_starE (Core.EvalCommandE π)
     (ss := []) hblock_done) ?_
   refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
   exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
@@ -521,7 +522,6 @@ private theorem xFalseEnv_blockWF :
         rw [hd] at hn; simp at hn)
     (by intro n hn p hp; simp [testParams] at hp)
     (by intro n hn p hp; simp [testParams] at hp)
-    (by intro n hn p hp; simp [testParams] at hp)
     (by
       have hdef : (fun n => (xFalseEnv.store n).isSome) =
           (fun _ : Core.Expression.Ident => true) := by funext n; simp [xFalseEnv]
@@ -532,6 +532,10 @@ private theorem xFalseEnv_blockWF :
         Stmt.defUseWellFormed, Command.definedVars, Imperative.HasVarsImp.definedVars,
         Imperative.Cmd.definedVars])
     (by intro s hs; simp [testParams])
+    (by
+      simp [Block.InitTypesInhabited, pNoAssumeBody_eq, iteStmt,
+        assertTrueStmt, assertFalseStmt, Block.initTypes, Stmt.initTypes,
+        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
 
 /-- Arbitrary valuation in a model over `Core.Factory`. -/
 private def someValuation (model : Lambda.Interp Core.Factory) :
@@ -547,12 +551,12 @@ private def someValuation (model : Lambda.Interp Core.Factory) :
 theorem pNoAssume_triple_invalid
     (model : Lambda.Interp Core.Factory)
     (π : String → Option Core.Procedure)
-    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory) :
-    ¬ Core.Logic.Hoare.TripleWith π φ (Core.Logic.DenoteBasedInterp model) testParams
+ :
+    ¬ Core.Logic.Hoare.TripleWith π (Core.Logic.DenoteBasedInterp model) testParams
       (fun _ => True) pNoAssumeBody (fun _ => True) := by
   intro htriple
   have hres := htriple xFalseEnv xFalseEnv _ trivial xFalseEnv_blockWF
-    (.inl (xFalseEnv_run π φ))
+    (.inl (xFalseEnv_run π))
   have hfalse := hres.1.1 trivial (someValuation model)
     (by intro condition hmem; simp at hmem)
   exact false_not_holds model (someValuation model) xFalseEnv.store Core.Factory rfl hfalse
@@ -565,9 +569,9 @@ theorem pNoAssume_triple_invalid
 theorem pReq_triple_valid
     (model : Lambda.Interp Core.Factory)
     (π : String → Option Core.Procedure)
-    (φ : Core.Expression.Factory → PureFunc Core.Expression → Core.Expression.Factory)
+
     (params : Core.Logic.InitEnvWFParams) :
-    Core.Logic.Hoare.TripleWith π φ (Core.Logic.DenoteBasedInterp model) params
+    Core.Logic.Hoare.TripleWith π (Core.Logic.DenoteBasedInterp model) params
       (fun ρ => Core.Logic.Hoare.Procedure.preAsPredicate pReqProc ρ ∧
         ρ.factory = Core.Factory)
       pReqBody (fun _ => True) := by
@@ -583,7 +587,7 @@ theorem pReq_triple_valid
     have h := hrequires "requires_x" pReqCheck hreqmem
     rw [pReqCheck_expr_eq] at h
     exact h
-  rcases ite_run_inv π φ (ρ := ρ₀) (ρ' := ρ') (singleton_run_inv π φ hrun) with
+  rcases ite_run_inv π (ρ := ρ₀) (ρ' := ρ') (singleton_run_inv π hrun) with
     ⟨_hc, htr⟩ | ⟨hc, _⟩
   · subst htr
     refine ⟨fun _ world _ => ?_, trivial⟩

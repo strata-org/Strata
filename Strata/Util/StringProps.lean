@@ -70,7 +70,7 @@ theorem digitLoop_extra (fuel₁ fuel₂ n : Nat) (ds : List Char)
 theorem digitChar_val {n : Nat} (h : n < 10) :
     n.digitChar.toNat - '0'.toNat = n := by
   have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> native_decide
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
 
 
 theorem readBack_digitLoop (n : Nat) :
@@ -123,8 +123,7 @@ theorem isPrefixOf_append_self (pfx sfx : List Char) :
 theorem digitChar_is_digit (n : Nat) (h : n < 10) :
     '0' ≤ n.digitChar ∧ n.digitChar ≤ '9' := by
   have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    exact ⟨by native_decide, by native_decide⟩
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
 
 
 theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)

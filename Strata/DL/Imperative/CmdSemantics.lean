@@ -27,7 +27,7 @@ abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Exp
 abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
 /--
 Evaluation relation of an Imperative command `Cmd`.
-Commands do not modify the evaluator - only `funcDecl` statements do.
+Commands do not modify the evaluator.
 
 The Bool flag reports whether the command observed
 a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
@@ -294,10 +294,58 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
     ----
     InitState σ x v σ'
 
+/-- Evaluate a list of expressions with the language evaluator `P.eval`; every
+    free variable of each expression must be bound. -/
+inductive EvalExpressions {P : PureExpr} [HasFvars P] :
+    P.Factory → SemanticStore P → List P.Expr → List P.Expr → Prop where
+  | eval_none : EvalExpressions f σ [] []
+  | eval_some :
+    isDefined σ (HasFvars.getFvars e) →
+    P.eval f σ e = .some v →
+    EvalExpressions f σ es vs →
+    EvalExpressions f σ (e :: es) (v :: vs)
+
+/-- Read values from store slots.  Every returned expression is a value in `f`. -/
+inductive ReadValues {P : PureExpr} [HasVal P] (f : P.Factory) :
+    SemanticStore P → List P.Ident → List P.Expr → Prop where
+  | read_none : ReadValues f σ [] []
+  | read_some :
+      σ x = .some v →
+      HasVal.value f v →
+      ReadValues f σ xs vs →
+      ReadValues f σ (x :: xs) (v :: vs)
+
+/-- A positional fold of `UpdateState`: each target must already be bound. -/
+inductive UpdateStates {P : PureExpr} :
+    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+  | update_none : UpdateStates σ [] [] σ
+  | update_some :
+    UpdateState P σ x v σ' →
+    UpdateStates σ' xs vs σ'' →
+    UpdateStates σ (x :: xs) (v :: vs) σ''
+
+/-- A positional fold of `InitState`: each target must be unbound beforehand. -/
+inductive InitStates {P : PureExpr} :
+    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+  | init_none : InitStates σ [] [] σ
+  | init_some :
+    InitState P σ x v σ' →
+    InitStates σ' xs vs σ'' →
+    InitStates σ (x :: xs) (v :: vs) σ''
+
+/-- `v` has the same type as the value currently stored at `x`. -/
+@[expose] def HasVal.valueOfStoredTy [HasVal P]
+    (f : P.Factory) (σ : SemanticStore P) (x : P.Ident)
+    (v : P.Expr) : Prop :=
+  ∃ previous ty,
+    σ x = some previous ∧
+    HasVal.valueOfTy f previous ty ∧
+    HasVal.valueOfTy f v ty
+
 /--
 An inductively-defined operational semantics for `Cmd` that depends on variable
 lookup (`σ`) and expression evaluation (`P.eval`) functions.
-Commands do not modify the evaluator - only `funcDecl` statements do.
+Commands do not modify the evaluator.
 
 The `Bool` output parameter is a *failure flag*: `true` when the command
 signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`
@@ -305,44 +353,55 @@ sets it to `true`; all other constructors report `false`.
 
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
+
+This relation covers the monomorphic runtime semantics: every type carried by
+an `.init`, and every type witnessed for a `.set`, is assumed to have already
+been monomorphized by type checking. Polymorphic instantiation is outside
+`EvalCmd`.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
   P.Factory → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
-  /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
+  /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`.
+      The explicit type premise is redundant after type checking, but keeps this
+      rule symmetric with nondeterministic init for refinement proofs. -/
   | eval_init :
     P.eval f σ e = .some v →
     InitState P σ x v σ' →
+    HasVal.valueOfTy f v ty →
     WellFormedSemanticEvalVar (P := P) f →
     ---
-    EvalCmd f σ (.init x _ (.det e) _) σ' false
+    EvalCmd f σ (.init x ty (.det e) md) σ' false
 
   /-- Initialize `x` with an unconstrained value (havoc semantics).  The
   havoc'd value `v` is still required to be a value, so a nondet write
   preserves store well-formedness. -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
-    HasVal.value f v →
+    HasVal.valueOfTy f v ty →
     WellFormedSemanticEvalVar (P := P) f →
     ---
-    EvalCmd f σ (.init x _ .nondet _) σ' false
+    EvalCmd f σ (.init x ty .nondet md) σ' false
 
-  /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
+  /-- If `e` evaluates to `v`, assign `x` according to `UpdateState`.
+      Requiring the old and new values to share a type is redundant for checked
+      programs, but aligns deterministic and nondeterministic assignment rules. -/
   | eval_set :
     P.eval f σ e = .some v →
     UpdateState P σ x v σ' →
+    HasVal.valueOfStoredTy (P := P) f σ x v →
     WellFormedSemanticEvalVar (P := P) f →
     ----
-    EvalCmd f σ (.set x (.det e) _) σ' false
+    EvalCmd f σ (.set x (.det e) md) σ' false
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`.  The
   havoc'd value `v` is still required to be a value, so a nondet write
   preserves store well-formedness. -/
   | eval_set_nondet :
     UpdateState P σ x v σ' →
-    HasVal.value f v →
+    HasVal.valueOfStoredTy (P := P) f σ x v →
     WellFormedSemanticEvalVar (P := P) f →
     ----
-    EvalCmd f σ (.set x .nondet _) σ' false
+    EvalCmd f σ (.set x .nondet md) σ' false
 
   /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
   | eval_assert_pass :
@@ -395,32 +454,35 @@ partial evaluator to reduce the condition to a Boolean. -/
 inductive EvalCmdE [HasFvar P] [HasBool P] :
     P.Factory → SemanticStore P → Cmd P → SemanticStore P → Trace P → Prop where
   /-- Evaluate a deterministic initializer, update the store, and emit no
-  observation. -/
+  observation. The typed-value premise mirrors nondeterministic init, which
+  makes deterministic-to-nondeterministic refinement direct. -/
   | eval_init :
     P.eval f σ e = .some v →
     InitState P σ x v σ' →
+    HasVal.valueOfTy f v ty →
     WellFormedSemanticEvalVar (P := P) f →
     EvalCmdE f σ (.init x ty (.det e) md) σ' []
 
   /-- Initialize a variable with an arbitrary value and emit no observation. -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
-    HasVal.value f v →
+    HasVal.valueOfTy f v ty →
     WellFormedSemanticEvalVar (P := P) f →
     EvalCmdE f σ (.init x ty .nondet md) σ' []
 
-  /-- Evaluate a deterministic assignment, update the store, and emit no
-  observation. -/
+  /-- Evaluate a deterministic assignment and emit no observation. The
+  stored-type premise mirrors nondeterministic set for refinement proofs. -/
   | eval_set :
     P.eval f σ e = .some v →
     UpdateState P σ x v σ' →
+    HasVal.valueOfStoredTy (P := P) f σ x v →
     WellFormedSemanticEvalVar (P := P) f →
     EvalCmdE f σ (.set x (.det e) md) σ' []
 
   /-- Assign an arbitrary value and emit no observation. -/
   | eval_set_nondet :
     UpdateState P σ x v σ' →
-    HasVal.value f v →
+    HasVal.valueOfStoredTy (P := P) f σ x v →
     WellFormedSemanticEvalVar (P := P) f →
     EvalCmdE f σ (.set x .nondet md) σ' []
 

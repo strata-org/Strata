@@ -678,7 +678,7 @@ type Bad2 := B2(x: Bad1)
 inhabited, but `Either Empty Empty` is not. Our check is conservative and will
 not allow either of these types.
 
-We determine if all types in a TypeFactory are inhabited simulataneously,
+We determine if all types in a TypeFactory are inhabited simultaneously,
 memoizing the results.
 -/
 

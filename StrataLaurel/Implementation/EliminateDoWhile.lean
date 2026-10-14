@@ -59,7 +59,7 @@ public def freshExitLabel : ElimM String :=
   | .While cond invs dec body true =>
     let source := node.source
     let exitLabel ← freshExitLabel
-    let notCond : StmtExprMd := ⟨.StaticCall (mkId Operation.Not.procName) [cond], source⟩
+    let notCond : StmtExprMd := ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], source⟩
     let exitStmt : StmtExprMd := ⟨.Exit exitLabel, source⟩
     let guardCheck : StmtExprMd := ⟨.IfThenElse notCond exitStmt none, source⟩
     let loopBody : StmtExprMd := ⟨.Block [body, guardCheck] none, source⟩

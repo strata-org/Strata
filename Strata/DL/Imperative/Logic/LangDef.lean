@@ -124,13 +124,12 @@ one-step relation. -/
 abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
-    (extendFactory : ExtendFactory P)
     (ParamsTy : Type)
     (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop) :
     EventLang P EventT where
   StmtT := Stmt P CmdT
   CfgT := Config P CmdT
-  step := StepStmtE P evalCmd extendFactory
+  step := StepStmtE P evalCmd
   stmtCfg := .stmt
   terminalCfg := .terminal
   exitingCfg := .exiting
@@ -153,12 +152,12 @@ initial-environment well-formedness with no default (a real language supplies
 it), so no `isAtAssert` field is needed. -/
 abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT) (extendFactory : ExtendFactory P)
+    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
     (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop)) :
     EventLang P EventT where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
-  step := StepStmtE P evalCmd extendFactory
+  step := StepStmtE P evalCmd
   stmtCfg := .stmts
   terminalCfg := .terminal
   exitingCfg := .exiting
@@ -183,15 +182,16 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     overrides both. -/
 abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    (CmdT : Type) (evalCmd : EvalCmdParam P CmdT)
     (isAtAssert : Config P CmdT → AssertId P → Prop)
     (ParamsTy : Type := Unit)
     -- Default: the weakest condition an evaluator-based semantics needs.  A real
-    -- language overrides it (see `Core.Logic.Lang.core`).
+    -- language overrides it (see `Core.Logic.Lang.core`).  The factory is read
+    -- from the initial environment (`ρ.factory`).
     (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop :=
       fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory) :
     Lang P :=
-  ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendFactory,
+  ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, ParamsTy, initEnvWF⟩
 
 /-- Block-level initial-environment well-formedness for the imperative-block
@@ -202,28 +202,31 @@ instantiating Imperative, so an Imperative-level default is not the right thing 
 have. -/
 structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     (Q : String → Prop) (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
     extends WellFormedSemanticEval (P := P) ρ.factory where
   /-- Every variable the block defines starts undefined in `ρ`. -/
   defsUndefined : ∀ x ∈ Block.definedVars ss false, ρ.store x = none
   /-- No name satisfying `Q` is defined in the initial store. -/
   definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+  /-- Every init-type the block declares has a value witness in the factory. -/
+  initTypesInhabited : Block.InitTypesInhabited (P := P) (C := CmdT) ρ.factory ss
 
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
 abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
     [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT]
-    (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
+    (evalCmd : EvalCmdParam P CmdT)
     (isAtAssertFn : Config P CmdT → AssertId P → Prop)
     -- Default: `BlockInitEnvWF`, which is slated for removal (see its doc comment).
-    -- A real language overrides it (see `Core.Logic.Lang.coreBlock`).
+    -- A real language overrides it (see `Core.Logic.Lang.coreBlock`).  The factory
+    -- is read from the initial environment (`ρ.factory`).
     (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop) :=
-      ⟨String → Prop, fun Q ss ρ => BlockInitEnvWF Q ss ρ⟩) : Lang P where
+      ⟨String → Prop, BlockInitEnvWF⟩) : Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
-  star := StepStmtStar P evalCmd extendFactory
+  star := StepStmtStar P evalCmd
   stmtCfg := .stmts
   terminalCfg := .terminal
   exitingCfg := .exiting
@@ -239,13 +242,14 @@ carried in the configuration.
 so a real `isAtAssert` would detect a config sitting at one. It is left trivial
 because the current overapproximation results never consume the target's `isAtAssert`. -/
 abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
-    (extendFactory : ExtendFactory P) : Lang P where
+    : Lang P where
   StmtT := CFG String (DetBlock String (Cmd P) P)
   CfgT := P.Factory × (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
-  star := fun c d => StepDetCFGStar extendFactory c.1 c.2.1 c.2.2 d.2.2
+  star := fun c d => StepDetCFGStar c.1 c.2.1 c.2.2 d.2.2
   stmtCfg := fun cfg ρ => (ρ.factory, cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
   terminalCfg := fun ρ => (ρ.factory, ⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
-  exitingCfg := fun lbl ρ => (ρ.factory, ⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
+  exitingCfg := fun lbl ρ =>
+    (ρ.factory, ⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
   isAtAssert := fun _ _ => False
   getEnv := fun c => { store := c.2.2.getStore, factory := c.1, hasFailure := c.2.2.getFailure }
   InitEnvWFParamsTy := Unit

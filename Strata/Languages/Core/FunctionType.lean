@@ -141,7 +141,7 @@ open Lambda Imperative
 open Std (ToFormat Format format)
 
 /--
-Type check a `PureFunc Expression` (used in statement-level function declarations).
+Type check a `PureFunc Expression`.
 Converts to `Function`, type checks, and returns both the type-checked `PureFunc`
 and the `Function` (for adding to the context).
 -/

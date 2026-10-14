@@ -43,7 +43,6 @@ open Core Imperative Strata.Logic Imperative.Logic
 
 namespace Hoare
 
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-- A snapshot of a procedure's non-`free` contract clauses as `assert` events is
 assertion-valid whenever every such clause evaluates to `true` in that snapshot. -/
@@ -133,11 +132,11 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
     (procName : String) (proc : Procedure) (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
-    (h : Triple p.findProcByString? φ params (Procedure.preAsPredicate proc)
+    (h : Triple p.findProcByString? params (Procedure.preAsPredicate proc)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
-    Procedure.contractTriple φ p params procName :=
+    Procedure.contractTriple p params procName :=
   ⟨proc, bss, hproc, hbody,
-    consequence p.findProcByString? φ params h (fun _ hρ => hρ.1) (fun _ h => h)⟩
+    consequence p.findProcByString? params h (fun _ hρ => hρ.1) (fun _ h => h)⟩
 
 /-- Build a `contractTriple` whose body proof may assume the concrete factory and
     old-inout relation but does not need input-value typing. -/
@@ -145,13 +144,13 @@ theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFP
     (procName : String) (proc : Procedure) (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
-    (h : Triple p.findProcByString? φ params
+    (h : Triple p.findProcByString? params
       (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
         Procedure.oldInoutAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
-    Procedure.contractTriple φ p params procName :=
+    Procedure.contractTriple p params procName :=
   ⟨proc, bss, hproc, hbody,
-    consequence p.findProcByString? φ params h
+    consequence p.findProcByString? params h
       (fun _ hρ => ⟨hρ.1, hρ.2.1, hρ.2.2.1⟩) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` while retaining every entry fact, including values
@@ -161,11 +160,11 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
-    (h : Triple p.findProcByString? φ params
+    (h : Triple p.findProcByString? params
       (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
         Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
-    Procedure.contractTriple φ p params procName :=
+    Procedure.contractTriple p params procName :=
   ⟨proc, bss, hproc, hbody, h⟩
 
 /-- A contract whose every non-`free` `ensures` is literally one of the
@@ -184,10 +183,10 @@ theorem Procedure.contractTriple_nil (p : Core.Program) (params : InitEnvWFParam
       check.attr = Procedure.CheckAttr.Default →
       ∃ (label' : CoreLabel) (check' : Procedure.Check),
         (label', check') ∈ proc.spec.preconditions.toList ∧ check'.expr = check.expr) :
-    Procedure.contractTriple φ p params procName := by
-  refine Procedure.contractTriple_of φ p params procName proc [] hproc hbody ?_
-  refine Core.Logic.Hoare.consequence p.findProcByString? φ params
-    (Core.Logic.Hoare.skip p.findProcByString? φ params "" #[]
+    Procedure.contractTriple p params procName := by
+  refine Procedure.contractTriple_of p params procName proc [] hproc hbody ?_
+  refine Core.Logic.Hoare.consequence p.findProcByString? params
+    (Core.Logic.Hoare.skip p.findProcByString? params "" #[]
       (Procedure.preAsPredicate proc))
     (fun _ h => h) (fun ρ hpre label check hmem hattr => ?_)
   obtain ⟨label', check', hmem', hexpr⟩ := himp label check hmem hattr
@@ -221,8 +220,8 @@ theorem Procedure.contractTriple_nil_of_ensuresAmongRequires
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured [])
     (h : Procedure.ensuresAmongRequires proc = Bool.true) :
-    Procedure.contractTriple φ p params procName := by
-  refine Procedure.contractTriple_nil φ p params procName proc hproc hbody
+    Procedure.contractTriple p params procName := by
+  refine Procedure.contractTriple_nil p params procName proc hproc hbody
     (fun label check hmem hattr => ?_)
   simp only [Procedure.ensuresAmongRequires, List.all_eq_true, List.any_eq_true,
     Bool.or_eq_true, decide_eq_true_eq] at h
@@ -243,17 +242,16 @@ theorem Procedure.contractTriple_singleton_cmd (p : Core.Program)
     (hsem : ∀ ρ₀ σ' emitted, Procedure.preAsPredicate proc ρ₀ →
       ρ₀.factory = Core.Factory → Procedure.oldInoutAsPredicate proc ρ₀ →
       InitEnvWF params (Stmt.cmd c) ρ₀ →
-      EvalCommandE p.findProcByString? φ ρ₀.factory ρ₀.store c σ' emitted →
+      EvalCommandE p.findProcByString? ρ₀.factory ρ₀.store c σ' emitted →
       Trace.AssertionsValid Expression (EvaluatorBasedInterp Expression) emitted ∧
         (Trace.Reachable Expression (EvaluatorBasedInterp Expression) emitted →
           Procedure.postAsPredicate proc { ρ₀ with store := σ' }))
     (hpost_proj : Imperative.Logic.Hoare.PostWF [Imperative.Stmt.cmd c]
       (Procedure.postAsPredicate proc)) :
-    Procedure.contractTriple φ p params procName :=
-  Procedure.contractTriple_of_core φ p params procName proc _ hproc hbody
-    (block p.findProcByString? φ params (by simp [Imperative.Block.noFuncDecl,
-        Imperative.Stmt.noFuncDecl])
-      (cmd p.findProcByString? φ params c
+    Procedure.contractTriple p params procName :=
+  Procedure.contractTriple_of_core p params procName proc _ hproc hbody
+    (block p.findProcByString? params
+      (cmd p.findProcByString? params c
         (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
           Procedure.oldInoutAsPredicate proc ρ)
         (Procedure.postAsPredicate proc)

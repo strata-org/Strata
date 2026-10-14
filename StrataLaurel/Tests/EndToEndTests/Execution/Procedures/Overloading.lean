@@ -89,7 +89,8 @@ procedure caller()
 
 /-! ## A no-overload call produces the expected error through the full pipeline -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure f(x: int) returns (r: int) opaque ensures r == x;
@@ -102,7 +103,8 @@ procedure caller() opaque {
 
 /-! ## Identical signatures are rejected without a spurious internal-error banner -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: both abort on the annotated resolution error instead of reporting it as a diagnostic.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure foo(x: int) opaque { };

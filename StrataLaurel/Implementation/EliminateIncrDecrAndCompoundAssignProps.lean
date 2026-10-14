@@ -140,7 +140,7 @@ private theorem lowerOpAssign_contains {s : KindSet} {primOp : Operation}
     (hrhs : Contains (outSet s) rhs) :
     Contains (outSet s) (lowerOpAssign primOp target rhs src) := by
   have hcall : Contains (outSet s)
-      (⟨.StaticCall (mkId primOp.procName) [targetAsRead target, rhs], src⟩ : StmtExprMd) := by
+      (⟨.StaticCall (mkId primOp.procName) [targetAsRead target, rhs] [], src⟩ : StmtExprMd) := by
     refine .node _ (fun k hk => ?_) (by simp [stmtExprTypes]) ?_
     · simp only [NodeKind.ofStmtExpr, NodeKind.ofCallee, mkId, List.mem_cons,
         ofProcName?_procName] at hk

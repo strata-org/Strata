@@ -1865,16 +1865,65 @@ procedure comparisons(x: int, y: int, l: string, r: string)
   assert (x == y) == !(x != y);
   assert (x < y) ==> (x <= y);
   assert (x > y) ==> (x >= y);
-  assert (l ^ r) == (l ^ r)
+  assert (l ^ r) == (l ^ r);
+  assert (l < r) ==> (l <= r)
 };
 ```
 
-Equality requires operands of consistent types and is available at every type. Ordering requires
-numeric operands. `^` concatenates two strings.
+Equality requires operands of consistent types and is available at every type. `^` concatenates two
+strings.
+
+Ordering is available at `int`, `real`, `bv n` for `n` in 1, 8, 16, 32 and 64 — those comparisons are
+*signed* — and at `string`. On strings it is the lexicographic order over code points, so `"ab" < "abc"`
+and `"Z" < "a"`. A comparison whose operands have a *type variable* type selects no overload and is an
+ambiguity error, not a default.
+
+One practical caveat about string ordering: the laws that make it an *order* rather than just a
+relation — antisymmetry, totality, transitivity — are discharged by z3 and time out under cvc5, so a
+proof that leans on them wants `--solver z3`. Everything else about `<` on strings, including every
+counterexample, works under either.
 
 Equality means different things at different types, and the difference matters: on a datatype it
 is structural, and on a composite it is reference identity. See
 {ref "aliasing-and-separation"}[*Aliasing and separation*].
+
+### Bitwise operations
+
+There is *no bitwise operator at `int`*. `&` and `|` are the eager boolean operators, `^` is string
+concatenation, and `<<` / `>>` are not Laurel syntax at all. Bitwise work is done by calling built-in
+procedures whose names carry the width and the signedness, because a bitwise operation on a bounded
+integer needs both and an operator spelling could carry neither:
+
+```laurel
+procedure bits(x: int, y: int)
+  requires x >= 0
+  requires x <= 4294967295
+  requires y >= 0
+  requires y <= 4294967295
+  opaque
+{
+  assert $bitAndU8(12, 10) == 8;
+  assert $bitOrU8(12, 10) == 14;
+  assert $bitXorU8(12, 10) == 6;
+  assert $bitAndS32(-2, 3) == 2;
+  assert $bitXorU32(x, x) == 0;
+  assert $bitAndU32(x, y) <= 4294967295
+};
+```
+
+`$bitAndU8`, `$bitOrS32`, `$bitXorU64`, … are available as `$bit{And,Or,Xor}{S,U}{8,16,32,64}`. Each
+*requires* both operands to lie in the width's range for that signedness and returns the
+two's-complement result in the same range. An out-of-range operand is a failed precondition, not a
+silent truncation, and since a bitwise and/or/xor of two in-range values is itself in range there is
+no overflow case to report.
+
+Underneath them the bitvector layer is exposed directly, for widths 1 through 128:
+`$bv{W}{And,Or,Xor,Not,Shl,UShr,SShr}` on `bv W`, plus the three conversions `$intToBv{W}`,
+`$bv{W}ToInt` (signed reading) and `$bv{W}ToUInt` (unsigned). `$intToBv{W}` truncates to `W` bits, so
+a caller using these directly owns the range premise that makes the round trip exact. Note these all
+reach the solver through SMT-LIB's `int_to_bv`/`ubv_to_int`/`sbv_to_int`, which *cvc5 supports and
+z3 does not*; and prefer `$bv{W}ToUInt` for symbolic reasoning, because a bound on `$bv{W}ToInt` at
+width 32 or above is not something the solver discharges in practice.
 
 ## Conditionals
 
@@ -2275,12 +2324,10 @@ procedure div(a: int, b: int) returns (r: int)
 `throws` is part of the signature — it changes what callers have to deal with — so
 it sits with `returns`, before `opaque`.
 
-### Catch or declare
+### Uncaught exceptions
 
-Laurel enforces *catch-or-declare*, the discipline Java applies to its checked
-exceptions. A procedure that declares no `throws` may not let an exception escape,
-whether thrown directly or propagated from a callee, and a procedure declaring
-`throws T` may only let exceptions escape whose type is a subtype of `T`.
+A procedure declaring `throws T` may only let exceptions escape whose type is a
+subtype of `T`. This is checked statically:
 
 ```laurel
 composite ArithError {}
@@ -2297,11 +2344,35 @@ procedure wrongThrows()
 };
 ```
 
-The check is about the program as you wrote it rather than about how it lowers, so
-it runs during resolution and reports at the offending `throw` or call. Whether the
-*source* language requires catch-or-declare is a separate question: procedures
-coming from Python or JavaScript carry a `throws` clause too, even though neither
-language has that surface construct.
+A procedure that declares no `throws` may not let any exception escape, whether
+thrown directly or propagated from a callee. This is checked by the verifier, so it
+is an error only if the exception can actually escape: an uncaught `throw` is
+asserted to be unreachable, and an uncaught call to a throwing procedure is asserted
+not to throw, which the callee's `throwsOn` cases decide.
+
+```laurel
+composite Boom {}
+
+procedure checked(x: int) returns (r: int)
+  requires x >= 0
+  opaque
+{
+  if x < 0 then {
+    var b: Boom := new Boom;
+    throw b   // verifies: unreachable under the precondition
+  };
+  r := x
+};
+```
+
+Without the precondition the `throw` is reported as
+`uncaught exception 'Boom' is not thrown does not hold`. An exception that reaches
+the end of an outermost `try` uncaught — no `catch` matched — is reported at that
+`try` instead, since the `try` could still have intercepted it.
+
+Whether the *source* language requires declaring exceptions is a separate question:
+procedures coming from Python or JavaScript can carry a `throws` clause too, even
+though neither language has that surface construct.
 
 ### Handling: try, catch, finally
 

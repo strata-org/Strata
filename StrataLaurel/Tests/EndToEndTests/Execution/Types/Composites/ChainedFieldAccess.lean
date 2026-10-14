@@ -152,12 +152,7 @@ procedure chainedParenFreeIncrDecr()
 
 #end
 
--- Verification only. `chainedReadUnconstrainedFails` and `chainedWriteIsolationFails`
--- assert a value for a field that was never written; the initial heap is a hole, so that
--- read leaves a residual `select` and the assert has no boolean value -- reported as
--- "condition did not reduce to bool" rather than the "does not hold" pinned below.
--- `chainedMayAliasFails` writes through the alias and would work as an entry on its own;
--- it is here only because a block cannot mix entry and non-entry procedures.
+-- No Core interpreter: reading a never-written field leaves a residual `select`, so the assert "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -209,5 +204,13 @@ procedure chainedWriteIsolationFails()
   o#inner#count := 7;
   assert d#count == 7
 //^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  chainedReadUnconstrainedFails();
+  chainedMayAliasFails();
+  chainedWriteIsolationFails()
 };
 #end

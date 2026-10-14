@@ -9,7 +9,7 @@ open StrataTest.Util
 open Strata
 
 /-! P1: inherited METHOD, parent declared AFTER child (order independence). -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite ChildP extends ParentP { }
@@ -27,11 +27,20 @@ procedure go(c: ChildP)
   var x: int := c#m();
   assert x == 4
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var c: ChildP := new ChildP;
+  go(c)
+};
 #end
 
 /-! P2: DIAMOND ambiguity — D extends L, R; BOTH declare m, D does not.
     No most-specific declarer => rejected (not a silent pick). -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated diagnostic is a resolution error, on which both interpreter paths abort.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite L2 {
@@ -55,7 +64,7 @@ procedure go(d: D2)
 /-! P3: diamond RESOLVED by an override on D itself — most-specific is D.
     D3.m must REFINE both parents' contracts (Liskov); its `r == 3` refines the
     weaker `r >= 0` on both L3.m and R3.m, so the override is accepted. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite L3 {
@@ -76,12 +85,20 @@ procedure go(d: D3)
   var x: int := d#m();
   assert x == 3
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var d: D3 := new D3;
+  go(d)
+};
 #end
 
 /-! P4: depth — most-specific wins along a single chain. C extends B, B extends A;
     A and B both declare m; B is more specific => B$m (r == 2). B4.m overrides A4.m
     and must REFINE it (Liskov): `r == 2` refines the weaker `r >= 0`. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A4 {
@@ -98,6 +115,14 @@ procedure go(c: C4)
 {
   var x: int := c#m();
   assert x == 2
+};
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var c: C4 := new C4;
+  go(c)
 };
 #end
 
@@ -117,7 +142,7 @@ procedure go(c: C4)
     the commit message. -/
 -- Each declarer in the chain overrides the one above and must REFINE it (Liskov):
 -- the two ancestors carry the weaker `r >= 0`, which `D3p.m`'s `r == 3` refines.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite D2p {
@@ -139,6 +164,14 @@ procedure go(r: Rp)
   var x: int := r#m();
   assert x == 3
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var r: Rp := new Rp;
+  go(r)
+};
 #end
 
 /-! ## P6: GENERIC inherited call — a method inherited (not redeclared) from a GENERIC parent,
@@ -147,7 +180,7 @@ procedure go(r: Rp)
     relation (`isSubtype`/`ancestorMatchesTarget`) AND monomorphization
     (`inferProcInst`/`liftActualToParamHead`). Before those, this raised an internal error
     ("expected 'GBase<T>', got 'GSub<int>'" then "'GBase$get' is not defined"). -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite GBase<T> {
@@ -161,11 +194,19 @@ procedure go(s: GSub<int>)
   var x: int := s#get();
   assert x == 0
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var s: GSub<int> := new GSub<int>;
+  go(s)
+};
 #end
 
 /-! ## P7: the same inherited generic call must still be SOUND — a false assertion on its
     result fails (the read is real, not vacuous). -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite GBase2<T> {
@@ -179,6 +220,14 @@ procedure go(s: GSub2<int>)
   var x: int := s#get();
   assert x == 5
 //^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var s: GSub2<int> := new GSub2<int>;
+  go(s)
 };
 #end
 

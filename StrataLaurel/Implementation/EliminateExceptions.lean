@@ -9,6 +9,8 @@ public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.LaurelPass
 public import StrataLaurel.Implementation.SemanticModel
 import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.LaurelTypes
+import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
@@ -64,6 +66,12 @@ escape.
   An `exit` that stays inside every enclosing `finally` region is left alone.
 - a call to a `throws` procedure  →  bind its `Result` to a temp, then `if
   isBad(tmp) then propagate else unwrap value(tmp)`.
+- an exception that would leave a procedure that declares no `throws`  →  an
+  assertion that it does not, placed where it would leave: `assert false` for an
+  uncaught `throw` outside every `try`, `assert isGood(tmp)` for such a throwing
+  call, and `assert !$thrown` on the re-dispatch edge of an outermost `try` (an
+  exception the `try` may not intercept). The escape is therefore an error only
+  if it can actually happen; resolution does not reject it statically.
 - the body is wrapped in `block $exnexit { … }`; after it, `$result` is built
   (`Bad($exc)` if thrown, else `Good(val)`).
 - `ensures P`  →  Good-path `isGood($result) ==> P[out := value($result)]`;
@@ -204,7 +212,7 @@ private def declNoInit (name : String) (ty : HighTypeMd) : StmtExprMd :=
 private def declInit (name : String) (ty : HighTypeMd) (val : StmtExprMd) : StmtExprMd :=
   nn (.Assign [⟨.Declare ⟨mkId name, ty⟩, .unknown⟩] val)
 private def callStatic (name : String) (args : List StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId name) args)
+  nn (.StaticCall (mkId name) args [])
 /-- `Ctor(arg)` / `Datatype..fn(arg)` — a single-argument datatype op. -/
 private def resultApp (fn : String) (arg : StmtExprMd) : StmtExprMd := callStatic fn [arg]
 private def exitTo (label : String) : StmtExprMd := nn (.Exit label)
@@ -215,11 +223,11 @@ private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
 -- Operators are calls to their built-in wrappers (see `Operation.procName`); neither
 -- `$implies` nor `$and` is overloaded, so these names survive `UniqueOverloadNames`.
 private def impliesOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.Implies.procName) [a, b])
+  nn (.StaticCall (mkId Operation.Implies.procName) [a, b] [])
 private def orOf (a b : StmtExprMd) : StmtExprMd :=
   callStatic Operation.Or.procName [a, b]
 private def andOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.And.procName) [a, b])
+  nn (.StaticCall (mkId Operation.And.procName) [a, b] [])
 /-- `e as ty` — a downcast. On a propagation edge its runtime cast-assert is
     discharged by a preceding `assume e is ty` (see `lowerTry`). -/
 private def asTypeOf (e : StmtExprMd) (ty : HighTypeMd) : StmtExprMd := nn (.AsType e ty)
@@ -227,6 +235,16 @@ private def asTypeOf (e : StmtExprMd) (ty : HighTypeMd) : StmtExprMd := nn (.AsT
 private def isTypeOf (e : StmtExprMd) (ty : HighTypeMd) : StmtExprMd := nn (.IsType e ty)
 /-- `assume c` — a free assumption. -/
 private def assumeOf (c : StmtExprMd) : StmtExprMd := nn (.Assume c)
+/-- `assert c; assume c; leave`. A Core assertion is not assumed by later checks, so
+    the `assume` keeps the verifier from reporting the failure again downstream (e.g.
+    at the `value(…)` unwrap of a call); `leave` ends the path for the Core
+    interpreter, which ignores `assume`s. -/
+private def assertThenLeave (c : StmtExprMd) (summary : String) (leave : StmtExprMd) :
+    List StmtExprMd :=
+  [nn (.Assert c (some summary)), nn (.Assume c), leave]
+private def notOf (c : StmtExprMd) : StmtExprMd := callStatic Operation.Not.procName [c]
+/-- A type as shown in an assertion summary. -/
+private def showType (ty : HighTypeMd) : String := toString (formatHighTypeVal ty.val)
 
 /-- Give every *still-source-less* node in `e` the range `src`.
 
@@ -427,6 +445,12 @@ private def innerTry (frames : List Frame) : Option TryFrame :=
 
 private def throwTargetOf (ctx : Ctx) : String :=
   ((innerTry ctx.frames).map (·.throwLabel)).getD exnExitLabel
+
+/-- Whether an exception raised here would leave a procedure that declares no
+    `throws`, with no `try` in between to intercept it. The lowering asserts that it
+    does not happen. -/
+private def escapesUncaught (ctx : Ctx) : Bool :=
+  ctx.procExc.isNone && (innerTry ctx.frames).isNone
 private def finallyTargetOf (ctx : Ctx) : String :=
   ((innerTry ctx.frames).map (·.finallyLabel)).getD exnExitLabel
 /-- The `$exc` variable (name and type) active in the current region: the
@@ -473,7 +497,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   markUsedExc
   let model := (← get).model
   let callee := match callNode.val with
-    | .StaticCall c _ => c
+    | .StaticCall c _ _ => c
     | .InstanceCall _ c _ => c
     | _ => mkId "?"
   let p? := calleeProc model callee
@@ -503,6 +527,11 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
     [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ]
   let propagate := iteOf (resultApp exnResultIsBad (localRef callres))
     (blockOf onBad) none
+  let propagate : List StmtExprMd :=
+    if escapesUncaught ctx then
+      assertThenLeave (resultApp exnResultIsGood (localRef callres))
+        s!"call does not throw an uncaught '{showType errTy}'" propagate
+    else [propagate]
   -- A `Declare` value target is declared up front so it stays in scope for later
   -- statements; it is assigned the unwrapped value only on the Good path.
   let (preDecls, goodStmts) : List StmtExprMd × List StmtExprMd :=
@@ -517,7 +546,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
         ([], [setLocal x.text (resultApp exnResultValue (localRef callres))])
     | _ => ([], [])
   -- All of this is machinery for one call, so it points at the call.
-  pure (fillSrcs callNode.source (preDecls ++ [multiCall, propagate] ++ goodStmts))
+  pure (fillSrcs callNode.source (preDecls ++ [multiCall] ++ propagate ++ goodStmts))
 
 mutual
 
@@ -569,11 +598,18 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       let body' := fillSrcs body.source (← lowerStmt ctx body)
       pure [⟨.While c invs dec (blockOf body') postTest, src⟩]
   | .Throw value =>
+      if escapesUncaught ctx then
+        -- Reaching the `throw` is the failure. The thrown value is not evaluated:
+        -- the path ends here either way.
+        let ty := computeExprType (← get).model value
+        return assertThenLeave (litBool false) s!"uncaught exception '{showType ty}' is not thrown"
+          (exitTo exnExitLabel)
       markUsedExc
       -- Write the thrown value into the current region's `$exc` (its type is a
       -- supertype of every type thrown here, so no cast is needed). The `none`
-      -- case is unreachable for a well-formed program (a throw with no enclosing
-      -- `$exc` would escape, which the resolution-time escape check rejects).
+      -- case is a finally-only `try` in a procedure that declares no `throws`:
+      -- the value has nowhere to go, and if it escapes the `try` the re-dispatch
+      -- asserts that it does not.
       let setExc := match currentExc ctx with
         | some (v, _) => [setLocal v value]
         | none => []
@@ -605,12 +641,12 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       -- A call to a throwing procedure on the RHS needs the propagate/unwrap
       -- dispatch; any other assignment is left untouched.
       match value.val with
-      | .StaticCall callee _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
           if calleeThrows (← get).model callee then
             lowerThrowingCall ctx value targets
           else pure [stmt]
       | _ => pure [stmt]
-  | .StaticCall callee _ =>
+  | .StaticCall callee _ _ =>
       if calleeThrows (← get).model callee then
         lowerThrowingCall ctx stmt []
       else pure [stmt]
@@ -650,11 +686,18 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- no handler to inspect it, so nothing narrows its type).
   -- A `catch` clause is *reachable* only if resolution found a thrown type for
   -- it. A try whose body throws nothing determinable has `bindingType = Unknown`
-  -- (resolution's `collectThrownTypeNames` reached no throw), so its catches can
-  -- never fire; drop them and lower the try as finally-only. This also avoids an
-  -- `Unknown`-typed `$exc_<i>` (which Core rejects) and dead catch guards
+  -- (resolution's `collectThrownTypes` reached no throw it could type), so its
+  -- catches can never fire; drop them and lower the try as finally-only. This also
+  -- avoids an `Unknown`-typed `$exc_<i>` (which Core rejects) and dead catch guards
   -- (`e is T`) that, at the erased Unknown type, have no valid pre-heap type to
   -- test unrelated `T`s against.
+  --
+  -- This drop is NOT silent, and must not become so: `Check.tryCatch` warns
+  -- whenever it types a binding `Unknown` with clauses present, which is the only
+  -- way a clause reaches here unreachable (resolution recomputes `bindingType` on
+  -- every program, front-end-authored ASTs included). Discarding a handler changes
+  -- the semantics the procedure is verified against, so if this guard ever gains a
+  -- path that resolution does not cover, that path needs its own diagnostic.
   let catchesReachable : Bool :=
     match catches with
     | c :: _ => match c.bindingType.val with | .Unknown => false | _ => true
@@ -812,8 +855,19 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         iteOf (localRef (exitPendingVar l))
           (blockOf [setLocal (exitPendingVar l) (litBool false), exitTo l]) none)
   let reDispatch : List StmtExprMd :=
-    [ iteOf (localRef exnThrownVar) (blockOf (copyStmts ++ [exitTo thrownExit])) none,
-      iteOf (localRef exnReturningVar) (blockOf [exitTo returnExit]) none ] ++ exitDispatch
+    -- An exception still pending past an outermost `try` escapes. It is asserted on
+    -- this edge rather than at the `throw` because the `try` may still intercept it
+    -- (a `catch` guard that matches at run time, or a `finally` that completes
+    -- abruptly).
+    let propagateThrown :=
+      iteOf (localRef exnThrownVar) (blockOf (copyStmts ++ [exitTo thrownExit])) none
+    let onThrown : List StmtExprMd :=
+      if escapesUncaught ctx then
+        assertThenLeave (notOf (localRef exnThrownVar)) "no exception escapes this `try` uncaught"
+          propagateThrown
+      else [propagateThrown]
+    onThrown ++
+    [ iteOf (localRef exnReturningVar) (blockOf [exitTo returnExit]) none ] ++ exitDispatch
   let tryFinBlock := blockOf (blockOf bStmts (some tryLbl) :: catchChainStmts) (some tryFinLbl)
   -- Declare this try's own `$exc_<id>` in the enclosing scope, just before the
   -- try/finally block, so it is live for the body, catch chain, `finally`, and
@@ -844,7 +898,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   match _h : stmt.val with
   | .Throw _ => true
   | .Try _ _ _ => true
-  | .StaticCall callee _ => calleeThrows model callee
+  | .StaticCall callee _ _ => calleeThrows model callee
   | .InstanceCall _ callee _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
   | .Block stmts _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)

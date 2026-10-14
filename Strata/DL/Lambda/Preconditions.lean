@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.LExprType
 
 /-! # Function Precondition Obligation Collection
 
@@ -61,7 +62,7 @@ private def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
   else
     let opSubst := (fn.opTypeSubst callee).getD Subst.empty
     let argConstraints := (args.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))
     let argSubst :=
       if argConstraints.isEmpty then Subst.empty
       else match Constraints.unify argConstraints SubstInfo.empty with
@@ -99,7 +100,7 @@ where
           let tySubst := callSiteTypeSubst func op args
           func.preconditions.map fun precond =>
             let substedPrecond := substitutePrecondition precond.expr func.inputs args
-            let substedPrecond := substedPrecond.applySubst tySubst
+            let substedPrecond := substedPrecond.applyTypeSubst tySubst
             { funcName := func.name.name
               obligation := wrapImplications implications substedPrecond
               callSiteMetadata := md

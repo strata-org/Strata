@@ -381,17 +381,18 @@ procedure userAliasMatchesMap(m: IntBoolMap, n: Map<int, bool>, k: int)
 };
 #end
 
-/-! ## An undetermined value type is a user error, not a compiler bug
+/-! ## An undetermined value type is a resolution error
 
-`mapEmpty()` binds neither `K` nor `V` from arguments, and `mapContains` mentions `V` nowhere
-in its own signature — so if the use site does not supply it either, nothing does. Such a call
-is rejected in `LaurelToCoreSchemaPass` with an actionable message. Left alone it would reach
-the SMT encoder as a free type variable and be reported as `strata-bug: … should be fully
-monomorphic`, blaming the compiler for a program that is genuinely ambiguous.
+`mapEmpty()` binds neither `K` nor `V` from arguments, and `mapContains` mentions `V` nowhere in
+its own signature — so if the use site does not supply it either, nothing does. `Resolution`
+reports that at the call. Left alone it would reach the SMT encoder as a free type variable and be
+reported as `strata-bug: … should be fully monomorphic`, blaming the compiler for a program that
+is genuinely ambiguous.
 
-The positive cases above pin the other half: a nested `mapEmpty()` under `mapSet` is determined
-by the value argument, and an annotated binding supplies both parameters, so neither is
-flagged. -/
+Reported ONCE, on `mapContains`, even where the chain is longer. An inner call handed a slot from
+an enclosing call that has not finished inferring is DEFERRED rather than reported: it has done
+all it can, and reporting there would also reject the valid `mapSet(mapEmpty(), k, true)`, whose
+`V` comes from `true`. The positive cases above pin that half. -/
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -399,7 +400,7 @@ procedure valueTypeUndetermined(k: int)
   opaque
 {
   assert !mapContains(mapEmpty(), k)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer the value type of the map passed to 'mapContains': 'mapContains' does not mention it and nothing at this use site supplies it. Bind the map to an annotated variable first, e.g. `var m: Map<int, bool> := mapEmpty()`.
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'V' of 'mapContains': the expected type does not determine it either; annotate with a concrete instantiation
 };
 
 // Same through a chain that also leaves `V` open: `mapRemove` returns the map, so it
@@ -408,7 +409,69 @@ procedure valueTypeUndeterminedThroughRemove(k: int)
   opaque
 {
   assert !mapContains(mapRemove(mapEmpty(), k), k)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer the value type of the map passed to 'mapContains': 'mapContains' does not mention it and nothing at this use site supplies it. Bind the map to an annotated variable first, e.g. `var m: Map<int, bool> := mapEmpty()`.
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'V' of 'mapContains': the expected type does not determine it either; annotate with a concrete instantiation
+};
+#end
+
+/-! ## Nested `mapConst`
+
+`mapEmpty()` lowers to Core's `mapConst`, whose key type no argument determines, so each call is
+annotated from the instantiation resolution recorded for it. A `mapConst` whose argument is
+another `mapConst` is the case no declared type sits next to: only the inner call's own recorded
+key type says the inner map is keyed by `string` while the outer one is keyed by `int`. Wrong at
+any depth and Core type checking rejects the program, so the deepest map is keyed by a third
+type again. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure nestedMapConst()
+  opaque
+{
+  var m: TotalMap int (TotalMap string bool) := mapConst(mapConst(false));
+  assert select(select(m, 0), "key") == false
+};
+
+procedure depthThreeMapConst()
+  opaque
+{
+  var m: TotalMap int (TotalMap string (TotalMap bool int)) := mapConst(mapConst(mapConst(7)));
+  assert select(select(select(m, 0), "key"), true) == 7
+};
+#end
+
+/-! ## `mapConst` keyed by a SIBLING argument
+
+Nothing on the outside says what the map is keyed by: the binding is `bool`, which is the map's
+value type. The key comes from `select`'s other argument, so the `mapConst` slot only exists once
+that sibling has been resolved. Verification rather than resolution, because an unrecorded
+instantiation surfaces at Core translation, not at the call. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure mapConstKeyFromSibling()
+  opaque
+{
+  var b: bool := select(mapConst(false), 1);
+  assert !b
+};
+#end
+
+/-! ## `mapConst` inside a generic body
+
+The key comes only from the declared output, and the body is TRANSPARENT, so no expected type
+reaches Core translation. The recorded instantiation is the sole source, and inside a generic
+body it is written against the enclosing `K`/`V`: `MonomorphizeComposites` substitutes it on
+each clone. Both an abstract and a concrete key are pinned, since a concrete key still travels
+through the same recording. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure makeAbstractKey<K, V>(v: V) returns (r: TotalMap K V) {
+  return mapConst(v)
+};
+
+procedure makeConcreteKey<V>(v: V) returns (r: TotalMap int V) {
+  return mapConst(v)
 };
 #end
 

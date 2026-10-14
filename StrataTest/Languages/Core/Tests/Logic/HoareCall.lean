@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.HoareCall
+import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.BitVecEvalProps
 import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -30,8 +31,6 @@ open Lambda.LExpr.SyntaxMono
 
 namespace Strata
 
-variable (φ : Core.Expression.Factory → Imperative.PureFunc Core.Expression →
-  Core.Expression.Factory)
 
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
@@ -295,16 +294,16 @@ private theorem mm_run_body_eq :
 /-- Every execution of the Max16 body respects its output frame. -/
 private theorem max_body_frame :
     ∀ proc, mmAST.findProcByString? "Max16" = some proc →
-      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? φ proc := by
+      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? proc := by
   intro proc hlookup
   have hpe : proc = maxProc := (procOf_eq hlookup).symm
   subst hpe
-  intro σ_entry fac σ_exit fac_exit emitted hbody
+  intro σ_entry fac σ_exit emitted hbody
   rw [max_body_eq] at hbody
   cases hbody with
   | structured hrun =>
     rename_i ρ'
-    have hfr := Core.setBodyE_frame mmAST.findProcByString? φ resultId maxSetExpr maxSetMd
+    have hfr := Core.setBodyE_frame mmAST.findProcByString? resultId maxSetExpr maxSetMd
       σ_entry fac ρ' emitted hrun
     show Imperative.invStoresExcept σ_entry ρ'.store (ListMap.keys maxProc.header.outputs)
     rw [show ListMap.keys maxProc.header.outputs = [resultId] from by native_decide]
@@ -313,16 +312,16 @@ private theorem max_body_frame :
 /-- Every execution of the Min16 body respects its output frame. -/
 private theorem min_body_frame :
     ∀ proc, mmAST.findProcByString? "Min16" = some proc →
-      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? φ proc := by
+      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? proc := by
   intro proc hlookup
   have hpe : proc = minProc := (procOf_eq hlookup).symm
   subst hpe
-  intro σ_entry fac σ_exit fac_exit emitted hbody
+  intro σ_entry fac σ_exit emitted hbody
   rw [min_body_eq] at hbody
   cases hbody with
   | structured hrun =>
     rename_i ρ'
-    have hfr := Core.setBodyE_frame mmAST.findProcByString? φ resultId minSetExpr minSetMd
+    have hfr := Core.setBodyE_frame mmAST.findProcByString? resultId minSetExpr minSetMd
       σ_entry fac ρ' emitted hrun
     show Imperative.invStoresExcept σ_entry ρ'.store (ListMap.keys minProc.header.outputs)
     rw [show ListMap.keys minProc.header.outputs = [resultId] from by native_decide]
@@ -396,12 +395,15 @@ private theorem bv16_callentry_facts
     (∃ vr, σAO resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true) ∧
     Imperative.WellFormedStore σAO fac := by
   obtain ⟨inputVals, outOnlyVals, hEE, hRV, σA, σIO, hIA, hIO, hSnap⟩ := h
-  rw [hIn] at hEE
+  rw [show Imperative.Calls.getInputExprs callArgs = _ from hIn] at hEE
   rw [hOutArgs] at hRV
-  rw [hInKeys] at hIA
-  rw [hOutOnly] at hIO
+  rw [show Imperative.ProcedureHeader.inputParams (P := Core.Expression) proc.header = _
+    from hInKeys] at hIA
+  rw [← Core.Procedure.Header.keys_getOutputOnlyParams, hOutOnly] at hIO
   have hAOeq : σAO = σIO := by
-    rw [hSnap, hInout]; funext id; simp [Core.withOldSnapshots]
+    rw [hSnap, ← Core.Procedure.Header.keys_getInoutParams, hInout]
+    funext id
+    simp [Imperative.Calls.withOldSnapshots]
   cases hEE with
   | eval_some _hd1 he1 hEE2 =>
     cases hEE2 with
@@ -413,7 +415,7 @@ private theorem bv16_callentry_facts
         have hcx := hsem.val.outputsAreValues _ _ _ hwfσ he1
         have hcy := hsem.val.outputsAreValues _ _ _ hwfσ he2
         have hwfA : Imperative.WellFormedStore σA fac :=
-          Core.initStates_preserves_wf hIA
+          Imperative.initStates_preserves_wf hIA
             (by intro w v hv; simp [Imperative.emptyStore] at hv)
             (by intro v hv
                 simp only [List.mem_cons, List.not_mem_nil, or_false] at hv
@@ -421,7 +423,7 @@ private theorem bv16_callentry_facts
                 · exact hcx
                 · exact hcy)
         have hwfIO : Imperative.WellFormedStore σIO fac :=
-          Core.initStates_preserves_wf hIO hwfA
+          Imperative.initStates_preserves_wf hIO hwfA
             (by intro v hv; simp only [List.mem_singleton] at hv; subst hv; exact hrcanon)
         cases hIA with
         | init_some hix hIA2 =>
@@ -457,7 +459,8 @@ private theorem bv16_callexit_facts
     ∃ vr, σEnd resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true ∧
       σ' outVar = some vr ∧ (∀ k, k ≠ outVar → σ' k = σ k) := by
   obtain ⟨outputVals, hRV, hUpd⟩ := h
-  rw [hOutKeys] at hRV
+  rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) proc.header = _
+    from hOutKeys] at hRV
   rw [hLhs] at hUpd
   cases hRV with
   | read_some hres hrcanon hRV2 =>
@@ -508,13 +511,16 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
     Core.Logic.BlockInitEnvWF testParams
       [Imperative.Stmt.block "" [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
         (Imperative.Cmd.set resultId (.det setE) md))] #[]] ρ := by
-  refine Core.Logic.BlockInitEnvWF.of_defUseOk (hf ▸ Core.coreFactory_WellFormedSemanticEval)
-    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_) ?_ (fun _ _ => rfl)
+  refine Core.Logic.BlockInitEnvWF.of_defUseOk (hf.symm ▸ Core.coreFactory_WellFormedSemanticEval)
+    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_) ?_
+    (fun _ _ => rfl)
+    (by
+      simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
+        HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
       Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars] at hn
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
       Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars] at hn
-  · simp [Imperative.Block.funcDeclNames, Imperative.Stmt.funcDeclNames] at hn
   · simp [testParams] at hp
   · simp only [Imperative.Block.defUseWellFormed, Imperative.Stmt.defUseWellFormed,
       Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars,
@@ -542,9 +548,9 @@ private theorem bv16_call_triple
     (exX exY : Core.Expression.Expr) (outVar : Core.Expression.Ident)
     (fval : BitVec 16 → BitVec 16 → BitVec 16)
     (Ppre Ppost : Imperative.Env Core.Expression → Prop)
-    (hcontract : Core.Logic.Hoare.Procedure.contractTriple φ mmAST testParams procName)
+    (hcontract : Core.Logic.Hoare.Procedure.contractTriple mmAST testParams procName)
     (hframe : ∀ q, mmAST.findProcByString? procName = some q →
-      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? φ q)
+      Core.Logic.Hoare.Procedure.bodyFrame mmAST.findProcByString? q)
     (hproc : mmAST.findProcByString? procName = some proc)
     (hbody : proc.body = .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
       (Imperative.Cmd.set resultId (.det bodyE) bmd))])
@@ -575,9 +581,9 @@ private theorem bv16_call_triple
           (∀ σ' : Core.CoreStore, (∀ k, k ≠ outVar → σ' k = ρ.store k) →
             σ' outVar = some (bvc (fval va vb)) → Ppost { ρ with store := σ' }))
     (hPreFac : ∀ ρ : Imperative.Env Core.Expression, Ppre ρ → ρ.factory = Core.Factory) :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams Ppre
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams Ppre
       [Core.Statement.call procName callArgs md] Ppost := by
-  refine Core.Logic.Hoare.Procedure.call_of_contract φ mmAST testParams procName
+  refine Core.Logic.Hoare.Procedure.call_of_contract mmAST testParams procName
     callArgs md Ppre Ppost hcontract hframe ?_ ?_
   · -- hentry
     intro ρ₀ proc' bss σAO hpre hwf hlk hbody' hce
@@ -618,11 +624,10 @@ private theorem bv16_call_triple
           (fun h => by subst h; simp [hAOy]))
         (by simp [hAOr])
   · -- hexit
-    intro ρ₀ proc' ρ' σ' σAO hpre hwf hlk hpost hce hframeRel hcallexit hfaceq
+    intro ρ₀ proc' ρ' σ' σAO hpre hwf hlk hpost hρ'fac hce hframeRel hcallexit
     have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
     subst proc'
     have hfac : ρ₀.factory = Core.Factory := hPreFac ρ₀ hpre
-    have hfac' : ρ'.factory = Core.Factory := hfaceq.trans hfac
     obtain ⟨va, vb, hExa, hExb, hcont⟩ := hActuals ρ₀ hpre hwf hfac
     obtain ⟨⟨vx, hEEx, hAOx, _⟩, ⟨vy, hEEy, hAOy, _⟩, _, _⟩ :=
       bv16_callentry_facts proc callArgs ρ₀.factory ρ₀.store σAO exX exY outVar
@@ -648,7 +653,7 @@ private theorem bv16_call_triple
     have hsetEval : Lambda.LExpr.evalFully Core.Factory ρ'.store specE = some (bvc (fval va vb)) :=
       hEval ρ'.store va vb hτx hτy
     have hvres : vres = bvc (fval va vb) :=
-      bv16_result_value proc specE ρ' (fval va vb) vres hfac' hpost hens1 hEndRes hEndCanon hsetEval
+      bv16_result_value proc specE ρ' (fval va vb) vres (hρ'fac.trans hfac) hpost hens1 hEndRes hEndCanon hsetEval
     rw [hvres] at hσ'out
     exact hcont σ' hσ'other hσ'out
 
@@ -805,17 +810,16 @@ private theorem bv16_set_contract
     (hSpecEval : ∀ (σ : Core.CoreStore) (a b : BitVec 16),
       σ xId = some (bvc a) → σ yId = some (bvc b) →
       Lambda.LExpr.evalFully Core.Factory σ specE = some (bvc (fval a b))) :
-    Core.Logic.Hoare.Procedure.contractTriple φ mmAST testParams procName := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed φ mmAST testParams
+    Core.Logic.Hoare.Procedure.contractTriple mmAST testParams procName := by
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed mmAST testParams
     procName proc [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
       (Imperative.Cmd.set resultId (.det bodyE) md))] hproc hbody ?_
-  refine Core.Logic.Hoare.block mmAST.findProcByString? φ testParams (by
-    simp [Imperative.Block.noFuncDecl, Imperative.Stmt.noFuncDecl]) ?_
+  refine Core.Logic.Hoare.block mmAST.findProcByString? testParams ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by
       simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
         Imperative.HasVarsImp.definedVars, Core.Command.definedVars,
         Imperative.Cmd.definedVars]))
-  refine Core.Logic.Hoare.cmd mmAST.findProcByString? φ testParams
+  refine Core.Logic.Hoare.cmd mmAST.findProcByString? testParams
     (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) md))
     (fun ρ => Core.Logic.Hoare.Procedure.preAsPredicate proc ρ ∧
       ρ.factory = Core.Factory ∧
@@ -903,14 +907,14 @@ private theorem min_hens1 : ∃ lbl chk, (lbl, chk) ∈ minProc.spec.postconditi
 
 /-- **Max16 meets its unchanged conditional contract with the XOR-and-mask body.** -/
 theorem max16_meets_contract :
-    Core.Logic.Hoare.Procedure.contractTriple φ mmAST testParams "Max16" :=
-  bv16_set_contract φ "Max16" maxProc maxSetExpr maxSpecExpr maxSetMd vMax
+    Core.Logic.Hoare.Procedure.contractTriple mmAST testParams "Max16" :=
+  bv16_set_contract "Max16" maxProc maxSetExpr maxSpecExpr maxSetMd vMax
     (by native_decide) max_body_eq max_ensures_shape max_inList hEval_max hEval_max_spec
 
 /-- **Min16 meets its unchanged conditional contract with the XOR-and-mask body.** -/
 theorem min16_meets_contract :
-    Core.Logic.Hoare.Procedure.contractTriple φ mmAST testParams "Min16" :=
-  bv16_set_contract φ "Min16" minProc minSetExpr minSpecExpr minSetMd vMin
+    Core.Logic.Hoare.Procedure.contractTriple mmAST testParams "Min16" :=
+  bv16_set_contract "Min16" minProc minSetExpr minSpecExpr minSetMd vMin
     (by native_decide) min_body_eq min_ensures_shape min_inList hEval_min hEval_min_spec
 
 /-! ### Intermediate assertions threaded through the four calls -/
@@ -994,11 +998,11 @@ private theorem run_ensures_holds (σ : Core.CoreStore) (va vb : BitVec 16)
 
 /-- The first call establishes `maxAB = max(a, b)`. -/
 private theorem call1_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA0
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA0
       [Core.Statement.call "Max16" cArgs1 cMd1] PA1 := by
-  refine bv16_call_triple φ "Max16" maxProc cArgs1 cMd1 maxSetMd maxSetExpr maxSpecExpr
+  refine bv16_call_triple "Max16" maxProc cArgs1 cMd1 maxSetMd maxSetExpr maxSpecExpr
     (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) maxABId vMax PA0 PA1
-    (max16_meets_contract φ) (max_body_frame φ) (by native_decide) max_body_eq
+    (max16_meets_contract) (max_body_frame) (by native_decide) max_body_eq
     cArgs1_in cArgs1_out cArgs1_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
     max_readsSub max_hens1 hEval_max_spec ?_ (fun ρ hpre => hpre.2.1)
   intro ρ₀ hpre _hwf hfac
@@ -1018,11 +1022,11 @@ private theorem call1_triple :
 
 /-- The second call establishes `minMaxA = min(max(a, b), a)`. -/
 private theorem call2_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA1
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA1
       [Core.Statement.call "Min16" cArgs2 cMd2] PA2 := by
-  refine bv16_call_triple φ "Min16" minProc cArgs2 cMd2 minSetMd minSetExpr minSpecExpr
+  refine bv16_call_triple "Min16" minProc cArgs2 cMd2 minSetMd minSetExpr minSpecExpr
     (.fvar () maxABId bv16Ty) (.fvar () aId bv16Ty) minMaxAId vMin PA1 PA2
-    (min16_meets_contract φ) (min_body_frame φ) (by native_decide) min_body_eq
+    (min16_meets_contract) (min_body_frame) (by native_decide) min_body_eq
     cArgs2_in cArgs2_out cArgs2_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
     min_readsSub min_hens1 hEval_min_spec ?_ (fun ρ hpre => hpre.1)
   intro ρ₀ hpre _hwf _hfac
@@ -1033,11 +1037,11 @@ private theorem call2_triple :
 
 /-- The third call establishes `minAB = min(a, b)`. -/
 private theorem call3_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA2
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA2
       [Core.Statement.call "Min16" cArgs3 cMd3] PA3 := by
-  refine bv16_call_triple φ "Min16" minProc cArgs3 cMd3 minSetMd minSetExpr minSpecExpr
+  refine bv16_call_triple "Min16" minProc cArgs3 cMd3 minSetMd minSetExpr minSpecExpr
     (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) minABId vMin PA2 PA3
-    (min16_meets_contract φ) (min_body_frame φ) (by native_decide) min_body_eq
+    (min16_meets_contract) (min_body_frame) (by native_decide) min_body_eq
     cArgs3_in cArgs3_out cArgs3_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
     min_readsSub min_hens1 hEval_min_spec ?_ (fun ρ hpre => hpre.1)
   intro ρ₀ hpre _hwf _hfac
@@ -1049,11 +1053,11 @@ private theorem call3_triple :
 
 /-- The fourth call establishes `maxMinA = max(min(a, b), a)`. -/
 private theorem call4_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA3
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA3
       [Core.Statement.call "Max16" cArgs4 cMd4] PA4 := by
-  refine bv16_call_triple φ "Max16" maxProc cArgs4 cMd4 maxSetMd maxSetExpr maxSpecExpr
+  refine bv16_call_triple "Max16" maxProc cArgs4 cMd4 maxSetMd maxSetExpr maxSpecExpr
     (.fvar () minABId bv16Ty) (.fvar () aId bv16Ty) maxMinAId vMax PA3 PA4
-    (max16_meets_contract φ) (max_body_frame φ) (by native_decide) max_body_eq
+    (max16_meets_contract) (max_body_frame) (by native_decide) max_body_eq
     cArgs4_in cArgs4_out cArgs4_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
     max_readsSub max_hens1 hEval_max_spec ?_ (fun ρ hpre => hpre.1)
   intro ρ₀ hpre _hwf _hfac
@@ -1066,10 +1070,10 @@ private theorem call4_triple :
 
 /-- Declaring the local `maxAB` preserves the Run contract-entry facts. -/
 private theorem maxAB_init_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA0 [maxABInitStmt] PA0 := by
-  change Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA0
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA0 [maxABInitStmt] PA0 := by
+  change Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA0
     [Core.Statement.init maxABId maxABInitTy .nondet maxABInitMd] PA0
-  refine Core.Logic.Hoare.cmd mmAST.findProcByString? φ testParams
+  refine Core.Logic.Hoare.cmd mmAST.findProcByString? testParams
     (Imperative.CmdExt.cmd (Imperative.Cmd.init maxABId maxABInitTy .nondet maxABInitMd))
     PA0 PA0 (fun ρ₀ σ' emitted hpre _ hstep => ?_)
   cases hstep with
@@ -1104,10 +1108,10 @@ private theorem maxAB_init_triple :
 
 /-- Declaring the local `minAB` preserves the facts established by the first two calls. -/
 private theorem minAB_init_triple :
-    Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA2 [minABInitStmt] PA2 := by
-  change Core.Logic.Hoare.Triple mmAST.findProcByString? φ testParams PA2
+    Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA2 [minABInitStmt] PA2 := by
+  change Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA2
     [Core.Statement.init minABId minABInitTy .nondet minABInitMd] PA2
-  refine Core.Logic.Hoare.cmd mmAST.findProcByString? φ testParams
+  refine Core.Logic.Hoare.cmd mmAST.findProcByString? testParams
     (Imperative.CmdExt.cmd (Imperative.Cmd.init minABId minABInitTy .nondet minABInitMd))
     PA2 PA2 (fun ρ₀ σ' emitted hpre _ hstep => ?_)
   cases hstep with
@@ -1155,31 +1159,31 @@ private theorem run_post_of_PA4 :
 /-- The unsigned 16-bit-vector Run meets its contract: local intermediates
 compute two equal nested min/max compositions in its output parameters. -/
 theorem mm_run_meets_contract :
-    Core.Logic.Hoare.Procedure.contractTriple φ mmAST testParams "Run" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed φ mmAST testParams "Run"
+    Core.Logic.Hoare.Procedure.contractTriple mmAST testParams "Run" := by
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed mmAST testParams "Run"
     mmRunProc [maxABInitStmt, Core.Statement.call "Max16" cArgs1 cMd1,
       Core.Statement.call "Min16" cArgs2 cMd2, minABInitStmt,
       Core.Statement.call "Min16" cArgs3 cMd3, Core.Statement.call "Max16" cArgs4 cMd4]
     (by native_decide) mm_run_body_eq ?_
-  refine Core.Logic.Hoare.consequence mmAST.findProcByString? φ testParams ?_
-    (fun _ h => h) run_post_of_PA4
-  refine Core.Logic.Hoare.block mmAST.findProcByString? φ testParams (by native_decide) ?_
-    mm_run_PA4_postWF
-  have h56 := Core.Logic.Hoare.seq mmAST.findProcByString? φ testParams (by native_decide)
-    (call3_triple φ) (call4_triple φ)
+  refine Core.Logic.Hoare.consequence mmAST.findProcByString? testParams ?_
+    (fun _ h => h) (run_post_of_PA4)
+  refine Core.Logic.Hoare.block mmAST.findProcByString? testParams ?_
+    (mm_run_PA4_postWF)
+  have h56 := Core.Logic.Hoare.seq mmAST.findProcByString? testParams
+    (call3_triple) (call4_triple)
     (by simp [Imperative.Block.exitsCoveredByBlocks, Imperative.Stmt.exitsCoveredByBlocks])
-  have h456 := Core.Logic.Hoare.seq mmAST.findProcByString? φ testParams (by native_decide)
-    (minAB_init_triple φ) h56
+  have h456 := Core.Logic.Hoare.seq mmAST.findProcByString? testParams
+    (minAB_init_triple) h56
     (by simp [Imperative.Block.exitsCoveredByBlocks, minABInitStmt,
       Imperative.Stmt.exitsCoveredByBlocks])
-  have h3456 := Core.Logic.Hoare.seq mmAST.findProcByString? φ testParams (by native_decide)
-    (call2_triple φ) h456
+  have h3456 := Core.Logic.Hoare.seq mmAST.findProcByString? testParams
+    (call2_triple) h456
     (by simp [Imperative.Block.exitsCoveredByBlocks, Imperative.Stmt.exitsCoveredByBlocks])
-  have h23456 := Core.Logic.Hoare.seq mmAST.findProcByString? φ testParams (by native_decide)
-    (call1_triple φ) h3456
+  have h23456 := Core.Logic.Hoare.seq mmAST.findProcByString? testParams
+    (call1_triple) h3456
     (by simp [Imperative.Block.exitsCoveredByBlocks, Imperative.Stmt.exitsCoveredByBlocks])
-  exact Core.Logic.Hoare.seq mmAST.findProcByString? φ testParams (by native_decide)
-    (maxAB_init_triple φ) h23456
+  exact Core.Logic.Hoare.seq mmAST.findProcByString? testParams
+    (maxAB_init_triple) h23456
     (by simp [Imperative.Block.exitsCoveredByBlocks, maxABInitStmt,
       Imperative.Stmt.exitsCoveredByBlocks])
 end Strata

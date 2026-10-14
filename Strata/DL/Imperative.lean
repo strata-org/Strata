@@ -26,5 +26,7 @@ public import Strata.DL.Imperative.Logic.HoareTemplate
 
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
+public import Strata.DL.Imperative.CallAwareSemantics
+public import Strata.DL.Imperative.StmtCallSemanticsProps
 
 public import Strata.DL.Imperative.SMTUtils

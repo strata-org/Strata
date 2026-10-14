@@ -7,6 +7,7 @@ module
 
 meta import all Strata.DL.SMT.Encoder
 meta import all Strata.Languages.Core.Verifier
+meta import StrataTest.DL.SMT.EncodingTestUtils
 import all Strata.DL.SMT.Encoder
 import Strata.DL.SMT.Solver
 import Strata.DL.SMT.AbstractSolver
@@ -221,21 +222,7 @@ UF names collide with pre-declared sort/datatype names. -/
 namespace Strata.SMT.Encoder.UsedNamesTests
 
 open Strata.SMT
-
-/-- Helper: run an `EncoderM` action against a buffer solver and return the
-    final encoder state. -/
-private def runEncoder (act : EncoderM Unit) : IO EncoderState := do
-  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
-  let solver ← Solver.bufferWriter b
-  let (((), estate), _) ← (act.run EncoderState.init).run solver
-  return estate
-
-/-- Helper: run an `EncoderM` action with a pre-populated state. -/
-private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO EncoderState := do
-  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
-  let solver ← Solver.bufferWriter b
-  let (((), estate), _) ← (act.run initState).run solver
-  return estate
+open Strata.SMT.TestUtils
 
 -- A user UF named `f.0` should not collide with the first `encodeFunctionDef`
 -- output. The encoder must rename one of them.
@@ -244,7 +231,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #eval do
   let collidingUF : UF := { id := "f.0", args := [], out := .int }
   let fn : IF := { id := "userFn", args := [⟨"x", .int⟩], out := .int, body := .var ⟨"x", .int⟩ }
-  let estate ← runEncoder do
+  let (_, estate) ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
     let _ ← Encoder.encodeFunctionDef fn
   return (estate.functions[collidingUF]!, estate.functions[fn.toUF]!)
@@ -256,7 +243,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let collidingUF : UF := { id := "f.1", args := [], out := .bool }
   let fn0 : IF := { id := "fn0", args := [], out := .int, body := .prim (.int 42) }
   let fn1 : IF := { id := "fn1", args := [⟨"y", .int⟩], out := .int, body := .var ⟨"y", .int⟩ }
-  let estate ← runEncoder do
+  let (_, estate) ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
     let _ ← Encoder.encodeFunctionDef fn0
     let _ ← Encoder.encodeFunctionDef fn1
@@ -269,7 +256,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #eval do
   let preDeclaredNames := Std.HashSet.ofList ["MyDatatype", "Option"]
   let uf : UF := { id := "MyDatatype", args := [], out := .int }
-  let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
+  let (_, estate) ← runEncoder (state := EncoderState.initWithNames preDeclaredNames) do
     let _ ← Encoder.encodeUF uf
   return estate.functions[uf]!
 
@@ -280,7 +267,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #eval do
   let preDeclaredNames := Std.HashSet.ofList ["f.0"]
   let fn : IF := { id := "userFn", args := [⟨"x", .int⟩], out := .int, body := .var ⟨"x", .int⟩ }
-  let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
+  let (_, estate) ← runEncoder (state := EncoderState.initWithNames preDeclaredNames) do
     let _ ← Encoder.encodeFunctionDef fn
   return estate.functions[fn.toUF]!
 
@@ -290,7 +277,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #guard_msgs in
 #eval do
   let uf : UF := { id := "MyConstr", args := [], out := .int }
-  let estate ← runEncoder do
+  let (_, estate) ← runEncoder do
     let _ ← Encoder.declareType "MyType" ["MyConstr", "OtherConstr"]
     let _ ← Encoder.encodeUF uf
   return (estate.functions[uf]!, "MyConstr")
@@ -305,7 +292,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let ufSome : UF := { id := "some", args := [], out := .int }
   let ufVal : UF := { id := "val", args := [], out := .int }
   let initState := EncoderState.initWithNames (Std.HashSet.ofList ["Option", "none", "some", "val"])
-  let estate ← runEncoderWith initState do
+  let (_, estate) ← runEncoder (state := initState) do
     let _ ← Encoder.encodeUF ufOption
     let _ ← Encoder.encodeUF ufNone
     let _ ← Encoder.encodeUF ufSome

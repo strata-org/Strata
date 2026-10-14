@@ -81,12 +81,12 @@ procedure guard(x: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_guard_3(x: int): int
   opaque;
 procedure guard(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_guard_3(x);
   if x > 0
     then {
       var r: int := 1;
@@ -142,12 +142,12 @@ procedure chainedGuards(x: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_chainedGuards_3(x: int): int
   opaque;
 procedure chainedGuards(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_chainedGuards_3(x);
   if x > 10
     then {
       var r: int := 1;
@@ -209,12 +209,12 @@ procedure deadCodeAfterIfElse(b: bool)
   }
 }$return;
 -- after --
-procedure $declHole_3(b: bool): int
+procedure $declHole_deadCodeAfterIfElse_3(b: bool): int
   opaque;
 procedure deadCodeAfterIfElse(b: bool)
   returns (r: int)
 {
-  var r: int := $declHole_3(b);
+  var r: int := $declHole_deadCodeAfterIfElse_3(b);
   if b
     then {
       var r: int := 1;
@@ -275,12 +275,12 @@ procedure nestedIf(x: int)
     }
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_nestedIf_3(x: int): int
   opaque;
 procedure nestedIf(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_nestedIf_3(x);
   if x > 0
     then if x > 10
       then {
@@ -343,12 +343,12 @@ procedure nestedGuard(x: int, y: int)
   }
 }$return;
 -- after --
-procedure $declHole_4(x: int, y: int): int
+procedure $declHole_nestedGuard_4(x: int, y: int): int
   opaque;
 procedure nestedGuard(x: int, y: int)
   returns (r: int)
 {
-  var r: int := $declHole_4(x, y);
+  var r: int := $declHole_nestedGuard_4(x, y);
   if x > 0
     then if y > 0
       then {
@@ -400,12 +400,12 @@ procedure updateLocal(a: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(a: int): int
+procedure $declHole_updateLocal_3(a: int): int
   opaque;
 procedure updateLocal(a: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(a);
+  var r: int := $declHole_updateLocal_3(a);
   {
     var $v_4: int := a;
     {
@@ -454,12 +454,12 @@ procedure ifAssignsLocal(b: bool, a: int)
   }
 }$return;
 -- after --
-procedure $declHole_4(b: bool, a: int): int
+procedure $declHole_ifAssignsLocal_4(b: bool, a: int): int
   opaque;
 procedure ifAssignsLocal(b: bool, a: int)
   returns (r: int)
 {
-  var r: int := $declHole_4(b, a);
+  var r: int := $declHole_ifAssignsLocal_4(b, a);
   {
     var $v_5: int := 0;
     if b
@@ -522,12 +522,12 @@ procedure exitSkipsRest(x: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_exitSkipsRest_3(x: int): int
   opaque;
 procedure exitSkipsRest(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_exitSkipsRest_3(x);
   {
     var $v_4: int := 0;
     if x > 0
@@ -590,12 +590,12 @@ procedure exitToLabel(x: int)
   }done
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_exitToLabel_3(x: int): int
   opaque;
 procedure exitToLabel(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_exitToLabel_3(x);
   if x > 0
     then r
     else {
@@ -638,12 +638,12 @@ procedure labelledBlockNotLast(x: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(x: int): int
+procedure $declHole_labelledBlockNotLast_3(x: int): int
   opaque;
 procedure labelledBlockNotLast(x: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(x);
+  var r: int := $declHole_labelledBlockNotLast_3(x);
   {
     var r: int := 1;
     {
@@ -690,12 +690,12 @@ procedure blockValued(a: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(a: int): int
+procedure $declHole_blockValued_3(a: int): int
   opaque;
 procedure blockValued(a: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(a);
+  var r: int := $declHole_blockValued_3(a);
   {
     var r: int := {
       var $v_4: int := a;
@@ -754,16 +754,16 @@ procedure uninitThenAssign(a: int)
   }
 }$return;
 -- after --
-procedure $declHole_3(a: int): int
+procedure $declHole_uninitThenAssign_3(a: int): int
   opaque;
-procedure $declHole_4(a: int): int
+procedure $declHole_uninitThenAssign_4(a: int): int
   opaque;
 procedure uninitThenAssign(a: int)
   returns (r: int)
 {
-  var r: int := $declHole_3(a);
+  var r: int := $declHole_uninitThenAssign_3(a);
   {
-    var $declHoleVal_4: int := $declHole_4(a);
+    var $declHoleVal_4: int := $declHole_uninitThenAssign_4(a);
     {
       var $v_4: int := $declHoleVal_4;
       {
@@ -807,16 +807,16 @@ procedure uninitRead()
   }
 }$return;
 -- after --
-procedure $declHole_2(): int
+procedure $declHole_uninitRead_2(): int
   opaque;
-procedure $declHole_3(): int
+procedure $declHole_uninitRead_3(): int
   opaque;
 procedure uninitRead()
   returns (r: int)
 {
-  var r: int := $declHole_2();
+  var r: int := $declHole_uninitRead_2();
   {
-    var $declHoleVal_3: int := $declHole_3();
+    var $declHoleVal_3: int := $declHole_uninitRead_3();
     {
       var $v_3: int := $declHoleVal_3;
       {
@@ -1105,12 +1105,12 @@ procedure hasCall()
   }
 }$return;
 -- after --
-procedure $declHole_3(): int
+procedure $declHole_callee_3(): int
   opaque;
 procedure callee()
   returns (r: int)
 {
-  var r: int := $declHole_3();
+  var r: int := $declHole_callee_3();
   {
     var r: int := 1;
     r

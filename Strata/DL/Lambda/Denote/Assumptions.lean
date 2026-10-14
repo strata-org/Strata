@@ -11,7 +11,7 @@ import all Strata.DL.Lambda.TypeFactoryWF
 import all Strata.DL.Lambda.FactoryWF
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
 
 /-!
 ## Typing Assumptions
@@ -173,10 +173,10 @@ def Factory.ConstrWellFormed (F : @Factory T) (tf : @TypeFactory T.IDMeta) : Pro
       f = constrFunc c d
 
 /-- Every function body in the factory satisfies `OpsConsistent` after type
-instantiation via `applySubst`. -/
+instantiation via `applyTypeSubst`. -/
 def Factory.BodyOpsConsistent (F : @Factory T) : Prop :=
   ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
-    OpsConsistent F (body.applySubst S)
+    OpsConsistent F (body.applyTypeSubst S)
 
 /-- Every concrete evaluator in the factory returns results that satisfy
 `OpsConsistent`. -/
@@ -189,7 +189,7 @@ annotations consistent with `tyMap`. -/
 def Factory.BodyAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
     (tyMap : Map T.Identifier LMonoTy) : Prop :=
   ∀ (f : String), (hf : f ∈ F) → ∀ body S, (F[f]).body = some body →
-    fvars_annotated_by tyMap (body.applySubst S)
+    fvars_annotated_by tyMap (body.applyTypeSubst S)
 
 /-- Every concrete evaluator in the factory returns results with fvar
 annotations consistent with `tyMap`. -/

@@ -19,7 +19,7 @@ The well-typed cases, which also run through the interpreter, live in
 -/
 
 -- Ill-typed: the `when` guard is an int, not a bool.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 
@@ -27,6 +27,7 @@ procedure badGuard()
   opaque
 {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when 5 {
 //               ^ error: expected 'bool', got 'int'
@@ -36,12 +37,13 @@ procedure badGuard()
 #end
 
 -- A union guard whose operand is not boolean.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite ParseError {}
 procedure badUnionGuard() opaque {
   try {
+//^ warning: the `catch` clause(s) of this `try` can never fire
     assert true
   } catch e when e is ParseError || 5 {
 //                                  ^ error: expected 'bool', got 'int'

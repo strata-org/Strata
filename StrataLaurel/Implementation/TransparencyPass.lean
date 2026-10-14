@@ -98,14 +98,14 @@ private def functionalize (asFunctionNames : Std.HashSet String)
     (fun resultUsed e =>
       match e.val with
       | .Assert .. | .Assume _ => []
-      | .StaticCall callee args =>
+      | .StaticCall callee args tyArgs =>
         if !resultUsed then []
         else if asFunctionNames.contains callee.text then
           let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
-          [⟨.StaticCall funcCallee args, e.source⟩]
+          [⟨.StaticCall funcCallee args tyArgs, e.source⟩]
         else
           let newName := adjustSafeOperatorName (adjustSelectorName callee)
-          [⟨.StaticCall newName args, e.source⟩]
+          [⟨.StaticCall newName args tyArgs, e.source⟩]
       | _ => [e])
     true expr
 
@@ -125,10 +125,10 @@ private def functionalize (asFunctionNames : Std.HashSet String)
 private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .StaticCall callee args =>
+    | .StaticCall callee args tyArgs =>
       if redirectNames.contains callee.text then
         let funcCallee := { callee with text := callee.text ++ "$asFunction" }
-        ⟨.StaticCall funcCallee args, e.source⟩
+        ⟨.StaticCall funcCallee args tyArgs, e.source⟩
       else e
     | _ => e) expr
 
@@ -364,9 +364,9 @@ private def mkFreePostcondition (proc : Procedure) : StmtExprMd :=
   let source := proc.name.source
   let funcName := { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
   let inputArgs := proc.inputs.map fun p => (⟨ .Var (.Local p.name), source ⟩ : StmtExprMd)
-  let funcCall: StmtExprMd := ⟨ .StaticCall funcName inputArgs, source ⟩
+  let funcCall: StmtExprMd := ⟨ .StaticCall funcName inputArgs [], source ⟩
   match proc.outputs with
-  | [out] => ⟨ .StaticCall (mkId Operation.Eq.procName) [⟨ .Var (.Local out.name), source⟩, funcCall], source ⟩
+  | [out] => ⟨ .StaticCall (mkId Operation.Eq.procName) [⟨ .Var (.Local out.name), source⟩, funcCall] [], source ⟩
   | _ => ⟨ .LiteralBool true, source ⟩
 
 /-- Create the function copy of a procedure (suffixed `$asFunction`).
@@ -492,7 +492,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     let scanExprForTwins (e : StmtExprMd) : StateM (Std.HashSet String) Unit :=
       foldStmtExprM (fun e =>
         match e.val with
-        | .StaticCall callee _ =>
+        | .StaticCall callee _ _ =>
           if callee.text.endsWith "$asFunction" then
             modify (·.insert (callee.text.dropEnd "$asFunction".length).toString)
           else pure ()

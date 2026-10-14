@@ -331,7 +331,10 @@ private def substTypeVarsInStmtNode (subst : Std.HashMap String HighTypeMd)
     -- initialized `.Assign [.Declare …]` form below) also carries a type slot + binder id — must
     -- substitute + id-clear it, else a cloned poly proc leaves `Box<T>` un-lowered (StrataBug).
     | .Var (.Declare param) => .Var (.Declare (clrDeclParam param))
-    | .StaticCall callee args => .StaticCall (clr callee) args
+    -- The inferred `typeArgs` are substituted exactly like `.New`'s: a cloned poly body's call
+    -- recorded `mapConst<T>` against the PRISTINE `T`, and leaving that unsubstituted would hand
+    -- Core translation a stale type variable for an otherwise fully monomorphic program.
+    | .StaticCall callee args tyArgs => .StaticCall (clr callee) args (tyArgs.map s)
     | .Assign targets value => .Assign (targets.map clrVarTarget) value
     -- `IncrDecr`/`CompoundAssign` carry a `Variable` target too; clear its id like `.Assign`
     -- so a per-instantiation `.Field` target does not cross-link clones (it survives to clone
@@ -544,14 +547,16 @@ private def discoverRewritePolyCalls (model : SemanticModel)
   -- left to the downstream dangling-ref internalError.
   let nodeFn (e : StmtExprMd) : StateM (List ProcInst × List Message) StmtExprMd := do
     match e.val with
-    | .StaticCall callee args =>
+    | .StaticCall callee args _ =>
       match polyProcDefs.get? callee.text with
       | some calleeDef =>
         let argTys := args.map (fun a => substTypeVars subst (computeExprType model a))
         match inferProcInst ctx calleeDef argTys with
         | .ok (some pinst) =>
           modify (fun (pis, ds) => (pis ++ [pinst], ds))
-          pure { e with val := .StaticCall (mkId (procInstKey pinst)) args }
+          -- `procInstKey` bakes the instantiation into the name, so any recorded type
+          -- arguments are now redundant and are dropped.
+          pure { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
         | .ok none => pure e
         | .error diag =>
           modify (fun (pis, ds) => (pis, ds ++ [diag]))
@@ -818,7 +823,7 @@ private def collectSeeds (program : Program) (model : SemanticModel)
     (fun e => do
       modify (fun (i, p, d) => (recordInsts (collectInStmt genComposites e) i, p, d))
       match e.val with
-      | .StaticCall callee args =>
+      | .StaticCall callee args _ =>
         match polyProcDefs.get? callee.text with
         | some pproc =>
           match inferProcInst ctx pproc (args.map (computeExprType model)) with
@@ -972,7 +977,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- name matching that call's inferred instantiation.
   let rewriteCall (e : StmtExprMd) : StmtExprMd :=
     match e.val with
-    | .StaticCall callee args =>
+    | .StaticCall callee args _ =>
       match polyProcDefs.get? callee.text with
       | some pproc =>
         -- Leave the call unchanged on `.ok none` (not yet concrete) OR `.error` (ambiguous
@@ -980,7 +985,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
         -- `discoverRewritePolyCalls`, which stops the pipeline; this final rewrite only needs
         -- to not crash and not mis-rename.
         match inferProcInst ctx pproc (args.map (computeExprType model)) with
-        | .ok (some pinst) => { e with val := .StaticCall (mkId (procInstKey pinst)) args }
+        | .ok (some pinst) => { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
         | .ok none | .error _ => e
       | none => e
     | _ => e
@@ -993,7 +998,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
     (fun e => do
       let e' := stmtRewrite e
       match e.val, e'.val with
-      | .StaticCall before _, .StaticCall after _ =>
+      | .StaticCall before _ _, .StaticCall after _ _ =>
         if before.text != after.text then modify ((after.text, e.source) :: ·)
       | _, _ => pure ()
       pure e') program).run []

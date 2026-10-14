@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Logic.Hoare
 public import Strata.Languages.Core.Program
+import Strata.DL.Lambda.LExprType
 import all Strata.Languages.Core.Logic.Hoare
 
 /-! # A procedure's contract, read as a Hoare triple
@@ -59,7 +60,6 @@ open Core Imperative Strata.Logic Imperative.Logic
 
 namespace Hoare
 
-variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-- A procedure's preconditions, as a predicate on the initial environment. -/
 @[expose] def Procedure.preAsPredicate (proc : Procedure)
@@ -86,12 +86,12 @@ variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory
     ρ.store (CoreIdent.mkOld id.name) = ρ.store id
 
 /-- Runtime values matching a declared Core type. Bitvectors are represented by
-width-matching literals; other values use their syntactically recoverable type. -/
+width-matching literals; other values must type-check as closed expressions. -/
 @[expose] def Procedure.valueHasType (ty : Lambda.LMonoTy)
     (v : Expression.Expr) : Prop :=
   match ty with
   | .bitvec n => ∃ b : BitVec n, v = Lambda.LExpr.bitvecConst () n b
-  | _ => Lambda.LExpr.typeOf v = some ty
+  | _ => Lambda.LExpr.typeCheck [] v = some ty
 
 /-- Every input and inout formal is bound to a value matching its declared type. -/
 @[expose] def Procedure.inputAsPredicate (proc : Procedure)
@@ -119,7 +119,7 @@ width-matching literals; other values use their syntactically recoverable type. 
     (procName : String) : Prop :=
   ∃ proc bss, p.findProcByString? procName = some proc ∧
     proc.body = .structured bss ∧
-    Triple p.findProcByString? φ params
+    Triple p.findProcByString? params
       (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
         Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)

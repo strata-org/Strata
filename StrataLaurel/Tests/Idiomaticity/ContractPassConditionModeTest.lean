@@ -22,7 +22,7 @@ assumptions and assertions (through generated `$pre`/`$post` helper functions),
 so no `ensures` clause survives on a procedure with an implementation.
 
 Because a postcondition's helper reads the procedure's inputs in their entry
-state (where `old(...)` resolves), the body snapshots each input into a `$cp_*`
+state (where `old(...)` resolves), the body snapshots each input into a `$inputCopy*`
 temporary before any mutation and passes the snapshot as the helper's input
 argument. The expected output below pins which `assume`/`assert` statements
 appear for each mode at each site.
@@ -116,25 +116,25 @@ procedure callee(x: int)
   returns (r: int)
   opaque
 {
-  var $cp_0: int := x;
+  var $inputCopy0: int := x;
   assume callee$pre0(x);
   assume callee$pre1(x);
   {
     r := x
   };
-  assert callee$post0($cp_0, r) summary "postcondition";
-  assert callee$post2($cp_0, r) summary "postcondition"
+  assert callee$post0($inputCopy0, r) summary "postcondition";
+  assert callee$post2($inputCopy0, r) summary "postcondition"
 };
 procedure caller()
   returns (r: int)
   opaque
 {
-  var $cp_1: int := 5;
-  assert callee$pre0($cp_1) summary "precondition";
-  assert callee$pre2($cp_1) summary "precondition";
-  r := callee($cp_1);
-  assume callee$post0($cp_1, r);
-  assume callee$post1($cp_1, r)
+  var $inputCopy1: int := 5;
+  assert callee$pre0($inputCopy1) summary "precondition";
+  assert callee$pre2($inputCopy1) summary "precondition";
+  r := callee($inputCopy1);
+  assume callee$post0($inputCopy1, r);
+  assume callee$post1($inputCopy1, r)
 };
 -/
 #guard_msgs in

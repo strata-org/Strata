@@ -5,7 +5,7 @@
 -/
 module
 
-import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LExprType
 
 /-!
 ## Properties of `Lambda.Factory`
@@ -36,8 +36,8 @@ these facts to factories built from arrays.
 These are the algebraic facts about `LFunc` plumbing. The `LFuncDefined ↔ LFunc`
 conversions are mutually inverse (`LFuncDefined.toLFunc_toFunc`,
 `LFunc.toFunc_toLFunc`). The remaining lemmas unfold type-substitution helpers:
-`applySubst` reduces to `replaceUserProvidedType`
-(`LExpr.applySubst_eq_replaceUserProvidedType`) and `computeTypeSubst` agrees with
+`applyTypeSubst` reduces to `replaceUserProvidedType`
+(`LExpr.applyTypeSubst_eq_replaceUserProvidedType`) and `computeTypeSubst` agrees with
 `opTypeSubst` whenever the latter succeeds (`LFunc.computeTypeSubst_of_opTypeSubst`).
 -/
 
@@ -140,10 +140,10 @@ theorem Factory.callOfLFunc_getElem?
   cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
   all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
 
-theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
+theorem LExpr.applyTypeSubst_eq_replaceUserProvidedType {T : LExprParams}
     (e : LExpr T.mono) (S : Subst) :
-    e.applySubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
-  unfold applySubst
+    e.applyTypeSubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
+  unfold applyTypeSubst
   split
   case isTrue h_empty =>
     have h_id : LMonoTy.subst S = id :=
