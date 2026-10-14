@@ -43,10 +43,10 @@ pass                                    I   In  C   Tr  Ts  Tf  S   L   sI  W   
 13 TypeHierarchyTransform             | | | | | | | | + | : | : : : : : | | | | | V | V | : | | | : : | : |
 14 ModifiesClausesTransform           | | | | | | | | + | : | : :   : : | | | | | | | | |   | | | : : | : |
 15 GlobalParameterization             | + + | | | | | | + : | : V : : : | | | | | | | | | : | | | :   | : |
-16 UniqueOverloadNames                | | | | | | | | | | : | : | V : : | | | | | | | | | : | | | : : | : |
-17 PushOldInward                      | | | | | | | | | | : | : | | : : | | | | | | | | | V | | | : : | : |
-18 InferHoleTypes                     | | | | | | | | | | V | : | | : : | | | | | | | | | | | | | : : | : |
-19 EliminateDeterministicHoles        | | | | | | | | | | + | : | | : : | | | | | | | | | | | | | V : | : |
+16 PushOldInward                      | | | | | | | | | | : | : | : : : | | | | | | | | | V | | | : : | : |
+17 InferHoleTypes                     | | | | | | | | | | V | : | : : : | | | | | | | | | | | | | : : | : |
+18 EliminateDeterministicHoles        | | | | | | | | | | + | : | : : : | | | | | | | | | | | | | V : | : |
+19 UniqueOverloadNames                | | | | | | | | | | + | : | V : : | | | | | | | | | | | | | | : | : |
 20 DesugarShortCircuit                | | | | | | | | | | | | : | | : V | | | | | | | | | | | | | |   | : |
 21 EliminateReturnStatements          | | | | | | | | | | | + V | | : | | | | | | | | | | | | | | | : | : |
 22 LoopInvariantWellFormedness        | | | | | | | | | | | | | | | : | | | | | | | | | | | | | | | : | : |
