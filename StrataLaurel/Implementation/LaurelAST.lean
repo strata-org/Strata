@@ -1806,6 +1806,19 @@ def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
     | [winner] => some winner
     | _ => none
 
+/-- Whether some composite descends from both `a` and `b`, so a value of one type may
+    at runtime also be the other even when neither is a subtype of the other (multiple
+    inheritance, `composite D extends A, B`). Keyed on the types' base names, so it
+    over-approximates for generic instantiations; a type without a base name (a
+    primitive, set, map) has no descendants and yields `false`. -/
+def TypeLattice.haveCommonDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  match highBaseName? (ctx.unfold a).val, highBaseName? (ctx.unfold b).val with
+  | some an, some bn =>
+    ctx.parentExprMap.toList.any fun (name, _) =>
+      let anc := ctx.ancestors name
+      anc.contains an.text && anc.contains bn.text
+  | _, _ => false
+
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    `isConsistent` RECURSES element-wise (with `isConsistent`, not `highEq`) through
    `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/`.TVar` wildcard
@@ -2101,6 +2114,14 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
     `C<args> <: P<pargs>` holds, all as a `refl` witness. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
+
+/-- Whether `ty` is unrelated to a `catch` binding's type `bindTy`: neither is a
+    (consistent) subtype of the other and no composite descends from both, so the
+    caught exception can never be a `ty`. A gradual (`Unknown`) binding type is
+    related to everything. -/
+def TypeLattice.unrelatedToCatchBinding (ctx : TypeLattice) (bindTy ty : HighTypeMd) : Bool :=
+  !isConsistentSubtype ctx bindTy ty && !isConsistentSubtype ctx ty bindTy
+    && !ctx.haveCommonDescendant bindTy ty
 
 /-- The substituted-ancestor instantiations of `actual` that reach `declared`'s head, for when the
     actual's head is a DESCENDANT of the declared one. An INHERITED generic method is lifted to

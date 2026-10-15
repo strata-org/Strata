@@ -69,9 +69,10 @@ escape.
 - an exception that would leave a procedure that declares no `throws`  →  an
   assertion that it does not, placed where it would leave: `assert false` for an
   uncaught `throw` outside every `try`, `assert isGood(tmp)` for such a throwing
-  call, and `assert !$thrown` on the re-dispatch edge of an outermost `try` (an
-  exception the `try` may not intercept). The escape is therefore an error only
-  if it can actually happen; resolution does not reject it statically.
+  call, and, on the re-dispatch edge of an outermost `try` (an exception the `try`
+  may not intercept), one `assert !($thrown && $throwSite_<i> == k)` per throw
+  site `k` inside it, reported at that site. The escape is therefore an error
+  only if it can actually happen; resolution does not reject it statically.
 - the body is wrapped in `block $exnexit { … }`; after it, `$result` is built
   (`Bad($exc)` if thrown, else `Good(val)`).
 - `ensures P`  →  Good-path `isGood($result) ==> P[out := value($result)]`;
@@ -245,6 +246,12 @@ private def assertThenLeave (c : StmtExprMd) (summary : String) (leave : StmtExp
 private def notOf (c : StmtExprMd) : StmtExprMd := callStatic Operation.Not.procName [c]
 /-- A type as shown in an assertion summary. -/
 private def showType (ty : HighTypeMd) : String := toString (formatHighTypeVal ty.val)
+/-- The summary of the escape assertion for an uncaught `throw` of a `ty`. -/
+private def throwEscapeSummary (ty : HighTypeMd) : String :=
+  s!"uncaught exception '{showType ty}' is not thrown"
+/-- The summary of the escape assertion for an uncaught call that may throw an `errTy`. -/
+private def callEscapeSummary (errTy : HighTypeMd) : String :=
+  s!"call does not throw an uncaught '{showType errTy}'"
 
 /-- Give every *still-source-less* node in `e` the range `src`.
 
@@ -321,6 +328,26 @@ private def localOccursById (targetId : Nat) (e : StmtExprMd) : Bool :=
 
 /-! ### Callee lookup -/
 
+/-- Lower each `e is T` test of a `catch` binding (`bindingId`, typed `bindTy`)
+    against a type unrelated to `bindTy` to `false`. Resolution accepts such a test
+    in a guard: the caught exception is typed at the join of what
+    the `try` body throws, so it can never be a `T` (a Java multi-catch may name an
+    unchecked type the body never throws). A type sharing a descendant with `bindTy`
+    is not unrelated (the exception may be that descendant), and Resolution rejects
+    such a test, so it is never folded. Afterwards the guard no longer tests the
+    in-flight exception variable against an unrelated type, which re-resolution
+    would reject. -/
+private def falsifyUnrelatedTests (lattice : TypeLattice) (bindingId : Nat)
+    (bindTy : HighTypeMd) (p : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun n => match n.val with
+    | .IsType target ty =>
+      match target.val with
+      | .Var (.Local id) =>
+        if id.uniqueId == some bindingId && lattice.unrelatedToCatchBinding bindTy ty
+        then { n with val := .LiteralBool false } else n
+      | _ => n
+    | _ => n) p
+
 /-- The resolved callee procedure, if `callee` names one. -/
 private def calleeProc (model : SemanticModel) (callee : Identifier) : Option Procedure :=
   match model.get callee with
@@ -367,6 +394,11 @@ private structure EState where
       unwinding jumps raised inside itself (and hand the still-unfinished ones
       back to the enclosing region). -/
   raisedExits : List String := []
+  /-- The throw sites recorded inside the outermost `try` currently being lowered
+      (see `Ctx.siteVar`): each site's number, source range and escape-assertion
+      summary. `lowerTry` saves, clears and restores it around an outermost `try`,
+      and emits one escape assertion per site on that `try`'s exit edge. -/
+  throwSites : List (Nat × FileRange × String) := []
   /-- Procedures this pass deliberately left unlowered after rejecting them with a
       `NotYetImplemented`. The erasure backstop skips them: their exceptional
       constructs are still present *by design*, so reporting them as a bug in this
@@ -381,6 +413,18 @@ private structure EState where
 private abbrev EM := StateM EState
 
 private def freshNat : EM Nat := modifyGet (fun s => (s.nextId, { s with nextId := s.nextId + 1 }))
+/-- Inside an outermost `try` (see `Ctx.siteVar`), record a throw site at `src`
+    with the summary its escape assertion will carry, and return the
+    `$throwSite_<i> := k` assignment to emit next to `$thrown := true`. Outside one,
+    nothing is recorded. -/
+private def recordThrowSite (siteVar : Option String) (src : FileRange) (summary : String) :
+    EM (List StmtExprMd) := do
+  match siteVar with
+  | none => pure []
+  | some sv =>
+    let k ← freshNat
+    modify (fun s => { s with throwSites := s.throwSites ++ [(k, src, summary)] })
+    pure [⟨.Assign [⟨.Local (mkId sv), .unknown⟩] ⟨.LiteralInt (Int.ofNat k), .unknown⟩, .unknown⟩]
 private def markUsedExc : EM Unit := modify (fun s => { s with usedExc := true })
 private def emitDiag (d : Message) : EM Unit := modify (fun s => { s with diags := s.diags ++ [d] })
 
@@ -437,6 +481,12 @@ private structure Ctx where
       frame, `throw`/`return` targets fall back to `$exnexit` (leave the body) and
       the active `$exc` is `procExc`. -/
   frames : List Frame
+  /-- Inside an outermost `try` of a procedure that declares no `throws` (and any
+      region nested in it): the ghost `$throwSite_<i>` local that records which
+      throw site raised the in-flight exception, so the escape assertion on that
+      `try`'s exit edge can be reported at the site rather than at the `try`.
+      `none` everywhere else. -/
+  siteVar : Option String := none
 
 /-- The innermost enclosing `try` frame, if any. Labeled blocks are transparent
     to `throw`/`return` routing (only `exit` cares about them). -/
@@ -474,6 +524,20 @@ private def crossedFinallyOf (frames : List Frame) (target : String) : Option St
   | [] => none
   | .labeledBlock l :: rest => if l == target then none else crossedFinallyOf rest target
   | .tryRegion f :: rest => if f.hasFinally then some f.finallyLabel else crossedFinallyOf rest target
+
+/-- Raise an exception at the throw site `src`: write `value` into the current
+    region's `$exc` (a region with none -- a finally-only `try` in a procedure that
+    declares no `throws` -- drops it), record the site with the `summary` its escape
+    assertion carries (see `recordThrowSite`), set `$thrown` and leave for the
+    nearest handler. Every raising edge goes through here, so an exception is never
+    raised without its site being recorded. -/
+private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (value : StmtExprMd) :
+    EM (List StmtExprMd) := do
+  let setExc := match currentExc ctx with
+    | some (v, _) => [setLocal v value]
+    | none => []
+  let setSite ← recordThrowSite ctx.siteVar src summary
+  pure (setExc ++ setSite ++ [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ])
 
 /-! ### Statement lowering -/
 
@@ -520,17 +584,14 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- reached only when the call did not throw. An else-less `if` keeps this void.
   -- The propagated exception is written into the current region's `$exc` (whose
   -- type is a supertype of the callee's `throws` type, so no cast is needed).
-  let onBad : List StmtExprMd :=
-    (match currentExc ctx with
-      | some (v, _) => [setLocal v (resultApp exnResultErr (localRef callres))]
-      | none => []) ++
-    [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ]
+  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy)
+    (resultApp exnResultErr (localRef callres))
   let propagate := iteOf (resultApp exnResultIsBad (localRef callres))
     (blockOf onBad) none
   let propagate : List StmtExprMd :=
     if escapesUncaught ctx then
       assertThenLeave (resultApp exnResultIsGood (localRef callres))
-        s!"call does not throw an uncaught '{showType errTy}'" propagate
+        (callEscapeSummary errTy) propagate
     else [propagate]
   -- A `Declare` value target is declared up front so it stays in scope for later
   -- statements; it is assigned the unwrapped value only on the Good path.
@@ -602,18 +663,14 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
         -- Reaching the `throw` is the failure. The thrown value is not evaluated:
         -- the path ends here either way.
         let ty := computeExprType (← get).model value
-        return assertThenLeave (litBool false) s!"uncaught exception '{showType ty}' is not thrown"
+        return assertThenLeave (litBool false) (throwEscapeSummary ty)
           (exitTo exnExitLabel)
       markUsedExc
-      -- Write the thrown value into the current region's `$exc` (its type is a
-      -- supertype of every type thrown here, so no cast is needed). The `none`
-      -- case is a finally-only `try` in a procedure that declares no `throws`:
-      -- the value has nowhere to go, and if it escapes the `try` the re-dispatch
-      -- asserts that it does not.
-      let setExc := match currentExc ctx with
-        | some (v, _) => [setLocal v value]
-        | none => []
-      pure (setExc ++ [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ])
+      -- The current region's `$exc` is typed at a supertype of every type thrown
+      -- here, so the value needs no cast. A region with no `$exc` drops it, and if
+      -- it escapes the `try` the re-dispatch asserts that it does not.
+      let ty := computeExprType (← get).model value
+      raiseAt ctx src (throwEscapeSummary ty) value
   | .Return _ =>
       -- Value payloads were removed by EliminateValueInReturns, so this is a
       -- valueless return. Route it so that any enclosing `finally` runs,
@@ -679,6 +736,14 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   let tryId ← freshNat
   let tryLbl := s!"$try_{tryId}"
   let tryFinLbl := s!"$tryfin_{tryId}"
+  -- An outermost `try` of a procedure that declares no `throws` gets its own ghost
+  -- `$throwSite_<id>`, shared by every region nested in it, so its exit edge can
+  -- tell which throw site an escaping exception came from (see `reDispatch`). Its
+  -- throw sites are collected from a clean slate and restored afterwards.
+  let outermost := escapesUncaught ctx
+  let siteVar : Option String := if outermost then some s!"$throwSite_{tryId}" else ctx.siteVar
+  let outerSites := (← get).throwSites
+  if outermost then modify (fun s => { s with throwSites := [] })
   -- This try's in-flight-exception local: a fresh `$exc_<id>` typed at the try's
   -- least-common-ancestor exception type (`bindingType`, computed and carried on
   -- the resolved `catch` clause by `Check.tryCatch`) when the try has `catch`
@@ -718,12 +783,12 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   let bodyFrame : TryFrame :=
     { throwLabel := tryLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
   let bStmts := fillSrcs body.source
-    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved } body)
+    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar } body)
   -- Catch phase: a re-`throw` or `return` in a handler skips the (remaining)
   -- catch chain but still runs `finally` ($tryfin).
   let catchFrame : TryFrame :=
     { throwLabel := tryFinLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
-  let catchCtx : Ctx := { ctx with frames := .tryRegion catchFrame :: saved }
+  let catchCtx : Ctx := { ctx with frames := .tryRegion catchFrame :: saved, siteVar }
   -- Map over the `catches` *parameter* (via `attach`, so each clause carries its
   -- membership proof for the termination argument); the unreachable-catch case is
   -- handled by the `catchesReachable` guard rather than by mapping over the
@@ -739,8 +804,10 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     -- time, before the handler runs, so no nested throw has clobbered it yet.
     -- An id-less binding cannot reach this pass (resolution rebuilds every
     -- catch with its resolved binding), so the `none` arm substitutes nothing.
+    let lattice := (← get).lattice
     let pExpr := match c.predicate, c.binding.uniqueId with
-      | some p, some eid => substLocalById eid (localRef excVar) p
+      | some p, some eid =>
+        substLocalById eid (localRef excVar) (falsifyUnrelatedTests lattice eid c.bindingType p)
       | some p, none => p
       | none, _ => litBool true
     let hStmts := fillSrcs c.body.source (← lowerStmt catchCtx c.body)
@@ -806,13 +873,25 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         let exitClear := raisedExits.map (fun l => setLocal (exitPendingVar l) (litBool false))
         let exitRestore := raisedExits.map (fun l =>
           setLocal (exitPendingVar l) (localRef s!"$fin_exiting_{l}_{finId}"))
+        -- A nested `try`'s `finally` runs inside the enclosing outermost `try`, so a
+        -- throw it catches internally rewrites the shared `$throwSite`; snapshot it
+        -- with the pending exception. (An outermost `try`'s own `finally` is lowered
+        -- outside its site region, so it cannot touch the variable.)
+        let (siteSnap, siteRestore) : List StmtExprMd × List StmtExprMd :=
+          match ctx.siteVar with
+          | some sv =>
+              let savSite := s!"$fin_site_{finId}"
+              ([declInit savSite (tyNode .TInt) (localRef sv)], [setLocal sv (localRef savSite)])
+          | none => ([], [])
         pure
           ([ declInit savThrown boolTy (localRef exnThrownVar),
              declInit savReturning boolTy (localRef exnReturningVar) ] ++ excSnap ++ exitSnap ++
+           siteSnap ++
            [ setLocal exnThrownVar (litBool false),
              setLocal exnReturningVar (litBool false) ] ++ exitClear,
            [ setLocal exnThrownVar (localRef savThrown),
-             setLocal exnReturningVar (localRef savReturning) ] ++ excRestore ++ exitRestore)
+             setLocal exnReturningVar (localRef savReturning) ] ++ excRestore ++ exitRestore ++
+           siteRestore)
   let fStmts ← match _hf : finally? with
     | some f => do pure (fillSrcs f.source (← lowerStmt ctx f))
     | none => pure []
@@ -854,17 +933,33 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     | none =>
         iteOf (localRef (exitPendingVar l))
           (blockOf [setLocal (exitPendingVar l) (litBool false), exitTo l]) none)
+  -- The throw sites recorded inside this outermost `try` (empty for any other);
+  -- the enclosing region's accumulator is restored either way.
+  let recorded := (← get).throwSites
+  let sites := if outermost then recorded else []
+  if outermost then modify (fun s => { s with throwSites := outerSites })
   let reDispatch : List StmtExprMd :=
     -- An exception still pending past an outermost `try` escapes. It is asserted on
     -- this edge rather than at the `throw` because the `try` may still intercept it
     -- (a `catch` guard that matches at run time, or a `finally` that completes
-    -- abruptly).
+    -- abruptly). There is one assertion per recorded throw site,
+    -- `!($thrown && $throwSite == k)`, carrying that site's range and summary, so
+    -- exactly the sites that can escape are reported. A site whose exception an
+    -- inner `try` passes on keeps its number, so the original throw is named.
     let propagateThrown :=
       iteOf (localRef exnThrownVar) (blockOf (copyStmts ++ [exitTo thrownExit])) none
+    let siteAsserts : List StmtExprMd := match siteVar with
+      | some sv => sites.map (fun (k, siteSrc, summary) =>
+          ⟨.Assert (notOf (andOf (localRef exnThrownVar)
+              (callStatic Operation.Eq.procName [localRef sv, nn (.LiteralInt (Int.ofNat k))])))
+            (some summary), siteSrc⟩)
+      | none => []
     let onThrown : List StmtExprMd :=
-      if escapesUncaught ctx then
-        assertThenLeave (notOf (localRef exnThrownVar)) "no exception escapes this `try` uncaught"
-          propagateThrown
+      if outermost then
+        if siteAsserts.isEmpty then
+          assertThenLeave (notOf (localRef exnThrownVar)) "no exception escapes this `try` uncaught"
+            propagateThrown
+        else siteAsserts ++ [assumeOf (notOf (localRef exnThrownVar)), propagateThrown]
       else [propagateThrown]
     onThrown ++
     [ iteOf (localRef exnReturningVar) (blockOf [exitTo returnExit]) none ] ++ exitDispatch
@@ -873,10 +968,14 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- try/finally block, so it is live for the body, catch chain, `finally`, and
   -- re-dispatch. Only when this try introduced its own `$exc` (a finally-only
   -- or Unknown-LCA try reuses the enclosing one, which is already declared).
+  -- An outermost `try` also declares its `$throwSite_<id>` here.
   let declExc : List StmtExprMd :=
-    match thisExc with
-    | some (v, ty) => if introducedExc then [declNoInit v ty] else []
-    | none => []
+    (match thisExc with
+     | some (v, ty) => if introducedExc then [declNoInit v ty] else []
+     | none => []) ++
+    (match siteVar with
+     | some sv => if outermost then [declInit sv (tyNode .TInt) (nn (.LiteralInt 0))] else []
+     | none => [])
   pure (declExc ++ (⟨tryFinBlock.val, src⟩ :: (finPrologue ++ fStmts ++ finEpilogue ++ reDispatch)))
   -- `lowerTry` receives a `try`'s *components* rather than the node, so its
   -- measure is their combined size plus one: exactly the size of the `Try` node
