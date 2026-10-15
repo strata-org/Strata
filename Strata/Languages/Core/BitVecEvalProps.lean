@@ -108,25 +108,25 @@ private theorem eval_bv16ULe_value_of_bvs
       bv16ULeFunc, Lambda.binaryOp]
     rw [hF]
     simp [bv16ULeFunc, Lambda.binaryOp]
-  have hcan : Lambda.LExpr.isCanonicalValue f
+  have hcan : Lambda.LExpr.isValue f
       (.app () (.app () (bv16ULeFunc).opExpr x) y) = false := by
-    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+    simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
       Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       bv16ULeFunc, Lambda.binaryOp]
     rw [hF]
     simp [bv16ULeFunc, Lambda.binaryOp]
   have hcanbv : ∀ (a : BitVec 16),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.bitvecConst () 16 a : Expression.Expr) = true := by
-    intro a; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.bitvecConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.bitvecConst () 16 a : Expression.Expr) = true := by
+    intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.bitvecConst]
   have hcanb : ∀ (b : Bool),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
-    intro b; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.boolConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
+    intro b; simp [Lambda.LExpr.isValue, Lambda.LExpr.boolConst]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
   simp only [bv16ULeFunc, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
   rw [hx, hy]
   simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
@@ -142,7 +142,7 @@ private theorem eval_bv16ULe_value_of_bvs
   rw [if_pos (by simp [hcanbv])]
   simp only [hda, hdb]
   simp only [if_true]
-  rw [Lambda.eval_canonical_identity n f σ _ (hcanb _)]
+  rw [Lambda.eval_value_identity n f σ _ (hcanb _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
 
 /-! ## `evalFully`-level wrappers (used by the contract proofs) -/
@@ -181,7 +181,7 @@ private theorem eval_bv16Binary_value
     (f : Expression.Factory) (σ : CoreStore) (x y : Expression.Expr)
     (n : Nat) (a b : BitVec 16)
     (hF : f[name.name]? = some (bv16Binary name op).func)
-    (hcan : Lambda.LExpr.isCanonicalValue f
+    (hcan : Lambda.LExpr.isValue f
       (.app () (.app () (bv16Binary name op).opExpr x) y) = false)
     (hx : Lambda.LExpr.eval n f σ x = (Lambda.LExpr.bitvecConst () 16 a, .value true))
     (hy : Lambda.LExpr.eval n f σ y = (Lambda.LExpr.bitvecConst () 16 b, .value true)) :
@@ -197,16 +197,16 @@ private theorem eval_bv16Binary_value
     rw [hF]
     simp [bv16Binary, Lambda.binaryOp]
   have hcanbv : ∀ (a : BitVec 16),
-      Lambda.LExpr.isCanonicalValue f
+      Lambda.LExpr.isValue f
         (Lambda.LExpr.bitvecConst () 16 a : Expression.Expr) = true := by
     intro a
-    exact Lambda.isCanonicalValue_const_true f () (.bitvecConst 16 a)
+    exact Lambda.isValue_const_true f () (.bitvecConst 16 a)
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
   simp only [bv16Binary, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
   rw [hx, hy]
   simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
@@ -225,7 +225,7 @@ private theorem eval_bv16Binary_value
   rw [if_pos (by simp [hcanbv])]
   simp only [hda, hdb]
   simp only [if_true]
-  rw [Lambda.eval_canonical_identity n f σ _ (hcanbv _)]
+  rw [Lambda.eval_value_identity n f σ _ (hcanbv _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair,
     Lambda.LExpr.EvalResult.combineValueFlag]
 
@@ -234,7 +234,7 @@ private theorem coreEval_bv16Binary
     (name : CoreIdent) (op : BitVec 16 → BitVec 16 → BitVec 16)
     (hF : Core.Factory[name.name]? = some (bv16Binary name op).func)
     (hcan : ∀ x y : Expression.Expr,
-      Lambda.LExpr.isCanonicalValue Core.Factory
+      Lambda.LExpr.isValue Core.Factory
         (.app () (.app () (bv16Binary name op).opExpr x) y) = false)
     (σ : CoreStore) (x y : Expression.Expr) (a b : BitVec 16)
     (hx : Lambda.LExpr.evalFully Core.Factory σ x =
@@ -288,12 +288,12 @@ private theorem coreFactory_bv16Xor :
 
 set_option maxRecDepth 8000 in
 /-- A fully applied generic Bv16 binary operation is reducible rather than a
-canonical partial application. -/
-private theorem bv16Binary_not_canonical
+value (as a partial application would be). -/
+private theorem bv16Binary_not_value
     (name : CoreIdent) (op : BitVec 16 → BitVec 16 → BitVec 16)
     (hF : Core.Factory[name.name]? = some (bv16Binary name op).func)
     (x y : Expression.Expr) :
-    Lambda.LExpr.isCanonicalValue Core.Factory
+    Lambda.LExpr.isValue Core.Factory
       (.app () (.app () (bv16Binary name op).opExpr x) y) = false := by
   have hcall : Lambda.Factory.callOfLFunc (T := CoreLParams) Core.Factory
       (.app () (.app () (bv16Binary name op).opExpr x) y) true
@@ -303,7 +303,7 @@ private theorem bv16Binary_not_canonical
       bv16Binary, Lambda.binaryOp]
     rw [hF]
     simp [bv16Binary, Lambda.binaryOp]
-  rw [Lambda.LExpr.isCanonicalValue.eq_def]
+  rw [Lambda.LExpr.isValue.eq_def]
   simp only
   split
   · rename_i fst args fn hc
@@ -335,7 +335,7 @@ theorem coreEval_bv16And (σ : CoreStore) (x y : Expression.Expr) (a b : BitVec 
     simpa only [show bv16AndFunc =
       bv16Binary ⟨"Bv16.And", ()⟩ BitVec.and from rfl] using coreFactory_bv16And
   exact coreEval_bv16Binary ⟨"Bv16.And", ()⟩ BitVec.and hF
-    (bv16Binary_not_canonical ⟨"Bv16.And", ()⟩ BitVec.and hF) σ x y a b hx hy
+    (bv16Binary_not_value ⟨"Bv16.And", ()⟩ BitVec.and hF) σ x y a b hx hy
 
 /-- `bv16.xor(x, y)` evaluates to the bitwise exclusive-or of its operands. -/
 theorem coreEval_bv16Xor (σ : CoreStore) (x y : Expression.Expr) (a b : BitVec 16)
@@ -352,7 +352,7 @@ theorem coreEval_bv16Xor (σ : CoreStore) (x y : Expression.Expr) (a b : BitVec 
     simpa only [show bv16XorFunc =
       bv16Binary ⟨"Bv16.Xor", ()⟩ BitVec.xor from rfl] using coreFactory_bv16Xor
   exact coreEval_bv16Binary ⟨"Bv16.Xor", ()⟩ BitVec.xor hF
-    (bv16Binary_not_canonical ⟨"Bv16.Xor", ()⟩ BitVec.xor hF) σ x y a b hx hy
+    (bv16Binary_not_value ⟨"Bv16.Xor", ()⟩ BitVec.xor hF) σ x y a b hx hy
 
 
 

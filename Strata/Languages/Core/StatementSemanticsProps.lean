@@ -1723,7 +1723,7 @@ theorem InitVarsDefined :
     apply ih <;> assumption
 
 /-- Variables introduced by `InitVars` can be read back as values when the
-    resulting store contains only canonical bindings. -/
+    resulting store contains only value bindings. -/
 theorem InitVarsReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {ks : List P.Ident} :
   WellFormedStore σ' f →

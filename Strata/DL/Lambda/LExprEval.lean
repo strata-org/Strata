@@ -61,7 +61,7 @@ This test is relatively conservative:
 - Syntactically different, non-real constants are not equal
 - Closed lambdas of the same type are compared extensionally (i.e.
 syntactically after substituting a fresh variable for the body). Note that this
-does not evaluate the body, which may not be a canonical value.
+does not evaluate the body, which may not be a value.
 - Datatype constructor applications are compared using known injectivity
 and disjointness properties of datatypes.
 -/
@@ -112,14 +112,14 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
 
 
 /--
-Canonical values of `LExpr`s.
+Values of `LExpr`s.
 
-If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
-(1) `e1` is a constructor and `e2 .. en` are all canonical values, or
+If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a value if
+(1) `e1` is a constructor and `e2 .. en` are all values, or
 (2) `e1` is a named function `f` (not abstraction) and `n` is less than the
     number of arguments required to run the function `f`.
 -/
-@[expose] def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
+@[expose] def isValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
   | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>
@@ -135,7 +135,7 @@ If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
       List.all (args.attach.map (fun ⟨ x, _⟩ =>
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
-        (isCanonicalValue F x))) id
+        (isValue F x))) id
     | none => false
   termination_by e.sizeOf
 
@@ -184,13 +184,13 @@ def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
 /--
 Classification of partial evaluation outcome.
 - `outOfFuel`: ran out of fuel before reaching a normal form.
-- `value`: the result is a canonical value (satisfies `isCanonicalValue`).
+- `value`: the result is a value (satisfies `isValue`).
   The Boolean flag `everyStepFullyReduced` records whether every recursive
   invocation of `eval` performed by the current call itself returned
   `.value true` — i.e. whether the entire evaluation was fully reduced end
   to end, with no `.nonvalue`/`.outOfFuel`/`.value false` subterm masked.
 - `nonvalue`: evaluation terminated (not out of fuel) but the result is not a
-  canonical value.
+  value.
 -/
 inductive EvalResult where
   | outOfFuel
@@ -248,9 +248,9 @@ at Factory must have LMonoTy.
 def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono))
     : LExpr TBase.mono × EvalResult :=
   match n with
-  | 0 => (e, if isCanonicalValue F e then .value true else .outOfFuel)
+  | 0 => (e, if isValue F e then .value true else .outOfFuel)
   | n' + 1 =>
-    if isCanonicalValue F e then
+    if isValue F e then
       (e, .value true)
     else
       match F.callOfLFunc e with
@@ -262,13 +262,13 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
           match idx with
           | some i => (args[i]? |>.map (isConstrApp F)).getD false
           | none => false
-        let canonicalArgAt (idx : Option Nat) :=
+        let valueArgAt (idx : Option Nat) :=
           match idx with
-          | some i => (args[i]? |>.map (isCanonicalValue F)).getD false
+          | some i => (args[i]? |>.map (isValue F)).getD false
           | none => false
         if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
           constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
-          (FuncAttr.hasInlineIfAllCanonical lfunc.attr && args.all (isCanonicalValue F))) then
+          (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
           -- Inline a function only if it has a body.
           let body := lfunc.body.get (by simp_all)
           -- Apply type substitution to instantiate polymorphic type variables.
@@ -284,23 +284,23 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
           if -- Case 1: All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
-            args.all (isCanonicalValue F) ||
+            args.all (isValue F) ||
             -- Case 2: Some functions (e.g. Eliminators) only require the designated
             -- arg to be a constructor
             constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
             -- Case 3: Some functions (e.g. regex) only require the designated
-            -- arg to be a canonical value (e.g. a constant string)
-            canonicalArgAt (FuncAttr.findEvalIfCanonical lfunc.attr) then
+            -- arg to be a value (e.g. a constant string)
+            valueArgAt (FuncAttr.findEvalIfValue lfunc.attr) then
             match lfunc.concreteEval with
             | none =>
               -- No concrete evaluation available. The rebuilt call can still
               -- be a value: constructor applications (and partial
-              -- applications) of canonical arguments are canonical (e.g.
-              -- `Cons (1+1) nil` rebuilds to the canonical `Cons 2 nil`).
+              -- applications) of value arguments are values (e.g.
+              -- `Cons (1+1) nil` rebuilds to `Cons 2 nil`, which is a value).
               -- Canonicity alone decides value-hood; `argsAllFull` tempers
               -- the every-step-fully-reduced bit as everywhere else.
               combineEvalResValueFlag argsAllFull
-                (new_e, if isCanonicalValue F new_e then .value true else .nonvalue)
+                (new_e, if isValue F new_e then .value true else .nonvalue)
             | some ceval =>
               match ceval new_e.metadata args with
               | .some e' =>
@@ -320,17 +320,17 @@ def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.
   | .op _ _ _     => (e, .nonvalue)
   | .bvar _ _     => (e, .nonvalue)
   | .fvar _ x _  =>
-    -- Note: closed .abs terms are canonical values; we'll be here if .abs
+    -- Note: closed .abs terms are values; we'll be here if .abs
     -- contains free variables.
     match env x with
-    | some v => (v, if isCanonicalValue F v then .value true else .nonvalue)
+    | some v => (v, if isValue F v then .value true else .nonvalue)
     | none => (e, .nonvalue)
   | .abs _ _ _ _   =>
     let e' := LExpr.substFvarsFromEnv env e
-    (e', if isCanonicalValue F e' then .value true else .nonvalue)
+    (e', if isValue F e' then .value true else .nonvalue)
   | .quant _ _ _ _ _ _ =>
     let e' := LExpr.substFvarsFromEnv env e
-    (e', if isCanonicalValue F e' then .value true else .nonvalue)
+    (e', if isValue F e' then .value true else .nonvalue)
   | .app _ e1 e2 => evalApp n' F env e e1 e2
   | .eq m e1 e2 => evalEq n' F env m e1 e2
   | .ite m c t f => evalIte n' F env m c t f
@@ -405,7 +405,7 @@ def evalWithLState (n : Nat) (σ : LState TBase) (e : LExpr TBase.mono)
   eval n σ.config.factory (Scopes.toEnv σ.state) e
 
 /-- Walk a post-eval expression looking for a stuck redex: a fully-applied
-non-constructor factory function whose arguments are all canonical values.
+non-constructor factory function whose arguments are all values.
 Such a call *should* have reduced during `eval` but didn't (e.g. missing `body`
 or `concreteEval`). Returns the stuck subexpression if found.
 
@@ -420,7 +420,7 @@ def findStuckRedex (F : @Lambda.Factory TBase) : LExpr TBase.mono → Option (LE
   | e@(.app _m fn arg) =>
     match Factory.callOfLFunc F e false with
     | some (_, args, f) =>
-      if !f.isConstr && args.all (LExpr.isCanonicalValue F) then
+      if !f.isConstr && args.all (LExpr.isValue F) then
         some e
       else
         -- Non-stuck call: recurse into fn and arg (structural subterms)

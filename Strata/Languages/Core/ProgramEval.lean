@@ -184,11 +184,11 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
     (Recursive functions are left alone to avoid non-termination; the fuel bound
     also protects against runaway unfolding.)
 
-    `inline` rather than `inlineIfAllCanonical`, because the latter unfolds a body
-    only once *every* argument is a canonical value and a `Map` argument never is:
+    `inline` rather than `inlineIfAllValues`, because the latter unfolds a body
+    only once *every* argument is a value and a `Map` argument never is:
     a map value is a stack of `update`s over a `mapConst`, a saturated call of an
     uninterpreted function rather than a constructor application, which
-    `isCanonicalValue` rejects. That gate blocks every call taking a map, such as
+    `isValue` rejects. That gate blocks every call taking a map, such as
     Laurel's `readField(heap, obj, field)`. Unfolding unconditionally is safe here
     because these functions are non-recursive, so the chain of unfoldings is
     bounded by the call graph.
@@ -197,7 +197,7 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
 def inlineBodiedFunctions (prog : Program) : Program :=
   let addInline (f : Core.Function) : Core.Function :=
     if f.body.isSome && !f.isRecursive
-        && !f.attr.contains .inlineIfAllCanonical && !f.attr.contains .inline
+        && !f.attr.contains .inlineIfAllValues && !f.attr.contains .inline
     then { f with attr := f.attr.push .inline }
     else f
   { prog with decls := prog.decls.map fun d =>
@@ -253,8 +253,8 @@ private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :
 
 /-- `Core.Factory`'s uninterpreted `select`, with `selectFromMapTerm` attached.
 
-    `evalIfCanonical 1` is what turns it on: the map argument (index 0) is an
-    `update`/`mapConst` application, which is not a canonical value, so the
+    `evalIfValue 1` is what turns it on: the map argument (index 0) is an
+    `update`/`mapConst` application, which is not a value, so the
     evaluator's default "all arguments are concrete" gate would never fire. The
     key (index 1) is the argument that has to be concrete for the walk to decide
     anything. -/
@@ -265,7 +265,7 @@ private def interpretSelect (f : Lambda.LFunc CoreLParams) : Lambda.LFunc CoreLP
         match args with
         | [m, i] => selectFromMapTerm m i
         | _ => none)
-      attr := f.attr.push (.evalIfCanonical 1) }
+      attr := f.attr.push (.evalIfValue 1) }
   else f
 
 /-- `F` with its `select` interpreted, so the concrete interpreter can read and

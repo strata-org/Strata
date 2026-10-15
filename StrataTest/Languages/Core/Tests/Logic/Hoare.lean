@@ -243,17 +243,17 @@ private def xIs1Env : Imperative.Env Core.Expression :=
     hasFailure := false }
 
 /-- `xIs1Env` holds only values: its single binding is the literal `1`, which is a
-    canonical value in every factory.  The well-formedness conditions require this of any
+    value in every factory.  The well-formedness conditions require this of any
     environment a run starts from. -/
 private theorem xIs1Env_storeWellDefined :
     Imperative.WellFormedStore xIs1Env.store Core.Factory := by
   intro n v hn
-  show Lambda.LExpr.isCanonicalValue _ v = true
+  show Lambda.LExpr.isValue _ v = true
   simp only [xIs1Env] at hn
   split at hn
   · injection hn with hv
     subst hv
-    simp [Lambda.LExpr.isCanonicalValue]
+    simp [Lambda.LExpr.isValue]
   · exact absurd hn (by simp)
 
 /-- `xIs1Env` supplies the integer value required by a procedure whose only input
@@ -581,7 +581,7 @@ private theorem init_const (π : String → Option Core.Procedure)
 
 /-- `Core.Logic.Hoare.set` where the right-hand side is a variable known to hold a
     literal; `Lambda.evalFully_fvar_of_value` reads it, needing only that the binding is a
-    canonical value — which a literal is, in every factory. -/
+    value — which a literal is, in every factory. -/
 private theorem set_fvar (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams)
     (x src : Core.Expression.Ident) (ty : Option Lambda.LMonoTy) (κ : Lambda.LConst)
@@ -597,7 +597,7 @@ private theorem set_fvar (π : String → Option Core.Procedure)
     (fun ρ₀ σ' v hpre hev hup => by
       have hv : v = Lambda.LExpr.const () κ := (Option.some.injEq _ _).mp
         (hev.symm.trans (Lambda.evalFully_fvar_of_value ρ₀.factory ρ₀.store () src ty _
-          (hsrc ρ₀ hpre) (Lambda.isCanonicalValue_const_true _ _ _)))
+          (hsrc ρ₀ hpre) (Lambda.isValue_const_true _ _ _)))
       subst hv
       cases hup with
       | update _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
@@ -639,7 +639,7 @@ private theorem postAsPredicate_of_binds (proc : Core.Procedure)
   · rw [hexpr]
     exact Lambda.evalFully_eq_self ρ.factory ρ.store () _ _ (Lambda.LExpr.const () b.2.2)
       (Lambda.evalFully_fvar_of_value ρ.factory ρ.store () b.1 b.2.1 _ (hstore b hb)
-        (Lambda.isCanonicalValue_const_true _ _ _))
+        (Lambda.isValue_const_true _ _ _))
       (Lambda.evalFully_const ρ.factory ρ.store () b.2.2)
 
 /-- A one-assignment body meets a contract whose non-`free` `ensures` clauses are
@@ -859,7 +859,7 @@ value side nothing changes — `init_const` and `set_const` have the same shape,
 
 The second statement reads `t`, so this is also the first test where an assignment's
 right-hand side is not a literal.  `Lambda.evalFully_fvar_of_value` handles it with
-its single premise "the binding read is a canonical value", which the intermediate
+its single premise "the binding read is a value", which the intermediate
 store fact supplies. -/
 
 private def initVarPgm : Program :=
@@ -1452,7 +1452,7 @@ private theorem loopTermGuard_eval (σ : Core.CoreStore) (n : Int)
   rw [loopTermGuard_shape]
   exact Core.coreEval_intLe_numeral σ (Lambda.LExpr.fvar () loopTermY intTy) n
     (Lambda.evalFully_fvar_of_value Core.Factory σ () loopTermY intTy _ hσy
-      (Lambda.isCanonicalValue_const_true _ _ _))
+      (Lambda.isValue_const_true _ _ _))
 
 /-- With `y ↦ n`, the loop body assigns `n + 1` on `Core.Factory`. -/
 private theorem loopTermRhs_eval (σ : Core.CoreStore) (n : Int)
@@ -1462,7 +1462,7 @@ private theorem loopTermRhs_eval (σ : Core.CoreStore) (n : Int)
   rw [loopTermRhs_shape]
   exact Core.coreEval_intAdd_numeral σ (Lambda.LExpr.fvar () loopTermY intTy) n
     (Lambda.evalFully_fvar_of_value Core.Factory σ () loopTermY intTy _ hσy
-      (Lambda.isCanonicalValue_const_true _ _ _))
+      (Lambda.isValue_const_true _ _ _))
 
 /-- **Valid, and fully proved.**
     `y := 0; while (int.le(y, 9)) { y := int.add(y, 1) }` establishes `y == 10`.
@@ -1548,7 +1548,7 @@ theorem loopTerm_meets_contract :
       subst hn10
       exact Lambda.evalFully_eq_self Core.Factory ρ.store () _ _ (Lambda.LExpr.intConst () 10)
         (Lambda.evalFully_fvar_of_value Core.Factory ρ.store () loopTermY intTy _ hσy
-          (Lambda.isCanonicalValue_const_true _ _ _))
+          (Lambda.isValue_const_true _ _ _))
         (Lambda.evalFully_const Core.Factory ρ.store () (Lambda.LConst.intConst 10))
 
 

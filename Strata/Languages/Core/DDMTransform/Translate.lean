@@ -2341,7 +2341,7 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
-    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllCanonical]
+    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllValues]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
   let measure ← translateMeasure p bodyBindings fnOp.args[5]!
   let body ← translateExpr p bodyBindings fnOp.args[6]!

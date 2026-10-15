@@ -446,8 +446,8 @@ private theorem xFalseEnv_storeWellDefined :
   intro n v hn
   simp only [xFalseEnv] at hn
   injection hn with hv; subst hv
-  show Lambda.LExpr.isCanonicalValue _ ff0 = true
-  exact Lambda.isCanonicalValue_const_true _ _ _
+  show Lambda.LExpr.isValue _ ff0 = true
+  exact Lambda.isValue_const_true _ _ _
 
 /-- Reading `x` from `xFalseEnv` yields `false`. -/
 private theorem xFalseEnv_eval_x :

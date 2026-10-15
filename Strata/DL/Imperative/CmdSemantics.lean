@@ -142,7 +142,7 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
     rename targets.  For a variable-only `sm` whose targets are all defined in
     the well-formed store `σ'`, evaluating the renamed expression in `σ'` equals
     evaluating the original in the pulled-back store.  The `WellFormedStore σ'`
-    guard rules out the non-canonical store bindings under which a step-indexed
+    guard rules out store bindings that are not values under which a step-indexed
     evaluator could otherwise diverge. -/
 @[expose] def WellFormedSemanticEvalRename {P : PureExpr} [HasVal P] [HasFvar P] [HasSubstFvar P]
     (f : P.Factory) : Prop :=
