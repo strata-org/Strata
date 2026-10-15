@@ -2367,8 +2367,9 @@ procedure checked(x: int) returns (r: int)
 
 Without the precondition the `throw` is reported as
 `uncaught exception 'Boom' is not thrown does not hold`. An exception that reaches
-the end of an outermost `try` uncaught — no `catch` matched — is reported at that
-`try` instead, since the `try` could still have intercepted it.
+the end of an outermost `try` uncaught — no `catch` matched — is checked when it
+leaves the `try`, since the `try` could still have intercepted it, and is reported
+at the `throw` (or throwing call) it came from.
 
 Whether the *source* language requires declaring exceptions is a separate question:
 procedures coming from Python or JavaScript can carry a `throws` clause too, even
@@ -2456,6 +2457,15 @@ procedure logFailure(which: int) returns (out: string)
 If the types reaching a `catch` share no common ancestor, Laurel reports an error
 rather than leaving the binding untyped. If the body throws nothing determinable,
 no exception can reach the clauses, and they are dropped as unreachable.
+
+A guard may test the binding against a type unrelated to the binding's type, as a
+Java multi-catch arm for an unchecked exception the body never throws does:
+`catch e when e is StateError || e is NotFound`. Such a test can never be true, so
+it is accepted and treated as `false`, and the other tests in the guard still
+catch. A type that shares a descendant with the binding's type (with
+`composite D extends A, B`, an `A` may be a `D`, which is a `B`) is not unrelated,
+and testing against it is still an error. A clause whose guard is only such tests,
+or a disjunction of them, can never catch: its body is not checked.
 
 A frontend that needs to catch values with no useful common ancestor — unrelated
 types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a
