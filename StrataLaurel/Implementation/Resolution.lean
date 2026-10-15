@@ -6393,7 +6393,7 @@ private def validateGlobalNames (program : LaurelProgram) : List Message :=
     so it is empty before resolution has stamped any, and it structurally misses
     type parameters, a constrained type's `valueName`, block labels, and binders
     inside a field initializer. -/
-private def declaredNames (program : LaurelProgram) : List (String × String × FileRange) :=
+def declaredNames (program : LaurelProgram) : List (String × String × FileRange) :=
   let ofId (kind : String) (name : Identifier) := (kind, name.text, name.source)
   -- Binders introduced *inside* an expression. Labels are the one name here that
   -- is a bare `String` rather than an `Identifier` (see `StmtExpr.Block`), so they

@@ -114,8 +114,7 @@ procedure runAll() entry
     C4.m `ensures r == 5` refines B4.m's weaker `ensures r >= 0` (Liskov), so B4's
     static contract still holds at the call site while the derived body runs. -/
 
--- No Core interpreter: calling a procedure that allocates fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite B4 {
@@ -177,8 +176,7 @@ procedure go(c: C5)
     other dispatch case holds a derived instance and takes an overrider branch;
     this is the one exercising the fallthrough + the guarded owner post. -/
 
--- No Core interpreter: calling a procedure that allocates fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite B6 {
@@ -253,8 +251,7 @@ procedure go()
     most-derived overrider wins across a multi-level chain, not the nearest
     declared ancestor. Each override refines its parent (6 ⊢ r>=1 ⊢ r>=0). -/
 
--- No Core interpreter: calling a procedure that allocates fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite GP7 {
@@ -300,8 +297,7 @@ procedure runAll() entry
     B8-typed variable holding a C8b runs C8b's override (r == 7), NOT the sibling
     C8a's (r == 6) nor the base's — the runtime tag selects the correct branch. -/
 
--- No Core interpreter: calling a procedure that allocates fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite B8 {

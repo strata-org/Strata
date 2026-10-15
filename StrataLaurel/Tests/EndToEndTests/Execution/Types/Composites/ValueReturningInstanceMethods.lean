@@ -32,8 +32,7 @@ open Strata
 
 /-! ## 1. Basic: instance method body returns a field via `return expr`. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -64,8 +63,7 @@ procedure runAll() entry
 
 /-! ## 2. Return a computed expression. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -96,8 +94,7 @@ procedure runAll() entry
 
 /-! ## 3. Return an expression that uses a (non-self) parameter. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -129,8 +126,7 @@ procedure runAll() entry
 /-! ## 4. Conditional / early returns: a valued `return` in each branch of an
     if-then-else inside the method body. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -151,8 +147,13 @@ procedure useClampPos()
   opaque
 {
   var b: Num := new Num;
+  // One call per arm, with `b#v` written first so that both interpreters decide the branch.
+  b#v := 5;
   var x: int := b#clampPos();
-  assert x >= 0
+  assert x >= 0;
+  b#v := -5;
+  var y: int := b#clampPos();
+  assert y >= 0
 };
 
 procedure runAll() entry
@@ -165,8 +166,7 @@ procedure runAll() entry
 
 /-! ## 5. Method that mutates a field (modifies clause) and then returns. -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -201,8 +201,7 @@ procedure runAll() entry
 
 /-! ## 6. Boolean return type. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
@@ -234,8 +233,7 @@ procedure runAll() entry
 /-! ## 7. Two composites sharing a method name, both with value-returning
     bodies. Confirms lifting + value-return elimination keep them distinct. -/
 
--- No Core interpreter: `a#v` and `b#w` are never written, so their reads leave a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite A {
@@ -309,8 +307,7 @@ procedure useOuter()
 
 /-! ## 9. Local variable in the body before a valued return. -/
 
--- No Core interpreter: `b#v` is never written, so its read leaves a residual `select` that "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Num {
