@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 import all Init.Data.Repr
 
 public section

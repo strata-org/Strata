@@ -34,6 +34,7 @@ module
 -- Rebuild trigger: file-scope global declarations.
 -- Rebuild trigger: declared global reads/writes on opaqueSpec.
 -- Rebuild trigger token: totalMapType rename (frees `Map` for the partial map)
+public import Strata.Init
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

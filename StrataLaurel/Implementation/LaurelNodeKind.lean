@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-!
 # Laurel Node Kinds
 

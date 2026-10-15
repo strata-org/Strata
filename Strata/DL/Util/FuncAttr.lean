@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 public section
 /-!
 ## Structured Function Attributes

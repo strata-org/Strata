@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 public section
 -- Copied over from LNSym
 -- https://github.com/leanprover/LNSym/blob/main/Arm/Map.lean

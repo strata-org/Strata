@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import StrataDDM.Integration.Lean.OfAstM
 import StrataDDM.Integration.Lean.Gen
 import StrataDDM.Integration.Lean.HashCommands -- shake: keep

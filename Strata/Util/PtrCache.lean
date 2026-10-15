@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import Std.Data.HashMap.Basic
 
 /-! # Safe pointer-address caches

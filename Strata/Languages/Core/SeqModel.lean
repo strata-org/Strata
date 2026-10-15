@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-!
 # Sequence Axiom Model
 
