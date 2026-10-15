@@ -148,7 +148,7 @@ theorem CoreBodyExecE.structured
     {emitted : Trace Expression}
     (h : CoreStepStarE π
       (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
-    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := ⟨h⟩
+    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
 
 /-- Base-command step of Core's event contract relation. -/
 theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}

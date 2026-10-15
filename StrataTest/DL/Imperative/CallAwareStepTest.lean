@@ -8,7 +8,7 @@ module
 import Strata.DL.Imperative.CallAwareSemantics
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.Languages.Core.StatementSemanticsProps
-import all Strata.DL.Imperative.StmtCallSemantics
+import all Strata.DL.Imperative.StmtCFGCallSemantics
 import all Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.Procedure
 import all Strata.Util.ListMap
