@@ -268,7 +268,7 @@ private theorem inputAsPredicate_xIs1 (proc : Core.Procedure)
   obtain ⟨rfl, rfl⟩ := hmem
   refine ⟨Lambda.LExpr.const () (.intConst 1), ?_, ?_⟩
   · simp [xIs1Env]
-  · rfl
+  · exact ⟨1, rfl⟩
 
 /-- The block condition is immediate for an empty body: every clause that mentions
     the statements is vacuous, `Core.Factory` is well-formed, and the store holds
@@ -455,12 +455,11 @@ private def noReqProc : Core.Procedure :=
 theorem noReq_violates_contract :
     ¬ Core.Logic.Hoare.Procedure.contractTriple noReqPgmAST testParams "NoReq" := by
   intro h
-  obtain ⟨proc, bss, hproc, hbody, htb⟩ := h
+  obtain ⟨proc, hproc, htb⟩ := h
   have hp : proc = noReqProc := (procOf_eq hproc).symm
   subst hp
-  have hb : bss = [] := by
-    injection hbody.symm.trans (show noReqProc.body = .structured [] by native_decide)
-  subst hb
+  have hbody : noReqProc.body = .structured [] := by native_decide
+  rw [hbody] at htb
   have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
     ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc xIs1Env (by native_decide),
@@ -505,12 +504,11 @@ example : Core.Logic.Hoare.Procedure.preHoldsAt offByOneProc xIs1Env = true := b
 theorem offByOne_violates_contract :
     ¬ Core.Logic.Hoare.Procedure.contractTriple offByOnePgmAST testParams "OffByOne" := by
   intro h
-  obtain ⟨proc, bss, hproc, hbody, htb⟩ := h
+  obtain ⟨proc, hproc, htb⟩ := h
   have hp : proc = offByOneProc := (procOf_eq hproc).symm
   subst hp
-  have hb : bss = [] := by
-    injection hbody.symm.trans (show offByOneProc.body = .structured [] by native_decide)
-  subst hb
+  have hbody : offByOneProc.body = .structured [] := by native_decide
+  rw [hbody] at htb
   have ⟨_hvalid, hpostF⟩ := htb xIs1Env xIs1Env []
     ⟨Core.Logic.Hoare.Procedure.preAsPredicate_of_preHoldsAt (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout offByOneProc xIs1Env (by native_decide),

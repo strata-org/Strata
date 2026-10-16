@@ -330,25 +330,6 @@ private def createUnreachableAssertObligations
       (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
 
 /--
-Substitute free variables in an expression with their current values from the
-environment, excluding the given parameter names (which are treated as bound,
-not free). The replacement values come from the environment state and must be
-closed (no dangling bvars).
-
-Parameters are excluded because they are bound within the expression and should
-not be substituted with values from the enclosing scope.
--/
-def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
-  let freeVars := Lambda.LExpr.freeVars e
-  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
-  -- The replacement expressions must be closed (no dangling bvars).
-  let sm := freeVarsToCapture.filterMap (fun fv =>
-    match env.exprEnv.state.find? fv.fst with
-    | some (_, val) => some (fv.fst, val)
-    | none => none)
-  Lambda.LExpr.substFvars e sm
-
-/--
 An environment with an optional exit label.
 -/
 structure EnvWithNext where

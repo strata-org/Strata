@@ -311,7 +311,6 @@ structure CoreVerifierInput where
     obligations it produces, and `pass` reports success on every `VCResult`
     under the given mode. -/
 def CoreVerifierModel
-
     (mode : VerificationMode)
     (analyze : VerificationMode → CoreVerifierInput → VCResults) :
     Imperative.Specification.Analysis CoreVerifierInput VCResults :=

@@ -173,6 +173,32 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2
 
+/-- Event-trace language for deterministic CFGs. Active configurations carry the
+CFG and every configuration carries its environment, so the one-step relation is
+`StepCFGE P evalCmd` without additional captured parameters. -/
+abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
+    [HasFvars P] (CmdT : Type) {EventT : Type}
+    (evalCmd : EvalCmdParamE P CmdT EventT) (ParamsTy : Type)
+    (initEnvWF : ParamsTy → CFG String (DetBlock String CmdT P) → Env P → Prop) :
+    EventLang P EventT where
+  StmtT := CFG String (DetBlock String CmdT P)
+  CfgT := CFGConfig String CmdT P
+  step := StepCFGE P evalCmd
+  stmtCfg := fun cfg ρ => .atBlock cfg cfg.entry ρ
+  terminalCfg := .terminal
+  exitingCfg := fun _ => .terminal
+  terminal_no_step := by
+    intro ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  exiting_no_step := by
+    intro _ ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  getEnv := CFGConfig.getEnv
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
+
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator.
 
@@ -235,25 +261,21 @@ abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2
 
-/-- The unstructured CFG language: steps are `StepDetCFGStar` over the factory
-carried in the configuration.
-
-`isAtAssert` is `fun _ _ => False`: a CFG block can carry `assert` commands,
-so a real `isAtAssert` would detect a config sitting at one. It is left trivial
-because the current overapproximation results never consume the target's `isAtAssert`. -/
-abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+/-- The unstructured CFG language. Active configurations carry the CFG program;
+all configurations carry their execution environment. -/
+abbrev Lang.cfg {P : PureExpr} [HasBool P] [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasInt P] [HasIntOps P] [HasSubstFvar P]
     : Lang P where
   StmtT := CFG String (DetBlock String (Cmd P) P)
-  CfgT := P.Factory × (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
-  star := fun c d => StepDetCFGStar c.1 c.2.1 c.2.2 d.2.2
-  stmtCfg := fun cfg ρ => (ρ.factory, cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
-  terminalCfg := fun ρ => (ρ.factory, ⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
-  exitingCfg := fun lbl ρ =>
-    (ρ.factory, ⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
+  CfgT := CFGConfig String (Cmd P) P
+  star := StepDetCFGStar
+  stmtCfg := fun cfg ρ => .atBlock cfg cfg.entry ρ
+  terminalCfg := .terminal
+  exitingCfg := fun _ => .terminal
   isAtAssert := fun _ _ => False
-  getEnv := fun c => { store := c.2.2.getStore, factory := c.1, hasFailure := c.2.2.getFailure }
+  getEnv := CFGConfig.getEnv
   InitEnvWFParamsTy := Unit
-  initEnvWF := fun _ _ _ => True -- TODO: add wellformedness conditions for unstructured Core
+  initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
 
 end Logic
 end Imperative

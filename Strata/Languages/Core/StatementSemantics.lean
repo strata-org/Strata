@@ -194,9 +194,7 @@ place `EvalCommand` in a non-strictly-positive position.
 mutual
 
 /-- Reflexive-transitive closure of `StepStmt` for the Core language,
-    defined mutually with `EvalCommand` to satisfy strict positivity. The
-    immutable factory is carried by each configuration's environment and read
-    there by every step. -/
+    defined mutually with `EvalCommand` to satisfy strict positivity. -/
 inductive CoreStepStar
     (π : String → Option Procedure) :
     CoreConfig → CoreConfig → Prop where
@@ -211,9 +209,8 @@ inductive CoreStepStar
     semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
     `CoreBodyExec`.
 
-    The initial execution environment `ρ` is an explicit argument carrying the
-    store, active factory, and entry failure flag. The factory is immutable
-    during execution, so the body's output factory equals `ρ.factory`.
+    The initial execution environment `ρ` carries the store, active factory,
+    and entry failure flag.
 
     For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
     variable scoping introduced by the body does not leak past the procedure
@@ -228,14 +225,14 @@ inductive CoreBodyExec
       (.terminal ρ') →
     CoreBodyExec π (.structured ss) ρ ρ'.store ρ'.hasFailure
 
-/-- Core command semantics. The first relation index `g` is the active
+/-- Core command semantics. The first relation index `fac` is the active
     expression factory. -/
 inductive EvalCommand (π : String → Option Procedure) :
   Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {g σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) g σ c σ' f →
+  | cmd_sem {fac σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
     ----
-    EvalCommand π g σ (CmdExt.cmd c) σ' f
+    EvalCommand π fac σ (CmdExt.cmd c) σ' f
 
   /-- Arguments are matched positionally in three alignments: `inArgs`
       (`getInputExprs`) ↔ `p.header.inputs`; `lhs` (`getLhs`) ↔
@@ -243,18 +240,18 @@ inductive EvalCommand (π : String → Option Procedure) :
       `ListMap.keys p.header.getOutputOnlyParams`. The third alignment follows
       from the second because every inout formal is passed as `.inoutArg`. -/
   -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {g σ n p callArgs σ' σ_final
+  | call_sem {fac σ n p callArgs σ' σ_final
       bodyFailed preFailed postFailed md σAO} :
     π n = .some p →
-    CallEntry g σ p callArgs σAO →
-    EvalChecks g σAO
+    CallEntry fac σ p callArgs σAO →
+    EvalChecks fac σAO
       (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
-    CoreBodyExec π p.body ⟨σAO, g, false⟩ σ_final bodyFailed →
-    EvalChecks g σ_final
+    CoreBodyExec π p.body ⟨σAO, fac, false⟩ σ_final bodyFailed →
+    EvalChecks fac σ_final
       (Procedure.Spec.getDefaultCheckExprs p.spec.postconditions) postFailed →
-    CallExit g σ p callArgs σ_final σ' →
+    CallExit fac σ p callArgs σ_final σ' →
     ----
-    EvalCommand π g σ (CmdExt.call n callArgs md) σ'
+    EvalCommand π fac σ (CmdExt.call n callArgs md) σ'
       ((preFailed || bodyFailed) || postFailed)
 
 end
@@ -273,9 +270,7 @@ abbrev CoreBodyExecE
 /-- Event-producing Core command semantics: the generic `EvalCmdExtE` at
     `Expression`.  Base commands delegate to `EvalCmdE`; a procedure call emits
     its non-free preconditions as assertions, runs its body run-to-completion,
-    and emits its non-free postconditions as assertions.  The expression factory
-    is immutable, so a call runs its body from the entry environment and
-    interprets every contract clause at the active factory. -/
+    and emits its non-free postconditions as assertions. -/
 abbrev EvalCommandE
     (π : String → Option Procedure) :
     Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=

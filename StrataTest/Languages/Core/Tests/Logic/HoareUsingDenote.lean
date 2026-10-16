@@ -314,12 +314,12 @@ private theorem ite_run_inv {ρ ρ' : Imperative.Env Core.Expression}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_admin hadmin => cases hadmin with
-        | step_ite_true hc _ =>
+        | step_ite_true hc =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
           have htr := assert_run_inv π (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
             (ρ' := ρi) (singleton_run_inv π hin)
           exact .inl ⟨hc, by simpa using htr⟩
-        | step_ite_false hc _ =>
+        | step_ite_false hc =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
           have htr := assert_run_inv π (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
             (ρ' := ρi) (singleton_run_inv π hin)
@@ -328,12 +328,12 @@ private theorem ite_run_inv {ρ ρ' : Imperative.Env Core.Expression}
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_admin hadmin => cases hadmin with
-        | step_ite_true hc _ =>
+        | step_ite_true hc =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
           have htr := assert_run_inv π (l := "t") (e := forallExpr) (md := #[]) (ρ := ρ)
             (ρ' := ρi) (singleton_run_inv π hin)
           exact .inl ⟨hc, by simpa using htr⟩
-        | step_ite_false hc _ =>
+        | step_ite_false hc =>
           obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
           have htr := assert_run_inv π (l := "f") (e := ff0) (md := #[]) (ρ := ρ)
             (ρ' := ρi) (singleton_run_inv π hin)
@@ -456,11 +456,6 @@ private theorem xFalseEnv_eval_x :
     xFalseEnv_storeWellDefined rfl
   exact hvar.trans rfl
 
-/-- `Core.Factory` well-formedness for boolean evaluation. -/
-private theorem coreFactory_wfBool :
-    Imperative.WellFormedSemanticEvalBool (P := Core.Expression) Core.Factory :=
-  Core.coreFactory_WellFormedSemanticEval.bool
-
 /-- The completed event run of the assumeless body on `xFalseEnv`: it takes the else
     branch and emits exactly the `assert false` event. -/
 private theorem xFalseEnv_run (π : String → Option Core.Procedure)
@@ -499,7 +494,7 @@ private theorem xFalseEnv_run (π : String → Option Core.Procedure)
     exact .step _ [] _ _ _ (.step_admin .step_block_done) (.refl _)
   refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
   refine .step _ [] _ _ _
-    (.step_admin (.step_seq_inner (.step_ite_false xFalseEnv_eval_x coreFactory_wfBool))) ?_
+    (.step_admin (.step_seq_inner (.step_ite_false xFalseEnv_eval_x))) ?_
   refine ReflTransTrace.trans _ (seq_inner_starE (Core.EvalCommandE π)
     (ss := []) hblock_done) ?_
   refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_

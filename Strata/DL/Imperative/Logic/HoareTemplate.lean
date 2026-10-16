@@ -227,14 +227,14 @@ private theorem while_genE
     | .step _ _ _ _ _ _ _, hlen => simp only [ReflTransTraceT.len] at hlen; omega
   | succ n ih =>
     match hrunT, hlen with
-    | .step _ _ _ restTr _ (.step_admin (.step_loop_exit hg _)) hrest, hlen =>
+    | .step _ _ _ restTr _ (.step_admin (.step_loop_exit hg)) hrest, hlen =>
       -- guard false: the loop terminates immediately, emitting nothing.
       obtain ⟨hc, hnil⟩ := Imperative.stepStmtStarE_from_terminal (reflTransTraceT_to_prop hrest)
       subst hnil
       injection hc with hρ
       subst hρ
       exact ⟨True.intro, fun _ => ⟨hInv, hg⟩⟩
-    | .step _ _ _ restTr _ (.step_admin (.step_loop_enter hg _)) hrest, hlen =>
+    | .step _ _ _ restTr _ (.step_admin (.step_loop_enter hg)) hrest, hlen =>
       -- one iteration: the body's block, then the loop again.
       simp only [List.nil_append]
       obtain ⟨ρ_mid, tr₁, tr₂, htr, h_block_term, h_loop_rest, hlen_seq⟩ :=
@@ -565,20 +565,20 @@ theorem ite (params : ParamsTy)
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
       | step_admin hadmin => cases hadmin with
-        | step_ite_true hc _ =>
+        | step_ite_true hc =>
           exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
             (hthenDefs ρ₀ hinit) hthen_proj ht (.inl (by simpa using hrest))
-        | step_ite_false hc _ =>
+        | step_ite_false hc =>
           exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
             (helseDefs ρ₀ hinit) helse_proj he (.inl (by simpa using hrest))
   · cases hexit with
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
       | step_admin hadmin => cases hadmin with
-        | step_ite_true hc _ =>
+        | step_ite_true hc =>
           exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
             (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, by simpa using hrest⟩)
-        | step_ite_false hc _ =>
+        | step_ite_false hc =>
           exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
             (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, by simpa using hrest⟩)
 

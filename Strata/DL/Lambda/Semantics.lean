@@ -2080,7 +2080,7 @@ theorem isValue_eraseMetadata_eq
           have h_len : args₁.length = args₂.length := by
             have h_len_eq := congrArg List.length h_args_eM; simp [List.length_map] at h_len_eq; exact h_len_eq
           simp only [h_len]
-          -- The first part of && is the same; need to show all-values is the same
+          -- The first part of `&&` is the same; show that all arguments are values on both sides.
           congr 1
           -- Extract getLFuncCall from h1 to prove args are smaller
           have h_gl : getLFuncCall (.app m fn arg : LExpr Tbase.mono) = (op₁, args₁) := by
@@ -2488,7 +2488,7 @@ theorem eval_eraseMetadata_invariant
     · exact h_eM
     · split
       · -- factory case (inline/concreteEval/terminal)
-        rename_i h_ncan op_expr₁ args₁ lfunc h_call₁
+        rename_i h_nval op_expr₁ args₁ lfunc h_call₁
         -- Get the corresponding callOfLFunc for e₂
         obtain ⟨op₂, args₂, h_call₂, h_args_eM_raw, h_op_eM⟩ :=
           callOfLFunc_some_of_eraseMetadata_eq F e₁ e₂ false h_eM op_expr₁ args₁ lfunc h_call₁
@@ -2569,7 +2569,7 @@ theorem eval_eraseMetadata_invariant
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
-        -- Show all-values equality
+        -- Show that all arguments are values on both sides.
         have h_all_values :
             (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
             (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) := by
@@ -2614,7 +2614,7 @@ theorem eval_eraseMetadata_invariant
           · exact h_constrArgAt_eq _
           · exact congrArg _ h_all_values
         -- Show can_cond equality (for non-inline branch)
-        have h_can_cond_eq :
+        have h_val_cond_eq :
             ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) ||
               (match Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr with
               | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
@@ -2708,10 +2708,10 @@ theorem eval_eraseMetadata_invariant
           have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
           cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
-            simp only [h_fEC, h_fEV] at h_can_cond_eq h_constrArgAt_eq h_valueArgAt_eq ⊢
+            simp only [h_fEC, h_fEV] at h_val_cond_eq h_constrArgAt_eq h_valueArgAt_eq ⊢
             -- Now `split` on the outer LHS `if value` works.
             split
-            · rename_i h_can₁
+            · rename_i h_val₁
               cases h_ce : lfunc.concreteEval with
               | none =>
                 simp only []
@@ -2731,9 +2731,9 @@ theorem eval_eraseMetadata_invariant
                   next h_inline₂ =>
                     exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                   next h_ninline₂ =>
-                    -- LHS value check is true (h_can₁); derive RHS value check is true
-                    have h_can₂ := h_can_cond_eq ▸ h_can₁
-                    rw [if_pos h_can₂]
+                    -- LHS value check is true (h_val₁); derive RHS value check is true
+                    have h_val₂ := h_val_cond_eq ▸ h_val₁
+                    rw [if_pos h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
@@ -2752,8 +2752,8 @@ theorem eval_eraseMetadata_invariant
                   next h_inline₂ =>
                     exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                   next h_ninline₂ =>
-                    have h_can₂ := h_can_cond_eq ▸ h_can₁
-                    rw [if_pos h_can₂]
+                    have h_val₂ := h_val_cond_eq ▸ h_val₁
+                    rw [if_pos h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
@@ -2763,15 +2763,15 @@ theorem eval_eraseMetadata_invariant
                       exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
                     | none =>
                       simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
-            · rename_i h_ncan₁
+            · rename_i h_nval₁
               split
               next h_inline₂ =>
                 exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
               next h_ninline₂ =>
                 split
-                next h_can₂_prop =>
-                  exact absurd (h_can_cond_eq ▸ h_can₂_prop) h_ncan₁
-                next h_ncan₂_prop =>
+                next h_val₂_prop =>
+                  exact absurd (h_val_cond_eq ▸ h_val₂_prop) h_nval₁
+                next h_nval₂_prop =>
                   simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
           )
       · rename_i h_none₁

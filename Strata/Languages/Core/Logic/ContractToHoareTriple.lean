@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.Logic.Hoare
+public import Strata.Languages.Core.Logic.HoareUnstructured
 public import Strata.Languages.Core.Program
 import Strata.DL.Lambda.LExprType
 import all Strata.Languages.Core.Logic.Hoare
@@ -42,8 +42,8 @@ pair.  Kept separate because none of it is part of the logic proper.
 - `Procedure.contractTriple` — "the procedure named `procName` in `p` meets its
   contract", as a single judgement.  It names the procedure rather than taking it, so
   the environment a `call` resolves against is `p`'s own `findProcByString?` by
-  construction, and it is existential in both the procedure and its body so that
-  neither an unresolvable name nor a `.cfg` body makes it vacuous.
+  construction, and dispatches on the resolved procedure's body so neither an
+  unresolvable name nor either body representation makes the obligation vacuous.
 - `Procedure.ensuresAmongRequires` / `preHoldsAt` / `postRefutedAt` — the `Bool`
   decision procedures for the clause-list conditions above.
 
@@ -85,11 +85,18 @@ namespace Hoare
   ∀ id ∈ ListMap.keys proc.header.getInoutParams,
     ρ.store (CoreIdent.mkOld id.name) = ρ.store id
 
-/-- Runtime values matching a declared Core type. Bitvectors are represented by
-width-matching literals; other values must type-check as closed expressions. -/
+/-- Runtime values matching a declared Core type. Integers and bitvectors use
+their literal runtime representations; other values must type-check as closed
+expressions.
+
+TODO: this represents the executable subset of a value. Once the computable
+subset of values of ty is defined, valueHasType will have to be replaced with
+the function.
+-/
 @[expose] def Procedure.valueHasType (ty : Lambda.LMonoTy)
     (v : Expression.Expr) : Prop :=
   match ty with
+  | .int => ∃ i : Int, v = Lambda.LExpr.intConst () i
   | .bitvec n => ∃ b : BitVec n, v = Lambda.LExpr.bitvecConst () n b
   | _ => Lambda.LExpr.typeCheck [] v = some ty
 
@@ -99,30 +106,42 @@ width-matching literals; other values must type-check as closed expressions. -/
   ∀ id ty, (id, ty) ∈ proc.header.inputs.toList →
     ∃ v, ρ.store id = some v ∧ Procedure.valueHasType ty v
 
+/-- Entry condition shared by structured and CFG readings of a procedure contract. -/
+@[expose] def Procedure.contractPre (proc : Procedure)
+    (ρ : Imperative.Env Expression) : Prop :=
+  Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
+    Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ
+
 /-- **The Hoare triple a procedure's contract asserts about its body.**
 
-    `{ requires } body { ensures }` as a `Triple` over the body wrapped in its procedure
-    block `Stmt.block "" bss #[]`, so the `ensures` are checked at the environment that
-    block leaves behind (an `ensures` naming a variable the body *declares* is therefore
-    false — leaving the block drops it).  Partial correctness: a diverging body satisfies
-    any contract, so this is the contract obligation, not the whole of
-    `ProcedureAssertsValid`.
+    Structured bodies use `EventLang.coreBlock` over the body wrapped in its
+    procedure block, so body-local declarations are dropped before checking the
+    postcondition. CFG bodies use `TripleUnstructured`, backed by
+    `EventLang.coreCFG`, from their entry block to a terminal configuration. The
+    CFG reading matches the structured one by checking the postcondition on the
+    final store *projected through the entry store*, dropping CFG-local
+    declarations just as the procedure block drops its locals. The entry
+    environment is universally quantified and pinned in the precondition
+    (`ρ = ρEntry`) so the postcondition predicate, which only sees the final
+    environment, can still refer to the entry store.
+    Both readings use the same contract precondition and postcondition.
 
-    The precondition pins the initial environment to `Core.Factory`, so a body proof may
-    use the concrete evaluator's operator semantics; over an arbitrary well-formed factory
-    those value laws are unspecified. It carries `oldInoutAsPredicate` for each inout
-    formal's entry snapshot and `inputAsPredicate` so every input value matches the type
-    declared by the procedure signature. Discharge with `contractTriple_of` (all extra
-    assumptions discarded), `contractTriple_of_core` (factory and old relation kept), or
-    `contractTriple_of_core_typed` (all assumptions kept). -/
+    The precondition pins the initial environment to `Core.Factory`, carries the
+    entry snapshots of inout parameters, and requires every input value to match
+    its declared type. Partial correctness means a diverging body satisfies any
+    postcondition. -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
-  ∃ proc bss, p.findProcByString? procName = some proc ∧
-    proc.body = .structured bss ∧
-    Triple p.findProcByString? params
-      (fun ρ => Procedure.preAsPredicate proc ρ ∧ ρ.factory = Core.Factory ∧
-        Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
-      [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)
+  ∃ proc, p.findProcByString? procName = some proc ∧
+    match proc.body with
+    | .structured bss =>
+        Triple p.findProcByString? params (Procedure.contractPre proc)
+          [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)
+    | .cfg cfg =>
+        ∀ ρEntry, TripleUnstructured p.findProcByString? params
+          (fun ρ => Procedure.contractPre proc ρ ∧ ρ = ρEntry) cfg
+          (fun ρ' => Procedure.postAsPredicate proc
+            { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
 
 /-! ### Decidable bridges to a procedure's contract
 

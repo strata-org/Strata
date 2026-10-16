@@ -1554,7 +1554,7 @@ theorem eval_value_true_add_fuel (F : @Factory Tbase) (env : Env Tbase)
     to both `fun y => 2` and `fun y => (1 + 1)`, and both are values), but
     `eval`'s fixed operands-first strategy makes the fully-reduced result
     unique regardless of fuel. Together with `evalFully_of_value_true` this
-    says `evalFully` is the normal-form assignment for the fragment the
+    says `evalFully` assigns a normal form to the fragment the
     evaluator can fully reduce. -/
 theorem eval_value_true_deterministic (F : @Factory Tbase) (env : Env Tbase)
     (m k : Nat) (e : LExpr Tbase.mono) (v w : LExpr Tbase.mono)
@@ -3073,7 +3073,7 @@ theorem call_node_eval_eq
       LExpr.eval n' F σ' r = LExpr.eval n' F (substStoreExpr σ' sm) r :=
     fun r hr => eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF henvPB r
       (fun x hx => by rw [hr] at hx; simp at hx)
-  -- Each pullback-side argument residual is fully reduced values and hence
+  -- Each pullback-side argument residual is fully reduced, hence a value, hence
   -- closed (`getVars = []`).
   have hargClosed : ∀ a ∈ args,
       LExpr.LExpr.getVars (LExpr.eval n' F (substStoreExpr σ' sm) a).fst = [] := by

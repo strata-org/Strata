@@ -112,8 +112,9 @@ private def callCFG : CFG String (DetBlock String Command Expression) :=
     failure flag are unchanged and the trace is the call's pre / body / post events. -/
 example (fac : Expression.Factory) (σ : CoreStore)
     (f : Bool) :
-    StepCFGExtStarE calleeEnv fac callCFG
-      (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock callCFG "entry" ⟨σ, fac, f⟩) (callTrace fac)
+      (.terminal ⟨σ, fac, f⟩) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
   .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_sem fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)
@@ -121,8 +122,9 @@ example (fac : Expression.Factory) (σ : CoreStore)
 /-- The same CFG run derived through Core's abbreviations, with the call step from
     `callCmd_semCore`. -/
 example (fac : Expression.Factory) (σ : CoreStore) (f : Bool) :
-    StepCFGExtStarE calleeEnv fac callCFG
-      (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock callCFG "entry" ⟨σ, fac, f⟩) (callTrace fac)
+      (.terminal ⟨σ, fac, f⟩) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
   .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_semCore fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)

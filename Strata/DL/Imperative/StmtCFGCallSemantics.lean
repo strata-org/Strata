@@ -32,12 +32,12 @@ step:
 The call's trace is the precondition events, then the body events, then the
 postcondition events.
 
-`EvalCmdExtE` (one command), `BigStepE` (one procedure body) and `CFGRunExtE`
-(a CFG run) are mutually inductive: a call's `EvalCmdExtE.call_sem` derivation
-contains a `BigStepE` derivation of the callee body, and that body derivation is a
-multi-step run, of the structured statement relation `StepStmtE` for a structured
-body or of `CFGRunExtE` for a CFG body, whose commands are evaluated by
-`EvalCmdExtE` itself.  Nested calls therefore nest derivations.
+`EvalCmdExtE` (one command) and `BigStepE` (one procedure body) are mutually
+inductive: a call's `EvalCmdExtE.call_sem` derivation contains a `BigStepE`
+derivation of the callee body. A structured body is a multi-step run of
+`StepStmtE`; a CFG body is a multi-step run of `StepCFGE`. Both relations obtain
+their execution environment from their configurations, and both evaluate commands
+with `EvalCmdExtE` itself. Nested calls therefore nest derivations.
 
 `EvalCmdExtContractE` is the modular alternative for a call: it uses the same
 entry and exit, but replaces the body by havocking the output formals
@@ -148,13 +148,6 @@ variable {P : PureExpr}
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
 
-/-- Event-producing command relation with no possible command step.  Over it,
-    `StepCFGE` has exactly the control-flow steps of the CFG (fetch, conditional
-    jump, finish), each emitting no events. -/
-@[expose] def noCommandEvalEvents (P : PureExpr) (CmdT EventT : Type) :
-    EvalCmdParamE P CmdT EventT :=
-  fun _ _ _ _ _ => False
-
 mutual
 
 /-- Event-producing execution of a procedure body, structured or CFG, from its
@@ -173,47 +166,23 @@ inductive BigStepE
       ----
       BigStepE π (.structured ss) ρ ρ'.store emitted
 
-  /-- A CFG body runs from its entry block to a `finish` transfer at the factory
-      `ρ.factory` of the entry environment `ρ`, with calls evaluated by
-      `EvalCmdExtE`.  The final store is the halting store projected through the
-      entry store. -/
+  /-- A CFG body runs from its entry block to `finish`. The CFG program and
+      environment are carried by each `CFGConfig`, so the nested relation captures
+      only the globally fixed command evaluator `EvalCmdExtE π`. The final store is
+      projected through the entry store to drop body-local variables. -/
   | cfg :
-      CFGRunExtE π ρ.factory g (.atBlock g.entry ρ.store ρ.hasFailure) emitted
-        (.terminal σ' f) →
+      ReflTransTrace (StepCFGE P (EvalCmdExtE π))
+        (.atBlock g g.entry ρ)
+        emitted
+        (.terminal ρ') →
       ----
-      BigStepE π (.cfg g) ρ (projectStore ρ.store σ') emitted
-
-/-- Multi-step event-trace execution of the CFG `g` at factory `fac` over the
-    call-aware command relation `EvalCmdExtE π`, concatenating each step's events
-    chronologically.  It has the steps of
-    `StepCFGStarE P (EvalCmdExtE π) fac g`; a separate relation is needed
-    because a nested occurrence of `EvalCmdExtE` may not be indexed by the
-    constructor-local `fac` and `g`. -/
-inductive CFGRunExtE
-    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
-    P.Factory → DetCFG P (CmdExt P) → CFGConfig String (CmdExt P) P → Trace P →
-      CFGConfig String (CmdExt P) P → Prop where
-  | refl : CFGRunExtE π fac g c [] c
-  /-- Run one command from the residual list of the current block. -/
-  | step_cmd :
-      EvalCmdExtE π fac σ c σ' emitted →
-      CFGRunExtE π fac g (.inBlock t cs tr σ' f) rest c₂ →
-      ----
-      CFGRunExtE π fac g (.inBlock t (c :: cs) tr σ f) (emitted ++ rest) c₂
-  /-- Take one command-free control-flow `StepCFGE` step; it emits no events. -/
-  | step_admin :
-      StepCFGE P (noCommandEvalEvents P (CmdExt P) (Event P)) fac g c [] c₁ →
-      CFGRunExtE π fac g c₁ rest c₂ →
-      ----
-      CFGRunExtE π fac g c rest c₂
+      BigStepE π (.cfg g) ρ (projectStore ρ.store ρ'.store) emitted
 
 /-- Event-producing command semantics of `CmdExt P`.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the
     callee entry frame, executes its body from that frame, and emits its non-free
-    postconditions as assertions at the callee's final frame.  The expression
-    factory is immutable, so a call runs its body from the entry environment
-    `⟨σAO, fac, false⟩` and interprets every contract clause at the active
-    factory `fac`. -/
+    postconditions as assertions at the callee's final frame. The call runs its
+    body and interprets each contract clause with the active factory `fac`. -/
 inductive EvalCmdExtE
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     P.Factory → SemanticStore P → CmdExt P → SemanticStore P → Trace P → Prop where

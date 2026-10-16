@@ -142,7 +142,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasInt P] [HasIntOps P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
 
 
@@ -155,7 +155,7 @@ theorem evalStmtsSmallNil
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
-/-- A single step preserves the environment's immutable factory. -/
+/-- A single step preserves the environment's factory. -/
 theorem step_preserves_factory
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd c₁ c₂) :
@@ -166,7 +166,7 @@ theorem step_preserves_factory
   | _ => simp [Config.getEnv]
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
-/-- A multi-step run preserves the environment's immutable factory. -/
+/-- A multi-step run preserves the environment's factory. -/
 theorem star_preserves_factory
     {c₁ c₂ : Config P CmdT}
     (hstar : StepStmtStar P EvalCmd c₁ c₂) :
@@ -510,10 +510,10 @@ theorem stmts_append_done
 /-- Try every non-recursive `StepStmt` constructor, using `‹_›` (term-level
     assumption) to fill arguments so that no hypothesis names are needed. -/
 local macro "apply_step" : tactic => `(tactic| first
-  | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
-  | exact .step_ite_false ‹_› ‹_›
-  | exact .step_loop_enter ‹_› ‹_›
-  | exact .step_loop_exit ‹_› ‹_›
+  | exact .step_cmd ‹_›        | exact .step_ite_true ‹_›
+  | exact .step_ite_false ‹_›
+  | exact .step_loop_enter ‹_›
+  | exact .step_loop_exit ‹_›
   | exact .step_block
   | exact .step_exit
   | exact .step_typeDecl        | exact .step_stmts_nil
@@ -543,8 +543,8 @@ private def step_simulation
   cases hstep with
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
-  | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ | step_loop_exit _ _
+  | step_cmd _ | step_block | step_ite_true _ | step_ite_false _
+  | step_loop_enter _ | step_loop_exit _
   | step_exit | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
@@ -660,7 +660,7 @@ theorem smallStep_hasFailure_irrel
 
 /-! ## Well-paired exits: preservation and no-escape -/
 
-omit [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
+omit [HasBool P] [HasOps P] [HasFvars P] in
 /-- Helper: when the inner of a block reaches `.exiting l` and the
     block's label (if some) doesn't match `l`, then `l` must be in the outer
     labels list.  The conclusion is `l ∈ labels`, which is exactly the
@@ -703,7 +703,7 @@ theorem step_preserves_exitsCoveredByBlocks
   | step_ite_false => intro _ hwp; exact hwp.2
   | step_ite_nondet_true => intro _ hwp; exact hwp.1
   | step_ite_nondet_false => intro _ hwp; exact hwp.2
-  | step_loop_enter _ _ =>
+  | step_loop_enter _ =>
     intro labels hwp
     -- Goal: .seq (.block .none ρ.store (.stmts body ρ')) [.loop ...] covers labels.
     -- The .block .none label doesn't extend the labels list (Config.exitsCoveredByBlocks's
@@ -824,25 +824,20 @@ theorem block_star_extract_inner
     | step_block_exit_match => exact absurd (.refl _) (h_ne _ _)
     | step_block_exit_mismatch => exact absurd (.refl _) (h_ne _ _)
 
-/-! ## WF preservation along a run (factory is immutable) -/
+/-! ## WF preservation along a run -/
 
-variable [HasFvar P] [HasSubstFvar P]
+variable [HasFvar P] [HasSubstFvar P] [HasBoolOps P]
 
 omit [HasOps P] in
-/-- Single step preserves `Config.wfEval`.  The factory is immutable during
-    execution. -/
+/-- Single step preserves `Config.wfEval` via the step's factory equality. -/
 private theorem step_preserves_wfEval_wfExtend
     (c₁ c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd c₁ c₂)
     (hwf : c₁.wfEval) :
     c₂.wfEval := by
-  induction hstep with
-  -- Recursive rules: use the induction hypothesis on the inner config.
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body hinner ih =>
-    exact ⟨step_preserves_factory P EvalCmd _ _ hinner ▸ hwf.1, ih hwf.2⟩
-  -- Everything else is pure Config.wfEval juggling.
-  | _ => first | exact hwf | exact ⟨hwf, hwf⟩ | exact hwf.1
+  show WellFormedSemanticEval (P := P) c₂.getEnv.factory
+  rw [← step_preserves_factory P EvalCmd _ _ hstep]
+  exact hwf
 
 omit [HasOps P] in
 /-- `Config.wfEval` is preserved under `StepStmtStar`. -/
@@ -857,18 +852,8 @@ theorem star_preserves_cfg_wfEval
     exact ih (step_preserves_wfEval_wfExtend P EvalCmd _ _ hstep hwf)
 
 omit [HasOps P] in
-/-- `Config.wfEval` implies `WellFormedSemanticEval` of the config's own
-    (immutable) factory. -/
-theorem Config.wfEval_implies_wfEval (cfg : Config P CmdT) :
-    cfg.wfEval → WellFormedSemanticEval (P := P) cfg.getEnv.factory := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-omit [HasOps P] in
 /-- `WellFormedSemanticEval` of the factory is preserved under `StepStmtStar`
-    from a top-level `.stmt` start (trivially, since the factory is immutable). -/
+    from a top-level `.stmt` start, using factory preservation. -/
 theorem star_preserves_wfEval
     {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
     (hstar : StepStmtStar P EvalCmd (.stmt s ρ) c₂)
@@ -876,7 +861,7 @@ theorem star_preserves_wfEval
     WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
   have h := star_preserves_cfg_wfEval P EvalCmd hstar
     (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwf)
-  exact Config.wfEval_implies_wfEval P c₂ h
+  exact h
 
 omit [HasOps P] in
 /-- Block-list variant of `star_preserves_wfEval`: starting at `.stmts ss ρ`. -/
@@ -887,16 +872,16 @@ theorem star_preserves_wfEval_block
     WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
   have h := star_preserves_cfg_wfEval P EvalCmd hstar
     (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwf)
-  exact Config.wfEval_implies_wfEval P c₂ h
+  exact h
 
 end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
+variable (P : PureExpr) [HasFvar P] [HasFvars P] [HasBool P]
   [HasInt P] [HasIntOps P] [HasOps P]
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
+omit [HasFvar P] [HasBool P] [HasOps P] [HasFvars P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -931,7 +916,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
+omit [HasFvar P] [HasBool P] [HasOps P] [HasFvars P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -944,7 +929,7 @@ private theorem stmts_noMatchingAssert_append
     exact ⟨h₁.1, ih h₁.2⟩
 
 /-- A single step preserves `Config.noMatchingAssert`. -/
-private def step_preserves_noMatchingAssert
+private def step_preserves_noMatchingAssert [HasBoolOps P]
     (c₁ c₂ : Config P (Cmd P)) (label : String)
     (hstep : StepStmt P (EvalCmd P) c₁ c₂)
     (hno : c₁.noMatchingAssert label) :
@@ -987,7 +972,7 @@ private def step_preserves_noMatchingAssert
 omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- The syntactic check implies that no reachable config from `st`
     satisfies `isAtAssert` for the given label and expression. -/
-theorem noMatchingAssert_implies_no_reachable_assert
+theorem noMatchingAssert_implies_no_reachable_assert [HasBoolOps P]
     (st : Stmt P (Cmd P)) (label : String) (expr : P.Expr)
     (hno : st.noMatchingAssert label) :
     ∀ (ρ : Env P) (cfg : Config P (Cmd P)),
@@ -1012,7 +997,7 @@ omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a block reaches a config where isAtAssert holds,
     then the config must be `.block label inner` where `inner` is reachable
     from the block's body and satisfies `isAtAssert`. -/
-theorem block_isAtAssert_inner
+theorem block_isAtAssert_inner [HasBoolOps P]
     (label : Option String) (σ_parent : SemanticStore P)
     (inner₀ cfg : Config P (Cmd P)) (a : AssertId P)
     (hstar : StepStmtStar P (EvalCmd P) (.block label σ_parent inner₀) cfg)
@@ -1042,7 +1027,7 @@ omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a seq reaches a config where isAtAssert holds,
     then either the inner config matches (first disjunct), or the inner
     completed and we're in the tail (second disjunct). -/
-theorem seq_isAtAssert_cases
+theorem seq_isAtAssert_cases [HasBoolOps P]
     (inner₀ cfg : Config P (Cmd P)) (ss : List (Stmt P (Cmd P))) (a : AssertId P)
     (hstar : StepStmtStar P (EvalCmd P) (.seq inner₀ ss) cfg)
     (hat : isAtAssert P cfg a) :
@@ -1073,7 +1058,7 @@ omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- For a single assert command, any config reachable from `.stmts [assert] ρ`
     that satisfies `isAtAssert` has getStore = ρ.store.  (Assert steps are
     no-ops on the store.) -/
-theorem assert_tail_getStore
+theorem assert_tail_getStore [HasBoolOps P]
     (ρ : Env P) (l : String) (e : P.Expr) (md : MetaData P)
     (cfg : Config P (Cmd P)) (a : AssertId P)
     (hstar : StepStmtStar P (EvalCmd P)
@@ -1152,7 +1137,7 @@ theorem step_preserves_noFailure
       rw [hff] at htt
       exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
   | step_block => simp [Config.getEnv]; exact hnf
-  | step_loop_enter _ _ | step_loop_exit _ _
+  | step_loop_enter _ | step_loop_exit _
   | step_loop_nondet_enter | step_loop_nondet_exit =>
     simp only [Config.getEnv] at hnf ⊢; exact hnf
   | step_seq_inner h ih =>
@@ -1166,7 +1151,7 @@ theorem step_preserves_noFailure
   | _ => intros; exact hnf
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
-theorem allAssertsValid_preserves_noFailure
+theorem allAssertsValid_preserves_noFailure [HasBoolOps P]
     {ρ₀ ρ' : Env P}
     (st : Stmt P (Cmd P))
     (hvalid : ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
@@ -1514,7 +1499,7 @@ and the command-evaluation parameter. -/
 section ReflTransTHelpers
 
 variable {P : PureExpr} {CmdT : Type}
-  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasInt P] [HasIntOps P] [HasOps P]
   {EvalCmd : EvalCmdParam P CmdT}
 
 
@@ -2721,12 +2706,12 @@ theorem Config.varsDefined_step_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
   | step_cmd hcmd =>
     exact fun y hQ => h_cmd hcmd (h y hQ)
   | step_block => exact ⟨h, h⟩
-  | step_ite_true _ _ => exact ⟨h, h⟩
-  | step_ite_false _ _ => exact ⟨h, h⟩
+  | step_ite_true _ => exact ⟨h, h⟩
+  | step_ite_false _ => exact ⟨h, h⟩
   | step_ite_nondet_true => exact ⟨h, h⟩
   | step_ite_nondet_false => exact ⟨h, h⟩
-  | step_loop_enter _ _ => exact ⟨h, h⟩
-  | step_loop_exit _ _ => exact h
+  | step_loop_enter _ => exact ⟨h, h⟩
+  | step_loop_exit _ => exact h
   | step_loop_nondet_enter => exact ⟨h, h⟩
   | step_loop_nondet_exit => exact h
   | step_exit => exact h
@@ -2750,7 +2735,7 @@ theorem Config.varsDefined_step_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 
 /-! ### `Config.storeWellDefined` preservation
 
-Store value-hood is relative to the immutable factory `fac`, so a run preserves
+Store value-hood is relative to the factory `fac`, so a run preserves
 it given that the command evaluator preserves it. -/
 
 /-- A single step preserves `Config.storeWellDefined`, given that the command
@@ -2781,8 +2766,7 @@ private theorem Config.storeWellDefined_step_of {P : PureExpr} [HasBool P] [HasB
   -- block frame, which repeats it as the saved parent store.
   | _ => first | exact h | exact ⟨h, h⟩
 
-/-- Multi-step form of `Config.storeWellDefined_step_of`.  The factory is
-immutable, so no snapshot-consistency hypothesis is needed. -/
+/-- Multi-step form of `Config.storeWellDefined_step_of`. -/
 theorem Config.storeWellDefined_star_of {P : PureExpr} [HasBool P] [HasBoolOps P]
     {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {fl : Bool},
@@ -2870,7 +2854,7 @@ private theorem Config.varsUndefinedScoped_step_of {P : PureExpr}
     intro y hQ
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     exact h_cmd h_eval h_none (by simpa [Stmt.definedVars] using h_ndef)
-  | step_loop_enter _ _ | step_loop_nondet_enter =>
+  | step_loop_enter _ | step_loop_nondet_enter =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ s hs => ?_⟩
     rcases List.mem_cons.mp hs with h_eq | h_in
     · subst h_eq; simp [Stmt.definedVars]
@@ -2964,19 +2948,19 @@ theorem Config.varsUndefinedThroughout_step_of {P : PureExpr}
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     exact ⟨h_none, all_not_mem_definedVars_of_block (by simpa [Stmt.definedVars] using h_ndef)⟩
-  | step_ite_true _ _ | step_ite_nondet_true =>
+  | step_ite_true _ | step_ite_nondet_true =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
     simp only [Bool.false_eq_true, if_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inl hc)))⟩
-  | step_ite_false _ _ | step_ite_nondet_false =>
+  | step_ite_false _ | step_ite_nondet_false =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
     simp only [Bool.false_eq_true, if_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inr hc)))⟩
-  | step_loop_enter _ _ | step_loop_nondet_enter =>
+  | step_loop_enter _ | step_loop_nondet_enter =>
     refine ⟨⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩, fun y hQ s hs => ?_⟩
     · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
       rw [Stmt.definedVars] at h_ndef
@@ -3130,21 +3114,21 @@ theorem Config.varEqUnwritten_step {P : PureExpr}
     rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩
-  | step_ite_true _ _ | step_ite_nondet_true =>
+  | step_ite_true _ | step_ite_nondet_true =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
     rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw,
       all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inl hc))),
       all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inl hc)))⟩
-  | step_ite_false _ _ | step_ite_nondet_false =>
+  | step_ite_false _ | step_ite_nondet_false =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
     rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw,
       all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inr hc))),
       all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inr hc)))⟩
-  | step_loop_enter _ _ | step_loop_nondet_enter =>
+  | step_loop_enter _ | step_loop_nondet_enter =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
     have hnd' := hnd; have hnm' := hnm
     rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
@@ -3153,7 +3137,7 @@ theorem Config.varEqUnwritten_step {P : PureExpr}
       ?_, ?_⟩
     · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnd'
     · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnm'
-  | step_loop_exit _ _ | step_loop_nondet_exit | step_exit | step_typeDecl =>
+  | step_loop_exit _ | step_loop_nondet_exit | step_exit | step_typeDecl =>
     exact h_inv.1
   | step_stmts_nil =>
     exact h_inv.1
@@ -3273,18 +3257,18 @@ theorem StepStmt.toStepStmtE
       simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
         (StepStmtE.step_cmd hcmd.toEvalCmdE)
   | step_block => exact StepStmt.adminToStepStmtE .step_block
-  | step_ite_true heval hwf =>
-      exact StepStmt.adminToStepStmtE (.step_ite_true heval hwf)
-  | step_ite_false heval hwf =>
-      exact StepStmt.adminToStepStmtE (.step_ite_false heval hwf)
+  | step_ite_true heval =>
+      exact StepStmt.adminToStepStmtE (.step_ite_true heval)
+  | step_ite_false heval =>
+      exact StepStmt.adminToStepStmtE (.step_ite_false heval)
   | step_ite_nondet_true =>
       exact StepStmt.adminToStepStmtE .step_ite_nondet_true
   | step_ite_nondet_false =>
       exact StepStmt.adminToStepStmtE .step_ite_nondet_false
-  | step_loop_enter heval hwf =>
-      exact StepStmt.adminToStepStmtE (.step_loop_enter heval hwf)
-  | step_loop_exit heval hwf =>
-      exact StepStmt.adminToStepStmtE (.step_loop_exit heval hwf)
+  | step_loop_enter heval =>
+      exact StepStmt.adminToStepStmtE (.step_loop_enter heval)
+  | step_loop_exit heval =>
+      exact StepStmt.adminToStepStmtE (.step_loop_exit heval)
   | step_loop_nondet_enter =>
       exact StepStmt.adminToStepStmtE .step_loop_nondet_enter
   | step_loop_nondet_exit =>
@@ -3317,7 +3301,7 @@ produce the same chronological trace. -/
 
 section EventTraceStructural
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
   (EvalCmd : EvalCmdParamE P CmdT EventT)
 
 
@@ -3626,7 +3610,7 @@ apply to any `EvalCmdParamE`. -/
 
 section EventBlockScope
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
 
@@ -3800,7 +3784,7 @@ theorem stmt_block_reaches_doneE
 /-- Single-step preservation of scope-aware `Config.varsUndefined true` under a
 traced event step, given the command evaluator only defines what the command
 declares (`h_cmd`). -/
-private theorem Config.varsUndefinedScoped_stepE_of
+private theorem Config.varsUndefinedScoped_stepE_of [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
       EvalCmd f σ c σ' emitted → σ y = none →
@@ -3822,7 +3806,7 @@ private theorem Config.varsUndefinedScoped_stepE_of
 
 /-- A scope-aware `Config.varsUndefined true` invariant is preserved across a
 traced run when each command defines only the variables it declares. -/
-theorem Config.varsUndefinedScoped_star_ofE
+theorem Config.varsUndefinedScoped_star_ofE [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
       EvalCmd f σ c σ' emitted → σ y = none →
@@ -3839,7 +3823,7 @@ theorem Config.varsUndefinedScoped_star_ofE
 /-- **Leaving a block drops exactly the names its body scopes**, event-trace
 version: the store handed back after a finished traced body run is determined by
 the body alone. -/
-theorem projectStore_eq_dropVarsE
+theorem projectStore_eq_dropVarsE [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
       EvalCmd f σ c σ' emitted → σ y = none →
@@ -3878,7 +3862,7 @@ composing each iteration's trace chronologically. -/
 
 section EventTraceReflTransTHelpers
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
 
@@ -3975,7 +3959,7 @@ theorem Config.varsDefined_star_ofE
   | step _ _ _ _ _ h_step _ ih =>
     exact ih (Config.varsDefined_stepE_of h_cmd h_step h_inv)
 
-/-- A single traced event step preserves the environment's immutable factory. -/
+/-- A single traced event step preserves the environment's factory. -/
 theorem stepE_preserves_factory
     {cfg cfg' : Config P CmdT} {tr : List EventT}
     (h_step : StepStmtE P EvalCmd cfg tr cfg') :
@@ -3986,7 +3970,7 @@ theorem stepE_preserves_factory
   | step_seq_inner _ ih => simpa [Config.getEnv] using ih
   | step_block_body _ ih => simpa [Config.getEnv] using ih
 
-/-- A traced event run preserves the environment's immutable factory. -/
+/-- A traced event run preserves the environment's factory. -/
 theorem starE_preserves_factory
     {cfg cfg' : Config P CmdT} {tr : List EventT}
     (h_run : StepStmtStarE P EvalCmd cfg tr cfg') :
@@ -4035,7 +4019,7 @@ end EventInvariantEngines
 
 section EventCmdMonotonicity
 
-variable {P : PureExpr} {CmdT EventT : Type} [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} {CmdT EventT : Type} [HasBool P]
 
 /-- `StepStmtE` is monotone in its command relation. -/
 theorem StepStmtE.imp {E E' : EvalCmdParamE P CmdT EventT}

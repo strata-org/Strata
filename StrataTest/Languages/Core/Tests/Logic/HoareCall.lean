@@ -586,7 +586,7 @@ private theorem bv16_call_triple
   refine Core.Logic.Hoare.Procedure.call_of_contract mmAST testParams procName
     callArgs md Ppre Ppost hcontract hframe ?_ ?_
   · -- hentry
-    intro ρ₀ proc' bss σAO hpre hwf hlk hbody' hce
+    intro ρ₀ proc' σAO hpre hwf hlk hce
     have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
     subst proc'
     have hfac : ρ₀.factory = Core.Factory := hPreFac ρ₀ hpre
@@ -598,10 +598,7 @@ private theorem bv16_call_triple
     rw [hfac] at hEEx hEEy
     have hvx : vx = bvc va := Option.some.inj (hEEx.symm.trans hExa)
     have hvy : vy = bvc vb := Option.some.inj (hEEy.symm.trans hExb)
-    have hbss : bss = [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
-        (Imperative.Cmd.set resultId (.det bodyE) bmd))] := by
-      have := hbody'.symm.trans hbody; injection this
-    subst hbss
+    rw [hbody]
     refine ⟨⟨?_, hfac, ?_, ?_⟩, ?_⟩
     · intro label check hmem; rw [hNoPre] at hmem; simp at hmem
     · intro id hid; rw [hInout] at hid; simp at hid

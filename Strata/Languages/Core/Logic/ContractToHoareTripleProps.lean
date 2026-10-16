@@ -135,8 +135,9 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
     (h : Triple p.findProcByString? params (Procedure.preAsPredicate proc)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, bss, hproc, hbody,
-    consequence p.findProcByString? params h (fun _ hρ => hρ.1) (fun _ h => h)⟩
+  ⟨proc, hproc, by
+    rw [hbody]
+    exact consequence p.findProcByString? params h (fun _ hρ => hρ.1) (fun _ h => h)⟩
 
 /-- Build a `contractTriple` whose body proof may assume the concrete factory and
     old-inout relation but does not need input-value typing. -/
@@ -149,8 +150,9 @@ theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFP
         Procedure.oldInoutAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, bss, hproc, hbody,
-    consequence p.findProcByString? params h
+  ⟨proc, hproc, by
+    rw [hbody]
+    exact consequence p.findProcByString? params h
       (fun _ hρ => ⟨hρ.1, hρ.2.1, hρ.2.2.1⟩) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` while retaining every entry fact, including values
@@ -165,7 +167,7 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
         Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ)
       [Imperative.Stmt.block "" bss #[]] (Procedure.postAsPredicate proc)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, bss, hproc, hbody, h⟩
+  ⟨proc, hproc, by rw [hbody]; exact h⟩
 
 /-- A contract whose every non-`free` `ensures` is literally one of the
     `requires` is met by an empty body: nothing runs, so the precondition still

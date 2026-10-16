@@ -71,7 +71,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
     intro _ h; simp [LFunc.concreteEval] at h
 
-/-- An LFunc bundled with its well-formedness proof, including closedness. -/
+/-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
   func : LFunc T
   wf : LFuncWF func
@@ -84,7 +84,7 @@ def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
   f.func.opExpr
 
 /-- An array-backed factory whose functions each carry an `LFuncWF` proof.
-    Function names are unique, and `LFuncWF` includes closedness. -/
+    Function names are unique. -/
 structure WFLFactory (T : LExprParams) where
   toFactory : Factory T
   wf : ∀(func : LFunc T), func ∈ toFactory.toArray → LFuncWF func
@@ -110,8 +110,7 @@ structure WFLFactory (T : LExprParams) where
   }
 
 /--
-Well-formedness properties of a factory. Each function's `LFuncWF` proof
-includes its ordinary invariants and closedness.
+Well-formedness properties of a factory.
 -/
 structure FactoryWF {T} (fac : Factory T) where
   lfuncs_wf : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncWF lf
