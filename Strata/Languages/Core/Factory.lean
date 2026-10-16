@@ -1049,13 +1049,19 @@ def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
     (.bitvec size) (.bitvec (hi + 1 - lo)) rfl rfl
 
 def bvToUIntFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.ToUInt" (.bitvec size) .int rfl rfl
+  unaryOp (InValTy := BitVec size) s!"Bv{size}.ToUInt"
+    (fun value => Int.ofNat value.toNat)
+    (hInTy := rfl) (hOutTy := rfl)
 
 def bvToIntFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.ToInt" (.bitvec size) .int rfl rfl
+  unaryOp (InValTy := BitVec size) s!"Bv{size}.ToInt"
+    (fun value => value.toInt)
+    (hInTy := rfl) (hOutTy := rfl)
 
 def intToBvFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Int.ToBv{size}" .int (.bitvec size) rfl rfl
+  unaryOp (InValTy := Int) s!"Int.ToBv{size}"
+    (BitVec.ofInt size)
+    (hInTy := rfl) (hOutTy := rfl)
 
 def bv8ConcatFunc  := bvConcatFunc 8
 def bv16ConcatFunc := bvConcatFunc 16
