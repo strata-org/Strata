@@ -65,7 +65,7 @@ public section
 /-- Smart constructor for bitvector values: normalize the stored integer to the
     canonical bit-pattern representative in `[0, 2^w)` (via Euclidean `n.emod 2^w`,
     which stays non-negative for a positive divisor — unlike `%`/`Int.mod`, whose
-    truncated division would leave `(-1) % 256 = -1`). Storing a canonical value
+    truncated division would leave `(-1) % 256 = -1`). Storing a value
     makes structural equality (`==`) on `Value.bv` sound — e.g. `mkBv 8 256 = mkBv 8 0`
     and `mkBv 8 (-1) = mkBv 8 255` — which is what `Equal`/`NotEqual` rely on.
     (Mapping the pattern to a signed range `[-(2^(w-1)), 2^(w-1))` for display is

@@ -246,7 +246,7 @@ private theorem emptyBodyExecE
   simpa [projectStore_self] using h
 
 /-- Reading the slot just written by `calleeFrame` returns the written value,
-    provided that value is canonical in the factory. -/
+    provided that expression is a value in the factory. -/
 private theorem readValues_calleeFrame
     (fac : Expression.Factory) (v : Expression.Expr) (hv : HasVal.value fac v) :
     ReadValues fac (calleeFrame v) [calleeY] [v] := by
@@ -285,11 +285,11 @@ private theorem isDefined_boolConst (σ : CoreStore) (b : Bool) :
     isDefined σ (HasFvars.getFvars (Lambda.LExpr.boolConst () b)) := by
   simp [isDefined, HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
 
-/-- An integer literal is a canonical value in every factory. -/
+/-- An integer literal is a value in every factory. -/
 private theorem intVal_value (fac : Expression.Factory) (n : Int) :
     HasVal.value fac (intVal n) :=
-  show Lambda.LExpr.isCanonicalValue fac (intVal n) = true from
-    Lambda.isCanonicalValue_const_true fac () (Lambda.LConst.intConst n)
+  show Lambda.LExpr.isValue fac (intVal n) = true from
+    Lambda.isValue_const_true fac () (Lambda.LConst.intConst n)
 
 /-- An integer literal has Core's monomorphic integer type. -/
 private theorem intVal_valueOfTy (fac : Expression.Factory) (n : Int) :
@@ -300,7 +300,7 @@ private theorem intVal_valueOfTy (fac : Expression.Factory) (n : Int) :
 private theorem true_not_int (fac : Expression.Factory) :
     ¬ HasVal.valueOfTy fac Core.true (Lambda.LTy.forAll [] .int) := by
   simp [HasVal.valueOfTy, Core.true, Lambda.LExpr.boolConst,
-    Lambda.LExpr.isCanonicalValue, Lambda.LExpr.typeCheck, Lambda.LTy.toMonoType?,
+    Lambda.LExpr.isValue, Lambda.LExpr.typeCheck, Lambda.LTy.toMonoType?,
     Lambda.LConst.ty, Lambda.LMonoTy.bool, Lambda.LMonoTy.int]
 
 /-- The current inout formal keeps its incoming value in the snapshotted frame. -/

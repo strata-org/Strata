@@ -81,3 +81,68 @@ procedure unknownPromotesToNeighbour()
 //       ^^^^^^^^^^^^^^^^ error: cannot compare 'int' with 'real' using '=='
 };
 #end
+
+-- Operators applied only to holes are accepted: the holes take the context's type, or `int` in
+-- a comparison. Holes are typed after resolution, so only the full pipeline shows it.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure negatedHole()
+  opaque
+{
+  var x: int := -<?>
+};
+
+procedure addedHoles()
+  opaque
+{
+  var x: real := <?> + <?>
+};
+
+procedure comparedHoles()
+  opaque
+{
+  var b: bool := <?> < <?>
+};
+
+procedure equatedHoles()
+  opaque
+{
+  var b: bool := <?> == <?>
+};
+
+procedure negatedNondetHole()
+  opaque
+{
+  var x: int := -<??>
+};
+#end
+
+-- Where no overload has the guessed signature, the holes stay untyped and are reported:
+-- `-` takes no `bool`, `<` returns no `int`, and an untyped `var b` names no result type.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure negatedHoleAsBool()
+  opaque
+{
+  var b: bool := -<?>
+//                ^^^ error: could not infer type
+};
+
+procedure comparedHolesAsInt()
+  opaque
+{
+  var x: int := <?> < <?>
+//              ^^^ error: could not infer type
+//                    ^^^ error: could not infer type
+};
+
+procedure comparedHolesUntyped()
+  opaque
+{
+  var b := <?> < <?>
+//         ^^^ error: could not infer type
+//               ^^^ error: could not infer type
+};
+#end

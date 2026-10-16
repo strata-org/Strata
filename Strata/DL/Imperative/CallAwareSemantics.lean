@@ -7,15 +7,15 @@ module
 
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.KleeneStmtSemantics
-public import Strata.DL.Imperative.StmtCallSemantics
+public import Strata.DL.Imperative.StmtCFGCallSemantics
 
 /-! # Call-aware event-trace CFG and Kleene relations
 
 The generic event-trace relations `StepCFGE` / `StepCFGStarE` (CFGSemantics) and
 `StepKleeneE` / `StepKleeneStarE` (KleeneStmtSemantics) instantiated at
 `CmdT := CmdExt P`, `EventT := Event P` and the call-aware command relation
-`EvalCmdExtE π` (StmtCallSemantics).  A call inside a CFG block or a Kleene
-command runs the callee body to completion through the structured `BigStepE`.
+`EvalCmdExtE π` (StmtCFGCallSemantics).  A call inside a CFG block or a Kleene
+command runs the callee body, structured or CFG, to completion through `BigStepE`.
 The generic relations themselves stay call-agnostic. -/
 
 namespace Imperative

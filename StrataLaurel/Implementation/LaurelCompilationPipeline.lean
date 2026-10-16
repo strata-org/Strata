@@ -170,10 +170,10 @@ def laurelPipeline : Array LoweringPass := #[
   -- written global is by now an inout in the ordinary signature sense, which is
   -- what `procInoutNames` recognizes. Before `Contracts`, so that pass sees `$heap`
   -- as a plain inout and its existing `$out` machinery handles it unchanged.
-  uniqueOverloadNamesPass,
   pushOldInwardPass,
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
+  uniqueOverloadNamesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
   loopInvariantWellFormednessPass,

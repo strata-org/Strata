@@ -28,10 +28,10 @@ Each test is a pair of
 2. Its equivalent Lambda.LExpr.Step version.
 -/
 
--- A helper tactic for proving 'isCanonicalValue e = b'.
-macro "discharge_isCanonicalValue": tactic => `(tactic|
+-- A helper tactic for proving 'isValue e = b'.
+macro "discharge_isValue": tactic => `(tactic|
     conv =>
-      lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
+      lhs; reduce; unfold isValue; reduce; unfold isValue
   )
 -- Take a small step.
 macro "take_step": tactic => `(tactic |
@@ -43,7 +43,7 @@ macro "take_refl": tactic => `(tactic |
   )
 -- Do beta reduction.
 macro "reduce_beta": tactic => `(tactic |
-    apply Step.beta <;> discharge_isCanonicalValue
+    apply Step.beta <;> discharge_isValue
   )
 -- A helper tactic to exhibit an instance of Metadata (which is Unit)
 macro "inhabited_metadata": tactic => `(tactic |
@@ -428,11 +428,11 @@ example: steps_well test12 := by prove_steps_well test12 testState_wf
 
 /-- info: false -/
 #guard_msgs in
-#eval LExpr.isCanonicalValue testState.config.factory esM[((~Int.Add #100) #200)]
+#eval LExpr.isValue testState.config.factory esM[((~Int.Add #100) #200)]
 
 /-- info: true -/
 #guard_msgs in
-#eval LExpr.isCanonicalValue testState.config.factory esM[(~Int.Add #100)]
+#eval LExpr.isValue testState.config.factory esM[(~Int.Add #100)]
 
 
 def test13 := TestCase.new
@@ -705,24 +705,24 @@ example: steps_well test_poly_tysubst_distinct := by
   prove_steps_well test_poly_tysubst_distinct polyPairState_wf
 
 ---------------------------------------------------------------------
--- Tests for evalIfCanonical attribute (Issue #812)
--- When a function has `evalIfCanonical 0`, its concreteEval should fire
--- when argument 0 is a canonical value, even if other arguments are symbolic.
+-- Tests for evalIfValue attribute (Issue #812)
+-- When a function has `evalIfValue 0`, its concreteEval should fire
+-- when argument 0 is a value, even if other arguments are symbolic.
 
-private def evalIfCanonicalFuncs : Array (LFunc TestParams) :=
+private def evalIfValueFuncs : Array (LFunc TestParams) :=
   #[-- concreteEval negates the first int arg and returns (-x) == y.
-    -- With evalIfCanonical 0, this fires even when arg 1 is symbolic.
+    -- With evalIfValue 0, this fires even when arg 1 is symbolic.
     { name := "NegEq",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[bool],
-      attr := #[.evalIfCanonical 0],
+      attr := #[.evalIfValue 0],
       concreteEval := some (fun _m args => match args with
         | [e1, e2] =>
           match LExpr.denoteInt e1 with
           | some x => .some (.eq () (.intConst () (- x)) e2)
           | none => .none
         | _ => .none) },
-    -- Same function but without evalIfCanonical — concreteEval should NOT fire
+    -- Same function but without evalIfValue — concreteEval should NOT fire
     -- when the second argument is symbolic.
     { name := "NegEqNoAttr",
       inputs := [("x", mty[int]), ("y", mty[int])],
@@ -734,16 +734,16 @@ private def evalIfCanonicalFuncs : Array (LFunc TestParams) :=
           | none => .none
         | _ => .none) }]
 
-private def evalIfCanonicalFactory : @Factory TestParams := .ofArray evalIfCanonicalFuncs
+private def evalIfValueFactory : @Factory TestParams := .ofArray evalIfValueFuncs
 
-private def evalIfCanonicalState : LState TestParams :=
+private def evalIfValueState : LState TestParams :=
   { (LState.init : LState TestParams) with
     config := { (LState.init : LState TestParams).config with
-      factory := evalIfCanonicalFactory } }
+      factory := evalIfValueFactory } }
 
-private theorem each_evalIfCanonicalFunc_wf :
-    ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncWF lf := by
-  intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
+private theorem each_evalIfValueFunc_wf :
+    ∀ lf, lf ∈ evalIfValueFuncs → LFuncWF lf := by
+  intro lf hmem; simp [evalIfValueFuncs] at hmem
   rcases hmem with rfl | rfl <;> exact {
     arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
@@ -753,49 +753,49 @@ private theorem each_evalIfCanonicalFunc_wf :
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
 
-private theorem evalIfCanonicalState_wf :
-    FactoryWF evalIfCanonicalState.config.factory := by
+private theorem evalIfValueState_wf :
+    FactoryWF evalIfValueState.config.factory := by
   constructor; intro lf hmem
-  exact each_evalIfCanonicalFunc_wf lf (Factory.ofArray_mem hmem)
+  exact each_evalIfValueFunc_wf lf (Factory.ofArray_mem hmem)
 
--- Test: evalIfCanonical fires concreteEval when arg 0 is canonical but arg 1 is symbolic.
+-- Test: evalIfValue fires concreteEval when arg 0 is a value but arg 1 is symbolic.
 -- NegEq(#5, x) should reduce to (#-5 == x) — arg 0 is negated, arg 1 passes through.
-def test_evalIfCanonical := TestCase.new
-  evalIfCanonicalState
+def test_evalIfValue := TestCase.new
+  evalIfValueState
   esM[((~NegEq #5) x)]
   esM[(#-5 == x)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test_evalIfCanonical
+#eval check test_evalIfValue
 
-example : steps_well test_evalIfCanonical := by
-  prove_steps_well test_evalIfCanonical evalIfCanonicalState_wf
+example : steps_well test_evalIfValue := by
+  prove_steps_well test_evalIfValue evalIfValueState_wf
 
--- Test: without evalIfCanonical, concreteEval does NOT fire when arg 1 is symbolic.
+-- Test: without evalIfValue, concreteEval does NOT fire when arg 1 is symbolic.
 -- NegEqNoAttr(#5, x) stays as NegEqNoAttr(#5, x)
-def test_no_evalIfCanonical := TestCase.new
-  evalIfCanonicalState
+def test_no_evalIfValue := TestCase.new
+  evalIfValueState
   esM[((~NegEqNoAttr #5) x)]
   esM[((~NegEqNoAttr #5) x)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test_no_evalIfCanonical
+#eval check test_no_evalIfValue
 
--- Test: evalIfCanonical with all args canonical also works.
+-- Test: evalIfValue with all args are values also works.
 -- NegEq(#5, #10) reduces to (#-5 == #10), which further simplifies to #false.
-def test_evalIfCanonical_all_canonical := TestCase.new
-  evalIfCanonicalState
+def test_evalIfValue_all_values := TestCase.new
+  evalIfValueState
   esM[((~NegEq #5) #10)]
   esM[#false]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test_evalIfCanonical_all_canonical
+#eval check test_evalIfValue_all_values
 
-example : steps_well test_evalIfCanonical_all_canonical := by
-  prove_steps_well test_evalIfCanonical_all_canonical evalIfCanonicalState_wf
+example : steps_well test_evalIfValue_all_values := by
+  prove_steps_well test_evalIfValue_all_values evalIfValueState_wf
 
 /-! ### Tests: `.value true` is actually produced by `LExpr.eval`
 
@@ -811,7 +811,7 @@ def checkResultValueTrue (t : TestCase) : Bool :=
   | .value true => true
   | _ => false
 
--- Test: a plain integer literal is canonical, so `eval` returns `.value true`
+-- Test: a plain integer literal is a value, so `eval` returns `.value true`
 -- at any fuel.
 def test_vt_int_literal := TestCase.new ∅ esM[#42] esM[#42]
 
@@ -822,7 +822,7 @@ def test_vt_int_literal := TestCase.new ∅ esM[#42] esM[#42]
 #guard_msgs in
 #eval checkResultValueTrue test_vt_int_literal
 
--- Test: a boolean literal is canonical, so `eval` returns `.value true`.
+-- Test: a boolean literal is a value, so `eval` returns `.value true`.
 def test_vt_bool_literal := TestCase.new ∅ esM[#true] esM[#true]
 
 /-- info: true -/
@@ -832,7 +832,7 @@ def test_vt_bool_literal := TestCase.new ∅ esM[#true] esM[#true]
 #guard_msgs in
 #eval checkResultValueTrue test_vt_bool_literal
 
--- Test: `if true then #10 else #20` — the guard is canonical `.value true`,
+-- Test: `if true then #10 else #20` — the guard is a value `.value true`,
 -- and the taken branch `#10` is also `.value true`.  So the ite reduces to
 -- `#10` with `.value true`.
 def test_vt_ite_true := TestCase.new ∅ esM[if #true then #10 else #20] esM[#10]
@@ -854,7 +854,7 @@ def test_vt_ite_false := TestCase.new ∅ esM[if #false then #10 else #20] esM[#
 #guard_msgs in
 #eval checkResultValueTrue test_vt_ite_false
 
--- Test: `Int.Add #20 #30` — the concreteEval fires with both args canonical
+-- Test: `Int.Add #20 #30` — the concreteEval fires with both args are values
 -- `.value true`, so the outer result is `.value true` with `#50`.
 def test_vt_int_add := TestCase.new
   testState
@@ -882,7 +882,7 @@ def test_vt_int_add_nested := TestCase.new
 #guard_msgs in
 #eval checkResultValueTrue test_vt_int_add_nested
 
--- Test: β-reduction of a closed lambda applied to a canonical arg.
+-- Test: β-reduction of a closed lambda applied to a value argument.
 -- `(λ x. #17) #24` reduces to `#17` with `.value true`.
 def test_vt_beta_const := TestCase.new
   ∅
@@ -946,7 +946,7 @@ def test_vt_eq_neq := TestCase.new ∅ esM[(#5 == #6)] esM[#false]
 #guard_msgs in
 #eval checkResultValueTrue test_vt_eq_neq
 
--- Test: `IntAddAlias` is inlined and both arguments are canonical, so the
+-- Test: `IntAddAlias` is inlined and both arguments are values, so the
 -- outer result is `.value true` at `#50`.
 def test_vt_inline_alias := TestCase.new
   testState
@@ -971,24 +971,24 @@ private def constrState : LState TestParams :=
         (LFunc.mk (name := "Pair") (isConstr := true)
           (inputs := [("x", mty[int]), ("y", mty[int])]) (output := mty[int]))) } }
 
--- Test: a constructor applied to an already-canonical argument is canonical,
+-- Test: a constructor applied to an argument that is already a value is a value,
 -- so `eval` certifies it `.value true`.
-def test_vt_constr_canonical_arg := TestCase.new
+def test_vt_constr_value_arg := TestCase.new
   constrState
   esM[(~Box #5)]
   esM[(~Box #5)]
 
 /-- info: true -/
 #guard_msgs in
-#eval check test_vt_constr_canonical_arg
+#eval check test_vt_constr_value_arg
 /-- info: true -/
 #guard_msgs in
-#eval checkResultValueTrue test_vt_constr_canonical_arg
+#eval checkResultValueTrue test_vt_constr_value_arg
 
 -- Test: a constructor applied to a REDUCIBLE argument: `Box (Int.Add #1 #1)`
--- rebuilds to the canonical `Box #2` and is certified `.value true`.
+-- rebuilds to `Box #2`, which is certified `.value true`.
 -- Regression for the bug where the no-`concreteEval` branch flagged the
--- canonical rebuilt call `.nonvalue`, making `evalFully` diverge on any
+-- rebuilt value `.nonvalue`, making `evalFully` diverge on any
 -- constructor with reducible arguments.
 def test_vt_constr_reducible_arg := TestCase.new
   constrState
@@ -1003,8 +1003,8 @@ def test_vt_constr_reducible_arg := TestCase.new
 #eval checkResultValueTrue test_vt_constr_reducible_arg
 
 -- Test: a BINARY constructor with mixed-readiness arguments — the first needs
--- reduction, the second is already canonical: `Pair (Int.Add #1 #1) #5`
--- rebuilds to the canonical `Pair #2 #5` and is certified `.value true`,
+-- reduction, the second is already a value: `Pair (Int.Add #1 #1) #5`
+-- rebuilds to `Pair #2 #5`, which is certified `.value true`,
 -- exercising `argsAllFull` over a list where the argument statuses differ.
 def test_vt_constr_mixed_args := TestCase.new
   constrState
@@ -1019,8 +1019,8 @@ def test_vt_constr_mixed_args := TestCase.new
 #eval checkResultValueTrue test_vt_constr_mixed_args
 
 -- Test: NESTED constructors — the inner `Box (Int.Add #1 #1)` must first
--- reduce to the certified canonical `Box #2`, and the outer `Box` must then
--- recognize that certified argument as canonical and be certified itself.
+-- reduce to `Box #2`, a certified value, and the outer `Box` must then
+-- recognize that certified argument as a value and itself be certified.
 -- Exercises the new canonicity check through recursive evaluation.
 def test_vt_constr_nested := TestCase.new
   constrState

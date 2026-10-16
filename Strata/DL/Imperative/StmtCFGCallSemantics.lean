@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.CmdCallFormals
 public import Strata.DL.Imperative.StmtSemantics
 
@@ -31,10 +32,11 @@ step:
 The call's trace is the precondition events, then the body events, then the
 postcondition events.
 
-`EvalCmdExtE` (one command) and `BigStepE` (one procedure body) are mutually
-inductive: a call's `EvalCmdExtE.call_sem` derivation contains a `BigStepE`
-derivation of the callee body, and that body derivation is a multi-step run of
-the structured statement relation `StepStmtE` whose commands are evaluated by
+`EvalCmdExtE` (one command), `BigStepE` (one procedure body) and `CFGRunExtE`
+(a CFG run) are mutually inductive: a call's `EvalCmdExtE.call_sem` derivation
+contains a `BigStepE` derivation of the callee body, and that body derivation is a
+multi-step run, of the structured statement relation `StepStmtE` for a structured
+body or of `CFGRunExtE` for a CFG body, whose commands are evaluated by
 `EvalCmdExtE` itself.  Nested calls therefore nest derivations.
 
 `EvalCmdExtContractE` is the modular alternative for a call: it uses the same
@@ -44,8 +46,8 @@ entry and exit, but replaces the body by havocking the output formals
 
 The CFG and Kleene event relations (`StepCFGE`, `StepKleeneE`) are parameterized
 by a command relation.  `CallAwareSemantics.lean` instantiates them with
-`EvalCmdExtE`, so a call in a CFG block or a Kleene command runs its (structured)
-callee body through `BigStepE`, with no CFG- or Kleene-specific call rule. -/
+`EvalCmdExtE`, so a call in a CFG block or a Kleene command runs its callee body,
+structured or CFG, through `BigStepE`, with no CFG- or Kleene-specific call rule. -/
 
 namespace Imperative
 
@@ -146,14 +148,23 @@ variable {P : PureExpr}
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
   [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
 
+/-- Event-producing command relation with no possible command step.  Over it,
+    `StepCFGE` has exactly the control-flow steps of the CFG (fetch, conditional
+    jump, finish), each emitting no events. -/
+@[expose] def noCommandEvalEvents (P : PureExpr) (CmdT EventT : Type) :
+    EvalCmdParamE P CmdT EventT :=
+  fun _ _ _ _ _ => False
+
 mutual
 
-/-- Event-producing execution of a structured procedure body.  Only structured
-    bodies have an execution; the body is wrapped in `Stmt.block "" ss #[]` so
-    that inner scoping (e.g. `funcDecl`s) does not leak past the call. -/
+/-- Event-producing execution of a procedure body, structured or CFG, from its
+    entry environment to normal termination.  Inner scoping does not leak past the
+    call: variables initialized by the body are dropped from the final store. -/
 inductive BigStepE
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     Body P (CmdExt P) → Env P → SemanticStore P → Trace P → Prop where
+  /-- A structured body runs wrapped in `Stmt.block "" ss #[]`, which scopes
+      `init`s and catches `exit ""`. -/
   | structured :
       ReflTransTrace (StepStmtE P (EvalCmdExtE π))
         (.stmt (Stmt.block "" ss #[]) ρ)
@@ -161,6 +172,40 @@ inductive BigStepE
         (.terminal ρ') →
       ----
       BigStepE π (.structured ss) ρ ρ'.store emitted
+
+  /-- A CFG body runs from its entry block to a `finish` transfer at the factory
+      `ρ.factory` of the entry environment `ρ`, with calls evaluated by
+      `EvalCmdExtE`.  The final store is the halting store projected through the
+      entry store. -/
+  | cfg :
+      CFGRunExtE π ρ.factory g (.atBlock g.entry ρ.store ρ.hasFailure) emitted
+        (.terminal σ' f) →
+      ----
+      BigStepE π (.cfg g) ρ (projectStore ρ.store σ') emitted
+
+/-- Multi-step event-trace execution of the CFG `g` at factory `fac` over the
+    call-aware command relation `EvalCmdExtE π`, concatenating each step's events
+    chronologically.  It has the steps of
+    `StepCFGStarE P (EvalCmdExtE π) fac g`; a separate relation is needed
+    because a nested occurrence of `EvalCmdExtE` may not be indexed by the
+    constructor-local `fac` and `g`. -/
+inductive CFGRunExtE
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
+    P.Factory → DetCFG P (CmdExt P) → CFGConfig String (CmdExt P) P → Trace P →
+      CFGConfig String (CmdExt P) P → Prop where
+  | refl : CFGRunExtE π fac g c [] c
+  /-- Run one command from the residual list of the current block. -/
+  | step_cmd :
+      EvalCmdExtE π fac σ c σ' emitted →
+      CFGRunExtE π fac g (.inBlock t cs tr σ' f) rest c₂ →
+      ----
+      CFGRunExtE π fac g (.inBlock t (c :: cs) tr σ f) (emitted ++ rest) c₂
+  /-- Take one command-free control-flow `StepCFGE` step; it emits no events. -/
+  | step_admin :
+      StepCFGE P (noCommandEvalEvents P (CmdExt P) (Event P)) fac g c [] c₁ →
+      CFGRunExtE π fac g c₁ rest c₂ →
+      ----
+      CFGRunExtE π fac g c rest c₂
 
 /-- Event-producing command semantics of `CmdExt P`.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the

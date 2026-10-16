@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.DL.Imperative.StmtCallSemanticsProps
+import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Imperative.CFGSemanticsProps
 
@@ -14,9 +14,9 @@ import Strata.DL.Imperative.CFGSemanticsProps
 `EvalCmdExtE.induct` proves, by `induction … using`, that `EvalCmdExtE` is
 monotone in the procedure table: a derivation under `π` is a derivation under any
 `π'` that resolves every name `π` resolves to the same procedure.  The call case
-uses the induction hypothesis for every command step of the callee body, at any
-call depth.  `StepCFGE.casesRules` proves, by `cases … using`, that a CFG step
-from `.atBlock` emits no events. -/
+uses the induction hypothesis for every command step of the callee body,
+structured or CFG, at any call depth.  `StepCFGE.casesRules` proves, by
+`cases … using`, that a CFG step from `.atBlock` emits no events. -/
 
 namespace EvalCmdExtEInductTest
 
@@ -34,9 +34,12 @@ example {π π' : String → Option (Procedure P (CmdExt P) Hdr)}
   induction h using EvalCmdExtE.induct with
   | cmd_sem h => exact .cmd_sem h
   | call_sem hn hentry _ hexit ih =>
-    obtain ⟨ss, ρ', hss, rfl, hrun⟩ := ih
-    exact .call_sem (hπ _ _ hn) hentry
-      (hss ▸ .structured (hrun.imp fun _ _ _ _ _ ⟨_, h⟩ => h)) hexit
+    rcases ih with ⟨ss, ρ', hss, rfl, hrun⟩ | ⟨g, σ', f, hg, rfl, hrun⟩
+    · exact .call_sem (hπ _ _ hn) hentry
+        (hss ▸ .structured (hrun.imp fun _ _ _ _ _ ⟨_, h⟩ => h)) hexit
+    · have hrun' := hrun.imp fun _ _ _ hs => hs.imp fun _ _ _ _ _ ⟨_, h⟩ => h
+      exact .call_sem (hπ _ _ hn) hentry
+        (hg ▸ .cfg (CFGRunExtE_iff_stepCFGStarE.mpr hrun')) hexit
 
 example {l CmdT EventT : Type} [BEq l] [HasVal P]
     {EvalCmd : EvalCmdParamE P CmdT EventT} {fac : P.Factory}

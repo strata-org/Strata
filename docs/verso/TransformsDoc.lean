@@ -178,12 +178,12 @@ termination modes:
 
 - *Structural (ADT):* The TermCheck pipeline phase generates a
   `D..adtRank : D → Int` uninterpreted function with per-constructor axioms
-  establishing that recursive fields have strictly smaller rank, and a `f$$term`
-  verification procedure that asserts `adtRank(callArg) < adtRank(callerParam)`
-  at each recursive call site.
+  establishing that recursive fields have strictly smaller rank, and one lemma
+  `f_terminates_i` per recursive call site stating
+  `adtRank(callArg) < adtRank(callerParam)`.
 
 - *Int-valued:* For functions with an int-valued `decreases` expression, the
-  `f$$term` procedure asserts two obligations at each recursive call site:
+  termination lemmas state two obligations at each recursive call site:
   `0 <= call_measure` (non-negativity) and `call_measure < caller_measure`
   (strict decrease), where `call_measure` is the `decreases` expression with
   formals substituted by the actual arguments at the call site.

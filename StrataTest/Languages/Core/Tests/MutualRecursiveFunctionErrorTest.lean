@@ -121,7 +121,7 @@ error: recursive function 'isEven': structural recursion requires @[cases]
 --
 -- `loopy<a>` declares `decreases n` but recurses at `n + 1`, so the measure
 -- does not decrease.  Termination checking runs before monomorphization and
--- emits a polymorphic `$$term` procedure (specialized at a fresh opaque type
+-- emits polymorphic termination lemmas (checked at a fresh opaque type
 -- for `a`), so the non-decrease is caught: `loopy_terminates_1` FAILS.
 ---------------------------------------------------------------------
 

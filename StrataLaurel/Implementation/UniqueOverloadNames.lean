@@ -74,6 +74,9 @@ private def uniqueOverloadNames (program : Program) (model : SemanticModel) : Pr
 public def uniqueOverloadNamesPass : LoweringPass where
   name := "UniqueOverloadNames"
   removes := [NodeKind.Pseudo.overload]
+  -- An operator applied only to holes selects its overload once `InferHoleTypes` has typed
+  -- them and `EliminateDeterministicHoles` re-resolved; renamed earlier, it stays `$ovFail$$neg`.
+  unsupported := [NodeKind.StmtExpr.Hole.type.none]
   documentation := "Renames overloaded static procedures to unique names so downstream name-keyed passes don't see collisions."
   needsResolves := true
   run := fun _ p model => (uniqueOverloadNames p model, [], {})

@@ -340,6 +340,30 @@ axiom [f_ax]: f(Sequence.empty<int>()) == true;
 #eval roundtrip testSeqEmptyRoundtrip
 
 -------------------------------------------------------------------------------
+-- Test: Lemmas and parameterized axioms
+--
+-- A parameter list is sugar for a `forall`. An axiom reprints with `forall`;
+-- a lemma reprints with its outer `forall`s as a parameter list, or with its
+-- type parameters alone when its formula does not start with a `forall`.
+-------------------------------------------------------------------------------
+
+private def testLemmaRoundtrip : Program :=
+#strata
+program Core;
+
+function f(x : int) : int;
+axiom [f_pos] (x : int) { f(x) }: int.gt(f(x), 0);
+lemma [f_nonneg] (x : int): int.ge(f(x), 0);
+lemma [f_zero]: int.ge(f(0), 0);
+lemma [select_update] <k, v> (m : Map k v, x : k, y : v) { m[x := y] }: m[x := y][x] == y;
+lemma [no_binder] <a>: !(forall x : a :: !(x == x));
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testLemmaRoundtrip
+
+-------------------------------------------------------------------------------
 -- Test: Arrow type as a type-constructor argument (the dropped-parens bug)
 --
 -- `Map int (int -> int)` must reprint *with* the parentheses. Without them the

@@ -21,9 +21,9 @@ import Strata.DL.Lambda.Semantics
 
 Key results (organized roughly in the order they appear below):
 
-- `eval_value_isCanonicalValue` — if `eval` returns a `.value _`, the result's
-  `.fst` satisfies `isCanonicalValue`.
-- `eval_canonical_identity` — if `e` is a canonical value, `eval n F env e = (e, .value true)`
+- `eval_value_isValue` — if `eval` returns a `.value _`, the result's
+  `.fst` satisfies `isValue`.
+- `eval_value_identity` — if `e` is a value, `eval n F env e = (e, .value true)`
   at any fuel.
 - `eval_getVars_subset` — `eval` does not introduce fresh free variables:
   every free variable in the result was already free in the input.
@@ -56,28 +56,28 @@ variable {Tbase : LExprParams}
 
 /-! ## Part I: Properties of `eval` -/
 
-/-! ### `eval_value_isCanonicalValue`
+/-! ### `eval_value_isValue`
 
 If `eval n F env e = (_, .value _)`, the `.fst` component satisfies
-`isCanonicalValue F _ = true`.  The main theorem `eval_value_isCanonicalValue`
-is preceded by per-sub-evaluator helpers (`evalApp_value_isCanonicalValue`,
-`evalEq_value_isCanonicalValue`, `evalIte_value_isCanonicalValue`,
-`evalCore_value_isCanonicalValue`) that carry the same statement at the
+`isValue F _ = true`.  The main theorem `eval_value_isValue`
+is preceded by per-sub-evaluator helpers (`evalApp_value_isValue`,
+`evalEq_value_isValue`, `evalIte_value_isValue`,
+`evalCore_value_isValue`) that carry the same statement at the
 recursive level and are chained together by the top-level induction. -/
 
-section eval_value_isCanonicalValue
+section eval_value_isValue
 
-/-- Helper: if `evalApp` returns `.value _`, the result is canonical. -/
-private theorem evalApp_value_isCanonicalValue
+/-- Helper: if `evalApp` returns `.value _`, the result is a value. -/
+private theorem evalApp_value_isValue
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (e e1 e2 : LExpr Tbase.mono)
     (ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
-        LExpr.isCanonicalValue F (LExpr.eval n' F env e').fst = true)
+        LExpr.isValue F (LExpr.eval n' F env e').fst = true)
     {b : Bool} (h : (LExpr.evalApp n' F env e e1 e2).snd = .value b) :
-    LExpr.isCanonicalValue F (LExpr.evalApp n' F env e e1 e2).fst = true := by
+    LExpr.isValue F (LExpr.evalApp n' F env e e1 e2).fst = true := by
   have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
       p = LExpr.evalApp n' F env e e1 e2 →
-      p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+      p.snd = .value b → LExpr.isValue F p.fst = true := by
     intro p hp hv
     simp only [LExpr.evalApp] at hp
     split at hp
@@ -119,39 +119,39 @@ private theorem evalApp_value_isCanonicalValue
   exact key _ rfl h
 
 
-/-- Helper: if `evalEq` returns `.value _`, the result is canonical. -/
-private theorem evalEq_value_isCanonicalValue
+/-- Helper: if `evalEq` returns `.value _`, the result is a value. -/
+private theorem evalEq_value_isValue
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
     (_ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
-        LExpr.isCanonicalValue F (LExpr.eval n' F env e').fst = true)
+        LExpr.isValue F (LExpr.eval n' F env e').fst = true)
     {b : Bool} (h : (LExpr.evalEq n' F env m e1 e2).snd = .value b) :
-    LExpr.isCanonicalValue F (LExpr.evalEq n' F env m e1 e2).fst = true := by
+    LExpr.isValue F (LExpr.evalEq n' F env m e1 e2).fst = true := by
   have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
       p = LExpr.evalEq n' F env m e1 e2 →
-      p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+      p.snd = .value b → LExpr.isValue F p.fst = true := by
     intro p hp hv
     simp only [LExpr.evalEq] at hp
     generalize LExpr.eval n' F env e1 = r1 at hp
     generalize LExpr.eval n' F env e2 = r2 at hp
     generalize LExpr.eql F r1.fst r2.fst = eql_res at hp
     cases eql_res with
-    | some b0 => subst hp; unfold LExpr.isCanonicalValue; rfl
+    | some b0 => subst hp; unfold LExpr.isValue; rfl
     | none => subst hp; simp at hv
   exact key _ rfl h
 
 
-/-- Helper: if `evalIte` returns `.value _`, the result is canonical. -/
-private theorem evalIte_value_isCanonicalValue
+/-- Helper: if `evalIte` returns `.value _`, the result is a value. -/
+private theorem evalIte_value_isValue
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono)
     (ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
-        LExpr.isCanonicalValue F (LExpr.eval n' F env e').fst = true)
+        LExpr.isValue F (LExpr.eval n' F env e').fst = true)
     {b : Bool} (h : (LExpr.evalIte n' F env m c t f).snd = .value b) :
-    LExpr.isCanonicalValue F (LExpr.evalIte n' F env m c t f).fst = true := by
+    LExpr.isValue F (LExpr.evalIte n' F env m c t f).fst = true := by
   have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
       p = LExpr.evalIte n' F env m c t f →
-      p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+      p.snd = .value b → LExpr.isValue F p.fst = true := by
     intro p hp hv
     simp only [LExpr.evalIte] at hp
     split at hp
@@ -180,21 +180,21 @@ private theorem evalIte_value_isCanonicalValue
   exact key _ rfl h
 
 
-/-- Helper: if `evalCore` returns `.value _`, the result is canonical.
+/-- Helper: if `evalCore` returns `.value _`, the result is a value.
     Requires an IH for `eval` at the same fuel level. -/
-private theorem evalCore_value_isCanonicalValue
+private theorem evalCore_value_isValue
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     (ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
-        LExpr.isCanonicalValue F (LExpr.eval n' F env e').fst = true)
+        LExpr.isValue F (LExpr.eval n' F env e').fst = true)
     {b : Bool} (h : (LExpr.evalCore n' F env e).snd = .value b) :
-    LExpr.isCanonicalValue F (LExpr.evalCore n' F env e).fst = true := by
+    LExpr.isValue F (LExpr.evalCore n' F env e).fst = true := by
   have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
       p = LExpr.evalCore n' F env e →
-      p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+      p.snd = .value b → LExpr.isValue F p.fst = true := by
     intro p hp hv
     cases e with
     | const m c =>
-      simp [LExpr.evalCore] at hp; subst hp; unfold LExpr.isCanonicalValue; rfl
+      simp [LExpr.evalCore] at hp; subst hp; unfold LExpr.isValue; rfl
     | op m n args =>
       simp [LExpr.evalCore] at hp; subst hp; simp at hv
     | bvar m n =>
@@ -206,7 +206,7 @@ private theorem evalCore_value_isCanonicalValue
         subst hp
         rename_i v hx
         simp only at hv
-        by_cases hcan : LExpr.isCanonicalValue F v = true
+        by_cases hcan : LExpr.isValue F v = true
         · rw [if_pos hcan]; exact hcan
         · rw [if_neg hcan] at hv; simp at hv
       · -- env x = none
@@ -215,60 +215,60 @@ private theorem evalCore_value_isCanonicalValue
       simp only [LExpr.evalCore] at hp
       subst hp
       simp only at hv
-      by_cases hcan : LExpr.isCanonicalValue F (LExpr.substFvarsFromEnv env (.abs m n ty body)) = true
+      by_cases hcan : LExpr.isValue F (LExpr.substFvarsFromEnv env (.abs m n ty body)) = true
       · rw [if_pos hcan]; exact hcan
       · rw [if_neg hcan] at hv; simp at hv
     | quant m q n ty tr body =>
       simp only [LExpr.evalCore] at hp
       subst hp
       simp only at hv
-      by_cases hcan : LExpr.isCanonicalValue F (LExpr.substFvarsFromEnv env (.quant m q n ty tr body)) = true
+      by_cases hcan : LExpr.isValue F (LExpr.substFvarsFromEnv env (.quant m q n ty tr body)) = true
       · rw [if_pos hcan]; exact hcan
       · rw [if_neg hcan] at hv; simp at hv
     | app m e1 e2 =>
       simp only [LExpr.evalCore] at hp
       subst hp
-      exact evalApp_value_isCanonicalValue n' F env _ _ _ ih_eval hv
+      exact evalApp_value_isValue n' F env _ _ _ ih_eval hv
     | eq m e1 e2 =>
       simp only [LExpr.evalCore] at hp
       subst hp
-      exact evalEq_value_isCanonicalValue n' F env _ _ _ ih_eval hv
+      exact evalEq_value_isValue n' F env _ _ _ ih_eval hv
     | ite m c t f =>
       simp only [LExpr.evalCore] at hp
       subst hp
-      exact evalIte_value_isCanonicalValue n' F env _ _ _ _ ih_eval hv
+      exact evalIte_value_isValue n' F env _ _ _ _ ih_eval hv
   exact key _ rfl h
 
 
-/-- If `eval` returns `.value _`, the resulting expression satisfies `isCanonicalValue`. -/
-theorem eval_value_isCanonicalValue
+/-- If `eval` returns `.value _`, the resulting expression satisfies `isValue`. -/
+theorem eval_value_isValue
     (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     {b : Bool} (h : (LExpr.eval n F env e).snd = .value b) :
-    LExpr.isCanonicalValue F (LExpr.eval n F env e).fst = true := by
+    LExpr.isValue F (LExpr.eval n F env e).fst = true := by
   induction n generalizing e b with
   | zero =>
     have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
         p = LExpr.eval 0 F env e →
-        p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+        p.snd = .value b → LExpr.isValue F p.fst = true := by
       intro p hp hv
       simp only [LExpr.eval] at hp
       subst hp
-      by_cases hcan : LExpr.isCanonicalValue F e = true
+      by_cases hcan : LExpr.isValue F e = true
       · rw [if_pos hcan]; exact hcan
       · rw [if_neg hcan] at hv; simp at hv
     exact key _ rfl h
   | succ n' ih =>
     have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
         p = LExpr.eval (n' + 1) F env e →
-        p.snd = .value b → LExpr.isCanonicalValue F p.fst = true := by
+        p.snd = .value b → LExpr.isValue F p.fst = true := by
       intro p hp hv
       simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
         LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair] at hp
       split at hp
-      · -- isCanonicalValue F e = true
+      · -- isValue F e = true
         rename_i h_can
         subst hp; exact h_can
-      · -- isCanonicalValue F e = false
+      · -- isValue F e = false
         rename_i h_not_can
         split at hp
         · -- callOfLFunc = some (op_expr, args, lfunc)
@@ -300,7 +300,7 @@ theorem eval_value_isCanonicalValue
             rename_i h_not_cond
             rw [dif_neg h_not_cond] at hv
             cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-            cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+            cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
               simp only [h_fEC, h_fEV] at hv ⊢
               split at hv
               · -- inner if true: match concreteEval ...
@@ -308,7 +308,7 @@ theorem eval_value_isCanonicalValue
                 rw [if_pos h_eval_cond]
                 split at hv
                 · -- concreteEval = none: the rebuilt call is certified exactly
-                  -- when it is canonical
+                  -- when it is a value
                   rename_i h_ceval
                   split at hv
                   · rename_i h_can_new
@@ -335,26 +335,26 @@ theorem eval_value_isCanonicalValue
             )
         · -- callOfLFunc = none → evalCore
           subst hp
-          exact evalCore_value_isCanonicalValue n' F env e (fun e' b' h' => ih e' h') hv
+          exact evalCore_value_isValue n' F env e (fun e' b' h' => ih e' h') hv
     exact key _ rfl h
 
-end eval_value_isCanonicalValue
+end eval_value_isValue
 
-/-! ### `eval_canonical_identity`
+/-! ### `eval_value_identity`
 
-If `e` is canonical (`isCanonicalValue F e = true`), `eval` at any fuel returns
+If `e` is a value (`isValue F e = true`), `eval` at any fuel returns
 `(e, .value true)`.  A short one-line lemma — no helpers needed. -/
 
-section eval_canonical_identity
+section eval_value_identity
 
-/-- If `isCanonicalValue F e = true`, eval returns `(e, .value true)`. -/
-theorem eval_canonical_identity
+/-- If `isValue F e = true`, eval returns `(e, .value true)`. -/
+theorem eval_value_identity
     (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
-    (hcan : LExpr.isCanonicalValue F e = true) :
+    (hcan : LExpr.isValue F e = true) :
     LExpr.eval n F env e = (e, .value true) := by
   cases n <;> (simp only [LExpr.eval]; rw [if_pos hcan])
 
-end eval_canonical_identity
+end eval_value_identity
 
 /-! ### `eval_getVars_subset`
 
@@ -481,7 +481,7 @@ theorem eval_getVars_subset
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair] at hy
     revert hy
     split
-    · -- canonical: (e, .value)
+    · -- value: (e, .value)
       intro hy; exact hy
     · split
       · -- factory call
@@ -527,10 +527,10 @@ theorem eval_getVars_subset
             intro hy; exact hy
         · -- non-inline
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
             simp only []
             split
-            · -- canonical/constr condition holds
+            · -- value/constr condition holds
               split
               · -- concreteEval = none → (mkApp, .nonvalue)
                 intro hy
@@ -822,10 +822,10 @@ theorem eval_env_congr
             rfl
         · -- non-inline
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
             simp only []
             split
-            · -- canonical/constr cond holds
+            · -- value/constr cond holds
               split
               · -- concreteEval none
                 rfl
@@ -995,7 +995,7 @@ end evalFullyAux
 /-! ### `evalFully` suite
 
 The fuel-free `evalFully = evalFullyAux 0` wrapper: existence characterization,
-canonical-value outputs, identity on canonical values, `fvar` store lookup,
+value outputs, identity on values, `fvar` store lookup,
 and environment congruence. -/
 
 section evalFully
@@ -1011,34 +1011,34 @@ theorem evalFully_some_exists
   obtain ⟨n, _, hn, hlt⟩ := evalFullyAux_some_exists F env e 0 v heval
   exact ⟨n, hn, fun k hk => hlt k (by omega) hk⟩
 
-/-- `evalFully` only outputs canonical values. -/
-theorem evalFully_outputs_canonical
+/-- `evalFully` only outputs values. -/
+theorem evalFully_outputs_value
     (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     (v : LExpr Tbase.mono) (heval : LExpr.evalFully F env e = some v) :
-    LExpr.isCanonicalValue F v = true := by
+    LExpr.isValue F v = true := by
   obtain ⟨n, hn, _⟩ := evalFully_some_exists F env e v heval
-  have := eval_value_isCanonicalValue n F env e (b := true) (by rw [hn])
+  have := eval_value_isValue n F env e (b := true) (by rw [hn])
   rw [hn] at this; exact this
 
-/-- `evalFully` is the identity on canonical values. -/
+/-- `evalFully` is the identity on values. -/
 theorem evalFully_value_identity
     (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
-    (hcan : LExpr.isCanonicalValue F e = true) :
+    (hcan : LExpr.isValue F e = true) :
     LExpr.evalFully F env e = some e := by
   unfold LExpr.evalFully
-  refine evalFullyAux_of_eval F env e 0 e (eval_canonical_identity 0 F env e hcan)
+  refine evalFullyAux_of_eval F env e 0 e (eval_value_identity 0 F env e hcan)
     0 (Nat.le_refl _) (fun k hk1 hk2 => absurd hk2 (by omega))
 
 /-- `evalFully` on a free variable returns the store binding (given a well-formed store). -/
 theorem evalFully_fvar_store
     (F : @Factory Tbase) (env : Env Tbase)
-    (hwfs : ∀ x v, env x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, env x = some v → LExpr.isValue F v = true)
     (m : Tbase.Metadata) (v : Tbase.Identifier) (ty : Option Tbase.mono.TypeType) :
     LExpr.evalFully F env (.fvar m v ty) = env v := by
-  have hnotcan : LExpr.isCanonicalValue F (.fvar m v ty : LExpr Tbase.mono) = false := by
+  have hnotcan : LExpr.isValue F (.fvar m v ty : LExpr Tbase.mono) = false := by
     apply Bool.eq_false_iff.mpr
     intro hcan
-    have h_no_vars := isCanonicalValue_getVars_nil F _ hcan
+    have h_no_vars := isValue_getVars_nil F _ hcan
     simp [LExpr.LExpr.getVars] at h_no_vars
   have eval0 : LExpr.eval 0 F env (.fvar m v ty : LExpr Tbase.mono) =
       (.fvar m v ty, .outOfFuel) := by
@@ -1065,8 +1065,8 @@ theorem evalFully_fvar_store
       rw [hσv]
       exact fun hc => by cases hc
   | some val =>
-    -- The store binds `v` to a canonical value; `eval 1` already yields it.
-    have hval : LExpr.isCanonicalValue F val = true := hwfs v val hσv
+    -- The store binds `v` to a value; `eval 1` already yields it.
+    have hval : LExpr.isValue F val = true := hwfs v val hσv
     have h1 : LExpr.eval 1 F env (.fvar m v ty : LExpr Tbase.mono) = (val, .value true) := by
       rw [heval_succ 0]; unfold LExpr.evalCore; rw [hσv]; simp [hval]
     unfold LExpr.evalFully
@@ -1331,12 +1331,12 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
   induction m generalizing e v with
   | zero =>
     simp only [LExpr.eval] at h
-    by_cases hcan : LExpr.isCanonicalValue F e = true
+    by_cases hcan : LExpr.isValue F e = true
     · rw [if_pos hcan] at h
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
-      exact eval_canonical_identity (0 + 1) F env v hcan
+      exact eval_value_identity (0 + 1) F env v hcan
     · rw [if_neg hcan] at h
       have := congrArg Prod.snd h; simp at this
   | succ n' ih =>
@@ -1387,7 +1387,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
-      exact eval_canonical_identity (n' + 1 + 1) F env v hcan
+      exact eval_value_identity (n' + 1 + 1) F env v hcan
     · rename_i h_not_can
       split
       · rename_i op_expr args lfunc h_call
@@ -1439,7 +1439,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
           · rename_i h_eval_cond
             split
             · -- concreteEval = none: certified when the rebuilt call is
-              -- canonical on fully evaluated arguments
+              -- a value on fully evaluated arguments
               rename_i h_ceval_none
               intro h
               simp only [LExpr.combineEvalResValueFlag_eq_pair, Prod.mk.injEq] at h
@@ -1474,7 +1474,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                 simp only [LExpr.List_all_snd_isValueTrue_map_eval]
                 rw [h_argsAllFull_lift]
                 simp only [LExpr.List_map_fst_map_eval] at h_can h_fst
-                have h_can_v : LExpr.isCanonicalValue F v = true :=
+                have h_can_v : LExpr.isValue F v = true :=
                   h_fst ▸ h_can
                 simp [h_fst, h_can_v, LExpr.EvalResult.combineValueFlag]
             · rename_i ceval h_ceval
@@ -1551,10 +1551,10 @@ theorem eval_value_true_add_fuel (F : @Factory Tbase) (env : Env Tbase)
 /-- Two `.value true` outputs of `eval` at different fuel levels agree on the
     resulting expression. This is the evaluator-level confluence statement:
     `Step` itself is not confluent (e.g. `(fun x => fun y => x) (1 + 1)` steps
-    to both `fun y => 2` and `fun y => (1 + 1)`, and both are canonical), but
+    to both `fun y => 2` and `fun y => (1 + 1)`, and both are values), but
     `eval`'s fixed operands-first strategy makes the fully-reduced result
     unique regardless of fuel. Together with `evalFully_of_value_true` this
-    says `evalFully` is the canonical form assignment for the fragment the
+    says `evalFully` is the normal-form assignment for the fragment the
     evaluator can fully reduce. -/
 theorem eval_value_true_deterministic (F : @Factory Tbase) (env : Env Tbase)
     (m k : Nat) (e : LExpr Tbase.mono) (v w : LExpr Tbase.mono)
@@ -1827,7 +1827,7 @@ private theorem evalCore_frame
     obtain ⟨h_fst, h_snd⟩ := h
     split at h_snd
     · rename_i hcan
-      have hnil := isCanonicalValue_getVars_nil F _ hcan
+      have hnil := isValue_getVars_nil F _ hcan
       have hag := env_agree_of_subst_getVars_nil env env' hext (LExpr.abs m n ty body) hnil
       have hsub_eq : LExpr.substFvarsFromEnv env' (LExpr.abs m n ty body) =
           LExpr.substFvarsFromEnv env (LExpr.abs m n ty body) :=
@@ -1841,7 +1841,7 @@ private theorem evalCore_frame
     obtain ⟨h_fst, h_snd⟩ := h
     split at h_snd
     · rename_i hcan
-      have hnil := isCanonicalValue_getVars_nil F _ hcan
+      have hnil := isValue_getVars_nil F _ hcan
       have hag := env_agree_of_subst_getVars_nil env env' hext (LExpr.quant m qk n ty tr body) hnil
       have hsub_eq : LExpr.substFvarsFromEnv env' (LExpr.quant m qk n ty tr body) =
           LExpr.substFvarsFromEnv env (LExpr.quant m qk n ty tr body) :=
@@ -1878,12 +1878,12 @@ theorem eval_frame
   | zero =>
     intro e v h
     simp only [LExpr.eval] at h
-    by_cases hcan : LExpr.isCanonicalValue F e = true
+    by_cases hcan : LExpr.isValue F e = true
     · rw [if_pos hcan] at h
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
-      exact eval_canonical_identity 0 F env' v hcan
+      exact eval_value_identity 0 F env' v hcan
     · rw [if_neg hcan] at h
       have := congrArg Prod.snd h; simp at this
   | succ n' ih =>
@@ -1927,7 +1927,7 @@ theorem eval_frame
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
-      exact eval_canonical_identity (n' + 1) F env' v hcan
+      exact eval_value_identity (n' + 1) F env' v hcan
     · rename_i h_not_can
       split
       · rename_i op_expr args lfunc h_call
@@ -1977,7 +1977,7 @@ theorem eval_frame
           · rename_i h_eval_cond
             split
             · -- concreteEval = none: certified when the rebuilt call is
-              -- canonical on fully evaluated arguments
+              -- a value on fully evaluated arguments
               rename_i h_ceval_none
               intro h
               simp only [LExpr.combineEvalResValueFlag_eq_pair, Prod.mk.injEq] at h
@@ -2012,7 +2012,7 @@ theorem eval_frame
                 simp only [LExpr.List_all_snd_isValueTrue_map_eval]
                 rw [h_argsAllFull_lift]
                 simp only [LExpr.List_map_fst_map_eval] at h_can h_fst
-                have h_can_v : LExpr.isCanonicalValue F v = true :=
+                have h_can_v : LExpr.isValue F v = true :=
                   h_fst ▸ h_can
                 simp [h_fst, h_can_v, LExpr.EvalResult.combineValueFlag]
             · rename_i ceval h_ceval
@@ -2163,11 +2163,11 @@ theorem substFvarsFromEnv_substFvars
 The naive per-fuel EQUALITY `eval n σ' (substFvars e sm) = eval n (pullback) e` is
 FALSE: at fuel 0, `eval` returns the residual verbatim, so its `.fst` is
 `substFvars e sm` (renamed) on the left but `e` on the right. The runs only
-converge at the canonical fixpoint. The correct per-fuel invariant is
+converge at the fully evaluated fixpoint. The correct per-fuel invariant is
 substFvars-TWISTED:
   `eval n σ' (substFvars e sm) = (substFvars (eval n (pullback) e).fst sm,
                                   (eval n (pullback) e).snd)`.
-At the least-fuel `.value true` witness the residual is canonical hence closed, so
+At the least-fuel `.value true` witness the residual is a value and hence closed, so
 `substFvars` collapses to the identity and the two runs return the same value. -/
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
@@ -2236,13 +2236,13 @@ theorem substFvarsAux_getVars_nil_id
     rw [ihc h.1.1, iht h.1.2, ihf h.2]
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `substFvars` is the identity on canonical values (which are closed). -/
-theorem substFvars_canonical_id
+/-- `substFvars` is the identity on values (which are closed). -/
+theorem substFvars_value_id
     (F : @Factory Tbase)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
-    (v : LExpr Tbase.mono) (hv : LExpr.isCanonicalValue F v = true) :
+    (v : LExpr Tbase.mono) (hv : LExpr.isValue F v = true) :
     LExpr.substFvars v sm = v := by
-  have hnil := isCanonicalValue_getVars_nil F v hv
+  have hnil := isValue_getVars_nil F v hv
   unfold LExpr.substFvars
   split
   · rfl
@@ -2260,23 +2260,23 @@ theorem substFvars_getVars_nil_id
   · exact substFvarsAux_getVars_nil_id sm e h
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `isCanonicalValue` is invariant under a variable-only renaming.
-    Key insight: canonical values are closed (`getVars = []`), and `substFvars`
+/-- `isValue` is invariant under a variable-only renaming.
+    Key insight: values are closed (`getVars = []`), and `substFvars`
     is the identity on closed terms; if `e` has free variables so does the
-    renamed term (variable-only), so neither is canonical. -/
-theorem isCanonicalValue_substFvars_eq
+    renamed term (variable-only), so neither is a value. -/
+theorem isValue_substFvars_eq
     (F : @Factory Tbase)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono)) (hVar : VarOnly sm)
     (e : LExpr Tbase.mono) :
-    LExpr.isCanonicalValue F (LExpr.substFvars e sm)
-      = LExpr.isCanonicalValue F e := by
+    LExpr.isValue F (LExpr.substFvars e sm)
+      = LExpr.isValue F e := by
   by_cases hnil : LExpr.LExpr.getVars e = []
   · rw [substFvars_getVars_nil_id sm e hnil]
-  · -- e has free vars ⟹ both sides non-canonical
-    have hlhs : LExpr.isCanonicalValue F (LExpr.substFvars e sm) = false := by
+  · -- e has free vars ⟹ both sides non-value
+    have hlhs : LExpr.isValue F (LExpr.substFvars e sm) = false := by
       apply Bool.eq_false_iff.mpr
       intro hcan
-      have := isCanonicalValue_getVars_nil F _ hcan
+      have := isValue_getVars_nil F _ hcan
       -- getVars (substFvars e sm) = [] ⟹ getVars e = []
       have hnil' : LExpr.LExpr.getVars e = [] := by
         unfold LExpr.substFvars at this
@@ -2284,10 +2284,10 @@ theorem isCanonicalValue_substFvars_eq
         · exact this
         · exact (getVars_substFvarsAux_nil_iff sm hVar e).mp this
       exact hnil hnil'
-    have hrhs : LExpr.isCanonicalValue F e = false := by
+    have hrhs : LExpr.isValue F e = false := by
       apply Bool.eq_false_iff.mpr
       intro hcan
-      exact hnil (isCanonicalValue_getVars_nil F e hcan)
+      exact hnil (isValue_getVars_nil F e hcan)
     rw [hlhs, hrhs]
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
@@ -2471,14 +2471,14 @@ theorem pullback_none_find_none
     rw [h] at this; simp at this
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `substStoreExpr` maps only to closed (canonical) expressions. -/
+/-- `substStoreExpr` maps only to closed value expressions. -/
 theorem pullback_closed
     (F : @Factory Tbase) (σ' : Env Tbase)
-    (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, σ' x = some v → LExpr.isValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono)) (hVar : VarOnly sm)
     (z : Tbase.Identifier) (v : LExpr Tbase.mono)
     (h : substStoreExpr σ' sm z = some v) :
-    LExpr.isCanonicalValue F v = true := by
+    LExpr.isValue F v = true := by
   simp only [substStoreExpr] at h
   cases hf : sm.find? z with
   | none => rw [hf] at h; exact hwfs z v h
@@ -2492,7 +2492,7 @@ omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
     hence (by `TargetsDefined`) not in `sm`'s domain; store values are closed. -/
 theorem substFvars_substFvarsFromEnv_pullback_id
     (F : @Factory Tbase) (σ' : Env Tbase)
-    (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, σ' x = some v → LExpr.isValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm) (hTgt : TargetsDefined σ' sm)
     (e : LExpr Tbase.mono) :
@@ -2509,9 +2509,9 @@ theorem substFvars_substFvarsFromEnv_pullback_id
       have hfn : sm.find? x = none := pullback_none_find_none σ' sm hVar hTgt x hpb
       exact LExpr.substFvars_fvar_none m x ty sm hfn
     | some v =>
-      have hcan : LExpr.isCanonicalValue F v = true :=
+      have hcan : LExpr.isValue F v = true :=
         pullback_closed F σ' hwfs sm hVar x v hpb
-      exact substFvars_canonical_id F sm v hcan
+      exact substFvars_value_id F sm v hcan
   | abs m n ty body ih =>
     simp only [LExpr.substFvarsFromEnv, LExpr.substFvars_abs, ih]
   | quant m qk n ty tr body iht ihb =>
@@ -2524,23 +2524,23 @@ theorem substFvars_substFvarsFromEnv_pullback_id
     simp only [LExpr.substFvarsFromEnv, LExpr.substFvars_ite, ihc, iht, ihf]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `ite` heads are never canonical values (their head is not an `.op`). -/
-theorem isCanonicalValue_ite_false
+/-- `ite` heads are never values (their head is not an `.op`). -/
+theorem isValue_ite_false
     (F : @Factory Tbase) (m : Tbase.Metadata) (c t f : LExpr Tbase.mono) :
-    LExpr.isCanonicalValue F (.ite m c t f) = false := by
-  rw [LExpr.isCanonicalValue.eq_def]
+    LExpr.isValue F (.ite m c t f) = false := by
+  rw [LExpr.isValue.eq_def]
   simp only [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `eq` heads are never canonical values. -/
-theorem isCanonicalValue_eq_false
+/-- `eq` heads are never values. -/
+theorem isValue_eq_false
     (F : @Factory Tbase) (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono) :
-    LExpr.isCanonicalValue F (.eq m e1 e2) = false := by
-  rw [LExpr.isCanonicalValue.eq_def]
+    LExpr.isValue F (.eq m e1 e2) = false := by
+  rw [LExpr.isValue.eq_def]
   simp only [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
 
 /-- Bridge: a per-fuel TWISTED equality at fuel `n` yields the value-true
-    biconditional at that fuel. Because a `.value true` residual is a canonical
+    biconditional at that fuel. Because a `.value true` residual is a
     value, hence closed, `substFvars` collapses to the identity, so the twisting
     disappears exactly at the points the biconditional talks about. -/
 theorem bicond_of_twisted
@@ -2561,17 +2561,17 @@ theorem bicond_of_twisted
       (Prod.mk.injEq ..).mp h |>.1
     have hs : LExpr.EvalResult.value true = (LExpr.eval n F (substStoreExpr σ' sm) e).snd :=
       (Prod.mk.injEq ..).mp h |>.2
-    have hcanσ : LExpr.isCanonicalValue F (LExpr.eval n F (substStoreExpr σ' sm) e).fst = true :=
-      eval_value_isCanonicalValue n F (substStoreExpr σ' sm) e (b := true) hs.symm
-    rw [substFvars_canonical_id F sm _ hcanσ] at hf
+    have hcanσ : LExpr.isValue F (LExpr.eval n F (substStoreExpr σ' sm) e).fst = true :=
+      eval_value_isValue n F (substStoreExpr σ' sm) e (b := true) hs.symm
+    rw [substFvars_value_id F sm _ hcanσ] at hf
     rw [← Prod.eta (LExpr.eval n F (substStoreExpr σ' sm) e), ← hs, ← hf]
   · intro hR
     rw [hR] at h
     simp only at h
-    have hcan : LExpr.isCanonicalValue F v = true := by
-      have := eval_value_isCanonicalValue n F (substStoreExpr σ' sm) e (b := true) (by rw [hR])
+    have hcan : LExpr.isValue F v = true := by
+      have := eval_value_isValue n F (substStoreExpr σ' sm) e (b := true) (by rw [hR])
       rw [hR] at this; exact this
-    rw [h, substFvars_canonical_id F sm v hcan]
+    rw [h, substFvars_value_id F sm v hcan]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
 /-- `callOfLFunc` is `none` on an `ite` head. -/
@@ -2593,7 +2593,7 @@ theorem eval_succ_ite
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono) :
     LExpr.eval (n' + 1) F env (.ite m c t f) = LExpr.evalIte n' F env m c t f := by
   rw [LExpr.eval]
-  rw [if_neg (by rw [isCanonicalValue_ite_false]; simp)]
+  rw [if_neg (by rw [isValue_ite_false]; simp)]
   rw [callOfLFunc_ite_none]
   simp only [LExpr.evalCore]
 
@@ -2603,7 +2603,7 @@ theorem eval_succ_eq
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono) :
     LExpr.eval (n' + 1) F env (.eq m e1 e2) = LExpr.evalEq n' F env m e1 e2 := by
   rw [LExpr.eval]
-  rw [if_neg (by rw [isCanonicalValue_eq_false]; simp)]
+  rw [if_neg (by rw [isValue_eq_false]; simp)]
   rw [callOfLFunc_eq_none]
   simp only [LExpr.evalCore]
 
@@ -2611,7 +2611,7 @@ theorem eval_succ_eq
 theorem eval_succ_app_none
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
-    (hncan : LExpr.isCanonicalValue F (.app m e1 e2) = false)
+    (hncan : LExpr.isValue F (.app m e1 e2) = false)
     (hcall : F.callOfLFunc (.app m e1 e2) = none) :
     LExpr.eval (n' + 1) F env (.app m e1 e2)
       = LExpr.evalApp n' F env (.app m e1 e2) e1 e2 := by
@@ -3006,7 +3006,7 @@ theorem eval_call_not_full_snd
     (e : LExpr Tbase.mono)
     (triple : LExpr Tbase.mono × List (LExpr Tbase.mono) × LFunc Tbase)
     (hcall : F.callOfLFunc e = some triple)
-    (hcanF : LExpr.isCanonicalValue F e = false)
+    (hcanF : LExpr.isValue F e = false)
     (hfull : (triple.2.1.all fun a => (LExpr.eval n F env a).snd.isValueTrue) = false) :
     (LExpr.eval (n + 1) F env e).snd ≠ .value true := by
   obtain ⟨op_expr, args, lfunc⟩ := triple
@@ -3029,18 +3029,18 @@ theorem eval_call_not_full_snd
 /-- When a factory call's arguments ARE all fully reduced, evaluating the renamed
     call in the renamed store equals evaluating the original call in the pulled-back
     store: the residual `.fst` lists coincide (each argument value-syncs), and the
-    shared reduct is CLOSED (its free variables come only from the canonical — hence
-    closed — argument residuals), so `eval` is store-independent on it. -/
+    shared reduct is CLOSED (its free variables come only from the closed value
+    argument residuals), so `eval` is store-independent on it. -/
 theorem call_node_eval_eq
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
     (n' : Nat) (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
-    (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, σ' x = some v → LExpr.isValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm)
     (e : LExpr Tbase.mono)
     (op_expr : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (lfunc : LFunc Tbase)
     (hcall : F.callOfLFunc e = some (op_expr, args, lfunc))
-    (hcanF : LExpr.isCanonicalValue F e = false)
+    (hcanF : LExpr.isValue F e = false)
     (hfull : (args.all fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).snd.isValueTrue) = true)
     (ih : ∀ (e v : LExpr Tbase.mono),
       LExpr.eval n' F σ' (e.substFvars sm) = (v, .value true) ↔
@@ -3048,12 +3048,12 @@ theorem call_node_eval_eq
     (v : LExpr Tbase.mono) :
     (LExpr.eval (n' + 1) F σ' (LExpr.substFvars e sm) = (v, .value true))
       ↔ (LExpr.eval (n' + 1) F (substStoreExpr σ' sm) e = (v, .value true)) := by
-  -- Both stores bind only closed (canonical) values.
+  -- Both stores bind only closed values.
   have henvσ' : ∀ x v, σ' x = some v → LExpr.LExpr.getVars v = [] := by
-    intro x v hx; exact isCanonicalValue_getVars_nil F v (hwfs x v hx)
+    intro x v hx; exact isValue_getVars_nil F v (hwfs x v hx)
   have henvPB : ∀ x v, substStoreExpr σ' sm x = some v → LExpr.LExpr.getVars v = [] := by
     intro x v hx
-    exact isCanonicalValue_getVars_nil F v (pullback_closed F σ' hwfs sm hVar x v hx)
+    exact isValue_getVars_nil F v (pullback_closed F σ' hwfs sm hVar x v hx)
   -- The renamed and pullback argument residual lists coincide, and the
   -- `argsAllFull` bit agrees.
   have hfullL : ((args.map (LExpr.substFvars · sm)).all
@@ -3061,8 +3061,8 @@ theorem call_node_eval_eq
     rw [call_argsAllFull_eq n' F σ' sm ih args]; exact hfull
   have hfst := call_args_fst_eq n' F σ' sm ih args (by simpa using hfullL)
   have hbit := call_argsAllFull_eq n' F σ' sm ih args
-  have hcanFL : LExpr.isCanonicalValue F (LExpr.substFvars e sm) = false := by
-    rw [isCanonicalValue_substFvars_eq F sm hVar e]; exact hcanF
+  have hcanFL : LExpr.isValue F (LExpr.substFvars e sm) = false := by
+    rw [isValue_substFvars_eq F sm hVar e]; exact hcanF
   have hcallL : F.callOfLFunc (LExpr.substFvars e sm)
       = some (op_expr, args.map (LExpr.substFvars · sm), lfunc) :=
     callOfLFunc_substFvars F e sm op_expr args lfunc hcall
@@ -3073,7 +3073,7 @@ theorem call_node_eval_eq
       LExpr.eval n' F σ' r = LExpr.eval n' F (substStoreExpr σ' sm) r :=
     fun r hr => eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF henvPB r
       (fun x hx => by rw [hr] at hx; simp at hx)
-  -- Each pullback-side argument residual is fully reduced, hence canonical, hence
+  -- Each pullback-side argument residual is fully reduced values and hence
   -- closed (`getVars = []`).
   have hargClosed : ∀ a ∈ args,
       LExpr.LExpr.getVars (LExpr.eval n' F (substStoreExpr σ' sm) a).fst = [] := by
@@ -3088,8 +3088,8 @@ theorem call_node_eval_eq
         | false => rw [hs] at haVT; simp [LExpr.EvalResult.isValueTrue] at haVT
       | nonvalue => rw [hs] at haVT; simp [LExpr.EvalResult.isValueTrue] at haVT
       | outOfFuel => rw [hs] at haVT; simp [LExpr.EvalResult.isValueTrue] at haVT
-    have hcana := eval_value_isCanonicalValue n' F (substStoreExpr σ' sm) a (b := true) hsnd
-    exact isCanonicalValue_getVars_nil F _ hcana
+    have hcana := eval_value_isValue n' F (substStoreExpr σ' sm) a (b := true) hsnd
+    exact isValue_getVars_nil F _ hcana
   -- Bundled facts needed to bound the reducts' free variables.
   have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false hcall
   have h_wf := hWF.lfuncs_wf lfunc h_mem
@@ -3117,7 +3117,7 @@ theorem call_node_eval_eq
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair,
       hcanFL, hcallL, hcanF, hcall, hfst, hbit, hmeta]
     split
-    · -- `isCanonicalValue` guard: rewritten to `false`, so this branch is impossible.
+    · -- `isValue` guard: rewritten to `false`, so this branch is impossible.
       exact absurd ‹false = true› (by simp)
     · split
       · -- inline branch
@@ -3153,7 +3153,7 @@ theorem call_node_eval_eq
           right; exact ⟨by simp, by simp⟩
       · -- non-inline branch
         cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-        cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+        cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
           simp only []
           split
           · split
@@ -3194,7 +3194,7 @@ theorem eval_rename_commute
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
     (n : Nat)
     (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
-    (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, σ' x = some v → LExpr.isValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm) (hTgt : TargetsDefined σ' sm)
     (e : LExpr Tbase.mono) :
@@ -3205,7 +3205,7 @@ theorem eval_rename_commute
   | zero =>
     apply bicond_of_twisted F σ' sm 0 e
     simp only [LExpr.eval]
-    rw [isCanonicalValue_substFvars_eq F sm hVar e]
+    rw [isValue_substFvars_eq F sm hVar e]
   | succ n' ih =>
     -- Leaf/structural arms reuse the TWISTED equality (which holds there) via
     -- `bicond_of_twisted`; the recursive walls (ite/app/eq/callOfLFunc-some) are
@@ -3214,15 +3214,15 @@ theorem eval_rename_commute
     | some triple =>
       obtain ⟨op_expr, args, lfunc⟩ := triple
       intro v
-      by_cases hcan : LExpr.isCanonicalValue F e = true
+      by_cases hcan : LExpr.isValue F e = true
       · apply bicond_of_twisted F σ' sm (n' + 1) e
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar e]
+        rw [isValue_substFvars_eq F sm hVar e]
         rw [if_pos hcan, if_pos hcan]
-      · have hcanF : LExpr.isCanonicalValue F e = false :=
+      · have hcanF : LExpr.isValue F e = false :=
           Bool.eq_false_iff.mpr (by simpa using hcan)
-        have hcanFL : LExpr.isCanonicalValue F (LExpr.substFvars e sm) = false := by
-          rw [isCanonicalValue_substFvars_eq F sm hVar e]; exact hcanF
+        have hcanFL : LExpr.isValue F (LExpr.substFvars e sm) = false := by
+          rw [isValue_substFvars_eq F sm hVar e]; exact hcanF
         have hcallL : F.callOfLFunc (LExpr.substFvars e sm)
             = some (op_expr, args.map (LExpr.substFvars · sm), lfunc) :=
           callOfLFunc_substFvars F e sm op_expr args lfunc hcall
@@ -3256,7 +3256,7 @@ theorem eval_rename_commute
       | const m c =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.const m c)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.const m c)]
+        rw [isValue_substFvars_eq F sm hVar (.const m c)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.const m c) sm hVar hcall, hcall]
@@ -3264,7 +3264,7 @@ theorem eval_rename_commute
       | op m nm t =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.op m nm t)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.op m nm t)]
+        rw [isValue_substFvars_eq F sm hVar (.op m nm t)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.op m nm t) sm hVar hcall, hcall]
@@ -3272,7 +3272,7 @@ theorem eval_rename_commute
       | bvar m i =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.bvar m i)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.bvar m i)]
+        rw [isValue_substFvars_eq F sm hVar (.bvar m i)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.bvar m i) sm hVar hcall, hcall]
@@ -3280,7 +3280,7 @@ theorem eval_rename_commute
       | fvar m x ty =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.fvar m x ty)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.fvar m x ty)]
+        rw [isValue_substFvars_eq F sm hVar (.fvar m x ty)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.fvar m x ty) sm hVar hcall, hcall]
@@ -3294,9 +3294,9 @@ theorem eval_rename_commute
             cases hσx : σ' x with
             | none => simp [LExpr.substFvars_fvar_none m x ty sm hfnd]
             | some v =>
-              have hcanv : LExpr.isCanonicalValue F v = true := hwfs x v hσx
+              have hcanv : LExpr.isValue F v = true := hwfs x v hσx
               simp only [hcanv, if_true]
-              rw [substFvars_canonical_id F sm v hcanv]
+              rw [substFvars_value_id F sm v hcanv]
           | some to =>
             obtain ⟨m', y, ty', rfl⟩ := hVar x to hfnd
             rw [LExpr.substFvars_fvar_find m x ty sm _ hfnd]
@@ -3308,13 +3308,13 @@ theorem eval_rename_commute
             cases hσy : σ' y with
             | none => rw [hσy] at hsome; simp at hsome
             | some v =>
-              have hcanv : LExpr.isCanonicalValue F v = true := hwfs y v hσy
+              have hcanv : LExpr.isValue F v = true := hwfs y v hσy
               simp only [hcanv, if_true]
-              rw [substFvars_canonical_id F sm v hcanv]
+              rw [substFvars_value_id F sm v hcanv]
       | abs m nm ty body =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.abs m nm ty body)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.abs m nm ty body)]
+        rw [isValue_substFvars_eq F sm hVar (.abs m nm ty body)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.abs m nm ty body) sm hVar hcall, hcall]
@@ -3328,7 +3328,7 @@ theorem eval_rename_commute
       | quant m qk nm ty tr body =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.quant m qk nm ty tr body)
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-        rw [isCanonicalValue_substFvars_eq F sm hVar (.quant m qk nm ty tr body)]
+        rw [isValue_substFvars_eq F sm hVar (.quant m qk nm ty tr body)]
         split
         · rfl
         · rw [callOfLFunc_substFvars_none F (.quant m qk nm ty tr body) sm hVar hcall, hcall]
@@ -3342,18 +3342,18 @@ theorem eval_rename_commute
             (LExpr.quant m qk nm ty tr body)]
       | app m e1 e2 =>
         intro v
-        by_cases hcan : LExpr.isCanonicalValue F (.app m e1 e2) = true
-        · -- canonical (e.g. partial constructor application): closed, identity.
+        by_cases hcan : LExpr.isValue F (.app m e1 e2) = true
+        · -- value (e.g. partial constructor application): closed, identity.
           apply bicond_of_twisted F σ' sm (n' + 1) (.app m e1 e2)
           simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
-          rw [isCanonicalValue_substFvars_eq F sm hVar (.app m e1 e2)]
+          rw [isValue_substFvars_eq F sm hVar (.app m e1 e2)]
           rw [if_pos hcan, if_pos hcan]
-        · -- non-canonical, not a factory call: goes through `evalApp` (beta).
-          have hcanF : LExpr.isCanonicalValue F (.app m e1 e2) = false :=
+        · -- non-value, not a factory call: goes through `evalApp` (beta).
+          have hcanF : LExpr.isValue F (.app m e1 e2) = false :=
             Bool.eq_false_iff.mpr (by simpa using hcan)
-          have hcanL : LExpr.isCanonicalValue F
+          have hcanL : LExpr.isValue F
               (.app m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm)) = false := by
-            rw [← LExpr.substFvars_app, isCanonicalValue_substFvars_eq F sm hVar (.app m e1 e2)]
+            rw [← LExpr.substFvars_app, isValue_substFvars_eq F sm hVar (.app m e1 e2)]
             exact hcanF
           have hcallL : F.callOfLFunc
               (.app m (LExpr.substFvars e1 sm) (LExpr.substFvars e2 sm)) = none := by
@@ -3361,29 +3361,29 @@ theorem eval_rename_commute
             exact callOfLFunc_substFvars_none F (.app m e1 e2) sm hVar hcall
           -- Store-value closedness facts for `eval_env_congr`.
           have hσcl : ∀ x w, σ' x = some w → LExpr.LExpr.getVars w = [] :=
-            fun x w h => isCanonicalValue_getVars_nil F w (hwfs x w h)
+            fun x w h => isValue_getVars_nil F w (hwfs x w h)
           have hpbcl : ∀ x w, substStoreExpr σ' sm x = some w → LExpr.LExpr.getVars w = [] :=
-            fun x w h => isCanonicalValue_getVars_nil F w (pullback_closed F σ' hwfs sm hVar x w h)
+            fun x w h => isValue_getVars_nil F w (pullback_closed F σ' hwfs sm hVar x w h)
           -- Residual-closedness of value-true operands (both stores).
           have hcl1L : ∀ w, LExpr.eval n' F σ' (LExpr.substFvars e1 sm) = (w, .value true)
               → LExpr.LExpr.getVars w = [] := fun w hw =>
-            isCanonicalValue_getVars_nil F w (by
-              have := eval_value_isCanonicalValue n' F σ' (LExpr.substFvars e1 sm)
+            isValue_getVars_nil F w (by
+              have := eval_value_isValue n' F σ' (LExpr.substFvars e1 sm)
                 (b := true) (by rw [hw]); rw [hw] at this; exact this)
           have hcl2L : ∀ w, LExpr.eval n' F σ' (LExpr.substFvars e2 sm) = (w, .value true)
               → LExpr.LExpr.getVars w = [] := fun w hw =>
-            isCanonicalValue_getVars_nil F w (by
-              have := eval_value_isCanonicalValue n' F σ' (LExpr.substFvars e2 sm)
+            isValue_getVars_nil F w (by
+              have := eval_value_isValue n' F σ' (LExpr.substFvars e2 sm)
                 (b := true) (by rw [hw]); rw [hw] at this; exact this)
           have hcl1R : ∀ w, LExpr.eval n' F (substStoreExpr σ' sm) e1 = (w, .value true)
               → LExpr.LExpr.getVars w = [] := fun w hw =>
-            isCanonicalValue_getVars_nil F w (by
-              have := eval_value_isCanonicalValue n' F (substStoreExpr σ' sm) e1
+            isValue_getVars_nil F w (by
+              have := eval_value_isValue n' F (substStoreExpr σ' sm) e1
                 (b := true) (by rw [hw]); rw [hw] at this; exact this)
           have hcl2R : ∀ w, LExpr.eval n' F (substStoreExpr σ' sm) e2 = (w, .value true)
               → LExpr.LExpr.getVars w = [] := fun w hw =>
-            isCanonicalValue_getVars_nil F w (by
-              have := eval_value_isCanonicalValue n' F (substStoreExpr σ' sm) e2
+            isValue_getVars_nil F w (by
+              have := eval_value_isValue n' F (substStoreExpr σ' sm) e2
                 (b := true) (by rw [hw]); rw [hw] at this; exact this)
           -- Guard agreement across the rename (comparand closed).
           have hguardLR : ∀ (X : LExpr Tbase.mono), LExpr.LExpr.getVars X = [] →
@@ -3439,7 +3439,7 @@ theorem eval_rename_commute
 theorem rename_commute
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
     (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
-    (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
+    (hwfs : ∀ x v, σ' x = some v → LExpr.isValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm) (hTgt : TargetsDefined σ' sm)
     (e : LExpr Tbase.mono) :
@@ -3497,7 +3497,7 @@ evaluator does to a few specific forms, which is what a caller reasoning about a
 *concrete* program needs:
 
 - `evalFully_const` — a literal evaluates to itself;
-- `evalFully_fvar_of_value` — a variable bound to a canonical value evaluates to
+- `evalFully_fvar_of_value` — a variable bound to a value evaluates to
   that value.  Weaker premise than `evalFully_fvar_store`, which asks that *every*
   binding be a value: reading one variable only needs the binding actually read to
   be one;
@@ -3510,19 +3510,19 @@ public section
 section evalFully_forms
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- Literals are canonical values in every factory. -/
-theorem isCanonicalValue_const_true
+/-- Literals are values in every factory. -/
+theorem isValue_const_true
     (F : @Factory Tbase) (m : Tbase.Metadata) (κ : LConst) :
-    LExpr.isCanonicalValue F (.const m κ : LExpr Tbase.mono) = true := by
-  rw [LExpr.isCanonicalValue.eq_def]
+    LExpr.isValue F (.const m κ : LExpr Tbase.mono) = true := by
+  rw [LExpr.isValue.eq_def]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- Free variables are never canonical values (their head is not an `.op`). -/
-private theorem isCanonicalValue_fvar_false
+/-- Free variables are never values (their head is not an `.op`). -/
+private theorem isValue_fvar_false
     (F : @Factory Tbase) (m : Tbase.Metadata) (x : Tbase.Identifier)
     (ty : Option Tbase.mono.TypeType) :
-    LExpr.isCanonicalValue F (.fvar m x ty : LExpr Tbase.mono) = false := by
-  rw [LExpr.isCanonicalValue.eq_def]
+    LExpr.isValue F (.fvar m x ty : LExpr Tbase.mono) = false := by
+  rw [LExpr.isValue.eq_def]
   simp only [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
@@ -3546,19 +3546,19 @@ theorem eql_self (F : @Factory Tbase) (v : LExpr Tbase.mono) :
 theorem evalFully_const (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (κ : LConst) :
     LExpr.evalFully F env (.const m κ) = some (.const m κ) :=
-  evalFully_value_identity F env _ (isCanonicalValue_const_true F m κ)
+  evalFully_value_identity F env _ (isValue_const_true F m κ)
 
-/-- A variable bound to a canonical value evaluates to that value.  Contrast
+/-- A variable bound to a value evaluates to that value.  Contrast
     `evalFully_fvar_store`, which needs every binding of `env` to be a value; here
     only the binding being read does. -/
 theorem evalFully_fvar_of_value (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (x : Tbase.Identifier) (ty : Option Tbase.mono.TypeType)
     (v : LExpr Tbase.mono) (hx : env x = some v)
-    (hv : LExpr.isCanonicalValue F v = true) :
+    (hv : LExpr.isValue F v = true) :
     LExpr.evalFully F env (.fvar m x ty) = some v := by
   refine evalFully_of_value_true F env _ 1 v ?_
   rw [LExpr.eval]
-  rw [if_neg (by rw [isCanonicalValue_fvar_false]; simp)]
+  rw [if_neg (by rw [isValue_fvar_false]; simp)]
   rw [callOfLFunc_fvar_none]
   simp only [LExpr.evalCore, hx, hv, if_true]
 

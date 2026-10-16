@@ -335,16 +335,16 @@ private def vMax (a b : BitVec 16) : BitVec 16 := if BitVec.ule a b then b else 
 private def vMin (a b : BitVec 16) : BitVec 16 := if BitVec.ule a b then a else b
 private def bvc (w : BitVec 16) : Core.Expression.Expr := Lambda.LExpr.bitvecConst () 16 w
 
-/-- Every 16-bit bitvector literal is canonical in `Core.Factory`. -/
-private theorem bvc_canon (w : BitVec 16) :
-    Lambda.LExpr.isCanonicalValue Core.Factory (bvc w) = true := by
-  simp [bvc, Lambda.LExpr.isCanonicalValue, Lambda.LExpr.bitvecConst]
+/-- Every 16-bit bitvector literal is a value in `Core.Factory`. -/
+private theorem bvc_value (w : BitVec 16) :
+    Lambda.LExpr.isValue Core.Factory (bvc w) = true := by
+  simp [bvc, Lambda.LExpr.isValue, Lambda.LExpr.bitvecConst]
 
 /-- A variable bound to a 16-bit literal evaluates to that literal. -/
 private theorem bvc_evalFully {σ : Core.CoreStore} {id : Core.Expression.Ident} {w : BitVec 16}
     (h : σ id = some (bvc w)) :
     Lambda.LExpr.evalFully Core.Factory σ (.fvar () id bv16Ty) = some (bvc w) :=
-  Lambda.evalFully_fvar_of_value Core.Factory σ () id bv16Ty (bvc w) h (bvc_canon w)
+  Lambda.evalFully_fvar_of_value Core.Factory σ () id bv16Ty (bvc w) h (bvc_value w)
 
 /-- The test helper for unsigned comparison is the generated `Bv16.ULe` operator. -/
 private theorem bv16ULeApp_eq (x y : Core.Expression.Expr) :
@@ -389,10 +389,10 @@ private theorem bv16_callentry_facts
     (hInout : ListMap.keys proc.header.getInoutParams = [])
     (h : Core.CallEntry fac σ proc callArgs σAO) :
     (∃ vx, Core.Expression.eval fac σ exX = some vx ∧ σAO xId = some vx ∧
-        Lambda.LExpr.isCanonicalValue fac vx = true) ∧
+        Lambda.LExpr.isValue fac vx = true) ∧
     (∃ vy, Core.Expression.eval fac σ exY = some vy ∧ σAO yId = some vy ∧
-        Lambda.LExpr.isCanonicalValue fac vy = true) ∧
-    (∃ vr, σAO resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true) ∧
+        Lambda.LExpr.isValue fac vy = true) ∧
+    (∃ vr, σAO resultId = some vr ∧ Lambda.LExpr.isValue fac vr = true) ∧
     Imperative.WellFormedStore σAO fac := by
   obtain ⟨inputVals, outOnlyVals, hEE, hRV, σA, σIO, hIA, hIO, hSnap⟩ := h
   rw [show Imperative.Calls.getInputExprs callArgs = _ from hIn] at hEE
@@ -456,7 +456,7 @@ private theorem bv16_callexit_facts
     (hOutKeys : ListMap.keys proc.header.outputs = [resultId])
     (hLhs : Imperative.CallArg.getLhs callArgs = [outVar])
     (h : Core.CallExit fac σ proc callArgs σEnd σ') :
-    ∃ vr, σEnd resultId = some vr ∧ Lambda.LExpr.isCanonicalValue fac vr = true ∧
+    ∃ vr, σEnd resultId = some vr ∧ Lambda.LExpr.isValue fac vr = true ∧
       σ' outVar = some vr ∧ (∀ k, k ≠ outVar → σ' k = σ k) := by
   obtain ⟨outputVals, hRV, hUpd⟩ := h
   rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) proc.header = _
@@ -484,7 +484,7 @@ private theorem bv16_result_value
         chk.attr = Core.Procedure.CheckAttr.Default ∧
         chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty) setE)
     (hres : ρ'.store resultId = some vr)
-    (hrcanon : Lambda.LExpr.isCanonicalValue Core.Factory vr = true)
+    (hrcanon : Lambda.LExpr.isValue Core.Factory vr = true)
     (hsetE : Lambda.LExpr.evalFully Core.Factory ρ'.store setE = some (bvc w)) :
     vr = bvc w := by
   obtain ⟨lbl, chk, hmem, hattr, hexpr⟩ := hens1
@@ -850,7 +850,7 @@ private theorem bv16_set_contract
         intro label check hmem hattr
         rw [hens (label, check) hmem hattr, hfac]
         have hLHS := Lambda.evalFully_fvar_of_value Core.Factory σ' () resultId bv16Ty
-          (bvc (fval a b)) hnew (bvc_canon (fval a b))
+          (bvc (fval a b)) hnew (bvc_value (fval a b))
         have hRHS := hSpecEval σ' a b hx' hy'
         exact Lambda.evalFully_eq_self Core.Factory σ' () _ _ _ hLHS hRHS
 

@@ -47,7 +47,8 @@ procedure TestListLen() spec {
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram listLenTermPgm) |>.snd |>.isEmpty
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -58,13 +59,10 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilLen
 Property: assert
@@ -101,7 +99,8 @@ Result: ✅ pass
 
 Obligation: TestListLen_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify listLenTermPgm (options := .default)
 
@@ -123,7 +122,8 @@ rec function contains (key : int, @[cases] xs : IntList) : bool
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: contains_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -134,7 +134,8 @@ Result: ✅ pass
 
 Obligation: contains_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify containsTermPgm (options := .quiet)
 
@@ -202,7 +203,8 @@ rec function sumList (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: sumList_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -221,7 +223,8 @@ Result: ✅ pass
 
 Obligation: sumList_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify multiBranchPgm (options := .quiet)
 
@@ -253,7 +256,8 @@ procedure TestMutual() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -280,7 +284,8 @@ Result: ✅ pass
 
 Obligation: TestMutual_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualTermPgm (options := .quiet)
 
@@ -313,7 +318,8 @@ procedure Test() spec {
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -324,13 +330,10 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: listSum_body_calls_IntList..hd_0
 Property: assert
@@ -340,17 +343,14 @@ Obligation:
 Label: listSum_body_calls_IntList..tl_1
 Property: assert
 Obligation:
-!(IntList..isNil(xs@3)) ==> IntList..isCons(xs@3)
+!(IntList..isNil(xs@4)) ==> IntList..isCons(xs@4)
 
 Label: listSum_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@4)) ==> int.lt(IntList..adtRank(IntList..tl(xs@4)), IntList..adtRank(xs@4))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@5)) ==> int.lt(IntList..adtRank(IntList..tl(xs@5)), IntList..adtRank(xs@5))
 
 Label: lenNil
 Property: assert
@@ -399,7 +399,8 @@ Result: ✅ pass
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify sharedDtPgm (options := .default)
 
@@ -432,7 +433,8 @@ procedure TestTreeSize() spec {
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -444,54 +446,39 @@ Tree..isBranch(t@1) ==> !(Tree..isLeaf(t@1)) ==> Tree..isBranch(t@1)
 Label: treeSize_body_calls_Tree..right_1
 Property: assert
 Obligation:
-Tree..isBranch(t@1) ==> !(Tree..isLeaf(t@1)) ==> Tree..isBranch(t@1)
+Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> Tree..isBranch(t@2)
 
 Label: treeSize_body_calls_Tree..tail_2
 Property: assert
 Obligation:
-!(Tree..isBranch(t@1)) ==> !(Tree..isLeaf(t@1)) ==> Tree..isChain(t@1)
+!(Tree..isBranch(t@3)) ==> !(Tree..isLeaf(t@3)) ==> Tree..isChain(t@3)
 
 Label: treeSize_terminates_0
 Property: assert
-Assumptions:
-Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  int.ge(Tree..adtRank(x), 0)
-Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..left(t@2)), Tree..adtRank(t@2))
+(forall x : Tree ::  { Tree..adtRank(x) }
+  int.ge(Tree..adtRank(x), 0)) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))) ==> (forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))) ==> Tree..isBranch(t@4) ==> !(Tree..isLeaf(t@4)) ==> int.lt(Tree..adtRank(Tree..left(t@4)), Tree..adtRank(t@4))
 
 Label: treeSize_terminates_1
 Property: assert
-Assumptions:
-Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  int.ge(Tree..adtRank(x), 0)
-Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-Tree..isBranch(t@2) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..right(t@2)), Tree..adtRank(t@2))
+(forall x : Tree ::  { Tree..adtRank(x) }
+  int.ge(Tree..adtRank(x), 0)) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))) ==> (forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))) ==> Tree..isBranch(t@5) ==> !(Tree..isLeaf(t@5)) ==> int.lt(Tree..adtRank(Tree..right(t@5)), Tree..adtRank(t@5))
 
 Label: treeSize_terminates_2
 Property: assert
-Assumptions:
-Tree..adtRank_0: forall x : Tree ::  { Tree..adtRank(x) }
-  int.ge(Tree..adtRank(x), 0)
-Tree..adtRank_1: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_2: forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
-  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))
-Tree..adtRank_3: forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
-  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))
 Obligation:
-!(Tree..isBranch(t@2)) ==> !(Tree..isLeaf(t@2)) ==> int.lt(Tree..adtRank(Tree..tail(t@2)), Tree..adtRank(t@2))
+(forall x : Tree ::  { Tree..adtRank(x) }
+  int.ge(Tree..adtRank(x), 0)) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(left), Tree..adtRank(Branch(left, right)))) ==> (forall left : Tree :: forall right : Tree ::  { Tree..adtRank(Branch(left, right)) }
+  int.lt(Tree..adtRank(right), Tree..adtRank(Branch(left, right)))) ==> (forall head : int :: forall tail : Tree ::  { Tree..adtRank(Chain(head, tail)) }
+  int.lt(Tree..adtRank(tail), Tree..adtRank(Chain(head, tail)))) ==> !(Tree..isBranch(t@6)) ==> !(Tree..isLeaf(t@6)) ==> int.lt(Tree..adtRank(Tree..tail(t@6)), Tree..adtRank(t@6))
 
 Label: leaf
 Property: assert
@@ -553,7 +540,8 @@ Result: ✅ pass
 
 Obligation: TestTreeSize_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify treeSizePgm (options := .default)
 
@@ -586,13 +574,10 @@ Obligation:
 
 Label: intListLen_terminates_0
 Property: assert
-Assumptions:
-MyList..adtRank_0: forall x : (MyList int) ::  { MyList..adtRank(x) }
-  int.ge(MyList..adtRank(x), 0)
-MyList..adtRank_1: forall hd : int :: forall tl : (MyList int) ::  { MyList..adtRank(Cons(hd, tl)) }
-  int.lt(MyList..adtRank(tl), MyList..adtRank(Cons(hd, tl)))
 Obligation:
-!(MyList..isNil(xs@2)) ==> int.lt(MyList..adtRank(MyList..tl(xs@2)), MyList..adtRank(xs@2))
+(forall x : (MyList int) ::  { MyList..adtRank(x) }
+  int.ge(MyList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : (MyList int) ::  { MyList..adtRank(Cons(hd, tl)) }
+  int.lt(MyList..adtRank(tl), MyList..adtRank(Cons(hd, tl)))) ==> !(MyList..isNil(xs@2)) ==> int.lt(MyList..adtRank(MyList..tl(xs@2)), MyList..adtRank(xs@2))
 
 ---
 info:
@@ -624,14 +609,16 @@ rec function listLen (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
 Obligation: listLen_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify decreasesExplicitPgm (options := .quiet)
 
@@ -664,7 +651,8 @@ procedure TestZipLen() spec {
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -676,17 +664,14 @@ Obligation:
 Label: zipLen_body_calls_IntList..tl_1
 Property: assert
 Obligation:
-!(IntList..isNil(ys@1)) ==> !(IntList..isNil(xs@1)) ==> IntList..isCons(ys@1)
+!(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> IntList..isCons(ys@2)
 
 Label: zipLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(ys@2)) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(ys@2)), IntList..adtRank(ys@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(ys@3)) ==> !(IntList..isNil(xs@3)) ==> int.lt(IntList..adtRank(IntList..tl(ys@3)), IntList..adtRank(ys@3))
 
 Label: nilCases
 Property: assert
@@ -718,7 +703,8 @@ Result: ✅ pass
 
 Obligation: TestZipLen_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify decreasesNonCasesPgm (options := .default)
 
@@ -759,7 +745,8 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: bad_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -805,7 +792,8 @@ procedure TestMutualDt() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: treeSize_body_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
@@ -840,7 +828,8 @@ Result: ✅ pass
 
 Obligation: TestMutualDt_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualDtTermPgm (options := .quiet)
 
@@ -866,7 +855,8 @@ function badList (@[cases] xs : RoseList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: badTree_body_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
@@ -877,7 +867,8 @@ Result: ✅ pass
 
 Obligation: badList_terminates_0
 Property: assert
-Result: ❓ unknown -/
+Result: ❓ unknown
+-/
 #guard_msgs in
 #eval Core.verify mutualDtNonTermPgm (options := .quiet)
 
@@ -903,7 +894,8 @@ function intListSize (@[cases] xs : GenList int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: intTreeSize_body_calls_GenTree..children_0
 Property: assert
 Result: ✅ pass
@@ -926,7 +918,8 @@ Result: ✅ pass
 
 Obligation: intListSize_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify polyMutualDtTermPgm (options := .quiet)
 
@@ -950,7 +943,9 @@ rec function predVal (@[cases] n : MyNat) : int
 
 #end
 
-/-- info: Obligation: predVal_body_calls_MyNat..pred_0
+/--
+info:
+Obligation: predVal_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
@@ -964,7 +959,8 @@ Result: ✅ pass
 
 Obligation: predVal_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify precondTermPgm (options := .quiet)
 
@@ -986,14 +982,16 @@ rec function listLen (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
 Obligation: listLen_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify nestedInNonRecPgm (options := .quiet)
 
@@ -1082,7 +1080,8 @@ rec function allPos (@[cases] xs : IntList) : bool
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: allPos_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -1093,7 +1092,8 @@ Result: ✅ pass
 
 Obligation: allPos_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify recUnderBinderFreePgm (options := .quiet)
 
@@ -1115,7 +1115,8 @@ rec function listLen (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLen_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -1126,13 +1127,14 @@ Result: ✅ pass
 
 Obligation: listLen_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify letBindingTermPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 24: axiom filtering — mutual rec block with two unrelated datatypes
--- f recurses on IntList, g recurses on MyNat; each $$term proc
+-- f recurses on IntList, g recurses on MyNat; each termination lemma
 -- only gets axioms for its own decreasing type's datatype block
 ---------------------------------------------------------------------
 
@@ -1153,7 +1155,8 @@ function natToInt (@[cases] n : MyNat) : int
 };
 #end
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -1169,23 +1172,17 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: natToInt_terminates_0
 Property: assert
-Assumptions:
-MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  int.ge(MyNat..adtRank(x), 0)
-MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@2)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@2)), MyNat..adtRank(n@2))
+(forall x : MyNat ::  { MyNat..adtRank(x) }
+  int.ge(MyNat..adtRank(x), 0)) ==> (forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> !(MyNat..isZero(n@2)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@2)), MyNat..adtRank(n@2))
 
 ---
 info:
@@ -1203,7 +1200,8 @@ Result: ✅ pass
 
 Obligation: natToInt_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify extraAxiomsPgm (options := .default)
 
@@ -1251,14 +1249,16 @@ rec function listLenAlias (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLenAlias_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
 Obligation: listLenAlias_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify letAliasTermPgm (options := .quiet)
 
@@ -1282,14 +1282,16 @@ rec function listLenHave (@[cases] xs : IntList) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLenHave_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
 Obligation: listLenHave_terminates_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify haveAliasTermPgm (options := .quiet)
 

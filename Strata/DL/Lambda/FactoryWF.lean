@@ -35,7 +35,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       (fun e => e.freeVars) -- getTyFreeVars
       f.toFunc where
   /-- Constructors must not have a body or concreteEval. This ensures that
-      canonical values (which include fully-applied constructors) are normal
+      values (which include fully-applied constructors) are normal
       forms — they cannot be further reduced by `expand_fn` or `eval_fn`. -/
   constr_no_eval :
     f.isConstr → f.body = none ∧ f.concreteEval = none := by decide

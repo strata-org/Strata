@@ -50,10 +50,10 @@ def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.E
   .op () op.toString ty
 
 instance : HasVal Core.Expression where
-  value := fun f e => Lambda.LExpr.isCanonicalValue f e = true
+  value := fun f e => Lambda.LExpr.isValue f e = true
   valueOfTy := fun f e ty =>
     ∃ mty,
-      Lambda.LExpr.isCanonicalValue f e = true ∧
+      Lambda.LExpr.isValue f e = true ∧
       ty.toMonoType? = some mty ∧
       Lambda.LExpr.typeCheck [] e = some mty
 
@@ -125,9 +125,9 @@ instance : HasBool Core.Expression where
   boolIsValOfTy := fun f => by
     constructor
     · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
-      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
+      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
     · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
-      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
+      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
 
 instance : HasInt Core.Expression where
   zero        := .intConst () 0
@@ -138,7 +138,7 @@ instance : HasInt Core.Expression where
     cases n with
     | const m c =>
       cases c with
-      | intConst _ => simp [Lambda.LExpr.isCanonicalValue]
+      | intConst _ => simp [Lambda.LExpr.isValue]
       | _ => simp [Core.isNumeral] at hn
     | _ => simp [Core.isNumeral] at hn
   zeroIsNumeral := by
