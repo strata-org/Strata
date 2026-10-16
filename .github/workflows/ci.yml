@@ -114,7 +114,8 @@ jobs:
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
-          build-args: '--wfail'
+          # No --wfail: it also fails on warnings in dependencies (Verso).
+          # docs/verso/lakefile.toml sets warningAsError for the docs' own modules.
           lake-package-directory: 'docs/verso'
           use-github-cache: false
       - name: Build documentation
@@ -130,7 +131,7 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
+          args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/search/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
           fail: true
       - name: Check for broken links (html-multi)
         run: |

@@ -6,6 +6,9 @@
 module
 
 import StrataDDM.Integration.Lean
+public import StrataDDM.Integration.Lean.Deps
+public import StrataDDM.HNF
+
 ---------------------------------------------------------------------
 
 /-! # Getting Started with `ArithPrograms`
@@ -17,6 +20,7 @@ dialect's concrete syntax in a declarative fashion, after which we get parsing
 and preliminary type checking.
 -/
 
+public section
 #dialect
 dialect ArithPrograms;
 
@@ -69,5 +73,5 @@ namespace ArithPrograms
 -- #print Command.ofAst
 
 end ArithPrograms
-
+end
 ---------------------------------------------------------------------

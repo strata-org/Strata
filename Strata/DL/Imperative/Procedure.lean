@@ -27,7 +27,7 @@ public section
 
 /-- A deterministic control-flow graph over commands `C` and expressions `P`:
 labeled deterministic basic blocks with string labels. -/
-@[expose] abbrev DetCFG (P : PureExpr) (C : Type) :=
+abbrev DetCFG (P : PureExpr) (C : Type) :=
   CFG String (DetBlock String C P)
 
 /-- The body of a procedure: either structured (a list of statements) or
@@ -227,26 +227,6 @@ instance [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr] :
   definedVars _ _ := []
   modifiedVars p := ProcedureHeader.outputParams p.header
   readVars := Procedure.getVars
-
-/-- Non-transitive modified-variable lookup: the procedure's own modified
-    variables plus its body's, ignoring called procedures. -/
-def Procedure.modifiedVarsTrans [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr]
-    (_ : String → Option (Procedure P C Hdr)) (p : Procedure P C Hdr) : List P.Ident :=
-  HasVarsImp.modifiedVars p ++ HasVarsImp.modifiedVars p.body
-
-/-- Non-transitive read-variable lookup, the counterpart to
-    `Procedure.modifiedVarsTrans`. -/
-def Procedure.getVarsTrans [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr]
-    (_ : String → Option (Procedure P C Hdr)) (p : Procedure P C Hdr) : List P.Ident :=
-  HasVarsImp.readVars p ++ HasVarsImp.readVars p.body
-
-instance [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr] :
-    HasVarsProcTrans P (Procedure P C Hdr) where
-  modifiedVarsTrans := Procedure.modifiedVarsTrans
-  getVarsTrans := Procedure.getVarsTrans
-  definedVarsTrans := λ _ _ ↦ []
-  modifiedOrDefinedVarsTrans := Procedure.modifiedVarsTrans
-  allVarsTrans := λ π p ↦ Procedure.getVarsTrans π p ++ Procedure.modifiedVarsTrans π p
 
 end
 

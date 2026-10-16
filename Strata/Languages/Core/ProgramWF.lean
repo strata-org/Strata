@@ -401,7 +401,7 @@ private theorem Program.typeCheckFunctionDisjoint :
       intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
       rw[List.mem_flatMap]; exists a
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty <;> intros x hx)
-    | ax a =>
+    | ax _ | lemma _ =>
       specialize (IH tcok)
       match hx with
       | Or.inl hx =>
@@ -516,7 +516,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     split <;> try (intros;contradiction)
     rename_i x v Hid
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty)
-    | ax a =>
+    | ax _ | lemma _ =>
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
       intros a a_in; simp[Decl.names] at a_in; subst_vars

@@ -182,6 +182,7 @@ procedure loadUser(id: int)
   {
     {
       var $exc_0: NotFoundException;
+      var $throwSite_0: int := 0;
       {
         {
           {
@@ -189,6 +190,7 @@ procedure loadUser(id: int)
             if Result..isBad($callres_1)
               then {
                 $exc_0 := Result..err($callres_1);
+                $throwSite_0 := 2;
                 $thrown := true;
                 exit $try_0
               };
@@ -203,6 +205,8 @@ procedure loadUser(id: int)
             }
           }
       }$tryfin_0;
+      assert !($thrown & $throwSite_0 == 2) summary "call does not throw an uncaught 'NotFoundException'";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -249,6 +253,7 @@ info: procedure closeAndReturn()
   {
     {
       status := 0;
+      var $throwSite_0: int := 0;
       {
         {
           {
@@ -266,6 +271,8 @@ info: procedure closeAndReturn()
       };
       $thrown := $fin_thrown_1;
       $returning := $fin_returning_1;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -422,6 +429,7 @@ info: procedure nested()
   {
     {
       log := 0;
+      var $throwSite_0: int := 0;
       {
         {
           {
@@ -435,6 +443,7 @@ info: procedure nested()
             }$tryfin_1;
             var $fin_thrown_2: bool := $thrown;
             var $fin_returning_2: bool := $returning;
+            var $fin_site_2: int := $throwSite_0;
             $thrown := false;
             $returning := false;
             {
@@ -442,6 +451,7 @@ info: procedure nested()
             };
             $thrown := $fin_thrown_2;
             $returning := $fin_returning_2;
+            $throwSite_0 := $fin_site_2;
             if $thrown
               then {
                 exit $try_0
@@ -462,6 +472,8 @@ info: procedure nested()
       };
       $thrown := $fin_thrown_3;
       $returning := $fin_returning_3;
+      assert !$thrown summary "no exception escapes this `try` uncaught";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -485,9 +497,10 @@ First-match-wins is a sequence of else-less guarded `if`s (each match clears
 private def multiCatch : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
-composite SyntaxError {}
-composite IoError {}
-procedure parseStrict(input: int) returns (result: int) throws (e: SyntaxError);
+composite ParseError {}
+composite SyntaxError extends ParseError {}
+composite IoError extends ParseError {}
+procedure parseStrict(input: int) returns (result: int) throws (e: ParseError);
 procedure parseDocument(input: int)
   returns (result: int)
   opaque
@@ -505,9 +518,9 @@ procedure parseDocument(input: int)
 #end
 
 /--
-info: procedure parseStrict(input: int): (Result<int, SyntaxError>)
+info: procedure parseStrict(input: int): (Result<int, ParseError>)
   opaque
-  free ensures Result..isBad($result) ==> Result..err($result) is SyntaxError;
+  free ensures Result..isBad($result) ==> Result..err($result) is ParseError;
 
 procedure parseDocument(input: int)
   returns (result: int)
@@ -517,14 +530,16 @@ procedure parseDocument(input: int)
   var $returning: bool := false;
   {
     {
-      var $exc_0: SyntaxError;
+      var $exc_0: ParseError;
+      var $throwSite_0: int := 0;
       {
         {
           {
-            var $callres_1: Result<int, SyntaxError> := parseStrict(input);
+            var $callres_1: Result<int, ParseError> := parseStrict(input);
             if Result..isBad($callres_1)
               then {
                 $exc_0 := Result..err($callres_1);
+                $throwSite_0 := 2;
                 $thrown := true;
                 exit $try_0
               };
@@ -546,17 +561,19 @@ procedure parseDocument(input: int)
             }
           }
       }$tryfin_0;
-      var $fin_thrown_2: bool := $thrown;
-      var $fin_returning_2: bool := $returning;
-      var $fin_exc_2: SyntaxError := $exc_0;
+      var $fin_thrown_3: bool := $thrown;
+      var $fin_returning_3: bool := $returning;
+      var $fin_exc_3: ParseError := $exc_0;
       $thrown := false;
       $returning := false;
       {
         result := result + 100
       };
-      $thrown := $fin_thrown_2;
-      $returning := $fin_returning_2;
-      $exc_0 := $fin_exc_2;
+      $thrown := $fin_thrown_3;
+      $returning := $fin_returning_3;
+      $exc_0 := $fin_exc_3;
+      assert !($thrown & $throwSite_0 == 2) summary "call does not throw an uncaught 'ParseError'";
+      assume !$thrown;
       if $thrown
         then {
           exit $exnexit
@@ -613,6 +630,7 @@ info: procedure releaseAndBreak()
     {
       r := 0;
       {
+        var $throwSite_0: int := 0;
         {
           {
             {
@@ -633,6 +651,8 @@ info: procedure releaseAndBreak()
         $thrown := $fin_thrown_1;
         $returning := $fin_returning_1;
         $exiting_out := $fin_exiting_out_1;
+        assert !$thrown summary "no exception escapes this `try` uncaught";
+        assume !$thrown;
         if $thrown
           then {
             exit $exnexit

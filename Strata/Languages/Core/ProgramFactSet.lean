@@ -33,7 +33,7 @@ open Strata.Pipeline
 public section
 
 /-- A set of program facts known to hold on a program at a point in a pipeline. -/
-@[expose] abbrev ProgramFactSet := FactSet ProgramFact
+abbrev ProgramFactSet := FactSet ProgramFact
 
 /-- The empty fact set: nothing is known about the program. -/
 @[expose] def ProgramFactSet.empty : ProgramFactSet := emptyFactSet

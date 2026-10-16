@@ -3,8 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import StrataLaurel.Tests.Util.TestLaurel
+module
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
@@ -15,7 +15,7 @@ open Strata
 -- pipeline helper because the expected diagnostics are not pure resolution
 -- errors.
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure hasMutatingAssignment(): int
@@ -29,7 +29,7 @@ procedure hasMutatingAssignment(): int
 procedure functionWithMutatingAssignment(x: int): int
 {
   x := x + 1;
-//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'x'
   return 3
 };
 
@@ -71,7 +71,7 @@ The transparency pass reports only the first fatal transparent-body error per
 program, so this case lives in its own `#eval` block to avoid masking (or being
 masked by) the destructive-assignment diagnostics above. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure functionWithWhile(x: int): int

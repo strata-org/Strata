@@ -85,12 +85,12 @@ private def modeName : ConditionMode → String
 private partial def containsQuantifier (e : StmtExprMd) : Bool :=
   match e.val with
   | .Quantifier .. => true
-  | .StaticCall _ args => args.any containsQuantifier
+  | .StaticCall _ args _ => args.any containsQuantifier
   | _ => false
 
 private def isImpliesWrapped (e : StmtExprMd) : Bool :=
   match e.val with
-  | .StaticCall n (_ :: _ :: _) => n.text == Operation.Implies.procName
+  | .StaticCall n (_ :: _ :: _) _ => n.text == Operation.Implies.procName
   | _ => false
 
 /-- One line per condition: mode, whether the group's guard survived as an
@@ -100,7 +100,7 @@ private def describe (cs : List Condition) : String :=
   else "\n".intercalate (cs.map fun c =>
     s!"{modeName c.mode}, guarded={isImpliesWrapped c.condition}, quantified={containsQuantifier c.condition}")
 
-private def guard? : Option StmtExprMd := some ⟨.StaticCall (mkId "isGood") [], .unknown⟩
+private def guard? : Option StmtExprMd := some ⟨.StaticCall (mkId "isGood") [] [], .unknown⟩
 
 /-! ## 1. Group disposition: empty kept, wildcard dropped, absent unframed -/
 

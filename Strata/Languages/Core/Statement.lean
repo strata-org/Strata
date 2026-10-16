@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Imperative.CmdCallFormals
 import all Strata.DL.Imperative.Stmt
 import Std.Tactic.BVDecide.Normalize.Prop
 
@@ -22,58 +23,51 @@ public section
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.
 -/
-@[expose]
 abbrev Command := CmdExt Expression
 
 namespace CallArg
 
 /-- The expressions passed at a call: each `inArg`, plus a variable reference
-    for every `inoutArg`. -/
-def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
-  args.filterMap fun
-    | .inArg e => some e
-    | .inoutArg id => some (Lambda.LExpr.fvar () id none)
-    | .outArg _ => none
+    for every `inoutArg`.  The generic `Calls.getInputExprs` at `Expression`. -/
+abbrev getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
+  Calls.getInputExprs args
 
 end CallArg
 ---------------------------------------------------------------------
 
-@[expose]
 abbrev Statement := Imperative.Stmt Core.Expression Core.Command
-@[expose]
 abbrev Statements := List Statement
 
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.init (name : Expression.Ident) (ty : Expression.Ty) (expr : ExprOrNondet Expression)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.init name ty expr md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.set (name : Expression.Ident) (expr : Expression.Expr)
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name (.det expr) md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.havoc (name : Expression.Ident) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.set name .nondet md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.assert (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assert label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.assume label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.call (pname : String) (args : List (CallArg Expression))
     (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.call pname args md)
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression) :=
   @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
-@[expose, match_pattern]
+@[match_pattern]
 abbrev Statement.typeDecl (tc : TypeConstructor) (md : MetaData Expression) :=
   @Stmt.typeDecl Expression Command tc md
 
 ---------------------------------------------------------------------
 
-@[expose]
 abbrev Block := Imperative.Block Core.Expression Core.Command
 
 ---------------------------------------------------------------------
@@ -108,12 +102,6 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
   | .exit l md => .exit l md
-  | .funcDecl decl md =>
-    let decl' := { decl with
-      body := decl.body.map Lambda.LExpr.eraseTypes,
-      axioms := decl.axioms.map Lambda.LExpr.eraseTypes,
-      preconditions := decl.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
-    .funcDecl decl' md
   | .typeDecl tc md => .typeDecl tc md
 
 def Statements.eraseTypes (ss : Statements) : Statements :=
@@ -142,7 +130,7 @@ def Statement.collectAssertIds (s : Statement) : List (Imperative.AssertId Expre
     Statements.collectAssertIds then_ss ++ Statements.collectAssertIds else_ss
   | .loop _ _ inv body_ss _ =>
     inv.map (fun lp => ⟨lp.1, lp.2⟩) ++ Statements.collectAssertIds body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []
+  | .exit _ _ | .typeDecl _ _ => []
   termination_by Imperative.Stmt.sizeOf s
 
 /-- Collect all `AssertId Expression`s in a list of statements. -/
@@ -198,147 +186,6 @@ instance : HasVarsImp Expression (List Statement) where
 
 ---------------------------------------------------------------------
 
-def Command.modifiedVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (c : Command)
-  : List Expression.Ident := match c with
-  | .cmd c => Cmd.modifiedVars (P:=Expression) c
-  | .call f args _ =>
-    let lhs := CallArg.getLhs args
-    match π f with
-    | some proc => lhs ++ HasVarsTrans.modifiedVarsTrans π proc
-    | none => lhs
-
-mutual
-/-- Get all variables modified by the statement `s`. -/
-def Statement.modifiedVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (s : Statement)
-  : List Expression.Ident := match s with
-  | .cmd cmd => Command.modifiedVarsTrans π cmd
-  | .exit _ _ => []
-  | .block _ bss _ => Statements.modifiedVarsTrans π bss
-  | .ite _ tbss ebss _ =>
-    Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
-  | .loop _ _ _ bss _ =>
-    Statements.modifiedVarsTrans π bss
-  | .funcDecl _ _ => []  -- Function declarations don't modify variables
-  | .typeDecl _ _ => []  -- Type declarations don't modify variables
-
-def Statements.modifiedVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (ss : List (Statement))
-  : List Expression.Ident := match ss with
-  | [] => []
-  | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-end
-
-def Command.getVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (c : Command)
-  : List Expression.Ident := match c with
-  | .cmd c => Cmd.getVars (P:=Expression) c
-  | .call f args _ =>
-    let lhs := CallArg.getLhs args
-    (CallArg.getInputExprs args).flatMap HasFvars.getFvars ++
-    match π f with
-    | some proc => lhs ++ HasVarsTrans.getVarsTrans π proc
-    | none => []
-
-mutual
-/-- Get all variables get by the statement `s`. -/
-def Statement.getVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (s : Statement)
-  : List Expression.Ident := match s with
-  | .cmd cmd => Command.getVarsTrans π cmd
-  | .exit _ _ => []
-  | .block _ bss _ => Statements.getVarsTrans π bss
-  | .ite _ tbss ebss _ =>
-    Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
-  | .loop _ _ _ bss  _ =>
-    Statements.getVarsTrans π bss
-  | .funcDecl decl _ =>
-    -- Get free variables from function body, excluding formal parameters
-    match decl.body with
-    | none => []
-    | some body =>
-      let bodyVars := HasFvars.getFvars body
-      let formals := decl.inputs.map (·.1)
-      bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
-  | .typeDecl _ _ => []  -- Type declarations don't reference variables
-
-def Statements.getVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (ss : List (Statement))
-  : List Expression.Ident := match ss with
-  | [] => []
-  | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-end
-
--- don't need to transitively lookup for procedures
--- since call statement does not define any new variables
-def Command.definedVarsTrans
-  (_ : String → Option ProcType) (c : Command) :=
-  Command.definedVars c
-
--- don't need to transitively lookup for procedures
--- since call statement does not define any new variables
-def Statement.definedVarsTrans
-  (_ : String → Option ProcType) (s : Statement) :=
-  Stmt.definedVars s false
-
--- don't need to transitively lookup for procedures
--- since call statement does not define any new variables
-def Statements.definedVarsTrans
-  (_ : String → Option ProcType) (s : Statements) :=
-  Block.definedVars s false
-
-mutual
-/-- get all variables modified or defined by the statement `s` (write-set, transitive). -/
-def Statement.modifiedOrDefinedVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (s : Statement)
-  : List Expression.Ident :=
-  match s with
-  | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
-  | .exit _ _ => []
-  | .block _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
-  | .ite _ tbss ebss _ => Statements.modifiedOrDefinedVarsTrans π tbss ++ Statements.modifiedOrDefinedVarsTrans π ebss
-  | .loop _ _ _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
-  | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
-  | .typeDecl _ _ => []  -- Type declarations don't touch variables
-
-def Statements.modifiedOrDefinedVarsTrans
-  {ProcType : Type}
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (ss : Statements)
-  : List Expression.Ident :=
-  match ss with
-  | [] => []
-  | s :: srest => Statement.modifiedOrDefinedVarsTrans π s ++ Statements.modifiedOrDefinedVarsTrans π srest
-end
-
-def Statement.allVarsTrans
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (s : Statement) :=
-  Statement.getVarsTrans π s ++ Statement.modifiedOrDefinedVarsTrans π s
-
-def Statements.allVarsTrans
-  [HasVarsProcTrans Expression ProcType]
-  (π : String → Option ProcType) (ss : Statements) := match ss with
-  | [] => []
-  | s :: ss => Statement.allVarsTrans π s ++ Statements.allVarsTrans π ss
-
----------------------------------------------------------------------
-
 mutual
 def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
@@ -377,12 +224,6 @@ def Statement.substFvar (s : Core.Statement)
           (Block.substFvar body fr to)
           metadata
   | .exit _ _ => s
-  | .funcDecl decl md =>
-    -- Substitute in function body and axioms
-    let decl' := { decl with
-      body := decl.body.map (Lambda.LExpr.substFvar · fr to),
-      axioms := decl.axioms.map (Lambda.LExpr.substFvar · fr to) }
-    .funcDecl decl' md
   | .typeDecl _ _ => s  -- Type declarations don't contain expressions
 end
 
@@ -413,10 +254,6 @@ def Statement.renameLhs (s : Core.Statement)
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
   | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .funcDecl decl md =>
-    -- Rename function name if it matches
-    let decl' := if decl.name == fr then { decl with name := to } else decl
-    .funcDecl decl' md
   | .typeDecl _ _ => s  -- Type declarations don't have lhs variables
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
@@ -465,12 +302,8 @@ def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → 
     (ss : Statements) : M Statements :=
   ss.mapM (Statement.mapExprsM f)
 
-/-- Collect all user-facing expressions from a statement. With
-    `visitFuncDecl`, the expressions of the functions it declares are collected
-    too; without it, a `funcDecl` contributes nothing, which is what a caller
-    rewriting expressions in place needs, since a local function's body mentions
-    its formals. -/
-def Statement.collectExprs (visitFuncDecl : Bool) :
+/-- Collect all user-facing expressions from a statement. -/
+def Statement.collectExprs :
     Statement → List Expression.Expr
   | .cmd (.cmd (.assert _ e _)) => [e]
   | .cmd (.cmd (.assume _ e _)) => [e]
@@ -480,29 +313,27 @@ def Statement.collectExprs (visitFuncDecl : Bool) :
   | .cmd (.call _ args _) => args.filterMap fun
       | .inArg e => some e
       | _ => none
-  | .block _ ss _ => ss.flatMap (Statement.collectExprs visitFuncDecl)
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
   | .ite (.det c) tss ess _ =>
-    [c] ++ tss.flatMap (Statement.collectExprs visitFuncDecl) ++
-    ess.flatMap (Statement.collectExprs visitFuncDecl)
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
   | .ite .nondet tss ess _ =>
-    tss.flatMap (Statement.collectExprs visitFuncDecl) ++
-    ess.flatMap (Statement.collectExprs visitFuncDecl)
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
   | .loop (.det g) measure inv body _ =>
     [g] ++ measure.toList ++
-    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .loop .nondet measure inv body _ =>
     measure.toList ++
-    inv.map Prod.snd ++ body.flatMap (Statement.collectExprs visitFuncDecl)
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
   | .cmd (.cmd (.init _ _ .nondet _)) => []
   | .cmd (.cmd (.set _ .nondet _)) => []
   | .exit _ _ => []
-  | .funcDecl d _ => if visitFuncDecl then d.exprs else []
   | .typeDecl _ _ => []
 
 /-- Collect all user-facing expressions from a list of statements. -/
-def Statements.collectExprs (ss : Statements)
-    (visitFuncDecl : Bool := false) : List Expression.Expr :=
-  ss.flatMap (Statement.collectExprs visitFuncDecl)
+def Statements.collectExprs (ss : Statements) : List Expression.Expr :=
+  ss.flatMap Statement.collectExprs
 
 ---------------------------------------------------------------------
 
@@ -536,50 +367,31 @@ directly; what is left here is what genuinely mentions a Core command. -/
 @[expose] def Statements.staticSingleAssignment (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isNotReassignment ss
 
-/-- Is this statement anything other than a function declaration? -/
-@[expose] def Statement.isNotFuncDecl (s : Statement) : Bool :=
+/-- Is this statement an `assume`, `assert`, `cover`, `init`, or `ite *`?
+    These are the statements obligation extraction accepts. -/
+@[expose] def Statement.isObligationForm (s : Statement) : Bool :=
   match s with
-  | .funcDecl _ _ => false
-  | _ => true
+  | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.assume ..))
+  | .cmd (.cmd (.cover ..)) | .cmd (.cmd (.init ..)) => true
+  | .ite .nondet _ _ _ => true
+  | _ => false
 
-/-- Does `ss` declare no function inside a procedure body? -/
-@[expose] def Statements.noFuncDecls (ss : Statements) : Bool :=
-  Imperative.Block.allSubstmts Statement.isNotFuncDecl ss
-
-/-- Is the function this statement declares, if any, monomorphic? -/
-@[expose] def Statement.funcDeclMonomorphic (s : Statement) : Bool :=
-  match s with
-  | .funcDecl d _ => d.typeArgs.isEmpty
-  | _ => true
-
-/-- Is every function declared anywhere in `ss` monomorphic? -/
-@[expose] def Statements.funcDeclsMonomorphic (ss : Statements) : Bool :=
-  Imperative.Block.allSubstmts Statement.funcDeclMonomorphic ss
-
-/-- Does the function this statement declares, if any, carry no precondition?
-    A precondition on a partial function is a proof obligation, and nothing
-    downstream of `PrecondElim` generates one. -/
-@[expose] def Statement.funcDeclNoPreconditions (s : Statement) : Bool :=
-  match s with
-  | .funcDecl d _ => d.preconditions.isEmpty
-  | _ => true
-
-/-- Does no function declared anywhere in `ss` carry a precondition? -/
-@[expose] def Statements.funcDeclsNoPreconditions (ss : Statements) : Bool :=
-  Imperative.Block.allSubstmts Statement.funcDeclNoPreconditions ss
+/-- Does `ss` contain only `assume`, `assert`, `cover` and `init`, nested under
+    `ite *` to any depth? -/
+@[expose] def Statements.hasObligationForm (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isObligationForm ss
 
 ---------------------------------------------------------------------
 
-/-! ## Expressions of local functions
+/-! ## Expressions of statements
 
-`Statement.collectExprs` visits a `funcDecl`'s expressions only when asked, so a
-property of *every* expression in a program passes `visitFuncDecl := true`, while
-a caller rewriting expressions in place leaves them alone — a local function's
-body mentions its formals. -/
+`Statements.allExprs` collects every expression appearing in a list of
+statements. It is a named entry point used by the whole-program expression
+facts. -/
 
-/-- Every expression in `ss`, including those of the functions it declares. -/
+/-- Every expression in `ss`. -/
 @[expose] def Statements.allExprs (ss : Statements) : List Expression.Expr :=
-  Statements.collectExprs ss (visitFuncDecl := true)
+  Statements.collectExprs ss
 
 ---------------------------------------------------------------------
 

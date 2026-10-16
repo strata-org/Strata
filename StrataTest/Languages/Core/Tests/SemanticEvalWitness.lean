@@ -10,14 +10,12 @@ import Strata.DL.Lambda.Semantics
 import all Strata.DL.Lambda.LExprEvalProps
 
 /-!
-# A concrete evaluator satisfying the semantic well-formedness conditions
+# Concrete evaluator witnesses for semantic well-formedness
 
-`EvalCommand.call_sem` requires the Core's expression evaluator to satisfy
-`WellFormedSemanticEvalVal` and `WellFormedSemanticEvalVar` simultaneously.
-
-The two conditions are jointly satisfiable because they only constrain
-value-only stores (`WellFormedStore`): on such a store the free-variable lookup
-returns a value, so it agrees with the "every output is a value" requirement.
+The Core evaluator satisfies `WellFormedSemanticEvalVal` and
+`WellFormedSemanticEvalVar` simultaneously for every factory. These witnesses
+discharge generic Imperative metatheory premises about value-producing
+evaluation and free-variable lookup on well-formed stores.
 -/
 
 namespace Core

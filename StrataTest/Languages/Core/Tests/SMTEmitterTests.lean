@@ -7,6 +7,7 @@ module
 
 meta import Strata.Languages.Core.SMTEmitter
 meta import Strata.Languages.Core.Verifier
+meta import StrataTest.DL.SMT.EncodingTestUtils
 
 meta section
 
@@ -14,6 +15,7 @@ meta section
 
 namespace Core.SMT.EmitterTest
 open Core Core.SMT Core.SMT.Emitter Lambda Strata.SMT
+open Strata.SMT.TestUtils
 open Imperative (PathConditionEntry)
 
 private def boolTy : LMonoTy := .tcons "bool" []
@@ -54,7 +56,7 @@ private def renderFrom (estate : Strata.SMT.EncoderState) :
     let t ← Strata.SMT.Encoder.encodeTerm
       (.app (.uf ⟨"v", [], .bool⟩) [] .bool)
     Solver.assert t
-  let (((), estate), text, _) ← Solver.recordToString (act.run estate)
+  let (((), estate), text, _) ← recordSolverEncoding (act.run estate)
   return (text, estate)
 
 -- Same term, different states: a state that has already used the name `v`
@@ -126,7 +128,7 @@ private def runScenario
       | some cf =>
         let pctx ← Strata.Pipeline.PipelineContext.create
           (outputMode := .quiet) (profilePipeline := false)
-        let (_, coreText, _) ← Solver.recordToString
+        let (_, coreText, _) ← recordSolverEncoding
           (Strata.SMT.Encoder.encodeCore res.ctx (pure ()) res.assumptions
             res.goal {} (satisfiabilityCheck := false) (validityCheck := true)
             (label := ob.label) (varDefinitions := res.varDefs)

@@ -38,7 +38,7 @@ open Strata.Laurel
 private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := .unknown }
 
 private def call (name : String) : StmtExprMd :=
-  ⟨.StaticCall (mkId name) [], .unknown⟩
+  ⟨.StaticCall (mkId name) [] [], .unknown⟩
 
 private def emptyModel : SemanticModel :=
   { nextId := 0, compositeCount := 0, refToDef := {} }

@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
@@ -47,6 +46,7 @@ These negative tests pin each failing loop invariant's diagnostic to that
 invariant's own source range (per-invariant source ranges threaded through
 loop elimination), rather than the whole loop. -/
 
+-- No Core interpreter: it does not check loop invariants, so the annotated invariant failure never fires.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -61,8 +61,16 @@ procedure badInitialInvariant()
         i := i + 1
     }
 };
+
+procedure runAll()
+  entry
+  opaque
+{
+    badInitialInvariant()
+};
 #end
 
+-- No Core interpreter: it does not check loop invariants, so the annotated invariant failure never fires.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -79,6 +87,13 @@ procedure secondInvariantFails()
         i := i + 1;
         j := j + 1
     }
+};
+
+procedure runAll()
+  entry
+  opaque
+{
+    secondInvariantFails()
 };
 #end
 
@@ -106,6 +121,7 @@ procedure invariantHoldsOnLiveValue()
 };
 #end
 
+-- No Core interpreter: it does not check loop invariants, so the annotated invariant failure never fires.
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -118,5 +134,32 @@ procedure invariantFailsOnLiveValue()
 //              ^^^^^^ error: assertion does not hold
     {
     }
+};
+
+procedure runAll()
+  entry
+  opaque
+{
+  invariantFailsOnLiveValue()
+};
+#end
+
+/-! A divergent loop stops on the Laurel interpreter's step budget rather than
+running on. -/
+
+/-- error: out of fuel
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure spin()
+  entry
+  opaque
+{
+  var i: int := 0;
+  while (true) {
+    i := i + 1
+  }
 };
 #end

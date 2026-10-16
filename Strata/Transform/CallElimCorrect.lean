@@ -28,15 +28,15 @@ public section
 
 theorem createHavocsApp :
 createHavocs (a ++ b) md = createHavocs a md ++ createHavocs b md := by
-simp [createHavocs]
+  simp [createHavocs]
 
 theorem createFvarsApp :
 createFvars (a ++ b) = createFvars a ++ createFvars b := by
-simp [createFvars]
+  simp [createFvars]
 
 theorem createFvarsLength :
 (createFvars ls).length = ls.length := by
-induction ls <;> simp [createFvars]
+  induction ls <;> simp [createFvars]
 
 /-
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
@@ -55,7 +55,6 @@ theorem callElimBlockNoExcept :
   | ite cd tb eb md => exists [.ite cd tb eb md]
   | exit l b => exists [.exit l b]
   | loop g m i b md => exists [.loop g m i b md]
-  | funcDecl f md => exists [.funcDecl f md]
   | cmd c =>
     cases c with
     | cmd c' => exists [Imperative.Stmt.cmd (CmdExt.cmd c')]
@@ -277,7 +276,7 @@ theorem EvalExpressionUpdatedStates {δ : CoreEval} :
   Imperative.WellFormedSemanticEvalVal δ →
   ks'.length = vs'.length →
   ks'.Nodup →
-  ks'.Disjoint (Imperative.HasFvars.getFvars e) →
+  ks'.Disj (Imperative.HasFvars.getFvars e) →
   δ σ e = some v →
   δ (updatedStates σ ks' vs') e = some v := by
   intros Hwfv Hwfc Hwfvl Hlen Hnd Hnin Heval
@@ -298,7 +297,7 @@ theorem EvalExpressionUpdatedStates {δ : CoreEval} :
         apply Hnin _ Hin
         simp_all
       . apply ih <;> simp_all
-        apply List.Disjoint.mono_left _ Hnin
+        apply List.Disj.mono_left _ Hnin
         simp_all
       . rw [List.unzip_zip] <;> grind
 
@@ -308,7 +307,7 @@ theorem EvalExpressionsUpdatedStates {δ : CoreEval} :
   Imperative.WellFormedSemanticEvalVal δ →
   ks'.length = vs'.length →
   ks'.Nodup →
-  ks'.Disjoint (es.flatMap Imperative.HasFvars.getFvars) →
+  ks'.Disj (es.flatMap Imperative.HasFvars.getFvars) →
   EvalExpressions (P:=Core.Expression) δ σ es vs →
   EvalExpressions (P:=Core.Expression) δ (updatedStates σ ks' vs') es vs := by
   intros Hwfv Hwfc Hwfvl Hlen Hnd Hnin Heval
@@ -330,7 +329,7 @@ theorem EvalExpressionsUpdatedStates {δ : CoreEval} :
         apply Hnin _ Hin
         simp_all
       . apply ih <;> simp_all
-        apply List.Disjoint.mono_left _ Hnin
+        apply List.Disj.mono_left _ Hnin
         simp_all
       . rw [List.unzip_zip] <;> grind
 
@@ -361,10 +360,11 @@ theorem ReadValueUpdatedStates :
     simp [updatedState]
     simp_all
 
+/-- Updating a key outside `ks` preserves reading `ks` and its values. -/
 theorem ReadValuesUpdatedState :
   ¬ k ∈ ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedState σ k v) ks vs := by
+  ReadValues f σ ks vs →
+  ReadValues f (updatedState σ k v) ks vs := by
   intros Hin Hrd
   induction Hrd
   case read_none =>
@@ -375,11 +375,12 @@ theorem ReadValuesUpdatedState :
     apply Ne.symm Hin.1
     apply Hrd2 <;> simp_all
 
+/-- Updating a key list disjoint from `ks` preserves reading `ks` and its values. -/
 theorem ReadValuesUpdatedStates :
   ks'.length = vs'.length →
-  ks'.Disjoint ks →
-  ReadValues σ ks vs →
-  ReadValues (updatedStates σ ks' vs') ks vs := by
+  ks'.Disj ks →
+  ReadValues f σ ks vs →
+  ReadValues f (updatedStates σ ks' vs') ks vs := by
   intros Hlen Hin Hrd
   induction ks generalizing vs
   case nil =>
@@ -397,7 +398,7 @@ theorem ReadValuesUpdatedStates :
         . intros Hin'
           exact Hin Hin' List.mem_cons_self
       . apply ih ?_ Ht
-        apply List.Disjoint.mono_right _ Hin
+        apply List.Disj.mono_right _ Hin
         simp_all
 
 theorem ReadValueUpdatedState' :
@@ -426,10 +427,11 @@ theorem ReadValueUpdatedStates' :
     specialize ih Hne.2 Hsome Hlen
     exact ReadValueUpdatedState' Hne.1 ih
 
+/-- A read unaffected by one updated key also holds in the source store. -/
 theorem ReadValuesUpdatedState' :
   ¬ k ∈ ks →
-  ReadValues (updatedState σ k v) ks vs →
-  ReadValues σ ks vs := by
+  ReadValues f (updatedState σ k v) ks vs →
+  ReadValues f σ ks vs := by
   intros Hin Hrd
   induction Hrd
   case read_none =>
@@ -441,11 +443,12 @@ theorem ReadValuesUpdatedState' :
     . apply Hrd2
       exact List.not_mem_of_not_mem_cons Hin
 
+/-- A read unaffected by disjoint updated keys also holds in the source store. -/
 theorem ReadValuesUpdatedStates' :
   ks'.length = vs'.length →
-  ks'.Disjoint ks →
-  ReadValues (updatedStates σ ks' vs') ks vs →
-  ReadValues σ ks vs := by
+  ks'.Disj ks →
+  ReadValues f (updatedStates σ ks' vs') ks vs →
+  ReadValues f σ ks vs := by
   intros Hlen Hin Hrd
   induction ks generalizing vs
   case nil =>
@@ -463,13 +466,15 @@ theorem ReadValuesUpdatedStates' :
         . intros Hin'
           exact Hin Hin' List.mem_cons_self
       . apply ih ?_ Ht
-        apply List.Disjoint.mono_right _ Hin
+        apply List.Disj.mono_right _ Hin
         simp_all
 
+/-- Updating distinct keys with matching values makes those values readable at the
+same keys. -/
 theorem ReadValuesUpdatedStatesSame :
   ks.length = vs.length →
   ks.Nodup →
-  ReadValues (updatedStates σ ks vs) ks vs := by
+  ReadValues f (updatedStates σ ks vs) ks vs := by
   intros Hlen Hnd
   induction ks generalizing σ vs
   case nil =>
@@ -491,7 +496,7 @@ theorem EvalStatementContractInitVar :
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv →
   σ v' = none →
-  EvalStatementContract π φ δ σ
+  EvalStatementContract π δ σ
     (createInitVar ((v', ty), v))
     (updatedState σ v' vv) δ := by
   intros Hwf Hsome Hnone
@@ -514,13 +519,15 @@ theorem EvalStatementContractInitVar :
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars]
 
+/-- Initializing generated old-variable slots from values read in the source store
+produces the expected contract-statement execution. -/
 theorem EvalStatementsContractInitVars :
   Imperative.WellFormedSemanticEvalVar δ →
   -- the generated old variable names shouldn't overlap with original variables
   List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
-  ReadValues σ (trips.unzip.snd) vvs →
+  ReadValues f σ (trips.unzip.snd) vvs →
   Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
-  EvalStatementsContract π φ δ σ
+  EvalStatementsContract π δ σ
     (createInitVars trips)
     (updatedStates σ
       (trips.unzip.fst.unzip.fst) vvs) δ := by
@@ -561,7 +568,7 @@ theorem EvalStatementContractInit :
   Imperative.WellFormedSemanticEvalVar δ →
   δ σ e = some vv →
   σ v' = none →
-  EvalStatementContract π φ δ σ
+  EvalStatementContract π δ σ
     (createInit ((v', ty), e))
     (updatedState σ v' vv) δ := by
   intros Hwf Hsome Hnone
@@ -586,12 +593,11 @@ theorem EvalStatementsContractInits :
   Imperative.WellFormedSemanticEvalVal δ →
   WellFormedCoreEvalCong δ →
   -- the generated old variable names shouldn't overlap with original variables
-  trips.unzip.1.unzip.1.Disjoint (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression)) trips.unzip.2) →
+  trips.unzip.1.unzip.1.Disj (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression)) trips.unzip.2) →
   List.Nodup (trips.unzip.1.unzip.1) →
   EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
-  -- ReadValues σ (trips.unzip.2) vvs →
   Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
-  EvalStatementsContract π φ δ σ
+  EvalStatementsContract π δ σ
     (createInits trips)
     (updatedStates σ
       (trips.unzip.1.unzip.1) vvs) δ := by
@@ -612,13 +618,13 @@ theorem EvalStatementsContractInits :
     apply Hndef <;> simp_all
     unfold updatedStates
     apply ih
-    . apply List.Disjoint.mono ?_ ?_ Hdisj <;> simp_all
+    . apply List.Disj.mono ?_ ?_ Hdisj <;> simp_all
     . simp_all
     . refine EvalExpressionsUpdatedState Hwfvr Hwfc Hwfvl ?_ Hrest
       simp at Hdisj
       have Hdisj' :
-        [v'].Disjoint (List.flatMap Imperative.HasFvars.getFvars t.unzip.snd) := by
-        apply List.Disjoint.mono ?_ ?_ Hdisj <;> simp_all
+        [v'].Disj (List.flatMap Imperative.HasFvars.getFvars t.unzip.snd) := by
+        apply List.Disj.mono ?_ ?_ Hdisj <;> simp_all
       intros Hin
       exact Hdisj' (List.mem_singleton.mpr rfl) Hin
     . simp [Imperative.isNotDefined] at Hndef ⊢
@@ -632,7 +638,7 @@ theorem EvalStatementContractHavocUpdated :
   ∀ vv,
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv' →
-  EvalStatementContract π φ δ σ
+  EvalStatementContract π δ σ
     (createHavoc v)
     (updatedState σ v vv) δ := by
   intros vv Hwf Hsome
@@ -648,9 +654,10 @@ theorem EvalStatementContractHavocUpdated :
           Imperative.Cmd.modifiedVars, Option.isSome]
     split <;> simp_all
 
+/-- A store defining every requested key admits a read of their values. -/
 theorem ReadValuesSome :
   Imperative.isDefined σ ks →
-  ∃ vs, ReadValues σ ks vs := by
+  ∃ vs, ReadValues f σ ks vs := by
   intros H
   induction ks
   case nil =>
@@ -675,12 +682,15 @@ createHavocs (vs₁ ++ vs₂) =
 createHavocs vs₁ ++ createHavocs vs₂ := by
 cases vs₁ <;> simp [createHavocs]
 
+/-- Under equally sized, defined store substitutions and a well-formed evaluator,
+generated free variables evaluate to the values read at their
+corresponding substituted keys. -/
 theorem createFvarsSubstStores :
   ks1.length = ks2.length →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.substDefined σ σA (ks1.zip ks2) →
   Imperative.substStores σ σA (ks1.zip ks2) →
-  ReadValues σA ks2 argVals →
+  ReadValues f σA ks2 argVals →
   EvalExpressions (P:=Core.Expression) δ σ (createFvars ks1) argVals := by
     intros Hlen Hwfv Hdef Hsubst Hrd
     simp [createFvars]
@@ -720,7 +730,7 @@ theorem EvalStatementsContractHavocVars :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.isDefined σ vs →
   HavocVars σ vs σ' →
-  EvalStatementsContract π φ δ σ
+  EvalStatementsContract π δ σ
     (createHavocs vs) σ' δ := by
   intros Hwfv Hdef Hhav
   simp [createHavocs]
@@ -840,7 +850,7 @@ theorem UpdateStatesUpdatedDists
 {P : Imperative.PureExpr}
 {σ σ' : Imperative.SemanticStore P}
 {ks ks': List P.Ident} {vs vs' : List P.Expr} :
-  ks.Disjoint ks' →
+  ks.Disj ks' →
   UpdateStates σ ks vs σ' →
   UpdateStates (updatedStates σ ks' vs') ks vs (updatedStates σ' ks' vs') := by
 intros Hnd Hup
@@ -850,17 +860,17 @@ case update_none =>
 case update_some Hup Hups ih =>
   apply UpdateStates.update_some
   . apply UpdateStateUpdatedDists <;> try assumption
-    simp [List.Disjoint] at Hnd
+    simp [List.Disj] at Hnd
     simp_all
   . apply ih
-    simp [List.Disjoint] at *
+    simp [List.Disj] at *
     simp_all
 
 theorem InitStatesUpdatedDists
 {P : Imperative.PureExpr}
 {σ σ' : Imperative.SemanticStore P}
 {ks ks': List P.Ident} {vs vs' : List P.Expr} :
-  ks.Disjoint ks' →
+  ks.Disj ks' →
   InitStates σ ks vs σ' →
   InitStates (updatedStates σ ks' vs') ks vs (updatedStates σ' ks' vs') := by
 intros Hnd Hup
@@ -870,10 +880,10 @@ case init_none =>
 case init_some Hup Hups ih =>
   apply InitStates.init_some
   . apply InitStateUpdatedDists <;> try assumption
-    simp [List.Disjoint] at Hnd
+    simp [List.Disj] at Hnd
     simp_all
   . apply ih
-    simp [List.Disjoint] at *
+    simp [List.Disj] at *
     simp_all
 
 theorem UpdateStatesUpdatedDist
@@ -885,7 +895,7 @@ theorem UpdateStatesUpdatedDist
   UpdateStates σ ks vs σ' →
   UpdateStates (updatedState σ k v) ks vs (updatedState σ' k v) := by
 intros Hnd Hup
-have Hnd : ks.Disjoint [k] := by
+have Hnd : ks.Disj [k] := by
   intros a Hin1 Hin2
   apply Hnd
   simp_all
@@ -894,7 +904,7 @@ simp [updatedStates, updatedStates'] at HH
 assumption
 
 theorem HavocVarsUpdatedDists :
-ks.Disjoint ks' →
+ks.Disj ks' →
 HavocVars σ ks σ' →
 HavocVars (updatedStates σ ks' vs') ks
           (updatedStates σ' ks' vs') := by
@@ -908,14 +918,14 @@ case cons h t ih =>
   cases Hhav
   next v σ'' Hup Hhav2 =>
   apply HavocVars.update_some (v:=v) (σ':=(updatedStates σ'' ks' vs'))
-  . simp [List.Disjoint] at Hnd
+  . simp [List.Disj] at Hnd
     apply UpdateStateUpdatedDists Hnd.1 Hup
   . apply ih ?_ Hhav2
-    apply List.Disjoint.mono_left ?_ Hnd
+    apply List.Disj.mono_left ?_ Hnd
     simp_all
 
 theorem InitVarsUpdatedDists :
-ks.Disjoint ks' →
+ks.Disj ks' →
 InitVars σ ks σ' →
 InitVars (updatedStates σ ks' vs') ks
           (updatedStates σ' ks' vs') := by
@@ -929,10 +939,10 @@ case cons h t ih =>
   cases Hhav
   next v σ'' Hup Hhav2 =>
   apply InitVars.init_some (v:=v) (σ':=(updatedStates σ'' ks' vs'))
-  . simp [List.Disjoint] at Hnd
+  . simp [List.Disj] at Hnd
     apply InitStateUpdatedDists Hnd.1 Hup
   . apply ih ?_ Hhav2
-    apply List.Disjoint.mono_left ?_ Hnd
+    apply List.Disj.mono_left ?_ Hnd
     simp_all
 
 theorem HavocVarsUpdatedDist :
@@ -941,7 +951,7 @@ HavocVars σ ks σ' →
 HavocVars (updatedState σ k v) ks
           (updatedState σ' k v) := by
 intros Hnd Hhav
-have Hnd : ks.Disjoint [k] := by
+have Hnd : ks.Disj [k] := by
   intros a Hin1 Hin2
   apply Hnd
   simp_all
@@ -955,7 +965,7 @@ InitVars σ ks σ' →
 InitVars (updatedState σ k v) ks
           (updatedState σ' k v) := by
 intros Hnd Hhav
-have Hnd : ks.Disjoint [k] := by
+have Hnd : ks.Disj [k] := by
   intros a Hin1 Hin2
   apply Hnd
   simp_all
@@ -964,7 +974,7 @@ simp [updatedStates, updatedStates'] at HH
 assumption
 
 theorem UpdatedStatesDisjNotDefMonotone :
-  ks.Disjoint ks' →
+  ks.Disj ks' →
   ks.length = vs.length →
   Imperative.isNotDefined σ ks' →
   Imperative.isNotDefined (updatedStates σ ks vs) ks' := by
@@ -980,7 +990,7 @@ case cons h t ih =>
   case cons h' t' ih' =>
     simp [updatedStates']
     rw [ih] <;> try simp_all
-    . apply List.Disjoint.mono_left _ Hdis
+    . apply List.Disj.mono_left _ Hdis
       simp_all
     . intros v Hin
       simp [updatedState]
@@ -1389,7 +1399,7 @@ theorem Lambda.LExpr.substFvarsCorrect :
   Imperative.substDefined σ σ' (fro.zip to) →
   Imperative.substNodup (fro.zip to) →
   Imperative.substStores σ σ' (fro.zip to) →
-  to.Disjoint (@Imperative.HasFvars.getFvars Expression _ _ e) →
+  to.Disj (@Imperative.HasFvars.getFvars Expression _ _ e) →
   Imperative.invStores σ σ'
     ((@Imperative.HasFvars.getFvars Expression _ _ e).removeAll (fro ++ to)) →
   δ σ e = δ σ' (e.substFvars (fro.zip $ createFvars to)) := by
@@ -1427,7 +1437,7 @@ theorem Lambda.LExpr.substFvarsCorrect :
     . simp [Imperative.substNodup] at Hnd ⊢
       have Hnd2 := nodup_middle Hnd.2
       simp_all
-    . -- Disjoint
+    . -- Disj
       intros a' Hin Hin2
       have Hor := getVarsSubstCreateFvar Hin2
       cases Hor <;> simp_all
@@ -1446,7 +1456,7 @@ theorem Lambda.LExpr.substFvarsCorrect :
       apply invStoresSubstTail Hsubst Hsubst1 Hsome ?_ Hinv
       . simp [Imperative.substNodup] at Hnd
         simp_all
-    . simp [List.Disjoint] at Hnin
+    . simp [List.Disj] at Hnin
       exact invStoresSubstHead Hsubst' Hnin.1
 
 /-
@@ -1462,12 +1472,12 @@ theorem createAssertsCorrect :
   (∀ pre, pre ∈ pres →
     Imperative.invStores σA σ'
       ((Imperative.HasFvars.getFvars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
-    ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) pre) ∧
+    ks'.Disj (Imperative.HasFvars.getFvars (P:=Expression) pre) ∧
     δ σA pre = some Imperative.HasBool.tt) →
   EvalExpressions δ σ (createFvars ks') vals →
-  ReadValues σA ks vals →
+  ReadValues f σA ks vals →
   Imperative.substStores σ' σA (ks'.zip ks) →
-  EvalStatementsContract π φ δ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' δ := by
+  EvalStatementsContract π δ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' δ := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
    simp [createAsserts]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1475,9 +1485,9 @@ theorem createAssertsCorrect :
      (∀ pre, pre ∈ l →
        Imperative.invStores σA σ'
          ((Imperative.HasFvars.getFvars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) pre) ∧
+       ks'.Disj (Imperative.HasFvars.getFvars (P:=Expression) pre) ∧
        δ σA pre = some Imperative.HasBool.tt) →
-     EvalStatementsContract π φ δ σ'
+     EvalStatementsContract π δ σ'
        (List.mapIdx (fun j pred => Statement.assert s!"assert_{i + j}"
          (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' δ
    by
@@ -1520,10 +1530,10 @@ theorem createAssumesCorrect :
   (∀ post, post ∈ posts →
     Imperative.invStores σA σ'
       ((Imperative.HasFvars.getFvars (P:=Expression) post).removeAll (ks ++ ks')) ∧
-    ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) post) ∧
+    ks'.Disj (Imperative.HasFvars.getFvars (P:=Expression) post) ∧
     δ σA post = some Imperative.HasBool.tt) →
   Imperative.substStores σA σ' (ks.zip ks') →
-  EvalStatementsContract π φ δ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' δ := by
+  EvalStatementsContract π δ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' δ := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hposts Hsubst2
    simp [createAssumes]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1531,9 +1541,9 @@ theorem createAssumesCorrect :
      (∀ post, post ∈ l →
        Imperative.invStores σA σ'
          ((Imperative.HasFvars.getFvars (P:=Expression) post).removeAll (ks ++ ks')) ∧
-       ks'.Disjoint (Imperative.HasFvars.getFvars (P:=Expression) post) ∧
+       ks'.Disj (Imperative.HasFvars.getFvars (P:=Expression) post) ∧
        δ σA post = some Imperative.HasBool.tt) →
-     EvalStatementsContract π φ δ σ'
+     EvalStatementsContract π δ σ'
        (List.mapIdx (fun j pred => Statement.assume s!"assume_{i + j}"
          (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ' δ
    by
@@ -1599,120 +1609,6 @@ theorem createOldStoreSubstEq :
   oldTrips.unzip.2.zip oldTrips.unzip.1.unzip.1 := by
   induction oldTrips <;> simp [createOldStoreSubst, createOldStoreSubst.go] at *
   case cons h t ih => exact ih
-
-theorem substOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  --Imperative.invStores σ₀ σ
-  --  ((OldExpressions.extractOldExprVars e).removeAll [fro]) →
-  Imperative.substDefined σ₀ σ [(fro, to)] →
-  Imperative.substStores σ₀ σ [(fro, to)] →
-  -- substitute the store and the expression simultaneously
-  δ σ e = δ σ (OldExpressions.substOld fro (createFvar to) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hdef Hsubst
-  induction e <;> simp [OldExpressions.substOld] at *
-  case abs m ty e ih  =>
-    cases Hnorm with
-    | abs Hnorm =>
-      apply Hwfc.1
-      apply ih Hnorm
-  case quant m k ty tr e trih eih =>
-    cases Hnorm with
-    | quant Ht He =>
-      specialize eih He
-      specialize trih Ht
-      apply Hwfc.quantcongr <;> grind
-  case app m c fn fih eih =>
-    cases Hnorm with
-    | app Hc Hfn Hwf =>
-    specialize fih Hc
-    specialize eih Hfn
-    split
-    . -- is an old var
-      split
-      . -- is an old var that is substituted
-        next x ty eq =>
-        simp [eq] at *
-        simp [WellFormedCoreEvalTwoState] at Hwf2
-        cases Hwf2.1 with
-        | intro vs Hwf2' =>
-        cases Hwf2' with
-        | intro vs' Hwf2' =>
-        cases Hwf2' with
-        | intro σ₁ Hwf2' =>
-        by_cases Hin : fro ∈ vs
-        case pos =>
-        -- old var is modified
-          have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-          simp [OldExpressions.oldVar,
-                OldExpressions.oldExpr,
-                CoreIdent.unres, Hin] at HH
-          rw [HH]
-          simp [createFvar]
-          simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-          rw [Hwfvr (v:=to)]
-          apply Hsubst
-          exact List.mem_singleton.mpr rfl
-          simp [Imperative.HasFvar.getFvar]
-        case neg =>
-        -- old var is not modified
-          have Hup := HavocVarsUpdateStates Hwf2'.1
-          cases Hup with
-          | intro as Hup =>
-          have Hinit := InitVarsInitStates Hwf2'.2
-          cases Hinit with
-          | intro bs Hinit =>
-          have Hsubst' := substStoresUpdatesInv' ?_ Hsubst Hup
-          have Hsubst'' := substStoresInitsInv' ?_ Hsubst' Hinit
-          . have HH:= Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2 fro
-            simp [OldExpressions.oldVar,
-                  OldExpressions.oldExpr,
-                  CoreIdent.unres, Hin] at HH
-            simp [createFvar]
-            simp [HH]
-            simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-            rw [Hwfvr (v:=to)]
-            . simp [Imperative.substStores] at Hsubst''
-              exact Hsubst''
-            . simp [Imperative.HasFvar.getFvar]
-          . simp [Imperative.substDefined] at *
-            have Hdef' : Imperative.isDefined σ₀ [fro] := by
-              simp [Imperative.isDefined]
-              exact Hdef.1
-            have Hdef'' := UpdateStatesDefMonotone Hdef' Hup
-            simp [Imperative.isDefined] at Hdef''
-            refine ⟨Hdef'', Hdef.2⟩
-          . simp [List.Disjoint]
-            intros a Hin Heq
-            simp [Heq] at *
-            contradiction
-      . -- is an old var that is not substituted, use congruence
-        rename_i e1 e2 mOp ty0 mVar x ty1 h
-        simp at m mOp ty0 mVar x ty1
-        apply Hwfc.appcongr <;> grind
-    . -- is not an old var, use congruence
-      apply Hwfc.appcongr <;> grind
-  case ite m c t e cih tih eih =>
-    cases Hnorm with
-    | ite Hc Ht He =>
-      specialize cih Hc
-      specialize tih Ht
-      specialize eih He
-      apply Hwfc.itecongr <;> grind
-  case eq m e1 e2 e1ih e2ih =>
-    cases Hnorm with
-    | eq He1 He2 =>
-    specialize e2ih He2
-    apply Hwfc.eqcongr <;> grind
-
-
--- Needed from refinement theorem
--- UpdateState P✝ σ id v✝ σ'✝
--- Ht : TouchVars σ'✝ l₂ σ''
--- ⊢ TouchVars σ l₂ σ''
 
 theorem UpdateStatesUpdatedId :
 k ∈ vs →
@@ -1835,63 +1731,6 @@ case cons h t ih =>
       exact fun a => Hne (Eq.symm a)
     simp_all
 
-theorem updatedStateOldWellFormedCoreEvalTwoState :
-  σ k = some v →
-  WellFormedCoreEvalTwoState δ σ₀ σ →
-  WellFormedCoreEvalTwoState δ (updatedState σ₀ k v) σ := by
-  intros Hsome Hwf2
-  simp [WellFormedCoreEvalTwoState] at *
-  refine ⟨?_, Hwf2.2⟩
-  cases Hwf2.1 with
-  | intro vs Hwf2 =>
-  cases Hwf2 with
-  | intro vs' Hwf =>
-  cases Hwf with
-  | intro σ₁ Hwf =>
-  by_cases Hin : k ∈ vs
-  -- k is already in vs, use the mod/init lists as is
-  case pos =>
-    refine ⟨vs,vs',σ₁,?_,Hwf.2⟩
-    have Hup := HavocVarsUpdateStates Hwf.1
-    cases Hup with
-    | intro vs' Hup =>
-    apply UpdateStatesHavocVars (modvals:=vs')
-    exact UpdateStatesUpdatedId Hin Hup
-  -- k is not in vs, add k to vs
-  case neg =>
-    by_cases Hin' : k ∈ vs'
-    -- k not in vs, but is in vs'.
-    -- This is the case that k is a newly created variable
-    -- Since we are updating/initializing k in σ₀, we remove k from vs'
-    case pos =>
-      refine ⟨vs,vs'.removeAll [k],(updatedState σ₁ k v),?_,?_⟩
-      . refine HavocVarsUpdatedDist Hin ?_
-        exact Hwf.1
-      . apply InitVarsRemoveAll <;> simp_all
-    -- k is not in vs'
-    case neg =>
-      have Hup := HavocVarsUpdateStates Hwf.1
-      cases Hup with
-      | intro es' Hup =>
-      refine ⟨k :: vs,vs',σ₁,?_,Hwf.2⟩
-      have Hdef1 : Imperative.isDefined σ₁ [k] := by
-        apply InitVarsDefMonotone' (σ':=σ) (vs':=vs') <;> simp_all
-        . simp_all [List.Disjoint]
-        . simp [Imperative.isDefined, Option.isSome]
-          split <;> simp_all
-      have Hdef0 : Imperative.isDefined σ₀ [k] := by
-        exact HavocVarsDefMonotone' (vs':=vs) Hdef1 Hwf.1
-      simp [Imperative.isDefined, Option.isSome] at Hdef0
-      split at Hdef0 <;> simp_all
-      next x val heq =>
-      apply UpdateStatesHavocVars (modvals:=val :: es')
-      refine UpdateStatesUpdatedId ?_ ?_
-      . exact List.mem_cons_self
-      . apply UpdateStates.update_some (σ':=updatedState σ₀ k val)
-        apply updatedStateUpdate <;> assumption
-        rw [updatedStateId] <;> simp_all
-
-open OldExpressions in
 theorem substOld_create_replace :
 NormalizedOldExpr e →
 (extractOldExprVars (substOld h (createFvar h') e)) =
@@ -2008,49 +1847,6 @@ theorem substOldExpr_cons:
   any_goals simp_all [createOldVarsSubst]
   any_goals rw [OldExpressions.substOldExpr_nil]
   simp [createFvar]; rw [OldExpressions.substOldExpr_nil]
-
-theorem substsOldCorrect :
-  Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.WellFormedSemanticEvalVal δ →
-  Core.WellFormedCoreEvalCong δ →
-  Core.WellFormedCoreEvalTwoState δ σ₀ σ →
-  OldExpressions.NormalizedOldExpr e →
-  Imperative.substStores σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substDefined σ₀ σ (createOldStoreSubst oldTrips) →
-  Imperative.substNodup (createOldStoreSubst oldTrips) →
-  oldTrips.unzip.1.unzip.1.Disjoint (OldExpressions.extractOldExprVars e) →
-  δ σ e = δ σ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) e) := by
-  intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hsubst Hdef Hnd Hdisj
-  induction oldTrips generalizing e
-  case nil =>
-    simp [createOldVarsSubst] at *; rw[OldExpressions.substOldExpr_nil]
-  case cons h t ih =>
-  have : OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
-          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
-    apply substOldExpr_cons Hnd
-  rw[this, ← ih]
-  apply substOldCorrect <;> try assumption
-  intro k1 k2 Hin
-  simp [Imperative.substDefined] at Hdef
-  apply Hdef; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  apply OldExpressions.substOldNormalizedMono
-  intro H; cases H; assumption;
-  constructor
-  intro k1 k2 Hin
-  simp [Imperative.substStores] at Hsubst
-  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
-  exact substDefined_tail Hdef
-  simp [createOldStoreSubst] at *
-  exact substNodup_tail Hnd
-  simp at Hdisj
-  rw [substOld_create_replace] <;> try assumption
-  have H:= List.Disjoint.removeAll (zs:=[h.snd]) Hdisj
-  rw[← List.Disjoint_app] at H;
-  simp
-  exact List.Disjoint_cons_tail H.right
 
 theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
@@ -3124,7 +2920,7 @@ theorem substOldExprPostSubset:
 
 open OldExpressions in
 theorem substsOldPostSubset:
-  oldTrips.unzip.1.unzip.1.Disjoint oldTrips.unzip.2 →
+  oldTrips.unzip.1.unzip.1.Disj oldTrips.unzip.2 →
   (Imperative.HasFvars.getFvars (substsOldExpr (createOldVarsSubst oldTrips) post)).Subset
     (Imperative.HasFvars.getFvars post ++ (oldTrips.unzip.1.unzip.1)) := by
   intros Hdisj
@@ -3136,7 +2932,7 @@ theorem substsOldPostSubset:
     simp [Map.isEmpty] at Hin
     exact Hin
   case cons h t ih =>
-    have Hdisj: (List.map (Prod.fst ∘ Prod.fst) t).Disjoint (List.map Prod.snd t) := by
+    have Hdisj: (List.map (Prod.fst ∘ Prod.fst) t).Disj (List.map Prod.snd t) := by
       apply List.Disjoint_Subsets Hdisj <;> apply List.subset_cons_self
 
     have ih := @ih post Hdisj
@@ -3160,7 +2956,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   (∀ pname, π pname = (Program.Procedure.find? p (.unres pname))) →
   -- all global variables in p exist in σ
   (∀ gk, (p.find? .var gk).isSome → (σ gk).isSome) →
-  EvalStatementsContract π φ δ σ [st] σ' δ →
+  EvalStatementsContract π δ σ [st] σ' δ →
   WellFormedCoreEvalCong δ →
   WF.WFStatementsProp p [st] →
   WF.WFProgramProp p →
@@ -3170,7 +2966,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
-    EvalStatementsContract π φ δ σ sts σ'' δ
+    EvalStatementsContract π δ σ sts σ'' δ
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
@@ -3183,7 +2979,6 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case exit => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
-  case funcDecl => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case cmd c =>
   cases c with
   | cmd c' =>
@@ -3471,7 +3266,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
               . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.1
               . simp [genOutExprIdentsTrip_snd Heqout]
                 exact Hlhs.1
-              . -- Disjoint between localGlob and Temp
+              . -- Disj between localGlob and Temp
                 simp [genOutExprIdentsTrip_snd Heqout]
                 apply List.PredDisjoint_Disjoint
                   (P:=(CoreIdent.isTemp ·))
@@ -3570,7 +3365,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
               . simp only [nodup_swap'] at Hgennd
                 simp only [← List.append_assoc] at Hgennd
                 have Hnd' := (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
-                exact List.Disjoint.symm Hnd'
+                exact List.Disj.symm Hnd'
               . simp [← Hargtriplen]
               . apply UpdateStatesNotDefMonotone' (σ:=σ) (σ':=σ') ?_ Hupdate
                 intros x Hin
@@ -3595,10 +3390,10 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
             . simp [List.append_assoc]
               apply EvalStatementsContractApp
               . -- asserts
-                have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
+                have Hrdin : ReadValues f σAO (ListMap.keys proc.header.inputs) argVals := by
                   apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
                   exact InitStatesReadValues Hinitin
-                have Hrdinout : ReadValues σAO
+                have Hrdinout : ReadValues f σAO
                       (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
                       (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
                 have Hlen : (ListMap.keys proc.header.inputs).length =
@@ -3635,7 +3430,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       . apply List.PredDisjoint_PredImplies_right
                         exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
                         exact CoreIdent.isLocl_isGlobOrLocl
-                  . apply List.Disjoint.symm
+                  . apply List.Disj.symm
                     apply List.Disjoint_app.mp ⟨?_, ?_⟩
                     . apply List.PredDisjoint_Disjoint
                         (P:=(CoreIdent.isTemp ·))
@@ -3701,8 +3496,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                     simp [List.append_assoc]
                     simp [List.removeAll_app]
                     rw [List.removeAll_comm]
-                    apply List.Disjoint.removeAll
-                    apply List.Disjoint.mono_right
+                    apply List.Disj.removeAll
+                    apply List.Disj.mono_right
                     . exact List.removeAll_Sublist
                     . apply List.PredDisjoint_Disjoint
                         (P:=(CoreIdent.isTemp ·))
@@ -3943,7 +3738,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                         . apply List.PredDisjoint_PredImplies_right
                           exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
                           exact CoreIdent.isLocl_isGlobOrLocl
-                    . apply List.Disjoint.symm
+                    . apply List.Disj.symm
                       apply List.Disjoint_app.mp ⟨?_, ?_⟩
                       . apply List.PredDisjoint_Disjoint
                           (P:=(CoreIdent.isTemp ·))
@@ -4061,7 +3856,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                             rw [List.unzip_zip]
                             rw [List.unzip_zip]
                             simp
-                            . exact List.DisjointAppRight' Hlhsdisj
+                            . exact List.DisjAppRight' Hlhsdisj
                             . simp [← Heq2]
                               exact ReadValuesLength Hrd2
                             . have Hlen := ReadValuesLength Hrd'.2.1
@@ -4079,7 +3874,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
                       . simp [Holdtriplen]
                       . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                    . apply List.Disjoint.symm
+                    . apply List.Disj.symm
                       exact List.removeAll_Disjoint
                   . -- TODO : all vars in substPost is a subset of subst ++ fst fst oldTrips
                     have Hin := postconditions_subst_unwrap HinSubst
@@ -4097,7 +3892,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                     have Hgl := List.Forall_mem_iff.mp Hpost.glvars
                     simp at Hlcl Hgl
                     intros x Hin1 Hin2
-                    have Hdisj : oldTrips.unzip.fst.unzip.fst.Disjoint oldTrips.unzip.snd := by
+                    have Hdisj : oldTrips.unzip.fst.unzip.fst.Disj oldTrips.unzip.snd := by
                       apply List.PredDisjoint_Disjoint
                         (P:=(CoreIdent.isTemp ·))
                         (Q:=(CoreIdent.isGlob ·))
@@ -4198,8 +3993,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                                 apply UpdateStatesNotDefMonotone _ Hup1
                                 simp [InitStatesUpdated Hinitout]
                                 apply UpdatedStatesDisjNotDefMonotone
-                                . -- Disjoint between local and temp
-                                  apply List.Disjoint.symm
+                                . -- Disj between local and temp
+                                  apply List.Disj.symm
                                   apply List.PredDisjoint_Disjoint
                                     (P:=(CoreIdent.isTemp ·))
                                     (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4209,8 +4004,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                                 . simp [Houtlen]
                                 . simp [InitStatesUpdated Hinitin]
                                   apply UpdatedStatesDisjNotDefMonotone
-                                  . -- Disjoint between local and temp
-                                    apply List.Disjoint.symm
+                                  . -- Disj between local and temp
+                                    apply List.Disj.symm
                                     apply List.PredDisjoint_Disjoint
                                       (P:=(CoreIdent.isTemp ·))
                                       (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4250,8 +4045,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                               apply filter_nodup
                               apply eraseDups_Nodup
                             . exact Houtnd
-                            . -- Disjoint between local and temp
-                              apply List.Disjoint.symm
+                            . -- Disj between local and temp
+                              apply List.Disj.symm
                               apply List.PredDisjoint_Disjoint
                                   (P:=(CoreIdent.isLocl ·))
                                   (Q:=(CoreIdent.isGlob ·))
@@ -4298,7 +4093,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                               apply filter_nodup
                               apply eraseDups_Nodup
                             . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-                            . apply List.Disjoint.symm
+                            . apply List.Disj.symm
                               apply List.PredDisjoint_Disjoint
                                   (P:=(CoreIdent.isTemp ·))
                                   (Q:=(CoreIdent.isGlob ·))
@@ -4390,7 +4185,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                           refine ⟨?_, ?_, ?_⟩
                           . exact Hinnd
                           . exact Hmodsnd
-                          . -- Disjoint between local and temp
+                          . -- Disj between local and temp
                             apply List.PredDisjoint_Disjoint
                                 (P:=(CoreIdent.isLocl ·))
                                 (Q:=(CoreIdent.isGlob ·))
@@ -4412,8 +4207,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                           apply UpdateStatesNotDefMonotone _ Hup1
                           simp [InitStatesUpdated Hinitout]
                           apply UpdatedStatesDisjNotDefMonotone
-                          . -- Disjoint between local and temp
-                            apply List.Disjoint.symm
+                          . -- Disj between local and temp
+                            apply List.Disj.symm
                             apply List.PredDisjoint_Disjoint
                               (P:=(CoreIdent.isTemp ·))
                               (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4423,8 +4218,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                           . simp [Houtlen]
                           . simp [InitStatesUpdated Hinitin]
                             apply UpdatedStatesDisjNotDefMonotone
-                            . -- Disjoint between local and temp
-                              apply List.Disjoint.symm
+                            . -- Disj between local and temp
+                              apply List.Disj.symm
                               apply List.PredDisjoint_Disjoint
                                 (P:=(CoreIdent.isTemp ·))
                                 (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4439,7 +4234,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                     . simp [← HσR₁]
                       apply ReadValuesUpdatedStates
                       . simp [Holdtriplen]
-                      . -- Disjoint between local and temp
+                      . -- Disj between local and temp
                         apply List.PredDisjoint_Disjoint
                           (P:=(CoreIdent.isTemp ·))
                           (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4448,7 +4243,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                         . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
                       . apply ReadValuesUpdatedStates
                         . simp [Houttriplen]
-                        . -- Disjoint between local and temp
+                        . -- Disj between local and temp
                           apply List.PredDisjoint_Disjoint
                             (P:=(CoreIdent.isTemp ·))
                             (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4465,7 +4260,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       . apply ReadValuesUpdatedStates
                         . simp [Houttriplen]
                         . simp only [← List.append_assoc] at Hgennd
-                          exact List.Disjoint.symm (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
+                          exact List.Disj.symm (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
                         . apply ReadValuesUpdatedStatesSame
                           . simp [Hargtriplen]
                           . exact (List.nodup_append.mp Hgennd).1
@@ -4473,7 +4268,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       rw [List.zip_append, updatedStates'App]
                       . apply ReadValuesUpdatedStates
                         . simp [Holdtriplen]
-                        . -- Disjoint between local and temp
+                        . -- Disj between local and temp
                           apply List.PredDisjoint_Disjoint
                             (P:=(CoreIdent.isTemp ·))
                             (Q:=(CoreIdent.isLocl ·))
@@ -4484,7 +4279,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                             exact CoreIdent.isLocl_isGlobOrLocl
                         . apply ReadValuesUpdatedStates
                           . simp [Houttriplen]
-                          . -- Disjoint between local and temp
+                          . -- Disj between local and temp
                             apply List.PredDisjoint_Disjoint
                               (P:=(CoreIdent.isTemp ·))
                               (Q:=(CoreIdent.isLocl ·))
@@ -4495,7 +4290,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                               exact CoreIdent.isLocl_isGlobOrLocl
                           . apply ReadValuesUpdatedStates
                             . simp [Hargtriplen]
-                            . -- Disjoint between local and temp
+                            . -- Disj between local and temp
                               apply List.PredDisjoint_Disjoint
                                 (P:=(CoreIdent.isTemp ·))
                                 (Q:=(CoreIdent.isLocl ·))
@@ -4529,7 +4324,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 have Hlen := UpdateStatesLength Hupdate
                 rw [List.map_fst_zip]
                 rw [List.map_fst_zip]
-                . -- Disjoint between old labels and lhs, modified, and modvals
+                . -- Disj between old labels and lhs, modified, and modvals
                   apply List.PredDisjoint_Disjoint
                     (P:=(CoreIdent.isTemp ·))
                     (Q:=(CoreIdent.isGlobOrLocl ·))
@@ -4541,7 +4336,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                   . exact CoreIdent.Disjoint_isTemp_isGlobOrLocl
                 . simp_all
                 . simp_all
-              . -- Disjoint between old labels and lhs, modified, and modvals
+              . -- Disj between old labels and lhs, modified, and modvals
                 simp
                 rw [List.map_fst_zip]
                 rw [List.map_fst_zip (l₂:=modvals)]
@@ -4557,7 +4352,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 . have Hlen := UpdateStatesLength Hupdate
                   omega
                 . simp_all
-              . -- Disjoint between generated out labels and lhs ++ modifies
+              . -- Disj between generated out labels and lhs ++ modifies
                 simp
                 rw [List.map_fst_zip]
                 rw [List.map_fst_zip (l₂:=modvals)]

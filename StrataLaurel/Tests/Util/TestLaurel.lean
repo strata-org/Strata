@@ -3,21 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Strata.Pipeline.Messages
-import StrataDDM.Integration.Lean.HashCommands
-import StrataDDM.Elab
-import StrataDDM.BuiltinDialects.Init
-import StrataLaurel.Implementation.Grammar.LaurelGrammar
-import StrataLaurel.Implementation.Grammar.ConcreteToAbstractTreeTranslator
-import StrataLaurel.Implementation.Resolution
-import StrataLaurel.Implementation.EliminateValueInReturns
-import StrataLaurel.Implementation.GlobalParameterization
-import StrataLaurel.Implementation.LaurelCompilationPipeline
-import StrataLaurel.Implementation
-import Strata.Languages.Core.ProgramEval
-import Strata.Languages.Core.Verifier
-import StrataLaurel.Implementation.Interpreter
+module
+public import Strata.Pipeline.Messages
+public meta import StrataDDM.Integration.Lean.HashCommands
+public import StrataDDM.Elab
+public import StrataDDM.BuiltinDialects.Init
+public import StrataLaurel.Implementation.Grammar.LaurelGrammar
+public import StrataLaurel.Implementation.Grammar.ConcreteToAbstractTreeTranslator
+public import StrataLaurel.Implementation.Resolution
+public import StrataLaurel.Implementation.EliminateValueInReturns
+public import StrataLaurel.Implementation.GlobalParameterization
+public import StrataLaurel.Implementation.CoreDefinitionsForLaurel
+public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataLaurel.Implementation
+public import Strata.Languages.Core.ProgramEval
+public import Strata.Languages.Core.Verifier
+public import StrataLaurel.Implementation.Interpreter
 
 open Strata
 open Strata.Laurel
@@ -28,7 +29,7 @@ namespace StrataTest.Util
 /-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
     `Program`. Used by tests that need to plug in a custom post-translation
     pipeline stage; throws if translation fails. -/
-def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
+public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
@@ -43,13 +44,13 @@ def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
     `InferHoleTypes` reading its parameter types to type a hole operand) would
     silently get nothing. Any test driving `resolve` on a bare snippet needs
     this. -/
-def withBuiltins (program : Laurel.Program) : Laurel.Program :=
+public def withBuiltins (program : Laurel.Program) : Laurel.Program :=
   { program with
     staticProcedures :=
       Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
 
-def printGlobalParameterization (includeStaticFieldCount : Bool)
+public def printGlobalParameterization (includeStaticFieldCount : Bool)
     (program : StrataDDM.Program) : IO Unit := do
   let parsed ← translateLaurel program
   let builtinNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
@@ -98,7 +99,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
 /-- Default options used by `testLaurelExecution` when the caller doesn't override:
     quiet verifier, default solver. Override by passing
     `(options := …)` to `testLaurelExecution`. -/
-def defaultLaurelTestOptions : LaurelVerifyOptions :=
+public def defaultLaurelTestOptions : LaurelVerifyOptions :=
   { verifyOptions := { Core.VerifyOptions.quiet with useArrayTheory := true } }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
@@ -245,16 +246,21 @@ private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 1
     Core interpret path.
 
     Unlike `runLaurelInterpretRaw`, this does *not* go through Laurel→Core: it
-    drives the Laurel-level evaluator directly. The evaluator supports only a
-    subset of Laurel today, so an unsupported construct surfaces as a thrown
-    `IO.userError` from `evalProgram` — enable this path (`skipLaurelInterpreter
-    := false`) only on blocks whose constructs are all supported.
+    drives the Laurel-level evaluator directly. An unsupported construct
+    surfaces as a thrown `IO.userError` from `evalProgram`.
+
+    The program is resolved first, against the prelude, because resolution is what
+    tells overloads apart: a resolved call carries its overload's id, and the
+    prelude is where the partial operators' preconditions live. A program
+    resolution rejects is an error, as it is for the Core path; a warning resolution
+    reports is one of this path's diagnostics, as it is the verifier's.
 
     Entry selection mirrors `runLaurelInterpretRaw`: the `entry` markers are read
     off the parsed Laurel program. `none` means no entry is marked (verify-only,
     skip). Otherwise each `entry` procedure is run once from a fresh evaluator
     (the evaluator itself never iterates), and their failures are concatenated in
-    entry order. -/
+    entry order with repeats dropped, as `Core.Program.interpretEntries` does, so
+    an assert failing on every loop iteration is reported once. -/
 private def runLaurelEvalRaw (program : StrataDDM.Program) :
     IO (Option (Array Strata.Message)) := do
   let uri := Strata.Uri.file "<#strata>"
@@ -264,13 +270,24 @@ private def runLaurelEvalRaw (program : StrataDDM.Program) :
   let entries := laurelProgram.staticProcedures.filter (·.isInterpretEntry)
   if entries.isEmpty then
     return none
-  let mut allMessages : Array Strata.Message := #[]
+  let resolved := Laurel.resolve (withBuiltins laurelProgram)
+  let fatal := resolved.errors.filter (·.kind.impact.isFatal)
+  unless fatal.isEmpty do
+    throw (IO.userError
+      s!"laurel-interpret: resolution failed: {fatal.map (·.message)}")
+  let program := resolved.program
+  let mut allMessages : Array Strata.Message := resolved.errors
+  let mut seen : Std.HashSet Strata.Message := Std.HashSet.ofArray resolved.errors
   for p in entries do
     let (_, failures) ← Strata.Laurel.Interpreter.evalProgram
       ({} : Strata.Laurel.Interpreter.ExternalBackend)
-      { entryProcedure := p.name.text, dumpState := false }
-      laurelProgram
-    allMessages := allMessages ++ failures
+      { entryProcedure := p.name.text, dumpState := false, printAsserts := false,
+        fuel := 1000000 }
+      program
+    for f in failures do
+      unless seen.contains f do
+        allMessages := allMessages.push f
+        seen := seen.insert f
   return some allMessages
 
 /-! ## Inline-annotation matcher
@@ -377,7 +394,7 @@ private def LocatedMessage.render (block : SourcedProgram) (m : LocatedMessage)
 
 /-- Format an actual `Diagnostic` for reporting. Thin wrapper over
     `LocatedMessage.render` so callers don't project by hand. -/
-def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
+public def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
     (showSnippet : Bool := false) : String :=
   (LocatedMessage.ofDiagnostic d).render block showSnippet
 
@@ -586,15 +603,14 @@ private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOption
       interpreter cannot reproduce (see below), or its program never reaches Core.
     - `skipLaurelInterpreter` — skip the standalone Laurel interpreter path
       (`Strata.Laurel.Interpreter.evalProgram`, driven directly on the
-      Laurel program without going through Core). `true` by default (off),
-      because the standalone evaluator supports only a subset of Laurel; enable
-      it on a block only when every construct it uses is supported. Like the Core
-      path it requires a parameterless `entry` procedure and is held to the same
-      annotations. -/
-structure MultiplePathTestOptions where
+      Laurel program without going through Core). `false` by default, like the
+      Core path, so a block is run by both interpreters and the verifier, all held
+      to the same annotations. Like the Core path it requires a parameterless
+      `entry` procedure, so a block with none says `skipLaurelInterpreter := true`. -/
+public structure MultiplePathTestOptions where
   skipVerification : Bool := false
   skipCoreInterpreter : Bool := false
-  skipLaurelInterpreter : Bool := true
+  skipLaurelInterpreter : Bool := false
   deriving Inhabited
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -611,7 +627,7 @@ structure MultiplePathTestOptions where
 
     `options`, `showLocations`, `showSnippet`, and `debug` behave as in
     `testLaurelExecution`. -/
-def testLaurelVerification (block : SourcedProgram)
+public def testLaurelVerification (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false)
     (debug : Bool := false) : IO Unit := do
@@ -661,14 +677,11 @@ def testLaurelVerification (block : SourcedProgram)
     error: mark one, or opt out with `skipCoreInterpreter := true`. A silent skip
     would let a block lose its interpreter coverage without anything noticing.
 
-    Set `skipLaurelInterpreter := false` to *also* run the standalone Laurel
-    interpreter (`Evaluator.evalProgram`, driven directly on the Laurel program
-    without going through Core) and hold it to the *same* annotations. This third
-    path is off by default because the standalone evaluator supports only a subset
-    of Laurel; enable it on a block only when every construct it uses is
-    supported, otherwise the evaluator throws on the first unsupported construct.
-    Like the Core path it requires a parameterless `entry` procedure and throws if
-    none is marked.
+    The standalone Laurel interpreter (`Evaluator.evalProgram`, driven directly
+    on the Laurel program without going through Core) is a third path, on by
+    default and held to the *same* annotations. Like the Core path it requires a
+    parameterless `entry` procedure and throws if none is marked, so a block that
+    cannot be interpreted says `skipLaurelInterpreter := true` as well.
 
     `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
     solver). Pass an explicit value to override the solver, timeout, etc. — for
@@ -679,7 +692,7 @@ def testLaurelVerification (block : SourcedProgram)
     file-relative `line:col` range (so a `#guard_msgs` golden can pin the
     localization), and `showSnippet := true` to also append the snippet-relative
     range. (Failure reports always use the file-relative format regardless.) -/
-def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : SourcedProgram)
+public def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false)
     (debug : Bool := false) : IO Unit := do
@@ -732,11 +745,11 @@ def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : Sourced
 
 /-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
-def buildDir : IO String := do
+public def buildDir : IO String := do
   let cwd ← IO.currentDir
   return s!"{cwd}/.lake/build/intermediatePrograms/"
 
-def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
   let dir ← buildDir
   runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
 
@@ -748,7 +761,7 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     As with `testLaurelVerification`, succeeds silently by default; `showLocations := true`
     echoes each diagnostic's file-relative `line:col` range and
     `showSnippet := true` appends the snippet-relative range. -/
-def testLaurelResolution (block : SourcedProgram)
+public def testLaurelResolution (block : SourcedProgram)
     (gradualTypes : Std.HashSet String := {})
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block (runLaurelResolutionRaw gradualTypes) (label := "resolve")

@@ -581,7 +581,7 @@ composite Child extends Parent {
 procedure u() opaque { assert 1 == 1 };"},
 
   { name := "renamed_typaram_override_rejected", outcome := .rejectedExactly .userError,
-    why := "a generic override that RENAMES its composite's type parameter (`SBox<U> extends Box<U>`) must be REJECTED cleanly — its `is`/`as` tag-test emits `U`, which the dispatcher's `T`-scope cannot relate (a clean diagnostic, not an internal StrataBug)"
+    why := "a generic override that RENAMES its composite's type parameter (`SBox<U> extends Box<U>`) must be REJECTED cleanly — the dispatcher's scope carries the base's `T`, so the overrider's `U` names a parameter it cannot relate (a clean diagnostic, not an internal StrataBug)"
     src := r"
 composite Box<T> { var v: T
   procedure get(self: Box<T>) returns (r: T) opaque ensures true { r := self#v };

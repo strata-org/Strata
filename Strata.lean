@@ -24,6 +24,8 @@ import Strata.Util.Sarif
 import Strata.Util.Worklist
 
 /- Strata Languages -/
+import Strata.Languages.Core.BitVecEvalProps
+import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
@@ -41,8 +43,6 @@ import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
-import Strata.Transform.LiftInternalFuncDecls
-import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
@@ -60,6 +60,7 @@ import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.Languages.Core.Logic.LangDefProps
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.Hoare
+import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
@@ -92,6 +93,7 @@ import Strata.DL.SMT.DenoteTyped
 import Strata.DL.SMT.DenoteTypedProps
 import Strata.DL.SMT.DenoteSemanticsEquiv
 import Strata.DL.SMT.DenoteTypedSMTQuery
+import Strata.DL.SMT.SymbolProps
 
 /- Other -/
 import Strata.MetaVerifier
@@ -146,6 +148,7 @@ import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData
 
 -- noimport: Strata.Util.IOTests (used for tests)
+-- noimport: Strata.CodeGen.TypeShape (meta module, used by the code generators)
 -- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)
 
 import Strata.DL.SMT.DenoteTypedFactoryCorrect

@@ -10,7 +10,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.NameMangling
 public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExprTraversal
 import Strata.Util.Worklist
 import all Strata.DL.Imperative.Stmt
@@ -29,8 +29,8 @@ This pass runs in `corePipelinePhases` after:
   type annotation the type checker attaches to the `.op` node.  Before type
   checking, `f`'s call sites carry `f`'s generic arrow (e.g. `a → a`); only after
   it do they carry the instantiated arrow (e.g. `int → int`).
-- `LiftInternalFuncDecls` has also already hoisted every function to the top level,
-  so all functions are `Decl.func` / `Decl.recFuncBlock` declarations.
+- Functions are represented by top-level `Decl.func` / `Decl.recFuncBlock`
+  declarations.
 
 ## How it works (worklist)
 
@@ -310,6 +310,9 @@ def processTopDecls (index : PolymorphicFuncDecls) (factory : Lambda.Factory Cor
     | .ax a md =>
       refs := refs ++ collectFuncSpecializations index factory a.e
       decls := decls.push (.ax { a with e := ← mangleOpsInLExpr index factory a.e } md)
+    | .lemma l md =>
+      refs := refs ++ collectFuncSpecializations index factory l.e
+      decls := decls.push (.lemma { l with e := ← mangleOpsInLExpr index factory l.e } md)
     | .distinct n es md =>
       refs := refs ++ es.flatMap (collectFuncSpecializations index factory)
       decls := decls.push (.distinct n (← es.mapM (mangleOpsInLExpr index factory)) md)
@@ -341,10 +344,10 @@ def monomorphizeFunction (f : Function) (newName : CoreIdent) (inst : TypeArgsSu
   { f with
     inputs := f.inputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)),
     output := LMonoTy.subst S f.output,
-    body := f.body.map (·.applySubst S),
-    axioms := f.axioms.map (·.applySubst S),
-    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applySubst S }),
-    measure := f.measure.map (·.applySubst S)
+    body := f.body.map (·.applyTypeSubst S),
+    axioms := f.axioms.map (·.applyTypeSubst S),
+    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applyTypeSubst S }),
+    measure := f.measure.map (·.applyTypeSubst S)
     name := newName,
     typeArgs := [] }
 
@@ -550,12 +553,12 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
     -- A call inside a polymorphic procedure can instantiate a function at that
     -- procedure's type parameter, which is not a concrete type to specialize at,
     -- so the procedures must be monomorphic first.
-    (requires := factSet![.noInternalFuncDecl, .noPolymorphicProcedures])
+    (requires := factSet![.noPolymorphicProcedures])
     (establishes := factSet![.noPolymorphicFunctions])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noPolymorphicProcedures,
                          .typeAnnotated])
     fun prog => monomorphizeFunctions prog
 

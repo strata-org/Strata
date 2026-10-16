@@ -76,7 +76,7 @@ return x;
 info: 0
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let result := resolveAndElim chainedProgram
   IO.println (toString result.types.length)
 
@@ -101,7 +101,7 @@ private def cyclicProgram : Program :=
 info: 1
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let result := resolveAndElim cyclicProgram
   IO.println (toString result.staticProcedures.length)
 

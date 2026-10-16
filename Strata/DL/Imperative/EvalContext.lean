@@ -75,8 +75,8 @@ def PathConditionEntry.fastEq {P : PureExpr}
     ptrFastEq l1 l2 && ptrFastEq es1 es2
   | _, _ => false
 
-@[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
-@[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)
+abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
+abbrev PathConditions (P : PureExpr) := List (PathCondition P)
 
 def PathConditionEntry.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : PathConditionEntry P → Format
   | .assumption label expr => f!"({label}, {expr})"
@@ -238,7 +238,7 @@ instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (ProofO
                   Obligation: {ob.obligation}\n\
                   Metadata: {ob.metadata}\n"
 
-@[expose] abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
+abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
 
 ---------------------------------------------------------------------
 

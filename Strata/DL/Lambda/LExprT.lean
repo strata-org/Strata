@@ -29,7 +29,7 @@ public section
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
 
-@[expose] abbrev LExprT (T : LExprParamsT) :=
+abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
 
 partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExprT T) : Std.Format :=
@@ -96,7 +96,7 @@ Convert a typed `LExprT` back to an `LExpr`:
 /--
 Apply type substitution `S` to `LExpr e`.
 This is for metadata-stored types.
-To change user-defined types, use applySubst
+To change user-defined types, use applyTypeSubst
 -/
 def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
   LExpr.replaceMetadata (T:=T.mono.typed) (NewMetadata:=T.mono.typed.base.Metadata) e <|

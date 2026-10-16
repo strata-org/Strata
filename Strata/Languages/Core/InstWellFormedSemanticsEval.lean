@@ -43,23 +43,23 @@ namespace Core
 
 open Imperative
 
-@[expose] abbrev CoreEval := SemanticEval Expression
-@[expose] abbrev CoreStore := SemanticStore Expression
+abbrev CoreEval := SemanticEval Expression
+abbrev CoreStore := SemanticStore Expression
 
-/-- `Lambda.LExpr.evalFully` only outputs canonical values (delegates to the
-    generic `Lambda.evalFully_outputs_canonical`). -/
-theorem Lambda.LExpr.evalFully_outputs_canonical (f : Expression.Factory)
+/-- `Lambda.LExpr.evalFully` only outputs values (delegates to the
+    generic `Lambda.evalFully_outputs_value`). -/
+theorem Lambda.LExpr.evalFully_outputs_value (f : Expression.Factory)
     (σ : CoreStore) (e : Expression.Expr) (v' : Expression.Expr)
     (heval : Lambda.LExpr.evalFully f σ e = some v') :
-    Lambda.LExpr.isCanonicalValue f v' = true :=
-  Lambda.evalFully_outputs_canonical f σ e v' heval
+    Lambda.LExpr.isValue f v' = true :=
+  Lambda.evalFully_outputs_value f σ e v' heval
 
 /-- The Core evaluator's value behavior is well-formed: `evalFully` returns only
-    canonical values on well-formed stores, and is the identity on values. -/
+    values on well-formed stores, and is the identity on values. -/
 @[expose] def coreEvaluator_WellFormedSemanticEvalVal (f : Expression.Factory) :
     WellFormedSemanticEvalVal (P := Expression) f where
   outputsAreValues := fun v v' σ _hwfs heval =>
-    Lambda.LExpr.evalFully_outputs_canonical f σ v v' heval
+    Lambda.LExpr.evalFully_outputs_value f σ v v' heval
   identityOnValues := fun v' σ hv => by
     simp only [HasVal.value] at hv
     show Lambda.LExpr.evalFully f σ v' = some v'
@@ -81,13 +81,13 @@ theorem Lambda.LExpr.evalFully_outputs_canonical (f : Expression.Factory)
     agree on all free variables of an expression, `evalFully` produces the same
     result. This is the `WellFormedSemanticEvalExprCongr` property for Core. -/
 theorem coreEvaluator_WellFormedSemanticEvalExprCongr (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f) :
+    (hWF : Lambda.FactoryWF f) :
     WellFormedSemanticEvalExprCongr (P := Expression) f := by
   intro e σ σ' _h_wfs h_wfs' hagree
   exact Lambda.evalFully_env_congr
     (fun a b h => by cases a; cases b; simp_all)
-    f σ σ' hWF hClosed
-    (fun x v hx => Lambda.isCanonicalValue_getVars_nil f v (h_wfs' x v hx))
+    f σ σ' hWF
+    (fun x v hx => Lambda.isValue_getVars_nil f v (h_wfs' x v hx))
     e hagree
 
 /-- The Core evaluator is monotone under store extension: a successful `evalFully`
@@ -120,9 +120,9 @@ theorem eval_boolNot_value_iff
       Lambda.boolNotFunc, Lambda.unaryOp]
     rw [hBN]
     simp [Lambda.boolNotFunc, Lambda.unaryOp]
-  have hcan : Lambda.LExpr.isCanonicalValue f
+  have hcan : Lambda.LExpr.isValue f
       (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e) = false := by
-    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+    simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
       Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.boolNotFunc, Lambda.unaryOp]
     rw [hBN]
@@ -132,7 +132,7 @@ theorem eval_boolNot_value_iff
   simp only [Lambda.boolNotFunc, Lambda.unaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.or_false, Bool.and_true]
   have hcev : Lambda.LambdaLeanType.cevalTy (ty := Lambda.LMonoTy.bool) (ValTy := Bool) CoreLParams
       = Lambda.LExpr.denoteBool := rfl
@@ -143,8 +143,8 @@ theorem eval_boolNot_value_iff
       Lambda.LExpr.denoteBool (Lambda.LExpr.boolConst m b : Expression.Expr) = some b := by
     intro m b; rfl
   have hcanb : ∀ (m : Unit) (b : Bool),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.boolConst m b : Expression.Expr) = true := by
-    intro m b; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.boolConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.boolConst m b : Expression.Expr) = true := by
+    intro m b; simp [Lambda.LExpr.isValue, Lambda.LExpr.boolConst]
   have hdb : ∀ (x : Expression.Expr) (b : Bool),
       Lambda.LExpr.denoteBool x = some b → x = Lambda.LExpr.boolConst () b := by
     intro x b hx
@@ -156,7 +156,7 @@ theorem eval_boolNot_value_iff
         subst hx; rfl
       | _ => simp [Lambda.LExpr.denoteBool] at hx
     | _ => simp [Lambda.LExpr.denoteBool] at hx
-  by_cases hcv : Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.eval n f σ e).fst = true
+  by_cases hcv : Lambda.LExpr.isValue f (Lambda.LExpr.eval n f σ e).fst = true
   · rw [if_pos hcv]
     rcases hd : (Lambda.LExpr.eval n f σ e).fst.denoteBool with _ | β
     · simp only []
@@ -168,7 +168,7 @@ theorem eval_boolNot_value_iff
         rw [hβfst, hdbc () β] at hd
         exact absurd hd (by simp)
     · simp only []
-      rw [Lambda.eval_canonical_identity n f σ _ (hcanb _ _)]
+      rw [Lambda.eval_value_identity n f σ _ (hcanb _ _)]
       simp only [Lambda.LExpr.combineEvalResValueFlag_eq_pair,
         Lambda.LExpr.EvalResult.combineValueFlag]
       constructor
@@ -234,10 +234,10 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
     (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func) :
     Imperative.WellFormedSemanticEvalBool (P := Expression) f := by
   intro σ e
-  have hcanT : Lambda.LExpr.isCanonicalValue f Core.true = true := by
-    simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
-  have hcanF : Lambda.LExpr.isCanonicalValue f Core.false = true := by
-    simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]
+  have hcanT : Lambda.LExpr.isValue f Core.true = true := by
+    simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
+  have hcanF : Lambda.LExpr.isValue f Core.false = true := by
+    simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
   have hevT : Lambda.LExpr.evalFully f σ Core.true = some Core.true :=
     Lambda.evalFully_value_identity f σ Core.true hcanT
   have hevF : Lambda.LExpr.evalFully f σ Core.false = some Core.false :=
@@ -256,9 +256,9 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
           (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0)
             = some Core.true) := by
     intro e0
-    have hcanA : Lambda.LExpr.isCanonicalValue f
+    have hcanA : Lambda.LExpr.isValue f
         (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0) = false := by
-      simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+      simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
         Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
         Lambda.boolNotFunc, Lambda.unaryOp]
       rw [hBN]
@@ -418,25 +418,25 @@ theorem eval_intLt_value_of_numerals
       Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr, Lambda.intLtFunc, Lambda.binaryOp]
     rw [hILt]
     simp [Lambda.intLtFunc, Lambda.binaryOp]
-  have hcan : Lambda.LExpr.isCanonicalValue f
+  have hcan : Lambda.LExpr.isValue f
       (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = false := by
-    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+    simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
       Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.intLtFunc, Lambda.binaryOp]
     rw [hILt]
     simp [Lambda.intLtFunc, Lambda.binaryOp]
   have hcani : ∀ (a : Int),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
-    intro a; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.intConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
+    intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.intConst]
   have hcanb : ∀ (b : Bool),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
-    intro b; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.boolConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
+    intro b; simp [Lambda.LExpr.isValue, Lambda.LExpr.boolConst]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
   simp only [Lambda.intLtFunc, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
   rw [hx, hy]
   simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
@@ -450,7 +450,7 @@ theorem eval_intLt_value_of_numerals
   rw [if_pos (by simp [hcani])]
   simp only [hdenote, hdenote']
   simp only [if_true]
-  rw [Lambda.eval_canonical_identity n f σ _ (hcanb _)]
+  rw [Lambda.eval_value_identity n f σ _ (hcanb _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
 
 open Lambda in
@@ -474,25 +474,25 @@ theorem eval_intLe_value_of_numerals
       Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr, Lambda.intLeFunc, Lambda.binaryOp]
     rw [hILe]
     simp [Lambda.intLeFunc, Lambda.binaryOp]
-  have hcan : Lambda.LExpr.isCanonicalValue f
+  have hcan : Lambda.LExpr.isValue f
       (.app () (.app () (Lambda.intLeFunc (T := CoreLParams)).opExpr x) y) = false := by
-    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+    simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
       Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.intLeFunc, Lambda.binaryOp]
     rw [hILe]
     simp [Lambda.intLeFunc, Lambda.binaryOp]
   have hcani : ∀ (a : Int),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
-    intro a; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.intConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
+    intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.intConst]
   have hcanb : ∀ (b : Bool),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
-    intro b; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.boolConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
+    intro b; simp [Lambda.LExpr.isValue, Lambda.LExpr.boolConst]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
   simp only [Lambda.intLeFunc, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
   rw [hx, hy]
   simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
@@ -506,7 +506,7 @@ theorem eval_intLe_value_of_numerals
   rw [if_pos (by simp [hcani])]
   simp only [hdenote, hdenote']
   simp only [if_true]
-  rw [Lambda.eval_canonical_identity n f σ _ (hcanb _)]
+  rw [Lambda.eval_value_identity n f σ _ (hcanb _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
 
 open Lambda in
@@ -530,22 +530,22 @@ theorem eval_intAdd_value_of_numerals
       Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr, Lambda.intAddFunc, Lambda.binaryOp]
     rw [hIAdd]
     simp [Lambda.intAddFunc, Lambda.binaryOp]
-  have hcan : Lambda.LExpr.isCanonicalValue f
+  have hcan : Lambda.LExpr.isValue f
       (.app () (.app () (Lambda.intAddFunc (T := CoreLParams)).opExpr x) y) = false := by
-    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+    simp only [Lambda.LExpr.isValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
       Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.intAddFunc, Lambda.binaryOp]
     rw [hIAdd]
     simp [Lambda.intAddFunc, Lambda.binaryOp]
   have hcani : ∀ (a : Int),
-      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
-    intro a; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.intConst]
+      Lambda.LExpr.isValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
+    intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.intConst]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
   simp only [Lambda.intAddFunc, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
-  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
   rw [hx, hy]
   simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
@@ -559,7 +559,7 @@ theorem eval_intAdd_value_of_numerals
   rw [if_pos (by simp [hcani])]
   simp only [hdenote, hdenote']
   simp only [if_true]
-  rw [Lambda.eval_canonical_identity n f σ _ (hcani _)]
+  rw [Lambda.eval_value_identity n f σ _ (hcani _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
 
 open Lambda in
@@ -747,19 +747,19 @@ theorem coreEval_intAdd_numeral (σ : CoreStore) (yv : Expression.Expr) (n : Int
 
 /-- The Core evaluator commutes with variable renaming under target-definedness,
     discharged by the generic `Lambda.rename_commute`.  The `WellFormedStore σ'`
-    guard supplies the canonical-store premise `rename_commute` consumes;
+    guard supplies the value-store premise `rename_commute` consumes;
     `CoreIdent = Lambda.Identifier Unit`, so the name-injectivity premise holds
     trivially.  The generic `SubstVarsDefined`/`substStoreExpr` (phrased via
     `HasFvar.getFvar`) yield the Lambda-level `VarOnly`/`TargetsDefined`/`substStoreExpr`
     (phrased via the `fvar` pattern) for Core, because
     `HasFvar.getFvar (.fvar _ v _) = some v`. -/
 theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f) :
+    (hWF : Lambda.FactoryWF f) :
     WellFormedSemanticEvalRename (P := Expression) f := by
   intro e σ' sm hwfs hVarsDef
   have hIdent : ∀ a b : CoreIdent, a.name = b.name → a = b := by
     intro a b h; cases a; cases b; cases h; rfl
-  have hwfs' : ∀ x v, σ' x = some v → Lambda.LExpr.isCanonicalValue f v = true := by
+  have hwfs' : ∀ x v, σ' x = some v → Lambda.LExpr.isValue f v = true := by
     intro x v hx
     have := hwfs x v hx
     simpa only [HasVal.value] using this
@@ -783,31 +783,31 @@ theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
   show Lambda.LExpr.evalFully f σ' (Lambda.LExpr.substFvars e sm)
       = Lambda.LExpr.evalFully f (substStoreExpr σ' sm) e
   rw [hpb]
-  exact Lambda.rename_commute hIdent f σ' hWF hClosed hwfs' sm hVar' hTgt' e
+  exact Lambda.rename_commute hIdent f σ' hWF hwfs' sm hVar' hTgt' e
 
 /-!
 ## Instance of the full `WellFormedSemanticEval` bundle
 --/
 
 def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
-    (hWF : Lambda.FactoryWF f) (hClosed : Lambda.FactoryClosed f)
+    (hWF : Lambda.FactoryWF f)
     (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func)
     (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func) :
     Imperative.WellFormedSemanticEval (P := Expression) f where
   bool := coreEvaluator_WellFormedSemanticEvalBool f hBN
   val := coreEvaluator_WellFormedSemanticEvalVal f
   var := coreEvaluator_WellFormedSemanticEvalVar f
-  exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF hClosed
+  exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF
   int := coreEvaluator_WellFormedSemanticEvalInt f hILt
   mono := coreEvaluator_WellFormedSemanticEvalMono f
-  rename := coreEvaluator_WellFormedSemanticEvalRename f hWF hClosed
+  rename := coreEvaluator_WellFormedSemanticEvalRename f hWF
 
 /-- Specialization of `coreEvaluator_WellFormedSemanticEval` to the concrete
     `Core.Factory`, which is unconditionally well-formed and resolves
     `Bool.Not` to `boolNotFunc` and `Int.Lt` to `intLtFunc`. -/
 theorem coreFactory_WellFormedSemanticEval :
     Imperative.WellFormedSemanticEval (P := Expression) Core.Factory :=
-  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf Core.Factory_closed
+  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf
     coreFactory_boolNot coreFactory_intLt
 
 end Core

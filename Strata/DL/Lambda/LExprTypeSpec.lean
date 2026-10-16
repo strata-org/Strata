@@ -345,8 +345,10 @@ The proof is structured in three layers:
    `WellScoped` — no `checkContextTypesClosed`/`allKeysFresh`). This is the form
    consumed by callers that compose substitutions themselves (e.g. `CmdType.inferType_HasType`).
 
-   Note: we require only `FactoryWF`, not `FactoryClosed` — the latter does not hold of
-   typechecked terms in general (a `funcDecl` body may capture surrounding-scope variables).
+   `FactoryWF` includes closedness of the factory's own functions through
+   `LFuncWF.body_freevars` and `LFuncWF.precond_freevars`. It does not require
+   arbitrary typechecked terms to be closed: a local function lowered to a
+   `Lambda` value may capture surrounding-scope variables.
 
 3. **`resolve_HasType`**: The top-level theorem. Building on `resolve_HasType_core`, it adds
    the composability postconditions (`checkContextTypesClosed Env'`,
@@ -1526,7 +1528,7 @@ private theorem tyPrefix_ne_of_ne (a b : Nat) (h : a ≠ b) :
   intro h_eq; apply h
   rw [String.ext_iff] at h_eq
   simp [String.toList_append] at h_eq
-  exact Nat.toString_injective (String.toList_injective h_eq)
+  exact toDigits_injective h_eq
 
 /-- A generated name `tyPrefix ++ toString k` with `k < state.tyGen` satisfies
     the freshness condition for `state`. -/
@@ -5976,7 +5978,6 @@ theorem resolveAux_HasType :
                 AnnotCompat_subst S
                   (typeBoundVar_AnnotCompat C Env bty_val xv xty Env1 h_tbv h_aw)
                   (fun a ha => h_aw a ha)⟩)
-      simp at h_tquant
       exact h_tquant
   case h_eq =>
     intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo

@@ -83,14 +83,14 @@ transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
 
 {docstring Lambda.StepStar}
 
-The predicate {name Lambda.LExpr.isCanonicalValue}`isCanonicalValue` returns
+The predicate {name Lambda.LExpr.isValue}`isValue` returns
 `true` for `LExpr` that is a value: constants, closed abstractions and quantifiers,
 etc.
 
-{docstring Lambda.LExpr.isCanonicalValue}
+{docstring Lambda.LExpr.isValue}
 
-The theorem {name Lambda.canonical_value_not_step}`canonical_value_not_step`
-confirms the intended relationship between the two notions: canonical values are
+The theorem {name Lambda.value_not_step}`value_not_step`
+confirms the intended relationship between the two notions: values are
 precisely the normal forms of {name Lambda.Step}`Step`, so no reduction rule can
 fire on them.
 
@@ -100,7 +100,7 @@ Alongside the relational semantics, `Lambda` provides an executable partial
 evaluator, {name Lambda.LExpr.eval}`LExpr.eval`. It takes a fuel bound `n` and
 reduces an expression as far as that fuel allows, returning the resulting
 expression together with an `EvalResult` that classifies the outcome as
-`outOfFuel`, a canonical `value`, or a `nonvalue`.
+`outOfFuel`, a `value`, or a `nonvalue`.
 
 The theorem {name Lambda.eval_StepStar}`eval_StepStar` states the soundness of
 evaluator with respect to the operational semantics. For every fuel
@@ -263,9 +263,10 @@ The semantics of the {name Stmt}`Stmt` type is defined in terms of
 
 The {name StepStmt}`StepStmt` relation describes how each type of statement
 transforms configurations. It is parameterized by a command evaluator (because
-statements are parameteric to the list of defined commands) and an
-`extendFactory` function (used by `funcDecl` to add new function definitions to
-the expression evaluator within a scope).
+statements are parameteric to the list of defined commands). The expression
+factory is immutable during execution: it is carried in the environment to
+evaluate expressions, and a `.block` snapshots and restores it for scoping, but
+no statement step mutates it.
 
 {docstring Imperative.StepStmt}
 
@@ -410,21 +411,25 @@ Core extends the `Imperative` commands with a procedure `call`. A call is
 executed by descending into the callee's body
 ({name EvalCommand.call_sem}`EvalCommand.call_sem`).
 
-1. Evaluate the argument expressions `e₁, ..., eₙ`.
-2. Assert each (non-free) precondition, substituting actuals for formals.
-3. Havoc the output variables `y₁, ..., yₘ`.
-4. Run the body of the callee procedure, with the actuals substituted for
-   formals and binding `old v` to the value of `v` immediately before the call.
-5. Assert each (non-free) postcondition, substituting actuals for formals.
-6. Update the caller's state with the new values of the output variables.
+1. Evaluate the input and inout argument expressions, and read the current values
+   of caller-side `out` actuals.
+2. Initialize a fresh callee frame: bind input and inout formals to the evaluated
+   argument values, copy the `out` values into output-only formals, and snapshot
+   each inout formal as `old g`.
+3. Assert each non-free precondition unchanged in the initialized callee frame.
+4. Run the callee body in that frame. The `old g` snapshots continue to hold the
+   values that the inout formals had immediately before the call.
+5. Assert each non-free postcondition unchanged in the final callee frame.
+6. Update the caller's state with the final values of the callee output formals.
 
 Concrete execution of the body of procedure is necessary to make the procedure
 inlining transform exactly semantics-preserving.
 A contract version of call semantics is also defined at
-{name EvalCommandContract.call_sem}`EvalCommandContract.call_sem`.
-In this semantics, procedure inlining becomes an underapproximating transform
-because it replaces the values of havoc'ed output variables with concrete
-values.
+{name EvalCommandContract.call_sem}`EvalCommandContract.call_sem`. It does not
+execute the body: after checking preconditions, it havocs all initialized callee
+output formals, including inouts, and assumes the postconditions. In this semantics, procedure
+inlining becomes an underapproximating transform because it replaces the values
+of havoc'ed output variables with concrete values.
 
 ## Procedures
 

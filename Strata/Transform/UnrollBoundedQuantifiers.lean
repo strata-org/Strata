@@ -97,7 +97,6 @@ def collectAssumeIntFacts (s : Statement) : IntFactEnv :=
   | .ite _ _ _ _ => []
   | .loop _ _ _ _ _ => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
   termination_by structural s
 
@@ -171,7 +170,6 @@ def collectAssumeSelectFacts (s : Statement) : SelectEnv :=
   | .ite _ _ _ _ => []
   | .loop _ _ _ _ _ => []
   | .exit _ _ => []
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
   termination_by structural s
 
@@ -692,7 +690,6 @@ def unrollStmt (env : UEnv) (s : Statement) : Statement × Counts :=
   -- `noCFGBodies`, so neither shape reaches this traversal.
   | .loop g measure inv body md => (.loop g measure inv body md, {})
   | .exit l md => (.exit l md, {})
-  | .funcDecl decl md => (.funcDecl decl md, {})
   | .typeDecl tc md => (.typeDecl tc md, {})
   termination_by Imperative.Stmt.sizeOf s
 
@@ -739,10 +736,18 @@ public section
     range over the old value and drop conjuncts. -/
 def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "unrollBoundedQuantifiers"
-    (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment])
+    -- `hasObligationForm` rules out `block` and `exit`. `collectAssumeIntFacts`
+    -- reads an `assume` out of a `block`, which is unsound if an `exit` skips it.
+    (requires := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment,
+                          .hasObligationForm])
+    -- `noBetaRedexes` survives because an instance is the body with a *constant* index
+    -- substituted for the bound variable, which cannot put an abstraction in an
+    -- application's head; the fold builds applications of operators; and the per-instance
+    -- reduction only contracts redexes.
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
-                         .noNondetGuards, .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
+                         .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       let baseF ← Core.Transform.getFactory

@@ -23,8 +23,9 @@ stated without depending on the transform-specification framework, mirroring
 - **`InitEnvWFParams`** — the parameter record (reserved fresh-prefixes and the
   already-declared function names) threaded into both gates.
 - **`InitEnvWF`** / **`BlockInitEnvWF`** — the statement- and block-level gates.
-  Both extend `Imperative.WellFormedSemanticEval` on `ρ.factory` and add
-  Core-specific store, freshness and def-use conditions.
+  Both extend `Imperative.WellFormedSemanticEval` on the environment's own
+  factory (`ρ.factory`) and add Core-specific store, freshness and def-use
+  conditions.
 - **`Lang.core`** — the `Lang` for Core statements, gated on `InitEnvWF`.
 - **`Lang.coreBlock`** — the `Lang` for Core statement lists, gated on
   `BlockInitEnvWF`.
@@ -49,8 +50,7 @@ open Core Imperative Strata.Logic Imperative.Logic
     The `declaredFuncs : Expression.Ident → Bool` characterizes the set of
     operator/function names already defined in the initial evaluator.  Concrete
     instantiations use this to enforce a `defUseWellFormed` invariant that all
-    operator references in the program are pre-declared, and any `funcDecl`
-    introduces a fresh name. -/
+    operator references in the program are pre-declared. -/
 structure InitEnvWFParams where
   /-- Reserved "fresh-prefixes" that must not appear in the initial env. -/
   prefixIdents : List String
@@ -60,7 +60,7 @@ structure InitEnvWFParams where
 /-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
     getting stuck.
 
-    Extends `Imperative.WellFormedSemanticEval` on `ρ.factory`, which
+    Extends `Imperative.WellFormedSemanticEval` on `fac`, which
     contributes the evaluator-level conditions `bool`/`val`/`var`/`exprCongr`/`int`.
     The remaining fields are Core-specific (store definedness, reserved-prefix
     freshness, `defUse` well-formedness, factory membership). -/
@@ -72,7 +72,7 @@ structure InitEnvWF (params : InitEnvWFParams)
       guarded by it — so without this field the gate supports no reasoning about
       what an expression evaluates to in `ρ`.  It holds of every reachable store,
       and `Core.Specification.ProcEnvWF.storeValues` asserts it at procedure
-      entry. -/
+      entry.  The factory is read from the environment (`ρ.factory`). -/
   storeWellDefined : Imperative.WellFormedStore ρ.store ρ.factory
   readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false →
     (ρ.store n).isSome
@@ -80,19 +80,16 @@ structure InitEnvWF (params : InitEnvWFParams)
   /-- Source's `definedVars` don't use any of the reserved prefixes. -/
   definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ params.prefixIdents,
     ¬ p.toList.isPrefixOf n.name.toList
-  /-- Source's `funcDeclNames` don't use any of the reserved prefixes.
-      `funcDecl` names live in the evaluator (not the store), so they aren't
-      covered by `definedVarsNotReserved`. -/
-  funcDeclNamesNotReserved : ∀ n ∈ Stmt.funcDeclNames s false, ∀ p ∈ params.prefixIdents,
-    ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
   defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every init-type the statement declares has a value witness in `ρ`'s factory. -/
+  initTypesInhabited : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
-    statements `bss` from env `ρ`. -/
+    statements `bss` from env `ρ`.  The factory is read from `ρ.factory`. -/
 structure BlockInitEnvWF (params : InitEnvWFParams)
     (bss : Statements)
     (ρ : Imperative.Env Expression) : Prop
@@ -104,21 +101,20 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
   defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
   definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ params.prefixIdents,
     ¬ p.toList.isPrefixOf n.name.toList
-  funcDeclNamesNotReserved : ∀ n ∈ Block.funcDeclNames bss false, ∀ p ∈ params.prefixIdents,
-    ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
   defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every init-type the block declares has a value witness in `ρ`'s factory. -/
+  initTypesInhabited : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss
 
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     Strata.Logic.Lang Expression :=
   Imperative.Logic.Lang.imperative
-    Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    Expression Command (EvalCommand π) coreIsAtAssert
     (ParamsTy := InitEnvWFParams) (initEnvWF := InitEnvWF)
 
 /-- The `Lang Expression` bundle for Core small-step semantics over *statement
@@ -130,31 +126,28 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
     language a block-level overapproximation or Hoare-style block judgement is
     stated over, exactly as `Lang.core` is for single statements. -/
 @[expose] def Lang.coreBlock
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     Strata.Logic.Lang Expression :=
   Imperative.Logic.Lang.imperativeBlock
-    (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    (EvalCommand π) coreIsAtAssert
     (wfPkg := ⟨InitEnvWFParams, BlockInitEnvWF⟩)
 
 /-! ## Core event-trace language bundles -/
 
 /-- Core event language for single statements, gated by `InitEnvWF`. -/
 @[expose] def EventLang.core
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     Strata.Logic.EventLang Expression (Event Expression) :=
   Imperative.Logic.EventLang.imperativeE
-    Expression Command (EvalCommandE π φ) (EvalPureFunc φ)
+    Expression Command (EvalCommandE π)
     InitEnvWFParams InitEnvWF
 
 /-- Core event language for statement lists, gated by `BlockInitEnvWF`. -/
 @[expose] def EventLang.coreBlock
-    (π : String → Option Procedure)
-    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+    (π : String → Option Procedure) :
     Strata.Logic.EventLang Expression (Event Expression) :=
   Imperative.Logic.EventLang.imperativeBlockE
-    Expression Command (EvalCommandE π φ) (EvalPureFunc φ)
+    Expression Command (EvalCommandE π)
     ⟨InitEnvWFParams, BlockInitEnvWF⟩
 
 end Core.Logic

@@ -81,10 +81,10 @@ def List.replaceAll [BEq α] : List α → α → α → List α
 
 
 
-/-- `Disjoint l₁ l₂` means that `l₁` and `l₂` have no elements in common.
+/-- `Disj l₁ l₂` means that `l₁` and `l₂` have no elements in common.
 Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c4e25e19b40a6a49242e94ba072/Batteries/Data/List/Basic.lean#L512-L514
 -/
-@[expose] def List.Disjoint (l₁ l₂ : List α) : Prop :=
+@[expose] def List.Disj (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
 
 
@@ -117,53 +117,53 @@ namespace List
 /--
 Remove duplicates in a list.
 -/
-def dedup {α : Type} [DecidableEq α] : List α → List α
+def uniq {α : Type} [DecidableEq α] : List α → List α
   | [] => []
   | a :: as =>
-    let as := as.dedup
+    let as := as.uniq
     if a ∈ as then as else a :: as
 
 
 /--
-Tail-recursive worker for `dedup`. Walks the input left-to-right,
+Tail-recursive worker for `uniq`. Walks the input left-to-right,
 skipping elements that still appear later, and collects kept elements
 in reverse order.
 -/
-def dedupTR.go {α : Type} [DecidableEq α] :
+def uniqTR.go {α : Type} [DecidableEq α] :
     List α → List α → List α
   | [], acc => acc.reverse
   | a :: as, acc =>
-    if a ∈ as then dedupTR.go as acc else dedupTR.go as (a :: acc)
+    if a ∈ as then uniqTR.go as acc else uniqTR.go as (a :: acc)
 
 
 /--
-Tail-recursive implementation of `dedup`.
+Tail-recursive implementation of `uniq`.
 -/
-def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
-  dedupTR.go l []
+def uniqTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+  uniqTR.go l []
 
 
 
 /-- Deduplicates l and counts the number of occurrences for each element. -/
 def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
-  l.dedup.map (λ x => (x, l.count x))
+  l.uniq.map (λ x => (x, l.count x))
 
 
 /--
-`foldlIdx f init l` folds `f` over `l` with an index.
+`foldlIdxVal f init l` folds `f` over `l` with an index.
 -/
-def foldlIdx (f : β → Nat → α → β) (init : β) (l : List α) : β :=
+def foldlIdxVal (f : β → Nat → α → β) (init : β) (l : List α) : β :=
   ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
 
 
 end List
 
-/-! ### List.Forall₂ -/
+/-! ### List.Rel₂ -/
 
 /-- Pointwise relation between two lists. -/
-inductive List.Forall₂ (R : α → β → Prop) : List α → List β → Prop where
-  | nil : Forall₂ R [] []
-  | cons : R a b → Forall₂ R as bs → Forall₂ R (a :: as) (b :: bs)
+inductive List.Rel₂ (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Rel₂ R [] []
+  | cons : R a b → Rel₂ R as bs → Rel₂ R (a :: as) (b :: bs)
 
 
 end

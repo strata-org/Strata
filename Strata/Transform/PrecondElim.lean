@@ -21,10 +21,11 @@ This transformation eliminates function preconditions.
 In particular, it does the following:
 1. For every call to a function with a precondition, it inserts an `assert` at
 the call site.
-2. For every function and procedure contract, it generates a well-formedness
-check asserting that all calls to functions preconditions within the contract
-hold, assuming earlier calls succeed.
-3. For function declarations, the well-formedness check also asserts the
+2. For every function and procedure contract, it generates well-formedness
+lemmas, one per call to a function with preconditions within the contract,
+stating that the call's preconditions hold under the earlier conditions. The
+function or procedure lists these lemmas among its dependencies.
+3. For function declarations, well-formedness lemmas also state the
 preconditions of any partial functions called within the body.
 4. The returned program consists only of total functions (no preconditions).
 
@@ -48,17 +49,10 @@ open Core.Transform
 inductive Stats where
   | callSiteAssertsEmitted
   | wfProcedureBodyStmtsEmitted
-  | wfProceduresGenerated
+  | wfLemmasGenerated
   | numFuncsRemovedAfterPrecondStripped
 
 #derive_prefixed_toString Stats "PrecondElim"
-
-/-! ## Naming conventions -/
-
-/-- Suffix for generated well-formedness procedures. -/
-def wfSuffix : String := "$$wf"
-
-def wfProcName (name : String) : String := s!"{name}{wfSuffix}"
 
 /-! ## Collecting assertions from expressions -/
 
@@ -155,32 +149,61 @@ def processCondition (F : @Lambda.Factory CoreLParams)
 private def hasAssert (stmts : List Statement) : Bool :=
   stmts.any (fun s => match s with | .assert _ _ _ => true | _ => false)
 
-/-! ## Contract well-formedness procedures -/
+/-! ## Well-formedness lemmas -/
 
 /--
-Generate a well-formedness checking procedure for a procedure's contract.
+The well-formedness lemmas for the checks `stmts`, quantified over `binders` and
+generic in `typeArgs`: one lemma per `assert q`, named and annotated like it,
+whose formula is `p₁ ==> … ==> pₙ ==> q` for the conditions `pᵢ` assumed before
+it. Earlier checks are not hypotheses, since their own lemmas check them.
+
+A name already in `taken`, such as a declaration of the program, or repeated
+among the checks, gets a `_k` suffix: checks from different conditions can
+share a label, since each condition numbers its checks from 0.
+
+We should emit only one lemma in the future, whose formula keeps the whole tree
+of checks, and be able to verify it incrementally while reporting each check.
+-/
+def mkWFLemmas (taken : List String) (typeArgs : List TyIdentifier)
+    (binders : List (Expression.Ident × Lambda.LMonoTy)) (stmts : List Statement) :
+    List Decl :=
+  let (_, _, lemmas) := stmts.foldl
+    (init := (([] : List Expression.Expr), taken, ([] : List Decl)))
+    fun (hyps, names, lemmas) s =>
+      match s with
+      | .assume _ p _ => (p :: hyps, names, lemmas)
+      | .assert label q md =>
+        let e := hyps.foldl (init := q) fun body p => LExpr.mkApp () boolImpliesOp [p, body]
+        let name := Lemma.freshName names label
+        (hyps, name :: names, .lemma { name, typeArgs, e := Lemma.forallOver binders e } md :: lemmas)
+      | _ => (hyps, names, lemmas)
+  lemmas.reverse
+
+/--
+Generate the well-formedness lemmas for a procedure's contract.
 
 For each precondition+postcondition (in order):
-  - Assert WF of partial function calls in the condition
+  - Check the preconditions of partial function calls in the condition
   - Assume the condition (for use by subsequent clauses)
+
+The lemmas quantify over the procedure's parameters and the `old` values of
+its in-out parameters. Preconditions describe the entry state, so in them an
+in-out parameter stands for its `old` value.
 -/
-def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure)
-    (md : Imperative.MetaData Expression)
-: Option Decl :=
+def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : List String)
+    (proc : Procedure) : List Decl :=
   let name := proc.header.name.name
+  let inouts := proc.header.getInoutParams.toList
+  let atEntry (e : Expression.Expr) : Expression.Expr :=
+    inouts.foldl (init := e) fun e (x, _) =>
+      LExpr.substFvar e x (.fvar () (CoreIdent.mkOld x.name) none)
   let precondStmts := proc.spec.preconditions.flatMap fun (label, check) =>
-    processCondition F check.expr s!"{name}_pre_{label}" label check.md
+    processCondition F (atEntry check.expr) s!"{name}_pre_{label}" label check.md
   let postcondStmts := proc.spec.postconditions.flatMap fun (label, check) =>
     processCondition F check.expr s!"{name}_post_{label}" label check.md
-  let body := precondStmts ++ postcondStmts
-  if hasAssert body then
-    some <| .proc {
-      header := { proc.header with name := ⟨wfProcName name, ()⟩, noFilter := true }
-      spec := { preconditions := [], postconditions := [] }
-      body := .structured body
-    } md
-  else
-    none
+  let binders := proc.header.inputs.toList ++ proc.header.getOutputOnlyParams.toList ++
+    inouts.map fun (x, ty) => (CoreIdent.mkOld x.name, ty)
+  mkWFLemmas taken proc.header.typeArgs binders (precondStmts ++ postcondStmts)
 
 /-! ## Function well-formedness generation -/
 
@@ -216,25 +239,14 @@ def mkFuncWFStmts (F : @Lambda.Factory CoreLParams) (funcName : String)
     none
 
 /--
-Generate a well-formedness checking procedure for a top-level function declaration.
+Generate the well-formedness lemmas for a top-level function declaration,
+quantified over the function's inputs.
 -/
-def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function)
-    (md : Imperative.MetaData Expression)
-: Option Decl :=
-  let funcName := func.name.name
-  (mkFuncWFStmts F funcName func.preconditions func.body md).bind
-  (fun wfStmts =>
-    some <| .proc {
-      header := {
-        name := ⟨wfProcName funcName, ()⟩
-        typeArgs := func.typeArgs
-        inputs := func.inputs
-        outputs := []
-        noFilter := true
-      }
-      spec := { preconditions := [], postconditions := [] }
-      body := .structured wfStmts
-    } md)
+def mkFuncWFLemmas (F : @Lambda.Factory CoreLParams) (taken : List String)
+    (func : Function) (md : Imperative.MetaData Expression) : List Decl :=
+  match mkFuncWFStmts F func.name.name func.preconditions func.body md with
+  | some stmts => mkWFLemmas taken func.typeArgs func.inputs.toList stmts
+  | none => []
 
 /-! ## Statement transformation -/
 
@@ -252,9 +264,7 @@ def transformStmts (ss : List Statement)
   decreasing_by all_goals term_by_mem
 
 /-- Eliminate function preconditions from statement, adding assertions
-  at call sites (including in existing assertions and loop invariants).
-  Function declaration statements produce a well-formedness check block
-  mirroring the procedure created for top-level functions. -/
+  at call sites (including in existing assertions and loop invariants). -/
 def transformStmt (s : Statement)
     : CoreTransformM (Bool × List Statement) := do
   let F ← getFactory
@@ -316,30 +326,6 @@ def transformStmt (s : Statement)
       [.loop guard measure invariant (body' ++ measureAssertsEnd ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])
-  | .funcDecl decl md => do
-    let funcName := decl.name.name
-    -- Add function to factory before processing its preconditions/body
-    let func ← liftDiag ((Function.ofPureFunc decl).mapError Message.fromFormat)
-
-    let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-      | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-    let F' := F.push func.toLFunc notMem
-    setFactory F'
-    let decl' := { decl with preconditions := [] }
-    let hasPreconds := !decl.preconditions.isEmpty
-    if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
-
-    match mkFuncWFStmts F' funcName decl.preconditions decl.body md with
-    | none => return (hasPreconds, [.funcDecl decl' md])
-    | some wfStmts =>
-      incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}" wfStmts.length
-      -- Add init statements for function parameters so they're in scope
-      let paramInits := decl.inputs.toList.map fun (name, ty) =>
-        Statement.init name ty .nondet md
-      -- A `$$wf` block is always emitted here, so the program changed even when
-      -- the function itself had no preconditions (its body still calls a
-      -- precondition-carrying function).
-      return (true, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
@@ -348,19 +334,10 @@ end
 
 /-! ## Main transformation -/
 
-/-- Add a precondition-WF procedure as a leaf node in the cached call graph.
-These procedures contain only assert/assume statements and make no procedure
-calls, so they have no outgoing edges. -/
-private def addWFProcToCallGraph (name : String) : CoreTransformM Unit :=
-  modify fun σ => match σ.cachedAnalyses.callGraph with
-  | .some cg => { σ with cachedAnalyses := { σ.cachedAnalyses with
-      callGraph := .some (cg.addLeafNode name) } }
-  | .none => σ
-
 /--
 Transform an entire program:
-1. For each procedure, transform its body and if needed generate a WF procedure
-2. For each function, strip preconditions and if needed generate a WF procedure
+1. For each procedure, transform its body and if needed generate a WF lemma
+2. For each function, strip preconditions and if needed generate a WF lemma
 3. For each function call, assert that the preconditions hold
 
 Returns (changed, transformed program).
@@ -375,14 +352,21 @@ def precondElim (p : Program)
   -- afresh and duplicates must surface as errors).
   let savedF ← getFactory
   try
-    let (changed, newDecls) ← transformDecls p.decls
+    -- Generated lemmas are named away from every declaration of the program.
+    let taken := p.decls.flatMap fun d => d.names.map (·.name)
+    let listed := p.decls.flatMap fun
+      | .proc proc _ => proc.header.lemmas
+      | .func f _ => f.lemmas
+      | .recFuncBlock fs _ => fs.flatMap (·.lemmas)
+      | _ => []
+    let (changed, newDecls) ← transformDecls taken listed p.decls
     setFactory savedF
     return (changed, { decls := newDecls })
   catch e =>
     setFactory savedF
     throw e
 where
-  transformDecls (decls : List Decl)
+  transformDecls (taken listed : List String) (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
     let mut acc : Array Decl := #[]
     let mut changed := false
@@ -392,36 +376,27 @@ where
       let rest := remaining.tail
       match d with
       | .proc proc md => do
-        if TermCheck.isTermProc proc.header.name.name then
-          acc := acc.push d
-        else
-          let F ← getFactory
-          let (bodyChanged, proc') ← match proc.body with
-            | .structured ss =>
-              let (c, body') ← transformStmts ss
-              pure (c, { proc with body := .structured body' })
-            -- A CFG body cannot be walked here, and passing it through would
-            -- lose the well-formedness and precondition asserts it owes: the
-            -- obligations would go missing rather than fail. `noCFGBodies` is
-            -- declared as a requirement; this is where it is enforced.
-            | .cfg _ =>
-              throw (Strata.Message.fromFormat
-                f!"❌ PrecondElim: procedure {proc.header.name.name} has a CFG body; \
-                   preconditions can only be eliminated from structured bodies.")
-          setFactory F -- reset factory
-          let procDecl := Decl.proc proc' md
-          match mkContractWFProc F proc md with
-          | some wfDecl => do
-            incrementStat s!"{Stats.wfProceduresGenerated}"
-            incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-              (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
-            addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
-            changed := true
-            acc := acc.push wfDecl
-            acc := acc.push procDecl
-          | none =>
-            changed := changed || bodyChanged
-            acc := acc.push procDecl
+        let F ← getFactory
+        let (bodyChanged, proc') ← match proc.body with
+          | .structured ss =>
+            let (c, body') ← transformStmts ss
+            pure (c, { proc with body := .structured body' })
+          -- A CFG body cannot be walked here, and passing it through would
+          -- lose the well-formedness and precondition asserts it owes: the
+          -- obligations would go missing rather than fail. `noCFGBodies` is
+          -- declared as a requirement; this is where it is enforced.
+          | .cfg _ =>
+            throw (Strata.Message.fromFormat
+              f!"❌ PrecondElim: procedure {proc.header.name.name} has a CFG body; \
+                 preconditions can only be eliminated from structured bodies.")
+        setFactory F -- reset factory
+        let wfDecls := mkContractWFLemmas F taken proc
+        incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
+        changed := changed || bodyChanged || !wfDecls.isEmpty
+        acc := acc ++ wfDecls.toArray
+        let header := { proc'.header with
+          lemmas := proc'.header.lemmas ++ wfDecls.map (·.name.name) }
+        acc := acc.push (Decl.proc { proc' with header } md)
       | .func func md => do
         let F ← getFactory
         let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
@@ -429,21 +404,15 @@ where
         let F' := F.push func.toLFunc notMem
         setFactory F'
         let func' := { func with preconditions := [] }
-        let funcDecl := Decl.func func' md
         let hasPreconds := !func.preconditions.isEmpty
         if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
-        match mkFuncWFProc F' func md with
-        | some wfDecl => do
-          incrementStat s!"{Stats.wfProceduresGenerated}"
-          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
-          addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
-          changed := true
-          acc := acc.push wfDecl
-          acc := acc.push funcDecl
-        | none =>
-          changed := changed || hasPreconds
-          acc := acc.push funcDecl
+        let wfDecls := mkFuncWFLemmas F' taken func md
+        incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
+        changed := changed || hasPreconds || !wfDecls.isEmpty
+        -- A non-recursive function cannot mention itself in its preconditions
+        -- or body, so its lemmas never mention it and precede it.
+        acc := acc ++ wfDecls.toArray
+        acc := acc.push (Decl.func { func' with lemmas := func'.lemmas ++ wfDecls.map (·.name.name) } md)
       | .recFuncBlock funcs md => do
         let F ← getFactory
         let F' ← funcs.foldlM (init := F) fun F func =>  do
@@ -451,28 +420,33 @@ where
             | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
           pure <| F.push func.toLFunc notMem
         setFactory F'
-        let funcs' := funcs.map ({ · with preconditions := [] })
-        let funcDecl := Decl.recFuncBlock funcs' md
         let hasPreconds := funcs.any (!·.preconditions.isEmpty)
         let numStripped := funcs.foldl (fun n f =>
           if !f.preconditions.isEmpty then n + 1 else n) 0
         incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
-        let wfDecls ← funcs.filterMapM fun func => do
-          match mkFuncWFProc F' func md with
-          | some wfDecl => do
-            incrementStat s!"{Stats.wfProceduresGenerated}"
-            incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-              (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
-            addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
-            return some wfDecl
-          | none => return none
-        if !wfDecls.isEmpty then
-          changed := true
-          acc := acc.push funcDecl
-          acc := acc ++ wfDecls.toArray
-        else
-          changed := changed || hasPreconds
-          acc := acc.push funcDecl
+        let wfDeclss := funcs.map (mkFuncWFLemmas F' taken · md)
+        let funcs' := (funcs.zip wfDeclss).map fun (func, wfDecls) =>
+          { func with preconditions := [],
+                      lemmas := func.lemmas ++ wfDecls.map (·.name.name) }
+        let wfDecls := wfDeclss.flatten
+        incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
+        changed := changed || hasPreconds || !wfDecls.isEmpty
+        -- The lemmas follow the block: a body's path conditions may call the
+        -- block's functions.
+        acc := acc.push (Decl.recFuncBlock funcs' md)
+        acc := acc ++ wfDecls.toArray
+      | .lemma l md => do
+        -- A lemma's partial calls are checked like an assertion's, by
+        -- well-formedness lemmas declared before it. A lemma that a
+        -- declaration lists was generated, such as a termination check, and
+        -- its owner's own well-formedness lemmas already cover its calls.
+        let F ← getFactory
+        let wfDecls := if listed.contains l.name then [] else
+          mkWFLemmas taken l.typeArgs [] (collectPrecondAsserts F l.e l.name md)
+        incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
+        changed := changed || !wfDecls.isEmpty
+        acc := acc ++ wfDecls.toArray
+        acc := acc.push d
       | .type (.data block) _ => do
         let F ← getFactory
         let bf ← liftDiag (Lambda.genBlockFactory (T := CoreLParams) block)
@@ -493,9 +467,9 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- A CFG-bodied procedure is passed through untouched, so its
   -- well-formedness checks would go missing rather than fail; declaring the
   -- requirement turns that into a rejected pipeline.
-  -- A `funcDecl` statement becomes a block declaring the function's
-  -- parameters, which declares rather than reassigns, so
-  -- `staticSingleAssignment` survives. `noBetaRedexes` is not claimed: a
+  -- The pass only inserts assertion commands ahead of existing statements and
+  -- never introduces new assignments, so `staticSingleAssignment` survives.
+  -- `noBetaRedexes` is not claimed: a
   -- precondition is instantiated by substituting the call's arguments into it,
   -- and a function-typed parameter applied to an abstraction argument would
   -- leave a redex behind.
@@ -504,7 +478,7 @@ def precondElimPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       PrecondElim.precondElim prog
 

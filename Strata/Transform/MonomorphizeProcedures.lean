@@ -10,13 +10,15 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementType
 public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
 import all Strata.DL.Imperative.Stmt
 
 /-! # Monomorphize Procedures
 
 The `MonomorphizeProcedures` program transformation monomorphizes every
-polymorphic procedure so that no procedure's types mention type variables.
+polymorphic procedure so that no procedure's types mention type variables. It
+monomorphizes polymorphic lemmas the same way: a lemma's type parameters are
+replaced by fresh opaque types in its formula.
 
 ## Where it runs
 
@@ -49,7 +51,7 @@ For each procedure whose `header.typeArgs` is `x₁, …, xₖ`:
 2. A type substitution mapping each `xᵢ` to its opaque nullary type constructor
    is applied to the whole procedure: input/output signatures, precondition and
    postcondition expressions, and every expression *and local declaration type*
-   in the body (`LExpr.applySubst` for expression annotations, `LMonoTy.subst`
+   in the body (`LExpr.applyTypeSubst` for expression annotations, `LMonoTy.subst`
    for signature and declaration types).
 3. `header.typeArgs` is cleared, so the procedure is now monomorphic.
 
@@ -91,9 +93,9 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
       outputs := proc.header.outputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)) },
     spec := { proc.spec with
       preconditions :=
-        proc.spec.preconditions.map (fun (l, c) => (l, { c with expr := c.expr.applySubst S })),
+        proc.spec.preconditions.map (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst S })),
       postconditions :=
-        proc.spec.postconditions.map (fun (l, c) => (l, { c with expr := c.expr.applySubst S })) },
+        proc.spec.postconditions.map (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst S })) },
     body := body }
 
 /-! ### The transformation -/
@@ -112,30 +114,46 @@ private def opaqueTypePrefix : String := "$__opaque"
 private def genOpaqueTypeName (procName tyVar : String) : CoreGenM CoreIdent :=
   CoreGenState.gen ⟨s!"{opaqueTypePrefix}_{procName}_{tyVar}", ()⟩
 
+/-- Mint one fresh opaque type per type variable of the declaration `name`.
+    Returns the opaque type declarations and the substitution mapping each type
+    variable to its opaque type. -/
+def mkOpaqueSubst (name : String) (tyVars : List TyIdentifier) :
+    CoreTransformM (List Decl × Subst) := do
+  let mut pairs : List (TyIdentifier × LMonoTy) := []
+  let mut opaqueDecls : List Decl := []
+  for tv in tyVars do
+    let nm ← genOpaqueTypeName name tv
+    pairs := (tv, LMonoTy.tcons nm.name []) :: pairs
+    opaqueDecls := Decl.type (.con { name := nm.name, params := [] }) .empty :: opaqueDecls
+  return (opaqueDecls.reverse, [HMap.ofList pairs.reverse])
+
 /-- Monomorphize a single procedure.  One fresh opaque type is minted per
     declared type parameter (`header.typeArgs`); the opaque type declarations are
     returned first, followed by the substituted procedure.  A procedure with no
     type parameters is returned unchanged. -/
 def monomorphizeProc (proc : Procedure) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
-  let tyVars := proc.header.typeArgs.dedup
+  let tyVars := proc.header.typeArgs.uniq
   if tyVars.isEmpty then
     return [Decl.proc proc md]
   else
-    let procName := proc.header.name.name
-    let mut pairs : List (TyIdentifier × LMonoTy) := []
-    let mut opaqueDecls : List Decl := []
-    for tv in tyVars do
-      let nm ← genOpaqueTypeName procName tv
-      pairs := pairs ++ [(tv, LMonoTy.tcons nm.name [])]
-      opaqueDecls := opaqueDecls ++ [Decl.type (.con { name := nm.name, params := [] }) .empty]
-    let scope : SubstOne := HMap.ofList pairs
-    let S : Subst := [scope]
+    let (opaqueDecls, S) ← mkOpaqueSubst proc.header.name.name tyVars
     let proc' ← substProc S proc
     return opaqueDecls ++ [Decl.proc proc' md]
 
-/-- Monomorphize every procedure in the program, introducing opaque types for
-    the free type variables of each polymorphic procedure. -/
+/-- Monomorphize a lemma: a lemma holds at every instantiation of its type
+    parameters, so it is checked at fresh opaque types, as a procedure is. -/
+def monomorphizeLemma (l : Lemma) (md : MetaData Expression) :
+    CoreTransformM (List Decl) := do
+  let tyVars := l.typeArgs.uniq
+  if tyVars.isEmpty then
+    return [Decl.lemma l md]
+  else
+    let (opaqueDecls, S) ← mkOpaqueSubst l.name tyVars
+    return opaqueDecls ++ [Decl.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
+
+/-- Monomorphize every procedure and lemma in the program, introducing opaque
+    types for the type parameters of each polymorphic one. -/
 def run (p : Program) : CoreTransformM Program := do
   let out ← p.decls.foldlM (init := (#[] : Array Decl)) fun acc decl => do
     match decl with
@@ -160,6 +178,9 @@ def run (p : Program) : CoreTransformM Program := do
           else
             let contrib ← monomorphizeProc proc md
             pure (acc ++ contrib.toArray)
+    | .lemma l md => do
+      let contrib ← monomorphizeLemma l md
+      pure (acc ++ contrib.toArray)
     | _ => pure (acc.push decl)
   return { decls := out.toList }
 
@@ -168,7 +189,7 @@ end MonomorphizeProcedures
 open Core.Transform in
 /-- `CoreTransformM` runner for `MonomorphizeProcedures`, suitable for use with
     `Core.Transform.run`.  Reports whether any opaque type declaration was
-    introduced (which happens iff some procedure was monomorphized). -/
+    introduced (which happens iff some procedure or lemma was monomorphized). -/
 def monomorphizeProcedures (p : Program) : CoreTransformM (Bool × Program) := do
   let p' ← MonomorphizeProcedures.run p
   return (p'.decls.length != p.decls.length, p')
@@ -187,7 +208,7 @@ def monomorphizeProceduresPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated])
     fun prog =>
       monomorphizeProcedures prog
 

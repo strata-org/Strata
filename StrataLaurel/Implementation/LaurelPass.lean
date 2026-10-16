@@ -95,7 +95,8 @@ structure PassMeta where
   needsResolves : Bool := false
   /-- A description of what this pass does, used for documentation generation. -/
   documentation : String
-  /-- Shapes this pass introduces into the program. -/
+  /-- Shapes this pass introduces into the program. Disjoint from `removes` and
+      from `unsupported`; `orderingAnalysis` rejects a shape declared in both. -/
   creates : List NodeKind := []
   /-- Shapes that are gone from the program after this pass has run. -/
   removes : List NodeKind := []

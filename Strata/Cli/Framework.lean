@@ -115,6 +115,10 @@ structure Command where
   flags : List Flag := []
   help : String
   callback : Vector String args.length → ParsedFlags → IO Unit
+  /-- Flags that report something instead of running the command, paired with what they
+      print. One of these lets the command be invoked without its arguments, so
+      `verify --display-phases` needs no file to verify. -/
+  reportFlags : List (String × (ParsedFlags → IO Unit)) := []
 
 def includeFlag : Flag :=
   { name := "include", help := "Add a dialect search path.", takesArg := .repeat "path" }
@@ -237,6 +241,21 @@ private partial def parseArgs (cmdName : String)
   | [] =>
     pure (acc, pflags)
 
+/-- Run `cmd` when the argument count matches. With no arguments, a reporting flag answers
+    instead: a flag that only prints needs no input file (for example `--display-phases`, or
+    `--phases` with no pipeline left to run). Any other count is an error, because a report
+    would discard the arguments the caller gave. -/
+def runParsedCommand (cmd : Command) (args : Array String) (pflags : ParsedFlags) : IO Unit :=
+  if p : args.size = cmd.args.length then
+    cmd.callback ⟨args, p⟩ pflags
+  else if args.isEmpty then
+    match cmd.reportFlags.find? fun (name, _) =>
+            pflags.getBool name || (pflags.getString name).isSome with
+    | some (_, report) => report pflags
+    | none => exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
+  else
+    exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
+
 /-- Run a single command directly (for per-command executables).
     Parses `args` against the command's flag set, then invokes the callback. -/
 def runCommand (cmd : Command) (args : List String) : IO Unit := do
@@ -247,10 +266,7 @@ def runCommand (cmd : Command) (args : List String) : IO Unit := do
     let flagMap : Std.HashMap String Flag :=
       cmd.flags.foldl (init := {}) fun m f => m.insert f.name f
     let (parsed, pflags) ← parseArgs cmd.name flagMap #[] {} args
-    if p : parsed.size = cmd.args.length then
-      cmd.callback ⟨parsed, p⟩ pflags
-    else
-      exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
+    runParsedCommand cmd parsed pflags
   catch e =>
     exitFailure e.toString
 
@@ -271,10 +287,7 @@ def runCommandMap (map : Std.HashMap String Command)
         let flagMap : Std.HashMap String Flag :=
           cmd.flags.foldl (init := {}) fun m f => m.insert f.name f
         let (args, pflags) ← parseArgs cmd.name flagMap #[] {} args
-        if p : args.size = cmd.args.length then
-          cmd.callback ⟨args, p⟩ pflags
-        else
-          exitCmdFailure cmd.name s!"{cmd.name} expects {cmd.args.length} argument(s)."
+        runParsedCommand cmd args pflags
     | [] => do
       exitFailure "Expected subcommand."
   catch e =>

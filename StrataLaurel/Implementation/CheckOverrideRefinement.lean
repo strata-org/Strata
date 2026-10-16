@@ -32,8 +32,16 @@ violating override silently breaks the caller's proof.
 The checker procedures are ordinary top-level procedures with no callers. A
 `requires` clause is *assumed*; an `assert` in the body is *checked*. So
 `checker(params) requires Parent.pre opaque { assert Child.pre }` verifies iff
-`Parent.pre ⇒ Child.pre`, and a failure surfaces as a normal
-`assertion could not be proved` diagnostic pointing at the offending override.
+`Parent.pre ⇒ Child.pre`.
+
+Obligations are per-clause, so an ancestor with several postconditions yields one diagnostic per
+clause the override fails to re-establish. `refinementCheckers` anchors each at the OVERRIDE's
+method name, which puts them all at one position and leaves the quoted clause in the message as
+the only thing telling them apart — so the anchoring and the quoting only work together.
+
+The FRAME obligation is anchored by `ModifiesClauses`, at the checker procedure's own name,
+which `refinementProcName` copies from the override — so it coincides without being anchored
+here, and takes none of the fallback below.
 
 This pass runs BEFORE `LiftInstanceProcedures` (methods are still attached to
 their composites, the `extending` chain is intact) and is purely ADDITIVE — it
@@ -135,13 +143,27 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
   -- Empty for a non-generic family ⇒ those checkers carry no type args (non-poly).
   let allTypeArgs := childTypeArgs ++ child.typeArgs
   -- Liskov-specific diagnostic summaries, so a failed refinement VC names the override instead
-  -- of a bare "postcondition could not be proved" on the synthetic checker. Stamped on the
-  -- `summary` field ONLY (never the condition or its `source`), so no VC is split or re-anchored
-  -- and `.failsExactly` counts are unchanged.
+  -- of a bare "postcondition could not be proved" on the synthetic checker. The two quote
+  -- OPPOSITE sides: the pre-checker asserts the CHILD's clause, the demand the inherited
+  -- precondition does not license; the post-checker quotes the INHERITED clause, renamed into
+  -- the child's parameter names so the message reads in the names the user is looking at.
   let overriddenDesc := s!"'{parentTypeName.text}.{child.name.text}'"
-  let preMsg := s!"override precondition no stronger than {overriddenDesc} (Liskov)"
-  let postMsg := s!"override postcondition no weaker than {overriddenDesc} (Liskov)"
-  let frameMsg := s!"override modifies no more than {overriddenDesc} (Liskov)"
+  let shown := fun (e : StmtExprMd) => toString (formatStmtExpr e)
+  -- The verifier completes a summary with " could not be proved", so each stays a NOUN PHRASE
+  -- naming the obligation, with the clause INSIDE it. Appending the clause instead would read
+  -- "…must still guarantee 'r >= 0' could not be proved", where the suffix attaches to the
+  -- clause rather than to the obligation.
+  let preMsg := fun (e : StmtExprMd) =>
+    s!"override precondition '{shown e}' no stronger than {overriddenDesc}"
+  let postMsg := fun (e : StmtExprMd) =>
+    s!"override postcondition no weaker than '{shown e}' from {overriddenDesc}"
+  let frameMsg := s!"override modifies no more than {overriddenDesc}"
+  -- A frontend with no source for a declaration gives its identifiers `SourceRange.none`, and an
+  -- obligation anchored there yields a diagnostic no consumer can place, so the clause stands in:
+  -- a worse place to report, but a real one. No Laurel program reaches that branch, since source
+  -- always has positions.
+  let anchorFor (clause : StmtExprMd) : FileRange :=
+    if src.range.isNone then clause.source else src
   let preChecker : List Procedure :=
     if childPres.isEmpty then []  -- nothing the child demands ⇒ contravariance trivially holds
     else
@@ -151,7 +173,7 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
       let assume := conjoinConditions src (parentPres.map
         (fun c => { c with condition := rename c.condition }))
       let assertStmts : List StmtExprMd :=
-        (childPres.map (·.condition)).map (fun a => ⟨ .Assert a (some preMsg), src ⟩)
+        (childPres.map (·.condition)).map (fun a => ⟨ .Assert a (some (preMsg a)), anchorFor a ⟩)
       [{ name := refinementProcName childTypeName child.name (q "refines$pre")
          typeArgs := allTypeArgs
          inputs := child.inputs
@@ -211,8 +233,12 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
           preconditions := parentPres.map
             (fun c => { c with condition := rename c.condition })
           decreases := none
+          -- An inherited condition arrives carrying the ANCESTOR's position, so re-stamp it.
           body := .Opaque
-                    (parentPosts.map (fun c => { c with condition := rename c.condition, summary := c.summary.orElse (fun _ => some postMsg) }))
+                    (parentPosts.map (fun c =>
+                      let renamed := rename c.condition
+                      { c with condition := { renamed with source := anchorFor renamed },
+                               summary := c.summary.orElse (fun _ => some (postMsg renamed)) }))
                     (some ⟨ .Block [callStmt] none, src ⟩)
                     ((renameModifies parentModifies).map (fun g => { g with summary := g.summary.orElse (fun _ => some frameMsg) })) }
       [companion, checker]

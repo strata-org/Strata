@@ -10,6 +10,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Expressions
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.LExprType
 
 namespace Strata
 
@@ -18,7 +19,7 @@ namespace Strata
 Core-to-Core transforms that replace function calls with their bodies.
 
 Uses the same inlining logic as `LExprEval.eval`: `Factory.callOfLFunc`
-to decompose applications, `LFunc.computeTypeSubst` + `LExpr.applySubst`
+to decompose applications, `LFunc.computeTypeSubst` + `LExpr.applyTypeSubst`
 for polymorphic type instantiation, and `substFvarsLifting` for
 capture-safe substitution under binders.
 
@@ -47,7 +48,7 @@ private def tryInlineCall
     | some body =>
       match Lambda.LFunc.computeTypeSubst lfunc op_expr args with
       | some tySubst =>
-        let body := body.applySubst tySubst
+        let body := body.applyTypeSubst tySubst
         let input_map := lfunc.inputs.keys.zip args
         some (Lambda.LExpr.substFvarsLifting body input_map)
       | none => none
@@ -135,7 +136,7 @@ namespace FunctionInlining
 open Strata (inlineFuncDefs inlineFuncDefsBounded)
 
 /-- Apply a Core expression transform to every expression in a program:
-    axiom bodies and procedures (pre/postcondition checks and structured
+    axiom and lemma bodies and procedures (pre/postcondition checks and structured
     bodies via `Procedure.mapExprs`; CFG bodies unchanged). All other
     declaration kinds pass through untouched — deliberately so for inlining:
     `.func`/`.recFuncBlock` are the inlining *source* (rewriting their bodies
@@ -147,6 +148,7 @@ open Strata (inlineFuncDefs inlineFuncDefsBounded)
   { pgm with decls := pgm.decls.map fun d =>
     match d with
     | .ax ax md => .ax { ax with e := f ax.e } md
+    | .lemma l md => .lemma { l with e := f l.e } md
     | .proc p md => .proc (p.mapExprs f) md
     | other => other }
 
@@ -193,8 +195,8 @@ def functionInliningPipelinePhase (maxDepth : Option Nat := none) : PipelinePhas
     (requires := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs,
-                         .noNondetGuards, .noInternalFuncDecl, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noNondetGuards, .hasObligationForm,
+                         .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       -- The program's functions are in the factory for this pass alone: the encoder
       -- environment registers every `.func` itself and rejects a redefinition.

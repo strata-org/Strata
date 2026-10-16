@@ -26,7 +26,7 @@ open Std (ToFormat Format format)
 public section
 
 /-- Type identifiers. For now, these are just strings. -/
-@[expose] abbrev TyIdentifier := String
+abbrev TyIdentifier := String
 
 instance : Coe String TyIdentifier where
   coe := id
@@ -43,7 +43,7 @@ inductive LMonoTy : Type where
   | bitvec (size : Nat)
   deriving Inhabited, Repr, Hashable
 
-@[expose] abbrev LMonoTys := List LMonoTy
+abbrev LMonoTys := List LMonoTy
 
 @[expose, match_pattern]
 def LMonoTy.bool : LMonoTy :=
@@ -153,7 +153,7 @@ inductive LTy : Type where
   | forAll (vars : List TyIdentifier) (ty : LMonoTy)
   deriving Inhabited, Repr
 
-@[expose] abbrev LTys := List LTy
+abbrev LTys := List LTy
 
 ---------------------------------------------------------------------
 

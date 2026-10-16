@@ -1,6 +1,9 @@
 name = "StrataDoc"
 defaultTargets = ["ddm", "langdef", "langsem", "laureldesign", "laurelimpl", "laurelguide", "transforms", "irtranslation"]
 
+[leanOptions]
+warningAsError = true
+
 [[require]]
 name = "Strata"
 path = "../.."
@@ -8,7 +11,7 @@ path = "../.."
 [[require]]
 name = "verso"
 git = "https://github.com/leanprover/verso"
-rev = "v4.29.0"
+rev = "v4.31.0"
 
 [[lean_lib]]
 name = "DDMDoc"

@@ -8,7 +8,7 @@ module
 meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
 
-/-! # Tests for `VerifyOptions.disableCSE`
+/-! # Tests for a pipeline without common subexpression elimination
 
 Smoke-tests the pipeline with common subexpression elimination disabled.
 CSE is model-preserving (it only introduces definitional equalities), so
@@ -39,7 +39,14 @@ spec {
 };
 #end
 
--- Baseline: the default pipeline (CSE enabled).
+
+/-- The default order with common subexpression elimination dropped, which is the pipeline
+    these runs verify with. -/
+private def withoutCSE : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
+  (Core.ValidatedPipeline.ofList
+    ((Core.corePipelinePhases Core.VerifyOptions.quiet).filter
+      fun p => p.phase.name != "commonSubexprElim")).toOption
+
 /--
 info:
 Obligation: CseProbe_ensures_2
@@ -59,8 +66,8 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify cseProbePgm (options :=
-  { Core.VerifyOptions.quiet with disableCSE := true })
+#eval Core.verify cseProbePgm (options := Core.VerifyOptions.quiet)
+  (pipeline := withoutCSE)
 
 /-- A failing twin of `cseProbePgm`: same duplicated `int.add(a, b)`
     subexpressions for CSE to extract, but the postcondition is false at
@@ -99,8 +106,8 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval Core.verify cseProbeFailPgm (options :=
-  { Core.VerifyOptions.quiet with disableCSE := true })
+#eval Core.verify cseProbeFailPgm (options := Core.VerifyOptions.quiet)
+  (pipeline := withoutCSE)
 
 end Strata
 end

@@ -6,14 +6,14 @@
 module
 import all Strata.DL.Lambda.LTyProps
 
-public import Strata.DL.Lambda.LExprWF
+public import Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.LExprWF
 
 /-! ## Type Checking for Annotated Lambda Expressions
 
-`LExpr.typeCheck` returns `some τ` when the expression is well-typed with type
-`τ`, and `none` otherwise. `HasTypeA` is the corresponding inductive typing
-relation, and the two are proved equivalent.
+`LExpr.typeCheck`, defined in `Strata.DL.Lambda.LExprType`, returns `some τ` when
+the expression is well-typed with type `τ`, and `none` otherwise. `HasTypeA` is
+the corresponding inductive typing relation, and the two are proved equivalent.
 -/
 
 namespace Lambda
@@ -21,46 +21,6 @@ namespace Lambda
 open LExpr
 
 public section
-
-/-- Typecheck an annotated `LExpr`, returning `some τ` if well-typed, `none`
-otherwise. `ctx` maps de Bruijn indices to their types from enclosing
-binders. -/
-@[expose]
-def LExpr.typeCheck {T : LExprParams} (ctx : List LMonoTy) : LExpr T.mono → Option LMonoTy
-  | .const _ c => some c.ty
-  | .op _ _ (some ty) => some ty
-  | .op _ _ none => none
-  | .fvar _ _ (some ty) => some ty
-  | .fvar _ _ none => none
-  | .bvar _ i => ctx[i]?
-  | .abs _ _ (some aty) body => do
-    let rty ← typeCheck (aty :: ctx) body
-    some (.arrow aty rty)
-  | .abs _ _ none _ => none
-  | .quant _ _ _ (some qty) tr body => do
-    let _ ← typeCheck (qty :: ctx) tr
-    let bty ← typeCheck (qty :: ctx) body
-    guard (bty == .bool)
-    some .bool
-  | .quant _ _ _ none _ _ => none
-  | .app _ fn arg => do
-    let fty ← typeCheck ctx fn
-    let aty ← typeCheck ctx arg
-    let (dom, cod) ← fty.isArrow
-    guard (dom == aty)
-    some cod
-  | .ite _ c t e => do
-    let cty ← typeCheck ctx c
-    let tty ← typeCheck ctx t
-    let ety ← typeCheck ctx e
-    guard (cty == .bool)
-    guard (tty == ety)
-    some tty
-  | .eq _ e1 e2 => do
-    let ty1 ← typeCheck ctx e1
-    let ty2 ← typeCheck ctx e2
-    guard (ty1 == ty2)
-    some .bool
 
 /-- Declarative typing rules for annotated expressions.
 
@@ -435,43 +395,17 @@ then-branch, and else-branch. -/
 @[expose]
 def HasTypeA.ite_inv {T : LExprParams} {Δ : List LMonoTy} {m c t e τ}
     (h : @LExpr.HasTypeA T Δ (.ite m c t e) τ)
-    : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ :=
-  let tcC := LExpr.typeCheck Δ c
-  let tcT := LExpr.typeCheck Δ t
-  let tcE := LExpr.typeCheck Δ e
-  match h_c : tcC, h_t : tcT, h_e : tcE with
-  | some cty, some tty, some ety =>
-    if h_cb : cty == .bool then
-      if h_te : tty == ety then
-        have h' := LExpr.HasTypeA_to_typeCheck h
-        have hcb : cty = .bool := by grind
-        have hte : tty = ety := by grind
-        have hτ : tty = τ := by
-          subst_vars
-          unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard] at h'
-          exact h'
-        ⟨hcb ▸ LExpr.typeCheck_to_HasTypeA h_c,
-         hτ ▸ LExpr.typeCheck_to_HasTypeA h_t,
-         (Eq.trans (hte.symm) hτ) ▸ LExpr.typeCheck_to_HasTypeA h_e⟩
-      else absurd (LExpr.HasTypeA_to_typeCheck h)
-        (by unfold tcC tcT tcE at *
-            have h_ne : ¬ tty = ety := by grind
-            simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard, h_ne]
-            grind)
-    else absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          have h_nb : ¬ cty = .bool := by grind
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind, guard, h_nb])
-  | some _, some _, none => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, h_e, Option.bind])
-  | some _, none, _ => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, h_t, Option.bind])
-  | none, _, _ => absurd (LExpr.HasTypeA_to_typeCheck h)
-      (by unfold tcC tcT tcE at *
-          simp [LExpr.typeCheck, h_c, Option.bind])
+    : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ := by
+  have r := LExpr.HasTypeA_to_typeCheck h
+  simp [LExpr.typeCheck, Option.bind_eq_some_iff, guard] at r
+  have ⟨cty, ⟨(h_c : typeCheck Δ c = some cty), r⟩⟩ := r
+  have ⟨tty, ⟨(h_t : typeCheck Δ t = some tty), r⟩⟩ := r
+  have ⟨ety, ⟨(h_e : typeCheck Δ e = some ety), r⟩⟩ := r
+  have ⟨(hcb : cty = .bool), r⟩ := r
+  have ⟨(hte : tty = ety), (hτ : tty = τ)⟩ := r
+  exact ⟨hcb ▸ LExpr.typeCheck_to_HasTypeA h_c,
+    hτ ▸ LExpr.typeCheck_to_HasTypeA h_t,
+    (Eq.trans (hte.symm) hτ) ▸ LExpr.typeCheck_to_HasTypeA h_e⟩
 
 /-- From `HasTypeA Δ (.eq m e1 e2) τ`, extract the common type and
 sub-proofs. -/

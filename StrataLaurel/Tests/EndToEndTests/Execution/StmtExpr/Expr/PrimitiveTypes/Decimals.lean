@@ -3,12 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import StrataLaurel.Tests.Util.TestLaurel
+module
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
+-- No Core interpreter: real `<` and `+` do not reduce, so asserts fail with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -65,5 +66,15 @@ procedure testDecimalAssertFails()
     var b: real := 2.5;
     assert a == b
 //  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure runAll() entry
+  opaque
+{
+  testDecimalLiterals();
+  testDecimalArithmetic();
+  testDecimalNeg();
+  testDecimalComparisons();
+  testDecimalAssertFails()
 };
 #end

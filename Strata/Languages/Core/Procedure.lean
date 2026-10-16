@@ -182,8 +182,9 @@ structure Procedure.Header where
   inputs   : @LMonoTySignature Unit
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
   outputs  : @LMonoTySignature Unit
-  /-- If true, FilterProcedures will never remove this procedure. -/
-  noFilter : Bool := false
+  /-- Names of the top-level lemmas this procedure depends on, such as the
+      well-formedness lemmas of its contract. -/
+  lemmas : List String := []
   deriving Repr, DecidableEq, Inhabited
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
@@ -238,6 +239,12 @@ def Procedure.Spec.getCheckExprs (conds : ListMap CoreLabel Procedure.Check) :
   let checks := conds.values
   checks.map (fun c => c.expr)
 
+/-- Expressions of checks that are obligations rather than `free` assumptions. -/
+def Procedure.Spec.getDefaultCheckExprs
+    (conds : ListMap CoreLabel Procedure.Check) : List Expression.Expr :=
+  conds.values.filterMap fun c =>
+    if c.attr = .Default then some c.expr else none
+
 def Procedure.Spec.updateCheckExprs
   (es : List Expression.Expr) (conds : ListMap CoreLabel Procedure.Check) :
   ListMap CoreLabel Procedure.Check :=
@@ -250,7 +257,7 @@ def Procedure.Spec.updateCheckExprs
     { c with expr := e } :: go erest crest
 
 /-- A deterministic control-flow graph over Core commands and expressions. -/
-@[expose] abbrev DetCFG := Imperative.DetCFG Expression Command
+abbrev DetCFG := Imperative.DetCFG Expression Command
 
 /-- The body of a Core procedure. An empty structured body (`structured []`)
     represents an abstract/bodyless procedure. -/
@@ -315,21 +322,6 @@ def Procedure.stripMetaData (p : Procedure) : Procedure :=
     | .structured ss => .structured (Imperative.Block.stripMetaData ss)
     | .cfg c => .cfg (DetCFG.stripMetaData c)
   { p with body := body' }
-
--- NOTE : simply discarding the procedure lookup function for now
-instance : HasVarsTrans Expression Statement Procedure where
-  modifiedVarsTrans := Statement.modifiedVarsTrans
-  getVarsTrans := Statement.getVarsTrans
-  definedVarsTrans := Statement.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statement.modifiedOrDefinedVarsTrans
-  allVarsTrans := Statement.allVarsTrans
-
-instance : HasVarsTrans Expression (List Statement) Procedure where
-  modifiedVarsTrans := Statements.modifiedVarsTrans
-  getVarsTrans := Statements.getVarsTrans
-  definedVarsTrans := Statements.definedVarsTrans
-  modifiedOrDefinedVarsTrans := Statements.modifiedOrDefinedVarsTrans
-  allVarsTrans := Statements.allVarsTrans
 
 end
 end Core

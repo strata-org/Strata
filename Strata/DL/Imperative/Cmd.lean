@@ -71,7 +71,7 @@ command. Metadata distinguishes occurrences even when labels are reused.
 TODO: Update AssertId to have the identical definition, because labels can
 overlap, and expr may easily change after transformations.
 -/
-@[expose] abbrev CoverId (P : PureExpr) := String × MetaData P
+abbrev CoverId (P : PureExpr) := String × MetaData P
 
 /-! ## Commands
 
@@ -105,7 +105,7 @@ inductive Cmd (P : PureExpr) : Type where
   -/
   | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
-@[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
+abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .set default .nondet default
@@ -142,6 +142,16 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .init _ _ _ md | .set _ _ md
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
+
+/-- The declared types of the `init` commands in `c`: a singleton for `init`,
+    empty otherwise. -/
+@[expose] def Cmd.initTypes (c : Cmd P) : List P.Ty :=
+  match c with
+  | .init _ ty _ _ => [ty]
+  | _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (Cmd P) where
+  initTypes := Cmd.initTypes
 
 ---------------------------------------------------------------------
 
@@ -209,14 +219,11 @@ def getInArgs (args : List (CallArg P)) : List P.Expr :=
 def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id => some id | _ => none
 
-def getOutArgs (args : List (CallArg P)) : List P.Ident :=
+@[expose] def getOutArgs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .outArg id => some id | _ => none
 
-def getLhs (args : List (CallArg P)) : List P.Ident :=
+@[expose] def getLhs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
-
-def getOutOnly (args : List (CallArg P)) : List P.Ident :=
-  args.filterMap fun | .outArg id => some id | _ => none
 
 def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
   go args newExprs
@@ -283,6 +290,16 @@ instance : HasHavoc P (CmdExt P) where
 
 instance : HasInit P (CmdExt P) where
   init x ty e md := .cmd (.init x ty e md)
+
+/-- The declared init-types of a `CmdExt`: those of the wrapped command; a
+    procedure `call` initializes nothing. -/
+@[expose] def CmdExt.initTypes (c : CmdExt P) : List P.Ty :=
+  match c with
+  | .cmd c => Cmd.initTypes c
+  | .call _ _ _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (CmdExt P) where
+  initTypes := CmdExt.initTypes
 
 ---------------------------------------------------------------------
 

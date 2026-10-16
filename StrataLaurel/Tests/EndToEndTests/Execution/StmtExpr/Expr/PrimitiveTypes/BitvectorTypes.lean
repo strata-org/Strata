@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
@@ -62,5 +61,24 @@ procedure runBitvectorLocals()
   assert x == 100 bv 16;
   var y: bv 8 := 3 bv 8;
   assert y == 3 bv 8
+};
+#end
+
+/-! The ordering comparisons on bitvectors are signed: `255 bv 8` is -1. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure bvOrdering()
+  entry
+  opaque
+{
+  var x: bv 8 := 255 bv 8;
+  var y: bv 8 := 1 bv 8;
+  assert x < y;
+  assert x <= y;
+  assert y > x;
+  assert y >= x;
+  assert !(y < x)
 };
 #end

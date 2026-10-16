@@ -13,7 +13,7 @@ import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprProps
 import all Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LStateProps
-import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.Scopes
 public import Strata.Util.RelationsProps
@@ -24,7 +24,7 @@ public import Strata.Util.RelationsProps
   This file defines a small-step reduction relation `Step` for `LExpr` and
   proves three main theorems about `Step` and `LExpr.eval`:
 
-  - `canonical_value_not_step`: Canonical values are normal forms — no `Step`
+  - `value_not_step`: Values are normal forms — no `Step`
     rule can fire on them.
 
   - `eval_eraseMetadata_invariant`: `LExpr.eval` is invariant under metadata
@@ -73,7 +73,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     rf x = .some e →
     Step F rf (.fvar m x ty) e
 
-/-- Beta reduction. The argument `e2` need not be a canonical value;
+/-- Beta reduction. The argument `e2` need not be a value;
 this relaxation (compared to strict call-by-value) is necessary because `LExpr.eval`
 evaluates both sub-expressions before performing substitution and we want the
 semantics to be flexible enough to handle partial evaluation. -/
@@ -83,7 +83,7 @@ semantics to be flexible enough to handle partial evaluation. -/
     Step F rf (.app m1 (.abs m2 name ty e1) e2) eres
 
 /-- Argument evaluation: reduce the argument of an application.
-Note: this rule does NOT require the function part to be a canonical value.
+Note: this rule does NOT require the function part to be a value.
 Unlike the call-by-value strategy, this allows stepping any
 argument of an application, which is needed for factory calls where `LExpr.eval`
 evaluates all arguments independently (not left-to-right) with possibly limited
@@ -148,7 +148,7 @@ fuels. -/
     Step F rf (.eq m e1 e2) (.eq m' e1' e2)
 
 /-- Evaluation of the right-hand side of an equality.
-Note: this rule does NOT require the LHS to be a canonical value. -/
+Note: this rule does NOT require the LHS to be a value. -/
 | eq_reduce_rhs:
   ∀ (e1 e2 e2':LExpr Tbase.mono),
     Step F rf e2 e2' →
@@ -164,7 +164,7 @@ result. Note that this rule does not enforce an evaluation order. -/
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.body = .some fnbody →
     LFunc.computeTypeSubst fn callee args = .some tySubst →
-    new_body = LExpr.substFvarsLifting (fnbody.applySubst tySubst) (fn.inputs.keys.zip args) →
+    new_body = LExpr.substFvarsLifting (fnbody.applyTypeSubst tySubst) (fn.inputs.keys.zip args) →
     Step F rf e new_body
 
 /-- Evaluate a built-in function when a concrete evaluation function is
@@ -186,9 +186,9 @@ an abstraction, even though the substitution is not represented as an explicit
 syntactic term.
 
 The `x ∈ freeVars body` witness ensures the step only fires when the body
-actually has free variables. This preserves `canonical_value_not_step`:
-`isCanonicalValue` returns `true` for an abs only when it is *closed*
-(`freeVars e = []`), so a canonical abs has no free variables for this rule
+actually has free variables. This preserves `value_not_step`:
+`isValue` returns `true` for an abs only when it is *closed*
+(`freeVars e = []`), so an abstraction that is a value has no free variables for this rule
 to fire on.
 -/
 | abs_subst_fvars:
@@ -237,7 +237,7 @@ theorem ReflTrans_stuck {e e' : LExpr Tbase.mono}
   | refl => rfl
   | step _ b _ hab _ => exact absurd hab (h_stuck b)
 
--- canonical_value_not_step is proved after the helper lemmas below.
+-- value_not_step is proved after the helper lemmas below.
 
 /--
 Multi-step execution: reflexive transitive closure of single steps.
@@ -773,10 +773,10 @@ private theorem getLFuncCall_go_acc_change
 
 
 ---------------------------------------------------------------------
--- Helpers for canonical_value_not_step
+-- Helpers for value_not_step
 
 -- Helper: if callOfLFunc with partial app returns (op, args, f) with the
--- canonical condition (isConstr || blt), and callOfLFunc with full arity
+-- value condition (isConstr || blt), and callOfLFunc with full arity
 -- also succeeds, then isConstr must be true.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 /-- If `callOfLFunc` succeeds with both `allowPartialApp := true` and `false`,
@@ -946,17 +946,17 @@ private theorem getLFuncCall_go_app_acc
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; simp [Prod.mk.injEq] at h
   termination_by e1.sizeOf
 
--- Helper: if `.app m e1 e2` is canonical, then `e1` is also canonical.
--- Needed for the `reduce_1` case: stepping the function part of a canonical app.
+-- Helper: if `.app m e1 e2` is a value, then `e1` is also a value.
+-- Needed for the `reduce_1` case: stepping the function part of a value app.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isCanonicalValue_app_left
+private theorem isValue_app_left
     (F : @Factory Tbase) (m : Tbase.Metadata)
     (e1 e2 : LExpr Tbase.mono)
-    (hc : LExpr.isCanonicalValue F (.app m e1 e2) = true) :
-    LExpr.isCanonicalValue F e1 = true := by
-  -- The .app case of isCanonicalValue goes to the callOfLFunc branch.
+    (hc : LExpr.isValue F (.app m e1 e2) = true) :
+    LExpr.isValue F e1 = true := by
+  -- The .app case of isValue goes to the callOfLFunc branch.
   -- Extract the callOfLFunc result from hc.
-  unfold LExpr.isCanonicalValue at hc
+  unfold LExpr.isValue at hc
   split at hc
   · -- callOfLFunc returned some (op, args, f)
     rename_i op args f h_call
@@ -985,9 +985,9 @@ private theorem isCanonicalValue_app_left
           -- getLFuncCall.go (.app m (.op ..) e2) [] = (.op .., [e2])
           simp only [getLFuncCall.go] at h_lfc
           obtain ⟨rfl, rfl⟩ := h_lfc
-          -- isCanonicalValue F (.op m2 fn2 ty2)
+          -- isValue F (.op m2 fn2 ty2)
           -- callOfLFunc F (.op ..) true uses same factory function, arity 0 ≤ inputs.length
-          -- For .op, isCanonicalValue goes to callOfLFunc branch with 0 args
+          -- For .op, isValue goes to callOfLFunc branch with 0 args
           -- callOfLFunc F (.op ..) true: getLFuncCall returns (.op .., [])
           -- then getFactoryLFunc succeeds (h_gf), ble 0 inputs.length = true
           -- Result: (isConstr || blt 0 inputs.length) && [].all .. which simplifies
@@ -996,7 +996,7 @@ private theorem isCanonicalValue_app_left
             simp only [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go, h_gf]
             have h_ble : Nat.ble 0 func.inputs.length = true := by simp [Nat.ble_eq]
             simp [h_ble]
-          unfold LExpr.isCanonicalValue
+          unfold LExpr.isValue
           -- split on callOfLFunc result
           split
           · -- some case: need (isConstr || blt) && all
@@ -1034,7 +1034,7 @@ private theorem isCanonicalValue_app_left
               omega
             simp [h_ble2]
           -- Now use h_call_e1
-          unfold LExpr.isCanonicalValue
+          unfold LExpr.isValue
           split
           · -- some case
             rename_i op' args_inner f' h_cv2
@@ -1052,15 +1052,15 @@ private theorem isCanonicalValue_app_left
                 rw [h_eq] at h; simp [List.length_append, List.length_cons, List.length_nil] at h ⊢
                 omega
             · rw [h_eq] at h_all
-              have h_all' : (inner ++ [e1'', e2]).all (LExpr.isCanonicalValue F) = true := by
-                rw [show (inner ++ [e1'', e2]).all (LExpr.isCanonicalValue F) =
-                    ((inner ++ [e1'', e2]).attach.map (fun ⟨x, _⟩ => LExpr.isCanonicalValue F x)).all id
+              have h_all' : (inner ++ [e1'', e2]).all (LExpr.isValue F) = true := by
+                rw [show (inner ++ [e1'', e2]).all (LExpr.isValue F) =
+                    ((inner ++ [e1'', e2]).attach.map (fun ⟨x, _⟩ => LExpr.isValue F x)).all id
                   from by simp [List.all_map]]
                 exact h_all
               -- Now derive the goal
-              suffices h_suff : (inner ++ [e1'']).all (LExpr.isCanonicalValue F) = true by
-                rw [show (inner ++ [e1'']).all (LExpr.isCanonicalValue F) =
-                    ((inner ++ [e1'']).attach.map (fun ⟨x, _⟩ => LExpr.isCanonicalValue F x)).all id
+              suffices h_suff : (inner ++ [e1'']).all (LExpr.isValue F) = true by
+                rw [show (inner ++ [e1'']).all (LExpr.isValue F) =
+                    ((inner ++ [e1'']).attach.map (fun ⟨x, _⟩ => LExpr.isValue F x)).all id
                   from by simp [List.all_map]] at h_suff
                 exact h_suff
               rw [List.all_eq_true] at h_all' ⊢
@@ -1086,26 +1086,26 @@ private theorem isCanonicalValue_app_left
   · -- callOfLFunc returned none: hc = false, contradiction
     simp at hc
 
--- Helper: extract `isCanonicalValue F x = true` for `x ∈ args` from the
--- `all` condition in `isCanonicalValue`.
+-- Helper: extract `isValue F x = true` for `x ∈ args` from the
+-- `all` condition in `isValue`.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isCanonicalValue_args_all
+private theorem isValue_args_all
     (F : @Factory Tbase) (args : List (LExpr Tbase.mono))
-    (h_all : args.all (LExpr.isCanonicalValue F) = true)
+    (h_all : args.all (LExpr.isValue F) = true)
     (x : LExpr Tbase.mono) (hx : x ∈ args) :
-    LExpr.isCanonicalValue F x = true := by
+    LExpr.isValue F x = true := by
   rw [List.all_eq_true] at h_all
   exact h_all x hx
 
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-/-- Canonical values have no free variables. -/
-theorem isCanonicalValue_getVars_nil
+/-- Values have no free variables. -/
+theorem isValue_getVars_nil
     (F : @Factory Tbase) (e : LExpr Tbase.mono)
-    (hc : LExpr.isCanonicalValue F e = true) :
+    (hc : LExpr.isValue F e = true) :
     LExpr.LExpr.getVars e = [] := by
   suffices h : ∀ (sz : Nat) (e : LExpr Tbase.mono),
-      e.sizeOf ≤ sz → LExpr.isCanonicalValue F e = true →
+      e.sizeOf ≤ sz → LExpr.isValue F e = true →
       LExpr.LExpr.getVars e = [] from
     h e.sizeOf e (Nat.le_refl _) hc
   intro sz; induction sz with
@@ -1119,31 +1119,31 @@ theorem isCanonicalValue_getVars_nil
     | bvar => rfl
     | op => rfl
     | fvar =>
-      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+      simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
     | abs m n ty body =>
       simp [LExpr.LExpr.getVars]
       have h_closed : LExpr.closed (.abs m n ty body) = true := by
-        simp [LExpr.isCanonicalValue] at hc; exact hc
+        simp [LExpr.isValue] at hc; exact hc
       have h_body_closed : LExpr.closed body = true := by
         simp [LExpr.closed, LExpr.freeVars] at h_closed ⊢; exact h_closed
       exact closed_implies_getVars_nil body h_body_closed
     | quant m qk n ty tr body =>
       have h_closed : LExpr.closed (.quant m qk n ty tr body) = true := by
-        simp [LExpr.isCanonicalValue] at hc; exact hc
+        simp [LExpr.isValue] at hc; exact hc
       exact closed_implies_getVars_nil (.quant m qk n ty tr body) h_closed
     | app m e1 e2 =>
       simp only [LExpr.LExpr.getVars, List.append_eq_nil_iff]
       have hc_app := hc
-      simp [LExpr.isCanonicalValue] at hc
+      simp [LExpr.isValue] at hc
       split at hc
       · rename_i op args f h_call
         simp only [Bool.and_eq_true] at hc
         obtain ⟨h_cond, h_all⟩ := hc
-        have h_e1_can : LExpr.isCanonicalValue F e1 = true :=
-          isCanonicalValue_app_left F m e1 e2 hc_app
+        have h_e1_can : LExpr.isValue F e1 = true :=
+          isValue_app_left F m e1 e2 hc_app
         have h_mem : e2 ∈ args := callOfLFunc_app_arg_mem F e1 e2 m op args f _ h_call
-        have h_e2_can : LExpr.isCanonicalValue F e2 = true :=
-          isCanonicalValue_args_all F args h_all e2 h_mem
+        have h_e2_can : LExpr.isValue F e2 = true :=
+          isValue_args_all F args h_all e2 h_mem
         have h_sz_e1 : e1.sizeOf < (LExpr.app m e1 e2).sizeOf := by
           simp [LExpr.sizeOf]; omega
         have h_sz_e2 : e2.sizeOf < (LExpr.app m e1 e2).sizeOf := by
@@ -1153,17 +1153,17 @@ theorem isCanonicalValue_getVars_nil
         · exact ih e2 (by omega) h_e2_can
       · simp at hc
     | ite =>
-      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+      simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
     | eq =>
-      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+      simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
 
--- Canonical values are normal forms: no Step rule can fire on them.
+-- Values are normal forms: no Step rule can fire on them.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem canonical_value_not_step
+theorem value_not_step
     (F : @Factory Tbase) (rf : Env Tbase)
     (e : LExpr Tbase.mono)
     (hWF : FactoryWF F)
-    (hc : LExpr.isCanonicalValue F e = true) :
+    (hc : LExpr.isValue F e = true) :
     ∀ e', ¬ Step F rf e e' := by
   -- By structural induction on e
   induction e with
@@ -1174,17 +1174,17 @@ theorem canonical_value_not_step
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
   | fvar =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+    simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
   | ite =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+    simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
   | eq =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+    simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
   | abs _ _ _ body ih_body =>
     intro e' hstep
-    -- Canonical abs is closed → freeVars body = []
-    simp [LExpr.isCanonicalValue] at hc
+    -- An abstraction that is a value is closed → freeVars body = []
+    simp [LExpr.isValue] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
@@ -1194,7 +1194,7 @@ theorem canonical_value_not_step
       simp [h_fvs] at h_fv
   | quant _ _ _ _ tr body ih_tr ih_body =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue] at hc
+    simp [LExpr.isValue] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
@@ -1206,7 +1206,7 @@ theorem canonical_value_not_step
       simp [hc.1] at h_fv
   | op =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue] at hc
+    simp [LExpr.isValue] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ fn _ h_call h_body _ _ =>
       split at hc
@@ -1230,7 +1230,7 @@ theorem canonical_value_not_step
       · simp at hc
   | app m_app e1 e2 ih1 ih2 =>
     intro e' hstep
-    simp [LExpr.isCanonicalValue] at hc
+    simp [LExpr.isValue] at hc
     cases hstep with
     | beta _ _ _ =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
@@ -1239,13 +1239,13 @@ theorem canonical_value_not_step
       · rename_i op args f h_call
         simp only [Bool.and_eq_true] at hc
         have h_mem := callOfLFunc_app_arg_mem F e1 e2 m_app op args f _ h_call
-        have h_e2_can := isCanonicalValue_args_all F args hc.2 e2 h_mem
+        have h_e2_can := isValue_args_all F args hc.2 e2 h_mem
         exact ih2 h_e2_can e2' h_step_e2
       · simp at hc
     | reduce_1 _ e1' _ h_step_e1 =>
-      have h_e1_can : LExpr.isCanonicalValue F e1 = true := by
-        apply isCanonicalValue_app_left F m_app e1 e2
-        simp [LExpr.isCanonicalValue]
+      have h_e1_can : LExpr.isValue F e1 = true := by
+        apply isValue_app_left F m_app e1 e2
+        simp [LExpr.isValue]
         split at hc
         · exact hc
         · simp at hc
@@ -1358,7 +1358,6 @@ private theorem StepStar_getLFuncCall_args
           ((args'.take inner_args.length).get ⟨i, h_ia'_len ▸ hi⟩) := by
       intro i hi
       have h1 := h_steps i (by rw [h_split]; simp; omega)
-      simp only [] at h1
       grind
     obtain ⟨e_inner', h_step_inner, h_eq_inner⟩ :=
       StepStar_getLFuncCall_args e_inner op inner_args (args'.take inner_args.length)
@@ -1367,10 +1366,10 @@ private theorem StepStar_getLFuncCall_args
     have h_args_len : args.length = inner_args.length + 2 := by rw [h_split]; simp
     have h_step_a1 : StepStar F rf a1 a1' := by
       have h1 := h_steps inner_args.length (by omega)
-      simp only [] at h1; grind
+      grind
     have h_step_a2 : StepStar F rf a2 a2' := by
       have h1 := h_steps (inner_args.length + 1) (by omega)
-      simp only [] at h1; grind
+      grind
     -- Compose stepping
     have step1 := StepStar_app_fn F rf e_inner e_inner' a1 m2 h_step_inner
     have step2 := StepStar_app_fn F rf _ _ a2 m1 step1
@@ -2012,19 +2011,19 @@ private theorem StepStar_to_substFvarsFromEnv_quant
 
 ---------------------------------------------------------------------
 
--- isCanonicalValue depends only on eraseMetadata.
+-- isValue depends only on eraseMetadata.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-theorem isCanonicalValue_eraseMetadata_eq
+theorem isValue_eraseMetadata_eq
     {Tbase : LExprParams}
     [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
     (F : @Factory Tbase)
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
-    LExpr.isCanonicalValue F e₁ = LExpr.isCanonicalValue F e₂ := by
+    LExpr.isValue F e₁ = LExpr.isValue F e₂ := by
   -- Use strong induction on e₁.sizeOf
   suffices h : ∀ (sz : Nat) (e₁ e₂ : LExpr Tbase.mono),
       e₁.sizeOf ≤ sz → e₁.eraseMetadata = e₂.eraseMetadata →
-      LExpr.isCanonicalValue F e₁ = LExpr.isCanonicalValue F e₂ from
+      LExpr.isValue F e₁ = LExpr.isValue F e₂ from
     h e₁.sizeOf e₁ e₂ (Nat.le_refl _) h_eM
   intro sz; induction sz with
   | zero =>
@@ -2037,20 +2036,20 @@ theorem isCanonicalValue_eraseMetadata_eq
     cases e₁ with
     | const m c =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
-      cases hv; simp [LExpr.isCanonicalValue]
+      cases hv; simp [LExpr.isValue]
     | abs m nm ty body =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
-      | abs _ => simp only [LExpr.isCanonicalValue]; unfold LExpr.closed; rw [LExpr.freeVars_of_eraseMetadata_eq _ _ heM]
+      | abs _ => simp only [LExpr.isValue]; unfold LExpr.closed; rw [LExpr.freeVars_of_eraseMetadata_eq _ _ heM]
     | quant m qk nm ty tr body =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
-      | quant _ _ => simp only [LExpr.isCanonicalValue]; unfold LExpr.closed; rw [LExpr.freeVars_of_eraseMetadata_eq _ _ heM]
+      | quant _ _ => simp only [LExpr.isValue]; unfold LExpr.closed; rw [LExpr.freeVars_of_eraseMetadata_eq _ _ heM]
     | op m nm ty =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
       | op =>
-        simp only [LExpr.isCanonicalValue]
+        simp only [LExpr.isValue]
         cases h1 : F.callOfLFunc (.op m nm ty : LExpr Tbase.mono) (allowPartialApp := true) with
         | none =>
           rw [callOfLFunc_none_of_eraseMetadata_eq F _ _ true heM h1]
@@ -2073,15 +2072,15 @@ theorem isCanonicalValue_eraseMetadata_eq
           rw [h_args_nil, h_args₂_nil]
     | bvar m i =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
-      cases hv; simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+      cases hv; simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
     | fvar m x ty =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
-      cases hv; simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+      cases hv; simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
     | app m fn arg =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
       | app hfn harg =>
-        simp only [LExpr.isCanonicalValue]
+        simp only [LExpr.isValue]
         cases h1 : F.callOfLFunc (.app m fn arg : LExpr Tbase.mono) (allowPartialApp := true) with
         | none =>
           rw [callOfLFunc_none_of_eraseMetadata_eq F _ _ true heM h1]
@@ -2093,7 +2092,7 @@ theorem isCanonicalValue_eraseMetadata_eq
           have h_len : args₁.length = args₂.length := by
             have h_len_eq := congrArg List.length h_args_eM; simp [List.length_map] at h_len_eq; exact h_len_eq
           simp only [h_len]
-          -- The first part of && is the same; need to show all-canonical is the same
+          -- The first part of && is the same; need to show all-values is the same
           congr 1
           -- Extract getLFuncCall from h1 to prove args are smaller
           have h_gl : getLFuncCall (.app m fn arg : LExpr Tbase.mono) = (op₁, args₁) := by
@@ -2108,8 +2107,8 @@ theorem isCanonicalValue_eraseMetadata_eq
               obtain ⟨rfl, rfl, _⟩ := h1; exact rfl
           have h_smaller := getLFuncCall_smaller h_gl
           -- Prove the two mapped-attach lists are equal by list induction
-          suffices h_map : args₁.attach.map (fun x => LExpr.isCanonicalValue F x.val) =
-              args₂.attach.map (fun x => LExpr.isCanonicalValue F x.val) by
+          suffices h_map : args₁.attach.map (fun x => LExpr.isValue F x.val) =
+              args₂.attach.map (fun x => LExpr.isValue F x.val) by
             rw [h_map]
           apply List.ext_getElem
           · simp [h_len]
@@ -2125,10 +2124,10 @@ theorem isCanonicalValue_eraseMetadata_eq
               exact h_eM_i
     | eq m l r =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
-      cases hv; simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+      cases hv; simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
     | ite m c t f =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
-      cases hv; simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+      cases hv; simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
 
 -- isConstrApp depends only on eraseMetadata.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
@@ -2397,41 +2396,38 @@ private theorem evalCore_eraseMetadata_congr
 
 ---------------------------------------------------------------------
 
--- typeOf ignores metadata: erasing metadata preserves typeOf.
-private theorem typeOf_eraseMetadata {T : LExprParams}
-    (e : LExpr T.mono) : e.eraseMetadata.typeOf = e.typeOf := by
-  induction e with
-  | const => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | op => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | bvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | fvar => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | abs m name ty body ih =>
-    cases ty with
-    | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    | some t =>
-      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-      rw [show (body.replaceMetadata fun _ => ()).typeOf = body.eraseMetadata.typeOf from rfl, ih]
-  | quant => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-  | app m fn arg ih_fn _ =>
-    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    rw [show (fn.replaceMetadata fun _ => ()).typeOf = fn.eraseMetadata.typeOf from rfl, ih_fn]
-  | ite m c t f _ ih_t _ =>
-    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
-    rw [show (t.replaceMetadata fun _ => ()).typeOf = t.eraseMetadata.typeOf from rfl, ih_t]
-  | eq => simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.typeOf]
+/-- Replacing an expression's metadata does not change its type-check result. -/
+private theorem typeCheck_replaceMetadata {T : LExprParams} {NewMetadata : Type}
+    (e : LExpr T.mono) (ctx : List LMonoTy) (f : T.Metadata → NewMetadata) :
+    LExpr.typeCheck ctx e = LExpr.typeCheck ctx (e.replaceMetadata f) := by
+  induction e generalizing ctx <;>
+    simp [LExpr.replaceMetadata, LExpr.typeCheck] <;> try grind
+  case op m o ty => cases ty <;> simp [LExpr.typeCheck]
+  case fvar m name ty => cases ty <;> simp [LExpr.typeCheck]
+  case abs m name ty body ih =>
+    cases ty <;> simp [LExpr.typeCheck, ih]
+  case quant m k name ty tr body ihtr ih =>
+    cases ty <;> simp [LExpr.typeCheck, ih, ihtr]
 
--- If two expressions have the same eraseMetadata, they have the same typeOf.
-private theorem typeOf_of_eraseMetadata_eq {T : LExprParams}
+/-- Erasing all metadata from an expression does not change its type-check result. -/
+private theorem typeCheck_eraseMetadata {T : LExprParams}
+    (e : LExpr T.mono) (ctx : List LMonoTy) :
+    LExpr.typeCheck ctx e.eraseMetadata = LExpr.typeCheck ctx e := by
+  simpa [LExpr.eraseMetadata] using
+    (typeCheck_replaceMetadata e ctx (fun _ => ())).symm
+
+/-- Expressions with the same metadata-free form type-check identically. -/
+private theorem typeCheck_of_eraseMetadata_eq {T : LExprParams}
     (e₁ e₂ : LExpr T.mono) (h : e₁.eraseMetadata = e₂.eraseMetadata) :
-    e₁.typeOf = e₂.typeOf := by
-  have h1 := typeOf_eraseMetadata e₁
-  have h2 := typeOf_eraseMetadata e₂
+    LExpr.typeCheck [] e₁ = LExpr.typeCheck [] e₂ := by
+  have h1 := typeCheck_eraseMetadata e₁ []
+  have h2 := typeCheck_eraseMetadata e₂ []
   rw [h] at h1; rw [← h1, h2]
 
 -- computeTypeSubst is metadata-invariant: if callee and args have the same
 -- eraseMetadata, computeTypeSubst produces the same result.
 -- computeTypeSubst depends on callee only through its .op type annotation
--- (preserved by eraseMetadata) and on args only through typeOf (also preserved).
+-- (preserved by eraseMetadata) and on args only through typeCheck (also preserved).
 theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
     (fn : LFunc T) (op₁ op₂ : LExpr T.mono)
     (args₁ args₂ : List (LExpr T.mono))
@@ -2441,14 +2437,16 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
 
   -- For the args part:
   have h_argC : ((args₁.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))) =
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) =
     ((args₂.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => arg.typeOf.map (·, formal))) := by
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))) := by
     -- Prove by auxiliary induction on args and formals simultaneously
     suffices h_suff : ∀ (l₁ l₂ : List (LExpr T.mono)) (vs : List LMonoTy),
         l₁.map LExpr.eraseMetadata = l₂.map LExpr.eraseMetadata →
-        (l₁.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) =
-        (l₂.zip vs).filterMap (fun (arg, formal) => arg.typeOf.map (·, formal)) from
+        (l₁.zip vs).filterMap
+            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) =
+        (l₂.zip vs).filterMap
+            (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal)) from
       h_suff args₁ args₂ fn.inputs.values h_args
     intro l₁ l₂ vs h_eM
     induction l₁ generalizing l₂ vs with
@@ -2463,7 +2461,7 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
           have h_head_eq := congrArg List.head? h_eM; simp at h_head_eq; exact h_head_eq
         have h_tl : tl₁.map LExpr.eraseMetadata = tl₂.map LExpr.eraseMetadata := by
           have h_tail_eq := congrArg List.tail h_eM; simp at h_tail_eq; exact h_tail_eq
-        rw [typeOf_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
+        rw [typeCheck_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
       | hd₂ :: tl₂, [] => simp [List.zip]
       | [], _ => simp at h_eM
   -- opTypeSubst only depends on the type annotation of the callee
@@ -2497,7 +2495,7 @@ theorem eval_eraseMetadata_invariant
   | succ n' ih =>
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
-    rw [isCanonicalValue_eraseMetadata_eq F e₁ e₂ h_eM]
+    rw [isValue_eraseMetadata_eq F e₁ e₂ h_eM]
     split
     · exact h_eM
     · split
@@ -2554,15 +2552,15 @@ theorem eval_eraseMetadata_invariant
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
-        -- Show canonicalArgAt equality
-        have h_canonicalArgAt_eq : ∀ idx : Option Nat,
+        -- Show valueArgAt equality
+        have h_valueArgAt_eq : ∀ idx : Option Nat,
             (match idx with
             | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
-                (LExpr.isCanonicalValue F)).getD false
+                (LExpr.isValue F)).getD false
             | none => false) =
             (match idx with
             | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
-                (LExpr.isCanonicalValue F)).getD false
+                (LExpr.isValue F)).getD false
             | none => false) := by
           intro idx
           cases idx with
@@ -2579,17 +2577,17 @@ theorem eval_eraseMetadata_invariant
                 have h_eM_i := congrArg (·[i]?) h_args_eM_raw
                 simp [h, show i < args₂.length from by omega] at h_eM_i
                 exact h_eM_i
-              exact isCanonicalValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
+              exact isValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
-        -- Show all-canonical equality
-        have h_all_canonical :
-            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
-            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) := by
+        -- Show all-values equality
+        have h_all_values :
+            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
+            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) := by
           have h_map_eq :
-              (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F) =
-              (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F) := by
+              (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F) =
+              (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F) := by
             apply List.ext_getElem
             · simp [h_len]
             · intro i hi₁ hi₂
@@ -2600,12 +2598,12 @@ theorem eval_eraseMetadata_invariant
                 simp [show i < args₁.length from by simp at hi₁; omega,
                   show i < args₂.length from by simp at hi₂; omega] at h_eM_i
                 exact h_eM_i
-              exact isCanonicalValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
-          rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
-              ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F)).all id
+              exact isValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
+          rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
+              ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F)).all id
               from by simp [List.all_map]]
-          rw [show (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
-              ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F)).all id
+          rw [show (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
+              ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F)).all id
               from by simp [List.all_map]]
           rw [h_map_eq]
         -- Show inline condition equality
@@ -2615,39 +2613,39 @@ theorem eval_eraseMetadata_invariant
               | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
-              (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical lfunc.attr &&
-                (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F)))) =
+              (Strata.DL.Util.FuncAttr.hasInlineIfAllValues lfunc.attr &&
+                (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F)))) =
             (lfunc.body.isSome && (lfunc.attr.contains Strata.DL.Util.FuncAttr.inline ||
               (match Strata.DL.Util.FuncAttr.findInlineIfConstr lfunc.attr with
               | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
-              (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical lfunc.attr &&
-                (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F)))) := by
+              (Strata.DL.Util.FuncAttr.hasInlineIfAllValues lfunc.attr &&
+                (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F)))) := by
           congr 1; congr 1; congr 1
           · exact h_constrArgAt_eq _
-          · exact congrArg _ h_all_canonical
+          · exact congrArg _ h_all_values
         -- Show can_cond equality (for non-inline branch)
         have h_can_cond_eq :
-            ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) ||
+            ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) ||
               (match Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr with
               | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
-              (match Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr with
+              (match Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr with
               | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
-                  (LExpr.isCanonicalValue F)).getD false
+                  (LExpr.isValue F)).getD false
               | none => false)) =
-            ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) ||
+            ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) ||
               (match Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr with
               | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
-              (match Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr with
+              (match Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr with
               | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
-                  (LExpr.isCanonicalValue F)).getD false
+                  (LExpr.isValue F)).getD false
               | none => false)) := by
-          rw [h_all_canonical, h_constrArgAt_eq, h_canonicalArgAt_eq]
+          rw [h_all_values, h_constrArgAt_eq, h_valueArgAt_eq]
         -- Now handle the inline/non-inline case split.
         -- After simp only [LExpr.eval] beta-reduces the lets, both sides have
         -- if-then-else: LHS has args₁-based condition, RHS has args₂-based.
@@ -2715,15 +2713,15 @@ theorem eval_eraseMetadata_invariant
         · -- LHS non-inline
           rename_i h_ninline₁
           -- Case on both attribute lookups to eliminate inner matches
-          -- (findEvalIfConstr and findEvalIfCanonical) which cause `split`
-          -- to misfire when nested inside the outer `if canonical`.  After
-          -- this cases, the outer `if canonical` will be split cleanly.
+          -- (findEvalIfConstr and findEvalIfValue) which cause `split`
+          -- to misfire when nested inside the outer `if value`.  After
+          -- this cases, the outer `if value` will be split cleanly.
           have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call₁
           have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
-            simp only [h_fEC, h_fEV] at h_can_cond_eq h_constrArgAt_eq h_canonicalArgAt_eq ⊢
-            -- Now `split` on the outer LHS `if canonical` works.
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
+            simp only [h_fEC, h_fEV] at h_can_cond_eq h_constrArgAt_eq h_valueArgAt_eq ⊢
+            -- Now `split` on the outer LHS `if value` works.
             split
             · rename_i h_can₁
               cases h_ce : lfunc.concreteEval with
@@ -2745,7 +2743,7 @@ theorem eval_eraseMetadata_invariant
                   next h_inline₂ =>
                     exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                   next h_ninline₂ =>
-                    -- LHS canonical is true (h_can₁); derive RHS canonical is true
+                    -- LHS value check is true (h_can₁); derive RHS value check is true
                     have h_can₂ := h_can_cond_eq ▸ h_can₁
                     rw [if_pos h_can₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
@@ -2907,15 +2905,15 @@ theorem eval_StepStar
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
     split
     · -- Canonical: eval returns e
-      rename_i h_canonical
+      rename_i h_value
       have h_eval_n : (LExpr.eval n F env e).fst = e := by
         cases n with
         | zero => simp [LExpr.eval]
-        | succ n' => simp [LExpr.eval, h_canonical]
+        | succ n' => simp [LExpr.eval, h_value]
       obtain ⟨e', hstep, hve⟩ := ih e
       rw [h_eval_n] at hve
       exact ⟨e', hstep, hve⟩
-    · rename_i h_not_canonical
+    · rename_i h_not_value
       split
       · -- Factory case
         rename_i op_expr args lfunc h_call
@@ -2972,19 +2970,19 @@ theorem eval_StepStar
               exact computeTypeSubst_eraseMetadata_congr lfunc op' op_expr _ _
                 h_op'_eM.symm h_vals_eM
             have h_expand : Step F (env) e_stepped
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')) :=
               Step.expand_fn e_stepped op' body _ stepped_args' lfunc tySubst
                 h_call_stepped h_body_eq h_tySubst_stepped rfl
             obtain ⟨e'_s, h_step_s, h_ve_s⟩ :=
-              ih (LExpr.substFvarsLifting (body.applySubst tySubst)
+              ih (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                 (lfunc.inputs.keys.zip stepped_args'))
             refine ⟨e'_s, ReflTrans_Transitive _ _ _ _ h_step_e
               (ReflTrans.step _ _ _ h_expand h_step_s), ?_⟩
             have h_subst_eM :
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')).eraseMetadata =
-                (LExpr.substFvarsLifting (body.applySubst tySubst)
+                (LExpr.substFvarsLifting (body.applyTypeSubst tySubst)
                   (lfunc.inputs.keys.zip (args.map (fun a => (LExpr.eval n F env a).fst)))).eraseMetadata :=
               substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_vals_eM
             have h_body_get : lfunc.body.get (by simp [h_body_eq]) = body := by
@@ -2998,10 +2996,10 @@ theorem eval_StepStar
           rename_i h_not_inline
           -- Case on both attribute lookups to eliminate inner matches
           cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
             simp only []
             split
-            · rename_i h_canonical_args
+            · rename_i h_value_args
               split
               · -- No ceval: terminal
                 rename_i h_no_ceval
@@ -3022,10 +3020,10 @@ theorem eval_StepStar
           )
       · -- evalCore case: case analysis on e
         rename_i h_no_call
-        match e, h_not_canonical, h_no_call with
+        match e, h_not_value, h_no_call with
         | .const m c, h_nc, _ =>
-          exact absurd (by simp [LExpr.isCanonicalValue] :
-            LExpr.isCanonicalValue F (.const m c) = true) h_nc
+          exact absurd (by simp [LExpr.isValue] :
+            LExpr.isValue F (.const m c) = true) h_nc
         | .op m fn ty, _, _ =>
           refine ⟨_, ReflTrans.refl _, ?_⟩
           simp only [LExpr.evalCore]

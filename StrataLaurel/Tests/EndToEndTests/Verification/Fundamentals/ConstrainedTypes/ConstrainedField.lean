@@ -10,8 +10,8 @@ parameterization resolves constrained types to their base type for boxing,
 and that constraint checks are asserted on field writes.
 
 Constraints are also recovered when *reading* a constrained field
-(`readCountRecoversConstraint`); the remaining loop-invariant case is pinned by
-`ConstrainedFieldInvariantGap`.
+(`readCountRecoversConstraint`); the loop-invariant case is pinned by
+`ConstrainedFieldInvariant`.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
@@ -43,7 +43,7 @@ procedure setCountInvalid(c: Counter)
   modifies c
 {
   c#count := -1
-//^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // SOUNDNESS REGRESSION (Fabio Madge, PR #1364):
@@ -107,9 +107,25 @@ procedure readAndReturn(c: Counter) returns (r: nat)
 // check as an `ensures` whose source is the constrained output's type, so that is where
 // the failure is reported (measured: 58-61 on the signature line).
 procedure readAndReturnOutOfRange(c: Counter) returns (r: nat)
-//                                                        ^^^ error: postcondition does not hold
+//                                                        ^^^ error: postcondition could not be proved
   opaque
 {
   return c#count - 1
+};
+#end
+
+/-! Two composites whose names overlap once a separator is inserted: `A_b` with field `c`
+    and `A` with field `b_c`. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+composite A_b { var c: nat }
+composite A { var b_c: nat }
+procedure readsBothFields(x: A_b, y: A)
+  opaque
+{
+  assert x#c >= 0;
+  assert y#b_c >= 0
 };
 #end

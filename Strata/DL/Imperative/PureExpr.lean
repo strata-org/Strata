@@ -43,8 +43,8 @@ structure PureExpr : Type 1 where
       expression, and returns an optional evaluated expression. -/
   eval : Factory → (Ident → Option Expr) → Expr → Option Expr
 
-@[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
-@[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
+abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
+abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
 /-! ## Type Classes for Expressions -/
 
@@ -95,6 +95,20 @@ class HasOps (P : PureExpr) where
 
 class HasVal (P : PureExpr) where
   value : P.Factory → P.Expr → Prop
+  /-- `e` is a value of the monomorphic type `ty`. -/
+  valueOfTy : P.Factory → P.Expr → P.Ty → Prop
+
+/-- Laws for the abstract typed-value predicate. -/
+class LawfulHasVal (P : PureExpr) [HasVal P] where
+  /-- Every typed value is a value. -/
+  valueOfTy_isVal : ∀ f e ty,
+    HasVal.valueOfTy (P := P) f e ty → HasVal.value (P := P) f e
+  /-- Typed-value membership is congruent across the shared type of a witness:
+      if some value `a` has both types `ty₁` and `ty₂`, then any value of type
+      `ty₂` is also a value of type `ty₁`. -/
+  valueOfTy_congr : ∀ f (a b : P.Expr) (ty₁ ty₂ : P.Ty),
+    HasVal.valueOfTy (P := P) f a ty₁ → HasVal.valueOfTy (P := P) f a ty₂ →
+    HasVal.valueOfTy (P := P) f b ty₂ → HasVal.valueOfTy (P := P) f b ty₁
 
 /-- Boolean expressions.  Extends `HasVal P` (folding in the former
     `HasBoolVal`).  `boolIsVal` ensures `tt`/`ff` are values. -/
@@ -103,7 +117,19 @@ class HasBool (P : PureExpr) extends HasVal P where
   ff : P.Expr
   tt_is_not_ff: tt ≠ ff
   boolTy : P.Ty
-  boolIsVal : ∀ f, (@HasVal.value P) f tt ∧ (@HasVal.value P) f ff
+  /-- Boolean constants have the Boolean type. -/
+  boolIsValOfTy : ∀ f,
+    (@HasVal.valueOfTy P) f tt boolTy ∧
+    (@HasVal.valueOfTy P) f ff boolTy
+
+/-- Boolean constants are values, induced by their typed-value proofs. -/
+@[expose] def HasBool.boolIsVal {P : PureExpr} [HasBool P] [LawfulHasVal P]
+    (f : P.Factory) :
+    HasVal.value f HasBool.tt ∧ HasVal.value f HasBool.ff :=
+  ⟨LawfulHasVal.valueOfTy_isVal f HasBool.tt HasBool.boolTy
+      (HasBool.boolIsValOfTy f).1,
+    LawfulHasVal.valueOfTy_isVal f HasBool.ff HasBool.boolTy
+      (HasBool.boolIsValOfTy f).2⟩
 
 /-- Boolean operations: not, and, imp. -/
 class HasBoolOps (P : PureExpr) extends HasBool P where
@@ -140,7 +166,7 @@ class HasSubstFvar (P : PureExpr) where
 A function declaration for use with `PureExpr` - instantiation of `Func` for
 any expression system that implements the `PureExpr` interface.
 -/
-@[expose] abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
 end -- public section
 end Imperative

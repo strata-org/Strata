@@ -313,7 +313,7 @@ instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-@[expose] abbrev KnownTypes := Identifiers Nat
+abbrev KnownTypes := Identifiers Nat
 
 def makeKnownTypes (l: List KnownType) : KnownTypes :=
   Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))
@@ -363,8 +363,8 @@ Context data for type checking: a factory of user-specified functions and
 data structures for ensuring unique names of types and functions.
 
 This context is typically constant during expression type checking, but may
-be extended during statement type checking when local function declarations
-(`funcDecl`) add new functions to the factory.
+be extended during statement type checking (for example, a `typeDecl` statement
+adds a new type).
 
 Invariant: all functions defined in `TypeFactory.genFactory`
 for `datatypes` should be in `functions`.

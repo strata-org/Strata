@@ -22,6 +22,16 @@ removal/erasure and key/value membership.
 -/
 
 public section
+
+/-! ## `ListMap.toList` -/
+
+/-- The empty map lists as the empty list. -/
+@[simp] theorem ListMap.toList_empty : ListMap.toList ([] : ListMap α β) = [] := rfl
+
+/-- Listing a map peels one entry at a time, so a literal map reduces to a
+literal list. -/
+@[simp] theorem ListMap.toList_cons (a : α × β) (m : ListMap α β) :
+    ListMap.toList (a :: m) = a :: ListMap.toList m := rfl
 open Std (ToFormat Format format)
 
 theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst := by
@@ -791,5 +801,11 @@ theorem Map.find?_insert_ne [DecidableEq α]
       have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
       simp [h_ne2]
     · simp only [Map.find?]; split <;> simp_all
+
+/-- `ListMap.keys` of a key-filtered list is the filtered key list. -/
+theorem listMap_keys_filter {α β : Type} (q : α → Bool) :
+    ∀ l : List (α × β),
+      ListMap.keys (l.filter fun (a, _) => q a) = (ListMap.keys l).filter q :=
+  (by induction · <;> grind [ListMap.keys])
 
 end

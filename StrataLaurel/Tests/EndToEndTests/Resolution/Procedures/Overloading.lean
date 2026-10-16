@@ -228,6 +228,64 @@ procedure caller() opaque {
 };
 #end
 
+/-! ## A uniquely selected GENERIC overload still has its type arguments inferred
+
+Overloading must not change whether a type argument is inferred or reported. `T`
+appears only in the result here, so nothing at the call determines it and the
+unannotated `var x` does not either — exactly the situation the non-overloaded
+form reports. The selected overload therefore goes through the same generic
+inference and completeness check as a single definition would, instead of
+reporting its raw declared `T`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure choose<T>(tag: int) returns (r: T) opaque;
+procedure choose<T>(tag: bool) returns (r: T) opaque;
+procedure test() opaque {
+  var x := choose(0)
+//         ^^^^^^^^^ error: cannot infer type argument 'T' of 'choose'
+};
+#end
+
+/-! ## Same when the overload set mixes a generic with a monomorphic procedure
+
+The defect was never specific to generic-versus-generic: what matters is that the
+*selected* candidate is generic. `pick<T>` is chosen here over the monomorphic
+`pick(bool)`, and its `T` is undetermined. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box<T> { MkBox(v: T) }
+procedure pick<T>(x: int) returns (r: Box<T>) opaque;
+procedure pick(x: bool) returns (r: int) opaque;
+procedure caller() opaque {
+  var b := pick(1)
+//         ^^^^^^^ error: cannot infer type argument 'T' of 'pick'
+};
+#end
+
+/-! ## An annotation determines the type argument of an overloaded generic
+
+The companion positive case: the same overload pair with an annotation that does
+determine `T`. `Box<int>` is matched against the selected overload's declared
+`Box<T>` from the return position, binding `T ↦ int`, so the call resolves with
+no diagnostic. Without that return-position binding on the overload path this
+would report "cannot infer" — the completeness check has no other source for
+a type argument that appears only in the result. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box<T> { MkBox(v: T) }
+procedure pick<T>(x: int) returns (r: Box<T>) opaque;
+procedure pick(x: bool) returns (r: int) opaque;
+procedure caller() opaque {
+  var b: Box<int> := pick(1)
+};
+#end
+
 /-! ## External procedures cannot be overloaded -/
 
 #eval testLaurelResolution <|

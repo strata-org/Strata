@@ -163,14 +163,35 @@ procedure useFoo()
 };
 #end
 
--- Negative: the type argument itself is *not* checked at resolution — a
--- polymorphic `value: T` slot accepts any argument, so `Some(true)` type-checks
--- against both `Option<int>` and `Option<bool>` here. Core is the only thing that
--- catches the mismatch, which is exactly why it is worth pinning: if a future
--- change stopped forwarding type arguments to Core, this test fails instead of
--- silently accepting an ill-typed program. The pinned wording is Core's
--- (`Impossible to unify (Option int) with (Option bool)`), so it is deliberately
--- matched loosely on the first line.
+-- A generic datatype constructor passed straight to a polymorphic procedure. `ContractPass`
+-- gives the call's argument a temp whose type it asks `computeExprType` for, so the constructor
+-- call has to report `Option<int>` and not the bare `Option` head — a bare head is re-resolved
+-- after the pass and rejected as an unapplied generic datatype.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Option<T> {
+  Nothing(),
+  Some(value: T)
+}
+procedure consume<T>(x: T) returns (r: int)
+  requires true
+  opaque;
+procedure useConsume()
+  opaque
+{
+  var r: int := consume(Some(1));
+  assert r == r
+};
+#end
+
+-- Negative: the mismatched type argument is caught at RESOLUTION. The polymorphic `value: T`
+-- slot still accepts any argument, but the argument determines the instantiation, so `Some(true)`
+-- is an `Option<bool>` and the `Option<int>` binding rejects it — with a Laurel diagnostic naming
+-- both types, rather than Core's `Impossible to unify (Option int) with (Option bool)`.
+--
+-- This program is rejected before Core translation, so Core forwarding of a generic datatype is
+-- pinned by the `generic_datatype_*` cases in `GenericDatatypeTest`, which resolve.
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -182,7 +203,7 @@ procedure mismatchedTypeArg()
   opaque
 {
   var a: Option<int> := Some(true);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: ❌ Type checking error.
+//                      ^^^^^^^^^^ error: expected 'Option<int>', got 'Option<bool>'
   assert Option..isSome(a)
 };
 #end

@@ -50,6 +50,18 @@ end Factory
 
 namespace Program
 
+/-- Type check the proposition of an axiom or a lemma, described by `what` in
+the error message, and return it with its types resolved. -/
+@[expose] def typeCheckProp (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (fileRange : FileRange) (what : String) (e : Expression.Expr) :
+    Except Message (Expression.Expr × Core.Expression.TyEnv) := do
+  let Env := Env.pushEmptySubstScope
+  let (ae, Env) ← LExpr.resolve C Env e |>.mapError (fun e => Message.withRange fileRange e)
+  let Env := Env.popSubstScope
+  match ae.toLMonoTy with
+  | .bool => .ok (ae.unresolved, Env)
+  | _ => .error <| Message.withRange fileRange f!"{what} has non-boolean type."
+
 /--
 Type check the program. The function assumes that all functions registered to
 C are already well-typed.
@@ -94,12 +106,24 @@ C are already well-typed.
             .error (e.withRangeIfUnknown fileRange)
 
       | .ax a md => try
-        let Env := Env.pushEmptySubstScope
-        let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => Message.withRange fileRange e)
-        let Env := Env.popSubstScope
-        match ae.toLMonoTy with
-        | .bool => .ok (Decl.ax { a with e := ae.unresolved } md, C, Env)
-        | _ => .error <| Message.withRange fileRange f!"Axiom {a.name} has non-boolean type."
+        let (e, Env) ← typeCheckProp C Env fileRange s!"Axiom {a.name}" a.e
+        .ok (Decl.ax { a with e } md, C, Env)
+          catch e =>
+            .error (e.withRangeIfUnknown fileRange)
+
+      | .lemma l md => try
+        -- A lemma must hold at every type, so its formula may not constrain a
+        -- type parameter: it is first checked with each one replaced by a
+        -- fresh opaque type.
+        unless l.typeArgs.isEmpty do
+          let rigid := l.typeArgs.map fun a => (a, s!"$__rigid_{l.name}_{a}")
+          let C' ← rigid.foldlM (init := C) fun C (_, n) =>
+            C.addKnownTypeWithError { name := n, metadata := 0 }
+              (Message.withRange fileRange f!"Error in lemma {l.name}: type {n} already exists.")
+          let S := Strata.Util.HMaps.ofScopes [rigid.map fun (a, n) => (a, LMonoTy.tcons n [])]
+          let _ ← typeCheckProp C' Env fileRange s!"Lemma {l.name}" (l.e.applyTypeSubst S)
+        let (e, Env) ← typeCheckProp C Env fileRange s!"Lemma {l.name}" l.e
+        .ok (Decl.lemma { l with e } md, C, Env)
           catch e =>
             .error (e.withRangeIfUnknown fileRange)
 

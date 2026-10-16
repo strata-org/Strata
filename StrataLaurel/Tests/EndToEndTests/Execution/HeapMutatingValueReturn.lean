@@ -3,7 +3,6 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
@@ -11,6 +10,7 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
+-- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -26,10 +26,19 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
   c#value := x;
   return x
 };
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var c: Container := new Container;
+  var r: int := setAndReturn(c, 3);
+  assert r == 3
+};
 #end
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
+-- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -45,6 +54,13 @@ procedure setAndReturnBuggy(c: Container, x: int) returns (r: int)
 {
   c#value := x;
   return x
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var c: Container := new Container;
+  var r: int := setAndReturnBuggy(c, 3)
 };
 #end
 
@@ -70,6 +86,7 @@ it did.
 Note the clause order: `ensures` must precede `modifies`, or it is a parse error
 rather than a test of any of this. -/
 
+-- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -85,6 +102,14 @@ procedure shortFormSetAndReturn(c: Container, x: int): int
 {
   c#value := x;
   return x
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var c: Container := new Container;
+  var r: int := shortFormSetAndReturn(c, 3);
+  assert r == 3
 };
 #end
 
@@ -109,6 +134,7 @@ taking them as parameters, so they are provably distinct — two parameters of t
 type may alias, which would make the assertion unprovable for a reason unrelated to
 the frame. -/
 
+-- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -139,5 +165,11 @@ procedure bumpCaller()
   var r: Result<int, bool> := bump(c);
   // `bump` may change only `c`, so `other` is untouched across the call.
   assert other#value == seen
+};
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  bumpCaller()
 };
 #end

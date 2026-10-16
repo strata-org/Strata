@@ -107,6 +107,10 @@ def normalizeModelValues (s : String) : String :=
     else line
   String.intercalate "\n" normalized
 
+/-! Counterexamples contain only the variables requested for their obligation.
+The four procedures reuse the source name `x`, but their symbolic copies are
+distinct; a model for `Q0` must not include the copies from `Q1`–`Q3`. -/
+
 /--
 info:
 Obligation: a0
@@ -116,8 +120,6 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❌ fail
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -126,56 +128,54 @@ Result: ✅ pass
 Obligation: a3
 Property: assert
 Result: ❓ unknown
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a4
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 -/
 #guard_msgs in
 #eval do
@@ -194,8 +194,6 @@ Result: ✅ pass
 Obligation: a1
 Property: assert
 Result: ❓ unknown
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a2
 Property: assert
@@ -204,56 +202,54 @@ Result: ✅ pass
 Obligation: a3
 Property: assert
 Result: ❓ unknown
-Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
 
 Obligation: a4
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a5
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@1, model_not_2)
 
 Obligation: a6
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a7
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@2, model_not_2)
 
 Obligation: a8
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a9
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@3, model_not_2)
 
 Obligation: a10
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 
 Obligation: a1
 Property: assert
 Result: ❓ unknown
 Model:
-(x@1, model_not_2) (x@2, model_not_2) (x@3, model_not_2) (x@4, model_not_2)
+(x@4, model_not_2)
 -/
 #guard_msgs in
 #eval do

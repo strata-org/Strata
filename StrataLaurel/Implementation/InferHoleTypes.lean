@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Util.Statistics
 public import StrataLaurel.Implementation.LaurelPass
 public import StrataLaurel.Implementation.Resolution
+import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 import StrataLaurel.Implementation.LaurelTypes
 import StrataLaurel.Implementation.MapStmtExpr
 import StrataLaurel.Implementation.EliminateDeterministicHoles
@@ -114,15 +115,28 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Opt
     - for the other operators the result type is the operand type, so
       `expectedType` *is* the argument type.
 
+    Either guess stands only if one of the operator's prelude overloads takes it in
+    every position and returns the context's type. Otherwise the holes stay untyped
+    and are reported, rather than given a typing a later pass can only reject as a
+    compiler bug. `$eq`/`$neq` are exempt: resolution has already checked their one
+    generic signature against the context.
+
     A non-operator callee that failed to resolve is a genuine error reported
     elsewhere; keep the previous `Unknown` there rather than inventing a type. -/
 private def unresolvedOperatorArgType (model : SemanticModel) (callee : Identifier)
     (args : List StmtExprMd) (expectedType : HighTypeMd) (source : FileRange) : HighTypeMd :=
   match Operation.ofProcName? callee.text with
+  | some .Eq | some .Neq => inferComparisonArgType model args source
   | some op =>
-    match op with
-    | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
-    | _ => expectedType
+    let operandType := match op with
+      | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
+      | _ => expectedType
+    let fits (overload : Procedure) : Bool :=
+      overload.name.text == callee.text &&
+        overload.inputs.all (·.type.val == operandType.val) &&
+        overload.outputs.map (·.type.val) == [expectedType.val]
+    if coreDefinitionsForLaurel.staticProcedures.any fits then operandType
+    else ⟨ .Unknown, source ⟩
   | none => ⟨ .Unknown, source ⟩
 
 /-- Recover the expected receiver type for a resolved field reference. -/
@@ -215,12 +229,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .StaticCall callee args =>
+  | .StaticCall callee args tyArgs =>
       let args' ← match calleeParamTypes model callee with
         | some paramTypes => inferArgsTyped args paramTypes source outputType
         | none =>
           inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
-      return ⟨.StaticCall callee args', source⟩
+      return ⟨.StaticCall callee args' tyArgs, source⟩
   | .InstanceCall target callee args =>
       return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType), source⟩
   | .ReferenceEquals lhs rhs =>

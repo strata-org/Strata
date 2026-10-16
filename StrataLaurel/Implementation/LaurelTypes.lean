@@ -18,15 +18,29 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+/-- The type a call has AT THIS CALL SITE. `typeArgs` are the type arguments the call node
+    records; pass `[]` for a call shape that carries none. A constructor's type is its datatype
+    applied to `typeArgs`, and a procedure's is its declared output type with `typeArgs`
+    substituted for the procedure's type parameters. When `typeArgs` is empty the constructor
+    stays the bare datatype head: an applied shape with free type variables in it would read as
+    a wildcard instead of the arity error we want. Arity mismatch on a procedure keeps the
+    declared type. -/
+def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier)
+    (typeArgs : List HighTypeMd) : HighTypeMd :=
   match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .datatypeConstructor t _ =>
+      if typeArgs.isEmpty then ⟨ .UserDefined t, source ⟩
+      else ⟨ .Applied ⟨ .UserDefined t, source ⟩ typeArgs, source ⟩
     | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
-    | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
-      | [] => { val := .TVoid, source := source }
-      | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+    | .staticProcedure proc | .instanceProcedure _ proc =>
+      let declared := match proc.outputs with
+        | [] => { val := .TVoid, source := source }
+        | [singleOutput] => singleOutput.type
+        | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+      let names := proc.typeArgs.map (·.text)
+      if names.isEmpty || typeArgs.length != names.length then declared
+      else substTypeVars ((names.zip typeArgs).foldl (fun m (n, t) => m.insert n t) ∅) declared
     -- A coroutine call (`c(args)`) spawns an instance of the coroutine type;
     -- elaboration later retargets this to the `<c>State` composite.
     | .coroutineType proc => ⟨ .UserDefined proc.name, source ⟩
@@ -82,9 +96,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Var (.Field _ fieldName) => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
-  -- Calls — return the declared output type when available, fall back to Unknown otherwise
-  | .StaticCall callee _ => getCallType source model callee
-  | .InstanceCall _ callee _ => getCallType source model callee
+  -- Calls — the callee's return type at this call site, so a generic callee reports its
+  -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
+  -- argument temp from the argument itself and needs that instantiation.
+  | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
+  | .InstanceCall _ callee _ => getCallType source model callee []
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
@@ -147,36 +163,27 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
 
 /-- Classification of a heap-relevant modifies type. -/
 inductive ModifiesTypeKind where
-  | composite    -- a single Composite reference (UserDefined)
+  | composite    -- a single Composite reference (UserDefined, bare or applied)
   | compositeSet -- a Set of Composite references (TSet)
 
-/-- Classify a type as heap-relevant for modifies clauses, or `none` for
-non-heap-relevant types. Single source of truth for which types participate
-in modifies clauses and heap parameterization. -/
-def classifyModifiesHighType : HighType → Option ModifiesTypeKind
-  | .UserDefined _ => some .composite
-  -- A generic-composite INSTANTIATION (`GHolder<Pair<int,bool>>`) is a composite
-  -- reference too: it peels to a `.UserDefined` base. This predicate gates
-  -- modifies-clause entry survival + classification at RESOLUTION (isHeapRelevantType,
-  -- Resolution.resolveModifiesEntry), which runs BEFORE monomorphization — so a
-  -- `modifies g` on a generically-typed var still sees `.Applied` here and would be
-  -- wrongly dropped as "non-composite" without this arm. (It does NOT feed heap
-  -- parameterization, which keys off write-effects, not this classification; and
-  -- monomorphization later collapses the type to plain `.UserDefined` for the
-  -- post-mono frame builder.) Matches the sibling `.UserDefined` arm's model-free
-  -- fidelity: a generic DATATYPE base would also classify `.composite` here and fail
-  -- loud downstream at Core, exactly as a bare datatype var already does.
-  | .Applied base _ => match base.val with
-    | .UserDefined _ => some .composite
-    | _              => none
-  | .TSet _        => some .compositeSet
-  | _              => none
+/-- Classify a type as heap-relevant for modifies clauses, or `none` for non-heap-relevant
+types. `isValueTypeName` decides whether a nominal head names a VALUE rather than a heap
+reference, which a type's shape alone cannot tell.
 
-/-- Returns `true` when the given `HighType` is heap-relevant (composite or set
-of composite), i.e. the kind of type that appears in modifies clauses and
-triggers heap parameterization. -/
-def isHeapRelevantType (ty : HighType) : Bool :=
-  (classifyModifiesHighType ty).isSome
+An APPLICATION counts: a generic-composite instantiation (`GHolder<Pair<int,bool>>`) is still
+a reference, and this runs BEFORE monomorphization, so `modifies g` on a generically-typed var
+would otherwise be wrongly dropped as "non-composite". A `.TVar` head is deliberately not
+matched: a type parameter has no declaration to ask, and it carries no bound, so whether it
+stands for a reference is undecidable here and it is refused conservatively.
+
+`.TSet` has no surface production, so `.compositeSet` is unreachable from source: `Set<C>`
+parses as an application of the prelude's `opaque Set<T>` and takes the value arm. -/
+def classifyModifiesHighType (isValueTypeName : Identifier → Bool) :
+    HighType → Option ModifiesTypeKind
+  | .TSet _ => some .compositeSet
+  | .UserDefined n
+  | .Applied ⟨.UserDefined n, _⟩ _ => if isValueTypeName n then none else some .composite
+  | _ => none
 
 
 end Strata.Laurel

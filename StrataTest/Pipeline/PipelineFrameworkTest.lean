@@ -137,14 +137,14 @@ private def ofProgramFacts (p : Program) : ProgramFactSet :=
 whether the function is declared at top level or inside a body — which is what
 makes lifting neutral for `noPolymorphicFunctions`. -/
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts { decls :=
   [.proc { (default : Procedure) with
              header := { (default : Procedure.Header) with typeArgs := ["a"] },
              body := .structured [] } default] }))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts { decls :=
   [.func { (default : Function) with typeArgs := ["a"] } default] }))
@@ -159,106 +159,95 @@ private def loadedProgram : Program :=
   progOf [.loop .nondet (some trueExpr) [("inv", trueExpr)]
     [.block "b" [.ite .nondet [Statement.call "f" [] {}] [] {}] {}] {}]
 
-/-- info: noCFGBodies, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts loadedProgram))
 
-/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf [.loop .nondet none [] [] {}])))
 
 /-! A loop nested anywhere drops the fact: inside another loop's body, inside a
 block, or inside either branch of an `ite`. -/
 
-/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf
   [.loop (.det trueExpr) none [] [.block "b" [.loop (.det trueExpr) none [] [] {}] {}] {}])))
 
-/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf
   [.ite (.det trueExpr) [] [.loop (.det trueExpr) none [] [] {}] {}])))
 
-/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf
   [.ite (.det trueExpr) [.loop (.det trueExpr) none [] [] {}] [] {}])))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts { decls := [] }))
 
-/-- info: noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.call "f" [] {}], transfer := .finish {} })] } } default] }))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.set "x" trueExpr {}])))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.havoc "x" {}])))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.init "x" intTy .nondet {}])))
 
-/-- info: noCFGBodies, noCalls, noLoopInvariants, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoopInvariants, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (progOf [.loop (.det trueExpr) (some trueExpr) [] [] {}])))
+
+/-! `hasObligationForm` accepts `assume`, `assert`, `cover` and `init` under
+`ite *` at any depth, and rejects a deterministic `ite`, a `block`, an `exit`,
+and a `set` nested inside `ite *`. -/
+
+private def obligationForm (body : List Statement) : Bool :=
+  Program.allStatements Statements.hasObligationForm (progOf body)
+
+#guard obligationForm
+  [Statement.init "x" intTy .nondet {},
+   .ite .nondet
+     [Statement.assume "a" trueExpr {},
+      .ite .nondet [Statement.assert "p" trueExpr {}] [Statement.cover "c" trueExpr {}] {}]
+     [Statement.assert "q" trueExpr {}] {}] == true
+
+#guard obligationForm [.ite (.det trueExpr) [Statement.assert "p" trueExpr {}] [] {}] == false
+
+#guard obligationForm [.block "b" [Statement.assert "p" trueExpr {}] {}] == false
+
+#guard obligationForm [.exit "b" {}] == false
+
+#guard obligationForm
+  [.ite .nondet [] [.ite .nondet [Statement.set "x" trueExpr {}] [] {}] {}] == false
+
 private def redexExpr : Expression.Expr :=
   .app () (.abs () "x" none (.bvar () 0)) trueExpr
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (progOf [Statement.assume "a" redexExpr {}])))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts { decls := [.distinct "d" [redexExpr] default] }))
-/-- A local function whose body is `e` and which is otherwise trivial. -/
-private def localFuncDecl (e : Expression.Expr) : Statement :=
-  .funcDecl { name := "f", inputs := .empty, output := intTy,
-              body := some e } {}
-
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
-#guard_msgs in
-#eval IO.println (factNames (ofProgramFacts (progOf [localFuncDecl redexExpr])))
-
 /-! `noPolymorphicFunctions` counts a function declared inside a procedure body,
 not only a top-level one. -/
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures -/
-#guard_msgs in
-#eval IO.println (factNames (ofProgramFacts (progOf
-  [.funcDecl { name := "f", typeArgs := ["a"], inputs := .empty, output := intTy,
-               body := some trueExpr } {}])))
-
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
-#guard_msgs in
-#eval IO.println
-  (factNames (ofProgramFacts (progOf [.funcDecl { name := "f", inputs := .empty, output := intTy, body := some trueExpr, measure := some redexExpr } {}])))
-#guard
-  let f : Statement :=
-    .funcDecl { name := "f", inputs := .empty, output := intTy,
-                body := some (Transform.createFvar "body"),
-                axioms := [Transform.createFvar "ax"],
-                preconditions := [{ expr := Transform.createFvar "pre", md := default }],
-                measure := some (Transform.createFvar "meas") } {}
-  Statements.allExprs [f] ==
-    [Transform.createFvar "body", Transform.createFvar "ax",
-     Transform.createFvar "pre", Transform.createFvar "meas"]
-
-/-- info: noCFGBodies, noCalls, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
-#guard_msgs in
-#eval IO.println
-  (factNames (ofProgramFacts (progOf [.loop (.det trueExpr) none [] [localFuncDecl redexExpr] {}])))
-
-/-- info: noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [], transfer := .condGoto redexExpr "t" "f" {} })] } } default] }))
@@ -267,17 +256,12 @@ not only a top-level one. -/
 flattens the blocks, so an expression inside a command is seen by the same walk
 that sees a structured body's. -/
 
-/-- info: noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [("entry", { cmds := [.cmd (.assert "a" redexExpr {})], transfer := .finish {} })] } } default] }))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions -/
-#guard_msgs in
-#eval IO.println
-  (factNames (ofProgramFacts (progOf [.funcDecl { name := "f", inputs := .empty, output := intTy, body := some trueExpr, preconditions := [{ expr := trueExpr, md := default }] } {}])))
-
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts { decls := [.proc { (default : Procedure) with spec := { preconditions := .empty, postconditions := .ofList [("post", { expr := redexExpr })] } } default] }))
@@ -285,39 +269,39 @@ that sees a structured body's. -/
 private def assumeProg (e : Expression.Expr) : Program :=
   progOf [Statement.assume "a" e {}]
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.ite () trueExpr redexExpr trueExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (assumeProg (.app () (Transform.createFvar "f") redexExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (assumeProg (.app () (.app () (Transform.createFvar "f") redexExpr) trueExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (assumeProg (.quant () .all "x" none trueExpr redexExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (assumeProg (.quant () .exist "x" none redexExpr trueExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.abs () "x" none redexExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (factNames (ofProgramFacts (assumeProg (.eq () trueExpr redexExpr))))
 
-/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions -/
+/-- info: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println
   (factNames (ofProgramFacts (assumeProg (.abs () "x" none (.app () (Transform.createFvar "f") trueExpr)))))
@@ -331,7 +315,7 @@ example : ProgramFact.noCFGBodies.check?.isSome = true := by decide
 
 /-! ### What the back end needs at exit -/
 
-/-- info: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval IO.println (factNames backEndRequiredFacts)
 
@@ -417,7 +401,9 @@ private def describe {σ₀ : ProgramFactSet}
     (r : Except String (ValidatedPipeline σ₀)) : String :=
   match r with
   | .ok vp =>
-      s!"accepted; phases {vp.phases.map (·.phase.name)}; exit {factNames vp.establishes}"
+      let phaseLines := String.intercalate "\n" (vp.phases.map (fun p => s!"  {p.phase.name}"))
+      let phasesBlock := if vp.phases.isEmpty then "phases: (none)" else s!"phases:\n{phaseLines}"
+      s!"accepted\n{phasesBlock}\nexit: {factNames vp.establishes}"
   | .error e => s!"rejected: {e}"
 
 /-- Print a validation outcome. -/
@@ -448,31 +434,56 @@ private def checkDelivering (consumer : String) (needed : ProgramFactSet)
 #guard_msgs in
 #eval checkDelivering "the SMT conversion" factSet![.noCFGBodies] [testEstablisher, testNoop]
 
-/-- info: accepted; phases [testEstablisher]; exit noCFGBodies -/
+/-- info: accepted
+phases:
+  testEstablisher
+exit: noCFGBodies -/
 #guard_msgs in
 #eval checkDelivering "the SMT conversion" factSet![.noCFGBodies] [testEstablisher]
 
-/-- info: accepted; phases []; exit (none) -/
+/-- info: accepted
+phases: (none)
+exit: (none) -/
 #guard_msgs in
 #eval check []
 
-/-- info: accepted; phases [testEstablisher]; exit noCFGBodies -/
+/-- info: accepted
+phases:
+  testEstablisher
+exit: noCFGBodies -/
 #guard_msgs in
 #eval check [testEstablisher]
 
-/-- info: accepted; phases [testRequirer]; exit (none) -/
+/-- info: accepted
+phases:
+  testRequirer
+exit: (none) -/
 #guard_msgs in
 #eval checkFrom factSet![.noCFGBodies] [testRequirer]
 
-/-- info: accepted; phases [testEstablisher, testRequirer]; exit (none) -/
+/-- info: accepted
+phases:
+  testEstablisher
+  testRequirer
+exit: (none) -/
 #guard_msgs in
 #eval check [testEstablisher, testRequirer]
 
-/-- info: accepted; phases [testRequirer, testNoop, testNoop]; exit (none) -/
+/-- info: accepted
+phases:
+  testRequirer
+  testNoop
+  testNoop
+exit: (none) -/
 #guard_msgs in
 #eval checkFrom factSet![.noCFGBodies] [testRequirer, testNoop, testNoop]
 
-/-- info: accepted; phases [testEstablisher, testPreserver, testRequirer]; exit (none) -/
+/-- info: accepted
+phases:
+  testEstablisher
+  testPreserver
+  testRequirer
+exit: (none) -/
 #guard_msgs in
 #eval check [testEstablisher, testPreserver, testRequirer]
 
@@ -550,32 +561,32 @@ private def contractTable (phases : List PipelinePhase) : String :=
     findings "required and established, that is a preserve" phases requiredAndEstablished ++
     findings "required then dropped" phases requiredThenDropped)
 
-/-- info: V starts holding here   | holds, and is carried on   + required here, and holds
-: not holding, but would be carried   (blank) not holding, and would not be carried
+/-- info: V starts holding here   | holds, and is carried on   + required here, holds, and is carried on
+- required here, holds, and is dropped here   : not holding, but would be carried   (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
 
                               CF  Lo  LM  BR  NG  PP  TA
-phase                           Ca  LI  SS  PF  IF  PoF
+phase                           Ca  LI  SS  PF  HO  Po
  1 assertNoCFGBodies          V : : : : : : : : : : : :
- 2 liftInternalFuncDecls      | : : : : : : : : V :
- 3 callElim                   + V : : :     : : | : :
- 4 termCheck                  + | : : : :   : : |   : :
- 5 precondElim                + | : : : :   V : |   : :
- 6 insertLoopInvariantAsserts + | : V V : : | : | : : :
- 7 loopElim                   + | V + +   : | : | : : :
- 8 monomorphizeProcedures     + + | | | : : | : | V : :
- 9 typeCheck                  | | | | | : : | : | | : V
-10 monomorphizeFunctions      | | | | | : : | : + + V |
-11 nondetElim                 + | | | |   : | V | | | |
-12 symbolicEval               + V + | | V   | + | | | |
-13 betaReduce                 | | | | | | V | | | | | |
-14 commonSubexprElim          + | | | | + | | | | | | |
+ 2 callElim                   + V : : :     : :   : :
+ 3 termCheck                  + | : : : :   : :     : :
+ 4 precondElim                + | : : : :   V :     : :
+ 5 insertLoopInvariantAsserts + | : V V : : | :   : : :
+ 6 loopElim                   + | V + +   : | :   : : :
+ 7 monomorphizeProcedures     + + | | | : : | :   V : :
+ 8 typeCheck                  | | | | | : : | :   | : V
+ 9 monomorphizeFunctions      | | | | | : : | :   + V |
+10 nondetElim                 + | | | |   : | V   | | |
+11 symbolicEval               + V + | | V   | - V | | |
+12 betaReduce                 | | | | | | V | : | | | |
+13 commonSubexprElim          + | | | | + | | : | | | |
    the backend                + + +     + + +   + + + +
 
 established and preserved, name it once: none
 required and established, that is a preserve: none
-required then dropped: none -/
+required then dropped:
+  symbolicEval: noNondetGuards -/
 #guard_msgs in
 #eval IO.println (contractTable corePipelinePhases)
 
@@ -589,16 +600,23 @@ rather than stopping at it, which is what shows both cells at once. -/
 info: # required here, and does not hold   V starts holding here   ' was holding, and is dropped here
 (blank) not holding, and would not be carried
 CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
-LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   IF: noInternalFuncDecl   PP: noPolymorphicProcedures   PoF: noPolymorphicFunctions   TA: typeAnnotated
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
 
                    CF  Lo  LM  BR  NG  PP  TA
-phase                Ca  LI  SS  PF  IF  PoF
+phase                Ca  LI  SS  PF  HO  Po
  1 testEstablisher V
  2 testNoop        '
  3 testRequirer    #
 -/
 #guard_msgs in
 #eval IO.println (phaseTable [testEstablisher, testNoop, testRequirer])
+
+private def glossaryLabels : List String :=
+  let rendered := phaseTable corePipelinePhases
+  ProgramFact.all.map fun f =>
+    ((rendered.splitOn s!": {f.name}").head!.takeEnd 2).trimAscii.toString
+
+#guard glossaryLabels.Nodup
 
 /-- info: assertNoCFGBodies establishes noCFGBodies, proved: true, preserves all: true -/
 #guard_msgs in
@@ -607,11 +625,43 @@ phase                Ca  LI  SS  PF  IF  PoF
 proved: {assertNoCFGBodiesPhase.provesContract}, \
 preserves all: {assertNoCFGBodiesPhase.preserves.facts == ProgramFact.all}"
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report coreValidatedPipeline
 
-/-- info: accepted; phases [filterProcedures, assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, filterProcedures, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  filterProcedures
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  filterProcedures
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report (coreValidatedPipeline
   (options := { Core.VerifyOptions.default with proceduresToVerify := some ["main"] }))
@@ -620,7 +670,23 @@ preserves all: {assertNoCFGBodiesPhase.preserves.facts == ProgramFact.all}"
 places procedure inlining just after the entry assertion, where it composes
 because the assertion has established the structured bodies it requires. -/
 
-/-- info: accepted; phases [assertNoCFGBodies, inlineProcedures, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  inlineProcedures
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report (do
   let phases ← Strata.Core.splicePhasesAfter "assertNoCFGBodies"
@@ -640,46 +706,118 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+/-- info: [assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
   | .ok ps => toString (ps.map Strata.Core.phaseName)
   | .error e => e)
 
-/-! The `functionInlining` and `unrollBoundedQuantifiers` options each insert phases
-after `symbolicEval`, independently of one another; unrolling brings its own
-`betaReduce` ahead of itself. -/
+/-! Function inlining and bounded-quantifier unrolling are in no default order, so a pipeline
+that wants either names it. Both belong after `symbolicEval`, and unrolling wants a reduction
+ahead of it, since its eligibility matchers read a guard syntactically. -/
 
-private def inliningOnly : VerifyOptions :=
-  { VerifyOptions.default with functionInlining := true }
+private def withInlining : List PipelinePhase :=
+  (Strata.Core.splicePhasesAfter "symbolicEval" [Strata.Core.passFunctionInlining]
+    corePipelinePhases).toOption.getD corePipelinePhases
 
-private def unrollingOnly : VerifyOptions :=
-  { VerifyOptions.default with unrollBoundedQuantifiers := true }
+private def withUnrolling : List PipelinePhase :=
+  (Strata.Core.splicePhasesAfter "symbolicEval"
+    [Strata.Core.passBetaReduce, Strata.Core.passUnrollBoundedQuantifiers]
+    corePipelinePhases).toOption.getD corePipelinePhases
 
-private def inliningAndUnrolling : VerifyOptions :=
-  { VerifyOptions.default with functionInlining := true, unrollBoundedQuantifiers := true }
+private def withInliningAndUnrolling : List PipelinePhase :=
+  (Strata.Core.splicePhasesAfter "symbolicEval"
+    [Strata.Core.passFunctionInlining, Strata.Core.passBetaReduce,
+     Strata.Core.passUnrollBoundedQuantifiers]
+    corePipelinePhases).toOption.getD corePipelinePhases
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  functionInlining
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
-#eval report (coreValidatedPipeline (options := inliningOnly))
+#eval check withInlining
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  betaReduce
+  unrollBoundedQuantifiers
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
-#eval report (coreValidatedPipeline (options := unrollingOnly))
+#eval check withUnrolling
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, functionInlining, betaReduce, unrollBoundedQuantifiers, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  functionInlining
+  betaReduce
+  unrollBoundedQuantifiers
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
-#eval report (coreValidatedPipeline (options := inliningAndUnrolling))
+#eval check withInliningAndUnrolling
 
 /-! Unrolling on its own, with nothing established about the program, is refused. -/
 
 /-- info: rejected: phase #1 `unrollBoundedQuantifiers` requires:
   • `noCFGBodies`: no preceding phase guarantees it
   • `noLoops`: no preceding phase guarantees it
-  • `staticSingleAssignment`: no preceding phase guarantees it -/
+  • `staticSingleAssignment`: no preceding phase guarantees it
+  • `hasObligationForm`: no preceding phase guarantees it -/
 #guard_msgs in
 #eval check [unrollBoundedQuantifiersPipelinePhase]
+
+/-! Unrolling before symbolic evaluation is refused, even when an assert phase
+supplies `staticSingleAssignment`: only symbolic evaluation establishes
+`hasObligationForm`. -/
+
+/-- info: rejected: phase #13 `unrollBoundedQuantifiers` requires `hasObligationForm` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated` — phase #14 `symbolicEval` later in this pipeline establishes it, so it may be ordered too late -/
+#guard_msgs in
+#eval report (match Strata.Core.resolvePhases
+    (corePipelinePhases ++ [Strata.Core.passUnrollBoundedQuantifiers])
+    ((corePipelinePhases.map Strata.Core.phaseName).takeWhile (· != "symbolicEval") ++
+     ["assertStaticSingleAssignment", "betaReduce", "unrollBoundedQuantifiers",
+      "symbolicEval", "betaReduce"]) with
+  | .ok ps => ValidatedPipeline.ofList ps
+  | .error e => .error e)
 
 /-! Every fact either phase requires it also preserves. -/
 
@@ -687,7 +825,7 @@ private def inliningAndUnrolling : VerifyOptions :=
 
 #guard requiredThenDropped functionInliningPipelinePhase == []
 
-/-- info: rejected: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+/-- info: rejected: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #5 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline
   (match Strata.Core.splicePhasesAfter "assertNoCFGBodies" [functionInliningPipelinePhase]
@@ -739,26 +877,26 @@ has an executable check. These pin that resolution, and that the resulting list
 is validated the same way the default one is. The helpers live in the curated
 `Strata.Core` API surface, so they are named in full here. -/
 
-/-- info: [assertNoCFGBodies, liftInternalFuncDecls, inlineProcedures] -/
+/-! An unknown name is a user error. The hint that follows it belongs to the command, which
+knows the flags it offers, so this package adds only what the caller passes. -/
+
+/-- info: Unknown phase name 'noSuchPhase'. -/
 #guard_msgs in
-#eval IO.println (match Strata.Core.resolvePhases
-    (corePipelinePhases ++ [Strata.Core.passInlineAll])
-    ["assertNoCFGBodies", "liftInternalFuncDecls", "inlineProcedures"] with
+#eval IO.println (match Strata.Core.resolvePhases corePipelinePhases ["noSuchPhase"] with
   | .ok ps => toString (ps.map Strata.Core.phaseName)
   | .error e => e)
 
-/-! An unknown name is a user error naming the flag that lists the choices. -/
-
 /-- info: Unknown phase name 'noSuchPhase'. Use --display-phases to see the available phases. -/
 #guard_msgs in
-#eval IO.println (match Strata.Core.resolvePhases corePipelinePhases ["noSuchPhase"] with
+#eval IO.println (match Strata.Core.resolvePhases corePipelinePhases ["noSuchPhase"]
+    (hint := "Use --display-phases to see the available phases.") with
   | .ok ps => toString (ps.map Strata.Core.phaseName)
   | .error e => e)
 
 /-! Every fact with a check has an assert form; `typeAnnotated`, which has none,
 does not, so `typeCheck` stays its only source. -/
 
-/-- info: assertNoCFGBodies, assertNoCalls, assertNoLoops, assertNoLoopInvariants, assertNoLoopMeasures, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoPrecondsFromFuncs, assertNoNondetGuards, assertNoInternalFuncDecl, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions -/
+/-- info: assertNoCFGBodies, assertNoCalls, assertNoLoops, assertNoLoopInvariants, assertNoLoopMeasures, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoPrecondsFromFuncs, assertNoNondetGuards, assertHasObligationForm, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions -/
 #guard_msgs in
 #eval IO.println (", ".intercalate (ProgramFact.all.filterMap fun f =>
   let nm := Strata.Core.assertPhaseName f
@@ -783,7 +921,19 @@ private def allAssertNames : List String :=
     let nm := Strata.Core.assertPhaseName f
     (Strata.Core.assertPhaseFor nm).map (fun _ => nm))
 
-/-- info: accepted; phases [typeCheck, assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoBetaRedexes, assertNoPrecondsFromFuncs, assertNoInternalFuncDecl, assertNoPolymorphicProcedures, assertNoPolymorphicFunctions]; exit noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  typeCheck
+  assertNoCFGBodies
+  assertNoCalls
+  assertNoLoops
+  assertStaticSingleAssignment
+  assertNoBetaRedexes
+  assertNoPrecondsFromFuncs
+  assertHasObligationForm
+  assertNoPolymorphicProcedures
+  assertNoPolymorphicFunctions
+exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report (match Strata.Core.resolvePhases
                      (corePipelinePhases ++ [Strata.Core.passInlineAll])
@@ -801,7 +951,9 @@ rejects it, since it checks delivery to the back end as well. -/
   | .ok ps => s!"resolves to {ps.map Strata.Core.phaseName}"
   | .error e => s!"unexpected: {e}")
 
-/-- info: accepted; phases []; exit (none) -/
+/-- info: accepted
+phases: (none)
+exit: (none) -/
 #guard_msgs in
 #eval check []
 
@@ -813,7 +965,7 @@ info: rejected: phase #1 `the verification back end` requires:
   • `staticSingleAssignment`: no preceding phase guarantees it
   • `noBetaRedexes`: no preceding phase guarantees it
   • `noPrecondsFromFuncs`: no preceding phase guarantees it
-  • `noInternalFuncDecl`: no preceding phase guarantees it
+  • `hasObligationForm`: no preceding phase guarantees it
   • `noPolymorphicProcedures`: no preceding phase guarantees it
   • `noPolymorphicFunctions`: no preceding phase guarantees it
   • `typeAnnotated`: no preceding phase guarantees it
@@ -826,7 +978,20 @@ instead, and the phases they made unnecessary can go. Here `noLoops` assumed at
 entry lets both loop phases drop out, and the result still delivers what the
 back end needs. -/
 
-/-- info: accepted; phases [assertNoCFGBodies, liftInternalFuncDecls, callElim, termCheck, precondElim, monomorphizeProcedures, typeCheck, monomorphizeFunctions, nondetElim, symbolicEval, betaReduce, commonSubexprElim]; exit noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
+/-- info: accepted
+phases:
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  monomorphizeProcedures
+  typeCheck
+  monomorphizeFunctions
+  nondetElim
+  symbolicEval
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipelineFrom factSet![.noLoops]
   (corePipelinePhases.filter fun p =>
@@ -835,7 +1000,7 @@ back end needs. -/
 /-! Dropping those two phases without assuming the fact is rejected, naming the
 phase that needed it. -/
 
-/-- info: rejected: phase #10 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noInternalFuncDecl, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated` -/
+/-- info: rejected: phase #9 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated` -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline
   (corePipelinePhases.filter fun p =>
@@ -847,19 +1012,39 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases assertNoCFGBodies,liftInternalFuncDecls,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+  --phases assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,monomorphizeProcedures,typeCheck,monomorphizeFunctions,nondetElim,symbolicEval,betaReduce,commonSubexprElim
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.
-To see the declared dependencies between phases, use --display-phase-contracts.
+To see what each phase requires and delivers, use --display-phase-contracts.
 
 Available, not in the default order:
 
   inlineProcedures
 -/
 #guard_msgs in
-#eval IO.println (Strata.Core.displayPhasesText corePipelinePhases
-  (extras := [Strata.Core.passInlineAll]))
+#eval IO.println (Strata.Core.displayPhasesText
+  { select := "--phases", displayContracts := "--display-phase-contracts" }
+  corePipelinePhases (extras := [Strata.Core.passInlineAll]))
+
+/-! The flag that sentence names prints each phase's contract, which is what a reader
+assembling a phase list has to compare. -/
+
+/--
+info: # required here, and does not hold   V starts holding here   | holds, and is carried on
++ required here, holds, and is carried on   : not holding, but would be carried   (blank) not holding, and would not be carried
+CF: noCFGBodies   Ca: noCalls   Lo: noLoops   LI: noLoopInvariants
+LM: noLoopMeasures   SS: staticSingleAssignment   BR: noBetaRedexes   PF: noPrecondsFromFuncs   NG: noNondetGuards   HO: hasObligationForm   PP: noPolymorphicProcedures   Po: noPolymorphicFunctions   TA: typeAnnotated
+
+                             CF  Lo  LM  BR  NG  PP  TA
+phase                          Ca  LI  SS  PF  HO  Po
+ 1 callElim                  # V : : :     : :   : :
+ 2 betaReduce                : | : : : : V : : : : : :
+   the verification back end # + #     # + #   # # # #
+-/
+#guard_msgs in
+#eval IO.println (Strata.Core.displayPhaseContractsText
+  [Strata.Core.passCallElim, Strata.Core.passBetaReduce])
 
 /-! Feeding `--display-phases`' output back through `--phases` reproduces the
 default pipeline, which is the round-trip the two flags promise. -/

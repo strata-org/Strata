@@ -15,8 +15,8 @@ representable assignment whose callee can throw. All three checks must therefore
 descend into the target's object expression, not only into the assigned value: the
 escape check (`validateExceptionEscapes`), the "not yet lowerable position" guard
 (`validateExceptionLowerability`), and the least-common-ancestor collection for a
-`catch` binding. A check that missed the target would accept a procedure declaring
-no `throws`, and leave the call unlowered.
+`catch` binding. A check that missed the target would accept a procedure whose
+declared `throws` type does not cover the callee's, and leave the call unlowered.
 
 This is a unit test rather than an end-to-end one because the shape cannot be
 written in Laurel source today: a field access whose object is a call does not
@@ -50,6 +50,10 @@ private def objType : TypeDefinition :=
 private def errType : TypeDefinition :=
   .Composite { name := mkId "MyError", fields := [], extending := [], instanceProcedures := [] }
 
+/-- `composite OtherError {}`: unrelated to `MyError`. -/
+private def otherErrType : TypeDefinition :=
+  .Composite { name := mkId "OtherError", fields := [], extending := [], instanceProcedures := [] }
+
 /-- `procedure mk() returns (o: Obj) throws (e: MyError) opaque;` (bodiless, so it has
     no escape of its own to report). -/
 private def mkProc : Procedure :=
@@ -61,20 +65,22 @@ private def mkProc : Procedure :=
     throwsType := some (mkTy (.UserDefined (mkId "MyError")))
     body := .Opaque [] none [] }
 
-/-- `procedure writesThroughTarget() { mk()#x := 1 }` — no `throws` clause, and the
-    only call sits in the assignment target. -/
+/-- `procedure writesThroughTarget() throws (e: OtherError) { mk()#x := 1 }` — the
+    declared `throws` type does not cover the callee's `MyError`, and the only call
+    sits in the assignment target. -/
 private def writerProc : Procedure :=
   { name := mkId "writesThroughTarget"
     inputs := []
     outputs := []
     preconditions := []
     decreases := none
+    throwsType := some (mkTy (.UserDefined (mkId "OtherError")))
     body := .Transparent (nn (.Assign
-      [⟨.Field (nn (.StaticCall (mkId "mk") [])) (mkId "x"), .unknown⟩]
+      [⟨.Field (nn (.StaticCall (mkId "mk") [] [])) (mkId "x"), .unknown⟩]
       (nn (.LiteralInt 1)))) }
 
 private def program : Program :=
-  { staticProcedures := [mkProc, writerProc], staticFields := [], types := [objType, errType] }
+  { staticProcedures := [mkProc, writerProc], staticFields := [], types := [objType, errType, otherErrType] }
 
 private def mentions (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1
@@ -87,7 +93,7 @@ private def isExceptionDiag (d : Strata.Message) : Bool :=
 
 /--
 info: exception diagnostics:
-  procedure 'writesThroughTarget' may let an exception of type 'MyError' escape; catch it with a `try`/`catch` or declare a `throws` clause
+  procedure 'writesThroughTarget' may throw 'MyError', which is not a subtype of its declared `throws` type 'OtherError'
   a call to a procedure that `throws` is not yet supported in this expression position; bind it to a variable first (e.g. `var t := f(); … t …`)
 other diagnostics: 0
 -/

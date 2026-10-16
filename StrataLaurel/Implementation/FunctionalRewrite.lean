@@ -263,22 +263,34 @@ private theorem sizeOf_dropLast_le {α : Type} [SizeOf α] (xs : List α) :
     cases as with
     | nil => simp
     | cons b bs =>
-      simp only [List.dropLast_cons₂, List.cons.sizeOf_spec] at *
+      simp only [List.dropLast_cons_cons, List.cons.sizeOf_spec] at *
       omega
 
 /-- The name of the uninterpreted function standing for the initial value of the
     bare declaration whose `uniqueId` is `uid`, and the name of the local the rewrite
     binds its result to.
 
-    Deriving both from `uniqueId` — unique program-wide after resolution — is what lets
-    this pass mint hole names without threading a counter through `functionalizeStmts`,
-    keeping that function pure and its termination proof unchanged.
+    Deriving both from `uniqueId` is what lets this pass mint hole names without
+    threading a counter through `functionalizeStmts`, keeping that function pure and its
+    termination proof unchanged.
+
+    The hole *procedure* name is additionally qualified by the owning procedure, because
+    it is GLOBAL and a `uniqueId` is not in fact unique program-wide: a pass that copies
+    a procedure with `{ proc with … }` carries its parameter ids into the copy.
+    `LiftInstanceProcedures` does exactly that, emitting a virtual method as both
+    `T$m$impl` and a `T$m` dispatcher, so the two share their output parameter's id — and
+    the output gets a hole just as a bare local does. Named by `uniqueId` alone, two
+    transparent copies mint the same name and resolution reports a duplicate definition.
+    The procedure name separates them, and is itself unique here because
+    `UniqueOverloadNames` runs earlier. `declHoleValName` needs no such qualification:
+    it names a local, bound inside one body.
 
     The prefixes are deliberately *not* `EliminateDeterministicHoles`' `$hole_`: that
     pass numbers its holes from a counter, so sharing a prefix could produce the same
     name twice and resolution would report a duplicate definition. Both start with `$`,
     which a user cannot write, so neither can be shadowed by a program's own name. -/
-private def declHoleName (uid : Nat) : Identifier := s!"$declHole_{uid}"
+private def declHoleName (procName : Identifier) (uid : Nat) : Identifier :=
+  s!"$declHole_{procName.text}_{uid}"
 
 private def declHoleValName (uid : Nat) : Identifier := s!"$declHoleVal_{uid}"
 
@@ -408,10 +420,10 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     form of a deterministic hole: this pass runs long after
     `eliminateDeterministicHolesPass`, so emitting a `.Hole` here would never be
     eliminated. -/
-private def declHoleProcs (typeArgs : List Identifier) (inputs : List Parameter)
-    (decls : List HoleBinding) : List Procedure :=
+private def declHoleProcs (procName : Identifier) (typeArgs : List Identifier)
+    (inputs : List Parameter) (decls : List HoleBinding) : List Procedure :=
   decls.map fun (uid, _, ty) =>
-    { name := declHoleName uid
+    { name := declHoleName procName uid
       typeArgs := typeArgs
       inputs := inputs
       outputs := [{ name := "$result", type := ty }]
@@ -438,12 +450,12 @@ private def declHoleProcs (typeArgs : List Identifier) (inputs : List Parameter)
 
     Hoisting evaluates every hole even on paths that never read it, which is harmless:
     an uninterpreted function is pure and total. -/
-private def holePrelude (inputs : List Parameter) (decls : List HoleBinding)
-    (body : StmtExprMd) : StmtExprMd :=
+private def holePrelude (procName : Identifier) (inputs : List Parameter)
+    (decls : List HoleBinding) (body : StmtExprMd) : StmtExprMd :=
   let src := body.source
   let args : List StmtExprMd := inputs.map fun p => ⟨.Var (.Local p.name), src⟩
   decls.foldr (init := body) fun (uid, name, ty) acc =>
-    let call : StmtExprMd := ⟨.StaticCall (declHoleName uid) args, src⟩
+    let call : StmtExprMd := ⟨.StaticCall (declHoleName procName uid) args [], src⟩
     let decl : StmtExprMd :=
       ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] call, src⟩
     ⟨.Block [decl, acc] none, src⟩
@@ -593,16 +605,25 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
     | ⟨.Return (some value), _⟩ => .ok value
     | ⟨.Return none, _⟩ => .ok retExpr
     | ⟨.Assign [⟨.Local name, targetSource⟩] value, _⟩ =>
-      -- Assigning to an input parameter is a destructive assignment the Core
-      -- translator must keep rejecting. Turning it into a shadowing declaration
-      -- would silently accept the program.
+      -- A plain input cannot be mutated anywhere: an `opaque` body writing to its own
+      -- input is rejected by Core's type checker, with a far worse message. An *inout*
+      -- can be, but only in an opaque body — a function has one result and no slot to
+      -- thread the new value out, so a transparent body cannot mutate either kind.
+      -- This check keeps both rejections alive through the functional rewrite, which
+      -- would otherwise turn the assignment into a shadowing declaration and silently
+      -- accept it.
+      --
+      -- The author may not have written an assignment at all: a `modifies` callee or a
+      -- global write is threaded through the signature as an inout, so calling one from
+      -- a transparent body arrives here as an assignment to `$heap` or to the global.
       --
       -- Compared by `uniqueId`, not by text: a local that shadows an input has the
       -- same name but a different binding, and assigning to *it* is the ordinary
       -- destructive-update case that this pass handles.
       if name.uniqueId.any inputUids.contains then
         unsupported s.source
-          "destructive assignments are not supported in transparent bodies or contracts"
+          s!"a transparent body or contract cannot YET mutate any of its inputs, \
+             and this mutates '{name.text}'"
       else do
         let value ← match value with
           | ⟨.Block valueStmts _, _⟩ =>
@@ -752,8 +773,9 @@ private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure)
         -- The prelude is wrapped around the rewritten body *before* stripping, so its
         -- own declarations lose their ids like every other declaration this pass makes
         -- and the re-resolve mints fresh ones.
-        ({ proc with body := .Transparent (stripLocalUids (holePrelude proc.inputs decls body')) },
-         declHoleProcs proc.typeArgs proc.inputs decls, [])
+        (let prelude := holePrelude proc.name proc.inputs decls body'
+         ({ proc with body := .Transparent (stripLocalUids prelude) },
+          declHoleProcs proc.name proc.typeArgs proc.inputs decls, []))
       | .error diag => (proc, [], [diag])
     | [] =>
       -- A void procedure is legal (`valuelessEarlyReturn` is a transparent body

@@ -123,7 +123,11 @@ phase's claim — the exception is a phase that returns its input unchanged, whe
 `ProgramFactSet.all` is the honest answer. -/
 
 /-- A verification pipeline phase: a program transformation, its model
-    validation, and its phase contract (empty by default). -/
+    validation, and its phase contract (empty by default).
+
+    A phase a caller may select by name must also be listed in `Core.nameablePhases`.
+    One that is not there is deliberately not nameable — neither `--phases` nor a
+    registered pipeline entry can refer to it. -/
 structure PipelinePhase where
   /-- The program-to-program transformation.
     Returns false if the output Program is identical to the input Program

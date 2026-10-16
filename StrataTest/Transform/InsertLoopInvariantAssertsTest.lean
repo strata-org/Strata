@@ -70,8 +70,7 @@ procedure countUp (n : int)
   {
     assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
     assume [insertLoopInvAssume_invariant_loop_0_1]: int.le(i, n);
-    var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
@@ -205,8 +204,7 @@ procedure nondetMeasure (n : int)
   while *
   {
     assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
-    var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
@@ -247,8 +245,7 @@ procedure nondetMeasureOnly (n : int)
   i := 0;
   while *
   {
-    var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
@@ -300,10 +297,10 @@ procedure nondetInv ()
 /-- A deterministic loop with only a `decreases` measure and no invariant.
     This exercises the measure-only path: because the invariant list is empty,
     the entry asserts/assumes, the mid-loop invariant assume, and the maintain
-    asserts are all absent, while the measure setup (`init`/`assume`/`measure_lb`)
-    and the strict-decrease assert are still emitted inside the body. The only
-    statement left after the loop is the negated guard assume (there is no exit
-    invariant assume, since there is no invariant). -/
+    asserts are all absent, while the measure snapshot (`init`) with its
+    `measure_lb` assert and the strict-decrease assert are still emitted inside
+    the body. The only statement left after the loop is the negated guard assume
+    (there is no exit invariant assume, since there is no invariant). -/
 def measureOnlyPgm :=
 #strata
 program Core;
@@ -328,8 +325,7 @@ procedure measureOnly (n : int)
   i := 0;
   while (int.lt(i, n))
   {
-    var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    var $__loop_measure_loop_0 : int := int.sub(n, i);
     assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
     i := int.add(i, 1);
     assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);

@@ -107,4 +107,53 @@ public theorem matchTypeArg_monotone (declared actual : HighType)
   -- once into a child whose IH preserves `k` (`.TSet`). All uniform: unfold, then `grind`.
   | _ => simp only [matchTypeArg] at hm <;> grind
 
+/-- `withClauses` installs the given clause lists on a coroutine and drops them
+    on a regular procedure, so a member of the result is a member of the input. -/
+public theorem mem_relies_withClauses (c : CoroutineContracts)
+    (relies guarantees : List Condition) (yields resumes : List Parameter)
+    {x : Condition} (hx : x ∈ (c.withClauses relies guarantees yields resumes).relies) :
+    x ∈ relies := by
+  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.relies] at hx <;> exact hx
+
+/-- `withClauses` installs the `guarantees` list it is given on a coroutine and
+    drops it on a regular procedure, so a `guarantees` of the result is one it was
+    given. -/
+public theorem mem_guarantees_withClauses (c : CoroutineContracts)
+    (relies guarantees : List Condition) (yields resumes : List Parameter)
+    {x : Condition} (hx : x ∈ (c.withClauses relies guarantees yields resumes).guarantees) :
+    x ∈ guarantees := by
+  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.guarantees] at hx
+  exact hx
+
+/-- `withClauses` leaves the channel bindings alone: a binding of the result is a
+    binding it was given. -/
+public theorem mem_yields_withClauses (c : CoroutineContracts)
+    (relies guarantees : List Condition) (yields resumes : List Parameter)
+    {x : Parameter} (hx : x ∈ (c.withClauses relies guarantees yields resumes).yields) :
+    x ∈ yields := by
+  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.yields] at hx
+  exact hx
+
+/-- `withClauses` leaves the channel bindings alone, so a `resumes` binding of the
+    result is one it was given. -/
+public theorem mem_resumes_withClauses (c : CoroutineContracts)
+    (relies guarantees : List Condition) (yields resumes : List Parameter)
+    {x : Parameter} (hx : x ∈ (c.withClauses relies guarantees yields resumes).resumes) :
+    x ∈ resumes := by
+  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.resumes] at hx
+  exact hx
+
+/-- `withClauses` keeps the regular/coroutine distinction. -/
+public theorem kind_coroutine_withClauses (c : CoroutineContracts)
+    (relies guarantees : List Condition) (yields resumes : List Parameter)
+    (hk : (c.withClauses relies guarantees yields resumes).kind = ProcedureKind.Coroutine) :
+    c.kind = ProcedureKind.Coroutine := by
+  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.kind] at hk ⊢
+
+/-- `Operation.procName` and `Operation.ofProcName?` are inverse: the built-in
+    wrapper name of an operator names that operator. -/
+public theorem ofProcName?_procName (op : Operation) :
+    Operation.ofProcName? op.procName = some op := by
+  cases op <;> rfl
+
 end Strata.Laurel

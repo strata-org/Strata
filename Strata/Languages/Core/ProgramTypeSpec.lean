@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Languages.Core.FunctionTypeSpec
 public import Strata.Languages.Core.ProcedureTypeSpec
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.DatatypeTypeSpec
@@ -66,7 +67,7 @@ Declarative typing for a single declaration, parameterized over `ExprTypingSpec`
 `DeclHasType' τ P C Γ decl C' Γ'` reads: "under program `P`, in ambient context
 `C` and type-scope `Γ`, declaration `decl` is well-typed and yields output
 context `C'` and type-scope `Γ'`." `P` is threaded to `ProcHasType'` (so
-procedure bodies can resolve `call`s and local `funcDecl`s).
+procedure bodies can resolve `call`s).
 
 Only `type` synonyms extend `Γ` (with a new alias); type constructors/datatypes
 and function/procedure declarations extend `C` (with a known type, datatype
@@ -108,6 +109,12 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
   | ax : ∀ C Γ a md,
       S.exprTyped C Γ a.e (S.embed .bool) →
       DeclHasType' τ P C Γ (.ax a md) C Γ
+
+  /-- A lemma declaration: its expression is a `bool` in the current context.
+      Contexts are unchanged. -/
+  | lemma : ∀ C Γ l md,
+      S.exprTyped C Γ l.e (S.embed .bool) →
+      DeclHasType' τ P C Γ (.lemma l md) C Γ
 
   /-- A `distinct` declaration: each listed expression is well-typed at some
       monotype. Contexts are unchanged. -/

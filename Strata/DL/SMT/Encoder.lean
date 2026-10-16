@@ -132,19 +132,10 @@ def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
   isFunUninterp := {}
   usedNames := names.union smtReservedKeywordsSet
 
-@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
+abbrev EncoderM (α) := StateT EncoderState SolverEncodingM α
 
 
 namespace Encoder
-
-/-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
-    reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
-    names with `$` to make them valid simple symbols. -/
-def sanitizeSmtName (name : String) : String :=
-  if name.isEmpty then name
-  else
-    let first := name.front
-    if first == '@' || first == '.' then "$" ++ name else name
 
 /-- Base name for internally generated UF identifiers. Correctness is enforced
     by the `usedNames` registry which disambiguates via `@N` suffixes on
@@ -188,7 +179,7 @@ def seedManagedName (estate : EncoderState) (uf : UF) : EncoderState :=
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).functions.get? uf then return enc
-  let baseName := sanitizeSmtName uf.id
+  let baseName := uf.id
   let id ← uniquify baseName
   comment uf.id
   Solver.declareFun id uf.args uf.out
@@ -288,8 +279,11 @@ def encodeFunctionDef (f : IF) : EncoderM String := do
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
-  let (_, text, _) ← Solver.recordToString ((Encoder.encodeTerm e).run EncoderState.init)
-  pure text
+  let (result, text, _) ←
+    Solver.recordToString (((Encoder.encodeTerm e).run EncoderState.init).run)
+  match result with
+  | .ok _ => pure text
+  | .error err => throw (IO.userError (toString err))
 
 /--
 Once you've generated `Asserts` with one of the functions in Verifier.lean, you
@@ -303,7 +297,7 @@ Then you can run any `SolverM` action `act` with `act |>.run solver`, where
 Solver.lean.
 
 -/
-def encode (ts : List Term) : SolverM Unit := do
+def encode (ts : List Term) : SolverEncodingM Unit := do
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]

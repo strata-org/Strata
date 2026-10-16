@@ -10,6 +10,12 @@ public import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 import StrataLaurel.Implementation.DesugarShortCircuit
 import StrataLaurel.Implementation.EliminateReturnStatements
 import StrataLaurel.Implementation.EliminateDoWhile
+-- The passes' `NodeKind` declarations, proven against the pass bodies. Imported
+-- here so the pipeline's build checks them: `orderingRespected` below derives the
+-- pass order from declarations that these proofs tie to what the passes do.
+import StrataLaurel.Implementation.EliminateDoWhileProps
+import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
+import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
@@ -136,7 +142,7 @@ def laurelPipeline : Array LoweringPass := #[
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
-  -- Note: the exception contract checks (catch-or-declare, plus the
+  -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
@@ -164,10 +170,10 @@ def laurelPipeline : Array LoweringPass := #[
   -- written global is by now an inout in the ordinary signature sense, which is
   -- what `procInoutNames` recognizes. Before `Contracts`, so that pass sees `$heap`
   -- as a plain inout and its existing `$out` machinery handles it unchanged.
-  uniqueOverloadNamesPass,
   pushOldInwardPass,
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
+  uniqueOverloadNamesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
   loopInvariantWellFormednessPass,
@@ -278,14 +284,13 @@ private def runLaurelPasses
         -- post-`MonomorphizeComposites`, where the clone's throws type is concrete and an
         -- `int </: bool` escape surfaces as a NEW `.userError` (from `checkProcedureThrows`).
         -- Wrapping it as an internal `.strataBug` would misblame the compiler for the user's
-        -- unsound throws contract, so pass these through unchanged. The two markers are the
-        -- SAME string constants `checkProcedureThrows` weaves into its two diagnostics, so this
+        -- unsound throws contract, so pass these through unchanged. The marker is the
+        -- SAME string constant `checkProcedureThrows` weaves into its diagnostic, so this
         -- cross-module match is compile-time-guaranteed to stay in sync — rewording a message
         -- can't silently desync the classifier. (Matching on `MessageKind` instead cannot work:
         -- a genuine dangling-ref failure is also a `.userError`.)
         let isExceptionContract (d : Message) : Bool :=
           (d.message.splitOn escapeNotSubtypeMarker).length > 1
-            || (d.message.splitOn escapeUndeclaredMarker).length > 1
         let asStrataBug (d : Message) : Message :=
           { d with
               message :=
@@ -635,7 +640,14 @@ public structure PassDependency where
     pipeline-generated weakens this check silently — see the note there.
 
     Re-creating a shape after it has been removed is allowed, so long as nothing downstream
-    declares it `unsupported`. -/
+    declares it `unsupported`. A *single* pass declaring the same shape twice is not: a shape
+    in both `creates` and `removes`, or in both `creates` and `unsupported`, is rejected here
+    rather than resolved. Such a declaration carries no information — the live-set update
+    treats a shape in `creates` and `removes` exactly as it treats one in neither — while
+    reading as though the shape is gone, and a pass's `Contains` specification cannot
+    contradict it: `(s \ removes) ∪ creates` holds the shape either way. The way to say
+    "the source form is gone, mine remains" is to declare the two forms as separate refined
+    kinds, as `EliminateDoWhile` does with `While` and `While.postTest.true`. -/
 public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.run do
   let mut live : NodeKind → Bool := NodeKind.inSource
   -- The pass that last removed each shape, for dependency provenance.
@@ -643,6 +655,13 @@ public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.
   let mut failures : List OrderingFailure := []
   let mut deps : List PassDependency := []
   for p in allPasses do
+    for k in p.creates do
+      if p.removes.contains k then
+        failures := failures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and removes" }]
+      if p.unsupported.contains k then
+        failures := failures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and unsupported" }]
     for k in p.unsupported do
       if live k then
         failures := failures ++
@@ -653,8 +672,8 @@ public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.
     -- Bind the declarations before updating `live`, so the closure does not capture it.
     let (removes, creates, name) := (p.removes, p.creates, p.name)
     for k in removes do lastRemover := lastRemover.insert k name
-    -- `creates` wins a contradictory declaration: the shape stays live, so a downstream
-    -- `unsupported` on it fails loudly rather than passing in silence.
+    -- `creates` wins, which the check above has already rejected as a declaration: the shape
+    -- stays live, so a downstream `unsupported` on it fails loudly rather than in silence.
     live := fun k =>
       if creates.contains k then true
       else if removes.contains k then false

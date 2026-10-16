@@ -50,8 +50,19 @@ procedure main() {
     assert [lt_concrete_true]: str.lt("abc", "abd");
     assert [le_concrete_true]: str.le("abc", "abc");
 
+    // `str.lt`/`str.le` over a SYMBOLIC operand. The three literal rows above
+    // (and `lt_irrefl` below) are folded to `true` by `Str.Lt`/`Str.Le`'s
+    // concrete evaluator before the solver is reached — their obligation prints
+    // as `true`, so they pin the EVALUATOR, not the backend. These two are the
+    // backend's: an uninterpreted function would discharge neither.
+    assert [lt_symbolic_irrefl]: !str.lt(s1, s1);
+    assert [le_symbolic_refl]: str.le(s1, s1);
+
     // SMT-LIB edge-case conventions (out-of-range indexof/at, absent/empty
-    // replace pattern, lt irreflexivity). These pin the backend semantics.
+    // replace pattern, lt irreflexivity). These pin the backend semantics
+    // except where noted above: the `str.lt`/`str.le`/`str.prefixof`/
+    // `str.suffixof`/`str.contains`/`str.at`/`str.replace`/`str.indexof`/
+    // `str.len`/`str.concat` rows with all-literal operands are folded.
     assert [indexof_neg_offset]: str.indexof("abcdef", "cd", int.neg(1)) == int.neg(1);
     assert [indexof_absent]: str.indexof("abcdef", "xy", 0) == int.neg(1);
     assert [at_oob]: str.at("abc", 5) == "";
@@ -194,7 +205,7 @@ s1_len: str.len(s1) == 3
 s2_len: str.len(s2) == 3
 s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
-str.lt("abc", "abd")
+true
 
 Label: le_concrete_true
 Property: assert
@@ -203,7 +214,25 @@ s1_len: str.len(s1) == 3
 s2_len: str.len(s2) == 3
 s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
-str.le("abc", "abc")
+true
+
+Label: lt_symbolic_irrefl
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+!(str.lt(s1, s1))
+
+Label: le_symbolic_refl
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+str.le(s1, s1)
 
 Label: indexof_neg_offset
 Property: assert
@@ -266,7 +295,7 @@ s1_len: str.len(s1) == 3
 s2_len: str.len(s2) == 3
 s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
-!(str.lt("abc", "abc"))
+true
 
 Label: contains_empty
 Property: assert
@@ -354,6 +383,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: le_concrete_true
+Property: assert
+Result: ✅ pass
+
+Obligation: lt_symbolic_irrefl
+Property: assert
+Result: ✅ pass
+
+Obligation: le_symbolic_refl
 Property: assert
 Result: ✅ pass
 

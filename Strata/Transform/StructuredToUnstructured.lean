@@ -127,9 +127,6 @@ match ss with
 | .cmd c :: rest =>
   -- Accumulate this command to be emitted at the next block end.
   stmtsToBlocks k rest exitConts (c :: accum)
-| .funcDecl _ _ :: rest => do
-  -- Not yet supported, so just continue with `rest`.
-  stmtsToBlocks k rest exitConts accum
 | .typeDecl _ _ :: rest => do
   -- Not yet supported, so just continue with `rest`.
   stmtsToBlocks k rest exitConts accum

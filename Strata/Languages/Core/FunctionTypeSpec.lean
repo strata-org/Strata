@@ -32,9 +32,8 @@ public section
 /-- The typing context for a function body: the ambient context `Γ` with one new
     scope binding each formal to its declared monotype.
 
-    `Γ` matters because a statement-level `funcDecl` is checked with the enclosing
-    procedure's locals/params in scope and its body may reference them; for
-    top-level functions `Γ.types = []`, leaving just the formals scope. -/
+    For top-level functions the ambient type scope `Γ.types` is empty, leaving
+    just the formals scope. -/
 def funcContext (Γ : TContext Unit) (func : Function) : TContext Unit :=
   { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (func.inputs.map (fun (id, mty) => (id, .forAll [] mty)))) }
 

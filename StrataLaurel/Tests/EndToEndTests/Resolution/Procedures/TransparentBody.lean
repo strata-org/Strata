@@ -3,13 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import StrataLaurel.Tests.Util.TestLaurel
+module
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure assertAndAssumeInFunctions(a: int) returns (r: int)
@@ -53,7 +53,7 @@ An if-then-else followed by more statements is *not* an error: the continuation
 is duplicated into both branches. See `deadCodeAfterIfElse` in
 `Verification/Fundamentals/TransparentBody.lean`. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 

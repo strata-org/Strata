@@ -39,6 +39,13 @@ Having an idiomaticity test per pass is recommend but not required.
 
 The folder UnitTests contains tests that require calling internal Laurel APIs. Adding unit tests is recommend for utility functions such as the generic Laurel traversal code that's in MapStmtExprTest.
 
+**Do not unit test how a feature or a pass behaves.** How a feature behaves belongs in EndToEndTests, from the user's perspective; how a pass encodes it belongs in Idiomaticity, comparing the program before and after that pass. A unit test that builds an AST by hand and calls a pass's `run` on it is the wrong tool for either question, for two reasons:
+
+- It can pass while the feature is broken end to end, because it exercises one pass in isolation rather than the pipeline the user gets.
+- It pins an AST that nothing may be able to produce. The parser, the resolver and the type checker all restrict what reaches a pass, so a hand-built input can encode a shape no source program and no earlier pass ever creates.
+
+That second point is worth turning around, because it is easy to get backwards: if a behaviour cannot be expressed as a source program, that is evidence the behaviour is unreachable, not a licence to reach for a unit test. Check whether the shape is reachable — from the grammar, and from what earlier passes construct — before writing anything. If it is not reachable, the change under test needs a different justification than a test can give it, and saying so in the code review is more useful than a test that guards a shape nobody builds.
+
 # UseCases
 
 The folder UseCases contains tests that demonstrate how a front end is expected to model a source-language pattern, rather than pinning the semantics of a single Laurel construct. They answer "is this idiom expressible, and does it read reasonably?" instead of "is this construct correct?", so they usually combine several features and mirror a shape from Java, Python, or JavaScript.

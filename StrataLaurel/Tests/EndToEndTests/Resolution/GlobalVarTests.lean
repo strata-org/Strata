@@ -239,7 +239,10 @@ procedure mayThrowCall(b: int)
 };
 #end
 
-/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. -/
+/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. The modifies gate
+runs before the `old(...)`-globals validation, which sees only surviving targets, so a
+non-composite entry is reported as unframeable instead. Exempting `old(...)` from the gate would
+put `modifies old(<opaque>)` on the compiler-bug path. -/
 
 #guard_msgs in
 #eval testLaurelResolution <|
@@ -252,10 +255,35 @@ procedure mayThrowModifiesOld(b: int)
   opaque
   throwsOn b == 0 {
     modifies old(g)
-//               ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+//           ^^^^^^ error: modifies clause entry has non-composite type 'int'; only a heap object can be framed
   }
 {
   g := g
+};
+#end
+
+/-! The gate keeps only composites, and a composite target still reaches the rule above from a
+frame — so that position keeps its coverage. A composite-typed global has to be initialized with
+a hole: `new` is not effect-free, and omitting the initializer is rejected outright. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Holder {
+  var v: int
+}
+composite Exception {}
+var gh: Holder := <??>
+procedure mayThrowModifiesOldComposite(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    modifies old(gh)
+//               ^^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+{
+  b := b
 };
 #end
 
@@ -617,10 +645,10 @@ procedure runMe()
 program Laurel;
 var $result: int := 0
 //  ^^^^^^^ error: file-scope global name '$result' is reserved for compiler-generated variables
-var $tmp0: int := 0
-//  ^^^^^ error: file-scope global name '$tmp0' is reserved for compiler-generated variables
-var $cp_0: int := 0
-//  ^^^^^ error: file-scope global name '$cp_0' is reserved for compiler-generated variables
+var $writeValue0: int := 0
+//  ^^^^^^^^^^^^ error: file-scope global name '$writeValue0' is reserved for compiler-generated variables
+var $inputCopy0: int := 0
+//  ^^^^^^^^^^^ error: file-scope global name '$inputCopy0' is reserved for compiler-generated variables
 var $heap: int := 0
 //  ^^^^^ error: file-scope global name '$heap' is reserved for compiler-generated variables
 #end
@@ -647,7 +675,7 @@ procedure conditionalWriter(flag: bool) returns ($static.g: int) opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -698,7 +726,7 @@ procedure caller() opaque {
 
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -715,7 +743,7 @@ procedure caller(c: GlobalPair) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -734,7 +762,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var floor: int := 0
@@ -781,7 +809,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: bool := false
@@ -791,7 +819,7 @@ constrained MutatesGlobal = x: bool where (g := true) witness false
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -809,7 +837,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -823,7 +851,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -838,7 +866,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -855,7 +883,7 @@ procedure caller() opaque
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -872,7 +900,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: bool := false
@@ -884,7 +912,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -898,7 +926,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var $result: int := 0
@@ -911,7 +939,7 @@ composite InitialErrorInstance {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -923,7 +951,7 @@ constrained GlobalWitness = x: int where x >= 0 witness readG()
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -935,7 +963,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -950,7 +978,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -998,7 +1026,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1020,7 +1048,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1032,7 +1060,7 @@ procedure setG(v: int)
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1048,7 +1076,7 @@ procedure trigger()
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1069,7 +1097,7 @@ procedure caller(c: bool) opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1082,7 +1110,7 @@ procedure setG(v: int) returns (r: int)
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1098,7 +1126,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1124,7 +1152,7 @@ procedure reader() returns (r: int) opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1143,7 +1171,7 @@ procedure caller() opaque {
 
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1164,7 +1192,7 @@ procedure caller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1179,7 +1207,7 @@ procedure assertCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1194,7 +1222,7 @@ procedure assumeCaller() opaque {
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -1257,17 +1285,59 @@ procedure caller() opaque {
 };
 #end
 
--- A generic-typed file-scope global is rejected (`validateGlobalTypes`): monomorphization does
--- not reach a global's initializer, so a `.Applied` global type would reach Core un-monomorphized.
--- A generic COMPOSITE field is supported (#1394); only the file-scope-global case is rejected here.
+-- A generic global type is accepted whatever its head denotes: every lowering pass that rewrites
+-- types traverses a global's INITIALIZER alongside its type, so a generic-typed global is
+-- monomorphized like any other field. What each head then MEANS in Core is checked in
+-- Verification/Fundamentals/GlobalVars.lean; here only the heads that reach no further are
+-- covered. `Box<int>` is a composite.
 #guard_msgs in
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Box<T> { var v: T }
-var g: Box<int> := new Box<int>
-//     ^^^^^^^^ error: a generic datatype instantiation ('Box<…>') is not yet supported as a file-scope global type
-procedure u() opaque { assert 1 == 1 };
+procedure mkBox() returns (r: Box<int>) external;
+var g: Box<int> := mkBox()
+#end
+
+-- A user-declared opaque head, whose initializer is also a polymorphic call.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+opaque MyBox<T>
+procedure mk<T>() returns (r: MyBox<T>) external;
+var m: MyBox<int> := mk()
+#end
+
+-- A generic ALIAS over an exempt head. `TypeAliasElim` runs before monomorphization, so an
+-- alias is unfolded and then monomorphized from its target.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+type S<T> = Set<T>
+var s: S<int> := setEmpty()
+#end
+
+-- Allocation in an initializer is still rejected: a file-scope initializer has no heap to
+-- mutate. This is the one rule that keeps `new` out, and it must fire on a generic `new` too.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+var s: Set<Box<int>> := setInsert(setEmpty(), new Box<int>)
+//                                            ^^^^^^^^^^^^ error: the initializer of file-scope global 's' must be effect-free
+#end
+
+-- The same global with a non-allocating initializer is accepted.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+var s: Set<Box<int>> := setInsert(setEmpty(), mkBox())
 #end
 
 

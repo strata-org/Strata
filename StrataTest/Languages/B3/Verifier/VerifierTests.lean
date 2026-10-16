@@ -10,6 +10,7 @@ import StrataDDM.Integration.Lean.HashCommands
 meta import Strata.Languages.B3.Verifier
 meta import Strata.Languages.B3.DDMTransform.ParseCST
 meta import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.Languages.B3.DDMTransform.DefinitionAST
 meta import Strata.DL.SMT.Solver
 
 meta section

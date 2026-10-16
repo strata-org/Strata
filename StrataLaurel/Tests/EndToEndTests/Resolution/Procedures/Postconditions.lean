@@ -3,15 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import StrataLaurel.Tests.Util.TestLaurel
+module
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
 /-! ## Procedures with postconditions -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 

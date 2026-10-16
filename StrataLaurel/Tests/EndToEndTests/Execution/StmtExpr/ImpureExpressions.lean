@@ -3,8 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import StrataLaurel.Tests.Util.TestLaurel
+module
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
@@ -42,6 +42,21 @@ procedure conditionalAssignmentInExpression(x: int)
   if x > 0 then {
     assert y == 1;
     assert z == 2
+  } else {
+    assert z == 0;
+    assert y == 0
+  }
+};
+
+// As above, but `y` is read left of the `if`, so before the `if` assigns it.
+procedure conditionalAssignmentRightOfRead(x: int)
+  opaque
+{
+  var y: int := 0;
+  var z: int := y + (if x > 0 then { y := y + 1 } else { 0 });
+  if x > 0 then {
+    assert y == 1;
+    assert z == 1
   } else {
     assert z == 0;
     assert y == 0
@@ -252,6 +267,26 @@ procedure whileInBranch(b: bool)
     }
     else { 0 });
   assert z >= 0
+};
+
+#end
+
+#guard_msgs (drop info) in
+-- No interpreters: the annotated failure is "could not be proved", which a concrete run cannot produce.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+// Regression: a loop with no assignment in a guarded branch must stay under its
+// guard, so the `assert false` after it is reachable when `c` is false. The verdict is
+// "could not be proved" rather than "does not hold" because the uninvariant loop on the
+// `c` path blocks a counterexample; what matters is that the assert is reported.
+// Verifier-only: the interpreter cannot reach a parameterised non-entry procedure.
+procedure loopInGuardedBranchStaysGuarded(c: bool)
+  opaque
+{
+  var y: int := (if c then { while (true) { }; 0 } else { 1 });
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 #end

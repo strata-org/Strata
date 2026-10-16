@@ -12,10 +12,9 @@ import all Strata.DL.Imperative.Stmt
 
 Core-to-Core transformation that beta-reduces directly-applied lambda redexes
 (`(fun x => body)(arg)`) in every expression of the program: function
-definition bodies and axioms (top-level, recursive, and locally declared via
-`funcDecl` statements), top-level axioms, `distinct` facts, procedure spec
-clauses, and all statement expressions in procedure bodies (structured and
-CFG form).
+definition bodies and axioms (top-level and recursive), top-level axioms,
+`distinct` facts, procedure spec clauses, and all statement expressions in
+procedure bodies (structured and CFG form).
 
 Such redexes arise from front-end lowerings that name an intermediate value
 with a `let`-style binding. For example, a pattern-match binding like Java's
@@ -54,23 +53,9 @@ private def reduceFunction (f : Function) : Function :=
     preconditions := f.preconditions.map fun pc => { pc with expr := LExpr.betaReduceRedexes pc.expr }
     measure := f.measure.map LExpr.betaReduceRedexes }
 
-/-- Beta-reduce every expression of a locally-declared function (a `funcDecl`
-    statement): its body, axioms, preconditions, and measure. The SMT factory
-    registers these bodies verbatim (`collectFuncDecls` in `Verifier.lean`), so
-    they need the same reduction as top-level function bodies. -/
-private def reducePureFunc (decl : Imperative.PureFunc Expression) :
-    Imperative.PureFunc Expression :=
-  { decl with
-    body := decl.body.map LExpr.betaReduceRedexes
-    axioms := decl.axioms.map LExpr.betaReduceRedexes
-    preconditions := decl.preconditions.map fun pc => { pc with expr := LExpr.betaReduceRedexes pc.expr }
-    measure := decl.measure.map LExpr.betaReduceRedexes }
-
 mutual
-/-- Beta-reduce all expressions in a statement. Unlike
-    `Imperative.Stmt.mapExpr` (which treats `funcDecl` as a leaf), this
-    traversal recurses into locally-declared functions, so a redex inside a
-    nested `funcDecl` body is reduced like any other function body. -/
+/-- Beta-reduce all expressions in a statement, recursing into the statements
+    nested in blocks, conditional branches, and loop bodies. -/
 private def reduceStmt (s : Statement) : Statement :=
   match s with
   | .cmd c => .cmd (Command.mapExpr LExpr.betaReduceRedexes c)
@@ -86,7 +71,6 @@ private def reduceStmt (s : Statement) : Statement :=
     .loop .nondet (measure.map LExpr.betaReduceRedexes)
       (inv.map fun (l, e) => (l, LExpr.betaReduceRedexes e)) (reduceBlock body) md
   | .exit l md => .exit l md
-  | .funcDecl decl md => .funcDecl (reducePureFunc decl) md
   | .typeDecl tc md => .typeDecl tc md
   termination_by Imperative.Stmt.sizeOf s
 
@@ -125,6 +109,7 @@ def betaReduceProgram (p : Program) : Program :=
       | .func f md => .func (reduceFunction f) md
       | .recFuncBlock fs md => .recFuncBlock (fs.map reduceFunction) md
       | .ax a md => .ax { a with e := LExpr.betaReduceRedexes a.e } md
+      | .lemma l md => .lemma { l with e := LExpr.betaReduceRedexes l.e } md
       | .distinct n es md => .distinct n (es.map LExpr.betaReduceRedexes) md
       | d => d }
 
@@ -143,7 +128,7 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
     (establishes := factSet![.noBetaRedexes])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noInternalFuncDecl, .noPolymorphicProcedures,
+                         .hasObligationForm, .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       return (true, Core.BetaReduce.betaReduceProgram prog)

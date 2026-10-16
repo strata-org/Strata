@@ -3,14 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests that the Laurel compilation pipeline produces the expected statistics
 counters. Uses `translateWithLaurel` which returns `Statistics` as the fourth
 tuple element.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.LaurelCompilationPipeline
 import Strata.Util.Statistics
 
@@ -20,7 +20,7 @@ open StrataTest.Util
 namespace Strata.Laurel
 
 /-- Translate the program through the full Laurel pipeline and print stats. -/
-private def printStats (program : StrataDDM.Program) : IO Unit := do
+private meta def printStats (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let (_, _, _, stats) ← translateWithLaurel {} laurelProgram
   IO.print stats.format
@@ -28,7 +28,7 @@ private def printStats (program : StrataDDM.Program) : IO Unit := do
 /-! ## Laurel Statistics: simple procedure -/
 
 #guard_msgs in
-#eval! printStats <|
+#eval printStats <|
 #strata
 program Laurel;
 procedure test(x: int) returns (y: int)
@@ -46,7 +46,7 @@ info: [statistics] EliminateHoles.holesEliminated: 1
 [statistics] InferHoleTypes.holesAnnotated: 1
 -/
 #guard_msgs in
-#eval! printStats <|
+#eval printStats <|
 #strata
 program Laurel;
 procedure p1(a: bool, b: bool) returns (r: bool)

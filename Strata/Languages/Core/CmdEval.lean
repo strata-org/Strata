@@ -153,7 +153,7 @@ instance : EvalContext Expression Env where
   recordAssertFailure := CmdEval.recordAssertFailure
   ignoreAssume        := CmdEval.ignoreAssume
 
-instance : ToFormat (Cmds Expression × Env) where
+instance instToFormatProdCmdsExpressionEnv : ToFormat (Cmds Expression × Env) where
   format arg :=
     let fcs := Imperative.formatCmds Expression arg.fst
     let fσ := format arg.snd

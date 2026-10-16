@@ -28,8 +28,8 @@ inductive Expr where
   | ff
   | not (e : Expr)
   /-- An "operator" reference — opaque to `miniEval` (returns `some (.op n)`),
-      but observable to evaluator extensions: a `funcDecl` whose name matches
-      `n` can give `.op n` a definite boolean value. -/
+      but observable to evaluator extensions that could give `.op n` a
+      definite boolean value. -/
   | op (name : String)
   deriving DecidableEq, Repr, Inhabited
 
@@ -64,6 +64,11 @@ abbrev MiniPureExpr : PureExpr :=
 
 instance : HasVal MiniPureExpr where
   value _ _ := True
+  valueOfTy _ _ _ := True
+
+instance : LawfulHasVal MiniPureExpr where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 
 instance : HasFvars MiniPureExpr where
   getFvars _ := []
@@ -73,7 +78,7 @@ instance : HasBool MiniPureExpr where
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
-  boolIsVal := fun _ => ⟨trivial, trivial⟩
+  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : HasBoolOps MiniPureExpr where
   not := .not
@@ -125,10 +130,6 @@ def emptyStore : SemanticStore MiniPureExpr := fun _ => none
 def ρ₀ : Env MiniPureExpr :=
   { store := emptyStore, factory := (), hasFailure := false }
 
-/-- `ExtendFactory` is irrelevant to this test, but we need a value. -/
-def miniExtendFactory : ExtendFactory MiniPureExpr :=
-  fun f _ _ => f
-
 /-- Arbitrary command type — unused, but `Stmt` needs something. -/
 abbrev CmdT := Unit
 
@@ -152,9 +153,9 @@ def prog : Stmt MiniPureExpr CmdT :=
 
 /-- The test: `.stmt prog ρ₀ →* .terminal ρ₀` -/
 theorem progReachesTerminal :
-    StepStmtStar MiniPureExpr noCmd miniExtendFactory
+    StepStmtStar MiniPureExpr noCmd
       (.stmt prog ρ₀) (.terminal ρ₀) := by
-  have htt : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some HasBool.tt := rfl
   -- Step 1: step_block — enter the outer labeled block.
   refine .step _ _ _ StepStmt.step_block ?_
   -- Step 2: step_block_body step_stmts_cons.
@@ -219,9 +220,9 @@ def progIteThen : Stmt MiniPureExpr CmdT :=
 
 /-- The test: `.stmt progIteThen ρ₀ →* .terminal ρ₀` via the `then` branch. -/
 theorem progIteThenReachesTerminal :
-    StepStmtStar MiniPureExpr noCmd miniExtendFactory
+    StepStmtStar MiniPureExpr noCmd
       (.stmt progIteThen ρ₀) (.terminal ρ₀) := by
-  have htt : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some HasBool.tt := rfl
   refine .step _ _ _ StepStmt.step_block ?_
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   refine .step _ _ _
@@ -262,9 +263,9 @@ def progIteElse : Stmt MiniPureExpr CmdT :=
 
 /-- The test: `.stmt progIteElse ρ₀ →* .terminal ρ₀` via the `else` branch. -/
 theorem progIteElseReachesTerminal :
-    StepStmtStar MiniPureExpr noCmd miniExtendFactory
+    StepStmtStar MiniPureExpr noCmd
       (.stmt progIteElse ρ₀) (.terminal ρ₀) := by
-  have hff : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.ff = some HasBool.ff := rfl
+  have hff : MiniPureExpr.eval () ρ₀.store HasBool.ff = some HasBool.ff := rfl
   refine .step _ _ _ StepStmt.step_block ?rest1
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?rest2
   -- step_ite_false — take the else branch.
@@ -319,13 +320,18 @@ abbrev MiniPureExpr2 : PureExpr :=
 
 instance : HasVal MiniPureExpr2 where
   value _ _ := True
+  valueOfTy _ _ _ := True
 
+
+instance : LawfulHasVal MiniPureExpr2 where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 instance : HasBool MiniPureExpr2 where
   tt := .tt
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
-  boolIsVal := fun _ => ⟨trivial, trivial⟩
+  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : HasBoolOps MiniPureExpr2 where
   not := .not
@@ -395,7 +401,7 @@ theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) () := by
 
 /-- The standard `EvalCmd` for `Cmd MiniPureExpr`. -/
 def stdEvalCmd : EvalCmdParam MiniPureExpr (Cmd MiniPureExpr) :=
-  EvalCmd MiniPureExpr
+  EvalCmd (P := MiniPureExpr)
 
 /-- A store where "x" is defined (maps to `.tt`), everything else is `none`. -/
 def storeWithX : SemanticStore MiniPureExpr :=
@@ -430,7 +436,7 @@ private theorem storeWithXY_frame :
 
 /-- After the block exits, the store should have "x" defined but "y" = none. -/
 theorem blockScopeTest :
-    StepStmtStar MiniPureExpr stdEvalCmd miniExtendFactory
+    StepStmtStar MiniPureExpr stdEvalCmd
       (.stmt progBlockScope ρ_x)
       (.terminal { store := storeWithX, factory := (), hasFailure := false }) := by
   -- Step 1: step_block — enter the block, saving ρ_x.store as σ_parent.
@@ -448,6 +454,7 @@ theorem blockScopeTest :
               (show storeWithX "y" = none from rfl)
               (show storeWithXY "y" = some .tt from rfl)
               storeWithXY_frame)
+            (show HasVal.valueOfTy (P := MiniPureExpr) () .tt .Bool from trivial)
             miniEval_wfVar)))) ?_
   -- Step 4: step_block_body (step_seq_done) — seq is done, go to stmts [].
   refine .step _ _ _
@@ -492,7 +499,7 @@ def progLoopScope : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
     by the per-iteration anonymous block).  With the new semantics, each
     iteration's body runs in its own block scope. -/
 theorem loopScopeTest :
-    StepStmtStar MiniPureExpr stdEvalCmd miniExtendFactory
+    StepStmtStar MiniPureExpr stdEvalCmd
       (.stmt progLoopScope ρ_x)
       (.terminal { store := storeWithX, factory := (), hasFailure := false }) := by
   -- Step 1: step_loop_nondet_enter — produces:
@@ -515,6 +522,7 @@ theorem loopScopeTest :
                 (show storeWithX "y" = none from rfl)
                 (show storeWithXY "y" = some .tt from rfl)
                 storeWithXY_frame)
+              (show HasVal.valueOfTy (P := MiniPureExpr) () .tt .Bool from trivial)
               miniEval_wfVar))))) ?_
   -- Step 4: step_seq_inner (step_block_body step_seq_done) — inner stmt terminal
   refine .step _ _ _
@@ -567,198 +575,12 @@ def progReinitStuck : List (Stmt MiniPureExpr (Cmd MiniPureExpr)) :=
     because `InitState` requires `σ "x" = none` but `σ "x" = some .tt`.
     We show no single step is possible from this configuration. -/
 theorem reinit_stuck :
-    ¬ ∃ c₂, StepStmt MiniPureExpr stdEvalCmd miniExtendFactory
+    ¬ ∃ c₂, StepStmt MiniPureExpr stdEvalCmd
       (.stmt (.cmd (.init "x" .Bool (.det .ff) .empty)) ρ_x) c₂ := by
   intro ⟨c₂, hstep⟩
   match hstep with
-  | .step_cmd (.eval_init _ (.init h_none _ _) _) =>
+  | .step_cmd (.eval_init _ (.init h_none _ _) _ _) =>
     exact absurd h_none (by simp [ρ_x, storeWithX])
-
----------------------------------------------------------------------
-
-/-! ## funcDecl scoping tests
-
-Any `.funcDecl` that is declared inside a block must not leak from the
-block: the evaluator `env` of `Env` must be roll backed to the original
-eval after the end of the block scope.
--/
-
-/-- A temporary HasSubstFvar instance -/
-instance : HasSubstFvar MiniPureExpr where
-  substFvar e _ _ := e
-  substFvars e _  := e
-
-/-- A trivial factory extension — since `Factory = Unit`, the factory cannot
-    carry information, so this is the identity. -/
-def addEval : ExtendFactory MiniPureExpr :=
-  fun f _ _ => f
-
-/-- A trivial `PureFunc` named `"f"` to feed into `.funcDecl`.  After the
-    funcDecl steps, the inner eval maps `.op "f"` to `some .tt`. -/
-def fFunc : PureFunc MiniPureExpr :=
-  { name := "f", inputs := ∅, output := .Bool }
-
-/-- The funcDecl statement we will plant inside each scope. -/
-def funcDeclStmt : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .funcDecl fFunc .empty
-
-/-- Quick sanity check: `miniEval` does not know about `"f"` — it leaves
-    `.op "f"` as itself. -/
-example : miniEval () emptyStore (.op "f") = some (.op "f") := rfl
-
-/-- After `addEval` is applied for `fFunc`, the factory is unchanged (Unit). -/
-example : addEval () emptyStore fFunc = () := rfl
-
-/-- `block "B" { funcDecl f := ... }` — the funcDecl is scoped to the block. -/
-def progBlockFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .block "B" [funcDeclStmt] .empty
-
-/-- Stepping the block to terminal restores `eval` to the original
-    `ρ_x.eval = miniEval`: the `funcDecl` does not leak past block exit. -/
-theorem progBlockFuncDecl_eval_restored :
-    StepStmtStar MiniPureExpr stdEvalCmd addEval
-      (.stmt progBlockFuncDecl ρ_x) (.terminal ρ_x) := by
-  -- Step 1: enter the block (snapshot `ρ_x.store` and `ρ_x.eval := miniEval`).
-  refine .step _ _ _ StepStmt.step_block ?_
-  -- Step 2: dive into the body via stmts_cons.
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  -- Step 3: fire the funcDecl — inner eval becomes `addEval miniEval ...`.
-  refine .step _ _ _
-    (StepStmt.step_block_body
-      (StepStmt.step_seq_inner StepStmt.step_funcDecl)) ?_
-  -- Step 4: seq inner reached terminal → drop into stmts [].
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  -- Step 5: stmts [] becomes terminal.
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_nil) ?_
-  -- Step 6: step_block_done — eval is RESTORED to e_parent (= miniEval),
-  -- and the projected store equals `ρ_x.store` (no `init`s ran).
-  conv => rhs; rw [(projectStore_self_env ρ_x).symm]
-  exact .step _ _ _ StepStmt.step_block_done (.refl _)
-
-/-- `if .tt then { funcDecl f := ... } else { }` — funcDecl in the then
-    branch is also scoped: the implicit anonymous `.block .none` wrapper
-    around each branch captures `e_parent := ρ.eval`. -/
-def progIteFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .ite (.det .tt) [funcDeclStmt] [] .empty
-
-theorem progIteFuncDecl_eval_restored :
-    StepStmtStar MiniPureExpr stdEvalCmd addEval
-      (.stmt progIteFuncDecl ρ_x) (.terminal ρ_x) := by
-  have htt : MiniPureExpr.eval ρ_x.factory ρ_x.store HasBool.tt = some HasBool.tt := rfl
-  -- Step 1: step_ite_true wraps the then-branch in `.block .none ... ρ_x.eval ...`.
-  refine .step _ _ _ (StepStmt.step_ite_true htt miniEval_wfBool) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  refine .step _ _ _
-    (StepStmt.step_block_body
-      (StepStmt.step_seq_inner StepStmt.step_funcDecl)) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_nil) ?_
-  -- step_block_done restores eval to `e_parent = ρ_x.eval = miniEval` and
-  -- projects the store (identity here).
-  conv => rhs; rw [(projectStore_self_env ρ_x).symm]
-  exact .step _ _ _ StepStmt.step_block_done (.refl _)
-
-/-- `if .ff then { } else { funcDecl f := ... }` — same scoping fix
-    applied to the else branch. -/
-def progIteElseFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .ite (.det .ff) [] [funcDeclStmt] .empty
-
-theorem progIteElseFuncDecl_eval_restored :
-    StepStmtStar MiniPureExpr stdEvalCmd addEval
-      (.stmt progIteElseFuncDecl ρ_x) (.terminal ρ_x) := by
-  have hff : MiniPureExpr.eval ρ_x.factory ρ_x.store HasBool.ff = some HasBool.ff := rfl
-  refine .step _ _ _ (StepStmt.step_ite_false hff miniEval_wfBool) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
-  refine .step _ _ _
-    (StepStmt.step_block_body
-      (StepStmt.step_seq_inner StepStmt.step_funcDecl)) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_done) ?_
-  refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_nil) ?_
-  conv => rhs; rw [(projectStore_self_env ρ_x).symm]
-  exact .step _ _ _ StepStmt.step_block_done (.refl _)
-
-/-- `loop (nondet) { funcDecl f := ... }` — one iteration runs the body
-    inside the per-iteration `.block .none` wrapper.  When that body's
-    block terminates, `eval` is restored to `e_parent = ρ.eval = miniEval`,
-    so subsequent iterations / the final exit see the original eval. -/
-def progLoopFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
-  .loop .nondet none [] [funcDeclStmt] .empty
-
-theorem progLoopFuncDecl_eval_restored :
-    StepStmtStar MiniPureExpr stdEvalCmd addEval
-      (.stmt progLoopFuncDecl ρ_x) (.terminal ρ_x) := by
-  -- Step 1: step_loop_nondet_enter — body wrapped in `.block .none ... ρ_x.eval ...`.
-  refine .step _ _ _
-    (StepStmt.step_loop_nondet_enter) ?_
-  -- Steps 2-6: descend into the body's block, fire the funcDecl, run out.
-  refine .step _ _ _
-    (StepStmt.step_seq_inner
-      (StepStmt.step_block_body StepStmt.step_stmts_cons)) ?_
-  refine .step _ _ _
-    (StepStmt.step_seq_inner
-      (StepStmt.step_block_body
-        (StepStmt.step_seq_inner StepStmt.step_funcDecl))) ?_
-  refine .step _ _ _
-    (StepStmt.step_seq_inner
-      (StepStmt.step_block_body StepStmt.step_seq_done)) ?_
-  refine .step _ _ _
-    (StepStmt.step_seq_inner
-      (StepStmt.step_block_body StepStmt.step_stmts_nil)) ?_
-  -- Step 7: body's block terminates; `eval` is RESTORED to `miniEval` here.
-  refine .step _ _ _ (StepStmt.step_seq_inner StepStmt.step_block_done) ?_
-  -- Step 8: seq advances to the recursive `[loop ...]` with restored eval.
-  refine .step _ _ _ StepStmt.step_seq_done ?_
-  refine .step _ _ _ StepStmt.step_stmts_cons ?_
-  -- Step 9: step_seq_inner step_loop_nondet_exit — guard chooses to leave.
-  refine .step _ _ _
-    (StepStmt.step_seq_inner
-      (StepStmt.step_loop_nondet_exit)) ?_
-  refine .step _ _ _ StepStmt.step_seq_done ?_
-  -- The store has been projected once (body's block) but `ρ_x.store`'s shape
-  -- is preserved (no `init` ran).  Adjust the rhs shape to match
-  -- `step_stmts_nil`'s output.
-  conv => rhs; rw [show ρ_x =
-    { store := projectStore ρ_x.store ρ_x.store,
-      factory := ρ_x.factory,
-      hasFailure := ρ_x.hasFailure || false } from by
-    cases ρ_x; simp [projectStore_self]]
-  exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
-
-/-! ## Negative test: calling a `funcDecl`'d function after its block exits
-
-`progBlockFuncDecl` is the program
-
-  block "B" { funcDecl f := … }
-
-Here we make that scoping discipline observable by contrasting evaluator
-behaviour at three points along that trace, then proving that "calling f"
-after the block (modeled as an `ite` whose guard is the opaque expression
-`.op "f"`) is stuck because `f` has gone out of scope. -/
-
-/-- *Before* entering the block (the initial env): `miniEval` doesn't know
-    about `f`, so `.op "f"` stays opaque (returns itself). -/
-example : MiniPureExpr.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
-
-/-- *Inside* the block, after `step_funcDecl` has fired: the factory is
-    `addEval ρ_x.factory ρ_x.store fFunc`, which with `Factory = Unit` is
-    still `()`. The eval remains `miniEval` (unchanged by funcDecl). -/
-example : addEval ρ_x.factory ρ_x.store fFunc = () := rfl
-
-/-- *After* the block exits: `progBlockFuncDecl_eval_restored` returns us to
-    `ρ_x`, where `.op "f"` is opaque again — the funcDecl extension is gone. -/
-example : MiniPureExpr.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
-
-/-- And as a step-level consequence: from `ρ_x` (the env after the block),
-    an `ite` guarded by `.op "f"` cannot step. -/
-theorem funcDecl_out_of_scope_after_block :
-    ¬ ∃ c₂, StepStmt MiniPureExpr stdEvalCmd addEval
-      (.stmt (.ite (.det (.op "f")) [] [] .empty) ρ_x) c₂ := by
-  intro ⟨_, hstep⟩
-  cases hstep with
-  | step_ite_true h _ => simp [Expr.normBool] at h
-  | step_ite_false h _ => simp [Expr.normBool] at h
-
----------------------------------------------------------------------
 
 end StepStmtTest
 end

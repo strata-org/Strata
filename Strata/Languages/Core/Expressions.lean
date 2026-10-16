@@ -10,6 +10,8 @@ public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.IntBoolFactory
 
@@ -21,9 +23,8 @@ public section
 
 open Imperative
 
-@[expose] abbrev ExpressionMetadata := Unit
+abbrev ExpressionMetadata := Unit
 
-@[expose]
 abbrev Expression : PureExpr :=
    { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -49,7 +50,27 @@ def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.E
   .op () op.toString ty
 
 instance : HasVal Core.Expression where
-  value := fun f e => Lambda.LExpr.isCanonicalValue f e = true
+  value := fun f e => Lambda.LExpr.isValue f e = true
+  valueOfTy := fun f e ty =>
+    ∃ mty,
+      Lambda.LExpr.isValue f e = true ∧
+      ty.toMonoType? = some mty ∧
+      Lambda.LExpr.typeCheck [] e = some mty
+
+instance : LawfulHasVal Core.Expression where
+  valueOfTy_isVal := by
+    rintro _ _ _ ⟨_, hval, _, _⟩
+    exact hval
+  valueOfTy_congr := by
+    rintro f a b ty₁ ty₂
+      ⟨mty₁, _, hty₁, ha₁⟩
+      ⟨mty₂, _, hty₂, ha₂⟩
+      ⟨mty₃, hb, hty₃, hb₃⟩
+    have hmty₁₂ : mty₁ = mty₂ := Option.some.inj (ha₁.symm.trans ha₂)
+    have hmty₂₃ : mty₂ = mty₃ := Option.some.inj (hty₂.symm.trans hty₃)
+    subst mty₂
+    subst mty₃
+    exact ⟨mty₁, hb, hty₁, hb₃⟩
 
 instance : HasFvar Core.Expression where
   mkFvar := (.fvar () · none)
@@ -76,9 +97,9 @@ instance : LawfulHasFvar Core.Expression where
 
 instance : LawfulHasFvars Core.Expression where
   mkFvar_getFvars := fun _ => by
-    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+    simp [HasFvars.getFvars, HasFvar.mkFvar, Lambda.LExpr.LExpr.getVars]
   mkTypedFvar_getFvars := fun _ _ => by
-    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+    simp [HasFvars.getFvars, HasFvar.mkTypedFvar, Lambda.LExpr.LExpr.getVars]
 
 instance : LawfulHasIdent Core.Expression where
   ident_inj := by
@@ -101,12 +122,12 @@ instance : HasBool Core.Expression where
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
-  boolIsVal := fun f => by
-    simp only [HasVal.value]
-    exact ⟨by show Lambda.LExpr.isCanonicalValue f Core.true = true
-              simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue],
-           by show Lambda.LExpr.isCanonicalValue f Core.false = true
-              simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isCanonicalValue]⟩
+  boolIsValOfTy := fun f => by
+    constructor
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
 
 instance : HasInt Core.Expression where
   zero        := .intConst () 0
@@ -117,7 +138,7 @@ instance : HasInt Core.Expression where
     cases n with
     | const m c =>
       cases c with
-      | intConst _ => simp [Lambda.LExpr.isCanonicalValue]
+      | intConst _ => simp [Lambda.LExpr.isValue]
       | _ => simp [Core.isNumeral] at hn
     | _ => simp [Core.isNumeral] at hn
   zeroIsNumeral := by

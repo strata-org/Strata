@@ -18,7 +18,7 @@ verify regardless of how the binding is eliminated.
 -/
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -33,10 +33,21 @@ procedure binderShadowsInput(e: int)
   x#code := 5;
   throw x
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    binderShadowsInput(1)
+  } catch err {
+    assert err#code == 5
+  }
+};
 #end
 
 #guard_msgs in
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err { var code: int }
@@ -51,5 +62,16 @@ procedure shortFormThrows(): int
   var x: Err := new Err;
   x#code := 5;
   throw x
+};
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  try {
+    var n: int := shortFormThrows()
+  } catch err {
+    assert err#code == 5
+  }
 };
 #end

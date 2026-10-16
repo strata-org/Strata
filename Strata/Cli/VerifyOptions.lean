@@ -75,12 +75,6 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "checks" },
   { name := "incremental",
     help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
-  { name := "no-cse",
-    help := "Skip common subexpression elimination on proof obligations." },
-  { name := "function-inlining",
-    help := "Replace calls to the program's own non-recursive functions with their bodies." },
-  { name := "unroll-bounded-quantifiers",
-    help := "Unroll a bounded quantifier whose instance count is known." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
@@ -203,7 +197,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
         exitFailure "--keep-all-files must be a non-empty directory."
       else
         pure (some s!"{dir}/{keepAllFilesBaseName inputFile}")
-  pure { base with
+  let options := { base with
     verbose := if pflags.getBool "verbose" then .normal
               else if pflags.getBool "quiet" then .quiet
               else base.verbose,
@@ -216,10 +210,6 @@ def parseVerifyOptions (pflags : ParsedFlags)
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
-    disableCSE := pflags.getBool "no-cse" || base.disableCSE,
-    functionInlining := pflags.getBool "function-inlining" || base.functionInlining,
-    unrollBoundedQuantifiers :=
-      pflags.getBool "unroll-bounded-quantifiers" || base.unrollBoundedQuantifiers,
     solverOptions,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
@@ -229,5 +219,6 @@ def parseVerifyOptions (pflags : ParsedFlags)
     parallelWorkers,
     keepAllFilesPrefix
   }
+  pure options
 
 end -- public section

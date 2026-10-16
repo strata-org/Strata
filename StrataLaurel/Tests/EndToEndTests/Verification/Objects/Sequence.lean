@@ -280,11 +280,11 @@ procedure nestedSequence(ss: Sequence<Sequence<int>>, inner: Sequence<int>, a: i
 
 /-! ## Where `seqEmpty()`'s element type comes from
 
-`seqEmpty()` takes no argument, so its element type comes from context. With nothing to fix
-it the type variable reaches the SMT encoder unresolved and is reported as a `strata-bug`,
-blaming the compiler for a genuinely ambiguous program. The map side catches the same shape
-earlier with an actionable message; `seqLength` has no such guard, so this pins today's
-behaviour and will fail if it improves. -/
+`seqEmpty()` takes no argument, so its element type comes from context. With nothing to fix it,
+`Resolution` reports the call: `seqLength` returns `int` and mentions `T` nowhere, so neither the
+argument nor the expected type determines it. Reported at the call, naming the parameter, rather
+than reaching the SMT encoder as a free type variable and surfacing as a `strata-bug` that blames
+the compiler for a genuinely ambiguous program. -/
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -293,7 +293,7 @@ procedure emptyElemTypeUndetermined()
   opaque
 {
   assert seqLength(seqEmpty()) == 0
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ strata-bug: should be fully monomorphic
+//       ^^^^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'seqLength': the expected type does not determine it either; annotate with a concrete instantiation
 };
 #end
 

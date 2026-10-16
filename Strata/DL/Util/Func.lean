@@ -26,7 +26,7 @@ open Std (ToFormat Format format)
 public section
 
 /-- Type identifiers for generic type arguments. Alias for String. -/
-@[expose] abbrev TyIdentifier := String
+abbrev TyIdentifier := String
 
 /-- A precondition with its associated metadata -/
 structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
@@ -58,6 +58,9 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   axioms   : List ExprT := []  -- For axiomatic definitions
   preconditions : List (FuncPrecondition ExprT MetadataT) := []
   measure  : Option ExprT := .none -- Termination measure expression (from `decreases` clause)
+  /-- Names of the top-level lemmas this function depends on, such as its
+      well-formedness lemma. -/
+  lemmas   : List String := []
   deriving DecidableEq
 
 /-- All expressions `f` carries: body, axioms, preconditions, and measure. -/
@@ -116,21 +119,11 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
       getTyFreeVars ty ⊆ f.typeArgs
   output_typevars_in_typeArgs:
     getTyFreeVars f.output ⊆ f.typeArgs
-
-/--
-Closedness properties of a `Func`: its body and preconditions have no free
-variables beyond the function's own inputs. Split out of `FuncWF` because they
-do not hold of typechecked terms in general; see `Lambda.LFuncClosed` for the
-rationale.
--/
-structure FuncClosed {IdentT ExprT TyT MetadataT : Type}
-    (getName : IdentT → String) (getVarNames : ExprT → List String)
-    (f : Func IdentT ExprT TyT MetadataT) where
-  -- Free variables of body must be arguments.
+  -- Closedness: free variables of body must be arguments.
   body_freevars:
     ∀ b, f.body = .some b →
       getVarNames b ⊆ f.inputs.map (getName ·.1)
-  -- Free variables of preconditions must be arguments.
+  -- Closedness: free variables of preconditions must be arguments.
   precond_freevars:
     ∀ p, p ∈ f.preconditions →
       getVarNames p.expr ⊆ f.inputs.map (getName ·.1)
@@ -141,7 +134,7 @@ instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
     Decidable (List.Nodup (f.inputs.map (getName ·.1))) := by
   apply List.nodupDecidable
 
-instance FuncClosed.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
+instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (∀ b, f.body = .some b →
@@ -170,7 +163,7 @@ instance FuncWF.output_typevars_in_typeArgs_decidable
     Decidable (getTyFreeVars f.output ⊆ f.typeArgs) := by
   apply List.instDecidableRelSubsetOfDecidableEq
 
-instance FuncClosed.precond_freevars_decidable
+instance FuncWF.precond_freevars_decidable
     {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):

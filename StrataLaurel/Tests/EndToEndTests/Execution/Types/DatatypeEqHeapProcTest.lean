@@ -25,7 +25,7 @@ checking with:
 
   Impossible to unify (arrow Composite int) with (arrow <Datatype> ...)
 
-The fix guards the `ref!` rewrite on `!isDatatype`, letting datatype
+The fix guards the `ref!` rewrite on `isComposite`, letting datatype
 equality fall through to structural comparison. These programs verify
 cleanly with the fix and fail Core type checking without it.
 

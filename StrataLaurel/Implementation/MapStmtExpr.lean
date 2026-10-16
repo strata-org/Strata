@@ -124,8 +124,8 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.CompoundAssign op target (← mapStmtExprUsedM f true rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprUsedM f true target) fieldName (← mapStmtExprUsedM f true newValue), source⟩
-  | .StaticCall callee args =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
+  | .StaticCall callee args tyArgs =>
+    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) tyArgs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprUsedM f true lhs) (← mapStmtExprUsedM f true rhs), source⟩
   | .AsType target ty =>
@@ -239,7 +239,7 @@ the same `.StaticCall Operation.And/.Implies/.Not.procName` nodes and the same
 param-renaming map. -/
 
 def andMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
-  ⟨ .StaticCall (mkId Operation.And.procName) [a, b], src ⟩
+  ⟨ .StaticCall (mkId Operation.And.procName) [a, b] [], src ⟩
 
 /-- `a ==> b` as a `StmtExprMd`. A literal-`true` antecedent is dropped (`true ==> b` ≡ `b`),
     so a vacuous guard (e.g. an empty `notAnyOverrider` conjunction) does not clutter the
@@ -247,10 +247,10 @@ def andMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
 def impliesMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
   match a.val with
   | .LiteralBool true => b
-  | _ => ⟨ .StaticCall (mkId Operation.Implies.procName) [a, b], src ⟩
+  | _ => ⟨ .StaticCall (mkId Operation.Implies.procName) [a, b] [], src ⟩
 
 def notMd (src : FileRange) (a : StmtExprMd) : StmtExprMd :=
-  ⟨ .StaticCall (mkId Operation.Not.procName) [a], src ⟩
+  ⟨ .StaticCall (mkId Operation.Not.procName) [a] [], src ⟩
 
 /-- Conjoin a list of boolean `StmtExprMd`s: the empty list is the literal `true` (the `.And`
     identity), a non-empty list folds from its FIRST element so there is no leading `true &`
@@ -311,7 +311,7 @@ def nonFreeConditions (cs : List Condition) : List Condition :=
     `$heap`-threaded call) is the caller's concern. -/
 def mkCallAssigningOutputs (src : FileRange) (callee : Identifier)
     (args : List StmtExprMd) (outputs : List Parameter) : StmtExprMd :=
-  let call : StmtExprMd := ⟨ .StaticCall callee args, src ⟩
+  let call : StmtExprMd := ⟨ .StaticCall callee args [], src ⟩
   match outputs with
   | [] => call
   | outs => ⟨ .Assign (outs.map fun o => ⟨ .Local o.name, src ⟩) call, src ⟩
@@ -412,8 +412,8 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .PureFieldUpdate target fieldName newValue =>
       pure ⟨.PureFieldUpdate (collapse (← go true target) target.source) fieldName
         (collapse (← go true newValue) newValue.source), source⟩
-    | .StaticCall callee args =>
-      pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
+    | .StaticCall callee args tyArgs =>
+      pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tyArgs, source⟩
     | .ReferenceEquals lhs rhs =>
       pure ⟨.ReferenceEquals (collapse (← go true lhs) lhs.source) (collapse (← go true rhs) rhs.source), source⟩
     | .AsType target ty =>
@@ -511,8 +511,8 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
 
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
-  | .StaticCall callee args =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .StaticCall callee args tyArgs =>
+    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) tyArgs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprPrePostM pre post lhs) (← mapStmtExprPrePostM pre post rhs), source⟩
   | .AsType target ty =>
@@ -616,7 +616,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f rhs
   | .PureFieldUpdate target _ newValue =>
     foldStmtExprM f target; foldStmtExprM f newValue
-  | .StaticCall _ args =>
+  | .StaticCall _ args _ =>
     args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .ReferenceEquals lhs rhs =>
     foldStmtExprM f lhs; foldStmtExprM f rhs
@@ -816,11 +816,19 @@ def mapProcedureSpecificationsWithCoroutineM' [Monad m] (f : StmtExprMd → m St
     (proc : Procedure) : m Procedure :=
   mapProcedureSpecificationsWithCoroutineM f f proc
 
-/-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
-    (body, preconditions, decreases, invokeOn, and axioms). -/
+/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure:
+    the body, the specification fields (preconditions, decreases, invokeOn,
+    axioms, `throwsOn` cases) and a coroutine's `relies`/`guarantees` clauses.
+
+    The coroutine clauses are included so that this is *every* expression a
+    procedure holds, which is what lets a claim about the node kinds of a whole
+    program be proved of a pass built on this walk. It is not a reachable
+    behaviour change: a clause is a contract, so resolution already rejects an
+    `x++` there as a destructive assignment, and a `do … while` there is a `void`
+    where a `bool` is expected. -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
-  mapProcedureSpecificationsM f proc
+  mapProcedureSpecificationsWithCoroutineM' f proc
 
 /-- Apply a monadic transformation to every procedure in a program — both
     top-level static procedures and the instance procedures of composite types.
@@ -850,14 +858,17 @@ def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
 
 /-- Apply `f` to every `StmtExprMd` node appearing *anywhere* in a program: every
     procedure (top-level static procedures and composite instance procedures, via
-    `mapProcedureM` — bodies, preconditions, decreases, invokeOn, and axioms), the
-    constraint and witness of constrained types, and constant initializers. `f` is
-    applied per node in a bottom-up traversal (see `mapStmtExprM`).
+    `mapProcedureM` — body, specification fields and coroutine clauses), the
+    constraint and witness of constrained types, a composite's field
+    initializers, constant initializers, and file-scope globals' initializers.
+    `f` is applied per node in a bottom-up traversal (see `mapStmtExprM`).
 
     This is the expression analogue of `mapProgramHighTypesM`: the single place
     that knows where expressions live in a `Program`, so passes that rewrite call
     sites (or any other node) don't each re-enumerate procedures, constrained
-    types, and constants — and silently miss one. -/
+    types, and constants — and silently miss one. The list is exhaustive, which is
+    what makes a `removes` declaration provable: a pass can only be shown to
+    remove a node kind from the positions its walk reaches. -/
 def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
   let mapExpr := mapStmtExprM f
   let program ← mapProgramProceduresM (mapProcedureM mapExpr) program
@@ -865,6 +876,16 @@ def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : P
     match td with
     | .Constrained ct =>
       pure (.Constrained { ct with constraint := ← mapExpr ct.constraint, witness := ← mapExpr ct.witness })
+    -- A composite's field initializers are ordinary expressions too; the
+    -- instance procedures were already rewritten by `mapProgramProceduresM`.
+    -- No source program reaches this arm today: a field declaration is a name
+    -- and a type, with no initializer syntax. It is here so this walk really is
+    -- every expression a `Program` holds, which the `NodeKind` specifications
+    -- depend on.
+    | .Composite ct =>
+      let fields ← ct.fields.mapM fun fld => do
+        pure { fld with initializer := ← fld.initializer.mapM mapExpr }
+      pure (.Composite { ct with fields })
     | other => pure other
   let constants ← program.constants.mapM fun c => do
     pure { c with initializer := ← c.initializer.mapM mapExpr }
@@ -897,7 +918,8 @@ def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Varia
 /--
 Apply `f` to every `HighType` annotation carried *directly* by a single
 `StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
-targets), quantifier binders, `AsType`/`IsType` type arguments, and typed
+targets), quantifier binders, `AsType`/`IsType` type arguments, a generic
+`StaticCall`'s inferred type arguments, and typed
 `Hole`s. Does **not** recurse into child expressions — compose with
 `mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
 -/
@@ -914,6 +936,12 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
     pure ⟨.CompoundAssign op ⟨← mapVariableHighTypesM f target.val, target.source⟩ rhs, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode { param with type := ← f param.type } trigger body, source⟩
+  -- A generic call's INFERRED type arguments are a type slot like any other, so every
+  -- type-rewriting pass (alias expansion, heap boxing, constrained-type elimination) must see
+  -- them. Omitting them leaves stale types in the tree, which also perturbs prelude
+  -- name-reachability filtering and so the set of Core declarations emitted.
+  | .StaticCall callee args tyArgs =>
+    pure ⟨.StaticCall callee args (← tyArgs.mapM f), source⟩
   | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩
   | .IsType target ty => pure ⟨.IsType target (← f ty), source⟩
   | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
@@ -1083,7 +1111,7 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.Var (.Field covS (covId "f"))), 1),
   (covMd (.Assign [covVmd (.Field covS (covId "f"))] covS), 2),
   (covMd (.PureFieldUpdate covS (covId "f") covS), 2),
-  (covMd (.StaticCall (covId "c") [covS, covS]), 2),
+  (covMd (.StaticCall (covId "c") [covS, covS] []), 2),
   (covMd (.New (covId "r")), 0),
   (covMd .This, 0),
   (covMd (.ReferenceEquals covS covS), 2),

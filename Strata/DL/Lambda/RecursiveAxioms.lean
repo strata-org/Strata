@@ -72,7 +72,7 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     -/
     let dtTy : LMonoTy := .tcons dt.name []
     let constrTy := c.args.foldr (fun (_, argTy) acc => .arrow argTy acc) dtTy
-    let constrApp := c.args.foldlIdx (fun acc i _ =>
+    let constrApp := c.args.foldlIdxVal (fun acc i _ =>
       .app m acc (.bvar m (numFields - 1 - i))
     ) (.op m c.name (.some constrTy) : LExpr T.mono)
     let otherIdx (idx : Nat) : Nat := if idx < recIdx then idx else idx - 1
@@ -80,7 +80,7 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
       if idx == recIdx then constrApp
       else .bvar m (totalBvs - 1 - otherIdx idx)
     -- LHS: f(bvars..., C(fields...), bvars...) — not PE'd (serves as trigger)
-    let lhs := formals.foldlIdx (fun acc idx _ =>
+    let lhs := formals.foldlIdxVal (fun acc idx _ =>
       .app m acc (formalExpr idx)
     ) (LFunc.opExpr func)
     -- RHS: PE inlines the function since the recursive arg is a constructor

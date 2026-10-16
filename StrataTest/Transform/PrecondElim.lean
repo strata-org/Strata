@@ -29,6 +29,9 @@ section PrecondElimTests
 def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
+private def translationErrors (t : StrataDDM.Program) : Array String :=
+  (TransM.run Inhabited.default (translateProgram t)).snd
+
 def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
   match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
@@ -101,19 +104,11 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure safeMod$$wf (x : int, y : int)
-{
-  assume [precond_safeMod_0]: !(y == 0);
-  assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
-};
+lemma [safeMod_body_calls_Int.SafeMod_0] (x : int, y : int): !(y == 0) ==> !(y == 0);
 function safeMod (x : int, y : int) : int {
   int.safeMod(x, y)
 }
-procedure foo$$wf (x : int, y : int)
-{
-  assert [foo_precond_calls_safeMod_0]: !(y == 0);
-  assume [precond_foo_0]: int.gt(safeMod(x, y), 0);
-};
+lemma [foo_precond_calls_safeMod_0] (x : int, y : int): !(y == 0);
 function foo (x : int, y : int) : int {
   int.add(x, y)
 }
@@ -156,12 +151,7 @@ datatype List {
   Nil(),
   Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List)
-{
-  assume [test_requires_0]: List..isCons(xs);
-  assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_requires_1]: int.gt(List..head(xs), 0);
-};
+lemma [test_pre_test_requires_1_calls_List..head_0] (xs : List): List..isCons(xs) ==> List..isCons(xs);
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
@@ -202,15 +192,9 @@ datatype List {
   Nil(),
   Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List)
-{
-  assume [test_requires_0]: List..isCons(xs);
-  assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_ensures_1]: int.gt(List..head(xs), 0);
-  assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
-  assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
-  assume [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
-};
+lemma [test_post_test_ensures_1_calls_List..head_0] (xs : List): List..isCons(xs) ==> List..isCons(xs);
+lemma [test_post_test_ensures_2_calls_List..tail_0] (xs : List): List..isCons(xs) ==> int.gt(List..head(xs), 0) ==> List..isCons(xs);
+lemma [test_post_test_ensures_2_calls_List..head_1] (xs : List): List..isCons(xs) ==> int.gt(List..head(xs), 0) ==> List..isCons(List..tail(xs));
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
@@ -223,7 +207,12 @@ spec {
 #guard_msgs in
 #eval (Std.format (transformProgram dependentRequiresPgm))
 
-/-! ### Test 5: Function decl statement with precondition referencing local variable -/
+/-! ### Tests 5–7: local function preconditions are rejected during translation
+
+Lambda abstractions cannot represent function preconditions, so the Core DDM
+translator rejects these declarations before `PrecondElim` runs. Keep coverage
+for a declaration in a straight-line body, in conditional branches, and in
+separate procedures. -/
 
 def funcDeclPrecondPgm :=
 #strata
@@ -240,30 +229,8 @@ procedure test()
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure test ()
-{
-  var x : int := 1;
-  safeDiv$$wf: {
-    var y : int;
-    assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
-    assume [precond_safeDiv_0]: int.gt(int.safeDiv(y, x), 0);
-    assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
-  }
-  function safeDiv (y : int) : int { int.safeDiv(y, x) }
-  assert [init_calls_safeDiv_0]: int.gt(int.safeDiv(5, x), 0);
-  var z : int := safeDiv(5);
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram funcDeclPrecondPgm))
-
-/-! ### Test 6: Inline function declarations in both branches of if-then-else with different preconditions -/
+#guard (translationErrors funcDeclPrecondPgm).any
+  (· == "local function 'safeDiv': preconditions are not supported")
 
 def inlineFuncInIteSimplePgm :=
 #strata
@@ -286,39 +253,8 @@ procedure test(cond : bool, x : int, y : int)
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure test (cond : bool, x : int, y : int)
-{
-  if (cond) {
-    f$$wf: {
-      var a : int;
-      assume [precond_f_0]: !(x == 0);
-      assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-    }
-    function f (a : int) : int { int.safeDiv(a, x) }
-    assert [init_calls_f_0]: !(x == 0);
-    var r1 : int := f(10);
-  } else {
-    f$$wf: {
-      var a : int;
-      assume [precond_f_0]: !(y == 0);
-      assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-    }
-    function f (a : int) : int { int.safeDiv(a, y) }
-    assert [init_calls_f_0]: !(y == 0);
-    var r2 : int := f(20);
-  }
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram inlineFuncInIteSimplePgm))
-
-/-! ### Test 7: Same function name in multiple procedures with different preconditions -/
+#guard (translationErrors inlineFuncInIteSimplePgm).any
+  (· == "local function 'f': preconditions are not supported")
 
 def funcInMultipleProcsPgm :=
 #strata
@@ -342,37 +278,8 @@ procedure proc2(y : int)
 
 #end
 
-/--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: program Core;
-
-procedure proc1 (x : int)
-{
-  f$$wf: {
-    var a : int;
-    assume [precond_f_0]: !(x == 0);
-    assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
-  }
-  function f (a : int) : int { int.safeDiv(a, x) }
-  assert [init_calls_f_0]: !(x == 0);
-  var r : int := f(10);
-};
-procedure proc2 (y : int)
-{
-  f$$wf: {
-    var a : int;
-    assume [precond_f_0]: !(y == 0);
-    assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
-  }
-  function f (a : int) : int { int.safeDiv(a, y) }
-  assert [init_calls_f_0]: !(y == 0);
-  var r : int := f(20);
-};
--/
-#guard_msgs in
-#eval (Std.format (transformProgram funcInMultipleProcsPgm))
+#guard (translationErrors funcInMultipleProcsPgm).any
+  (· == "local function 'f': preconditions are not supported")
 
 /-! ### Test 8: Division in if-then-else condition generates precondition -/
 
@@ -444,7 +351,7 @@ procedure test (inout g : int, y : int)
 /-! ### Test 10: `collectPrecondAsserts` tags Sequence bounds obligations with `outOfBoundsAccess`
 
 Exercises the full `collectPrecondAsserts` path — the code called by
-`transformStmt` / `mkContractWFProc` / `mkFuncWFProc` — and inspects the
+`transformStmt` / `mkContractWFLemma` / `mkFuncWFLemma` — and inspects the
 metadata on the generated assert. Mirrors `OverflowCheckTest.lean`. -/
 
 section SeqBoundsObligations
@@ -526,7 +433,7 @@ variable `j` and the generated obligation fails to type-check with
 "Impossible to unify (arrow Inner Outer) with (arrow int ...)".
 
 `Inner` carries a second constructor so that `Inner..x` is a partial accessor
-whose tester precondition reaches the generated `$$wf` block. -/
+whose tester precondition reaches the generated `$$wf` lemma. -/
 
 def nestedExistsWFPgm :=
 #strata
@@ -554,12 +461,9 @@ datatype Inner {
 datatype Outer {
   Outer_A(v : Inner)
 };
-procedure bug$$wf (p : Outer)
-{
-  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
-};
+lemma [bug_body_calls_Inner..x_0] (p : Outer, m : Inner, j : int): p == Outer_A(m) ==> Inner..isInner_Cons(m);
 function bug (p : Outer) : bool {
-  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+  exists m : Inner :: p == Outer_A(m) && (exists j : int :: Inner..x(m) == j)
 }
 -/
 #guard_msgs in
@@ -570,7 +474,7 @@ function bug (p : Outer) : bool {
 `Inner..x` above is guarded by `Inner..isInner_Cons` because `Inner` has a
 second constructor for that tester to rule out. Where the datatype has a single
 constructor the tester holds for every value of the type, so the accessor is
-total and the function body needs no `$$wf` block at all. -/
+total and the function needs no `$$wf` lemma at all. -/
 
 def nestedExistsSingleConstrPgm :=
 #strata
@@ -598,20 +502,18 @@ datatype Outer {
   Outer_A(v : Inner)
 };
 function bug (p : Outer) : bool {
-  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+  exists m : Inner :: p == Outer_A(m) && (exists j : int :: Inner..x(m) == j)
 }
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram nestedExistsSingleConstrPgm))
 
-/-! ### Test: `changed` flag for a nested function whose body calls a
-    precondition-carrying function (regression)
+/-! ### Test: `changed` flag for a nullary internal function whose body calls a
+    precondition-carrying function
 
-A nested `function` declaration with no preconditions of its own, but whose
-body invokes a precondition-carrying function (`int.safeModT`), gets rewritten
-to gain a `$$wf` block with an `assert`. The pass must report `changed := true`
-whenever such a `$$wf` block is emitted, even when the function itself has no
-preconditions. -/
+A nullary internal function has no abstraction binders, so it translates
+straight to an initialized value. Its partial-call obligation is asserted at
+the initialization site, and the pass reports `changed := true`. -/
 
 /-- Run `PrecondElim` and return only its `changed` flag (`none` if the pass
     errors). -/
@@ -632,12 +534,10 @@ procedure P0()
 
 #end
 
--- The rewrite adds a `bB$$wf` block with an `assert`, so `changed` is `true`.
 /-- info: some true -/
 #guard_msgs in
 #eval transformChanged nestedFuncCallsPartialPgm
 
--- The rewritten program itself (shows the emitted `$$wf` block).
 /--
 info: [Strata.Core] Type checking succeeded.
 
@@ -646,10 +546,8 @@ info: program Core;
 
 procedure P0 ()
 {
-  bB$$wf: {
-    assert [bB_body_calls_Int.SafeModT_0]: !(2 == 0);
-  }
-  function bB () : int { int.safeModT(0, 2) }
+  assert [init_calls_Int.SafeModT_0]: !(2 == 0);
+  var bB : int := int.safeModT(0, 2);
 };
 -/
 #guard_msgs in

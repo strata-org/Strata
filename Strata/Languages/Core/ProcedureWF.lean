@@ -22,6 +22,20 @@ theorem getInoutParams_keys_subset_inputs (h : Procedure.Header) :
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
 
+/-- Each in-out parameter entry (id/type pair) is also an input entry. -/
+theorem getInoutParams_subset_inputs (h : Procedure.Header) :
+    ∀ p ∈ h.getInoutParams.toList, p ∈ h.inputs.toList := by
+  intro p hp
+  unfold Procedure.Header.getInoutParams Core.getInoutParams ListMap.toList at hp
+  exact (List.mem_filter.mp hp).1
+
+/-- Each output-only parameter entry (id/type pair) is also an output entry. -/
+theorem getOutputOnlyParams_subset_outputs (h : Procedure.Header) :
+    ∀ p ∈ h.getOutputOnlyParams.toList, p ∈ h.outputs.toList := by
+  intro p hp
+  unfold Procedure.Header.getOutputOnlyParams ListMap.toList at hp
+  exact (List.mem_filter.mp hp).1
+
 /-- Keys of `getOutputOnlyParams` are disjoint from keys of inputs. -/
 theorem getOutputOnlyParams_keys_disjoint_inputs (h : Procedure.Header) :
     ∀ id ∈ ListMap.keys h.getOutputOnlyParams, id ∉ ListMap.keys h.inputs := by

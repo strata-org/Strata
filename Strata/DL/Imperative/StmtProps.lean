@@ -23,20 +23,14 @@ variable {P : PureExpr} {C : Type}
 Equational theory for the boolean shape walkers defined in
 `Strata.DL.Imperative.Stmt`. Key results, by group:
 
-- Disjointness of `funcDeclNames` from `definedVars`/`declared`
-  (`Stmt`/`Block.funcDeclNames_disjoint_of_defined`/`_of_declared`,
-  `funcDeclNames_eq_nil_of_noFuncDecl`).
 - Per-constructor decomposition lemmas for `noNondetGuards`, `loopBodyNoInits`,
   `loopHasNoInvariants`, `noMeasureLoops`, `initVars`, `exitsCoveredByBlocks`,
   and `getBlockLabels` (the `_cons_iff` / `_branch_*` / `_loop_*` / `_block_*`
   families), plus the two non-structural results `exitsCoveredByBlocks_weaken`
   (label-list monotonicity) and `all_cmd_exitsCoveredByBlocks`.
 - Distribution of the block-level walkers over `++`
-  (`initVars`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
+  (`initVars`/`initTypes`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
-- `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
-  the expressions in a statement or block never introduces or removes a
-  `funcDecl`.
 - `Stmt`/`Block.mapExpr_eq_mapExprM` — the monadic `mapExprM` at the identity
   monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
   (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
@@ -46,175 +40,6 @@ Equational theory for the boolean shape walkers defined in
   list defines.  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
 -/
-
-/-! ### Disjointness of funcDeclNames from definedVars
-
-The strengthened `defUseWellFormed.funcDecl` case requires that each
-`funcDecl decl _` AST node satisfies `!definedVars decl.name` at its
-position.  This lets us derive: every name in `funcDeclNames s` is NOT
-in the initial `definedVars` predicate.  Used by simulation proofs
-when combined with `block_preserves_eval_on_disjoint`.
--/
-
-mutual
-
-theorem Stmt.funcDeclNames_disjoint_of_defined [HasVarsImp P C]
-    [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident]
-    (defined : P.Ident → Bool) (declared : P.Ident → Bool) (s : Stmt P C)
-    (hwf : Stmt.defUseWellFormed defined declared s = true) :
-    ∀ n ∈ Stmt.funcDeclNames s false, defined n = false := by
-  match s with
-  | .cmd _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .exit _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .typeDecl _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .funcDecl decl _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    subst hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    exact Bool.not_eq_true _ |>.mp (by simpa using hwf.1.1.2)
-  | .block _ bss _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    simp [Stmt.defUseWellFormed] at hwf
-    exact Block.funcDeclNames_disjoint_of_defined defined declared bss hwf n hn
-  | .ite _ tss ess _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames, List.mem_append] at hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    rcases hn with hn | hn
-    · exact Block.funcDeclNames_disjoint_of_defined defined declared tss hwf.1.2 n hn
-    · exact Block.funcDeclNames_disjoint_of_defined defined declared ess hwf.2 n hn
-  | .loop _ _ _ body _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    exact Block.funcDeclNames_disjoint_of_defined defined declared body hwf.2 n hn
-
-theorem Block.funcDeclNames_disjoint_of_defined [HasVarsImp P C]
-    [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident]
-    (defined : P.Ident → Bool) (declared : P.Ident → Bool) (bss : Block P C)
-    (hwf : Block.defUseWellFormed defined declared bss = true) :
-    ∀ n ∈ Block.funcDeclNames bss false, defined n = false := by
-  match bss with
-  | [] => intro n hn; simp [Block.funcDeclNames] at hn
-  | s :: rest =>
-    intro n hn
-    simp [Block.funcDeclNames, List.mem_append] at hn
-    simp [Block.defUseWellFormed, Bool.and_eq_true] at hwf
-    rcases hn with hn | hn
-    · exact Stmt.funcDeclNames_disjoint_of_defined defined declared s hwf.1 n hn
-    · -- The tail's predicate is `definedVars ∪ definedVars(s)`; if `n` is in
-      -- `funcDeclNames rest`, then it's not in the larger predicate, hence
-      -- not in `definedVars` either.
-      have ih := Block.funcDeclNames_disjoint_of_defined
-        (fun m => defined m || decide (m ∈ Stmt.definedVars s true))
-        (fun m => declared m || decide (m ∈ Stmt.funcDeclNames s true)) rest hwf.2 n hn
-      simp [Bool.or_eq_false_iff] at ih
-      exact ih.1
-
-end
-
-mutual
-
-/-- All `funcDeclNames` of `s` are *not* in the initial `declared` predicate,
-    given `Stmt.defUseWellFormed defined declared s = true`.  This is the
-    operator-level analog of `Stmt.funcDeclNames_disjoint_of_defined`. -/
-theorem Stmt.funcDeclNames_disjoint_of_declared [HasVarsImp P C]
-    [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident]
-    (defined : P.Ident → Bool) (declared : P.Ident → Bool) (s : Stmt P C)
-    (hwf : Stmt.defUseWellFormed defined declared s = true) :
-    ∀ n ∈ Stmt.funcDeclNames s false, declared n = false := by
-  match s with
-  | .cmd _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .exit _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .typeDecl _ _ => intro n hn; simp [Stmt.funcDeclNames] at hn
-  | .funcDecl decl _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    subst hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    exact Bool.not_eq_true _ |>.mp (by simpa using hwf.2)
-  | .block _ bss _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    simp [Stmt.defUseWellFormed] at hwf
-    exact Block.funcDeclNames_disjoint_of_declared defined declared bss hwf n hn
-  | .ite _ tss ess _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames, List.mem_append] at hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    rcases hn with hn | hn
-    · exact Block.funcDeclNames_disjoint_of_declared defined declared tss hwf.1.2 n hn
-    · exact Block.funcDeclNames_disjoint_of_declared defined declared ess hwf.2 n hn
-  | .loop _ _ _ body _ =>
-    intro n hn
-    simp [Stmt.funcDeclNames] at hn
-    simp [Stmt.defUseWellFormed, Bool.and_eq_true] at hwf
-    exact Block.funcDeclNames_disjoint_of_declared defined declared body hwf.2 n hn
-
-theorem Block.funcDeclNames_disjoint_of_declared [HasVarsImp P C]
-    [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident]
-    (defined : P.Ident → Bool) (declared : P.Ident → Bool) (bss : Block P C)
-    (hwf : Block.defUseWellFormed defined declared bss = true) :
-    ∀ n ∈ Block.funcDeclNames bss false, declared n = false := by
-  match bss with
-  | [] => intro n hn; simp [Block.funcDeclNames] at hn
-  | s :: rest =>
-    intro n hn
-    simp [Block.funcDeclNames, List.mem_append] at hn
-    simp [Block.defUseWellFormed, Bool.and_eq_true] at hwf
-    rcases hn with hn | hn
-    · exact Stmt.funcDeclNames_disjoint_of_declared defined declared s hwf.1 n hn
-    · have ih := Block.funcDeclNames_disjoint_of_declared
-        (fun m => defined m || decide (m ∈ Stmt.definedVars s true))
-        (fun m => declared m || decide (m ∈ Stmt.funcDeclNames s true)) rest hwf.2 n hn
-      simp [Bool.or_eq_false_iff] at ih
-      exact ih.1
-
-end
-
-mutual
-
-/-- If a statement contains no function declarations, then `funcDeclNames` is
-    empty (for either choice of `excludeScoped`). -/
-theorem Stmt.funcDeclNames_eq_nil_of_noFuncDecl
-    (s : Stmt P C) (excludeScoped : Bool) (h : Stmt.noFuncDecl s = true) :
-    Stmt.funcDeclNames s excludeScoped = [] := by
-  match s with
-  | .cmd _ => simp [Stmt.funcDeclNames]
-  | .exit _ _ => simp [Stmt.funcDeclNames]
-  | .typeDecl _ _ => simp [Stmt.funcDeclNames]
-  | .funcDecl _ _ => simp [Stmt.noFuncDecl] at h
-  | .block _ bss _ =>
-    simp [Stmt.noFuncDecl] at h
-    cases excludeScoped <;> simp [Stmt.funcDeclNames]
-    exact Block.funcDeclNames_eq_nil_of_noFuncDecl bss false h
-  | .ite _ tss ess _ =>
-    simp [Stmt.noFuncDecl, Bool.and_eq_true] at h
-    cases excludeScoped <;> simp [Stmt.funcDeclNames]
-    refine ⟨?_, ?_⟩
-    · exact Block.funcDeclNames_eq_nil_of_noFuncDecl tss false h.1
-    · exact Block.funcDeclNames_eq_nil_of_noFuncDecl ess false h.2
-  | .loop _ _ _ body _ =>
-    simp [Stmt.noFuncDecl] at h
-    cases excludeScoped <;> simp [Stmt.funcDeclNames]
-    exact Block.funcDeclNames_eq_nil_of_noFuncDecl body false h
-
-/-- If a block contains no function declarations, then `funcDeclNames` is empty. -/
-theorem Block.funcDeclNames_eq_nil_of_noFuncDecl
-    (ss : Block P C) (excludeScoped : Bool) (h : Block.noFuncDecl ss = true) :
-    Block.funcDeclNames ss excludeScoped = [] := by
-  match ss with
-  | [] => simp [Block.funcDeclNames]
-  | s :: rest =>
-    simp [Block.noFuncDecl, Bool.and_eq_true] at h
-    simp [Block.funcDeclNames]
-    refine ⟨?_, ?_⟩
-    · exact Stmt.funcDeclNames_eq_nil_of_noFuncDecl s excludeScoped h.1
-    · exact Block.funcDeclNames_eq_nil_of_noFuncDecl rest excludeScoped h.2
-
-end
 
 /-! ### Decomposition lemmas for the structural shape predicates
 
@@ -509,7 +334,6 @@ theorem exitsCoveredByBlocks_weaken
   | exit l _ =>
     intro labels₁ labels₂ hsub h
     exact hsub l h
-  | funcDecl _ _ => intros; trivial
   | typeDecl _ _ => intros; trivial
   | nil => intros; trivial
   | cons s ss ih_s ih_ss =>
@@ -560,14 +384,6 @@ theorem Block.getBlockLabels_loop_cons {P : PureExpr} {C : Type}
 theorem Block.getBlockLabels_cmd_cons {P : PureExpr} {C : Type}
     (c : C) (rest : List (Stmt P C)) :
     Block.getBlockLabels (.cmd c :: rest) = Block.getBlockLabels rest := by
-  show Block.getBlockLabels.stmtGetBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.getBlockLabels_funcDecl_cons {P : PureExpr} {C : Type}
-    (decl : Imperative.PureFunc P) (md : MetaData P)
-    (rest : List (Stmt P C)) :
-    Block.getBlockLabels (.funcDecl decl md :: rest) =
-      Block.getBlockLabels rest := by
   show Block.getBlockLabels.stmtGetBlockLabels _ ++ _ = _
   rfl
 
@@ -637,6 +453,14 @@ These syntactic lemmas distribute the structural walkers (`initVars`,
 `loopBodyNoInits`) over list concatenation. They are consumed by the
 transform correctness proofs, which all import this base module. -/
 
+/-- `Block.initTypes` distributes over list append. -/
+theorem Block.initTypes_append [HasInitTypesImp P C] (as bs : Block P C) :
+    Block.initTypes (as ++ bs) = Block.initTypes as ++ Block.initTypes bs := by
+  induction as with
+  | nil => rfl
+  | cons a rest ih =>
+    simp only [List.cons_append, Block.initTypes, ih, List.append_assoc]
+
 /-- Concatenation distributes over `Block.initVars`. -/
 theorem Block.initVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
     Block.initVars (xs ++ ys) = Block.initVars xs ++ Block.initVars ys := by
@@ -695,14 +519,6 @@ theorem Block.noMeasureLoops_append (xs ys : List (Stmt P (Cmd P))) :
   | nil => simp [Block.noMeasureLoops]
   | cons x rest ih => simp [Block.noMeasureLoops, ih, Bool.and_assoc]
 
-/-- Concatenation distributes over `Block.noFuncDecl`. -/
-theorem Block.noFuncDecl_append (xs ys : List (Stmt P C)) :
-    Block.noFuncDecl (xs ++ ys) =
-      (Block.noFuncDecl xs && Block.noFuncDecl ys) := by
-  induction xs with
-  | nil => simp [Block.noFuncDecl]
-  | cons x rest ih => simp [Block.noFuncDecl, ih, Bool.and_assoc]
-
 /-- `Block.definedVars` distributes over `++`. -/
 theorem Block.definedVars_append [HasVarsImp P C] (xs ys : List (Stmt P C))
     (excludeScoped : Bool) :
@@ -712,15 +528,6 @@ theorem Block.definedVars_append [HasVarsImp P C] (xs ys : List (Stmt P C))
   | nil => simp [Block.definedVars]
   | cons x rest ih =>
     simp only [List.cons_append, Block.definedVars, ih, List.append_assoc]
-
-/-- `Block.funcDeclNames` distributes over `++`. -/
-theorem Block.funcDeclNames_append (xs ys : List (Stmt P C)) (excludeScoped : Bool) :
-    Block.funcDeclNames (xs ++ ys) excludeScoped =
-      Block.funcDeclNames xs excludeScoped ++ Block.funcDeclNames ys excludeScoped := by
-  induction xs with
-  | nil => simp [Block.funcDeclNames]
-  | cons x rest ih =>
-    simp only [List.cons_append, Block.funcDeclNames, ih, List.append_assoc]
 
 /-- `Block.defUseWellFormed` holds of a prefix whenever it holds of the whole
     concatenation.  Only the prefix direction: the suffix was checked against the
@@ -736,47 +543,6 @@ theorem Block.defUseWellFormed_of_append_left [HasVarsImp P C] [HasFvars P] [Has
   | cons x rest ih =>
     simp only [List.cons_append, Block.defUseWellFormed, Bool.and_eq_true] at h ⊢
     exact ⟨h.1, ih h.2⟩
-
-mutual
-/-- `Stmt.mapExpr` preserves `noFuncDecl`: it recurses structurally and passes
-`funcDecl` through unchanged, so it never changes whether a statement contains a
-function declaration. -/
-theorem Stmt.noFuncDecl_mapExpr
-    (fe : P.Expr → P.Expr) (fc : C → C) (s : Stmt P C) :
-    Stmt.noFuncDecl (Stmt.mapExpr fe fc s) = Stmt.noFuncDecl s := by
-  match s with
-  | .cmd c => simp [Stmt.mapExpr, Stmt.noFuncDecl]
-  | .block l ss md =>
-    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
-    exact Block.noFuncDecl_mapExpr fe fc ss
-  | .ite (.det c) t e md =>
-    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
-               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
-  | .ite .nondet t e md =>
-    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
-               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
-  | .loop (.det g) mea inv b md =>
-    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
-    exact Block.noFuncDecl_mapExpr fe fc b
-  | .loop .nondet mea inv b md =>
-    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
-    exact Block.noFuncDecl_mapExpr fe fc b
-  | .exit l md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
-  | .funcDecl decl md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
-  | .typeDecl tc md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
-  termination_by sizeOf s
-
-/-- `Block.mapExpr` preserves `noFuncDecl` (pointwise over the block). -/
-theorem Block.noFuncDecl_mapExpr
-    (fe : P.Expr → P.Expr) (fc : C → C) (ss : Block P C) :
-    Block.noFuncDecl (Block.mapExpr fe fc ss) = Block.noFuncDecl ss := by
-  match ss with
-  | [] => simp [Block.mapExpr, Block.noFuncDecl]
-  | s :: rest =>
-    simp only [Block.mapExpr, Block.noFuncDecl,
-               Stmt.noFuncDecl_mapExpr fe fc s, Block.noFuncDecl_mapExpr fe fc rest]
-  termination_by sizeOf ss
-end
 
 /-- A name a statement list does not define is defined by none of its members, for any
     command type and at either setting of `excludeScoped` — the two sides are read at the
@@ -834,7 +600,7 @@ theorem Stmt.definedVars_true_subset_false
   | .cmd c =>
     simp only [Stmt.definedVars] at hn ⊢
     exact h_flag c n hn
-  | .block .. | .ite .. | .loop .. | .exit .. | .funcDecl .. | .typeDecl .. =>
+  | .block .. | .ite .. | .loop .. | .exit .. | .typeDecl .. =>
     simp [Stmt.definedVars] at hn
 
 omit [HasFvars P] [HasOps P] [HasOpsImp P C] [DecidableEq P.Ident] in
@@ -917,10 +683,6 @@ private theorem Stmt.defined_of_mem_modifiedVars_getVars
       · exact hb (List.mem_append.mpr (Or.inr hbody))
   | .exit l md =>
     simp only [Stmt.modifiedVars, Stmt.getVars, List.append_nil, List.not_mem_nil] at hn
-  | .funcDecl decl md =>
-    simp only [Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at h
-    simp only [Stmt.modifiedVars, List.nil_append] at hn
-    exact h.1.1.1 _ (by simpa [Stmt.getVars] using hn)
   | .typeDecl tc md =>
     simp only [Stmt.modifiedVars, Stmt.getVars, List.append_nil, List.not_mem_nil] at hn
 
@@ -1008,7 +770,6 @@ theorem Stmt.not_defined_of_mem_definedVars
     simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hn
     exact Block.not_defined_of_mem_definedVars h.2 hn
   | .exit l md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
-  | .funcDecl decl md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
   | .typeDecl tc md => simp only [Stmt.definedVars, List.not_mem_nil] at hn
 
 /-- A name a statement *list* defines is undefined at entry: `defUseWellFormed`
@@ -1094,7 +855,6 @@ theorem Stmt.not_containsNondetLoop_of_noNondetGuards {P : PureExpr}
   | .loop .nondet m inv body md =>
       rw [Stmt.noNondetGuards] at h; exact absurd h (by simp)
   | .exit lbl md => rw [Stmt.containsNondetLoop]
-  | .funcDecl d md => rw [Stmt.containsNondetLoop]
   | .typeDecl t md => rw [Stmt.containsNondetLoop]
   termination_by sizeOf s
 
@@ -1427,12 +1187,12 @@ theorem Block.transportShape_append {P : PureExpr} (xs ys : List (Stmt P (Cmd P)
   | nil => simp [Block.transportShape]
   | cons x rest ih => simp only [List.cons_append, Block.transportShape, ih, Bool.and_assoc]
 
-/-! ## An init-free, funcDecl-free (block of) statement(s) defines no variables. -/
+/-! ## An init-free (block of) statement(s) defines no variables. -/
 
 mutual
-/-- An init-free, funcDecl-free statement defines no variables. -/
-theorem stmt_definedVars_nil_of_noInits_noFuncDecl {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P))
-    (h_ni : Stmt.noInitsAnywhere s = true) (h_nf : Stmt.noFuncDecl s = true) :
+/-- An init-free statement defines no variables. -/
+theorem stmt_definedVars_nil_of_noInits {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P))
+    (h_ni : Stmt.noInitsAnywhere s = true) :
     Stmt.definedVars s false = [] := by
   match s with
   | .cmd (.init _ _ _ _) => exact absurd h_ni (by simp [Stmt.noInitsAnywhere])
@@ -1442,49 +1202,44 @@ theorem stmt_definedVars_nil_of_noInits_noFuncDecl {P : PureExpr} [HasFvars P] (
   | .cmd (.cover _ _ _) => with_unfolding_all rfl
   | .block lbl bss md =>
       rw [Stmt.definedVars]; show Block.definedVars bss false = []
-      exact block_definedVars_nil_of_noInits_noFuncDecl bss
-        (by simpa [Stmt.noInitsAnywhere] using h_ni) (by simpa [Stmt.noFuncDecl] using h_nf)
+      exact block_definedVars_nil_of_noInits bss
+        (by simpa [Stmt.noInitsAnywhere] using h_ni)
   | .ite g tss ess md =>
       rw [Stmt.definedVars]; show Block.definedVars tss false ++ Block.definedVars ess false = []
       simp only [Stmt.noInitsAnywhere, Bool.and_eq_true] at h_ni
-      simp only [Stmt.noFuncDecl, Bool.and_eq_true] at h_nf
-      rw [block_definedVars_nil_of_noInits_noFuncDecl tss h_ni.1 h_nf.1,
-          block_definedVars_nil_of_noInits_noFuncDecl ess h_ni.2 h_nf.2]; rfl
+      rw [block_definedVars_nil_of_noInits tss h_ni.1,
+          block_definedVars_nil_of_noInits ess h_ni.2]; rfl
   | .loop g m inv body md =>
       rw [Stmt.definedVars]; show Block.definedVars body false = []
-      exact block_definedVars_nil_of_noInits_noFuncDecl body
-        (by simpa [Stmt.noInitsAnywhere] using h_ni) (by simpa [Stmt.noFuncDecl] using h_nf)
+      exact block_definedVars_nil_of_noInits body
+        (by simpa [Stmt.noInitsAnywhere] using h_ni)
   | .exit lbl md => simp
-  | .funcDecl d md => exact absurd h_nf (by simp [Stmt.noFuncDecl])
   | .typeDecl t md => simp
   termination_by sizeOf s
 
-theorem block_definedVars_nil_of_noInits_noFuncDecl {P : PureExpr} [HasFvars P] (body : List (Stmt P (Cmd P)))
-    (h_ni : Block.noInitsAnywhere body = true) (h_nf : Block.noFuncDecl body = true) :
+theorem block_definedVars_nil_of_noInits {P : PureExpr} [HasFvars P] (body : List (Stmt P (Cmd P)))
+    (h_ni : Block.noInitsAnywhere body = true) :
     Block.definedVars body false = [] := by
   match body with
   | [] => with_unfolding_all rfl
   | s :: rest =>
       rw [Block.definedVars]; show Stmt.definedVars s false ++ Block.definedVars rest false = []
       simp only [Block.noInitsAnywhere, Bool.and_eq_true] at h_ni
-      simp only [Block.noFuncDecl, Bool.and_eq_true] at h_nf
-      rw [stmt_definedVars_nil_of_noInits_noFuncDecl s h_ni.1 h_nf.1,
-          block_definedVars_nil_of_noInits_noFuncDecl rest h_ni.2 h_nf.2]; rfl
+      rw [stmt_definedVars_nil_of_noInits s h_ni.1,
+          block_definedVars_nil_of_noInits rest h_ni.2]; rfl
   termination_by sizeOf body
 end
 
 /-! ## `transportShape` from the `.loop` arm Bool preconditions.
 
 `transportShape` FOLLOWS FROM the genuine `.loop` arm Bool preconditions ALONE
-(`containsNondetLoop = false`, `noFuncDecl = true`, `loopHasNoInvariants =
-true`, `noMeasureLoops = true`).  Proved by mutual structural induction; each
-statement constructor reduces to its sub-blocks under the corresponding Bool-walker
-reductions. -/
+(`containsNondetLoop = false`, `loopHasNoInvariants = true`, `noMeasureLoops =
+true`).  Proved by mutual structural induction; each statement constructor
+reduces to its sub-blocks under the corresponding Bool-walker reductions. -/
 mutual
 theorem Stmt.transportShape_of_arm_preconds {P : PureExpr}
     (s : Stmt P (Cmd P))
     (h_nd : Stmt.containsNondetLoop s = false)
-    (h_fd : Stmt.noFuncDecl s = true)
     (h_inv : Stmt.loopHasNoInvariants s = true)
     (h_measure : Stmt.noMeasureLoops s = true) :
     Stmt.transportShape s = true := by
@@ -1500,16 +1255,14 @@ theorem Stmt.transportShape_of_arm_preconds {P : PureExpr}
       simp only [Stmt.transportShape]
       exact Block.transportShape_of_arm_preconds bss
         (by simpa only [Stmt.containsNondetLoop] using h_nd)
-        (by simpa only [Stmt.noFuncDecl] using h_fd)
         (by simpa only [Stmt.loopHasNoInvariants] using h_inv)
         (by simpa only [Stmt.noMeasureLoops] using h_measure)
   | .ite g tss ess md =>
       simp only [Stmt.containsNondetLoop, Bool.or_eq_false_iff] at h_nd
-      simp only [Stmt.noFuncDecl, Bool.and_eq_true] at h_fd
       simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_inv
       simp only [Stmt.noMeasureLoops, Bool.and_eq_true] at h_measure
-      have h_t := Block.transportShape_of_arm_preconds tss h_nd.1 h_fd.1 h_inv.1 h_measure.1
-      have h_e := Block.transportShape_of_arm_preconds ess h_nd.2 h_fd.2 h_inv.2 h_measure.2
+      have h_t := Block.transportShape_of_arm_preconds tss h_nd.1 h_inv.1 h_measure.1
+      have h_e := Block.transportShape_of_arm_preconds ess h_nd.2 h_inv.2 h_measure.2
       cases g <;>
         simp only [Stmt.transportShape, Bool.and_eq_true] <;> exact ⟨h_t, h_e⟩
   | .loop g m inv body md =>
@@ -1526,18 +1279,15 @@ theorem Stmt.transportShape_of_arm_preconds {P : PureExpr}
         simp only [Stmt.transportShape]
         exact Block.transportShape_of_arm_preconds body
           (by simpa only [Stmt.containsNondetLoop] using h_nd)
-          (by simpa only [Stmt.noFuncDecl] using h_fd)
           (by rw [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_inv; exact h_inv.2)
           (by rw [Stmt.noMeasureLoops, Bool.and_eq_true] at h_measure; exact h_measure.2)
   | .exit lbl md => simp only [Stmt.transportShape]
-  | .funcDecl d md => exact absurd h_fd (by simp [Stmt.noFuncDecl])
   | .typeDecl t md => simp only [Stmt.transportShape]
   termination_by sizeOf s
 
 theorem Block.transportShape_of_arm_preconds {P : PureExpr}
     (ss : List (Stmt P (Cmd P)))
     (h_nd : Block.containsNondetLoop ss = false)
-    (h_fd : Block.noFuncDecl ss = true)
     (h_inv : Block.loopHasNoInvariants ss = true)
     (h_measure : Block.noMeasureLoops ss = true) :
     Block.transportShape ss = true := by
@@ -1545,12 +1295,11 @@ theorem Block.transportShape_of_arm_preconds {P : PureExpr}
   | [] => simp only [Block.transportShape]
   | s :: rest =>
       simp only [Block.containsNondetLoop, Bool.or_eq_false_iff] at h_nd
-      simp only [Block.noFuncDecl, Bool.and_eq_true] at h_fd
       simp only [Block.loopHasNoInvariants, Bool.and_eq_true] at h_inv
       simp only [Block.noMeasureLoops, Bool.and_eq_true] at h_measure
       simp only [Block.transportShape, Bool.and_eq_true]
-      exact ⟨Stmt.transportShape_of_arm_preconds s h_nd.1 h_fd.1 h_inv.1 h_measure.1,
-             Block.transportShape_of_arm_preconds rest h_nd.2 h_fd.2 h_inv.2 h_measure.2⟩
+      exact ⟨Stmt.transportShape_of_arm_preconds s h_nd.1 h_inv.1 h_measure.1,
+             Block.transportShape_of_arm_preconds rest h_nd.2 h_inv.2 h_measure.2⟩
   termination_by sizeOf ss
 end
 
@@ -1558,8 +1307,8 @@ end
 
 Property lemmas over the `namesFreshInExprs`, `namesFreshInRhsExprs`, and
 `exprsShapeFree` predicate families (defined in `Strata.DL.Imperative.Stmt`).
-Each leaf freshness condition is a `List.Disjoint`, so many lemmas reduce to the
-`List.Disjoint` API. -/
+Each leaf freshness condition is a `List.Disj`, so many lemmas reduce to the
+`List.Disj` API. -/
 
 mutual
 
@@ -1598,7 +1347,6 @@ theorem Stmt.namesFreshInRhsExprs_of_namesFreshInExprs {P : PureExpr} [HasFvars 
       exact Block.namesFreshInRhsExprs_of_namesFreshInExprs names body
         (fun a ha hmem => h ha (List.mem_append.mpr (Or.inr hmem)))
   | .exit _ _ => simp only [Stmt.namesFreshInRhsExprs]
-  | .funcDecl _ _ => simp only [Stmt.namesFreshInRhsExprs]
   | .typeDecl _ _ => simp only [Stmt.namesFreshInRhsExprs]
   termination_by sizeOf s
 
@@ -1644,7 +1392,6 @@ theorem Stmt.namesFreshInRhsExprs_subset {P : PureExpr}
     simp only [Stmt.namesFreshInRhsExprs] at h ⊢
     exact Block.namesFreshInRhsExprs_subset h_sub body h
   | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
-  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
   | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
   termination_by sizeOf s
 
@@ -1691,7 +1438,6 @@ theorem Stmt.namesFreshInRhsExprs_nil {P : PureExpr} [HasFvars P] (s : Stmt P (C
   | loop g m inv body md =>
     simp only [Stmt.namesFreshInRhsExprs]; exact Block.namesFreshInRhsExprs_nil body
   | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
-  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
   | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
   termination_by sizeOf s
 
@@ -1707,8 +1453,8 @@ end
 
 mutual
 /-- `namesFreshInRhsExprs` over a `cons` name list splits as the head-singleton
-freshness and the tail freshness (each leaf `List.Disjoint (hd :: tl) vars`
-splits as `hd ∉ vars ∧ List.Disjoint tl vars`). -/
+freshness and the tail freshness (each leaf `List.Disj (hd :: tl) vars`
+splits as `hd ∉ vars ∧ List.Disj tl vars`). -/
 theorem Stmt.namesFreshInRhsExprs_cons_names {P : PureExpr}
     [HasFvars P] (hd : P.Ident) (tl : List P.Ident) (s : Stmt P (Cmd P))
     (h_hd : Stmt.namesFreshInRhsExprs (P := P) [hd] s)
@@ -1730,7 +1476,6 @@ theorem Stmt.namesFreshInRhsExprs_cons_names {P : PureExpr}
     simp only [Stmt.namesFreshInRhsExprs] at h_hd h_tl ⊢
     exact Block.namesFreshInRhsExprs_cons_names hd tl body h_hd h_tl
   | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
-  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
   | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
   termination_by sizeOf s
 
@@ -1784,7 +1529,7 @@ theorem Stmt.namesFreshInRhsExprs_cmd_havoc {P : PureExpr}
   intro z _ hz; simp only [List.not_mem_nil] at hz
 
 /-- The empty name list is fresh in every statement's expressions:
-`namesFreshInExprs` is `List.Disjoint [] _`, which holds vacuously. -/
+`namesFreshInExprs` is `List.Disj [] _`, which holds vacuously. -/
 theorem Stmt.namesFreshInExprs_nil {P : PureExpr} [HasFvars P] (s : Stmt P (Cmd P)) :
     Stmt.namesFreshInExprs (P := P) [] s :=
   List.Disjoint_nil_left _
@@ -1799,7 +1544,7 @@ private theorem disjoint_of_shapefree_leaf {P : PureExpr} [HasIdent P]
     {Q : String → Prop} {names : List P.Ident} {vars : List P.Ident}
     (h_names_suffix : ∀ z ∈ names, ∃ str : String, z = HasIdent.ident str ∧ Q str)
     (h_sf : ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ vars) :
-    List.Disjoint names vars := by
+    List.Disj names vars := by
   intro z hz hzv
   obtain ⟨str, h_eq, h_suf⟩ := h_names_suffix z hz
   exact (h_eq ▸ h_sf str h_suf) hzv
@@ -1809,13 +1554,13 @@ private theorem disjoint_of_shapefree_leaf {P : PureExpr} [HasIdent P]
 private theorem Stmt.namesFreshInExprs_of_disjoint_getVars {P : PureExpr}
     [HasIdent P] [HasFvars P] {names : List P.Ident}
     (s : Stmt P (Cmd P))
-    (h : List.Disjoint names (Stmt.getVars s)) :
+    (h : List.Disj names (Stmt.getVars s)) :
     Stmt.namesFreshInExprs names s := h
 
 private theorem Block.namesFreshInExprs_of_disjoint_getVars {P : PureExpr}
     [HasIdent P] [HasFvars P] {names : List P.Ident}
     (ss : List (Stmt P (Cmd P)))
-    (h : List.Disjoint names (Block.getVars ss)) :
+    (h : List.Disj names (Block.getVars ss)) :
     Block.namesFreshInExprs names ss := h
 
 /-- `exprsShapeFree s` plus "every `names` element is a `Q`-kind ident"
@@ -2005,13 +1750,7 @@ theorem Block.initVars_map_cmd {P : PureExpr} [HasFvars P] (cs : List (Cmd P)) :
   | nil => simp [Block.initVars, Cmds.definedVars]
   | cons c rest ih =>
     simp only [List.map_cons, Block.initVars_cons, Cmds.definedVars]
-    rw [ih]; congr 1; cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
-
-/-- A `.cmd`-only block has `noFuncDecl`. -/
-theorem Block.noFuncDecl_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
-    Block.noFuncDecl (cs.map (Stmt.cmd : Cmd P → Stmt P (Cmd P))) = true :=
-  block_pred_map_cmd_true Block.noFuncDecl Stmt.noFuncDecl (by simp [Block.noFuncDecl])
-    (fun _ _ => by simp [Block.noFuncDecl]) (fun _ => by simp [Stmt.noFuncDecl]) cs
+    rw [ih]; congr 1 <;> (cases c <;> simp [Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars])
 
 /-- A `.cmd`-only block has `transportShape`. -/
 theorem Block.transportShape_map_cmd {P : PureExpr} (cs : List (Cmd P)) :
@@ -2110,7 +1849,6 @@ theorem Stmt.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C) 
       simp only [Stmt.mapExpr, Stmt.mapExprM]
       rw [Block.mapExpr_eq_mapExprM fExpr mapCmd body, optionMapM_Id, listMapM_Id]; rfl
   | .exit l md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
-  | .funcDecl decl md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
   | .typeDecl tc md => simp only [Stmt.mapExpr, Stmt.mapExprM]; rfl
   termination_by sizeOf s
 

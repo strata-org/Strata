@@ -31,7 +31,7 @@ open Strata.Laurel
 private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := .unknown }
 
 private def call (name : String) : StmtExprMd :=
-  ⟨.StaticCall (mkId name) [], .unknown⟩
+  ⟨.StaticCall (mkId name) [] [], .unknown⟩
 
 /-- A prelude procedure returning `int`, with a body so it is not `External`. -/
 private def preludeProc (name : String) : Procedure :=

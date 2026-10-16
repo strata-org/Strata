@@ -10,7 +10,7 @@ open Strata
 
 /-! CONTROL: a FALSE assertion with NO ambiguity verifies and FAILS -- the assert
     is actually checked when the program is not discarded. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Base {
@@ -25,13 +25,22 @@ procedure go(o: Only)
   assert x == 999
 //^^^^^^^^^^^^^^^ error: assertion does not hold
 };
+
+procedure runAll() entry
+  opaque
+  modifies *
+{
+  var o: Only := new Only;
+  go(o)
+};
 #end
 
 /-! SOUNDNESS: SAME false assertion, but the call is now AMBIGUOUS. If the ambiguity
     error prevents verification (program discarded), the assertion is NEVER checked,
     so only the ambiguity error fires. A false \"assert x == 999\" that produced no
     assertion failure here would otherwise be a silent unsound pass. -/
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+-- No interpreters: the annotated diagnostic is a resolution error, on which both interpreter paths abort.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite L {
