@@ -120,7 +120,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
   context. -/
   | treal_const : ∀ Γ m r,
             C.knownTypes.containsName "real" →
-            HasType C Γ (.realConst m r) (.forAll [] .real)
+            HasType C Γ (.rationalConst m r) (.forAll [] .real)
 
   /-- A string constant has type `.string` if `string` is a known type in this
   context. -/
@@ -5485,7 +5485,7 @@ theorem resolveAux_HasType :
       cases c with
       | boolConst b => exact HasType.tbool_const _ _ _ h_known
       | intConst i => exact HasType.tint_const _ _ _ h_known
-      | realConst r => exact HasType.treal_const _ _ _ h_known
+      | rationalConst r => exact HasType.treal_const _ _ _ h_known
       | strConst s => exact HasType.tstr_const _ _ _ h_known
       | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
   case h_op =>

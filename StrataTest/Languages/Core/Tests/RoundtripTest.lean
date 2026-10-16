@@ -594,9 +594,9 @@ private def rNeg (e : Core.Expression.Expr) : Core.Expression.Expr :=
 /-- A bare negative real literal, and `Real.Neg` applied to one. -/
 private def negRealLitPgm : Core.Program := { decls := [
   .func { name := "negLit", typeArgs := [], inputs := [], output := .real,
-          body := some (.realConst () (-3 : Rat)) } .empty,
+          body := some (.rationalConst () (-3 : Rat)) } .empty,
   .func { name := "negNegLit", typeArgs := [], inputs := [], output := .real,
-          body := some (rNeg (.realConst () (-3 : Rat))) } .empty
+          body := some (rNeg (.rationalConst () (-3 : Rat))) } .empty
 ]}
 
 /--

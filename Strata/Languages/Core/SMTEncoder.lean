@@ -691,7 +691,7 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
   match e with
   | .boolConst _ b => .ok (Term.bool b, ctx, pending)
   | .intConst _ i => .ok (Term.int i, ctx, pending)
-  | .realConst _ r =>
+  | .rationalConst _ r =>
     match StrataDDM.Decimal.fromRat r with
     | some d => .ok (Term.real d, ctx, pending)
     | none =>
@@ -1139,7 +1139,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
   match t with
   | .prim (.bool b)       => .boolConst () b
   | .prim (.int i)        => .intConst () i
-  | .prim (.real d)       => .realConst () d.toRat
+  | .prim (.real d)       => .rationalConst () d.toRat
   | .prim (.bitvec b)     => .bitvecConst () _ b
   | .prim (.string s)     => .strConst () s
   | .var v                =>
