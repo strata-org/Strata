@@ -147,7 +147,7 @@ def runProgramObligations (t : StrataDDM.Program) (useArrayTheory : Bool) :
   let prog := translate t
   let options : Core.VerifyOptions :=
     { Core.VerifyOptions.default with useArrayTheory := useArrayTheory, verbose := .quiet }
-  let phases := Core.corePipelinePhases none options
+  let phases := Core.corePipelinePhases options
   let seed : Core.Transform.CoreTransformState :=
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
   match ← EIO.toIO' (Core.runTransforms prog phases seed) with
