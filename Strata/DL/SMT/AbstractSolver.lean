@@ -138,6 +138,14 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   /-- Define an interpreted function with a body term. -/
   defineFun : String → List (String × σ) → σ → τ → m Unit
 
+  /-- Define a recursive function (`define-fun-rec`): the body may refer to
+      the function being defined. Only used under
+      `VerifyOptions.recursiveFnsAsDefineFunRec`; backends without support
+      keep the default, which fails. -/
+  defineFunRec : String → List (String × σ) → σ → τ → m Unit :=
+    fun name _ _ _ => throw (IO.userError
+      s!"define-fun-rec ({name}) is not supported by this solver backend")
+
   /-- Declare a new sort with the given arity. Returns the declared sort. -/
   declareSort : String → Nat → m σ
 
