@@ -104,19 +104,11 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: program Core;
 
-procedure safeMod$$wf (x : int, y : int)
-{
-  assume [precond_safeMod_0]: !(y == 0);
-  assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
-};
+lemma [safeMod_body_calls_Int.SafeMod_0] (x : int, y : int): !(y == 0) ==> !(y == 0);
 function safeMod (x : int, y : int) : int {
   int.safeMod(x, y)
 }
-procedure foo$$wf (x : int, y : int)
-{
-  assert [foo_precond_calls_safeMod_0]: !(y == 0);
-  assume [precond_foo_0]: int.gt(safeMod(x, y), 0);
-};
+lemma [foo_precond_calls_safeMod_0] (x : int, y : int): !(y == 0);
 function foo (x : int, y : int) : int {
   int.add(x, y)
 }
@@ -159,12 +151,7 @@ datatype List {
   Nil(),
   Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List)
-{
-  assume [test_requires_0]: List..isCons(xs);
-  assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_requires_1]: int.gt(List..head(xs), 0);
-};
+lemma [test_pre_test_requires_1_calls_List..head_0] (xs : List): List..isCons(xs) ==> List..isCons(xs);
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
@@ -205,15 +192,9 @@ datatype List {
   Nil(),
   Cons(head : int, tail : List)
 };
-procedure test$$wf (xs : List)
-{
-  assume [test_requires_0]: List..isCons(xs);
-  assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_ensures_1]: int.gt(List..head(xs), 0);
-  assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
-  assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
-  assume [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
-};
+lemma [test_post_test_ensures_1_calls_List..head_0] (xs : List): List..isCons(xs) ==> List..isCons(xs);
+lemma [test_post_test_ensures_2_calls_List..tail_0] (xs : List): List..isCons(xs) ==> int.gt(List..head(xs), 0) ==> List..isCons(xs);
+lemma [test_post_test_ensures_2_calls_List..head_1] (xs : List): List..isCons(xs) ==> int.gt(List..head(xs), 0) ==> List..isCons(List..tail(xs));
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
@@ -370,7 +351,7 @@ procedure test (inout g : int, y : int)
 /-! ### Test 10: `collectPrecondAsserts` tags Sequence bounds obligations with `outOfBoundsAccess`
 
 Exercises the full `collectPrecondAsserts` path — the code called by
-`transformStmt` / `mkContractWFProc` / `mkFuncWFProc` — and inspects the
+`transformStmt` / `mkContractWFLemma` / `mkFuncWFLemma` — and inspects the
 metadata on the generated assert. Mirrors `OverflowCheckTest.lean`. -/
 
 section SeqBoundsObligations
@@ -452,7 +433,7 @@ variable `j` and the generated obligation fails to type-check with
 "Impossible to unify (arrow Inner Outer) with (arrow int ...)".
 
 `Inner` carries a second constructor so that `Inner..x` is a partial accessor
-whose tester precondition reaches the generated `$$wf` block. -/
+whose tester precondition reaches the generated `$$wf` lemma. -/
 
 def nestedExistsWFPgm :=
 #strata
@@ -480,12 +461,9 @@ datatype Inner {
 datatype Outer {
   Outer_A(v : Inner)
 };
-procedure bug$$wf (p : Outer)
-{
-  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
-};
+lemma [bug_body_calls_Inner..x_0] (p : Outer, m : Inner, j : int): p == Outer_A(m) ==> Inner..isInner_Cons(m);
 function bug (p : Outer) : bool {
-  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+  exists m : Inner :: p == Outer_A(m) && (exists j : int :: Inner..x(m) == j)
 }
 -/
 #guard_msgs in
@@ -496,7 +474,7 @@ function bug (p : Outer) : bool {
 `Inner..x` above is guarded by `Inner..isInner_Cons` because `Inner` has a
 second constructor for that tester to rule out. Where the datatype has a single
 constructor the tester holds for every value of the type, so the accessor is
-total and the function body needs no `$$wf` block at all. -/
+total and the function needs no `$$wf` lemma at all. -/
 
 def nestedExistsSingleConstrPgm :=
 #strata
@@ -524,7 +502,7 @@ datatype Outer {
   Outer_A(v : Inner)
 };
 function bug (p : Outer) : bool {
-  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+  exists m : Inner :: p == Outer_A(m) && (exists j : int :: Inner..x(m) == j)
 }
 -/
 #guard_msgs in

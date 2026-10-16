@@ -7,7 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
-public import Strata.DL.Imperative.StmtCallSemantics
+public import Strata.DL.Imperative.StmtCFGCallSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Factory
@@ -263,8 +263,8 @@ end
 ### Mutual event semantics: `EvalCommandE` and `CoreBodyExecE`
 -/
 
-/-- Event-producing execution of a structured Core procedure body: the generic
-    `BigStepE` at `Expression`. -/
+/-- Event-producing execution of a Core procedure body, structured or CFG: the
+    generic `BigStepE` at `Expression`. -/
 abbrev CoreBodyExecE
     (π : String → Option Procedure) :
     Procedure.Body → Env Expression → CoreStore → Trace Expression → Prop :=

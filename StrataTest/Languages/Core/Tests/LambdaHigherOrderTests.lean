@@ -431,7 +431,8 @@ spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: applyN_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -442,7 +443,8 @@ Result: ✅ pass
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Core.verify recHigherOrderPgm (options := .quiet)
 
@@ -669,7 +671,9 @@ spec {
 };
 #end
 
-/-- info: Obligation: intListLen_body_calls_MyList..tl_0
+/--
+info:
+Obligation: intListLen_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -679,7 +683,8 @@ Result: ✅ pass
 
 Obligation: Test_ensures_0
 Property: assert
-Result: ✅ pass-/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Strata.Core.verify polyRecLambdaPgm (options := .quiet)
 

@@ -679,6 +679,7 @@ def buildEnv (options : VerifyOptions) (program : Program)
     match d with
     | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
     | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .lemma _ _         => s.increment s!"{Evaluator.Stats.lemmas}"
     | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
     | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
     | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
@@ -751,9 +752,12 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | _ => throw (Message.fromString s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
   -- The procedure name is only used for the obligation procedure header;
   -- downstream phases (ObligationExtraction) walk the body and ignore it.
-  -- We pick the first procedure name as a representative label.
+  -- We pick the first procedure name as a representative label, or the first
+  -- lemma name when a program has lemmas but no procedure.
   let procName := program.decls.findSome? fun
     | .proc p _ => some p.header.name | _ => none
+  let procName := procName <|> program.decls.findSome? fun
+    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
   let blocks := postEvalEnv.deferred.toList.map fun ob =>
     let assumes := ob.assumptions.reverse.flatten.filterMap fun
       | .assumption label e =>
@@ -1473,11 +1477,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     the requested procedures, keeping their transitive callees because
     `CallElim` still needs the callees' contracts. The second, after
     `CallElim`, `TermCheck` and `PrecondElim`, discards those callees now that
-    their contracts have been inlined; it names the requested procedures
-    together with the obligation procedures generated for them (via
-    `PrecondElim.wfProcName` and `TermCheck.termProcName`) so those survive,
-    and disables `noFilter` so that WF procedures for prelude functions are
-    pruned too.
+    their contracts have been inlined; it names the requested procedures and
+    drops the lemmas no declaration lists. The well-formedness and termination lemmas of a
+    requested procedure or function survive because it lists them in its
+    `lemmas`; those of other functions are pruned.
 
     A single filter would suffice if the first pass kept each callee as its
     contract alone, with the body removed: `CallElim` would consume those
@@ -1499,8 +1502,7 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
-      let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
-      [filterProceduresPipelinePhase targets (respectNoFilter := false)]
+      [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
     | none => []
   -- The filter runs before the entry assertions, because both facts are
   -- properties of every declaration: a caller naming structured procedures to
@@ -1713,8 +1715,10 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck label
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     else
-      let counterVal ← counter.get
-      counter.set (counterVal + 1)
+      -- Claim the number atomically: under `--parallel N` several worker tasks call this
+      -- concurrently with the same `counter`, and a separate `get`/`set` lets two of them
+      -- read the same value, write the same file and solve each other's query.
+      let counterVal ← counter.modifyGet fun n => (n, n + 1)
       let filename := tempDir / s!"{SMT.sanitizeFilenameCapped label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
@@ -1846,7 +1850,18 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     return .ok result
 
 /-- Dispatch solver jobs using a bounded worker pool. Workers pull from a shared
-    queue; results returned in original order. -/
+    queue; results returned in original order.
+
+    Each worker task gets its own `PipelineContext.fork` of `pctx`: the context's
+    phase-tracking refs are not thread-safe (see `Strata/Pipeline/Context.lean`),
+    so sharing `pctx` itself lets concurrent `withPhase` calls corrupt its phase
+    stack. A fork shares `pctx`'s messages and metrics handle, so diagnostics and
+    JSONL metrics from discharge still reach the caller, tagged with the caller's
+    phase path. Forks do not print phase lines, so per-obligation phases are not
+    printed under `--profile` (a `--verbose` caller still sees worker diagnostics
+    on stderr). After the pool finishes, `joinForks` credits the pool's
+    wall-clock time to the caller's enclosing phase (`vcDischarge`), so its
+    metrics have the same shape as a sequential run's. -/
 private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (phases : List AbstractedPhase) (workers : Nat)
@@ -1856,7 +1871,7 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
   let queue ← IO.mkRef (jobs.zipIdx : List (SolverJob × Nat))
   let resultMap ← IO.mkRef ({} : Std.HashMap Nat (Except Message VCResult))
   let shouldStop ← IO.mkRef false
-  let workerFn : IO Unit := do
+  let workerFn (workerCtx : PipelineContext) : IO Unit := do
     let mut running := true
     while running do
       if ← shouldStop.get then break
@@ -1867,21 +1882,27 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
       match entry with
       | none => running := false
       | some (job, idx) =>
-        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge pctx
+        let result ← dispatchSolverJob job p options counter tempDir phases mkDischarge workerCtx
         resultMap.modify (·.insert idx result)
         if options.stopOnFirstError then
           match result with
           | .ok r => if r.isNotSuccess then shouldStop.set true
           | .error _ => shouldStop.set true
   let numWorkers := min workers jobs.length
-  let workerTasks ← (List.range numWorkers).mapM fun _ =>
-    IO.asTask (prio := .dedicated) workerFn
+  -- Fork on this thread, before any worker starts, so the forks see a stable
+  -- phase on `pctx`.
+  let workerCtxs ← (List.range numWorkers).mapM fun _ => (pctx.fork : BaseIO _)
+  let poolStartNs ← IO.monoNanosNow
+  let workerTasks ← workerCtxs.mapM fun workerCtx =>
+    IO.asTask (prio := .dedicated) (workerFn workerCtx)
   -- Join all tasks before throwing to prevent orphaned processes
   let mut firstError : Option IO.Error := none
   for task in workerTasks do
     match task.get with
     | .ok () => pure ()
     | .error e => if firstError.isNone then firstError := some e
+  let poolElapsedNs := (← IO.monoNanosNow) - poolStartNs
+  pctx.joinForks workerCtxs poolElapsedNs
   if let some e := firstError then throw e
   let rmap ← resultMap.get
   let mut results : List (Option (Except Message VCResult)) := []

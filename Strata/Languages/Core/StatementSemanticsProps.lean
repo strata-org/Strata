@@ -148,7 +148,7 @@ theorem CoreBodyExecE.structured
     {emitted : Trace Expression}
     (h : CoreStepStarE π
       (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
-    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := ⟨h⟩
+    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
 
 /-- Base-command step of Core's event contract relation. -/
 theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
@@ -1723,7 +1723,7 @@ theorem InitVarsDefined :
     apply ih <;> assumption
 
 /-- Variables introduced by `InitVars` can be read back as values when the
-    resulting store contains only canonical bindings. -/
+    resulting store contains only value bindings. -/
 theorem InitVarsReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {ks : List P.Ident} :
   WellFormedStore σ' f →

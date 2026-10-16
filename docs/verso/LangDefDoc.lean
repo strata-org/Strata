@@ -105,7 +105,7 @@ The remainder of this document is structured as follows:
    building blocks.
 2. Section 4 describes how Strata Core assembles these blocks into a concrete
    verification language with procedures, type declarations, functions, axioms,
-   and programs.
+   lemmas, and programs.
 
 The semantics of each layer — operational and denotational for `Lambda`, and
 operational for `Imperative` — and how they compose to give meaning to Strata
@@ -633,6 +633,62 @@ The concrete syntax is:
 axiom [label]: expression;
 ```
 
+An axiom may also list parameters, with optional triggers after them. This
+form is sugar for a universal quantifier over the parameters:
+
+```
+axiom [label] (x : int, y : int) { f(x, y) }: expression;
+// stands for
+axiom [label]: forall x : int, y : int :: { f(x, y) } expression;
+```
+
+## Lemmas
+
+A lemma is a proposition that must be proved. It is written like an axiom,
+with the keyword `lemma`, and accepts the same parameter list and triggers:
+
+```
+lemma [label]: expression;
+lemma [label] (x : int) { f(x) }: expression;
+```
+
+`lemma` is a keyword, like `axiom`; an identifier of that name is written
+`|lemma|`.
+
+Each lemma yields one proof obligation, checked under the axioms and
+`distinct` facts declared before it, like an assertion in a procedure. A lemma
+is never assumed when checking other declarations, so proving it does not make
+it available to later proofs. Its outermost universal quantifiers are checked
+over fresh free variables, so a failing lemma reports a counterexample for
+them.
+
+A lemma may take type parameters, written after its label as for a procedure:
+
+```
+lemma [label] <a> (x : a, xs : List a): expression;
+lemma [label] <a>: expression;
+```
+
+Such a lemma must hold at every type. It is checked with each type parameter
+replaced by a fresh opaque type, so its formula cannot constrain a type
+parameter to a particular type.
+
+Functions and procedures list the lemmas they depend on. The
+well-formedness checks of a function's or procedure's contract are generated
+as such lemmas, one per check: each states that the preconditions of a partial
+function call hold under the conditions written before it. Procedure filtering
+keeps a procedure's lemmas exactly when it keeps the procedure.
+
+Preconditions describe the state on entry, so in these lemmas an in-out
+parameter `g` named in a precondition stands for its entry value `old g`. A
+postcondition that reads `g` reads its final value, which the preconditions do
+not constrain: with `requires !(g == 0)`, the check for `int.safeDiv(y, g)` in a
+postcondition fails, while the check for `int.safeDiv(y, old g)` succeeds.
+
+A lemma written in the program gets the same checks for the partial calls in
+its own formula, as an assertion does. Generated lemmas are named after their
+checks, with a `_k` suffix when that name is already declared in the program.
+
 ## Commands and Statements
 
 `Imperative` extends its own commands with a procedure call command. A
@@ -747,6 +803,7 @@ one of:
 
 - a type declaration (abstract type, type synonym, or algebraic datatype),
 - an axiom,
+- a lemma,
 - a `distinct` declaration (asserting that a list of expressions are pairwise distinct),
 - a procedure,
 - a (non-recursive) function, or

@@ -65,13 +65,10 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilLen
 Property: assert
@@ -172,13 +169,10 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: nilCase
 Property: assert
@@ -364,13 +358,10 @@ Obligation:
 
 Label: listLen_terminates_0
 Property: assert
-Assumptions:
-IntList..adtRank_0: forall x : IntList ::  { IntList..adtRank(x) }
-  int.ge(IntList..adtRank(x), 0)
-IntList..adtRank_1: forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))
 Obligation:
-!(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+(forall x : IntList ::  { IntList..adtRank(x) }
+  int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
@@ -586,7 +577,7 @@ Result: ✅ pass
 -- `len` is polymorphic and recursive but used at no ground type, so
 -- `MonomorphizeFunctions` (which runs after type checking) drops its
 -- *definition* as dead code before it can reach the SMT encoder.  Its body
--- well-formedness (`$$wf`) and termination (`$$term`) self-checks are
+-- well-formedness and termination lemmas are
 -- emitted (at a fresh opaque type for the type variable) and pass.
 ---------------------------------------------------------------------
 

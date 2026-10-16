@@ -60,7 +60,7 @@ private def monoFns (t : StrataDDM.Program) :
     matching the order in `corePipelinePhases`.  Each upstream pass can
     change the set of reachable polymorphic-function callsites:
     `precondElim` inlines `requires` clauses as fresh `assert`s (and
-    emits a `$$wf` procedure), `termCheck` emits `$$term` procedures +
+    emits well-formedness lemmas), `termCheck` emits termination lemmas +
     `D..adtRank` axioms for every recursive-function block, and
     `monomorphizeProcedures` substitutes a polymorphic procedure's type
     variables with fresh opaque types before type-checking. -/
@@ -814,7 +814,7 @@ info: "OK"
 /-! ### Example 13: `MonomorphizeFunctions` after `PrecondElim` / `TermCheck`
 
 `PrecondElim` inlines each call's `requires` clause as a fresh `assert`
-(and emits a WF procedure), and `TermCheck` emits `$$term` procedures +
+(and emits a WF lemma), and `TermCheck` emits termination lemmas +
 `D..adtRank` axioms for every recursive-function block.  Both can
 introduce new call-sites that reference polymorphic functions or add
 polymorphic axioms.  This example exercises `MonomorphizeFunctions` on
@@ -822,8 +822,8 @@ the output of that full transform chain to catch surprises those passes
 might introduce.
 
 The program has a poly recursive function `len<a>` used at `int` — which
-`TermCheck` will decorate with `MyList..adtRank<a>` axioms and a `len$$term`
-termination procedure — so `len`, the derived `MyList..adtRank`, and the
+`TermCheck` will decorate with `MyList..adtRank<a>` axioms and `len_terminates_i`
+termination lemmas — so `len`, the derived `MyList..adtRank`, and the
 termination check are all specialized at `int` and discharged end-to-end.
 -/
 
@@ -919,12 +919,8 @@ datatype MyList (a : Type) {
   Nil(),
   Cons(hd : a, tl : MyList a)
 };
-type $__opaque_head$$wf_a_0;
-procedure head$$wf (xs : MyList $__opaque_head$$wf_a_0)
-{
-  assume [precond_head_0]: MyList..isCons(xs);
-  assert [head_body_calls_MyList..hd_0]: MyList..isCons(xs);
-};
+type $__opaque_head_body_calls_MyList..hd_0_a_0;
+lemma [head_body_calls_MyList..hd_0] (xs : (MyList $__opaque_head_body_calls_MyList..hd_0_a_0)): MyList..isCons(xs) ==> MyList..isCons(xs);
 function |$__mono#head#int| (xs : MyList int) : int {
   MyList..hd(xs)
 }

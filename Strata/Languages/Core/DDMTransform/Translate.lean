@@ -2195,6 +2195,66 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   let md ← getMetaDataWithAnn op annotsArg
   return (.ax (Core.Axiom.mk l e) md, bindings)
 
+/-- Translate an optional `DeclLabel`, the name in front of a parameter list. -/
+def translateOptionDeclLabel? (arg : Arg) : TransM (Option String) := do
+  translateOption (fun maybe_arg => do
+                    match maybe_arg with
+                    | none => return none
+                    | some lop => let args ← checkOpArg lop q`Core.declLabel 1
+                                  return some (← translateIdent String args[0]!))
+                  arg
+
+/--
+Translate the name and proposition of `axiom` or `lemma` written with a
+parameter list, `[name] (x : T, ...) { triggers }: e`, into the name and
+`forall x : T, ... :: { triggers } e`. `args` holds the label, the parameter
+list, the triggers and the proposition, in that order.
+-/
+def translateParamsProposition (p : Program) (bindings : TransBindings)
+    (namePrefix : String) (args : Array Arg) :
+    TransM (String × Core.Expression.Expr × TransBindings) := do
+  let defaultName := s!"{namePrefix}_{getGenCount .axiom_def bindings.gen}"
+  let bindings := incrNum .axiom_def bindings
+  let l := (← translateOptionDeclLabel? args[0]!).getD defaultName
+  let triggers ← translateOption (fun t => pure t) args[2]!
+  let e ← translateQuantifier .all p bindings args[1]! triggers args[3]!
+  return (l, e, bindings)
+
+def translateAxiomParams (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom_params 5
+  let (l, e, bindings) ← translateParamsProposition p bindings "axiom" (op.args.extract 1 5)
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.ax (Core.Axiom.mk l e) md, bindings)
+
+def translateLemma (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma 3
+  let (l, bindings) ← nextLabel "lemma" .axiom_def op.args[1]! bindings
+  let e ← translateExpr p bindings op.args[2]!
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, e } md, bindings)
+
+def translateLemmaTypeArgs (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma_targs 4
+  let defaultName := s!"lemma_{getGenCount .axiom_def bindings.gen}"
+  let bindings := incrNum .axiom_def bindings
+  let l := (← translateOptionDeclLabel? op.args[1]!).getD defaultName
+  let typeArgs ← translateTypeArgs (.option default (some op.args[2]!))
+  let e ← translateExpr p bindings op.args[3]!
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, typeArgs := typeArgs.toList, e } md, bindings)
+
+def translateLemmaParams (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma_params 6
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let (l, e, bindings) ← translateParamsProposition p bindings "lemma"
+    #[op.args[1]!, op.args[3]!, op.args[4]!, op.args[5]!]
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, typeArgs := typeArgs.toList, e } md, bindings)
+
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 3
@@ -2281,7 +2341,7 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
-    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllCanonical]
+    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllValues]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
   let measure ← translateMeasure p bodyBindings fnOp.args[5]!
   let body ← translateExpr p bodyBindings fnOp.args[6]!
@@ -2567,6 +2627,14 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
         translateTypeSynonym bindings op
       | q`Core.command_axiom =>
         translateAxiom p bindings op
+      | q`Core.command_axiom_params =>
+        translateAxiomParams p bindings op
+      | q`Core.command_lemma =>
+        translateLemma p bindings op
+      | q`Core.command_lemma_params =>
+        translateLemmaParams p bindings op
+      | q`Core.command_lemma_targs =>
+        translateLemmaTypeArgs p bindings op
       | q`Core.command_distinct =>
         translateDistinct p bindings op
       | q`Core.command_procedure =>

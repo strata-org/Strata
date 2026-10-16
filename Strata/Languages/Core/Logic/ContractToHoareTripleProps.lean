@@ -30,7 +30,7 @@ procedure's contract decidable. The definitions being established live in
   a concrete procedure be settled by `decide` / `native_decide` rather than by
   unfolding a translated AST by hand.
 - `preAsPredicate_of_eqPairs` and `postAsPredicate_of_eqPairs` — establish contract
-  clauses that are equalities between variables with matching canonical bindings.
+  clauses that are equalities between variables with matching value bindings.
 - `assertionsValid_defaultAssertEvents` — turns true non-`free` contract clauses into
   a valid assertion-event trace.
 -/
@@ -80,7 +80,7 @@ theorem assertionsValid_defaultAssertEvents
   exact key checks.toList [] h
 
 /-- If every `requires` is an equality between a listed variable pair whose two
-bindings hold the same canonical value, all preconditions hold. -/
+bindings hold the same value, all preconditions hold. -/
 theorem preAsPredicate_of_eqPairs (proc : Procedure)
     (ρ : Imperative.Env Expression)
     (pairs : List ((Expression.Ident × Option Lambda.LMonoTy) ×
@@ -90,7 +90,7 @@ theorem preAsPredicate_of_eqPairs (proc : Procedure)
          Lambda.LExpr.eq () (Lambda.LExpr.fvar () p.1.1 p.1.2)
            (Lambda.LExpr.fvar () p.2.1 p.2.2))) = Bool.true)
     (hstore : ∀ p ∈ pairs, ∃ v, ρ.store p.1.1 = some v ∧ ρ.store p.2.1 = some v ∧
-       Lambda.LExpr.isCanonicalValue ρ.factory v = Bool.true) :
+       Lambda.LExpr.isValue ρ.factory v = Bool.true) :
     Procedure.preAsPredicate proc ρ := by
   intro label check hmem
   simp only [List.all_eq_true, List.any_eq_true, decide_eq_true_eq] at hsyn
@@ -102,7 +102,7 @@ theorem preAsPredicate_of_eqPairs (proc : Procedure)
     (Lambda.evalFully_fvar_of_value ρ.factory ρ.store () p.2.1 p.2.2 v h2 hv)
 
 /-- Postcondition analogue of `preAsPredicate_of_eqPairs`: `free` clauses are
-exempt, and each remaining equality follows from matching canonical bindings. -/
+exempt, and each remaining equality follows from matching value bindings. -/
 theorem postAsPredicate_of_eqPairs (proc : Procedure)
     (ρ : Imperative.Env Expression)
     (pairs : List ((Expression.Ident × Option Lambda.LMonoTy) ×
@@ -113,7 +113,7 @@ theorem postAsPredicate_of_eqPairs (proc : Procedure)
          Lambda.LExpr.eq () (Lambda.LExpr.fvar () p.1.1 p.1.2)
            (Lambda.LExpr.fvar () p.2.1 p.2.2))) = Bool.true)
     (hstore : ∀ p ∈ pairs, ∃ v, ρ.store p.1.1 = some v ∧ ρ.store p.2.1 = some v ∧
-       Lambda.LExpr.isCanonicalValue ρ.factory v = Bool.true) :
+       Lambda.LExpr.isValue ρ.factory v = Bool.true) :
     Procedure.postAsPredicate proc ρ := by
   intro label check hmem hattr
   simp only [List.all_eq_true, Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hsyn

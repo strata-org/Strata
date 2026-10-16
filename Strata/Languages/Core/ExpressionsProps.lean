@@ -36,7 +36,7 @@ private theorem eval_ite_value
     Lambda.LExpr.eval (n + 1) f σ (.ite m c t e)
       = ((if β then tv else ev), .value true) := by
   simp only [Lambda.LExpr.eval]
-  rw [if_neg (by rw [Lambda.isCanonicalValue_ite_false]; simp), Lambda.callOfLFunc_ite_none]
+  rw [if_neg (by rw [Lambda.isValue_ite_false]; simp), Lambda.callOfLFunc_ite_none]
   cases β with
   | true =>
     simp [Lambda.LExpr.evalCore, Lambda.LExpr.evalIte, hc, ht, Lambda.LExpr.boolConst,

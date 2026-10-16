@@ -115,6 +115,15 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
             "' has a CFG body; obligations can only be extracted from " ++
             "structured bodies")
       .ok (globalPc, allObs ++ obs)
+    | .lemma l md =>
+      -- The verifier never reaches this case: symbolic evaluation turns each
+      -- lemma into an obligation over fresh free variables, and the program it
+      -- hands here holds none. A lemma passed in directly keeps its `forall`s,
+      -- since this pass tracks no names to make fresh variables from; the
+      -- obligation is equivalent, but a failure shows no counterexample.
+      let ob := ProofObligation.mk (toString l.name) (convertMetaDataPropertyType md)
+        (RevPathConditions.consume (P := Expression) ⟨[globalPc]⟩) l.e md
+      .ok (globalPc, allObs.push ob)
     | _ => .ok (globalPc, allObs)
   return allObs
 

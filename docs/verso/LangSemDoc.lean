@@ -83,14 +83,14 @@ transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
 
 {docstring Lambda.StepStar}
 
-The predicate {name Lambda.LExpr.isCanonicalValue}`isCanonicalValue` returns
+The predicate {name Lambda.LExpr.isValue}`isValue` returns
 `true` for `LExpr` that is a value: constants, closed abstractions and quantifiers,
 etc.
 
-{docstring Lambda.LExpr.isCanonicalValue}
+{docstring Lambda.LExpr.isValue}
 
-The theorem {name Lambda.canonical_value_not_step}`canonical_value_not_step`
-confirms the intended relationship between the two notions: canonical values are
+The theorem {name Lambda.value_not_step}`value_not_step`
+confirms the intended relationship between the two notions: values are
 precisely the normal forms of {name Lambda.Step}`Step`, so no reduction rule can
 fire on them.
 
@@ -100,7 +100,7 @@ Alongside the relational semantics, `Lambda` provides an executable partial
 evaluator, {name Lambda.LExpr.eval}`LExpr.eval`. It takes a fuel bound `n` and
 reduces an expression as far as that fuel allows, returning the resulting
 expression together with an `EvalResult` that classifies the outcome as
-`outOfFuel`, a canonical `value`, or a `nonvalue`.
+`outOfFuel`, a `value`, or a `nonvalue`.
 
 The theorem {name Lambda.eval_StepStar}`eval_StepStar` states the soundness of
 evaluator with respect to the operational semantics. For every fuel

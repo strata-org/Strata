@@ -182,8 +182,9 @@ structure Procedure.Header where
   inputs   : @LMonoTySignature Unit
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
   outputs  : @LMonoTySignature Unit
-  /-- If true, FilterProcedures will never remove this procedure. -/
-  noFilter : Bool := false
+  /-- Names of the top-level lemmas this procedure depends on, such as the
+      well-formedness lemmas of its contract. -/
+  lemmas : List String := []
   deriving Repr, DecidableEq, Inhabited
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).

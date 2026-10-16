@@ -683,7 +683,7 @@ createHavocs vs₁ ++ createHavocs vs₂ := by
 cases vs₁ <;> simp [createHavocs]
 
 /-- Under equally sized, defined store substitutions and a well-formed evaluator,
-generated free variables evaluate to the canonical values read at their
+generated free variables evaluate to the values read at their
 corresponding substituted keys. -/
 theorem createFvarsSubstStores :
   ks1.length = ks2.length →
