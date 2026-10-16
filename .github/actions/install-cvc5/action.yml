@@ -20,12 +20,26 @@ inputs:
         "system"  — sudo cp the cvc5 binary into /usr/local/bin/.
     required: false
     default: "path"
+  safe-mode:
+    description: >
+      One of "unrestricted" (same as empty, the default), "safe", "stable".
+      If set to "safe" or "stable", `cvc5` becomes a wrapper that runs the
+      real binary (`cvc5-bin`) with `--safe-mode=<value>` as its first
+      argument. "stable" rejects expert options, more than one regular option
+      per run, and expert theories (e.g. higher-order logic, bags, finite
+      fields).
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
     - name: Download cvc5
       shell: bash
+      env:
+        CVC5_VERSION: ${{ inputs.version }}
+        INSTALL_TO: ${{ inputs.install-to }}
+        SAFE_MODE: ${{ inputs.safe-mode }}
       run: |
         set -eu
         ARCH=$(uname -m)
@@ -34,19 +48,36 @@ runs:
           aarch64|arm64)  ARCH_NAME="arm64" ;;
           *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
         esac
-        URL="https://github.com/cvc5/cvc5/releases/download/cvc5-${{ inputs.version }}/cvc5-Linux-${ARCH_NAME}-static.zip"
+        URL="https://github.com/cvc5/cvc5/releases/download/cvc5-${CVC5_VERSION}/cvc5-Linux-${ARCH_NAME}-static.zip"
         wget -q "$URL"
         unzip -q "cvc5-Linux-${ARCH_NAME}-static.zip"
-        chmod +x "cvc5-Linux-${ARCH_NAME}-static/bin/cvc5"
-        case "${{ inputs.install-to }}" in
-          path)
-            echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> "$GITHUB_PATH"
-            ;;
-          system)
-            sudo cp "cvc5-Linux-${ARCH_NAME}-static/bin/cvc5" /usr/local/bin/
+        BIN_DIR="cvc5-Linux-${ARCH_NAME}-static/bin"
+        chmod +x "$BIN_DIR/cvc5"
+        case "$SAFE_MODE" in
+          ""|unrestricted) ;;
+          safe|stable)
+            # Replace `cvc5` with a wrapper that execs the real binary, now
+            # `cvc5-bin` beside it, with `--safe-mode` as the first argument:
+            # options given before it are not restricted.
+            [ -e "$BIN_DIR/cvc5-bin" ] || mv "$BIN_DIR/cvc5" "$BIN_DIR/cvc5-bin"
+            printf '#!/bin/sh\nexec "$(dirname "$0")/cvc5-bin" --safe-mode=%s "$@"\n' \
+              "$SAFE_MODE" > "$BIN_DIR/cvc5"
+            chmod +x "$BIN_DIR/cvc5"
             ;;
           *)
-            echo "Unknown install-to value: ${{ inputs.install-to }}" >&2
+            echo "Unknown safe-mode value: $SAFE_MODE" >&2
+            exit 2
+            ;;
+        esac
+        case "$INSTALL_TO" in
+          path)
+            echo "$GITHUB_WORKSPACE/$BIN_DIR/" >> "$GITHUB_PATH"
+            ;;
+          system)
+            sudo cp "$BIN_DIR"/cvc5* /usr/local/bin/
+            ;;
+          *)
+            echo "Unknown install-to value: $INSTALL_TO" >&2
             exit 2
             ;;
         esac
