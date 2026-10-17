@@ -95,8 +95,11 @@ inductive LConst : Type where
   code points encoded with UTF-8. -/
   | strConst (s: String)
 
-  /-- A real constant, represented as a rational number. -/
-  | realConst (r: Rat)
+  /-- A literal of type `real`. Literals are exact rationals because every real
+  written in Strata's finite literal notation (a decimal or `frac{n, d}`) is
+  rational. `Rat` normalizes each value to a canonical representation, so two
+  literals are equal exactly when their stored values are equal. -/
+  | rationalConst (r: Rat)
 
   /-- A bit vector constant, represented using Lean's `BitVec` type. -/
   | bitvecConst (n: Nat) (b: BitVec n)
@@ -242,7 +245,7 @@ def LExpr.intConst (m : T.base.Metadata) (n: Int) : LExpr T := .const m <| LCons
 @[expose, match_pattern]
 def LExpr.strConst (m : T.base.Metadata) (s: String) : LExpr T := .const m <| LConst.strConst s
 @[expose, match_pattern]
-def LExpr.realConst (m : T.base.Metadata) (r: Rat) : LExpr T := .const m <| LConst.realConst r
+def LExpr.rationalConst (m : T.base.Metadata) (r: Rat) : LExpr T := .const m <| LConst.rationalConst r
 @[expose, match_pattern]
 def LExpr.bitvecConst (m : T.base.Metadata) (n: Nat) (b: BitVec n) : LExpr T := .const m <| LConst.bitvecConst n b
 @[expose, match_pattern]
@@ -283,7 +286,7 @@ def LConst.ty (c: LConst) : LMonoTy :=
   | .intConst _ => .int
   | .strConst _ => .string
   | .bitvecConst n _ => .bitvec n
-  | .realConst _ => .real
+  | .rationalConst _ => .real
   | .boolConst _ => .bool
 
 /--
@@ -294,7 +297,7 @@ def LConst.tyName (c: LConst) : String :=
   | .intConst _ => "int"
   | .strConst _ => "string"
   | .bitvecConst _ _ => "bitvec"
-  | .realConst _ => "real"
+  | .rationalConst _ => "real"
   | .boolConst _ => "bool"
 
 /--
@@ -305,7 +308,7 @@ def LConst.tyNameFormat (c: LConst) : Format :=
   | .intConst _ => f!"Integers"
   | .strConst _ => f!"Strings"
   | .bitvecConst n _ => f!"Bit vectors of size {n}"
-  | .realConst _ => f!"Reals"
+  | .rationalConst _ => f!"Reals"
   | .boolConst _ => f!"Booleans"
 
 ---------------------------------------------------------------------
@@ -601,7 +604,7 @@ If `e` is an `LExpr` real, then denote that into a Lean `Rat`.
 -/
 def denoteReal {T : LExprParams} (e : LExpr ⟨T, TypeType⟩) : Option Rat :=
   match e with
-  | .realConst _ r => some r
+  | .rationalConst _ r => some r
   | _ => none
 
 /--
@@ -731,7 +734,7 @@ instance : ToString LConst where
     match c with
     | .intConst i => toString i
     | .strConst s => s
-    | .realConst r => toString r
+    | .rationalConst r => toString r
     | .bitvecConst _ b => toString (b.toNat)
     | .boolConst b => toString b
 

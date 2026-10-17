@@ -961,7 +961,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (1/3 : Rat))
+#eval showReal (.rationalConst () (1/3 : Rat))
 
 /--
 info: program Core;
@@ -971,7 +971,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (1/7 : Rat))
+#eval showReal (.rationalConst () (1/7 : Rat))
 
 /--
 info: program Core;
@@ -981,7 +981,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (-2/3 : Rat))
+#eval showReal (.rationalConst () (-2/3 : Rat))
 
 -- A `Rat` keeps its sign in the numerator, so the denominator is never
 -- negative. Writing the sign on the denominator (`1 / (-3)`) normalizes to
@@ -994,7 +994,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (1 / (-3) : Rat))
+#eval showReal (.rationalConst () (1 / (-3) : Rat))
 
 -- Terminating decimals are unaffected: they still print as decimals.
 /--
@@ -1005,7 +1005,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (1/2 : Rat))
+#eval showReal (.rationalConst () (1/2 : Rat))
 
 -- Negative terminating decimals are decomposed into `real.neg(…)`.
 /--
@@ -1016,7 +1016,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (-3 : Rat))
+#eval showReal (.rationalConst () (-3 : Rat))
 
 -- Negative non-integer terminating decimal.
 /--
@@ -1027,7 +1027,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (-1/2 : Rat))
+#eval showReal (.rationalConst () (-1/2 : Rat))
 
 -------------------------------------------------------------------------------
 -- Round-trip: `frac{n, d}` written in surface syntax parses back to the exact
@@ -1095,7 +1095,7 @@ function f () : real {
 
 -------------------------------------------------------------------------------
 -- A zero denominator has no rational value. The translator records an error
--- (without panicking) and falls back to a benign `realConst 0`; `ASTtoCST`
+-- (without panicking) and falls back to a benign `rationalConst 0`; `ASTtoCST`
 -- prints the collected error alongside the program.
 -------------------------------------------------------------------------------
 
@@ -1134,7 +1134,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.realConst () (1/0 : Rat))
+#eval showReal (.rationalConst () (1/0 : Rat))
 
 -------------------------------------------------------------------------------
 -- The `frac{...}` literal uses `frac{` as its leading token (like `bv{N}`), so

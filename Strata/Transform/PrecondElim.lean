@@ -164,7 +164,7 @@ share a label, since each condition numbers its checks from 0.
 We should emit only one lemma in the future, whose formula keeps the whole tree
 of checks, and be able to verify it incrementally while reporting each check.
 -/
-def mkWFLemmas (taken : List String) (typeArgs : List TyIdentifier)
+def mkWFLemmas (taken : Std.HashSet String) (typeArgs : List TyIdentifier)
     (binders : List (Expression.Ident × Lambda.LMonoTy)) (stmts : List Statement) :
     List Decl :=
   let (_, _, lemmas) := stmts.foldl
@@ -175,7 +175,7 @@ def mkWFLemmas (taken : List String) (typeArgs : List TyIdentifier)
       | .assert label q md =>
         let e := hyps.foldl (init := q) fun body p => LExpr.mkApp () boolImpliesOp [p, body]
         let name := Lemma.freshName names label
-        (hyps, name :: names, .lemma { name, typeArgs, e := Lemma.forallOver binders e } md :: lemmas)
+        (hyps, names.insert name, .lemma { name, typeArgs, e := Lemma.forallOver binders e } md :: lemmas)
       | _ => (hyps, names, lemmas)
   lemmas.reverse
 
@@ -190,7 +190,7 @@ The lemmas quantify over the procedure's parameters and the `old` values of
 its in-out parameters. Preconditions describe the entry state, so in them an
 in-out parameter stands for its `old` value.
 -/
-def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : List String)
+def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet String)
     (proc : Procedure) : List Decl :=
   let name := proc.header.name.name
   let inouts := proc.header.getInoutParams.toList
@@ -242,7 +242,7 @@ def mkFuncWFStmts (F : @Lambda.Factory CoreLParams) (funcName : String)
 Generate the well-formedness lemmas for a top-level function declaration,
 quantified over the function's inputs.
 -/
-def mkFuncWFLemmas (F : @Lambda.Factory CoreLParams) (taken : List String)
+def mkFuncWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet String)
     (func : Function) (md : Imperative.MetaData Expression) : List Decl :=
   match mkFuncWFStmts F func.name.name func.preconditions func.body md with
   | some stmts => mkWFLemmas taken func.typeArgs func.inputs.toList stmts
@@ -353,8 +353,8 @@ def precondElim (p : Program)
   let savedF ← getFactory
   try
     -- Generated lemmas are named away from every declaration of the program.
-    let taken := p.decls.flatMap fun d => d.names.map (·.name)
-    let listed := p.decls.flatMap fun
+    let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
+    let listed := Std.HashSet.ofList <| p.decls.flatMap fun
       | .proc proc _ => proc.header.lemmas
       | .func f _ => f.lemmas
       | .recFuncBlock fs _ => fs.flatMap (·.lemmas)
@@ -366,8 +366,11 @@ def precondElim (p : Program)
     setFactory savedF
     throw e
 where
-  transformDecls (taken listed : List String) (decls : List Decl)
+  transformDecls (taken listed : Std.HashSet String) (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
+    -- Each generated name is reserved as soon as it is chosen, so that the
+    -- lemmas of later declarations cannot take it too.
+    let mut taken := taken
     let mut acc : Array Decl := #[]
     let mut changed := false
     let mut remaining := decls
@@ -391,6 +394,7 @@ where
                  preconditions can only be eliminated from structured bodies.")
         setFactory F -- reset factory
         let wfDecls := mkContractWFLemmas F taken proc
+        taken := taken.insertMany (wfDecls.map (·.name.name))
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || bodyChanged || !wfDecls.isEmpty
         acc := acc ++ wfDecls.toArray
@@ -407,6 +411,7 @@ where
         let hasPreconds := !func.preconditions.isEmpty
         if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
         let wfDecls := mkFuncWFLemmas F' taken func md
+        taken := taken.insertMany (wfDecls.map (·.name.name))
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || hasPreconds || !wfDecls.isEmpty
         -- A non-recursive function cannot mention itself in its preconditions
@@ -424,7 +429,12 @@ where
         let numStripped := funcs.foldl (fun n f =>
           if !f.preconditions.isEmpty then n + 1 else n) 0
         incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
-        let wfDeclss := funcs.map (mkFuncWFLemmas F' taken · md)
+        let (revWfDeclss, taken') := funcs.foldl (init := ([], taken))
+          fun (revDeclss, taken) func =>
+            let wfDecls := mkFuncWFLemmas F' taken func md
+            (wfDecls :: revDeclss, taken.insertMany (wfDecls.map (·.name.name)))
+        let wfDeclss := revWfDeclss.reverse
+        taken := taken'
         let funcs' := (funcs.zip wfDeclss).map fun (func, wfDecls) =>
           { func with preconditions := [],
                       lemmas := func.lemmas ++ wfDecls.map (·.name.name) }
@@ -443,6 +453,7 @@ where
         let F ← getFactory
         let wfDecls := if listed.contains l.name then [] else
           mkWFLemmas taken l.typeArgs [] (collectPrecondAsserts F l.e l.name md)
+        taken := taken.insertMany (wfDecls.map (·.name.name))
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || !wfDecls.isEmpty
         acc := acc ++ wfDecls.toArray

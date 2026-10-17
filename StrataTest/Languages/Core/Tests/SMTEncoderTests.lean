@@ -253,20 +253,20 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
     (.fvar () "y" (.some .real)))
   (factory := Core.Factory)
 
--- A `realConst` whose value has no terminating decimal expansion (e.g. `1/3`,
+-- A `rationalConst` whose value has no terminating decimal expansion (e.g. `1/3`,
 -- the value of the surface literal `frac{1, 3}`) cannot be emitted as a single
 -- SMT-LIB decimal literal, so it is encoded as the exact real division
 -- `(/ num den)` rather than erroring.
 /-- info: "(assert (|/| 1.0 3.0))\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.realConst () (1 / 3 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst () (1 / 3 : Rat))
 
 -- The sign of a negative non-terminating value (e.g. `-2/3`, the value of
 -- `-frac{2, 3}`) rides on the numerator, which the serializer wraps in unary
 -- minus; the denominator stays positive.
 /-- info: "(assert (|/| (- 2.0) 3.0))\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.realConst () (-2 / 3 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst () (-2 / 3 : Rat))
 
 -- Conversely, a *terminating* value (e.g. `1/4`) keeps routing through the
 -- `Decimal.fromRat = some` branch and emits a single SMT-LIB decimal literal,
@@ -275,7 +275,7 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 -- emitted SMT.
 /-- info: "(assert 0.25)\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.realConst () (1 / 4 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst () (1 / 4 : Rat))
 
 end ArrayTheory
 
@@ -298,7 +298,7 @@ private def negUF (arg : Strata.SMT.Term) : Strata.SMT.Term :=
 
 -- Real constant operand ⇒ `Real.Neg` (the untyped placeholder return type is ignored).
 #guard smtTermToLExpr (negUF (.prim (.real (StrataDDM.Decimal.mk 628 (-2)))))
-  == .app () (.op () "Real.Neg" none) (.realConst () (StrataDDM.Decimal.mk 628 (-2)).toRat)
+  == .app () (.op () "Real.Neg" none) (.rationalConst () (StrataDDM.Decimal.mk 628 (-2)).toRat)
 
 -- A non-constant operand (here a variable) is not a real literal ⇒ defaults to `Int.Neg`.
 #guard smtTermToLExpr (negUF (.var { id := "x", ty := .constr "_placeholder" [] }))
@@ -323,7 +323,7 @@ private def binMinusUF (a b : Strata.SMT.Term) : Strata.SMT.Term :=
 -- while the inner `-` over the real literal is `Real.Neg`.
 #guard smtTermToLExpr (negUF (negUF (.prim (.real (StrataDDM.Decimal.mk 100 0)))))
   == .app () (.op () "Int.Neg" none)
-       (.app () (.op () "Real.Neg" none) (.realConst () (StrataDDM.Decimal.mk 100 0).toRat))
+       (.app () (.op () "Real.Neg" none) (.rationalConst () (StrataDDM.Decimal.mk 100 0).toRat))
 
 /-! ## Test that built-in types do not produce declare-sort -/
 

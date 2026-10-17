@@ -120,7 +120,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
   | .tcons "real" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
     let n <- IO.rand 1 2147483648
-    return (.some (.realConst () (mkRat i n)))
+    return (.some (.rationalConst () (mkRat i n)))
   | .tcons "string" [] =>
     -- TODO: random string generator
     return (.some (.strConst () "a"))

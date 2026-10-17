@@ -25,11 +25,16 @@ jobs:
       matrix:
         toolchain:
           - stable
+    env:
+      # Run Strata's tests with cvc5's `--safe-mode=stable`.
+      CVC5_SAFE_MODE: stable
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Install cvc5
         uses: ./.github/actions/install-cvc5
+        with:
+          safe-mode: ${{ env.CVC5_SAFE_MODE }}
       - name: Install z3
         uses: ./.github/actions/install-z3
       - name: Install .NET
@@ -42,6 +47,10 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: ./.github/actions/restore-lake-cache
         with:
+          # Most tests run when their modules elaborate, and lake does not
+          # re-elaborate modules restored from the cache. Key the cache on the
+          # cvc5 safe-mode so a cache built under another setting is not reused.
+          key-prefix: lake-cvc5-${{ env.CVC5_SAFE_MODE }}
           path: |
             .lake
       - name: Download ion-java jar for Java codegen test
@@ -60,6 +69,7 @@ jobs:
       - name: Save lake cache
         uses: ./.github/actions/save-lake-cache
         with:
+          key-prefix: lake-cvc5-${{ env.CVC5_SAFE_MODE }}
           path: |
             .lake
 
