@@ -321,15 +321,29 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
+/-- Does the term apply a datatype constructor, tester or selector?  `denoteTerm`
+    has no case for these, so a query containing one has no denotation. -/
+partial def Term.hasDatatypeOp : Term → Bool
+  | .app (.datatype_op ..) _ _ => true
+  | .app _ args _ => args.any Term.hasDatatypeOp
+  | .quant _ _ trs body => body.hasDatatypeOp || trs.any (·.any Term.hasDatatypeOp)
+  | .some t => t.hasDatatypeOp
+  | _ => false
+
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
+  -- The bridge axiom asserts that the goals imply `smtVCsCorrect`, which is the
+  -- denotation of the VCs. A VC the denotation does not cover makes that
+  -- statement `False`, and the axiom would prove it; refuse instead.
+  if t.hasDatatypeOp || ts.any Term.hasDatatypeOp || ctx.axms.any Term.hasDatatypeOp
+      || ctx.ifs.any (·.body.hasDatatypeOp) then
+    throwError m!"gen_smt_vcs: verification condition '{label}' uses a datatype, which the \
+      denotation of SMT queries does not cover yet, so no Lean goal can be created for it; \
+      the SMT path still checks it"
   match translateQuery ctx.toCore ts t with
   | .error e =>
     -- Name the VC: the tactic must not drop an obligation it cannot state in
     -- Lean (that would weaken the bridge axiom's premise), so it fails, and the
-    -- user should learn which obligation and why. A common cause is a datatype
-    -- sort in the query: the bridge introduces uninterpreted sorts and
-    -- functions but does not yet declare datatypes; the SMT path still checks
-    -- such VCs.
+    -- user should learn which obligation and why.
     throwError m!"gen_smt_vcs: cannot translate verification condition '{label}' to a Lean goal: {e}"
   | .ok e =>
     trace[debug] "e := {e}"
