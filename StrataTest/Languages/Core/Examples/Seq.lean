@@ -748,5 +748,61 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify seqSelectBangBuildPgm
 
+-- A checked sequence operation and its total twin denote the same function, so
+-- in bounds the two agree. They are encoded as one solver symbol.
+
+private def seqCheckedTotalPgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+
+procedure P()
+{
+  assume [g_len]: Sequence.length(g) == 2;
+  assert [select_pair]: Sequence.select(g, 0) == Sequence.select!(g, 0);
+  assert [update_pair]: Sequence.update(g, 0, 7) == Sequence.update!(g, 0, 7);
+  assert [take_pair]: Sequence.take(g, 1) == Sequence.take!(g, 1);
+  assert [drop_pair]: Sequence.drop(g, 1) == Sequence.drop!(g, 1);
+};
+#end
+
+/--
+info:
+Obligation: assert_select_pair_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: select_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_update_pair_calls_Sequence.update_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: update_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_take_pair_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: take_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_drop_pair_calls_Sequence.drop_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: drop_pair
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqCheckedTotalPgm (options := .quiet)
+
 end
 ----------------------------------------------------------------------
