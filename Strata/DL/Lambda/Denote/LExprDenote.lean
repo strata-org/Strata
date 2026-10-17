@@ -248,7 +248,7 @@ def IdentInterp.withArgs [DecidableEq T.IDMeta]
 def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
-    | .realConst r     => r
+    | .rationalConst r => r
     | .strConst s      => s
     | .bitvecConst _ b => b
 

@@ -704,20 +704,33 @@ def unrollBlock (env : UEnv) (ss : List Statement) : List Statement × Counts :=
 end
 
 /-- Unroll the bounded index quantifiers in every procedure's goals, each in the
-    scope of the assumptions reaching it, summing the counters over the program. -/
+    scope of the assumptions reaching it, and in every lemma, in the scope of the
+    declarations before it, which are the axioms it is checked under. Sums the
+    counters over the program. -/
 def unrollBoundedQuantifiersProgram (F : @Lambda.Factory CoreLParams) (p : Program) :
     Program × Counts :=
   let env := seedUEnv p F
-  let (decls, counts) := unzipCounts (p.decls.map fun decl =>
+  let factoryInts := factoryIntFactEnv F
+  -- `ints` and `sel` hold the facts of the axioms walked so far, as `seedUEnv`
+  -- orders them, so a lemma sees exactly the axioms before it.
+  let (_, _, rs) := p.decls.foldl (init := (([] : IntFactEnv), ([] : SelectEnv), []))
+    fun (ints, sel, acc) decl =>
       match decl with
+      | .ax a _ =>
+        ((intFactOf? a.e).elim ints (· :: ints), (selectFactOf? a.e).elim sel (· :: sel),
+         (decl, {}) :: acc)
+      | .lemma l md =>
+        let (e', c) := processExpr ⟨factoryInts ++ ints, sel, F⟩ l.e
+        (ints, sel, (.lemma { l with e := e' } md, c) :: acc)
       | .proc proc md =>
         let (body, cbody) := match proc.body with
           | .structured ss =>
             let (ss', css) := unrollBlock env ss
             (.structured ss', css)
           | .cfg g => (.cfg g, {})
-        (.proc { proc with body := body } md, cbody)
-      | d => (d, {}))
+        (ints, sel, (.proc { proc with body := body } md, cbody) :: acc)
+      | d => (ints, sel, (d, {}) :: acc)
+  let (decls, counts) := unzipCounts rs.reverse
   ({ decls := decls }, counts)
 
 end Core.UnrollBoundedQuantifiers

@@ -356,7 +356,7 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
                ⟨fun _ => hevT, fun _ => hevF⟩⟩
     | intConst i => exact hApp _
     | strConst s => exact hApp _
-    | realConst r => exact hApp _
+    | rationalConst r => exact hApp _
     | bitvecConst n bv => exact hApp _
   | op m o ty => exact hApp _
   | bvar m i => exact hApp _

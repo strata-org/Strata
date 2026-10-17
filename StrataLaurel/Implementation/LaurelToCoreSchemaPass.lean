@@ -612,7 +612,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBool b => return .const () (.boolConst b)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
-  | .LiteralDecimal d => return .const () (.realConst (StrataDDM.Decimal.toRat d))
+  | .LiteralDecimal d => return .const () (.rationalConst (StrataDDM.Decimal.toRat d))
   | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier

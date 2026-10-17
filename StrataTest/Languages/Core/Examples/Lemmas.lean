@@ -261,6 +261,47 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify wfNameClashPgm (options := .quiet)
 
+/-! Two generated lemmas can also want the same name: here the contract of `P`
+and the user lemma `P_pre_L` both yield `P_pre_L_calls_g_0`. The name chosen
+first is reserved, so the second one takes a suffix. -/
+
+def generatedPairClashPgm :=
+#strata
+program Core;
+
+function g(x : int) : int
+  requires int.gt(x, 0);
+{ x }
+procedure P(x : int)
+spec {
+  requires [L]: int.gt(g(x), 0);
+} {
+};
+lemma [P_pre_L] (y : int): g(y) == g(y);
+
+#end
+
+/--
+info:
+Obligation: P_pre_L_calls_g_0
+Property: assert
+Result: ❌ fail
+
+Obligation: P_pre_L_calls_g_0_1
+Property: assert
+Result: ❌ fail
+
+Obligation: P_pre_L_calls_g_1
+Property: assert
+Result: ❌ fail
+
+Obligation: P_pre_L
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify generatedPairClashPgm (options := .quiet)
+
 /-! A contract's well-formedness lemma reads each precondition in the entry state:
 there an in-out parameter stands for its `old` value, so `g_nonzero` guards the
 division by `old g` in the postcondition. The postcondition itself fails, since

@@ -1698,33 +1698,21 @@ theorem eql_eraseMetadata_eq
   · rename_i h_eqmod
     rw [eqModuloMeta_eraseMetadata_eq h₁ h₂] at h_eqmod
     unfold LExpr.eql; simp [h_eqmod]
-  -- Cases 2-8: For each, use EMEquiv to decompose e₁'/e₂', then show same eql branch fires.
+  -- Cases 2-7: For each, use EMEquiv to decompose e₁'/e₂', then show the same eql branch fires.
   -- The key trick: rewrite h_not_eqmod BEFORE cases to keep it in a usable form.
-  -- Case 2: const/const, realConst/realConst
+  -- Case 2: const/const
   · rename_i h_not_eqmod _ _
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
-  -- Case 3: const/const, non-real
-  · rename_i h_not_eqmod _ _
-    have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
-    have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
-    have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
-    cases hv₁; cases hv₂
-    -- Goal: some (c1 == c2) = eql F (.const m' c1) (.const m₂' c2)
-    -- Unfold eql: eqModuloMeta false → match const/const → match on c1/c2
-    -- The hyp x✝ says c1/c2 can't both be realConst, so same non-real branch fires.
-    unfold LExpr.eql; simp only [h_nm']
-    -- Now need to handle the match on c1, c2
-    split <;> simp_all
-  -- Case 4: abs/abs ty mismatch
+  -- Case 3: abs/abs ty mismatch
   · rename_i h_not_eqmod h_ty_ne _
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm', h_ty_ne]
-  -- Case 5: abs/abs closed → recursive eql on varOpen
+  -- Case 4: abs/abs closed → recursive eql on varOpen
   · -- With revert/intro, ih is now universally quantified over e₁'/e₂'.
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
@@ -1743,7 +1731,7 @@ theorem eql_eraseMetadata_eq
         -- Unfold RHS: for the abs/abs case, eql returns the recursive call on varOpen
         simp only [LExpr.eql, h_nm', LExpr.closed] at *
         simp_all
-  -- Case 6: abs/abs not closed
+  -- Case 5: abs/abs not closed
   · have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
@@ -1755,20 +1743,20 @@ theorem eql_eraseMetadata_eq
         have h_fv₂ := LExpr.freeVars_of_eraseMetadata_eq _ _ hv_body₂.eraseMetadata_eq
         simp only [LExpr.eql, h_nm', LExpr.closed, Bool.and_eq_true_iff] at *
         simp_all
-  -- Case 7: const/abs
+  -- Case 6: const/abs
   · rename_i h_not_eqmod
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
-  -- Case 8: abs/const
+  -- Case 7: abs/const
   · rename_i h_not_eqmod
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; assumption
     have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
     have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
     cases hv₁; cases hv₂; simp [LExpr.eql, h_nm']
-  -- Cases 9-13: callOfLFunc catch-all (nested match)
-  · -- case 9: callOfLFunc some/some, not both constructors → none
+  -- Cases 8-11: callOfLFunc catch-all (nested match)
+  · -- case 8: callOfLFunc some/some, not both constructors → none
     rename_i _ _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_not_cc h_not_aa h_not_ca h_not_ac
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
 
@@ -1790,7 +1778,7 @@ theorem eql_eraseMetadata_eq
        | exact h_not_aa _ _ _ _ _ _ _ _ rfl rfl
        | exact h_not_ca _ _ _ _ _ _ rfl rfl
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
-  · -- case 10: callOfLFunc some/some, both constructors, different names → some false
+  · -- case 9: callOfLFunc some/some, both constructors, different names → some false
     rename_i _ _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd, ↓reduceIte]
@@ -1811,7 +1799,7 @@ theorem eql_eraseMetadata_eq
        | exact h_not_aa _ _ _ _ _ _ _ _ rfl rfl
        | exact h_not_ca _ _ _ _ _ _ rfl rfl
        | exact h_not_ac _ _ _ _ _ _ rfl rfl)
-  · -- case 11: callOfLFunc some/some, both constructors, same name → foldl eqlCombine
+  · -- case 10: callOfLFunc some/some, both constructors, same name → foldl eqlCombine
     rename_i _ _ _ h_ne _ _ _ _ _ _ h_call₁ h_call₂ h_nc h_nd h_not_cc h_not_aa h_not_ca h_not_ac ih
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     rw [h_call₁, h_call₂]; simp only [h_nc, h_nd]
@@ -1819,9 +1807,9 @@ theorem eql_eraseMetadata_eq
     obtain ⟨_, _, h_call₂', h_eM_args₂, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
     have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by
       revert h_nm'; cases LExpr.eqModuloMeta e₁' e₂' <;> simp
-    -- Use eq_6 to unfold only the top-level eql (preserving inner eql calls in foldl)
+    -- Unfold only the top-level eql (preserving inner eql calls in foldl)
     symm
-    rw [Lambda.LExpr.eql.eq_6 F e₁' e₂' (by
+    rw [Lambda.LExpr.eql.eq_5 F e₁' e₂' (by
         intro m c1 m₁ c2 he₁ he₂; subst he₁; subst he₂
         have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
         have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
@@ -1846,7 +1834,7 @@ theorem eql_eraseMetadata_eq
     simp only [foldl_attach_zip_eq_eql F]
     -- Apply the zip congruence helper
     exact (foldl_zip_eql_congr F _ _ _ _ h_eM_args₁ h_eM_args₂ ih _).symm
-  · -- case 12: callOfLFunc catch-all (simultaneous match not both some) → none
+  · -- case 11: callOfLFunc catch-all (simultaneous match not both some) → none
     rename_i h_ne h_not_cc h_not_aa h_not_ca h_not_ac h_not_both_some
     have h_nm' : ¬LExpr.eqModuloMeta e₁' e₂' = true := by rw [← eqModuloMeta_eraseMetadata_eq h₁ h₂]; exact h_ne
     have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by

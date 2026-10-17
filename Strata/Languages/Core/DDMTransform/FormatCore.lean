@@ -367,7 +367,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     else
       pure (.unaryArithInt default (CoreDDM.UnaryArithInt.int_neg default)
         (.natToInt default ⟨default, n.natAbs⟩))
-  | .realConst r =>
+  | .rationalConst r =>
     match StrataDDM.Decimal.fromRat r with
     | some d =>
       if d.mantissa < 0 then
