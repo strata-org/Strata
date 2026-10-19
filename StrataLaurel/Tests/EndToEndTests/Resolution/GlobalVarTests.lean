@@ -1347,66 +1347,12 @@ var s: Set<Box<int>> := setInsert(setEmpty(), mkBox())
 body. Effects are otherwise inferred from statements, and a bodiless procedure has none,
 so the declaration is the only evidence — the role `modifies` plays for the heap.
 
-`writes g` makes the procedure a global writer, so `g` is threaded as an inout and the
-caller's knowledge of `g` is replaced by what the postcondition states. -/
-
-#guard_msgs (drop info) in
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-var g: int := 0
-procedure setsGTo7()
-  opaque
-  ensures g == 7
-  writes g;
-procedure callerSees()
-  opaque
-{
-  setsGTo7();
-  assert g == 7
-};
-#end
-
-/-! Without a postcondition the caller's prior knowledge of `g` is correctly
-    invalidated: the declared write alone says the value may change. -/
-
-#guard_msgs (drop info) in
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-var g: int := 0
-procedure clobbersG()
-  opaque
-  writes g;
-procedure callerCannotAssume()
-  opaque
-{
-  var before: int := g;
-  clobbersG();
-  assert g == before
-//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
-#end
-
-/-! `reads g` threads `g` as a plain input, and a postcondition may relate the result
-    to it. -/
-
-#guard_msgs (drop info) in
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-var g: int := 0
-procedure echoesG() returns (r: int)
-  opaque
-  ensures r == g
-  reads g;
-procedure callerReads()
-  opaque
-{
-  var v: int := echoesG();
-  assert v == g
-};
-#end
+What follows is only which declarations resolution ACCEPTS or REJECTS. That a declared
+effect then carries the right facts across a call — `writes g` replacing the caller's
+knowledge of `g` with what the postcondition states, `reads g` letting a postcondition
+relate the result to it — is a verification question, and those cases live in
+`Verification/Fundamentals/GlobalVars.lean`. They cannot live here: their subject is a
+passing `assert`, which `testLaurelResolution` never evaluates. -/
 
 /-! A declared effect must name a file-scope global. -/
 

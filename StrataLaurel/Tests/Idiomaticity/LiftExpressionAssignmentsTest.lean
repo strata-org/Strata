@@ -15,6 +15,14 @@ by comparing the lifted Laurel against expected output.
 The lifter takes a list of "root" names (procedures known to be impure /
 multi-output) that drive which calls get hoisted; both `[]` and a populated
 list are exercised below.
+
+This test does NOT use the shared `runPassForIdiomaticity` driver: the driver
+runs a pass object's `run`, but the behaviour under test is the
+`liftExpressionAssignments` FUNCTION, whose `roots` argument the corresponding
+`liftImperativeExpressionsPass` object does not expose — most cases below pass a
+non-empty `roots`, which the pass could not reproduce. Two cases also feed a
+deliberately UNRESOLVED program to exercise a precondition-violation error path,
+the opposite of the driver's resolve-first flow.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
@@ -124,6 +132,56 @@ procedure impure(): int {
 };
 procedure test() {
   assert impure() == 1
+};
+#end
+
+/-! ## A polymorphic callee's result local carries the call's instantiation -/
+
+/--
+info: procedure idp<T>(x: T)
+  returns (r: T)
+  opaque
+{
+  r := x
+};
+procedure test(k: int)
+{
+  var $cndtn_0: bool := idp(true);
+  assert $cndtn_0 || true;
+  var $cndtn_1: int := idp(k);
+  assert $cndtn_1 == k || true
+};
+-/
+#guard_msgs in
+#eval printLifted ["idp"] <|
+#strata
+program Laurel;
+procedure idp<T>(x: T) returns (r: T) opaque { r := x };
+procedure test(k: int) {
+  assert idp(true) || true;
+  assert idp(k) == k || true
+};
+#end
+
+/-! ## A nullary callee's instantiation comes from the expected type -/
+
+/--
+info: procedure mk<T>()
+  returns (r: T)
+  opaque;
+procedure test()
+{
+  var $cndtn_0: int := mk();
+  assert $cndtn_0 == 1 || true
+};
+-/
+#guard_msgs in
+#eval printLifted ["mk"] <|
+#strata
+program Laurel;
+procedure mk<T>() returns (r: T) opaque;
+procedure test() {
+  assert mk() == 1 || true
 };
 #end
 

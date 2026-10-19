@@ -25,11 +25,11 @@ after the last one would let a caller assume a fact nothing proved.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## Negative: tail after the last yield breaks the guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -49,7 +49,7 @@ coroutine breaker(s: Cell)
 
 /-! ## Negative: the caller cannot assume the broken guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -81,7 +81,7 @@ procedure main()
 
 /-! ## Positive: the final segment honors the guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

@@ -5,15 +5,13 @@
 -/
 
 /-
-Shared test helper for the YieldElim concurrency tests. Every test file
-in this directory wants the same options block — `verifyCoroutine :=
-true` plus the defaults — and was duplicating ~5 lines per `#eval
-testLaurelExecution` invocation. This helper hoists that boilerplate into a
-single named function `testCoroutine`.
+Shared test options for the YieldElim concurrency tests. `coroutineOptions` is
+the test defaults plus `verifyCoroutine := true`, which every test file in this
+directory needs and none should spell out again.
 
 Use:
 
-  #eval testCoroutine <| #strata
+  #eval testLaurelVerification (options := coroutineOptions) <| #strata
   program Laurel;
   ...
   #end
@@ -29,18 +27,16 @@ namespace StrataTest.Util.Concurrency
 
 open StrataTest.Util Strata StrataDDM
 
-/-- Run `testLaurelExecution` with `verifyCoroutine := true`. Drops the
-    boilerplate options block every concurrency test would otherwise
-    repeat.
+/-- The test defaults plus `verifyCoroutine := true`. Drops the boilerplate
+    options block every concurrency test would otherwise repeat.
 
-    Verification only: a coroutine's `resume`/`yield` schedule over all
-    interleavings is what these tests are about, which one concrete run cannot
+    Every test in this directory pairs these options with
+    `testLaurelVerification`: a coroutine's `resume`/`yield` schedule over all
+    interleavings is what the tests are about, which one concrete run cannot
     show, so no block here marks an `entry`. -/
-def testCoroutine (block : SourcedProgram) : IO Unit :=
-  testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true }
-    (options := { defaultLaurelTestOptions with
-      translateOptions := { defaultLaurelTestOptions.translateOptions with
-        verifyCoroutine := true } })
-    block
+def coroutineOptions : Laurel.LaurelVerifyOptions :=
+  { defaultLaurelTestOptions with
+    translateOptions := { defaultLaurelTestOptions.translateOptions with
+      verifyCoroutine := true } }
 
 end StrataTest.Util.Concurrency

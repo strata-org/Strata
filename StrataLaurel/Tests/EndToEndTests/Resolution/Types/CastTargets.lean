@@ -15,8 +15,9 @@ Both operators against both reasons, plus the alias that makes the type-paramete
 differ from what it resolves to, and a composite target as the control that must stay accepted. The
 wording differs by reason because the claims differ: `int` genuinely is not a composite, whereas a
 type parameter might be one and is refused only because that cannot be decided here.
-`GenericMethodTest`'s `*_target_rejected` cases pin that the rejection is a single clean
-`.userError`; these pin what it says and where it points. -/
+The remaining non-composite target kinds — a datatype and a constrained type — and the
+generic-instantiation rule are in `TypeTestAndCastTargets.lean`; these pin what each reason
+says and where it points. -/
 
 #eval testLaurelResolution <|
 #strata

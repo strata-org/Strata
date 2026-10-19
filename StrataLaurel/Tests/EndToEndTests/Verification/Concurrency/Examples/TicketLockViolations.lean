@@ -18,9 +18,9 @@ Negative sanity tests for the ticket lock under the YieldElim rely/guarantee pas
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -43,7 +43,7 @@ coroutine ticketLockGuaranteeBad(s: TLState, myTicket: int)
 };
 #end
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

@@ -401,7 +401,7 @@ statement. -/
      | _ => true)
 
 /-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
-    `header.typeArgs`, which is what `MonomorphizeProcedures` clears; the opaque
+    `header.typeArgs`, which is what `GenOpaqueTypeParams` clears; the opaque
     type declarations it adds in their place are ordinary declared sorts. -/
 @[expose] def Program.noPolymorphicProcedures (p : Program) : Bool :=
   p.decls.all fun d =>

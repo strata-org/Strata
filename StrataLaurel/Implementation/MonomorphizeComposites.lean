@@ -472,7 +472,7 @@ private def liftActualToParamHead (ctx : TypeLattice)
     the resulting type-var bindings by the procedure's declared `typeArgs`. Returns
     `none` if a binding is missing/inconsistent or arities differ — the call then
     can't be monomorphized and is left for the loud downstream failure. `argTys` are
-    the actual argument types (from `computeExprType` at the call).
+    the actual argument types (see `argType`).
 
     Each actual is first lifted via `liftActualToParamHead` so an inherited generic method
     binds its type args (a no-op on same-head / non-composite params).
@@ -517,54 +517,75 @@ private def inferProcInst (ctx : TypeLattice)
     if ordered.all (·.isSome) && (ordered.filterMap id).all (fun t => (tyTag t).isSome)
     then some (proc.name.text, ordered.filterMap id) else none
 
+/-- `proc`'s result type at the instantiation `targs`. -/
+private def resultTypeAt (proc : Procedure) (targs : List HighType) : HighTypeMd :=
+  procResultTypeAt .unknown proc (targs.map (⟨·, .unknown⟩))
+
+/-- The type of call argument `a` under the clone substitution `subst`. A call this traversal renamed
+    reports the output recorded for its monomorph, since `model` cannot resolve the new name. -/
+private def argType (model : SemanticModel) (subst renamedOutputs : Std.HashMap String HighTypeMd)
+    (a : StmtExprMd) : HighTypeMd :=
+  let renamed? := match a.val with
+    | .StaticCall callee _ _ => renamedOutputs.get? callee.text
+    | _ => none
+  renamed?.getD (substTypeVars subst (computeExprType model a))
+
+/-- Threaded through a poly-call rewrite traversal. -/
+private structure RewriteState where
+  /-- Every call this traversal renamed, with its instantiation and source. -/
+  renamed        : List (ProcInst × FileRange) := []
+  /-- The result type of each call this traversal renamed, keyed by monomorph name. The traversal
+      is bottom-up, so an enclosing call meets its argument already renamed, to a name `model`
+      cannot resolve. -/
+  renamedOutputs : Std.HashMap String HighTypeMd := {}
+  /-- Ambiguity diagnostics from `inferProcInst`. Surfaced by the caller (which stops the
+      pipeline) rather than left to the downstream dangling-reference internal error. -/
+  diags          : List Message := []
+
+/-- Rewrite ONE node: a `StaticCall` to an indexed poly procedure becomes a call to the monomorph
+    matching the instantiation inferred from its argument types, and that instantiation is
+    recorded. `subst` makes an enclosing clone's abstract argument types concrete (`Box<T>` inside
+    `outer<T>` cloned at int becomes `Box<int>`); it is empty outside a clone body.
+
+    A call whose args yield no concrete binding is LEFT unchanged and NOT discovered: inside a
+    generic body the clone discovers it once `subst` is concrete, and anywhere else it fails loud
+    downstream (dangling poly callee at re-resolution) rather than silently mis-monomorphizing. -/
+private def rewritePolyCallNode (model : SemanticModel) (ctx : TypeLattice)
+    (polyProcDefs : Std.HashMap String Procedure) (subst : Std.HashMap String HighTypeMd)
+    (e : StmtExprMd) : StateM RewriteState StmtExprMd := do
+  let .StaticCall callee args _ := e.val | return e
+  let some calleeDef := polyProcDefs.get? callee.text | return e
+  let st ← get
+  match inferProcInst ctx calleeDef (args.map (argType model subst st.renamedOutputs)) with
+  | .error diag =>
+    set { st with diags := st.diags ++ [diag] }
+    return e
+  | .ok none => return e
+  | .ok (some pinst) =>
+    let key := procInstKey pinst
+    set { st with
+      renamed := st.renamed ++ [(pinst, e.source)]
+      renamedOutputs := st.renamedOutputs.insert key (resultTypeAt calleeDef pinst.2) }
+    -- `procInstKey` bakes the instantiation into the name, so any recorded type arguments are
+    -- now redundant and are dropped.
+    return { e with val := .StaticCall (mkId key) args [] }
+
 /-- Discover and rewrite polymorphic-procedure CALLS inside a (pristine, resolved)
     procedure's StmtExpr slots — preconditions, decreases, invokeOn, and body — under
     a concrete `subst`. This is the procedure→procedure edge of the fixpoint (step 3):
     a cloned `outer<T>`'s body may call another poly proc `inner<T>(b: Box<T>)`.
 
-    For each `StaticCall` to an indexed poly procedure, infer the callee's
-    instantiation from the call's argument types. Those types are computed against the
-    PRISTINE body via `computeExprType model` — this MUST happen before cloning, since
-    the clone's ids are cleared and absent from `model` — then pushed through `subst`,
-    so an abstract `Box<T>` argument inside `outer`'s generic body resolves to the
-    concrete `Box<int>` once `outer` is cloned at int. Returns the procedure with each
-    such callee rewritten to its monomorph name (`procInstKey`), plus the discovered
-    `ProcInst`s for the worklist to clone.
-
-    A call whose args don't yield a concrete binding — e.g. a poly-call RESULT passed
-    straight into another poly call, which bottom-up traversal has already renamed so
-    its output type is no longer model-resolvable — is LEFT unchanged and NOT
-    discovered. It then fails LOUD downstream (dangling poly callee at translation)
-    rather than silently mis-monomorphizing. This is the step-3 scope boundary; the
-    common shape (the inner call's arg is a parameter or declared local) is handled. -/
+    Argument types are computed against the PRISTINE body, which is why this must run before
+    cloning: a clone's ids are cleared and absent from `model`. Returns the rewritten procedure
+    plus the instantiations for the worklist. -/
 private def discoverRewritePolyCalls (model : SemanticModel)
     (ctx : TypeLattice)
     (polyProcDefs : Std.HashMap String Procedure)
     (subst : Std.HashMap String HighTypeMd) (pproc : Procedure)
     : Procedure × List ProcInst × List Message :=
-  -- State: (discovered ProcInsts, ambiguity diagnostics). An ambiguous diamond at a nested
-  -- poly call is recorded and surfaced by the caller (which stops the pipeline), rather than
-  -- left to the downstream dangling-ref internalError.
-  let nodeFn (e : StmtExprMd) : StateM (List ProcInst × List Message) StmtExprMd := do
-    match e.val with
-    | .StaticCall callee args _ =>
-      match polyProcDefs.get? callee.text with
-      | some calleeDef =>
-        let argTys := args.map (fun a => substTypeVars subst (computeExprType model a))
-        match inferProcInst ctx calleeDef argTys with
-        | .ok (some pinst) =>
-          modify (fun (pis, ds) => (pis ++ [pinst], ds))
-          -- `procInstKey` bakes the instantiation into the name, so any recorded type
-          -- arguments are now redundant and are dropped.
-          pure { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
-        | .ok none => pure e
-        | .error diag =>
-          modify (fun (pis, ds) => (pis, ds ++ [diag]))
-          pure e
-      | none => pure e
-    | _ => pure e
-  let (pproc', (pis, ds)) := (mapProcedureM (mapStmtExprM nodeFn) pproc).run ([], [])
-  (pproc', pis, ds)
+  let (pproc', st) :=
+    (mapProcedureM (mapStmtExprM (rewritePolyCallNode model ctx polyProcDefs subst)) pproc).run {}
+  (pproc', st.renamed.map (·.1), st.diags)
 
 /-- Collect generic-composite instantiations from a procedure's body StmtExpr type
     slots (Declare types, `as`/`is`, quantifier binders, `new C<τ>`). Purely
@@ -975,33 +996,18 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- 5. Rewrite statement-level types + new sites (`rewriteStmt`), AND rewrite
   -- StaticCall callees that target a monomorphized poly procedure to the monomorph
   -- name matching that call's inferred instantiation.
-  let rewriteCall (e : StmtExprMd) : StmtExprMd :=
-    match e.val with
-    | .StaticCall callee args _ =>
-      match polyProcDefs.get? callee.text with
-      | some pproc =>
-        -- Leave the call unchanged on `.ok none` (not yet concrete) OR `.error` (ambiguous
-        -- diamond): the ambiguity was already reported as a `userError` by `collectSeeds` /
-        -- `discoverRewritePolyCalls`, which stops the pipeline; this final rewrite only needs
-        -- to not crash and not mis-rename.
-        match inferProcInst ctx pproc (args.map (computeExprType model)) with
-        | .ok (some pinst) => { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
-        | .ok none | .error _ => e
-      | none => e
-    | _ => e
-  let stmtRewrite (e : StmtExprMd) : StmtExprMd := rewriteCall (rewriteStmt genComposites e)
+  -- Calls are renamed before `rewriteStmt`, so an argument is typed as it was when seeded
+  -- (`new Box<int>`, not its monomorph). The rewrite's diagnostics are dropped: `collectSeeds` /
+  -- `discoverRewritePolyCalls` already reported them and stop the pipeline.
   -- Recording each renamed callee makes "seeding is as wide as the rewrite" a property this pass
   -- CHECKS rather than one maintained by hand: without it, a rename with no clone behind it surfaces
   -- one pass later as a re-resolution `strata-bug` naming an undefined procedure, which says nothing
   -- about which walk was too narrow.
-  let (program', renamed) := (mapProgramStmtExprM (m := StateM (List (String × FileRange)))
-    (fun e => do
-      let e' := stmtRewrite e
-      match e.val, e'.val with
-      | .StaticCall before _ _, .StaticCall after _ _ =>
-        if before.text != after.text then modify ((after.text, e.source) :: ·)
-      | _, _ => pure ()
-      pure e') program).run []
+  let (program', rewriteSt) :=
+    (mapProgramStmtExprM (m := StateM RewriteState) (rewritePolyCallNode model ctx polyProcDefs {})
+      program).run {}
+  let program' := mapProgramStmtExpr (rewriteStmt genComposites) program'
+  let renamed := rewriteSt.renamed.map fun (pinst, source) => (procInstKey pinst, source)
   let emittedProcs : Std.HashSet String :=
     staticProcs'.foldl (fun s p => s.insert p.name.text) {}
   diags := diags ++ (renamed.filter (!emittedProcs.contains ·.1)).map (fun (n, source) =>

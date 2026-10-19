@@ -522,7 +522,12 @@ private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
 
     Each name is tested raw *and* unfolded: `unfold` is keyed on type-name text
     through the global constrained/alias map, so a global `constrained T` would
-    rewrite a same-named parameter to its base and hide the slot. -/
+    rewrite a same-named parameter to its base and hide the slot.
+
+    A parameter is spelled `.UserDefined` on a freshly parsed tree and `.TVar` on a
+    re-resolved one, so both count: missing the second types a constructor argument
+    or a destructor's result at the declared `T` on re-resolution (`MkBx(42)` as `T`,
+    not `int`). -/
 private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
     (ty : HighTypeMd) : Bool :=
   match _h : ty.val with
@@ -531,6 +536,7 @@ private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
       (match (ctx.unfold ty).val with
        | .UserDefined u => typeParams.contains u.text
        | _ => false)
+  | .TVar name => typeParams.contains name.text
   | .TSet et => mentionsTypeParam ctx typeParams et
   | .TMap kt vt =>
     mentionsTypeParam ctx typeParams kt || mentionsTypeParam ctx typeParams vt
@@ -1819,24 +1825,17 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
     modify fun s => { s with errors := s.errors.push diag }
   -- RECORD the instantiation, in the callee's declaration order, so a downstream pass reads it
   -- off the node instead of recovering it from context: `LaurelToCoreSchemaPass` needs it for
-  -- the external generic primitives, which never monomorphize.
+  -- the external generic primitives, which never monomorphize, and a pass that introduces a
+  -- local for a call declares the local at it (`typeAtCall`).
   --
   -- Stamped only when every parameter is bound: a partial list would be worse than none, since
   -- position carries meaning. `unbound` above has already reported anything missing.
   let inferredTypeArgs : List HighTypeMd :=
-    -- EXTERNAL callees only. An instantiation needs recording precisely when the callee will
-    -- never be monomorphized — an `external` Core primitive (`mapConst`, `setEmpty`, `seqEmpty`)
-    -- has no body to clone, so nothing downstream can recover its type arguments. A callee WITH
-    -- a body is monomorphized, and recording an instantiation for it actively conflicts with
-    -- that: for an inherited generic method the expected type yields a witness
-    -- (`GBaseD$get` at `int`) where `MonomorphizeComposites` must instead report the diamond as
-    -- ambiguous, and the call is then left dangling.
-    if !(proc.body matches .External) then []
     -- Not while any argument is still `Unknown`. Holes are typed LATER (`InferHoleTypes`), so a
     -- tree that still contains one has not finished inferring: freezing an instantiation now
     -- records a premature answer and the hole is then never resolved ("holes should have been
     -- eliminated before translation"). The re-resolution after hole inference records it.
-    else if argTys.any (fun t => mentionsUnknown t.val) then []
+    if argTys.any (fun t => mentionsUnknown t.val) then []
     else if proc.typeArgs.isEmpty then []
     else
       let bound := proc.typeArgs.map (fun tv => subst[tv.text]?)
@@ -3495,7 +3494,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
           let subst := (dtParams.zip recvArgs).foldl (fun m (n, t) => m.insert n t) (∅ : Std.HashMap String HighTypeMd)
           substTypeVars subst fld.type
         else { val := .Unknown, source := callee.source }
-      return (.StaticCall callee' args' [], retTy)
+      -- Recorded like a procedure call's instantiation, and on the same condition.
+      let recorded := if recvArgs.length == dtParams.length
+          && !recvArgs.any (fun t => mentionsUnknown t.val) then recvArgs else []
+      return (.StaticCall callee' args' recorded, retTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
@@ -3572,15 +3574,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- application) is checked here as usual. See `mentionsTypeParam` for why the
       -- datatype's own `typeParams` list is the reliable source rather than a
       -- scope lookup at this call site.
-      -- Recognise BOTH spellings of a type parameter: a datatype's stored constructor argument is
-      -- `.UserDefined "T"` on a freshly parsed tree and `.TVar "T"` on the post-pass
-      -- re-resolution, and `mentionsTypeParam` is name-based so it sees only the first. A slot
-      -- missed here counts as concrete, which sends the argument down the check branch where it
-      -- reports the DECLARED `T` as its type rather than its own (`MkBx(42)` as `T`, not `int`).
-      let isTypeParamSlot : Bool :=
-        mentionsTypeParam ctx typeParams fieldTy
-          || (tvarNames matchFieldTy.val).any typeParams.contains
-      if isTypeParamSlot then
+      if mentionsTypeParam ctx typeParams fieldTy then
         -- Still SYNTHESIZED, not checked: the slot's parameter may be undetermined at this
         -- point, and an erased parameter accepts any argument. What is new is that the
         -- stage-1 instantiation is handed down as the expected type, so a nested generic call in
@@ -6290,7 +6284,7 @@ private def validateGlobalNames (program : Program) : List Message :=
   -- the literal `$heap` that `ModifiesClauses` writes into its frames would bind to the
   -- user's variable instead. Runs only on the initial resolve of user source, so the
   -- synthesized `$heap` parameters added later are unaffected. Pinned by
-  -- GenericCompositeTest's `user_heap_output_rejected`.
+  -- the `$heap` output case in EndToEndTests/Resolution/DollarNamesRejected.
   -- Instance procedures are inspected alongside the static list, as the sibling
   -- validators in this file do: an instance procedure's parameters are just as capable
   -- of colliding with `$heap`.

@@ -592,7 +592,7 @@ composite SBox<U> extends Box<U> {
 procedure u() opaque { assert 1 == 1 };"},
 
   { name := "concrete_override_of_generic_method_rejected", outcome := .rejectedExactly .userError,
-    why := "a CONCRETE composite overriding a GENERIC parent's method (`IntBox extends Box<int>` with its own `get`) must be REJECTED cleanly — the generic `Box$get<T>` dispatcher's tag-test `self is IntBox` cannot be related to `Box<T>` at re-resolution (a clean diagnostic, not an internal StrataBug). Concrete composites may still INHERIT a generic parent's fields (see GenericMethodTest concrete_extends_geninst_*); only OVERRIDING its dispatched method is unsupported."
+    why := "a CONCRETE composite overriding a GENERIC parent's method (`IntBox extends Box<int>` with its own `get`) must be REJECTED cleanly — the generic `Box$get<T>` dispatcher's tag-test `self is IntBox` cannot be related to `Box<T>` at re-resolution (a clean diagnostic, not an internal StrataBug). Concrete composites may still INHERIT a generic parent's fields (see the concrete-child-of-a-monomorph cases in EndToEndTests/.../Composites/Inheritance); only OVERRIDING its dispatched method is unsupported."
     src := r"
 composite Box<T> { var v: T
   procedure get(self: Box<T>) returns (r: T) opaque ensures true { r := self#v };

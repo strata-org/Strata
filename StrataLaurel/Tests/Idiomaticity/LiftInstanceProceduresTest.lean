@@ -30,30 +30,16 @@ dispatcher, no `$impl`). The pass needs a resolved program
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
-import StrataLaurel.Implementation.LiftInstanceProcedures
-import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Resolve `program`, run `LiftInstanceProcedures`, and print the resulting
-    program as Laurel source: the composite types (now with empty
-    `instanceProcedures`) then the static procedures (the lifted bodies,
-    dispatchers, and `$impl`s), plus any diagnostics. -/
-private def printLifted (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
-  let (lifted, diags, _) := liftInstanceProceduresPass.run {} result.program result.model
-  IO.println "-- types --"
-  for ty in lifted.types do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format ty)))
-  IO.println "-- procedures --"
-  for proc in lifted.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-  for d in diags do
-    IO.println s!"diagnostic: {d.message}"
+/-- Parse, resolve, run `liftInstanceProceduresPass`, print the lifted program
+    (the composite types with their methods removed, then the lifted static
+    procedures — dispatchers and `$impl`s). -/
+private def printLifted := runPassForIdiomaticity liftInstanceProceduresPass
 
 /-! ## Non-overridden method: plain static lift
 
@@ -62,9 +48,7 @@ static `Box$get(self: Box)`; the `obj#get()` call site is rewritten to
 `Box$get(obj)`. No dispatcher, no `$impl`. -/
 
 /--
-info: -- types --
-composite Box { var v: int }
--- procedures --
+info: composite Box { var v: int }
 procedure u()
   opaque
 {
@@ -99,10 +83,8 @@ Animal$speak$impl(self)`) with tag-conditioned posts, the two real bodies lift t
 fallthrough-only dispatcher. -/
 
 /--
-info: -- types --
-composite Animal { }
+info: composite Animal { }
 composite Dog extends Animal { }
--- procedures --
 procedure u()
   opaque
 {
@@ -167,11 +149,9 @@ post (`!(self is Dog) & !(self is Cat) ==> …`). Pins the multi-overrider shape
 single-child case above does not exercise. -/
 
 /--
-info: -- types --
-composite Animal { }
+info: composite Animal { }
 composite Dog extends Animal { }
 composite Cat extends Animal { }
--- procedures --
 procedure u()
   opaque
 {

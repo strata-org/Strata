@@ -32,11 +32,11 @@ This file pins three cases:
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## (1) Explicit `oldGuarantee` invariant — verifies. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -73,7 +73,7 @@ coroutine writeThenYieldExplicit(s: Cell)
    We pin the back-edge invariant failure here so the trade-off
    is documented in test form. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ coroutine yieldThenWriteExits(s: Cell)
    `$h_yield_prev` to `$heap`. So both the yield and the exit pin
    fail, from the one missing `oldGuarantee` invariant. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

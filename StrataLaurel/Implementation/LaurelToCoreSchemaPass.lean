@@ -198,7 +198,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   -- per call site. Kind-agnostic: a value-kinded `T` unifies with `int`, a reference-kinded
   -- `T` with the single `Composite` sort every composite lowers to — so reference-`T`
   -- reaches here as `.TVar` needing no prior erase-to-composite pass (see
-  -- `PolymorphicFunctionTest`).
+  -- `EndToEndTests/Execution/Procedures/PolyProcedure`).
   | .TVar name => return .ftvar name.text
   | .TReal => return LMonoTy.real
   -- Generic type application. A DATATYPE (`List<int>`, `Option<int>`) lowers to a

@@ -34,27 +34,29 @@ the conditions that precede it: `$pre_i` assumes `requires` clauses `0 … i-1`,
 
 meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.ContractPass
-meta import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-private meta def parseAndLower (program : StrataDDM.Program) : IO Program := do
-  let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
-  pure (lowerContracts result.model result.program)
-
-private meta def printLowered (program : StrataDDM.Program) : IO Unit := do
-  let lowered ← parseAndLower program
-  for proc in lowered.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+/-- Parse, resolve, run `contractPass`, print the lowered program. `prelude := false`:
+    `Contracts` lowers every procedure's pre/postconditions into `$pre`/`$post`
+    helpers, so with the prelude present the output would gain a `$pre` helper for
+    every operator wrapper that has one. The snippets below are therefore written
+    with no operators at all — every condition is a plain `bool` parameter or the
+    `bool` output — so they resolve without the prelude. -/
+private meta def printLowered := runPassForIdiomaticity contractPass (prelude := false)
 
 /-! ## All three modes on both pre- and postconditions
 
 `callee` carries one precondition and one postcondition in each mode; `caller`
-invokes it so the call-site checks are generated too. In the lowered output:
+invokes it so the call-site checks are generated too. The conditions are bare
+`bool` references rather than comparisons, because an operator is a call to a
+prelude wrapper and this test runs without the prelude (see `printLowered`); the
+postconditions reuse `b` and `c` so that the *mode* is the only thing that
+differs between `free requires b` and `free ensures b`, and the golden shows the
+two landing at different sites. In the lowered output:
 
   - the body of `callee` assumes the `Both` and `free` preconditions, but not
     the `checked` one (assert-only preconditions are not assumed in the body);
@@ -67,96 +69,100 @@ invokes it so the call-site checks are generated too. In the lowered output:
     not the `checked` one (assert-only postconditions are not assumed). -/
 
 /--
-info: procedure callee$pre0(x: int): bool
+info: procedure callee$pre0(a: bool, b: bool, c: bool): bool
 {
-  $result := x > 0;
+  $result := a;
   exit $return
 }$return;
-procedure callee$pre1(x: int): bool
+procedure callee$pre1(a: bool, b: bool, c: bool): bool
 {
-  assume x > 0;
-  $result := x > 1;
+  assume a;
+  $result := b;
   exit $return
 }$return;
-procedure callee$pre2(x: int): bool
+procedure callee$pre2(a: bool, b: bool, c: bool): bool
 {
-  assume x > 0;
-  assume x > 1;
-  $result := x > 2;
+  assume a;
+  assume b;
+  $result := c;
   exit $return
 }$return;
-procedure callee$post0(x: int, r$out: int): bool
+procedure callee$post0(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume x > 0;
-  assume x > 1;
-  assume x > 2;
-  $result := r$out > 0;
+  assume a;
+  assume b;
+  assume c;
+  $result := r$out;
   exit $return
 }$return;
-procedure callee$post1(x: int, r$out: int): bool
+procedure callee$post1(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume x > 0;
-  assume x > 1;
-  assume x > 2;
-  assume r$out > 0;
-  $result := r$out > 1;
+  assume a;
+  assume b;
+  assume c;
+  assume r$out;
+  $result := b;
   exit $return
 }$return;
-procedure callee$post2(x: int, r$out: int): bool
+procedure callee$post2(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume x > 0;
-  assume x > 1;
-  assume x > 2;
-  assume r$out > 0;
-  assume r$out > 1;
-  $result := r$out > 2;
+  assume a;
+  assume b;
+  assume c;
+  assume r$out;
+  assume b;
+  $result := c;
   exit $return
 }$return;
-procedure callee(x: int)
-  returns (r: int)
+procedure callee(a: bool, b: bool, c: bool)
+  returns (r: bool)
   opaque
 {
-  var $inputCopy0: int := x;
-  assume callee$pre0(x);
-  assume callee$pre1(x);
+  var $inputCopy0: bool := a;
+  var $inputCopy1: bool := b;
+  var $inputCopy2: bool := c;
+  assume callee$pre0(a, b, c);
+  assume callee$pre1(a, b, c);
   {
-    r := x
+    r := a
   };
-  assert callee$post0($inputCopy0, r) summary "postcondition";
-  assert callee$post2($inputCopy0, r) summary "postcondition"
+  assert callee$post0($inputCopy0, $inputCopy1, $inputCopy2, r) summary "postcondition";
+  assert callee$post2($inputCopy0, $inputCopy1, $inputCopy2, r) summary "postcondition"
 };
 procedure caller()
-  returns (r: int)
+  returns (r: bool)
   opaque
 {
-  var $inputCopy1: int := 5;
-  assert callee$pre0($inputCopy1) summary "precondition";
-  assert callee$pre2($inputCopy1) summary "precondition";
-  r := callee($inputCopy1);
-  assume callee$post0($inputCopy1, r);
-  assume callee$post1($inputCopy1, r)
+  var $inputCopy3: bool := true;
+  var $inputCopy4: bool := true;
+  var $inputCopy5: bool := true;
+  assert callee$pre0($inputCopy3, $inputCopy4, $inputCopy5) summary "precondition";
+  assert callee$pre2($inputCopy3, $inputCopy4, $inputCopy5) summary "precondition";
+  r := callee($inputCopy3, $inputCopy4, $inputCopy5);
+  assume callee$post0($inputCopy3, $inputCopy4, $inputCopy5, r);
+  assume callee$post1($inputCopy3, $inputCopy4, $inputCopy5, r)
 };
 -/
 #guard_msgs in
 #eval printLowered <|
 #strata
 program Laurel;
-procedure callee(x: int) returns (r: int)
-  requires x > 0
-  free requires x > 1
-  checked requires x > 2
+procedure callee(a: bool, b: bool, c: bool) returns (r: bool)
+  requires a
+  free requires b
+  checked requires c
   opaque
-  ensures r > 0
-  free ensures r > 1
-  checked ensures r > 2
+  ensures r
+  free ensures b
+  checked ensures c
 {
-  r := x
+  r := a
 };
 
-procedure caller() returns (r: int)
+procedure caller() returns (r: bool)
 opaque
 {
-  r := callee(5)
+  r := callee(true, true, true)
 };
 #end
 

@@ -191,7 +191,7 @@ procedure useConsume()
 -- both types, rather than Core's `Impossible to unify (Option int) with (Option bool)`.
 --
 -- This program is rejected before Core translation, so Core forwarding of a generic datatype is
--- pinned by the `generic_datatype_*` cases in `GenericDatatypeTest`, which resolve.
+-- pinned by the resolving generic-datatype cases in `Execution/Types/GenericDatatypes.lean`.
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -205,5 +205,172 @@ procedure mismatchedTypeArg()
   var a: Option<int> := Some(true);
 //                      ^^^^^^^^^^ error: expected 'Option<int>', got 'Option<bool>'
   assert Option..isSome(a)
+};
+#end
+
+/-! ## Equality between whole datatype values
+
+`Execution/Types/GenericDatatypes.lean` deliberately reads payloads back with SELECTORS and
+compares at a primitive type, because that is what the concrete interpreter can check.
+Equality between two whole datatype values is a different obligation — it goes to the SMT
+datatype theory rather than through a selector — so it is pinned here, on the verification
+path, with a false twin per shape so the equality cannot be passing on an unconstrained
+value. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+
+// Two separately constructed values with the same payload are equal.
+procedure equalPayloads()
+  opaque
+{
+  var b1: Bx<int> := MkBx(5);
+  var b2: Bx<int> := MkBx(5);
+  assert b1 == b2
+};
+
+// ONE parametric declaration used at two instantiations — there is no per-instantiation
+// clone, so each value has to equal its own reconstruction without the other's equality
+// leaking in.
+procedure equalityAtTwoInstantiations()
+  opaque
+{
+  var bi: Bx<int> := MkBx(5);
+  var bb: Bx<bool> := MkBx(true);
+  assert bi == MkBx(5) && bb == MkBx(true)
+};
+#end
+
+-- SOUNDNESS twin: values with DIFFERENT payloads must not be equal. Without this,
+-- `equalPayloads` would also pass if datatype equality were trivially true.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+
+procedure distinctPayloadsNotEqual()
+  opaque
+{
+  var b1: Bx<int> := MkBx(5);
+  var b2: Bx<int> := MkBx(6);
+  assert b1 == b2
+//^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- A RECURSIVE generic datatype compared by equality rather than walked with selectors:
+-- the whole spine has to be constrained, not just the head the selector reads.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Lst<T> { Nil(), Cons(head: T, tail: Lst<T>) }
+
+procedure recursiveEquality()
+  opaque
+{
+  var xs: Lst<int> := Cons(1, Nil());
+  assert xs == Cons(1, Nil())
+};
+#end
+
+-- SOUNDNESS twin for the recursive spine: a wrong head must make the equality fail.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Lst<T> { Nil(), Cons(head: T, tail: Lst<T>) }
+
+procedure recursiveEqualityFalse()
+  opaque
+{
+  var xs: Lst<int> := Cons(1, Nil());
+  assert xs == Cons(2, Nil())
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- A datatype with NO type parameters still works now that the grammar takes an optional
+-- type-parameter list: the absent list must read as "none", not as a parse failure or an
+-- empty application.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Pr { MkPr(a: int, b: int) }
+
+procedure monomorphicDatatypeUnaffected()
+  opaque
+{
+  var p1: Pr := MkPr(1, 2);
+  var p2: Pr := MkPr(1, 2);
+  assert p1 == p2
+};
+#end
+
+/-! ## A generic datatype stored in a composite FIELD
+
+A field whose type is a generic application routes through `HeapParameterization`'s box
+wrapper via its `.Applied` arm, which emits one box variant per instantiation. So the
+write/read round-trip below is checking the box naming as much as the datatype: two
+instantiations used as two fields must get two distinct variants, or one field's write
+would be readable through the other. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+composite Holder { var b: Bx<int> }
+
+procedure datatypeFieldRoundTrip()
+  opaque
+  modifies *
+{
+  var h: Holder := new Holder;
+  var x: Bx<int> := MkBx(9);
+  h#b := x;
+  var y: Bx<int> := h#b;
+  assert y == x
+};
+#end
+
+-- SOUNDNESS twin: the value read back is the one written, not an unconstrained box.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+composite Holder { var b: Bx<int> }
+
+procedure datatypeFieldRoundTripFalse()
+  opaque
+  modifies *
+{
+  var h: Holder := new Holder;
+  var x: Bx<int> := MkBx(9);
+  var z: Bx<int> := MkBx(8);
+  h#b := x;
+  var y: Bx<int> := h#b;
+  assert y == z
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- Two instantiations of one generic datatype as two fields of one composite: each gets its
+-- own box variant, so writing the `bool` field cannot disturb the `int` one.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+composite Holder { var bi: Bx<int>
+ var bb: Bx<bool> }
+
+procedure twoInstantiationsAsFields()
+  opaque
+  modifies *
+{
+  var h: Holder := new Holder;
+  h#bi := MkBx(1);
+  h#bb := MkBx(true);
+  var yi: Bx<int> := h#bi;
+  assert yi == MkBx(1)
 };
 #end
