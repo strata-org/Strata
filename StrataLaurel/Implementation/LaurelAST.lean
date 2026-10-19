@@ -2725,19 +2725,33 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Opaque ty => ty.name
   | .Alias ty => ty.name
 
+/-- Reserved prefix of the field-free parent that `MonomorphizeComposites` gives
+    every instantiation of one generic composite; the rest of the name is the
+    generic composite's own. `HeapParameterization` stores a field of an
+    instantiation under its family, so one object seen at two instantiations
+    (`Box<A>` and `Box<B>` with `A = B`) has one heap location for each field. -/
+def genericFamilyPrefix : String := "$Family$"
+
+def isGenericFamilyName (name : String) : Bool := name.startsWith genericFamilyPrefix
+
+/-- Whether `parent`, one of a composite's `extending`, is its family parent. -/
+def isGenericFamilyParent (parent : HighTypeMd) : Bool :=
+  (highBaseName? parent.val).any (isGenericFamilyName ·.text)
+
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `parentExprMap` with their direct
-    parent expressions. Datatypes and opaque types contribute nothing — they're nominal
-    and irreducible. -/
+    parent expressions, less a family parent (`genericFamilyPrefix`), which is no type:
+    beside a real common parent, two instantiations would have no single common ancestor.
+    Datatypes and opaque types contribute nothing — they're nominal and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text (ta.typeArgs, ta.target) }
     | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ([], ct.base) }
     | .Composite c =>
-      { ctx with
-        parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
+      let parents := c.extending.filter (!isGenericFamilyParent ·)
+      { ctx with parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, parents) }
     | .Datatype _ | .Opaque _ => ctx
 
 structure Constant where

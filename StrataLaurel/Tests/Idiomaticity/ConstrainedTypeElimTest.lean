@@ -21,6 +21,7 @@ unchecked (`StmtExpr.Return.value.some` is in the pass's `unsupported` list).
 meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.EliminateValueInReturns
+import StrataLaurel.Implementation.MonomorphizeComposites
 
 open Strata
 open StrataTest.Util
@@ -314,6 +315,72 @@ procedure $witness_nat()
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 procedure partial(b: bool) returns (r: nat) { if b then { r := 1 } };
+#end
+
+-- The instantiations of a generic composite, prepared by `MonomorphizeComposites`, store each field
+-- in one heap location. A constraint they all have (`n`) gets one axiom, and a field they declare
+-- at different types (`v`, of `Box<int8>` and `Box<nat>`, which `toBox` instantiates) none.
+/--
+info: composite $Family$Box { }
+composite Box$a1$int8 extends $Family$Box { var v: int var n: int }
+composite Box$a1$nat extends $Family$Box { var v: int var n: int }
+procedure int8$constraint(x: int): bool
+{
+  $result := x >= -128 && x <= 127;
+  return
+};
+procedure nat$constraint(x: int): bool
+{
+  $result := x >= 0;
+  return
+};
+procedure user(m: (TotalMap int int), k: (TotalMap int int))
+  opaque
+{
+  toBox$a1$int8(m);
+  toBox$a1$nat(k)
+};
+procedure toBox$a1$int8(m: (TotalMap int int))
+  returns (r: Box$a1$int8)
+  opaque
+{
+  r := new Box$a1$int8
+};
+procedure toBox$a1$nat(m: (TotalMap int int))
+  returns (r: Box$a1$nat)
+  opaque
+{
+  r := new Box$a1$nat
+};
+procedure $witness_int8()
+  opaque
+{
+  var $witness: int := 0;
+  assert int8$constraint($witness)
+};
+procedure $witness_nat()
+  opaque
+{
+  var $witness: int := 0;
+  assert nat$constraint($witness)
+};
+procedure $fieldConstraint_Box$a1$int8$n($o: Box$a1$int8)
+  invokeOn $o#n
+  opaque
+  ensures int8$constraint($o#n);
+-/
+#guard_msgs in
+#eval runPassAfterForIdiomaticity constrainedTypeElimPass (fun p m => (monomorphizeComposites p m).1) <|
+#strata
+program Laurel;
+constrained int8 = x: int where x >= -128 && x <= 127 witness 0
+constrained nat = x: int where x >= 0 witness 0
+composite Box<T> {
+  var v: T
+  var n: int8
+}
+procedure toBox<T>(m: TotalMap int T) returns (r: Box<T>) opaque { r := new Box<T> };
+procedure user(m: TotalMap int int8, k: TotalMap int nat) opaque { toBox(m); toBox(k) };
 #end
 
 end Laurel

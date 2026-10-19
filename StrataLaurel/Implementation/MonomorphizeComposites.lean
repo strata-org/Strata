@@ -20,7 +20,8 @@ one concrete composite per *used* instantiation (`Box<int>` → `Box$a1$int` wit
 `new Box` allocation — to the monomorphic name. After this pass no
 `HighType.Applied` (over a generic composite) and no generic composite definition
 remain, so all downstream passes (HeapParameterization, translation) see only
-ordinary monomorphic composites.
+monomorphic composites. A generic composite leaves a field-free family parent
+(`genericFamilyPrefix`), which its instantiations extend.
 
 Runs after resolution, before `HeapParameterization`. `needsResolves := true`
 re-resolves the injected concrete composites.
@@ -596,8 +597,10 @@ private def processWorklistItem (genComposites : Std.HashMap String (List Identi
           for inst in collectInTy genComposites (substTypeVars subst p) do
             unless s.emitted.contains (monoName inst.1 inst.2) do
               s := { s with worklist := s.worklist ++ [.inl inst] }
+        -- Every instantiation also extends its family parent (`genericFamilyPrefix`).
+        let family : HighTypeMd := ⟨.UserDefined (mkId (genericFamilyPrefix ++ cname)), .unknown⟩
         s := { s with monoComposites := s.monoComposites ++ [.Composite {
-          name := mkId (monoName cname args), typeArgs := [], extending := extending',
+          name := mkId (monoName cname args), typeArgs := [], extending := extending' ++ [family],
           fields := fields', instanceProcedures := [] }] }
       | none => pure ()
   | .inr (pname, targs) =>
@@ -899,16 +902,19 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
       s!"monomorphization did not converge within {1024} instantiation steps (worklist still has {st.worklist.length} items): too many distinct generic instantiations. This is a tool limit, not a program error — report it if the program is reasonable."
       MessageKind.notYetImplemented]
 
-  -- 4. Rewrite all type positions + drop generic composites.
+  -- 4. Rewrite all type positions + replace generic composites.
   let rwTypeDef (td : TypeDefinition) : TypeDefinition :=
     mapTypeDefTypesM (m := Id) (rewriteTy genComposites) td
-  let types' : List TypeDefinition := program.types.filterMap fun td =>
+  let types' : List TypeDefinition := program.types.map fun td =>
     match td with
-    -- A generic composite is DROPPED here, replaced by the monomorphs emitted for it.
-    | .Composite ct => if ct.typeArgs.isEmpty then some (rwTypeDef td) else none
-    | _ => some (rwTypeDef td)
+    -- A generic composite is replaced by its family parent, which the monomorphs emitted for it
+    -- extend.
+    | .Composite ct => if ct.typeArgs.isEmpty then rwTypeDef td else .Composite {
+        name := mkId (genericFamilyPrefix ++ ct.name.text), typeArgs := [], extending := [],
+        fields := [], instanceProcedures := [] }
+    | _ => rwTypeDef td
   -- Static procedures: DROP the indexed poly procedures (replaced by their clones,
-  -- like generic composites are dropped), keep+rewrite the rest, append the clones
+  -- like generic composites), keep+rewrite the rest, append the clones
   -- (also rewritten for any generic composites in their now-concrete signatures).
   let rwProcSig (proc : Procedure) : Procedure :=
     { proc with
@@ -963,7 +969,7 @@ def monomorphizeCompositesPass : LaurelPass := .onUnordered {
   -- pass leaves alone, so neither can be declared here.
   removes := [NodeKind.CompositeType.typeArgs.cons]
   needsResolves := true
-  documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Runs before heap parameterization." }
+  documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Each instantiation extends a field-free family parent that names their shared heap fields. Runs before heap parameterization." }
   fun _ p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})
 
 end -- public section

@@ -15,6 +15,7 @@ import StrataLaurel.Implementation.MapStmtExpr
 import StrataLaurel.Implementation.HeapParameterizationConstants
 import StrataLaurel.Implementation.LaurelTypes
 import Strata.Util.Tactics
+import Strata.Util.OrderedSet
 import StrataLaurel.Implementation.LiftImperativeExpressions
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.EliminateReturnStatements
@@ -217,12 +218,29 @@ private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e,
 private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val := v, source }
 
 /--
+The name the fields of `ct` are stored under: for an instantiation of a generic composite, that
+generic composite's, read off its family parent (`genericFamilyPrefix`); else `ct`'s own.
+ModifiesClauses names its frames through it on the model resolved before this pass, whose
+instantiations still extend their family.
+-/
+def heapFieldOwner (ct : CompositeType) : String :=
+  match ct.extending.find? isGenericFamilyParent >>= (highBaseName? ·.val) with
+  | some family => (family.text.drop genericFamilyPrefix.length).toString
+  | none => ct.name.text
+
+/-- The heap field that `field` of `ct` is stored as: `Owner.field`, as `heapFieldOwner` names
+    the owner. -/
+def heapFieldName (ct : CompositeType) (field : String) : String := s!"{heapFieldOwner ct}.{field}"
+
+/--
 Resolve the owning composite type name for a field access by computing the target expression's type.
-Returns the qualified field name "DeclaringType.fieldName".
+Returns the qualified field name "DeclaringType.fieldName", as `heapFieldName` names it.
 -/
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : Option String :=
   match model.get fieldName with
-    | .field owner _ => owner.text ++ "." ++ fieldName.text
+    | .field owner _ => match model.get owner with
+      | .compositeType ct => heapFieldName ct fieldName.text
+      | _ => owner.text ++ "." ++ fieldName.text
     | .unresolved _ => none
     | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
@@ -844,18 +862,23 @@ def heapParameterization (model: SemanticModel) (program : LaurelProgram) : Exce
     .error s!"heapParameterization: {residualSnapshots.length} Snapshot/labeled-old \
               node(s) survived the pass — a snapshot reached a procedure not classified \
               as heap-writing, so the snapshot local was never declared"
-  -- Collect all qualified field names and generate a Field datatype
-  let fieldNames := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => acc ++ ct.fields.map (fun f => (mkId $ ct.name.text ++ "." ++ f.name.text))
-    | _ => acc) ([] : List Identifier)
+  -- Collect all qualified field names and generate a Field datatype. The instantiations of one
+  -- generic composite share their fields' names, so each is listed once.
+  let fieldNames := (Util.OrderedSet.eraseDups (program.types.flatMap fun
+    | .Composite ct => ct.fields.map (heapFieldName ct ·.name.text)
+    | _ => [])).map mkId
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Remove fields from composite types since they are now stored in the heap.
-  let types' := program.types.map fun td =>
+  -- Remove fields from composite types since they are now stored in the heap. The family parents
+  -- only named them, so they go too: `TypeHierarchy` would make each a type tag that no object
+  -- has.
+  let types' := program.types.filterMap fun td =>
     match td with
-    | .Composite ct => .Composite { ct with fields := [] }
-    | other => other
+    | .Composite ct =>
+      if isGenericFamilyName ct.name.text then none
+      else some (.Composite { ct with
+        fields := [], extending := ct.extending.filter (!isGenericFamilyParent ·) })
+    | other => some other
   -- Generate the boxing datatype from all constructors used during transformation.
   -- The name lives in Laurel's reserved `$`-namespace, and the coupling is by hand rather than
   -- derived: the accessors emitted for field reads come from `boxDestructorName`, which spells

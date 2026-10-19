@@ -28,10 +28,10 @@ trigger is not just the signature — a procedure with a value-`T` signature tha
 `Box<T>` in its BODY has to be captured too, which is what the body-scan case below pins.
 
 Cloning brings its own obligations, each with a case here: the clone's fields must be
-re-resolved independently (or two instantiations cross-link and one's write is visible through
-the other), the clone's contract must be substituted and still checked, and the discovery has
-to be a FIXPOINT — cloning `outer$int` reveals a now-concrete `inner(b: Box<int>)` call that
-needs cloning in turn.
+re-resolved independently (or the bodies of two instantiations cross-link), the clone's
+contract must be substituted and still checked, and the discovery has to be a FIXPOINT —
+cloning `outer$int` reveals a now-concrete `inner(b: Box<int>)` call that needs cloning
+in turn.
 
 Verification-only throughout: every case is heap-allocating.
 -/

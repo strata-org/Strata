@@ -148,7 +148,7 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
       with the constraint assumed on it as for an uninitialized declaration. A copy of the
       hole would not do: each occurrence of a hole is its own value.
     - All other nodes are returned unchanged; the traversal handles recursion. -/
-def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.HashSet String)
     (resultUsed : Bool) (node : StmtExprMd) : StateM Nat (List StmtExprMd) := do
   let source := node.source
   match node.val with
@@ -165,7 +165,7 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
       | _ => []
     return [node] ++ asserts ++ suffix
-  | .Var (.Field ..) =>
+  | .Var (.Field _ fieldName) =>
     -- Constrained field read → `{ assume T$constraint(read); read }`.
     -- `elimCompositeType` lowers the declared type to its base without restating the
     -- predicate on READ, while the range OBLIGATION still lands at the destination
@@ -179,7 +179,8 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     -- never assigned, yet a read is assumed in range (measured). Writes are covered
     -- anyway -- `.Assign` checks each, and `IncrDecr` / `CompoundAssign` lower to
     -- `.Assign` first (LaurelCompilationPipeline runs
-    -- eliminateIncrDecrAndCompoundAssign before constrainedTypeElim).
+    -- eliminateIncrDecrAndCompoundAssign before constrainedTypeElim). The fact fails for a
+    -- field of `mixedFields`, so nothing is assumed there.
     --
     -- On the READ: hoisting to the enclosing statement could reference a local that
     -- statement declares. The duplicated read is pure (`readField(heap, obj, field)`);
@@ -188,6 +189,10 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     --
     -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
     -- write, so the `Datatype` branch over-approximates.
+    let isMixed := match model.get fieldName with
+      | .field .. => (resolveQualifiedFieldName model fieldName).any mixed.contains
+      | _ => false
+    if isMixed then return [node] else
     match constraintCallForExpr ptMap (computeExprType model node).val node (src := source) with
     | some c => return [⟨.Assume c, source⟩, node]
     | none => return [node]
@@ -204,8 +209,9 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
 /-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
     traversal. A procedure body is a statement, so the top-level `resultUsed`
     is `false`. -/
-def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (body : StmtExprMd) : StmtExprMd :=
-  (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model) false body).run' 0
+def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.HashSet String)
+    (body : StmtExprMd) : StmtExprMd :=
+  (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model mixed) false body).run' 0
 
 private def isSpecStatement (s : StmtExprMd) : Bool :=
   match s.val with
@@ -285,7 +291,7 @@ private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter
   | _ => ⟨.Block (body' :: checks none) none, body'.source⟩
 
 def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
-    (proc : Procedure) : Procedure :=
+    (mixed : Std.HashSet String) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
@@ -300,11 +306,11 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : Typ
   | .Transparent bodyExpr =>
     let constrained := proc.outputs.filter fun p =>
       (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).isSome
-    if constrained.isEmpty then .Transparent (elimStmts ptMap model bodyExpr) else
+    if constrained.isEmpty then .Transparent (elimStmts ptMap model mixed bodyExpr) else
     let tailed := match proc.outputs with
       | [out] => assignTail model lattice out.name (resolveType ptMap out.type) bodyExpr
       | _ => bodyExpr
-    let body := elimStmts ptMap model tailed
+    let body := elimStmts ptMap model mixed tailed
     .Transparent (addExitChecks ptMap constrained body)
   -- Output type-constraints go FIRST, before the user's own `ensures`. The order
   -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
@@ -312,7 +318,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : Typ
   -- `returns (r: nonzero)` with `ensures 10 / r > 1` needs `r != 0`. Appended
   -- instead, the constraint would come too late to be assumed.
   | .Opaque postconds impl modif =>
-    let impl' := impl.map (elimStmts ptMap model)
+    let impl' := impl.map (elimStmts ptMap model mixed)
     .Opaque (outputEnsures ++ postconds) impl' modif
   | .Abstract postconds => .Abstract (outputEnsures ++ postconds)
   | .External => .External
@@ -342,6 +348,18 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     preconditions := []
     decreases := none }
 
+/-- The fields, named by `heapFieldName`, that two instantiations of a generic composite
+    (`families`) declare at different types. No instantiation may rely on such a field's
+    constraint, as one object can be both: through `D<S> extends Box<S>, Box<int>` at
+    `S := int8`, a `Box<int>` view sets a `Box<int8>`'s `v` to 1000. A type stored in another
+    box, as `bool` is, is no exception: the `int` read off a `bool` box is one value, so two
+    bounds assumed of it may contradict. -/
+private def mixedFields (families : Std.HashMap String (List CompositeType)) : Std.HashSet String :=
+  families.fold (init := {}) fun s _ family =>
+    family.foldl (init := s) fun s ct => ct.fields.foldl (init := s) fun s f =>
+      if family.any (·.fields.any fun g => g.name.text == f.name.text && !highEq g.type f.type)
+      then s.insert (heapFieldName ct f.name.text) else s
+
 /-- `ContractPass` turns an `invokeOn` trigger plus `ensures` into
 
       forall (o: C) { o#f } => T$constraint(o#f)
@@ -365,13 +383,19 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     `A_b.c` and `A.b_c` mint the same name, and underscores are common enough in real
     names for that to collide in ordinary code. `$` only collides for a name that itself
     contains `$`, which the duplicate-definition diagnostic already tells the author to
-    rename, and matches `MonomorphizeComposites`' `$aN$` tags. -/
-private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
-    (ct : CompositeType) : List Procedure :=
+    rename, and matches `MonomorphizeComposites`' `$aN$` tags.
+
+    Core quantifies `o` over every object, not just `C`'s, and the instantiations of a generic
+    composite (`family`) share each field's heap location (`heapFieldOwner`): the first's
+    axioms hold for all, and a field of `mixedFields` has none. -/
+private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap) (mixed : Std.HashSet String)
+    (family : List CompositeType) (ct : CompositeType) : List Procedure :=
+  if family.head?.any (·.name.text != ct.name.text) then [] else
   let src := ct.name.source
   let objName : Identifier := mkId "$o"
   let objRef : StmtExprMd := ⟨.Var (.Local objName), src⟩
   ct.fields.filterMap fun f =>
+    if mixed.contains (heapFieldName ct f.name.text) then none else
     let fieldRead : StmtExprMd := ⟨.Var (.Field objRef f.name), src⟩
     (constraintCallForExpr ptMap f.type.val fieldRead (src := src)).map fun constraint =>
       { name := mkId s!"$fieldConstraint_{ct.name.text}${f.name.text}"
@@ -391,10 +415,11 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
     a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
     resolve in later passes and the final Core translation. -/
 def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
-    (ct : CompositeType) (prepare : Procedure → Procedure := id) : CompositeType :=
+    (mixed : Std.HashSet String) (ct : CompositeType) (prepare : Procedure → Procedure := id) :
+    CompositeType :=
   { ct with
     fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model lattice ∘ prepare) }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model lattice mixed ∘ prepare) }
 
 private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any ids.contains
@@ -443,8 +468,12 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let fieldAxiomProcedures := program.types.flatMap fun
-    | .Composite ct => mkFieldConstraintProcs ptMap ct | _ => []
+  let composites := program.types.filterMap fun | .Composite ct => some ct | _ => none
+  let families : Std.HashMap String (List CompositeType) := composites.foldr (init := {})
+    fun ct m => let owner := heapFieldOwner ct; m.insert owner (ct :: m.getD owner [])
+  let mixed := mixedFields families
+  let fieldAxiomProcedures := composites.flatMap fun ct =>
+    mkFieldConstraintProcs ptMap mixed (families.getD (heapFieldOwner ct) []) ct
   let instanceProcedures := program.types.flatMap fun
     | .Composite composite => composite.instanceProcedures
     | _ => []
@@ -455,7 +484,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let prepared := program.staticProcedures.map addGlobalConditions
   ({ program with
     staticProcedures := constraintProcs ++
-      prepared.map (elimProc ptMap model lattice)
+      prepared.map (elimProc ptMap model lattice mixed)
                         ++ witnessProcedures ++ fieldAxiomProcedures
     staticFields := program.staticFields.map fun field =>
       { field with
@@ -464,7 +493,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct =>
-          some (.Composite (elimCompositeType ptMap model lattice ct addGlobalConditions))
+          some (.Composite (elimCompositeType ptMap model lattice mixed ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained
