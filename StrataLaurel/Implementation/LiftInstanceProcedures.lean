@@ -270,6 +270,11 @@ def outputSignatureCompatible (model : SemanticModel) (baseM ovM : Procedure) : 
            | none => false
          | _ => false))
 
+/-- Whether an overriding composite's type parameters fail to repeat its generic base's verbatim:
+    the RENAMED-TYPE-PARAMS shape below. -/
+def renamesBaseTypeParams (baseTypeArgs overriderTypeArgs : List Identifier) : Bool :=
+  !baseTypeArgs.isEmpty && overriderTypeArgs.map (·.text) != baseTypeArgs.map (·.text)
+
 /-- Validate every dispatch family for shapes the dispatcher cannot lower, emitting a
     CLEAN `.userError` (which halts the pipeline before the synthetic if-chain reaches a
     later pass and hard-fails as an internal `.strataBug`). Four shapes, each a real
@@ -334,7 +339,7 @@ private def validateDispatchFamilies (model : SemanticModel) (families : List Di
             -- RENAMED-TYPE-PARAMS: a generic base's overrider must repeat its type params verbatim
             -- (see the docstring); a renamed/concrete overrider is rejected. Non-generic base exempt.
             let d3 : List Message :=
-              guardErr (!ct.typeArgs.isEmpty && ov.typeArgs.map (·.text) != ct.typeArgs.map (·.text))
+              guardErr (renamesBaseTypeParams ct.typeArgs ov.typeArgs)
                   s!"dynamic dispatch does not yet support an override of a generic method whose type parameters differ from the base: '{ov.name.text}' declares type parameters [{String.intercalate ", " (ov.typeArgs.map (·.text))}] but the overridden generic '{ct.name.text}' declares [{String.intercalate ", " (ct.typeArgs.map (·.text))}]. An overriding composite must repeat the base's type parameters verbatim (e.g. `SBox<T> extends Box<T>`)."
             -- OUTPUT-SIGNATURE: reject a differing output arity or a non-covariant return cleanly;
             -- a covariant return (subtype of the base's) is sound and admitted. See

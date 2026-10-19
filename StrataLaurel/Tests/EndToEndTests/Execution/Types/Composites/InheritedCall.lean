@@ -371,3 +371,35 @@ composite C9 extends B9 {
 }
 procedure go() opaque { assert 1 == 1 };
 #end
+
+/-! ## 10. An override that dynamic dispatch does not support is reported as such: `C10` does not
+    repeat `P10`'s type parameter. That rejection is the one reported, since no Liskov check is
+    built for such an override, although `m`'s `a` also mistypes `P10`'s contract. -/
+
+-- No interpreters: as in §9, a definition-time rejection, with no call to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite P10<X> {
+  var v: X
+  procedure g(self: P10<X>, a: X)
+    returns (r: X)
+    opaque
+    ensures r == a
+  { r := a };
+  procedure m(self: P10<X>, a: X)
+    returns (r: X)
+    opaque
+    ensures r == self#g(a)
+  { r := self#g(a) };
+}
+composite C10 extends P10<int> {
+  procedure m(self: C10, a: bool)
+//          ^ error: dynamic dispatch does not yet support an override of a generic method whose type parameters differ from the base
+    returns (r: bool)
+    opaque
+    ensures true
+  { r := a };
+}
+procedure go() opaque { assert 1 == 1 };
+#end
