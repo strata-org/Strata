@@ -1688,16 +1688,22 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
       omega))
     all_goals (try (simp_all; omega))
 
+/-- Whether `n` is one of the enclosing entity's type parameters, by binder: matching on text would
+    accept a callee's own parameter that happens to be spelled like one of ours. -/
+private def tvarInScope (scope : Scope) (n : Identifier) : Bool :=
+  match scope.get? n.text with
+  | some (defId, .typeParameter _) => n.uniqueId == some defId
+  | _ => false
+
 /-- STAGE 1 of a generic call — bind from the RETURN position, before the arguments are touched.
     `setEmpty<T>() : Set<T>` and `mapConst<K,V>(value: V) : TotalMap K V` mention `T`/`K` only in
     the result, so matching the declared return type against the expected type is the only thing
     that can determine them. Doing it first is what lets stage 2 hand each argument a concrete slot.
-    Bindings that still MENTION a type variable are KEPT here, unlike in `callSiteTypeSubst`. That
-    filter exists to avoid recording an uninformative `T ↦ T`; a structured binding is a different
-    thing entirely, and dropping it breaks the prelude. `mapRemove<K,V>`'s
-    `update(m, k, $MapAbsent())` binds `update`'s `V2 ↦ $MapEntry V` from the expected `Map<K,V>`,
-    and that is precisely what tells the `$MapAbsent()` slot which datatype it is building.
-    Substituting a `T ↦ T` is a no-op, so keeping those costs nothing.
+    Bindings that still MENTION a type variable are KEPT here: a structured binding is what the
+    prelude needs. `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` binds `update`'s
+    `V2 ↦ $MapEntry V` from the expected `Map<K,V>`, and that is precisely what tells the
+    `$MapAbsent()` slot which datatype it is building. Substituting a `T ↦ T` is a no-op, so keeping
+    those costs nothing.
 
     Pure in the procedure and the expected type, so an overloaded name can run it on the procedure
     `selectOverloads` picked. -/
@@ -1735,8 +1741,9 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
     (expected? : Option HighTypeMd) (retSubst : Std.HashMap String HighTypeMd)
     (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
   let ctx := (← get).typeLattice
+  let inScope := tvarInScope (← get).scope
   let paramTys := proc.inputs.map (·.type)
-  let (argSubst, conflicts) := callSiteTypeSubst ctx paramTys argTys
+  let (argSubst, conflicts) := callSiteTypeSubst ctx inScope paramTys argTys
   -- STAGE 3 — merge. Argument bindings WIN over the stage-1 return bindings: an argument is
   -- direct evidence, whereas the expected type has already passed through subsumption and may
   -- be a supertype (`var a: Animal := identity(aDog)` must keep `T ↦ Dog`, not widen it to
@@ -1791,21 +1798,11 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
   -- to resolve and so synthesized `Unknown`): inference genuinely had nothing to work with
   -- there, and a second error about a type argument would only bury the first.
   --
-  -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: a binding that
-  -- mentions a type variable is absent from `subst` (it teaches nothing) yet the parameter IS
-  -- determined. Reading `subst` here would report every internal call in a generic body,
-  -- starting with the prelude's own `mapGet`/`seqLength`.
-  -- A type variable is in scope when the enclosing entity declares it (`scopeTypeParams`
-  -- registers each as a `.typeParameter`), matched on the binder's `uniqueId`. Matching on text
-  -- would accept a callee's own parameter that happens to be spelled like one of ours.
-  let scopeNow := (← get).scope
-  let tvarInScope := fun (n : Identifier) =>
-    match scopeNow.get? n.text with
-    | some (defId, .typeParameter _) => n.uniqueId == some defId
-    | _ => false
+  -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: an ambiguous diamond
+  -- binds nothing in `subst` yet the parameter IS determined.
   let determined :=
-    callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := true) (paramTys.zip argTys) ++
-    callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := false)
+    callSiteDeterminedTypeParams ctx inScope (requireInScope := true) (paramTys.zip argTys) ++
+    callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
       (match expected? with
        | some exp => [(procReturnType callee proc, exp)]
        | none => [])
@@ -3360,6 +3357,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     -- extend the lattice and every subtype/coercion decision downstream must see the final one.
     -- Reusing the pre-argument lattice there would silently change which coercions get realized.
     let ctx0 := (← get).typeLattice
+    let inScope := tvarInScope (← get).scope
     let paramTys := gproc.inputs.map (·.type)
     let retSubst := returnPositionSubst ctx0 callee gproc expected?
     -- STAGE 2 — resolve each argument, handing it its parameter type instantiated by stage 1.
@@ -3401,7 +3399,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let mut working : Std.HashMap String HighTypeMd := retSubst
     let immediatePairs : List (HighTypeMd × HighTypeMd) :=
       resolvedImmediate.filterMap fun (i, _, aTy) => (paramTys[i]?).map (fun pTy => (pTy, aTy))
-    working := (callSiteTypeSubst ctx0 (immediatePairs.map (·.1)) (immediatePairs.map (·.2))).1.fold
+    working := (callSiteTypeSubst ctx0 inScope (immediatePairs.map (·.1))
+        (immediatePairs.map (·.2))).1.fold
       (fun acc name ty => acc.insert name ty) working
     let mut resolvedDeferred : List (Nat × StmtExprMd × HighTypeMd) := []
     for (⟨a, hMem⟩, i) in deferred do
@@ -3409,7 +3408,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       let (a', aTy) ← Synth.resolveStmtExpr a (slotAt working i)
       resolvedDeferred := resolvedDeferred ++ [(i, a', aTy)]
       if let some pTy := paramTys[i]? then
-        working := (callSiteTypeSubst ctx0 [pTy] [aTy]).1.fold
+        working := (callSiteTypeSubst ctx0 inScope [pTy] [aTy]).1.fold
           (fun acc name ty => acc.insert name ty) working
     -- Back to SOURCE ORDER: the guards below and `genericCallResult` both index-zip against
     -- `paramTys`.
@@ -3588,7 +3587,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let ctorArgTys := resolvedArgs.map (·.2)
     -- Bind the remaining parameters from the ARGUMENTS, which win over the expected type for the
     -- same reason as in the generic-procedure path (direct evidence, no subsumption widening).
-    let (ctorArgSubst, ctorConflicts) := callSiteTypeSubst ctx matchFieldTys ctorArgTys
+    let inScope := tvarInScope (← get).scope
+    let (ctorArgSubst, ctorConflicts) := callSiteTypeSubst ctx inScope matchFieldTys ctorArgTys
     let ctorSubst := ctorRetSubst.fold
       (fun acc name ty => if acc.contains name then acc else acc.insert name ty) ctorArgSubst
     for (name, t1, t2) in ctorConflicts.reverse do
@@ -3599,15 +3599,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
     -- Report the INSTANTIATED datatype, so a use of the result is checked against the real type
     -- instead of the bare head's wildcard. This is also what lets a destructor applied directly
     -- to a constructor call (`Opt..value!(Som(5))`) recover the instantiation.
-    let scopeNow := (← get).scope
-    let tvarInScope := fun (n : Identifier) =>
-      match scopeNow.get? n.text with
-      | some (defId, .typeParameter _) => n.uniqueId == some defId
-      | _ => false
     let determined :=
-      callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := true)
+      callSiteDeterminedTypeParams ctx inScope (requireInScope := true)
         (matchFieldTys.zip ctorArgTys) ++
-      callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := false)
+      callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
         (match expected? with | some exp => [(ctorRetShape, exp)] | none => [])
     let ctorUnbound := typeParams.filter (fun p => !determined.contains p)
     -- Suppressed when the expected type already NAMES this datatype. The user did annotate; if

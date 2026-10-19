@@ -1036,3 +1036,30 @@ procedure nestedGenericViaFieldOnlyFalse()
 //^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
+
+-- A generic method calling a generic procedure at its composite's `T` and at its own `U`.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure f<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+composite Box<T> {
+  var val: T
+  procedure both<U>(self: Box<T>, u: U) opaque {
+    var a := f(self#val);
+    var b := f(u);
+    assert a == self#val && b == u;
+    assert b != u
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+  };
+}
+
+procedure methodCallsAtBothTypeParameters()
+  entry
+  opaque
+  modifies *
+{
+  var bx: Box<int> := new Box<int>;
+  bx#val := 1;
+  bx#both(true)
+};
+#end
