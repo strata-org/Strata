@@ -15,9 +15,11 @@ import Strata.Util.Tactics
 Determines, for each procedure, whether it reads and/or writes the heap. A
 procedure reads the heap when it accesses a composite field (`x#f`) and writes
 the heap when it assigns a field, creates an object (`new`), or has an opaque
-body with a non-empty modifies clause. The analysis is transitive over calls
-(both static and instance calls): if `A` calls `B` and `B` reads/writes the
-heap, then so does `A`.
+body with a non-empty modifies clause. It may allocate when it creates an
+object, or when it writes the heap without an implementation, which could
+create any object. The analysis is transitive over calls (both static and
+instance calls): if `A` calls `B` and `B` reads/writes the heap or may
+allocate, then so does `A`.
 
 This is the single source of truth for heap-effect classification. It lives in
 its own module (importing only the AST and the generic `MapStmtExpr` traversal)
@@ -35,6 +37,7 @@ namespace Strata.Laurel
 structure AnalysisResult where
   readsHeapDirectly : Bool := false
   writesHeapDirectly : Bool := false
+  allocatesDirectly : Bool := false
   callees : List Identifier := []
 
 /-- Collect the direct heap effects of an expression (and the callees needed to
@@ -54,7 +57,7 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
     | .StaticCall callee _ _ => modify fun s => { s with callees := callee :: s.callees }
     | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
-    | .New .. => modify fun s => { s with writesHeapDirectly := true }
+    | .New .. => modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
     | .Assign assignTargets _ =>
         for ⟨assignTarget, _⟩ in assignTargets.attach do
           match assignTarget.val with
@@ -97,7 +100,7 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
       -- post-`EliminateExceptions` procedures can carry zero groups, and
       -- `[].all` being vacuously true classifies those as non-writers too.
       if modifies.all (·.targets.isEmpty) && !framesHeapOnThrow then result else
-        { result with readsHeapDirectly := true, writesHeapDirectly := true }
+        { result with readsHeapDirectly := true, writesHeapDirectly := true, allocatesDirectly := true }
   | _ =>
       if framesHeapOnThrow then { result with writesHeapDirectly := true } else result
 
@@ -149,6 +152,9 @@ def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) 
 
 def computeWritesHeap (procs : List Procedure) : Except String (Std.HashSet Nat) :=
   computeEffectClosure procs (·.writesHeapDirectly)
+
+def computeMayAllocate (procs : List Procedure) : Except String (Std.HashSet Nat) :=
+  computeEffectClosure procs (·.allocatesDirectly)
 
 end Strata.Laurel
 

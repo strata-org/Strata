@@ -44,8 +44,38 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   /-- Quantifier-free modifies frame for single-reference clauses. Set-valued entries
-      keep the quantified frame. If the procedure's modifies clause contains sets,
-      this option has no effect. Use with the verifier's `useArrayTheory`. -/
+      keep the quantified frame, and so does a procedure that may allocate. If the
+      procedure's modifies clause contains sets, this option has no effect. Use with
+      the verifier's `useArrayTheory`.
+
+      The exclusion of procedures that may allocate is a temporary restriction. The
+      enumerated frame says that every heap row the clause does not name is
+      unchanged, including the rows of objects the call allocates, while the body
+      only checks that for objects that already existed. `increment` leaves `data`
+      unchanged, so a fresh object already has a row in the pre-state heap, and a
+      formula that reads it can contradict the callee's writes. Without the
+      restriction this proves `false`:
+
+      ```
+      procedure mkBump(c: Node) returns (t: Node)
+        opaque
+        ensures t#v == old(t#v) + 1
+        ensures t != c
+        modifies c
+      { var u: Node := new Node; u#v := u#v + 1; return u };
+
+      procedure callerProvesFalse(c: Node) opaque modifies c
+      { var t: Node := mkBump(c); assert false };
+      ```
+
+      Preventing reads from objects that are not yet allocated in the state being
+      read would let allocating procedures keep the enumerated frame. That is not a
+      trivial change. A field read under `old` is only one way to reach such a row:
+      a function called under `old`, a datatype argument, and a quantifier over a
+      composite type reach it too. Checking those reads also needs references
+      stored in the heap to be allocated, which the encoding does not maintain:
+      `new` leaves fields unset, and a hole can hold any reference.
+      `ModifiesFrameSoundness.lean` §6 pins the shapes. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
   /-- Verify coroutines via rely/guarantee.

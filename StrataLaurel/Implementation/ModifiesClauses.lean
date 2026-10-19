@@ -42,8 +42,10 @@ where notModified($obj, $fld) conjoins, per entry:
 - `!(select(s, $obj))`        Set `s`
 - `!($obj == o && $fld == f)` field `(o, f)`
 
-Under array theory with only individual refs, callers assume a quantifier-free
-(enumerated) frame and the body re-checks the pointwise frame at every exit.
+Under array theory, for a procedure that names only individual refs and cannot
+allocate, callers assume a quantifier-free (enumerated) frame and the body
+re-checks the pointwise frame at every exit. Excluding procedures that may
+allocate is temporary; see `LaurelTranslateOptions.enumeratedModifiesClauses`.
 -/
 
 namespace Strata.Laurel
@@ -180,6 +182,13 @@ never built.
 def hasHeapOut (model : SemanticModel) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any model.heapWriters.contains
 
+/-- Whether `proc` may create objects. The enumerated frame says that every row the
+clause does not name is unchanged, including the rows of objects created during the
+call, which the quantified frame leaves free. So the quantified frame implies the
+enumerated one only for a procedure that cannot allocate. -/
+def mayAllocate (model : SemanticModel) (proc : Procedure) : Bool :=
+  proc.name.uniqueId.all model.heapAllocators.contains
+
 /-- Build and attach `proc`'s frame conditions, then clear the clauses.
 
 This pass knows nothing about exceptions. Each `ModifiesGroup` lowers on its own:
@@ -197,10 +206,11 @@ The enumerated-frame optimization (quantifier-free caller view) applies to
 guarded and unguarded groups alike, with both halves of the split under the
 group's guard: the body still checks `guard ==> quantified frame` and callers
 assume `guard ==> enumerated frame`, which is sound because the quantified
-frame implies the enumerated one pointwise and the shared guard preserves the
-implication (a vacuous guard makes both halves trivial, not unsound). This
-keeps a lowered throwing procedure's normal frame — guarded on its result —
-as cheap for callers as a non-throwing procedure's. -/
+frame implies the enumerated one for a procedure that cannot allocate (see
+`mayAllocate`) and the shared guard preserves the implication (a vacuous guard
+makes both halves trivial, not unsound). This keeps a lowered throwing
+procedure's normal frame — guarded on its result — as cheap for callers as a
+non-throwing procedure's. -/
 def transformModifiesClauses (model: SemanticModel)
     (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
   match proc.body with
@@ -221,7 +231,7 @@ def transformModifiesClauses (model: SemanticModel)
           else
             let entries := extractModifiesEntries model g.targets
             let summary := g.summary.getD "modifies clause"
-            if useEnumeratedFrame && onlyIndividualRefs entries then
+            if useEnumeratedFrame && onlyIndividualRefs entries && !mayAllocate model proc then
               -- Callers assume the quantifier-free frame (assume-only); the body
               -- checks the pointwise frame (assert-only) at every exit, so the
               -- quantified frame is verified but never exposed to callers. A

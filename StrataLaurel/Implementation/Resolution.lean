@@ -7371,12 +7371,15 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
   let heapWritersResult := computeWritesHeap allProcs
   let heapReaders := heapReadersResult.toOption.getD {}
   let heapWriters := heapWritersResult.toOption.getD {}
+  -- Fails exactly when the two above do, and an empty `heapWriters` already builds no frames.
+  let heapAllocators := (computeMayAllocate allProcs).toOption.getD {}
   let semanticModel := {
     compositeCount := program.types.length,
     refToDef := refToDef,
     nextId := finalState.nextId,
     heapReaders := heapReaders
     heapWriters := heapWriters
+    heapAllocators := heapAllocators
     conflictingOverloads := finalState.conflictingOverloads
   }
   let heapAnalysisErrors : Array Message :=
