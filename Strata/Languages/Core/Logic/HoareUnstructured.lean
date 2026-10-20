@@ -24,8 +24,6 @@ namespace Hoare
 
 variable (π : String → Option Procedure)
 
-local notation "I" => EvaluatorBasedInterp Expression
-
 /-- Core CFG Hoare triple with an explicit event-condition interpretation. -/
 @[expose] def TripleUnstructuredWith (conditionInterp : ConditionInterp Expression)
     (params : InitEnvWFParams)
@@ -38,7 +36,8 @@ local notation "I" => EvaluatorBasedInterp Expression
 @[expose] def TripleUnstructured (params : InitEnvWFParams)
     (Pre : Imperative.Env Expression → Prop) (cfg : Core.DetCFG)
     (Post : Imperative.Env Expression → Prop) : Prop :=
-  TripleUnstructuredWith π I params Pre cfg Post
+  ∀ model : Lambda.Interp Core.Factory,
+    TripleUnstructuredWith π (DenoteBasedInterp model) params Pre cfg Post
 
 /-
 TODO: Add a block-local proof rule for `TripleUnstructured`. Attach a

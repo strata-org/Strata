@@ -184,11 +184,11 @@ program. -/
     correctness-only definition here is useful.
 
     A possibly more succinct style of ProcedureAssertsValid is using Hoare
-    triple (`Hoare.Triple` in `Strata.DL.Imperative.Logic.HoareTemplate`). Since
-    `Hoare.Triple` also
+    triple (`Hoare.TripleWith` in `Strata.DL.Imperative.Logic.HoareTemplate`). Since
+    `Hoare.TripleWith` also
     uses partial correctness, this seems natural. However, there is a very
     subtle issue due to the fact that programs can also have `assert`s in the
-    middle of procedures, which leads `Hoare.Triple` to too weak notion to use
+    middle of procedures, which leads `Hoare.TripleWith` to too weak notion to use
     for us.
 
     For example, let's consider this program:
@@ -214,7 +214,7 @@ program. -/
     };
     ```
 
-    We know that the assert A does not hold. However, if we use `Hoare.Triple` which
+    We know that the assert A does not hold. However, if we use `Hoare.TripleWith` which
     inspects asserts and postconditions *only if the code terminates*,
     we end up accepting this procedure P as 'correct'.
 

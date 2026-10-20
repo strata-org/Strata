@@ -21,14 +21,14 @@ itself (`Stmt`, `Cmd`, their event-trace small-step semantics, and the
 framework (`AssertValidOnTracesWhen`, `Sound`, or the `Overapproximates` family); the event-trace transport bridge lives on its side, in
 `Strata.Transform.SpecHoareConnection`.
 
-`Strata.Logic.Hoare.Triple` is language-agnostic — stated over an arbitrary
-`Strata.Logic.EventLang P (Event P)`, which is what lets a triple be transported from a
-target language back to the source.  Conditions use `EvaluatorBasedInterp P` throughout.
-Everything else lives in `Imperative.Logic.Hoare`.
+`Strata.Logic.Hoare.TripleWith` is language-agnostic — stated over an arbitrary
+`Strata.Logic.EventLang P (Event P)` and condition interpreter, which is what lets a
+triple be transported from a target language back to the source. Everything else lives
+in `Imperative.Logic.Hoare`.
 
 ## Contents
 
-`Strata.Logic.Hoare.Triple` and `PostWF`, with the rules `false_pre`,
+`Strata.Logic.Hoare.TripleWith` and `PostWF`, with the rules `false_pre`,
 `consequence`, `skip_block`, `cmd`, `seq_append`, `exit_cons`, `block`,
 `singleton`, `skip`, `ite`, and `while_rule`.
 
@@ -49,16 +49,18 @@ public section
 
 /-! ## The `EventLang`-generic triple -/
 
+section HoareRules
+
+variable {P : Imperative.PureExpr}
+variable {conditionInterp : Imperative.ConditionInterp P}
+
 namespace Strata.Logic.Hoare
 
 open Imperative
 
 section
 
-variable {P : PureExpr} [HasBool P]
 variable (L : EventLang P (Event P))
-
-local notation "I" => EvaluatorBasedInterp P
 
 /-- Partial-correctness Hoare triple: for every initial environment satisfying
     `Pre` that the language's own `initEnvWF` admits, if `s` runs to completion
@@ -90,19 +92,18 @@ local notation "I" => EvaluatorBasedInterp P
     Trace.AssertionsValid P conditionInterp trace ∧
       (Trace.Reachable P conditionInterp trace → Post ρ')
 
-/-- `TripleWith` specialized to the interpreter which uses the evaluator
-registered at PureExpr.
+end
 
-TODO: rewrite the Hoare rules in this file to use `TripleWith`, and remove
-`Triple` below.
-This will help users of HoareTemplate not accidentally use the evaluator-based
-interpreter. It will have to be included in a patch that fully switches Core's
-Hoare.Triple to use the LExpr.denote function.
--/
-@[expose] def Triple
-    (params : L.InitEnvWFParamsTy)
-    (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
-  TripleWith L I params Pre s Post
+end Strata.Logic.Hoare
+
+local notation "I" => conditionInterp
+local notation "Triple" => fun L => Strata.Logic.Hoare.TripleWith L conditionInterp
+
+namespace Strata.Logic.Hoare
+
+open Imperative
+
+variable (L : EventLang P (Event P))
 
 /-! ## Rules that do not inspect the statement -/
 
@@ -121,8 +122,6 @@ theorem consequence (params : L.InitEnvWFParamsTy)
   intro ρ₀ ρ' trace hpre' hinit hrun
   have ⟨hvalid, hp⟩ := h ρ₀ ρ' trace (hpre ρ₀ hpre') hinit hrun
   exact ⟨hvalid, fun hsatisfiable => hpost ρ' (hp hsatisfiable)⟩
-
-end
 
 end Strata.Logic.Hoare
 
@@ -157,10 +156,9 @@ theorem postWF_of_definedVars_nil {P : PureExpr} {CmdT : Type} [HasVarsImp P Cmd
 
 section StmtRules
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
+variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
     [HasSubstFvar P] [HasInt P] [HasIntOps P]
 variable {CmdT : Type}
-local notation "I" => EvaluatorBasedInterp P
 variable (evalCmd : EvalCmdParamE P CmdT (Event P))
 variable {ParamsTy : Type}
 variable (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop)
@@ -632,5 +630,7 @@ end StructuredRules
 end StmtRules
 
 end Imperative.Logic.Hoare
+
+end HoareRules
 
 end -- public section

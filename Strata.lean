@@ -25,6 +25,7 @@ import Strata.Util.Worklist
 
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
+import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
@@ -61,6 +62,7 @@ import Strata.Transform.StructuredToUnstructuredPipelineCorrect
 /- Program Logics -/
 import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.Languages.Core.Logic.LangDefProps
+import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall

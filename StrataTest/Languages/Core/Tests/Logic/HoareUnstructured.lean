@@ -5,6 +5,8 @@
 -/
 
 module
+import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import Strata.Languages.Core.IntEvalProps
 
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
@@ -15,6 +17,7 @@ import Strata.DL.Lambda.OperationalSemantics
 import StrataDDM.Integration.Lean.HashCommands
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprEvalProps
+import all Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Lambda.FactoryProps
@@ -75,6 +78,8 @@ set_option linter.unusedSimpArgs false
 
 namespace Strata
 
+open CoreHoareTestSupport
+
 private def cstToAST (p : Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
@@ -106,20 +111,6 @@ private def incExpr : Core.Expression.Expr := .app () (.app () Core.coreIntAddOp
 /-- `int.add(s, i)` -/
 private def addExpr : Core.Expression.Expr :=
   .app () (.app () (Lambda.intAddFunc (T := Core.CoreLParams)).opExpr sExpr) iExpr
-/-- `int.ge(n, 0)` -- the `requires` clause. -/
-private def geExpr : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intGeFunc (T := Core.CoreLParams)).opExpr nExpr) (.const () (.intConst 0))
-/-- `int.add(n, 1)` in the `ensures` clause. -/
-private def addNExpr : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intAddFunc (T := Core.CoreLParams)).opExpr nExpr) (.const () (.intConst 1))
-/-- `int.mul(2, result)` -- the `ensures` left-hand side. -/
-private def mulLhs : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intMulFunc (T := Core.CoreLParams)).opExpr (.const () (.intConst 2))) resultExpr
-/-- `int.mul(n, int.add(n, 1))` -- the `ensures` right-hand side. -/
-private def mulRhs : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intMulFunc (T := Core.CoreLParams)).opExpr nExpr) addNExpr
-/-- `int.mul(2, result) == int.mul(n, int.add(n, 1))` -- the `ensures` clause. -/
-private def ensExpr : Core.Expression.Expr := Lambda.LExpr.eq () mulLhs mulRhs
 
 /-! ## The translated CFG, spelled out -/
 
@@ -200,6 +191,16 @@ private theorem eval_fvar_int (σ : SemanticStore Core.Expression) (x : Core.Exp
   Lambda.evalFully_fvar_of_value Core.Factory σ () x ty _ hx
     (Lambda.isValue_const_true _ _ _)
 
+/-- Factory-generic version of `eval_fvar_int`: a free variable bound to an
+    integer constant `k` evaluates to `intConst k` in *every* factory `F`, since a
+    literal is a value in any factory. -/
+private theorem evalFully_fvar_int_gen (F : Core.Expression.Factory)
+    (σ : SemanticStore Core.Expression) (x : Core.Expression.Ident)
+    (ty : Option Lambda.LMonoTy) (k : Int) (hx : σ x = some (.intConst () k)) :
+    Lambda.LExpr.evalFully F σ (.fvar () x ty) = some (Lambda.LExpr.intConst () k) :=
+  Lambda.evalFully_fvar_of_value F σ () x ty _ hx
+    (Lambda.isValue_const_true _ _ _)
+
 /-- `int.lt(i, n)` with `i ↦ a`, `n ↦ b` evaluates to `boolConst (a < b)`. -/
 private theorem eval_lt (σ : SemanticStore Core.Expression) (a b : Int)
     (hi : σ iId = some (.intConst () a)) (hn : σ nId = some (.intConst () b)) :
@@ -238,63 +239,6 @@ private theorem eval_inc (σ : SemanticStore Core.Expression) (a : Int)
     (hi : σ iId = some (.intConst () a)) :
     Core.Expression.eval Core.Factory σ incExpr = some (Lambda.LExpr.intConst () (a + 1)) :=
   Core.coreEval_intAdd_numeral σ iExpr a (eval_fvar_int σ iId intTy a hi)
-
-/-- `int.ge(n, 0)` with `n ↦ nv` evaluates to `boolConst (nv ≥ 0)`. -/
-private theorem eval_ge (σ : SemanticStore Core.Expression) (nv : Int)
-    (hn : σ nId = some (.intConst () nv)) :
-    Core.Expression.eval Core.Factory σ geExpr
-      = some (Lambda.LExpr.boolConst () (decide (nv ≥ 0))) := by
-  have hnv := eval_fvar_int σ nId intTy nv hn
-  have h0 := Lambda.evalFully_const Core.Factory σ () (Lambda.LConst.intConst 0)
-  obtain ⟨nn, hnn, _⟩ := Lambda.evalFully_some_exists Core.Factory σ _ _ hnv
-  obtain ⟨n0, hn0, _⟩ := Lambda.evalFully_some_exists Core.Factory σ _ _ h0
-  have hn_max := Lambda.eval_value_true_mono_le Core.Factory σ nn (max nn n0)
-    (Nat.le_max_left _ _) _ _ hnn
-  have h0_max := Lambda.eval_value_true_mono_le Core.Factory σ n0 (max nn n0)
-    (Nat.le_max_right _ _) _ _ hn0
-  have hstep := Core.eval_intGe_value_of_numerals Core.Factory σ nExpr (Lambda.LExpr.intConst () 0)
-    (max nn n0) nv 0 Core.coreFactory_intGe hn_max h0_max
-  exact Lambda.evalFully_of_value_true Core.Factory σ _ _ _ hstep
-
-/-- `int.mul(xe, ye)` with `xe ↦ a`, `ye ↦ b` evaluates to `intConst (a * b)`. -/
-private theorem eval_mul (σ : SemanticStore Core.Expression) (xe ye : Core.Expression.Expr)
-    (a b : Int)
-    (hx : Lambda.LExpr.evalFully Core.Factory σ xe = some (Lambda.LExpr.intConst () a))
-    (hy : Lambda.LExpr.evalFully Core.Factory σ ye = some (Lambda.LExpr.intConst () b)) :
-    Core.Expression.eval Core.Factory σ
-        (.app () (.app () (Lambda.intMulFunc (T := Core.CoreLParams)).opExpr xe) ye)
-      = some (Lambda.LExpr.intConst () (a * b)) := by
-  obtain ⟨nx, hnx, _⟩ := Lambda.evalFully_some_exists Core.Factory σ _ _ hx
-  obtain ⟨ny, hny, _⟩ := Lambda.evalFully_some_exists Core.Factory σ _ _ hy
-  have hx_max := Lambda.eval_value_true_mono_le Core.Factory σ nx (max nx ny)
-    (Nat.le_max_left _ _) _ _ hnx
-  have hy_max := Lambda.eval_value_true_mono_le Core.Factory σ ny (max nx ny)
-    (Nat.le_max_right _ _) _ _ hny
-  have hstep := Core.eval_intMul_value_of_numerals Core.Factory σ xe ye
-    (max nx ny) a b Core.coreFactory_intMul hx_max hy_max
-  exact Lambda.evalFully_of_value_true Core.Factory σ _ _ _ hstep
-
-/-- The `ensures` clause holds at a terminal store with `n ↦ nv`, `result ↦ rv`, and
-    `2 * rv = nv * (nv + 1)`. -/
-private theorem ens_eval (σ : SemanticStore Core.Expression) (nv rv : Int)
-    (hn : σ nId = some (.intConst () nv))
-    (hr : σ resultId = some (.intConst () rv))
-    (hsum : 2 * rv = nv * (nv + 1)) :
-    Core.Expression.eval Core.Factory σ ensExpr = some Imperative.HasBool.tt := by
-  have hlhs : Lambda.LExpr.evalFully Core.Factory σ mulLhs
-      = some (Lambda.LExpr.intConst () (2 * rv)) :=
-    eval_mul σ (.const () (.intConst 2)) resultExpr 2 rv
-      (Lambda.evalFully_const Core.Factory σ () (Lambda.LConst.intConst 2))
-      (eval_fvar_int σ resultId intTy rv hr)
-  have hadd : Lambda.LExpr.evalFully Core.Factory σ addNExpr
-      = some (Lambda.LExpr.intConst () (nv + 1)) :=
-    Core.coreEval_intAdd_numeral σ nExpr nv (eval_fvar_int σ nId intTy nv hn)
-  have hrhs : Lambda.LExpr.evalFully Core.Factory σ mulRhs
-      = some (Lambda.LExpr.intConst () (nv * (nv + 1))) :=
-    eval_mul σ nExpr addNExpr nv (nv + 1) (eval_fvar_int σ nId intTy nv hn) hadd
-  rw [show nv * (nv + 1) = 2 * rv from hsum.symm] at hrhs
-  exact Lambda.evalFully_eq_self Core.Factory σ () mulLhs mulRhs
-    (Lambda.LExpr.intConst () (2 * rv)) hlhs hrhs
 
 /-! ## The configuration invariant -/
 
@@ -426,6 +370,19 @@ private theorem set_inv {π : String → Option Core.Procedure} {fac : Core.Expr
   | eval_set heval hupdate _ _ =>
     cases hupdate with
     | update _ hres hother => exact ⟨_, heval, hres, hother, rfl⟩
+
+/-- A `set x := e` command step can only fire when `x` is already bound: the
+    `UpdateState` it performs requires a prior binding. -/
+private theorem set_pre {π : String → Option Core.Procedure} {fac : Core.Expression.Factory}
+    {σ σ' : SemanticStore Core.Expression} {x : Core.Expression.Ident}
+    {e : Core.Expression.Expr} {md : MetaData Core.Expression} {emitted}
+    (h : Core.EvalCommandE π fac σ (.cmd (.set x (.det e) md)) σ' emitted) :
+    (σ x).isSome = true := by
+  rcases h with ⟨hbase⟩
+  cases hbase with
+  | eval_set heval hupdate _ _ =>
+    cases hupdate with
+    | update hpre _ _ => simp [hpre]
 
 /-- Inversion of a nondeterministic `init x` command step. -/
 private theorem init_inv {π : String → Option Core.Procedure} {fac : Core.Expression.Factory}
@@ -607,15 +564,6 @@ private theorem run_preserves {π : String → Option Core.Procedure} {nv : Int}
 
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
 
-/-- Every precondition of the translated `sum_to_n` is the `int.ge(n, 0)` clause. -/
-private theorem pre_expr : ∀ lc ∈ sumToNProc.spec.preconditions.toList,
-    (Prod.snd lc).expr = geExpr := by native_decide
-
-/-- Every postcondition of the translated `sum_to_n` is the
-    `int.mul(2, result) == int.mul(n, int.add(n, 1))` clause. -/
-private theorem post_expr : ∀ lc ∈ sumToNProc.spec.postconditions.toList,
-    (Prod.snd lc).expr = ensExpr := by native_decide
-
 /-- The translated `sum_to_n` has a CFG body, namely `sumToNCFG`. -/
 private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG := by native_decide
 
@@ -623,33 +571,178 @@ private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG := by native_deci
 private theorem sumToN_find : sumToNAST.findProcByString? "sum_to_n" = some sumToNProc := by
   native_decide
 
-/-- **The CFG `sum_to_n` meets its contract.**  From `int.ge(n, 0)` and a nonnegative
-    integer input, the unstructured body establishes
-    `2 * result = n * (n + 1)`. -/
+/-! ## Contract denotation -/
+
+/-- `int.mul(2, _)`'s operand literal. -/
+private def twoExpr : Core.Expression.Expr := .const () (.intConst 2)
+/-- The arrow type carried by the `int.ge` operator. -/
+private def geArrowTy : Lambda.LMonoTy := .arrow .int (.arrow .int .bool)
+/-- The arrow type carried by the `int.add`/`int.mul` operators. -/
+private def intArrowTy : Lambda.LMonoTy := .arrow .int (.arrow .int .int)
+/-- The `int.ge` operator expression. -/
+private def geOpE : Core.Expression.Expr := .op () ⟨"Int.Ge", ()⟩ (some geArrowTy)
+/-- The `int.add` operator expression. -/
+private def addOpE : Core.Expression.Expr := .op () ⟨"Int.Add", ()⟩ (some intArrowTy)
+/-- The `int.mul` operator expression. -/
+private def mulOpE : Core.Expression.Expr := .op () ⟨"Int.Mul", ()⟩ (some intArrowTy)
+/-- The `sum_to_n` precondition expression `int.ge(n, 0)`. -/
+private def reqExprSpec : Core.Expression.Expr := .app () (.app () geOpE nExpr) zeroExpr
+/-- The `sum_to_n` postcondition expression `int.mul(2, result) == int.mul(n, int.add(n, 1))`. -/
+private def ensExprSpec : Core.Expression.Expr :=
+  .eq ()
+    (.app () (.app () mulOpE twoExpr) resultExpr)
+    (.app () (.app () mulOpE nExpr) (.app () (.app () addOpE nExpr) oneExpr))
+
+/-- `Lambda.LExpr.intConst` unfolds to a `.const` node. -/
+private theorem ic_eq (k : Int) :
+    (Lambda.LExpr.intConst () k : Core.Expression.Expr) = .const () (.intConst k) := rfl
+
+/-- The captured `int.ge(n, 0)` with `n ↦ nv` denotes to `nv ≥ 0`. -/
+private theorem denote_capReq (model : Lambda.Interp Core.Factory)
+    (fvarVal : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
+    (vt : Lambda.TyVarVal) (nv : Int)
+    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.app () geOpE (.const () (.intConst nv))) (.const () (.intConst 0))) .bool) :
+    (Lambda.LExpr.denote model.tcInterp model.opInterp fvarVal vt .nil
+      (.app () (.app () geOpE (.const () (.intConst nv))) (.const () (.intConst 0))) .bool h : Bool)
+      = decide (nv ≥ 0) := by
+  have hic : ∀ (i : Int) (hh : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.const () (.intConst i)) Lambda.LMonoTy.int),
+      Lambda.LExpr.denote model.tcInterp model.opInterp fvarVal vt .nil
+        (.const () (.intConst i)) Lambda.LMonoTy.int hh = i :=
+    fun i hh => Lambda.denote_intConst _ _ _ _ _ hh
+  have hop : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.op () ⟨"Int.Ge", ()⟩ (some geArrowTy)) (Lambda.LMonoTy.arrow .int (.arrow .int .bool)) := .op
+  have hnv : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst nv)) .int := .const
+  have hz : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst 0)) .int := .const
+  have happ1 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.op () ⟨"Int.Ge", ()⟩ (some geArrowTy)) (.const () (.intConst nv))) (.arrow .int .bool) :=
+    .app hop hnv
+  simp only [geOpE] at h ⊢
+  rw [Lambda.denote_app .nil happ1 hz h, Lambda.denote_app .nil hop hnv happ1]
+  simp only [hic]
+  rw [Lambda.denote_op]
+  show (model.opInterp "Int.Ge"
+    (Lambda.LSort.mkArrow .bool [.int, .int]) nv (0 : Int) : Bool)
+    = decide (nv ≥ 0)
+  rw [Core.intGe_opInterp model nv 0]
+
+/-- The captured `int.mul(2, result) == int.mul(n, int.add(n, 1))` with `n ↦ nv`,
+    `result ↦ rv` denotes to `true` whenever `2 * rv = nv * (nv + 1)`. -/
+private theorem denote_capEns (model : Lambda.Interp Core.Factory)
+    (fvarVal : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
+    (vt : Lambda.TyVarVal) (nv rv : Int) (hsum : 2 * rv = nv * (nv + 1))
+    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.eq ()
+        (.app () (.app () mulOpE (.const () (.intConst 2))) (.const () (.intConst rv)))
+        (.app () (.app () mulOpE (.const () (.intConst nv)))
+          (.app () (.app () addOpE (.const () (.intConst nv))) (.const () (.intConst 1))))) .bool) :
+    (Lambda.LExpr.denote model.tcInterp model.opInterp fvarVal vt .nil
+      (.eq ()
+        (.app () (.app () mulOpE (.const () (.intConst 2))) (.const () (.intConst rv)))
+        (.app () (.app () mulOpE (.const () (.intConst nv)))
+          (.app () (.app () addOpE (.const () (.intConst nv))) (.const () (.intConst 1))))) .bool h : Bool)
+      = true := by
+  have hic : ∀ (i : Int) (hh : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.const () (.intConst i)) Lambda.LMonoTy.int),
+      Lambda.LExpr.denote model.tcInterp model.opInterp fvarVal vt .nil
+        (.const () (.intConst i)) Lambda.LMonoTy.int hh = i :=
+    fun i hh => Lambda.denote_intConst _ _ _ _ _ hh
+  have hmulOp : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.op () ⟨"Int.Mul", ()⟩ (some intArrowTy)) (Lambda.LMonoTy.arrow .int (.arrow .int .int)) := .op
+  have haddOp : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.op () ⟨"Int.Add", ()⟩ (some intArrowTy)) (Lambda.LMonoTy.arrow .int (.arrow .int .int)) := .op
+  have h2 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst 2)) .int := .const
+  have hrv : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst rv)) .int := .const
+  have hnv : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst nv)) .int := .const
+  have h1 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] (.const () (.intConst 1)) .int := .const
+  have hlhs1 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.op () ⟨"Int.Mul", ()⟩ (some intArrowTy)) (.const () (.intConst 2))) (.arrow .int .int) := .app hmulOp h2
+  have hlhs : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.app () (.op () ⟨"Int.Mul", ()⟩ (some intArrowTy)) (.const () (.intConst 2))) (.const () (.intConst rv))) .int := .app hlhs1 hrv
+  have hadd1 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.op () ⟨"Int.Add", ()⟩ (some intArrowTy)) (.const () (.intConst nv))) (.arrow .int .int) := .app haddOp hnv
+  have hadd : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.app () (.op () ⟨"Int.Add", ()⟩ (some intArrowTy)) (.const () (.intConst nv))) (.const () (.intConst 1))) .int := .app hadd1 h1
+  have hrhs1 : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.op () ⟨"Int.Mul", ()⟩ (some intArrowTy)) (.const () (.intConst nv))) (.arrow .int .int) := .app hmulOp hnv
+  have hrhs : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
+      (.app () (.app () (.op () ⟨"Int.Mul", ()⟩ (some intArrowTy)) (.const () (.intConst nv)))
+        (.app () (.app () (.op () ⟨"Int.Add", ()⟩ (some intArrowTy)) (.const () (.intConst nv))) (.const () (.intConst 1)))) .int := .app hrhs1 hadd
+  simp only [mulOpE, addOpE] at h ⊢
+  apply Lambda.denote_eq_true .nil hlhs hrhs h
+  rw [Lambda.denote_app .nil hlhs1 hrv hlhs, Lambda.denote_app .nil hmulOp h2 hlhs1,
+      Lambda.denote_app .nil hrhs1 hadd hrhs, Lambda.denote_app .nil hmulOp hnv hrhs1,
+      Lambda.denote_app .nil hadd1 h1 hadd, Lambda.denote_app .nil haddOp hnv hadd1]
+  simp only [hic]
+  rw [Lambda.denote_op, Lambda.denote_op]
+  show (model.opInterp "Int.Mul"
+          (Lambda.LSort.mkArrow .int [.int, .int]) (2 : Int) rv : Int)
+      = (model.opInterp "Int.Mul"
+          (Lambda.LSort.mkArrow .int [.int, .int]) nv
+          (model.opInterp "Int.Add"
+            (Lambda.LSort.mkArrow .int [.int, .int]) nv (1 : Int)))
+  rw [Core.intMul_opInterp model 2 rv, Core.intAdd_opInterp model nv 1, Core.intMul_opInterp model nv (nv + 1)]
+  exact hsum
+
+/-- The semantic `requires` forces `0 ≤ n` on a typed `n` binding. -/
+private theorem req_nonneg (model : Lambda.Interp Core.Factory) (ρ : Imperative.Env Core.Expression)
+    (nv : Int) (hfac : ρ.factory = Core.Factory) (hvn : ρ.store nId = some (.intConst () nv))
+    (hpre : Core.Logic.Hoare.Procedure.preAsPredicate model sumToNProc ρ) : 0 ≤ nv := by
+  obtain ⟨⟨l, c⟩, hmem, _⟩ :
+      ∃ p ∈ sumToNProc.spec.preconditions.toList, (Prod.snd p).expr = reqExprSpec := by native_decide
+  have hcexpr : c.expr = reqExprSpec := by
+    have key : ∀ p ∈ sumToNProc.spec.preconditions.toList, (Prod.snd p).expr = reqExprSpec := by
+      native_decide
+    exact key (l, c) hmem
+  rcases hpre l c hmem (someValuation model) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · have hcap : Core.Logic.capturedExpr
+        { factory := ρ.factory, store := ρ.store, label := l, expr := c.expr, metadata := c.md }
+        = .app () (.app () geOpE (.const () (.intConst nv))) (.const () (.intConst 0)) := by
+      simp only [Core.Logic.capturedExpr, hcexpr, reqExprSpec, geOpE, nExpr, zeroExpr,
+        Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hvn, ic_eq]
+    rw [hcap] at hex
+    obtain ⟨hty, hd⟩ := hex
+    rw [denote_capReq model (someValuation model).freeVarVal (someValuation model).tyVarVal nv hty] at hd
+    exact of_decide_eq_true hd
+  · exact absurd hfac hne
+
+/-- The final-store fact `2 * result = n * (n + 1)` discharges the semantic `ensures`. -/
+private theorem post_holds (model : Lambda.Interp Core.Factory) (ρ : Imperative.Env Core.Expression)
+    (nv rv : Int) (hfac : ρ.factory = Core.Factory) (hvn : ρ.store nId = some (.intConst () nv))
+    (hr : ρ.store resultId = some (.intConst () rv)) (hsum : 2 * rv = nv * (nv + 1)) :
+    Core.Logic.Hoare.Procedure.postAsPredicate model sumToNProc ρ := by
+  intro l c hmem _hattr world
+  have hcexpr : c.expr = ensExprSpec := by
+    have key : ∀ p ∈ sumToNProc.spec.postconditions.toList, (Prod.snd p).expr = ensExprSpec := by
+      native_decide
+    exact key (l, c) hmem
+  have hcap : Core.Logic.capturedExpr
+      { factory := ρ.factory, store := ρ.store, label := l, expr := c.expr, metadata := c.md }
+      = .eq ()
+          (.app () (.app () mulOpE (.const () (.intConst 2))) (.const () (.intConst rv)))
+          (.app () (.app () mulOpE (.const () (.intConst nv)))
+            (.app () (.app () addOpE (.const () (.intConst nv))) (.const () (.intConst 1)))) := by
+    simp only [Core.Logic.capturedExpr, hcexpr, ensExprSpec, mulOpE, addOpE, nExpr, resultExpr,
+      twoExpr, oneExpr, Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hvn, hr, ic_eq]
+  refine Or.inl ⟨hfac, ?_⟩
+  rw [hcap]
+  exact ⟨.eq (.app (.app .op .const) .const) (.app (.app .op .const) (.app (.app .op .const) .const)),
+    denote_capEns model world.freeVarVal world.tyVarVal nv rv hsum
+      (.eq (.app (.app .op .const) .const) (.app (.app .op .const) (.app (.app .op .const) .const)))⟩
+
+/-- The CFG `sum_to_n` meets its contract. -/
 theorem sum_to_n_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple sumToNAST testParams "sum_to_n" := by
-  refine ⟨sumToNProc, sumToN_find, ?_⟩
+  refine ⟨sumToNProc, sumToN_find, by native_decide, ?_⟩
+  intro model
   rw [sumToN_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨hpre, rfl⟩ := hpre
   obtain ⟨hpreP, hfac, _hold, hinput⟩ := hpre
-  -- `n` holds an integer, nonnegative by the `requires`.
   obtain ⟨vn, hvn, invn⟩ := hinput nId Lambda.LMonoTy.int (by native_decide)
   obtain ⟨nv, rfl⟩ := invn
-  have hge : Core.Expression.eval ρ₀.factory ρ₀.store geExpr = some Imperative.HasBool.tt := by
-    obtain ⟨lc, hmem, hexpr⟩ :
-        ∃ lc ∈ sumToNProc.spec.preconditions.toList, (Prod.snd lc).expr = geExpr := by native_decide
-    have heval := hpreP lc.1 lc.2 hmem
-    rw [hexpr] at heval
-    exact heval
-  rw [hfac] at hge
-  have heqb := Option.some.inj (hge.symm.trans (eval_ge ρ₀.store nv hvn))
-  have hnonneg : 0 ≤ nv := by
-    by_cases hc : (0 : Int) ≤ nv
-    · exact hc
-    · rw [decide_eq_false (by simpa using hc)] at heqb
-      exact absurd heqb (by decide)
-  -- Either `TerminatesAt` disjunct is the same terminal run.
+  have hnonneg : 0 ≤ nv := req_nonneg model ρ₀ nv hfac hvn hpreP
   have hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE sumToNAST.findProcByString?))
       (.atBlock sumToNCFG sumToNCFG.entry ρ₀) trace (.terminal ρ') := by
     rcases hterm with h | ⟨_, h⟩ <;> exact h
@@ -657,7 +750,6 @@ theorem sum_to_n_meets_contract :
   obtain ⟨hfinal, htrace⟩ := run_preserves hnonneg (RunInv.atEntry ρ₀ hfac hvn) hrun
   subst htrace
   refine ⟨True.intro, fun _ => ?_⟩
-  intro label check hmem _hattr
   obtain ⟨hfac', hpost⟩ := runInv_terminal hfinal
   obtain ⟨rv, hn', hr, hsum⟩ := hpost
   have hresultEntry : (ρ₀.store resultId).isSome :=
@@ -668,9 +760,8 @@ theorem sum_to_n_meets_contract :
   have hresultProjected : Imperative.projectStore ρ₀.store ρ'.store resultId =
       some (.intConst () rv) := by
     simp [Imperative.projectStore, hresultEntry, hr]
-  rw [post_expr (label, check) hmem, hfac']
-  exact ens_eval (Imperative.projectStore ρ₀.store ρ'.store) nv rv
-    hnProjected hresultProjected hsum
+  exact post_holds model { ρ' with store := Imperative.projectStore ρ₀.store ρ'.store }
+    nv rv hfac' hnProjected hresultProjected hsum
 
 /-! ## Non-vacuity of the CFG contract reading and a `CFGInitEnvWF` witness
 
@@ -794,30 +885,38 @@ private theorem falseEns_run :
       (Core.coreEvaluator_WellFormedSemanticEvalVar Core.Factory)))) <|
   .step _ [] _ [] _ (StepCFGE.step_admin Imperative.StepCFG.finish) (.refl _)
 
-/-- `false` never evaluates to `true` in any store at `Core.Factory`. -/
-private theorem ff_ne_eval_tt {σ : Core.CoreStore} :
-    ¬ Core.Expression.eval Core.Factory σ Imperative.HasBool.ff = some Imperative.HasBool.tt := by
-  intro h
-  have hff : Core.Expression.eval Core.Factory σ Imperative.HasBool.ff = some Imperative.HasBool.ff :=
-    Lambda.evalFully_const Core.Factory σ () (Lambda.LConst.boolConst false)
-  rw [hff] at h
-  exact absurd (Option.some.inj h) (by decide)
+/-- The captured `false` literal never holds denotationally at `Core.Factory`:
+    its closed captured form denotes `false` in every world. -/
+private theorem ff_not_holds (model : Lambda.Interp Core.Factory)
+    (world : Core.Logic.DenoteValuation model) (σ : Core.CoreStore)
+    (lbl : Core.CoreLabel) (md : Imperative.MetaData Core.Expression) :
+    ¬ (Core.Logic.DenoteBasedInterp model).holds world
+      ⟨Core.Factory, σ, lbl, Imperative.HasBool.ff, md⟩ := by
+  rintro (⟨_, hex⟩ | ⟨hne, _⟩)
+  · have hcap : Core.Logic.capturedExpr
+        (⟨Core.Factory, σ, lbl, Imperative.HasBool.ff, md⟩ :
+          Imperative.EventArg Core.Expression) = Imperative.HasBool.ff := by
+      simp only [Core.Logic.capturedExpr, Imperative.HasBool.ff, Core.Core.false,
+        Lambda.LExpr.boolConst, Lambda.LExpr.substFvarsFromEnv]
+    rw [hcap] at hex
+    obtain ⟨_hty, hd⟩ := hex
+    simp [Imperative.HasBool.ff, Core.Core.false, Lambda.LExpr.boolConst, Lambda.LMonoTy.bool,
+      Lambda.denote_boolConst] at hd
+  · exact hne rfl
 
-/-- **A reachable terminal refutes a false `ensures`.**  `false_ens` does not meet
-    its contract: its CFG body terminates, so partial-correctness vacuity cannot
-    satisfy its `ensures false`. -/
+/-- The terminating `false_ens` procedure does not meet its contract. -/
 theorem false_ens_contract_refuted :
     ¬ Core.Logic.Hoare.Procedure.contractTriple falseEnsPgm testParams "false_ens" := by
+  obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
-  obtain ⟨proc, hfind, htriple⟩ := h
+  obtain ⟨proc, hfind, _htyped, htriple⟩ := h
   have hpe : proc = falseEnsProc := by
     have hf : falseEnsPgm.findProcByString? "false_ens" = some falseEnsProc := by native_decide
     exact Option.some.inj (hfind.symm.trans hf)
   subst hpe
   have hbody : falseEnsProc.body = .cfg falseEnsCFG := falseEns_body
   rw [hbody] at htriple
-  -- Specialize the universally-quantified entry environment and the run.
-  have hpre : Core.Logic.Hoare.Procedure.contractPre falseEnsProc ρ0N := by
+  have hpre : Core.Logic.Hoare.Procedure.contractPre model falseEnsProc ρ0N := by
     refine ⟨?_, rfl, ?_, ?_⟩
     · intro label check hmem
       rw [show falseEnsProc.spec.preconditions.toList = [] from by native_decide] at hmem
@@ -828,18 +927,17 @@ theorem false_ens_contract_refuted :
     · intro id ty hmem
       rw [show falseEnsProc.header.inputs.toList = [] from by native_decide] at hmem
       simp at hmem
-  obtain ⟨_, hpost⟩ := htriple ρ0N ρ0N { ρ0N with store := σ2N } []
+  obtain ⟨_, hpost⟩ := htriple model ρ0N ρ0N { ρ0N with store := σ2N } []
     ⟨hpre, rfl⟩ false_ens_initEnvWF (Or.inl falseEns_run)
-  have hreach : Trace.Reachable Core.Expression (EvaluatorBasedInterp Core.Expression) [] :=
-    ⟨(), by intro c hc; simp at hc⟩
-  -- The sole postcondition is literally `false`, which never evaluates to `tt`.
+  have hreach : Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp model) [] :=
+    ⟨someValuation model, by intro c hc; simp at hc⟩
   obtain ⟨⟨plabel, pcheck⟩, hmem, hattr, hexpr⟩ :
       ∃ lc ∈ falseEnsProc.spec.postconditions.toList,
         (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
         (Prod.snd lc).expr = Imperative.HasBool.ff := by native_decide
-  have hp := hpost hreach plabel pcheck hmem hattr
-  rw [hexpr] at hp
-  exact ff_ne_eval_tt hp
+  have hcheck := (hpost hreach) plabel pcheck hmem hattr (someValuation model)
+  rw [hexpr] at hcheck
+  exact ff_not_holds model (someValuation model) _ plabel _ hcheck
 
 /-! ## `call_of_contract` applied to a CFG-body callee
 
@@ -973,11 +1071,37 @@ private theorem run_preserves_copy {π : String → Option Core.Procedure} {a : 
     subst hem hrest
     exact ⟨hfinal, rfl⟩
 
+/-- An `ensures` that equates two variables, each bound to the same integer value
+    in the store, holds denotationally in every world of every model: after store
+    substitution both sides are the literal `a`, so the equality denotes to `true`
+    regardless of how the model interprets the factory's operators. -/
+private theorem checkAsPredicate_eq_of_binds
+    (model : Lambda.Interp Core.Factory) (ρ : Imperative.Env Core.Expression)
+    (lbl : Core.CoreLabel) (check : Core.Procedure.Check)
+    (x y : Core.Expression.Ident) (tyx tyy : Option Lambda.LMonoTy) (a : Int)
+    (hfac : ρ.factory = Core.Factory)
+    (hexpr : check.expr =
+      Lambda.LExpr.eq () (.fvar () x tyx) (.fvar () y tyy))
+    (hx : ρ.store x = some (Lambda.LExpr.intConst () a))
+    (hy : ρ.store y = some (Lambda.LExpr.intConst () a)) :
+    Core.Logic.Hoare.Procedure.checkAsPredicate model ρ lbl check := by
+  intro world
+  refine Or.inl ⟨hfac, ?_⟩
+  simp only [Core.Logic.capturedExpr, hexpr, Lambda.LExpr.substFvarsFromEnv,
+    Lambda.Env.mk, hx, hy]
+  have hty : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) ([] : List Lambda.LMonoTy)
+      (Lambda.LExpr.eq () (Lambda.LExpr.intConst () a) (Lambda.LExpr.intConst () a))
+      Lambda.LMonoTy.bool := Lambda.LExpr.typeCheck_to_HasTypeA (by rfl)
+  refine ⟨hty, ?_⟩
+  cases hty with
+  | eq h1 h2 => exact Lambda.denote_eq_true .nil h1 h2 (.eq h1 h2) rfl
+
 /-- **`copy` meets its contract.**  From input `x`, the CFG body establishes
     `result == x` on the projected final store. -/
 theorem copy_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple copyPgm testParams "copy" := by
-  refine ⟨copyProc, copy_find, ?_⟩
+  refine ⟨copyProc, copy_find, by native_decide, ?_⟩
+  intro model
   rw [copy_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨hpre, rfl⟩ := hpre
@@ -992,7 +1116,6 @@ theorem copy_meets_contract :
   cases hfinal with
   | terminal _ hf' hx' hr' =>
     refine ⟨True.intro, fun _ => ?_⟩
-    intro label check hmem _hattr
     have hxEntry : (ρ₀.store xIdC).isSome :=
       hinit.readWritesDefined xIdC (by native_decide) (by native_decide)
     have hrEntry : (ρ₀.store resultId).isSome :=
@@ -1001,11 +1124,10 @@ theorem copy_meets_contract :
         some (Lambda.LExpr.intConst () a) := by simp [Imperative.projectStore, hxEntry, hx']
     have hrProj : Imperative.projectStore ρ₀.store ρ'.store resultId =
         some (Lambda.LExpr.intConst () a) := by simp [Imperative.projectStore, hrEntry, hr']
-    rw [post_expr_copy (label, check) hmem, hf']
-    exact Lambda.evalFully_eq_self Core.Factory (Imperative.projectStore ρ₀.store ρ'.store) ()
-      resultExpr xExprC (Lambda.LExpr.intConst () a)
-      (eval_fvar_int (Imperative.projectStore ρ₀.store ρ'.store) resultId intTy a hrProj)
-      (eval_fvar_int (Imperative.projectStore ρ₀.store ρ'.store) xIdC intTy a hxProj)
+    intro label check hmem _hattr
+    exact checkAsPredicate_eq_of_binds model
+      { ρ' with store := Imperative.projectStore ρ₀.store ρ'.store } label check
+      resultId xIdC intTy intTy a hf' (post_expr_copy (label, check) hmem) hrProj hxProj
 
 /-! ### The callee body frame: `CopyFrame` -/
 
@@ -1107,6 +1229,110 @@ theorem copy_body_frame :
     cases hfinal with
     | terminal _ hfr => exact frame_project hfr
 
+/-! ### The callee output typing: `CopyTypedOut` -/
+
+/-- Output-typing invariant for a `copy` run from entry store `σe` at factory
+    `fac`, whose input `x` holds the integer `a`.  The `atEntry`/`preSet` points
+    pin the running store to `σe`; once the `result := x` assignment has fired, the
+    invariant records both that `result` was already bound in `σe` (so it survives
+    projection) and that it now holds the literal `a`.  The invariant is factory
+    generic: `bodyOutputsTyped` must hold at the caller's factory, whatever it is. -/
+private inductive CopyTypedOut (fac : Core.Expression.Factory) (σe : Core.CoreStore) (a : Int) :
+    CFGConfig String Core.Command Core.Expression → Prop where
+  | atEntry (ρ : Env Core.Expression) (hf : ρ.factory = fac) (hs : ρ.store = σe)
+      (hx : σe xIdC = some (Lambda.LExpr.intConst () a)) :
+      CopyTypedOut fac σe a (.atBlock copyCFG "entry" ρ)
+  | preSet (ρ : Env Core.Expression) (hf : ρ.factory = fac) (hs : ρ.store = σe)
+      (hx : σe xIdC = some (Lambda.LExpr.intConst () a)) :
+      CopyTypedOut fac σe a
+        (.inBlock copyCFG "entry" [copySet] (.finish (transferMdOf copyCFG "entry")) ρ)
+  | atFinish (ρ : Env Core.Expression) (hf : ρ.factory = fac)
+      (hre : (σe resultId).isSome = true)
+      (hr : ρ.store resultId = some (Lambda.LExpr.intConst () a)) :
+      CopyTypedOut fac σe a
+        (.inBlock copyCFG "entry" [] (.finish (transferMdOf copyCFG "entry")) ρ)
+  | terminal (ρ : Env Core.Expression) (hf : ρ.factory = fac)
+      (hre : (σe resultId).isSome = true)
+      (hr : ρ.store resultId = some (Lambda.LExpr.intConst () a)) :
+      CopyTypedOut fac σe a (.terminal ρ)
+
+/-- One CFG step preserves `CopyTypedOut` and emits no events. -/
+private theorem step_preserves_typed {π : String → Option Core.Procedure}
+    {fac : Core.Expression.Factory} {σe : Core.CoreStore} {a : Int}
+    {before after : CFGConfig String Core.Command Core.Expression}
+    {emitted : List (Event Core.Expression)}
+    (hinv : CopyTypedOut fac σe a before)
+    (hstep : StepCFGE Core.Expression (Core.EvalCommandE π) before emitted after) :
+    CopyTypedOut fac σe a after ∧ emitted = [] := by
+  cases hinv with
+  | atEntry ρ hf hs hx =>
+    cases hstep using StepCFGE.casesRules with
+    | fetch hlookup =>
+      have hb := Option.some.inj (hlookup.symm.trans copy_entry_lookup)
+      rw [hb]
+      exact ⟨CopyTypedOut.preSet ρ hf hs hx, rfl⟩
+  | preSet ρ hf hs hx =>
+    cases hstep using StepCFGE.casesRules with
+    | step_cmd hcmd =>
+      have hre : (ρ.store resultId).isSome = true := set_pre hcmd
+      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      rw [hf, hs] at heval
+      rw [hs] at hre
+      have hv : v = Lambda.LExpr.intConst () a :=
+        Option.some.inj (heval.symm.trans (evalFully_fvar_int_gen fac σe xIdC intTy a hx))
+      subst hv
+      exact ⟨CopyTypedOut.atFinish _ hf hre hres, rfl⟩
+  | atFinish ρ hf hre hr =>
+    cases hstep using StepCFGE.casesRules with
+    | finish => exact ⟨CopyTypedOut.terminal ρ hf hre hr, rfl⟩
+  | terminal ρ hf hre hr =>
+    cases hstep using StepCFGE.casesRules
+
+/-- A whole run preserves `CopyTypedOut` and emits no events. -/
+private theorem run_preserves_typed {π : String → Option Core.Procedure}
+    {fac : Core.Expression.Factory} {σe : Core.CoreStore} {a : Int}
+    {start final : CFGConfig String Core.Command Core.Expression}
+    {trace : List (Event Core.Expression)}
+    (hinv : CopyTypedOut fac σe a start)
+    (hrun : ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE π)) start trace final) :
+    CopyTypedOut fac σe a final ∧ trace = [] := by
+  induction hrun with
+  | refl _ => exact ⟨hinv, rfl⟩
+  | step _ emitted _ rest _ hstep _ ih =>
+    obtain ⟨hnext, hem⟩ := step_preserves_typed hinv hstep
+    obtain ⟨hfinal, hrest⟩ := ih hnext
+    subst hem hrest
+    exact ⟨hfinal, rfl⟩
+
+/-- Every `copy` body run binds `result` to a value of its declared type. -/
+private theorem copy_body_outputs_typed :
+    ∀ proc, copyPgm.findProcByString? "copy" = some proc →
+      Core.Logic.Hoare.Procedure.bodyOutputsTyped copyPgm.findProcByString? proc := by
+  intro proc hlk
+  obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
+  intro σ_entry fac σ_exit emitted _hfac hin hbody
+  obtain ⟨vx, hvx, hvt⟩ := hin xIdC Lambda.LMonoTy.int (by native_decide)
+  obtain ⟨a, rfl⟩ := hvt
+  rw [copy_body] at hbody
+  cases hbody with
+  | cfg hrun =>
+    rename_i ρ'
+    rw [copy_entry] at hrun
+    obtain ⟨hfinal, _⟩ :=
+      run_preserves_typed (CopyTypedOut.atEntry ⟨σ_entry, fac, false⟩ rfl rfl hvx) hrun
+    cases hfinal with
+    | terminal _ _hf hre hr =>
+      intro id ty hmem
+      rw [show copyProc.header.outputs.toList = [(resultId, Lambda.LMonoTy.int)]
+        from by native_decide] at hmem
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
+      obtain ⟨rfl, rfl⟩ := hmem
+      refine ⟨Lambda.LExpr.intConst () a, ?_, a, rfl⟩
+      show Imperative.projectStore σ_entry ρ'.store resultId = some (Lambda.LExpr.intConst () a)
+      unfold Imperative.projectStore
+      rw [if_pos hre]
+      exact hr
+
 /-! ### Applying `call_of_contract` to the CFG callee -/
 
 /-- The call `call copy(a, out z)`. -/
@@ -1118,12 +1344,44 @@ private def CopyCallPre (ρ : Env Core.Expression) : Prop :=
   ρ.factory = Core.Factory ∧ (∃ av, ρ.store aIdC = some (Lambda.LExpr.intConst () av)) ∧
     (ρ.store zIdC).isSome
 
-/-- Caller postcondition: after the output is returned, `z == a` holds. -/
+/-- Caller postcondition: after the call returns, `z == a` evaluates to `true`.
+    The callee output `result`, which is written back into `z`, is a canonical
+    integer (from `outputAsPredicate`), and the semantic callee equality
+    `result == x` pins it to `a`'s value, so the concrete `eval`-level comparison
+    `z == a` reduces to `true`. -/
 private def CopyCallPost (ρ : Env Core.Expression) : Prop :=
   ρ.factory = Core.Factory ∧
     Core.Expression.eval Core.Factory ρ.store
       (Lambda.LExpr.eq () (Lambda.LExpr.fvar () zIdC intTy) (Lambda.LExpr.fvar () aIdC intTy))
       = some Imperative.HasBool.tt
+
+/-- When `result` and `x` are bound to integer literals, holding their equality
+    denotationally in one world forces the literals to coincide. -/
+private theorem resultEq_inv (model : Lambda.Interp Core.Factory)
+    (ρ : Imperative.Env Core.Expression) (lbl : Core.CoreLabel) (check : Core.Procedure.Check)
+    (i av : Int) (hfac : ρ.factory = Core.Factory) (hexpr : check.expr = ensExprC)
+    (hr : ρ.store resultId = some (Lambda.LExpr.intConst () i))
+    (hx : ρ.store xIdC = some (Lambda.LExpr.intConst () av))
+    (h : Core.Logic.Hoare.Procedure.checkAsPredicate model ρ lbl check) : i = av := by
+  rcases h (someValuation model) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · have hcap : Core.Logic.capturedExpr
+        { factory := ρ.factory, store := ρ.store, label := lbl, expr := check.expr,
+          metadata := check.md }
+        = Lambda.LExpr.eq () (Lambda.LExpr.intConst () i) (Lambda.LExpr.intConst () av) := by
+      simp only [Core.Logic.capturedExpr, hexpr, ensExprC, resultExpr, xExprC,
+        Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hr, hx]
+    rw [hcap] at hex
+    obtain ⟨hty, hd⟩ := hex
+    cases hty with
+    | eq hleft hright =>
+      cases Lambda.HasTypeA.const_inv hleft
+      have heq := Lambda.denote_eq_true_implies_eq .nil hleft hright (.eq hleft hright) hd
+      have hd1 := Lambda.denote_intConst model.tcInterp model.opInterp
+        (someValuation model).freeVarVal (someValuation model).tyVarVal .nil hleft
+      have hd2 := Lambda.denote_intConst model.tcInterp model.opInterp
+        (someValuation model).freeVarVal (someValuation model).tyVarVal .nil hright
+      exact hd1.symm.trans (heq.trans hd2)
+  · exact absurd hfac hne
 
 /-- The callee entry frame `σAO` for `copy(a, out z)` binds `x` to `a`'s value and
     `result` to `z`'s slot value, both values, and is a well-formed store. -/
@@ -1189,10 +1447,11 @@ private theorem copy_callentry_facts
 theorem copy_call_triple :
     Core.Logic.Hoare.Triple copyPgm.findProcByString? testParams CopyCallPre
       [Core.Statement.call "copy" copyCall .empty] CopyCallPost := by
-  refine Core.Logic.Hoare.Procedure.call_of_contract copyPgm testParams "copy" copyCall .empty
-    CopyCallPre CopyCallPost copy_meets_contract copy_body_frame ?_ ?_
+  refine Core.Logic.Hoare.Procedure.call_of_contract copyPgm testParams
+    "copy" copyCall .empty CopyCallPre CopyCallPost copy_meets_contract
+    copy_body_frame copy_body_outputs_typed ?_ ?_
   · -- hentry
-    intro ρ₀ proc σAO hpre hwf hlk hce
+    intro model ρ₀ proc σAO hpre hwf hlk hce
     obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
     obtain ⟨hfac, ⟨av, ha⟩, _hz⟩ := hpre
     obtain ⟨hAOx, ⟨vz, hAOr, hvzval⟩, hwfAO⟩ :=
@@ -1242,7 +1501,7 @@ theorem copy_call_triple :
             rw [show Imperative.DetCFG.initTypes copyCFG = [] from by native_decide] at hty
             simp at hty }
   · -- hexit
-    intro ρ₀ proc ρ' σ' σAO hpre hwf hlk hpost hρ'fac hce hframeRel hcallexit
+    intro model ρ₀ proc ρ' σ' σAO hpre hwf hlk hpost houtputsρ hρ'fac hce hframeRel hcallexit
     obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
     obtain ⟨hfac, ⟨av, ha⟩, _hz⟩ := hpre
     obtain ⟨hAOx, _, _⟩ :=
@@ -1257,37 +1516,36 @@ theorem copy_call_triple :
     have hxFinal : ρ'.store xIdC = some (Lambda.LExpr.intConst () av) := by
       have hf := hframeRel [xIdC] hdisjx xIdC xIdC (by simp)
       rw [← hf]; exact hAOx
+    obtain ⟨vr, hrStore, hvt⟩ := houtputsρ resultId Lambda.LMonoTy.int (by native_decide)
+    obtain ⟨i, rfl⟩ := hvt
+    obtain ⟨⟨plabel, pcheck⟩, hmem, hattr, hpexpr⟩ :
+        ∃ lc ∈ copyProc.spec.postconditions.toList,
+          (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
+          (Prod.snd lc).expr = ensExprC := by native_decide
+    have hiav : i = av :=
+      resultEq_inv model ρ' plabel pcheck i av (hρ'fac.trans hfac) hpexpr hrStore hxFinal
+        (hpost plabel pcheck hmem hattr)
+    rw [hiav] at hrStore
     obtain ⟨_, outputVals, hRV, hUpd⟩ := hcallexit
     rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) copyProc.header
       = [resultId] from by native_decide] at hRV
     rw [show Imperative.CallArg.getLhs copyCall = [zIdC] from rfl] at hUpd
     cases hRV with
-    | read_some hres hvr_val hRV2 =>
+    | read_some hres _hvr_val hRV2 =>
       cases hRV2
       cases hUpd with
       | update_some hub hUpd2 =>
         cases hUpd2
         cases hub with
         | update _ hznew hzother =>
-          obtain ⟨⟨plabel, pcheck⟩, hmem, hattr, hpexpr⟩ :
-              ∃ lc ∈ copyProc.spec.postconditions.toList,
-                (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
-                (Prod.snd lc).expr = ensExprC := by native_decide
-          have hposteval := hpost plabel pcheck hmem hattr
-          rw [hpexpr, hρ'fac, hfac] at hposteval
-          rw [hfac] at hvr_val
-          have hlhs := Lambda.evalFully_fvar_of_value Core.Factory ρ'.store () resultId intTy _
-            hres hvr_val
-          have hrhs := eval_fvar_int ρ'.store xIdC intTy av hxFinal
-          have heql := Lambda.eql_true_of_evalFully_eq_true Core.Factory ρ'.store () resultExpr
-            xExprC _ (Lambda.LExpr.intConst () av) hlhs hrhs hposteval
           refine ⟨hfac, ?_⟩
-          have hzEval := Lambda.evalFully_fvar_of_value Core.Factory σ' () zIdC intTy _
-            hznew hvr_val
+          have hzEnd : σ' zIdC = some (Lambda.LExpr.intConst () av) := by
+            rw [hznew]; exact congrArg some (Option.some.inj (hres.symm.trans hrStore))
+          have hzEval := eval_fvar_int σ' zIdC intTy av hzEnd
           have haEval := eval_fvar_int σ' aIdC intTy av
             (by rw [hzother aIdC (ident_ne (by decide))]; exact ha)
-          exact Lambda.evalFully_eq_of_evalFully Core.Factory σ' ()
-            (Lambda.LExpr.fvar () zIdC intTy) (Lambda.LExpr.fvar () aIdC intTy) _
-            (Lambda.LExpr.intConst () av) true hzEval haEval heql
+          exact Lambda.evalFully_eq_self Core.Factory σ' ()
+            (Lambda.LExpr.fvar () zIdC intTy) (Lambda.LExpr.fvar () aIdC intTy)
+            (Lambda.LExpr.intConst () av) hzEval haEval
 
 end Strata

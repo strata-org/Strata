@@ -508,12 +508,6 @@ for interpreting each captured `EventArg` in that world.
 
 {docstring Imperative.ConditionInterp}
 
-The initial implementation delegates condition interpretation to the partial
-`PureExpr.eval` evaluator. A denotational interpretation can replace it without
-changing the operational transition relation or trace representation.
-
-{docstring Imperative.EvaluatorBasedInterp}
-
 {docstring Imperative.Event.neutral}
 
 Only assumption events constrain the worlds considered later in a trace.
@@ -566,11 +560,11 @@ assumptions.
 
 ## Hoare Logic
 
-A partial-correctness Hoare triple `Strata.Logic.Hoare.Triple`
+A partial-correctness Hoare triple `Strata.Logic.Hoare.TripleWith`
 ([`Logic/HoareTemplate.lean`](https://github.com/strata-org/Strata/blob/main/Strata/DL/Imperative/Logic/HoareTemplate.lean)),
 states that any run of `s` from an initial environment satisfying `Pre` that
 reaches a terminal or exiting (like `break` in C/Java) configuration emits an
-assertion-valid trace under `EvaluatorBasedInterp`.  If that trace is
+assertion-valid trace under its supplied condition interpreter.  If that trace is
 `Trace.Reachable`, the final environment also satisfies `Post`.
 
 For Imperative's structured statements, since Imperative doesn't fix command type
@@ -579,9 +573,16 @@ and wellformedness of the statement, the structural rules (`consequence`, `seq_a
 well-formedness side conditions as additional assumptions.
 
 The Hoare rules of Strata Core ([`Core/Logic/Hoare.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/Hoare.lean))
-instantiates the Imperative template over its block language `EventLang.coreBlock`
-with its own wellformedness conditions `Core.Logic.BlockInitEnvWF` and discharges
-the side conditions. Also, a Core procedure can be translated into a Hoare triple.
+instantiate the Imperative template over its block language `EventLang.coreBlock`
+with its own wellformedness conditions `Core.Logic.BlockInitEnvWF` and discharge
+the side conditions. Core interprets assertion and assumption conditions through
+Lambda's denotational semantics: `Core.Logic.DenoteBasedInterp` captures the
+store in each `Lambda.LExpr`, checks its type, and interprets it with
+`Lambda.LExpr.denote` in a model of `Core.Factory`. The default Core triple
+quantifies over every such model. In this current denotation, Core `real` has
+Lean domain `Rat`; these correctness statements are therefore about rational
+semantics and do not claim adequacy with mathematical or SMT `Real`. Also, a
+Core procedure can be translated into a Hoare triple.
 [`Core/Logic/ContractToHoareTriple.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/ContractToHoareTriple.lean),
 `Procedure.contractTriple` reads a `spec { requires ...; ensures ...; }` as a triple
 over the body — the `requires` clauses (including `free` ones, which the caller

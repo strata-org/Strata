@@ -19,7 +19,7 @@ well-formedness predicate.  All of it is parametric over the shared
 pure-expression system `P`.
 
 Bundling these lets a statement be made once and reused across languages —
-`Strata.Logic.Hoare.Triple` (in `Strata.DL.Imperative.Logic.HoareTemplate`) and the
+`Strata.Logic.Hoare.TripleWith` (in `Strata.DL.Imperative.Logic.HoareTemplate`) and the
 `Overapproximates` family (in `Strata.Transform.Specification`) both quantify
 over an arbitrary `Strata.Logic.Lang P`, which is what allows a result to relate
 a structured source language to an unstructured CFG target.
