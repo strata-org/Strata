@@ -321,14 +321,29 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
+mutual
+
 /-- Does the term apply a datatype constructor, tester or selector?  `denoteTerm`
     has no case for these, so a query containing one has no denotation. -/
-partial def Term.hasDatatypeOp : Term → Bool
+private def Term.hasDatatypeOp (t : Term) : Bool :=
+  match t with
   | .app (.datatype_op ..) _ _ => true
-  | .app _ args _ => args.any Term.hasDatatypeOp
-  | .quant _ _ trs body => body.hasDatatypeOp || trs.any (·.any Term.hasDatatypeOp)
+  | .app _ args _ => Term.anyHasDatatypeOp args
+  | .quant _ _ trs body => body.hasDatatypeOp || Term.anyHasDatatypeOps trs
   | .some t => t.hasDatatypeOp
   | _ => false
+
+private def Term.anyHasDatatypeOp (ts : List Term) : Bool :=
+  match ts with
+  | [] => false
+  | t :: ts => t.hasDatatypeOp || Term.anyHasDatatypeOp ts
+
+private def Term.anyHasDatatypeOps (tss : List (List Term)) : Bool :=
+  match tss with
+  | [] => false
+  | ts :: rest => Term.anyHasDatatypeOp ts || Term.anyHasDatatypeOps rest
+
+end
 
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
   -- The bridge axiom asserts that the goals imply `smtVCsCorrect`, which is the
