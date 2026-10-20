@@ -502,8 +502,17 @@ function Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) : ReturnType
 };
 ```
 
-A function may be prefixed with `inline` to request inlining during the partial
-evaluation transform, when applied.
+A function may be prefixed with `inline` to allow its calls to be replaced by its
+body. Inlining is a request, not a guarantee. The `simplify` phase expands a call to an
+`inline` function only where the copy cannot compound: when every parameter the body
+uses more than once receives a closed value (a literal or a constructor applied to
+closed values) or a single variable or constant, or, for an argument that is a
+constructor application, when the expanded call folds to something smaller. Symbolic
+evaluation then expands a call only when all its arguments are closed values. So
+`dup(3)` still folds to `6`, while `dup(dup(y))` keeps its outer call. A call to a
+function with a precondition is never expanded. Calls to a function that takes,
+returns or builds a function value are always expanded, because expanding them is what
+removes the lambdas the SMT encoder cannot represent.
 
 ### Recursive Functions
 

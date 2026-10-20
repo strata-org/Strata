@@ -128,7 +128,8 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
     (establishes := factSet![.noBetaRedexes])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,
-                         .hasObligationForm, .noPolymorphicProcedures,
+                         .hasObligationForm, .noProcedureContracts,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       return (true, Core.BetaReduce.betaReduceProgram prog)

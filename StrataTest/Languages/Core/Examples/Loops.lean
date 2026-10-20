@@ -209,7 +209,7 @@ true
 Label: insertLoopInvAssert_measure_lb_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@2)
 loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
@@ -222,7 +222,7 @@ Obligation:
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@2)
 loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
@@ -235,7 +235,7 @@ int.le(0, int.add(i@1, 1))
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@2)
 loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
@@ -248,7 +248,7 @@ int.le(int.add(i@1, 1), n@2)
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@2)
 loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
@@ -261,7 +261,7 @@ int.add(s@3, int.add(i@1, 1)) == int.safeDiv(int.mul(int.add(i@1, 1), int.add(in
 Label: insertLoopInvAssert_measure_decrease_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@2)
 loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
 insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
 insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
@@ -276,13 +276,13 @@ Property: assert
 Assumptions:
 sum_requires_0: int.ge(n@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
-<label_ite_cond_true: int.lt(i, n)>: if int.lt(0, n@2) then int.lt(0, n@2) else true
+<label_ite_cond_true: int.lt(0, n)>: if int.lt(0, n@2) then int.lt(0, n@2) else true
 loopElimAssume_guard_loop_1: if int.lt(0, n@2) then int.lt(i@1, n@2) else true
 insertLoopInvAssume_invariant_loop_0_0: if int.lt(0, n@2) then int.le(0, i@1) else true
 insertLoopInvAssume_invariant_loop_0_1: if int.lt(0, n@2) then int.le(i@1, n@2) else true
 insertLoopInvAssume_invariant_loop_0_2: if int.lt(0, n@2) then s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2) else true
 loopElimAssume_not_guard_loop_1: if int.lt(0, n@2) then !(int.lt(i@2, n@2)) else true
-<label_ite_cond_false: !(int.lt(i, n))>: if if int.lt(0, n@2) then false else true then if int.lt(0, n@2) then false else true else true
+<label_ite_cond_false: !(int.lt(0, n))>: if if int.lt(0, n@2) then false else true then if int.lt(0, n@2) then false else true else true
 insertLoopInvAssume_exit_invariant_loop_0_0: int.le(0, if int.lt(0, n@2) then i@2 else 0)
 insertLoopInvAssume_exit_invariant_loop_0_1: int.le(if int.lt(0, n@2) then i@2 else 0, n@2)
 insertLoopInvAssume_exit_invariant_loop_0_2: (if int.lt(0, n@2) then s@4 else 0) == int.safeDiv(int.mul(if int.lt(0, n@2) then i@2 else 0, int.add(if int.lt(0, n@2) then i@2 else 0, 1)), 2)

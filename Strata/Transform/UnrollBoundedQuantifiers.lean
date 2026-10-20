@@ -760,6 +760,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+                         .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do

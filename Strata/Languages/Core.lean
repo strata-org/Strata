@@ -17,6 +17,7 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 import Strata.Transform.TerminationCheck
 import Strata.Transform.UnrollBoundedQuantifiers
+import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
 import Strata.Transform.GenOpaqueTypeParams
@@ -24,6 +25,7 @@ import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.Simplify
 
 /-! ## Strata Core Transform & Verification API
 
@@ -207,6 +209,19 @@ def Core.passGenOpaqueTypeParams : Core.PipelinePhase :=
 /-- Replace polymorphic functions with instances at the types used. -/
 def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
   _root_.Core.monomorphizeFunctionsPipelinePhase
+
+/-- Partially evaluate the program: fold constants, substitute known values, expand calls
+    whose expansion cannot compound, and drop definitions nothing reads. -/
+def Core.passSimplify : Core.PipelinePhase :=
+  _root_.Core.simplifyPhase
+
+/-- Attach per-constructor axioms to recursive `@[cases]` functions, which symbolic
+    evaluation otherwise generates. For a pipeline that runs `simplify` in its place.
+    `Core.verify` rebuilds this phase from its own options, so whether it generates the
+    axioms always matches whether the back end emits `define-fun-rec`. -/
+def Core.passRecursiveAxioms (options : Core.VerifyOptions := Core.VerifyOptions.default) :
+    Core.PipelinePhase :=
+  _root_.Core.recursiveAxiomsPhase options
 
 /-- Replace non-deterministic guards with havoc and assumption. -/
 def Core.passNondetElim : Core.PipelinePhase :=

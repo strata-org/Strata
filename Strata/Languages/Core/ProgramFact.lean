@@ -119,6 +119,14 @@ inductive ProgramFact where
       Required by the back end, whose obligation extraction handles only bodies
       of this shape. Also required by `UnrollBoundedQuantifiers`. -/
   | hasObligationForm
+  /-- No procedure carries a `requires` or `ensures` clause, free or checked.
+      Established by symbolic evaluation, which assumes a procedure's
+      preconditions and asserts its postconditions in the obligations it emits,
+      and emits a procedure with an empty contract. Required by the back end:
+      obligation extraction reads only procedure bodies, so a surviving
+      `ensures` would go unchecked and a surviving `requires` would be dropped
+      from the path condition. -/
+  | noProcedureContracts
   /-- No procedure carries type parameters. Established by
       `GenOpaqueTypeParams`, which replaces each type parameter of a procedure
       by a fresh opaque type and clears `header.typeArgs`. Required by the back end: SMT has no
@@ -184,6 +192,7 @@ def ProgramFact.name : ProgramFact → String
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
   | .noNondetGuards => "noNondetGuards"
   | .hasObligationForm => "hasObligationForm"
+  | .noProcedureContracts => "noProcedureContracts"
   | .noPolymorphicProcedures => "noPolymorphicProcedures"
   | .noPolymorphicFunctions => "noPolymorphicFunctions"
   | .typeAnnotated => "typeAnnotated"
@@ -198,7 +207,7 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
    .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-   .hasObligationForm, .noPolymorphicProcedures,
+   .hasObligationForm, .noProcedureContracts, .noPolymorphicProcedures,
    .noPolymorphicFunctions, .typeAnnotated]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
@@ -242,6 +251,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noPrecondsFromFuncs => some Program.noFuncPreconditions
   | .noNondetGuards => some (Program.allStatements Imperative.Block.noNondetGuards)
   | .hasObligationForm => some (Program.allStatements Statements.hasObligationForm)
+  | .noProcedureContracts => some Program.noProcedureContracts
   | .noPolymorphicProcedures => some Program.noPolymorphicProcedures
   | .noPolymorphicFunctions => some Program.noPolymorphicFunctions
   | .typeAnnotated => none
@@ -264,6 +274,7 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     fun p => Program.allStatements Imperative.Block.noNondetGuards p = true
   | .hasObligationForm =>
     fun p => Program.allStatements Statements.hasObligationForm p = true
+  | .noProcedureContracts => fun p => Program.noProcedureContracts p = true
   | .noPolymorphicProcedures => fun p => Program.noPolymorphicProcedures p = true
   | .noPolymorphicFunctions => fun p => Program.noPolymorphicFunctions p = true
   | .typeAnnotated => fun p => Program.allExprs Lambda.LExpr.fullyAnnotated p = true

@@ -231,7 +231,7 @@ def callElimPipelinePhase : PipelinePhase where
   -- parameters with the caller's variables build those references unannotated,
   -- so a fully annotated input does not stay one.
   preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
-                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions]
 

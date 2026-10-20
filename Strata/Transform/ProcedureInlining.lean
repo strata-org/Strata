@@ -356,6 +356,7 @@ def procedureInliningPipelinePhase
     (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog =>

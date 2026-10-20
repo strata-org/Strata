@@ -400,6 +400,24 @@ statement. -/
      | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
      | _ => true)
 
+/-- The attributes of every function `p` declares, by name, including the functions of
+    a recursive block. -/
+def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.FuncAttr) :=
+  p.decls.foldl (init := {}) fun acc d =>
+    match d with
+    | .func fn _ => acc.insert fn.name.name fn.attr
+    | .recFuncBlock fns _ => fns.foldl (fun a fn => a.insert fn.name.name fn.attr) acc
+    | _ => acc
+
+/-- Does no procedure in `p` carry a `requires` or `ensures` clause, free or
+    checked? -/
+@[expose] def Program.noProcedureContracts (p : Program) : Bool :=
+  p.decls.all fun d =>
+    match d with
+    | Core.Decl.proc q _md =>
+      q.spec.preconditions.isEmpty && q.spec.postconditions.isEmpty
+    | _ => true
+
 /-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
     `header.typeArgs`, which is what `GenOpaqueTypeParams` clears; the opaque
     type declarations it adds in their place are ordinary declared sorts. -/

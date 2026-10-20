@@ -407,7 +407,8 @@ def Core.commonSubexprElimPhase : Core.PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .hasObligationForm, .noPolymorphicProcedures,
+                         .hasObligationForm, .noProcedureContracts,
+                         .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
 
 end -- public section

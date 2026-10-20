@@ -49,6 +49,9 @@ import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.Simplify
+import Strata.Transform.Simplify.Expr
+import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredCorrect

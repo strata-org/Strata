@@ -434,7 +434,7 @@ def termCheckPipelinePhase : PipelinePhase :=
     (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       TermCheck.termCheck prog
