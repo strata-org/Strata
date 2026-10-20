@@ -136,7 +136,9 @@ import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
 import Strata.DL.Lambda.LExprTraversalProps
 import Strata.DL.Lambda.Reflect
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
+import Strata.DL.Lambda.OperationalSemanticsProps
+import Strata.DL.Lambda.LExprEvalSound
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.Util.HListProps
 import Strata.Languages.Core.ProgramWF

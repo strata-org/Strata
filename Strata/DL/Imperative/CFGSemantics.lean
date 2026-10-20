@@ -31,22 +31,18 @@ Configuration for small-step CFG semantics. Every configuration carries:
   and cumulative failure flag travel together exactly as in structured
   statement configurations.
 
-The control component is one of:
-
-- `.atBlock cfg t ρ` — about to fetch the block at label `t`;
-- `.inBlock cfg t cs tr ρ` — partway through a block, with residual commands
-  `cs` and transfer `tr`;
-- `.terminal ρ` — execution has finished.
-
 Active configurations carry `cfg` because it is needed for future fetches.
 Terminal configurations cannot step, so retaining a program there would be
 unobservable and would prevent the generic `Lang.terminalCfg` operation from
 constructing exact outcomes.
 -/
 inductive CFGConfig (l CmdT : Type) (P : PureExpr) : Type where
+  /-- Configuration immediately before the block at the given label is fetched. -/
   | atBlock : CFG l (DetBlock l CmdT P) → l → Env P → CFGConfig l CmdT P
+  /-- Configuration within a block, retaining its label, residual commands, and transfer. -/
   | inBlock : CFG l (DetBlock l CmdT P) → l → List CmdT → DetTransferCmd l P → Env P →
       CFGConfig l CmdT P
+  /-- Configuration after CFG execution has completed. -/
   | terminal : Env P → CFGConfig l CmdT P
 
 /-- Project the execution environment from a `CFGConfig`. -/

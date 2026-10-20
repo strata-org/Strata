@@ -10,7 +10,7 @@ public import Strata.DL.Imperative.CFGSemantics
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Lambda.LExprEval
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemanticsProps
 import all Strata.DL.Lambda.LExprEvalProps
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.IntBoolFactory

@@ -11,7 +11,7 @@ import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Imperative.Logic.HoareTemplate
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
 import StrataDDM.Integration.Lean.HashCommands
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprEvalProps

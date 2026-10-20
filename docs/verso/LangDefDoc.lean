@@ -15,7 +15,7 @@ import Strata.DL.Imperative.KleeneStmtSemantics
 import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
 import Strata.DL.Lambda.Denote.LExprResolveAnnotated

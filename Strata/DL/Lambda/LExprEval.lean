@@ -429,7 +429,7 @@ def findStuckRedex (F : @Lambda.Factory TBase) : LExpr TBase.mono → Option (LE
 
 This is the interpreter's own expression evaluator, defined as a separate
 function so that we can later prove it consistent with the small-step
-`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
+`Lambda.Step` relation from `Strata.DL.Lambda.OperationalSemantics`.
 
 Currently delegates to `LExpr.eval` with the fuel and state from `LState`.
 If the result contains a stuck redex (a fully-applied function that should
