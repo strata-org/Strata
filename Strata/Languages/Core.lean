@@ -19,7 +19,7 @@ import Strata.Transform.TerminationCheck
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
-import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
@@ -200,9 +200,9 @@ def Core.passTermCheck : Core.PipelinePhase :=
 def Core.passPrecondElim : Core.PipelinePhase :=
   _root_.Core.precondElimPipelinePhase
 
-/-- Replace polymorphic procedures with instances at the types used. -/
-def Core.passMonomorphizeProcedures : Core.PipelinePhase :=
-  _root_.Core.monomorphizeProceduresPipelinePhase
+/-- Replace the type parameters of procedures and lemmas by fresh opaque types. -/
+def Core.passGenOpaqueTypeParams : Core.PipelinePhase :=
+  _root_.Core.genOpaqueTypeParamsPipelinePhase
 
 /-- Replace polymorphic functions with instances at the types used. -/
 def Core.passMonomorphizeFunctions : Core.PipelinePhase :=

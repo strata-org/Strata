@@ -120,8 +120,8 @@ inductive ProgramFact where
       of this shape. Also required by `UnrollBoundedQuantifiers`. -/
   | hasObligationForm
   /-- No procedure carries type parameters. Established by
-      `MonomorphizeProcedures`, which specializes each polymorphic procedure and
-      clears `header.typeArgs`. Required by the back end: SMT has no
+      `GenOpaqueTypeParams`, which replaces each type parameter of a procedure
+      by a fresh opaque type and clears `header.typeArgs`. Required by the back end: SMT has no
       procedure-level polymorphism to encode. -/
   | noPolymorphicProcedures
   /-- No function carries type parameters, wherever it is declared. Established

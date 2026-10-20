@@ -215,7 +215,8 @@ private def emitStaticCall (model : SemanticModel) (original : StmtExprMd)
     else
       -- Preserve output arity when the source discards the callee's value.
       let discards ← (calleeOutputs model callee).mapM fun output => do
-        return mkVarMd (.Declare ⟨← freshVarName, some output.type⟩) original.source
+        let type := typeAtCall model callee typeArgs output.type
+        return mkVarMd (.Declare ⟨← freshVarName, some type⟩) original.source
       return bindings ++ [⟨.Assign (targets ++ discards) call, original.source⟩]
 
 private def globalOfRef (model : SemanticModel) (name : Identifier)

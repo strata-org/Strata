@@ -9,15 +9,15 @@ import StrataDDM.Integration.Lean
 meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType
-meta import Strata.Transform.MonomorphizeProcedures
+meta import Strata.Transform.GenOpaqueTypeParams
 
 meta section
 
 open Strata
 
-/-! ## `MonomorphizeProcedures` tests
+/-! ## `GenOpaqueTypeParams` tests
 
-`MonomorphizeProcedures` monomorphizes every polymorphic procedure by minting a
+`GenOpaqueTypeParams` makes every polymorphic procedure monomorphic by minting a
 fresh opaque nullary type per declared type parameter (`header.typeArgs`) and
 substituting it throughout the procedure's signature, spec, and body.
 
@@ -29,12 +29,12 @@ sees in the pipeline — and check both the substituted output and that the resu
 subsequently type-checks.
 -/
 
-section MonomorphizeProceduresTests
+section GenOpaqueTypeParamsTests
 
-/-- Run the monomorphization pass on a program (fresh generator state, so
+/-- Run the `GenOpaqueTypeParams` pass on a program (fresh generator state, so
     opaque-type counters start at 0). -/
 private def runMono (p : Core.Program) : Core.Program :=
-  match Core.Transform.run p Core.MonomorphizeProcedures.run with
+  match Core.Transform.run p Core.GenOpaqueTypeParams.run with
   | .ok p' => p'
   | .error _ => p
 
@@ -44,13 +44,13 @@ private def translate (t : StrataDDM.Program) : Core.Program :=
 private def quietOpts : Core.VerifyOptions :=
   { Core.VerifyOptions.default with verbose := .quiet }
 
-/-- Translate (parse) a surface program, then monomorphize — mirroring the
+/-- Translate (parse) a surface program, then run the pass — mirroring the
     pipeline position where the pass runs just before `typeCheckPhase`, while
     `header.typeArgs` are still intact under their source names. -/
 private def monoBeforeTypeCheck (t : StrataDDM.Program) : Core.Program :=
   runMono (translate t)
 
-/-- Monomorphize a parsed program and format the result as surface syntax. -/
+/-- Run the pass on a parsed program and format the result as surface syntax. -/
 private def fmtMono (t : StrataDDM.Program) : Std.Format :=
   Std.format (monoBeforeTypeCheck t).stripMetaData
 
@@ -77,7 +77,7 @@ private def typeChecks (p : Core.Program) : Bool :=
   | .ok _ => true
   | .error _ => false
 
-/-- Run the full verification pipeline (which includes `MonomorphizeProcedures`
+/-- Run the full verification pipeline (which includes `GenOpaqueTypeParams`
     before type checking) on a parsed program and print the VC verdicts.  Routes
     through `Core.verifyProgram` on the translated `Core.Program` — the same
     pipeline `Core.verify` uses. -/
@@ -214,7 +214,7 @@ spec {
 ---------------------------------------------------------------------
 /-! ### Example 5: a polymorphic datatype (`List a`) in a constructor
 
-The datatype `List` stays polymorphic — only the *procedure* is monomorphized —
+The datatype `List` stays polymorphic — only the *procedure* gets opaque types —
 so the opaque type introduced for `T` appears as a type *argument* of `List`
 (`List $__opaque_prepend_T_0`). -/
 
@@ -299,10 +299,10 @@ spec {
 
 Internal function syntax translates to an ordinary function-typed `init`.
 The input below intentionally remains `function` syntax so this test covers
-both `funcDecl_statement` lowering and the subsequent monomorphization. The
+both `funcDecl_statement` lowering and the subsequent opaque-type substitution. The
 pass substitutes both the initializer's declared arrow type and the type
 annotations on its nested abstraction, so a local value referencing the
-procedure's type parameter is monomorphized consistently. -/
+procedure's type parameter gets the same opaque type everywhere. -/
 
 private def internalFuncPgm :=
 #strata
@@ -334,8 +334,8 @@ procedure Q (x : $__opaque_Q_T_0, out r : $__opaque_Q_T_0)
 ---------------------------------------------------------------------
 /-! ### Examples: end-to-end verification via `Core.verify`
 
-These run the *whole* pipeline (so `MonomorphizeProcedures` runs before the SMT
-encoder) and check the solver verdicts.  The point: after monomorphization a
+These run the *whole* pipeline (so `GenOpaqueTypeParams` runs before the SMT
+encoder) and check the solver verdicts.  The point: after this pass a
 procedure's type parameter is a *declared* opaque type rather than a free type
 variable, so a quantified contract over it is encoded as a quantifier over an
 uninterpreted sort — a valid contract verifies, a false one is refuted. -/
@@ -407,7 +407,7 @@ Result: ✅ pass
 #eval verifyMono singletonPgm quietOpts
 
 /-! #### End-to-end Example 3: a type parameter whose source name is a builtin sort
-(`Map`).  Monomorphization renames it to a fresh opaque type regardless, and the
+(`Map`).  The pass renames it to a fresh opaque type regardless, and the
 false contract is refuted. -/
 
 private def builtinNamedPgm : StrataDDM.Program :=
@@ -504,7 +504,7 @@ Result: ❌ fail
 /-! #### End-to-end Example 6: a polymorphic datatype (`List`) end-to-end.
 
 A procedure over `List T` whose postcondition follows from the datatype axioms
-(`head!(Cons(x, xs)) == x`) verifies after monomorphization — `T` is a declared
+(`head!(Cons(x, xs)) == x`) verifies after the pass — `T` is a declared
 opaque type and `List` remains generic, applied to it. -/
 
 private def listHeadPgm : StrataDDM.Program :=
@@ -559,6 +559,6 @@ Result: ✅ pass
 #guard_msgs in
 #eval verifyMono recPgm quietOpts
 
-end MonomorphizeProceduresTests
+end GenOpaqueTypeParamsTests
 
 end

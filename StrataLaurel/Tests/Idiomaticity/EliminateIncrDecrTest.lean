@@ -3,52 +3,38 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
-Tests that the EliminateIncrDecr + LiftImperativeExpressions pipeline correctly
-lowers Java-style `++`/`--` operators in both prefix and postfix forms, in both
-statement and expression positions, by comparing the lowered Laurel against
-expected output.
+Idiomaticity test for `EliminateIncrDecrAndCompoundAssign`, focusing on the
+increment/decrement operators (`++x`, `x++`, `--x`, `x--`). Prefix yields the new
+value, postfix the old; in expression position each lowers to a block expression
+(later hoisted by `LiftImperativeExpressions`, whose idiomaticity is in
+`LiftExpressionAssignmentsTest`; this test pins only THIS pass's output).
+
+Uses the shared idiomaticity driver `runPassForIdiomaticity`.
 -/
 
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import StrataLaurel.Implementation.Grammar
-meta import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
-meta import StrataLaurel.Implementation.LiftImperativeExpressions
-
-meta section
+import StrataLaurel.Tests.Util.TestLaurel
 
 open Strata
-open StrataDDM (initDialect)
-open StrataDDM.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Run the parser, the EliminateIncrDecr pass, then LiftImperativeExpressions,
-    so that test output reflects the Laurel form that is fed to Core. -/
-def parseLowerIncrDecr (input : String) : IO Program := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    -- Step 1: eliminate IncrDecr and CompoundAssign
-    let program := eliminateIncrDecrAndCompoundAssign program
-    -- Step 2: resolve so liftExpressionAssignments has a valid SemanticModel
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    match liftExpressionAssignments program model [] with
-    | .ok p => pure p
-    | .error e => throw (IO.userError s!"Lift error: {e}")
-
-/-- Statement form: `x++;` and `--x` as statements. Prefix (`--x`) produces
-    a clean assignment. Postfix (`x++`) emits the same assignment-based form as
-    the expression position. -/
-def stmtFormProgram : String := r"
+/- Statement form: `x++` and `--x` as statements. -/
+/--
+info: procedure stmtForm()
+  opaque
+{
+  var x: int := 0;
+  (x := x + 1) - 1;
+  x := x - 1
+};
+-/
+#guard_msgs in
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
 procedure stmtForm()
   opaque
 {
@@ -56,26 +42,23 @@ procedure stmtForm()
   x++;
   --x
 };
-"
+#end
 
+/- Prefix form in expression position: yields the new value. -/
 /--
-info: procedure stmtForm()
+info: procedure preIncrExpr()
   opaque
 {
   var x: int := 0;
-  x := x + 1;
-  x - 1;
-  x := x - 1
+  var y: int := (x := x + 1) + (x := x + 1);
+  assert x == 2;
+  assert y == 3
 };
 -/
 #guard_msgs in
-#eval do
-  let program ← parseLowerIncrDecr stmtFormProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-
-/-- Prefix form in expression position: yields the new value. -/
-def preIncrExprProgram : String := r"
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
 procedure preIncrExpr()
   opaque
 {
@@ -84,31 +67,23 @@ procedure preIncrExpr()
   assert x == 2;
   assert y == 3
 };
-"
+#end
 
+/- Postfix form in expression position: yields the OLD value. -/
 /--
-info: procedure preIncrExpr()
+info: procedure postIncrExpr()
   opaque
 {
   var x: int := 0;
-  x := x + 1;
-  var $x_0: int := x;
-  x := x + 1;
-  var y: int := $x_0 + x;
+  var y: int := (x := x + 1) - 1 + ((x := x + 1) - 1);
   assert x == 2;
-  assert y == 3
+  assert y == 1
 };
 -/
 #guard_msgs in
-#eval do
-  let program ← parseLowerIncrDecr preIncrExprProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-
-/-- Postfix form in expression position: yields the OLD value. After the
-    pipeline runs, the snapshot mechanism makes `(x++) + (x++)` evaluate to
-    `0 + 1 = 1` while `x` ends up at 2 — matching Java semantics. -/
-def postIncrExprProgram : String := r"
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
 procedure postIncrExpr()
   opaque
 {
@@ -117,27 +92,6 @@ procedure postIncrExpr()
   assert x == 2;
   assert y == 1
 };
-"
-
-/--
-info: procedure postIncrExpr()
-  opaque
-{
-  var x: int := 0;
-  x := x + 1;
-  var $x_0: int := x;
-  x := x + 1;
-  var y: int := $x_0 - 1 + (x - 1);
-  assert x == 2;
-  assert y == 1
-};
--/
-#guard_msgs in
-#eval do
-  let program ← parseLowerIncrDecr postIncrExprProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#end
 
 end Laurel
-end Strata
-end

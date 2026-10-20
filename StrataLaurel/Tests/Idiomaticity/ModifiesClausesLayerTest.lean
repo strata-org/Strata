@@ -26,6 +26,12 @@ through the whole pipeline. Two families:
 Procedures are built directly as ASTs: the layer under test runs after heap
 parameterization, whose output shape (a `$heap` output, resolved targets) is
 easiest to state explicitly.
+
+This test does NOT use the shared `runPassForIdiomaticity` driver: the driver
+resolves the program to build the `SemanticModel` the pass reads, but these cases
+supply a hand-built `SemanticModel` describing the post-heap-parameterization
+shape (which `resolve` would not reconstruct from the AST), so they call
+`transformModifiesClauses` directly.
 -/
 
 meta import StrataLaurel.Implementation.ModifiesClauses

@@ -32,30 +32,16 @@ test resolves first and then drives `checkOverrideRefinementPass.run`.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
-import StrataLaurel.Implementation.CheckOverrideRefinement
-import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Resolve `program`, run `CheckOverrideRefinement`, and print the resulting
-    program as Laurel source: the composite types (unchanged — the pass is
-    additive) then the static procedures (the appended checkers), plus any
-    diagnostics. -/
-private def printChecked (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
-  let (checked, diags, _) := checkOverrideRefinementPass.run {} result.program result.model
-  IO.println "-- types --"
-  for ty in checked.types do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format ty)))
-  IO.println "-- procedures --"
-  for proc in checked.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-  for d in diags do
-    IO.println s!"diagnostic: {d.message}"
+/-- Parse, resolve, run `checkOverrideRefinementPass`, print the checked program:
+    the composite types (unchanged — the pass is additive) then the static
+    procedures (the appended checkers). -/
+private def printChecked := runPassForIdiomaticity checkOverrideRefinementPass
 
 private def methodOn (p : Program) (tyName : String) : Option Procedure :=
   p.types.findSome? fun
@@ -100,8 +86,7 @@ the pass appends all three synthesized procedures: the pre-checker, the
 `$childspec` companion, and the two-state post-checker. -/
 
 /--
-info: -- types --
-composite Parent {procedure m(self: Parent, a: int)
+info: composite Parent {procedure m(self: Parent, a: int)
   returns (r: int)
   requires a >= 0
   opaque
@@ -117,7 +102,6 @@ composite Child extends Parent {procedure m(self: Child, a: int)
 {
   r := a
 }; }
--- procedures --
 procedure u()
   opaque
 {
@@ -162,8 +146,7 @@ pre-checker is omitted; only the `$childspec` companion and the post-checker are
 appended. -/
 
 /--
-info: -- types --
-composite Parent {procedure m(self: Parent)
+info: composite Parent {procedure m(self: Parent)
   returns (r: int)
   opaque
   ensures r >= 0
@@ -177,7 +160,6 @@ composite Child extends Parent {procedure m(self: Child)
 {
   r := 5
 }; }
--- procedures --
 procedure u()
   opaque
 {
@@ -214,8 +196,7 @@ procedure u() opaque { assert 1 == 1 };
 nothing — the program is unchanged apart from resolution. -/
 
 /--
-info: -- types --
-composite Parent {procedure m(self: Parent)
+info: composite Parent {procedure m(self: Parent)
   returns (r: int)
   opaque
   ensures r >= 0
@@ -223,7 +204,6 @@ composite Parent {procedure m(self: Parent)
   r := 0
 }; }
 composite Child extends Parent { }
--- procedures --
 procedure u()
   opaque
 {
@@ -248,8 +228,7 @@ the post-checker + `$childspec` companion are omitted; `Child.m` declares a `req
 so only the pre-checker is appended. Exercises the `parentPosts.isEmpty` guard. -/
 
 /--
-info: -- types --
-composite Parent {procedure m(self: Parent, a: int)
+info: composite Parent {procedure m(self: Parent, a: int)
   returns (r: int)
   opaque
 {
@@ -262,7 +241,6 @@ composite Child extends Parent {procedure m(self: Child, a: int)
 {
   r := a
 }; }
--- procedures --
 procedure u()
   opaque
 {
@@ -295,8 +273,7 @@ position and only their text tells the resulting diagnostics apart. This pins th
 clause gets a summary quoting itself, rather than two copies of one sentence. -/
 
 /--
-info: -- types --
-composite Parent {procedure m(self: Parent)
+info: composite Parent {procedure m(self: Parent)
   returns (r: int)
   opaque
   ensures r >= 0
@@ -311,7 +288,6 @@ composite Child extends Parent {procedure m(self: Child)
 {
   r := 50
 }; }
--- procedures --
 procedure u()
   opaque
 {

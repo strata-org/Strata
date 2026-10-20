@@ -273,8 +273,11 @@ procedure catchesTransparent(x: int) returns (out: int)
 -- rather than letting the lowering proceed — which would synthesize a `Result`
 -- carrier and surface as a misleading "2 output parameters" error plus leaked
 -- `$thrown`/`$returning` assignments that do not point at the `throw`.
+-- No interpreters: the annotated error is a rejection of the declaration, so there is no
+-- program to run — and the only procedure takes a parameter, so there is no parameterless
+-- `entry` to mark either.
 #guard_msgs (drop info) in
-#eval testLaurelVerification <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}

@@ -252,7 +252,10 @@ private def mkTempAssignments (model : SemanticModel) (args : List StmtExprMd)
     let paramType := match inputParams[i]? with
       | some p => if mentionsTVar p.type.val then computeExprType model arg else p.type
       | none => { val := .Unknown, source := src }
-    let param : Parameter? := { name := mkId tempName, type := some paramType }
+    -- `Unknown`, as for an argument this pass already rewrote, has no Core sort: re-resolution
+    -- types the local from `arg` instead.
+    let type := if mentionsUnknown paramType.val then none else some paramType
+    let param : Parameter? := { name := mkId tempName, type }
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName))) src]
   return (decls, refs)
@@ -377,7 +380,8 @@ private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (arg
       let mut outputRefs : List StmtExprMd := []
       for p in info.outputParams do
         let tempName ← freshTemp
-        outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
+        let type := some (typeAtCall model callee typeArgs p.type)
+        outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type }) src]
         outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
       let callWithOutputs : StmtExprMd :=
         -- `typeArgs` re-attached. Dropping it is not cosmetic here: this rebuilt call becomes the

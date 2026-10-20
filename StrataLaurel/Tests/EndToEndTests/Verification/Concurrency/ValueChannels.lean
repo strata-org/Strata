@@ -31,14 +31,14 @@ be `modifies *`, exactly as the `ExitGuarantee` examples are.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## `yields`: the yielded value is checked at every `yield` and at the exit
 tail. Each step writes `x` before suspending; the scalar binding persists, so
 `guarantees x >= 1` holds at all three yields and at the final `resume → halt`
 segment. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 coroutine counter() yields (x: int)
@@ -55,7 +55,7 @@ coroutine counter() yields (x: int)
 the yielded value's property across the loop's back-edge, so it holds at the
 in-loop `yield` and after the loop exits. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 coroutine ticker() yields (x: int)
@@ -79,7 +79,7 @@ coroutine ticker() yields (x: int)
 every step) but yields `max(y, 0)`, so `guarantees x >= 0` holds for *any*
 resumed value — at each yield and at the exit tail. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 coroutine clamp() yields (x: int) resumes (y: int)
@@ -101,7 +101,7 @@ negative `y`, and it survives the environment step only because the rely is
 assumed *after* the heap havoc (and against the fresh `y`, not the previous
 step's). -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 composite Cell { var v: int }
@@ -124,7 +124,7 @@ be negative) and at the exit tail. This is the soundness dual of `clamp`: a
 `rely` is a reflexive heap relation and never constrains the resumed value, so
 the body must be correct for every `y`. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 coroutine echoNonneg() yields (x: int) resumes (y: int)
