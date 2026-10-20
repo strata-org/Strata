@@ -26,10 +26,6 @@ state (where `old(...)` resolves), the body snapshots each input into a `$inputC
 temporary before any mutation and passes the snapshot as the helper's input
 argument. The expected output below pins which `assume`/`assert` statements
 appear for each mode at each site.
-
-A condition may rely on earlier ones to be well-formed, so each helper assumes
-the conditions that precede it: `$pre_i` assumes `requires` clauses `0 … i-1`, and
-`$post_i` assumes all the preconditions plus `ensures` clauses `0 … i-1`.
 -/
 
 meta import StrataLaurel.Tests.Util.TestLaurel
@@ -44,8 +40,7 @@ namespace Strata.Laurel
     `Contracts` lowers every procedure's pre/postconditions into `$pre`/`$post`
     helpers, so with the prelude present the output would gain a `$pre` helper for
     every operator wrapper that has one. The snippets below are therefore written
-    with no operators at all — every condition is a plain `bool` parameter or the
-    `bool` output — so they resolve without the prelude. -/
+    with no operators at all, so they resolve without the prelude. -/
 private meta def printLowered := runPassForIdiomaticity contractPass (prelude := false)
 
 /-! ## All three modes on both pre- and postconditions
@@ -76,41 +71,26 @@ info: procedure callee$pre0(a: bool, b: bool, c: bool): bool
 }$return;
 procedure callee$pre1(a: bool, b: bool, c: bool): bool
 {
-  assume a;
   $result := b;
   exit $return
 }$return;
 procedure callee$pre2(a: bool, b: bool, c: bool): bool
 {
-  assume a;
-  assume b;
   $result := c;
   exit $return
 }$return;
 procedure callee$post0(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume a;
-  assume b;
-  assume c;
   $result := r$out;
   exit $return
 }$return;
 procedure callee$post1(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume a;
-  assume b;
-  assume c;
-  assume r$out;
   $result := b;
   exit $return
 }$return;
 procedure callee$post2(a: bool, b: bool, c: bool, r$out: bool): bool
 {
-  assume a;
-  assume b;
-  assume c;
-  assume r$out;
-  assume b;
   $result := c;
   exit $return
 }$return;
@@ -164,6 +144,61 @@ opaque
 {
   r := callee(true, true, true)
 };
+#end
+
+/-! ## A clause that calls a procedure
+
+A helper assumes the clauses before it only if its function copy would differ from it. That copy
+would call `id` as it is, since `id` is transparent and asserts nothing, so `twoCalls$pre1`
+assumes nothing. It would call `opq`'s `$asFunction` twin instead of `opq`, which is opaque, so
+`twoCalls$pre2` assumes `b` and `id(b)`. -/
+
+/--
+info: procedure twoCalls$pre0(b: bool): bool
+{
+  $result := b;
+  exit $return
+}$return;
+procedure twoCalls$pre1(b: bool): bool
+{
+  $result := id(b);
+  exit $return
+}$return;
+procedure twoCalls$pre2(b: bool): bool
+{
+  assume b;
+  assume id(b);
+  $result := opq(b);
+  exit $return
+}$return;
+procedure id(b: bool)
+  returns (r: bool)
+{
+  b
+};
+procedure opq(b: bool)
+  returns (r: bool)
+  opaque;
+procedure twoCalls(b: bool)
+  opaque;
+-/
+#guard_msgs in
+#eval printLowered <|
+#strata
+program Laurel;
+procedure id(b: bool) returns (r: bool)
+{
+  b
+};
+
+procedure opq(b: bool) returns (r: bool)
+  opaque;
+
+procedure twoCalls(b: bool)
+  requires b
+  requires id(b)
+  requires opq(b)
+  opaque;
 #end
 
 end Strata.Laurel

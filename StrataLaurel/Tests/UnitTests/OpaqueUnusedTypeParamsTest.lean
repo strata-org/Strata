@@ -56,7 +56,7 @@ type mixed$Q$opaque;
 function mixed$pre0<T> (t : T) : bool {
   forall x : mixed$Q$opaque :: x == x
 }
-function mixed$post0$asFunction<T> (t : T, r$out : T) : bool {
+function mixed$post0<T> (t : T, r$out : T) : bool {
   r$out == t
 }
 function mixed$asFunction<T> (t : T) : T;

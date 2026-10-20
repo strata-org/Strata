@@ -64,6 +64,13 @@ private def adjustSafeOperatorName (name : Identifier) : Identifier :=
   | some text => { name with text }
   | none => name
 
+/-- The callee a function copy calls in place of `callee`. -/
+private def functionCopyCallee (asFunctionNames : Std.HashSet String) (callee : Identifier) :
+    Identifier :=
+  if asFunctionNames.contains callee.text then
+    { callee with text := callee.text ++ "$asFunction", uniqueId := none }
+  else adjustSafeOperatorName (adjustSelectorName callee)
+
 /-- Make an expression pure: drop its proof steps and point its calls at the
     `$asFunction` twins. A `StaticCall` to a procedure with a twin is renamed (other
     callees get their selector/checked-operator adjustment).
@@ -101,14 +108,17 @@ private def functionalize (asFunctionNames : Std.HashSet String)
       | .Assert .. | .Assume _ => []
       | .StaticCall callee args tyArgs =>
         if !resultUsed then []
-        else if asFunctionNames.contains callee.text then
-          let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
-          [⟨.StaticCall funcCallee args tyArgs, e.source⟩]
-        else
-          let newName := adjustSafeOperatorName (adjustSelectorName callee)
-          [⟨.StaticCall newName args tyArgs, e.source⟩]
+        else [⟨.StaticCall (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
       | _ => [e])
     true expr
+
+/-- Whether `functionalize` changes `expr` beyond deleting an unused call: it drops a proof step
+    or points a call elsewhere. -/
+def functionalizeChanges (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : Bool :=
+  anyStmtExpr (fun e => match e.val with
+    | .Assert .. | .Assume _ => true
+    | .StaticCall callee _ _ => (functionCopyCallee asFunctionNames callee).text != callee.text
+    | _ => false) expr
 
 /-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
     to their `$asFunction` versions, leaving everything else (selectors,
@@ -161,6 +171,21 @@ private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Pro
     would then reject the embedded assert. -/
 private def containsAssertOrAssume (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun e => match e.val with | .Assert .. | .Assume _ => true | _ => false) expr
+
+/-- Whether this pass emits `proc` as a Core procedure twinned with an `$asFunction` function,
+    rather than as the function alone. A transparent procedure whose body is purely functional (no
+    Assume/Assert from contract instrumentation) needs only the function. Exception: an
+    `entry`-marked procedure is a concrete-interpretation entry point, so it must survive as a Core
+    procedure even when its body has no assertions — otherwise the schema pass's `interpretEntry`
+    metadata is emitted only on the discarded proc arm and `entryProcedures` sees nothing. -/
+private def Procedure.needsProceduralTwin (proc : Procedure) : Bool :=
+  !proc.body.isExternal && (proc.isInterpretEntry || match proc.body with
+    | .Transparent b => containsAssertOrAssume b
+    | _ => true)
+
+/-- The procedures of `procs` that this pass emits with a procedural twin, by name. -/
+def twinnedNames (procs : List Procedure) : Std.HashSet String :=
+  .ofList ((procs.filter (·.needsProceduralTwin)).map (·.name.text))
 
 /-- Rewrite references to the declaration identified by `boundUid` so they name
     `newName` instead.
@@ -414,19 +439,8 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def createFunctionsForTransparentBodies (program : LaurelProgram) (options : LaurelTranslateOptions := {}) : LaurelProgram :=
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
-  -- A transparent procedure whose body is purely functional (no Assume/Assert
-  -- from contract instrumentation) needs only a function copy, not a procedural
-  -- twin. This matches the old `isFunctional` behavior for condition helpers.
-  -- Exception: an `entry`-marked procedure is a concrete-interpretation entry
-  -- point, so it must survive as a Core procedure even when its body has no
-  -- assertions — otherwise the schema pass's `interpretEntry` metadata is
-  -- emitted only on the discarded proc arm and `entryProcedures` sees nothing.
-  let needsProcTwin (p : Procedure) : Bool :=
-    p.isInterpretEntry || match p.body with
-    | .Transparent b => containsAssertOrAssume b
-    | _ => true
-  let (imperativeProcs, _) := toUpdate.partition needsProcTwin
+  let imperativeProcs := program.staticProcedures.filter (·.needsProceduralTwin)
+  let toUpdateNames := twinnedNames program.staticProcedures
   match options.analysisMode with
   | .Execute =>
     -- Concrete execution: keep every procedure as a real procedure (no call
@@ -443,7 +457,6 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
     -- application the schema pass accepts, exactly as before the merge. The
     -- imperative procedure bodies themselves are left untouched (their calls stay
     -- procedure calls), preserving execution semantics.
-    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
     -- No proof blocks: the quantifier proof-procedure scaffolding is a
     -- verification-only construct. Its nondet `$proof_N` guard is an
@@ -456,7 +469,6 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
     { program with staticFunctions := program.staticFunctions ++ functions, staticProcedures := coreProcedures }
   | .Verify | .BothSuboptimally =>
-    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     -- Names of single-output procedures whose calls can be redirected to their
     -- `$asFunction` version: `mkFreePostcondition` only equates a single output
     -- to the function, and a single function application can only fill one

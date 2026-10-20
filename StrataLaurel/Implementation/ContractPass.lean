@@ -8,6 +8,7 @@ module
 public import StrataLaurel.Implementation.MapStmtExpr
 public import StrataLaurel.Implementation.LaurelPass
 import StrataLaurel.Implementation.EliminateReturnStatements
+import StrataLaurel.Implementation.TransparencyPass
 import StrataLaurel.Implementation.LaurelTypes
 import Strata.Util.Tactics
 
@@ -58,8 +59,9 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
     Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`.
 
     `assumptions` are emitted as `assume` statements ahead of the condition. The
-    `i`-th precondition helper is given `requires` clauses `0 … i-1`, because a
-    precondition may rely on the preceding ones to be well-formed. -/
+    `i`-th precondition helper may be given `requires` clauses `0 … i-1`, because a
+    precondition may rely on the preceding ones to be well-formed; see
+    `needsPrecedingClauses`. -/
 private def mkConditionProc (name : String)
     (params : List Parameter) (assumptions : List Condition) (condition : Condition) : Procedure :=
   let src := condition.condition.source
@@ -128,9 +130,9 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
     Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
     identically-named inputs, and the condition body is rewritten to match.
 
-    The original procedure's `preconditions` are assumed at the start of the
-    helper's body so a postcondition may rely on them for its
-    well-formedness — e.g. a postcondition that calls a partial function
+    When the helper needs them (see `needsPrecedingClauses`), the original procedure's
+    `preconditions` are assumed at the start of its body, so a postcondition may rely
+    on them for its well-formedness — e.g. a postcondition that calls a partial function
     `safe(x) requires x > 0` is well-formed only because the procedure declares
     `requires x > 0`. They are emitted as `assume` statements rather than helper
     preconditions: the helper only needs them to hold in order to be well-formed,
@@ -481,6 +483,16 @@ private def bindMentionedTypeArgs (typeArgs : List Identifier) (helper : Procedu
   let mentioned := ((mapProcedureHighTypesM collect helper).run []).2
   { helper with typeArgs := typeArgs.filter (mentioned.contains ·.text) }
 
+/-- Whether the helper for `condition` needs the clauses before it. `transparencyPass` emits a
+    helper that assumes nothing as a function only, so the helper needs them wherever that function
+    would mean something else: where it drops an `Assert` they discharge, or where an interpreted
+    call to one of `twinned` would reach the callee's `$asFunction` twin instead of running it, or
+    a destructor or checked operator would lose its check. A first clause's helper is a function
+    whatever it calls. `condition` must be the rewritten one: an external's precondition, such as
+    `seqSelect`'s bounds, shows only as the `Assert` this pass inserts. -/
+private def needsPrecedingClauses (twinned : Std.HashSet String) (condition : StmtExprMd) : Bool :=
+  functionalizeChanges twinned condition
+
 /-- Build the pre/postcondition helper procedures for one procedure, rewriting call
     sites inside the contract expressions so they carry the callee's precondition
     obligations.
@@ -492,18 +504,21 @@ private def bindMentionedTypeArgs (typeArgs : List Identifier) (helper : Procedu
     Only the condition expressions are rewritten; the assumes `mkPostConditionProc`
     prepends are left alone, for the reason given in its docstring. -/
 private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
-    (proc : Procedure) : ContractM (List Procedure) := do
+    (twinned : Std.HashSet String) (proc : Procedure) : ContractM (List Procedure) := do
   let rw := rewriteCallSites model contractInfoMap
   let preProcs ← proc.preconditions.zipIdx.mapM fun (c, i) => do
     let condition' ← rw c.condition
     -- See `mkConditionProc` for why the preceding preconditions are assumed.
+    let context :=
+      if needsPrecedingClauses twinned condition' then proc.preconditions.take i else []
     pure (mkConditionProc (preCondProcName proc.name.text i) proc.inputs
-      (proc.preconditions.take i) { c with condition := condition' })
+      context { c with condition := condition' })
   let postProcs ← proc.body.postconditions.zipIdx.mapM fun (c, i) => do
     let condition' ← rw c.condition
+    let (pres, posts) := if needsPrecedingClauses twinned condition'
+      then (proc.preconditions, proc.body.postconditions.take i) else ([], [])
     pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs
-      proc.outputs proc.preconditions (proc.body.postconditions.take i)
-      { c with condition := condition' })
+      proc.outputs pres posts { c with condition := condition' })
   return (preProcs ++ postProcs).map (bindMentionedTypeArgs proc.typeArgs)
 
 /-- Conjoin a list of conditions into a single expression with `&&`. -/
@@ -555,7 +570,9 @@ def lowerContracts (model : SemanticModel) (program : LaurelProgram) : LaurelPro
         | none => pure proc
       -- Rewrite call sites in the procedure body
       rewriteCallSitesInProc model contractInfoMap proc
-    let helperProcs ← program.staticProcedures.flatMapM (mkHelperProcs model contractInfoMap)
+    -- Decided from the bodies just lowered, as `transparencyPass` will decide it.
+    let helperProcs ← program.staticProcedures.flatMapM
+      (mkHelperProcs model contractInfoMap (twinnedNames transformedProcs))
     return helperProcs ++ transformedProcs).run 0
 
   { program with staticProcedures := allProcs }
