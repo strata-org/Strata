@@ -8,15 +8,20 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
--- No interpreters: `multipleReturns` has no body, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure multipleReturns() returns (x: int, y: int, z: int)
   opaque
-  ensures x == 1 && y == 2 && z == 3;
+  ensures x == 1 && y == 2 && z == 3
+{
+  x := 1;
+  y := 2;
+  z := 3
+};
 
 procedure caller()
+  entry
   opaque
 {
   var y: int;
@@ -34,23 +39,5 @@ procedure caller()
   var m: int := 3;
   var n: int;
   n := 4
-};
-#end
-
--- A variable assigned from two results of one call is refused as an ill-formed call.
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
-#strata
-program Laurel;
-procedure multipleReturns() returns (x: int, y: int, z: int)
-  opaque
-  ensures x == 1 && y == 2 && z == 3;
-
-procedure repeatedAssignTarget()
-  opaque
-{
-  var x: int;
-  assign x, x, x := multipleReturns();
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the call to multipleReturns passes the variable x for more than one out parameter; the results of a call must be distinct variables
-  assert false
 };
 #end

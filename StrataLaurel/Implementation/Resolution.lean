@@ -1423,6 +1423,18 @@ private def declInferValueType (name : Identifier) (initSource : FileRange)
     pure { val := .Unknown, source := valueTy.source }
   | _ => pure valueTy
 
+private def reportDuplicateTargets (targets : List VariableMd) : ResolveM Unit := do
+  let mut seen : List Nat := []
+  for target in targets do
+    if let .Local ref := target.val then
+      if let some id := ref.uniqueId then
+        if seen.contains id then
+          let diag := diagnosticFromSource target.source
+            s!"'{ref.text}' is assigned more than once by this assignment"
+          modify fun s => { s with errors := s.errors.push diag }
+        else
+          seen := id :: seen
+
 /-- (Decl-Synth over multi-assign) Component types each target adopts from a
     synthesized multi-valued RHS; all `none` on a non-multi-valued RHS.
     Shared by `Synth.assign`/`Check.assign`. `inferInfo` is `some` only when
@@ -2959,6 +2971,7 @@ def Synth.assign (exprMd : StmtExprMd)
     | .inr (param, ty', vs) =>
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
+  reportDuplicateTargets targets'
   pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by

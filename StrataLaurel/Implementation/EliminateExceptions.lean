@@ -542,17 +542,18 @@ private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (value : St
 /-! ### Statement lowering -/
 
 /-- Lower a call to a throwing procedure. The callee now returns any inout
-    outputs it has *and* a `Result` value; bind the `Result`
-    to a fresh temp — keeping the inout targets — then propagate on `Bad` or
-    unwrap the value on `Good`. (The heap `$heap` becomes such an inout output
-    only later, when heap parameterization threads it through both signatures and
-    call sites; this pass runs before that.)
+    outputs it has *and* a `Result` value; bind the inout outputs and the `Result`
+    to fresh temps, then propagate on `Bad` or assign the targets on `Good`.
+    (The heap `$heap` becomes such an inout output only later, when heap
+    parameterization threads it through both signatures and call sites; this
+    pass runs before that.)
 
     The original call is a (possibly multi-target) assignment whose targets align
-    positionally with the callee's original outputs. The inout targets are kept
-    in place; the single value target is replaced by the fresh `$callres` and
-    unwrapped on the Good path. This matches the callee's new output order
-    (inout outputs, then the `Result`).
+    positionally with the callee's original outputs. Each inout target is
+    replaced by a fresh `$callinout`, and the single value target by the fresh
+    `$callres`; both are assigned to their targets only on the Good path, so a
+    call that throws leaves its targets unchanged. This matches the callee's new
+    output order (inout outputs, then the `Result`).
 
     Not recursive (it only rewrites the call node itself), so it sits outside the
     statement-lowering `mutual` block below. -/
@@ -575,11 +576,23 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- Split targets (positional with callee outputs) into kept inout targets and
   -- the single value target (replaced by `$callres`, unwrapped on the Good path).
   let paired := targets.zip calleeOutputs
-  let inoutTargets := paired.filterMap (fun (t, o) =>
-    if calleeInputNames.contains o.name.text then some t else none)
+  let mut inoutTemps : List VariableMd := []
+  let mut inoutDecls : List StmtExprMd := []
+  let mut inoutAssigns : List StmtExprMd := []
+  for (t, o) in paired do
+    if calleeInputNames.contains o.name.text then
+      let temp := s!"$callinout_{← freshNat}"
+      let (targetTy, decl, target) : HighTypeMd × List StmtExprMd × VariableMd := match t.val with
+        | .Declare param =>
+            (param.type.getD o.type, [⟨.Var (.Declare param), t.source⟩], ⟨.Local param.name, t.source⟩)
+        | .Local x => ((model.get x).getType, [], t)
+        | .Field _ _ => (o.type, [], t)
+      inoutTemps := inoutTemps ++ [⟨.Declare ⟨mkId temp, targetTy⟩, .unknown⟩]
+      inoutDecls := inoutDecls ++ decl
+      inoutAssigns := inoutAssigns ++ [nn (.Assign [target] (localRef temp))]
   let valueTarget? := (paired.find? (fun (_, o) => !calleeInputNames.contains o.name.text)).map Prod.fst
   let callresTarget : VariableMd := ⟨.Declare ⟨mkId callres, resultTyOf valTy errTy⟩, .unknown⟩
-  let multiCall := nn (.Assign (inoutTargets ++ [callresTarget]) callNode)
+  let multiCall := nn (.Assign (inoutTemps ++ [callresTarget]) callNode)
   -- Propagate on `Bad` (exits the block), so the Good-path unwrap that follows is
   -- reached only when the call did not throw. An else-less `if` keeps this void.
   -- The propagated exception is written into the current region's `$exc` (whose
@@ -607,7 +620,8 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
         ([], [setLocal x.text (resultApp exnResultValue (localRef callres))])
     | _ => ([], [])
   -- All of this is machinery for one call, so it points at the call.
-  pure (fillSrcs callNode.source (preDecls ++ [multiCall] ++ propagate ++ goodStmts))
+  pure (fillSrcs callNode.source
+    (inoutDecls ++ preDecls ++ [multiCall] ++ propagate ++ inoutAssigns ++ goodStmts))
 
 mutual
 
