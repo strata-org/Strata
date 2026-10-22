@@ -1753,7 +1753,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
     : EIO Message VCResult := do
-  let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+  -- Formatting the whole program is costly on a large one, so it is done only when the debug
+  -- trace below shows it.
+  let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let ans ← IO.toEIO
       (fun e => Message.fromFormat f!"{e}")
       (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
@@ -1769,7 +1771,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | _ => true
     if traceInQuiet || options.verbose >= VerboseMode.debug then
       dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
-                   {if options.verbose >= VerboseMode.debug then prog else ""}"
+                   {if options.verbose >= VerboseMode.debug then prog () else ""}"
     return { obligation := obligation,
              outcome := Except.error vcError,
              verbose := options.verbose,
