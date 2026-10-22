@@ -3661,7 +3661,7 @@ theorem block_inner_starE
 still open, or its body reached a terminal/exiting outcome (with the *same*
 trace, since block enter/exit steps emit nothing) and the block projected the
 result store through the parent, restoring the parent factory. -/
-private theorem block_run_to_finalE
+theorem block_run_to_finalE
     {inner : Config P CmdT} {label : Option String}
     {σ_parent : SemanticStore P}
     {cfg : Config P CmdT} {tr : List EventT}

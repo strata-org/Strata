@@ -38,6 +38,9 @@ import Strata.Languages.Core.WFProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectness
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect

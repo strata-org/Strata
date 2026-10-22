@@ -36,6 +36,8 @@ together with basic assumption-prefix algebra.
 - `Trace.AssertionsValid.append`, `Trace.AssertionsValid.left_of_append`, and
   `Trace.AssertionsValid.append_of_reachable_left` — compose, restrict, and
   conditionally sequence trace validity.
+- `Trace.AssertionsValid.suffix` — keeps validity of a suffix once the dropped
+  prefix's assumptions hold in every world.
 - `Trace.CoverSatisfiableFrom.mono_assumptions` — preserves per-ID cover
   satisfiability when accumulated assumptions are weakened.
 -/
@@ -403,6 +405,45 @@ theorem Trace.AssertionsValidFrom.append_cond
           rw [Trace.AssumptionsHold_append] at hhold ⊢
           exact ⟨hhold.1,
             (Trace.assumptionsHold_cons_cover I world condition rest).mpr hhold.2⟩
+
+/-- Validity of `pre ++ rest` gives validity of `rest` under the accumulated
+assumptions together with those of `pre`. -/
+private theorem Trace.AssertionsValidFromP.split {P : PureExpr} (I : ConditionInterp P)
+    {keep : EventArg P → Prop} :
+    ∀ (pre rest acc : Trace P),
+      Trace.AssertionsValidFromP P I keep acc (pre ++ rest) →
+      Trace.AssertionsValidFromP P I keep (acc ++ pre) rest
+  | [], rest, acc, h => by simpa using h
+  | (.assume c) :: pre, rest, acc, h => by
+    simp only [List.cons_append, Trace.AssertionsValidFromP] at h
+    have := Trace.AssertionsValidFromP.split I pre rest _ h
+    simpa [List.append_assoc] using this
+  | (.assert c) :: pre, rest, acc, h => by
+    simp only [List.cons_append, Trace.AssertionsValidFromP] at h
+    exact Trace.AssertionsValidFromP.mono_assumptions I keep
+      (fun _ hw c' hc' => hw c' (by
+        rcases List.mem_append.mp hc' with hc' | hc'
+        · exact List.mem_append_left _ hc'
+        · exact List.mem_append_right _ (List.mem_cons_of_mem _ hc')))
+      (Trace.AssertionsValidFromP.split I pre rest acc h.2)
+  | (.cover c) :: pre, rest, acc, h => by
+    simp only [List.cons_append, Trace.AssertionsValidFromP] at h
+    exact Trace.AssertionsValidFromP.mono_assumptions I keep
+      (fun _ hw c' hc' => hw c' (by
+        rcases List.mem_append.mp hc' with hc' | hc'
+        · exact List.mem_append_left _ hc'
+        · exact List.mem_append_right _ (List.mem_cons_of_mem _ hc')))
+      (Trace.AssertionsValidFromP.split I pre rest acc h)
+
+/-- A valid trace stays valid for any of its suffixes once the assumptions of
+the dropped prefix hold in every world. -/
+theorem Trace.AssertionsValid.suffix {P : PureExpr} (I : ConditionInterp P)
+    (pre rest : Trace P) (hpre : ∀ c, Event.assume c ∈ pre → ∀ world, I.holds world c)
+    (h : Trace.AssertionsValid P I (pre ++ rest)) :
+    Trace.AssertionsValid P I rest :=
+  Trace.AssertionsValidFromP.mono_assumptions I _ (weaker := []) (stronger := [] ++ pre)
+    (fun world _ c hc => hpre c (by simpa using hc) world)
+    (Trace.AssertionsValidFromP.split I pre rest [] h)
 
 /-- Sequencing rule for assertion validity: the prefix is valid, and the suffix
 need only be valid when the prefix is reachable. -/

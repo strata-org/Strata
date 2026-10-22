@@ -22,6 +22,7 @@ public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.DL.Imperative.Logic.Termination
 public import Strata.DL.Imperative.Logic.TerminationProps
+public import Strata.DL.Imperative.Analysis.Assertions
 public import Strata.DL.Imperative.Logic.HoareTemplate
 
 public import Strata.DL.Imperative.KleeneStmt
