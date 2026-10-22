@@ -26,7 +26,13 @@ inductive TermPrimType where
   | string
   /-- `regex`: regular expressions in the theory of unicode strings -/
   | regex
-deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrimType
+deriving instance Repr, Inhabited, Hashable for TermPrimType
+
+-- Exposed so that importers' kernels can evaluate equality of primitive types
+-- (used through `TermType.beq` by the proof-producing `gen_smt_vcs`).
+@[expose] section
+deriving instance DecidableEq for TermPrimType
+end
 
 def TermPrimType.mkName : TermPrimType → String
   | .bool     => "bool"
@@ -91,7 +97,8 @@ instance TermType.decLt (x y : TermType) : Decidable (x < y) :=
   if h : TermType.lt x y then isTrue h else isFalse h
 
 
-def TermType.beq : TermType → TermType → Bool
+/-- Boolean equality of types. Exposed so that importers' kernels can evaluate it. -/
+@[expose] def TermType.beq : TermType → TermType → Bool
   | .prim pty₁, .prim pty₂ => pty₁ == pty₂
   | .option ty₁, .option ty₂ => TermType.beq ty₁ ty₂
   | .constr id₁ args₁, .constr id₂ args₂ => id₁ == id₂ && go args₁ args₂

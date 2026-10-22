@@ -376,8 +376,10 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     throw m!"Error: 'mod' expects exactly two operands, got '{as.length}'"
   | .app .abs [a] _ =>
     let (_, a) ← translateTerm a
-    let c := mkApp2 mkIntLT a (toExpr (0 : Int))
-    return (mkInt, mkApp5 (.const ``ite [1]) mkInt c (.app (.const ``Classical.propDecidable []) c) (.app mkIntNeg a) a)
+    let zero := toExpr (0 : Int)
+    let c := mkApp2 mkIntLT a zero
+    -- Use `Int.decLt`, the instance `Denote.denoteTerm` elaborates to.
+    return (mkInt, mkApp5 (.const ``ite [1]) mkInt c (mkApp2 (.const ``Int.decLt []) a zero) (.app mkIntNeg a) a)
   | .app .le [x, y] _ =>
     let (_, x) ← translateTerm x
     let (_, y) ← translateTerm y
@@ -569,6 +571,13 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
       expectString γ
       return e
     return (mkString, as.foldl (mkApp2 mkStringAppend) (mkApp2 mkStringAppend a b))
+  -- Options
+  | .none ty =>
+    let α ← translateSort ty
+    return (.app (.const ``Option [0]) α, .app (.const ``Option.none [0]) α)
+  | .some a =>
+    let (α, a) ← translateTerm a
+    return (.app (.const ``Option [0]) α, mkApp2 (.const ``Option.some [0]) α a)
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do

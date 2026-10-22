@@ -11,10 +11,9 @@ import Strata.MetaVerifier
 open StrataDDM (Program)
 
 /-!
-`gen_smt_vcs` closes `smtVCsCorrect p` with an axiom stating that its goals imply
-the denotation of the VCs, so the goals must have the denotation's meaning
-(issue #1488): operators are translated with their SMT-LIB semantics, and a VC
-the denotation does not cover is refused rather than trusted.
+`gen_smt_vcs` proves that each goal is the denotation of its VC (issue #1488):
+operators are translated with their SMT-LIB semantics, and a VC the denotation
+does not cover is refused.
 -/
 
 namespace Strata
@@ -35,8 +34,7 @@ theorem udivPgm_correct : smtVCsCorrect udivPgm := by
   rw [BitVec.smtUDiv_zero]
   decide
 
-/-- A VC over a datatype has no denotation, so `smtVCsCorrect` is `False` for this
-    program; the tactic must not introduce an axiom proving it. -/
+/-- A VC over a datatype has no denotation, so the tactic must refuse it. -/
 def dtPgm : Program :=
 #strata
 program Core;

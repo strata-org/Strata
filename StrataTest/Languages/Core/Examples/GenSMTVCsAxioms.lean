@@ -11,16 +11,17 @@ import Strata.MetaVerifier
 open StrataDDM (Program)
 ---------------------------------------------------------------------
 /-!
-## Axioms emitted by `gen_smt_vcs`
+## Axioms used by `gen_smt_vcs`
 
-`gen_smt_vcs` expands `smtVCsCorrect p` into one subgoal per VC and
-adds a per-theorem local axiom that bridges the `translateQuery`-based
-conjunction back to the `smtVCsCorrect` goal type.  This axiom makes
-`translateQuery` part of the trusted computing base but does not weaken
-the individual VC proofs that the user must supply.
+`gen_smt_vcs` expands `smtVCsCorrect p` into one subgoal per VC. The subgoals
+are built by `translateQuery`, and for each VC the tactic also proves that the
+subgoal is the denotation of the VC, so `translateQuery` is not trusted.
+Beyond the standard axioms, the proof only depends on `Lean.ofReduceBool` and
+`Lean.trustCompiler`, used to evaluate VC generation, and on
+`Core.WFFactory._native.native_decide.ax_1`, which comes from Strata's factory
+rather than from this tactic.
 
-`#print axioms` on a theorem proved with `gen_smt_vcs` will list this
-bridge axiom alongside the standard Lean kernel axioms.
+If the proof cannot be produced for some VC, the tactic fails, naming the VC.
 -/
 namespace Strata
 
@@ -42,13 +43,77 @@ theorem minCorrect : smtVCsCorrect minPgm := by
   gen_smt_vcs
   grind
 
--- `#print axioms` shows the per-theorem TCB bridge axiom produced by
--- `gen_smt_vcs`.  It is scoped to this theorem and named after it, so
--- different theorems get independent axioms.
--- Expected output includes:
---   Strata.minCorrect._genSMTVCs_tcbBridge : andN [...] → smtVCsCorrect minPgm
--- alongside the standard Lean kernel axioms (Classical.choice, propext, etc.).
+/--
+info: 'Strata.minCorrect' depends on axioms: [propext,
+ Classical.choice,
+ Lean.ofReduceBool,
+ Lean.trustCompiler,
+ Quot.sound,
+ Core.WFFactory._native.native_decide.ax_1✝]
+-/
+#guard_msgs in
 #print axioms minCorrect
+
+/-! Uninterpreted sorts are covered by the proof-producing translation. -/
+
+private def sortPgm : Program :=
+#strata
+program Core;
+type T;
+function f(x : T) : int;
+axiom [f_pos]: forall x : T :: int.gt(f(x), 0);
+procedure p(x : T, out r : int)
+spec {
+  ensures int.gt(r, 0);
+}
+{
+  r := f(x);
+};
+#end
+
+theorem sortCorrect : smtVCsCorrect sortPgm := by
+  gen_smt_vcs
+  all_goals grind
+
+/--
+info: 'Strata.sortCorrect' depends on axioms: [propext,
+ Classical.choice,
+ Lean.ofReduceBool,
+ Lean.trustCompiler,
+ Quot.sound,
+ Core.WFFactory._native.native_decide.ax_1✝]
+-/
+#guard_msgs in
+#print axioms sortCorrect
+
+/-! Bitvectors are covered as well. -/
+
+private def bvPgm : Program :=
+#strata
+program Core;
+procedure q(x : bv W8, out r : bv W8)
+spec {
+  ensures r == x;
+}
+{
+  r := bv8.add(x, bv{8}(0));
+};
+#end
+
+theorem bvCorrect : smtVCsCorrect bvPgm := by
+  gen_smt_vcs
+  all_goals bv_decide
+
+/--
+info: 'Strata.bvCorrect' depends on axioms: [propext,
+ Classical.choice,
+ Lean.ofReduceBool,
+ Lean.trustCompiler,
+ Quot.sound,
+ Core.WFFactory._native.native_decide.ax_1✝]
+-/
+#guard_msgs in
+#print axioms bvCorrect
 
 end Strata
 ---------------------------------------------------------------------
