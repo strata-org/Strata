@@ -26,7 +26,16 @@ public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.DL.Imperative.Logic.Termination
 public import Strata.DL.Imperative.Logic.TerminationProps
+public import Strata.DL.Imperative.Logic.Temporal
+public import Strata.DL.Imperative.Logic.TemporalProps
+public import Strata.DL.Imperative.Logic.ProgramEntries
+public import Strata.DL.Imperative.Analysis.Definitions
 public import Strata.DL.Imperative.Analysis.Assertions
+public import Strata.DL.Imperative.Analysis.DefinitionsProps
+public import Strata.DL.Imperative.Analysis.Verdict
+public import Strata.DL.Imperative.Analysis.VerdictProps
+public import Strata.DL.Imperative.Analysis.DeductiveVerification
+public import Strata.DL.Imperative.Analysis.DeductiveVerificationProps
 public import Strata.DL.Imperative.Logic.HoareTemplate
 
 public import Strata.DL.Imperative.KleeneStmt

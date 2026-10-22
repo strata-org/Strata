@@ -100,6 +100,17 @@ inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
       ReflTransTrace r x (emitted ++ rest) z
 
 
+/-- `ReflTransTrace` bounded by a number of steps: `x` reaches `z` in at most `n`
+steps of `r`, emitting `t`. A property quantified over every bound covers every
+finite execution, with no induction on the execution itself. -/
+@[expose] def ReflTransTraceN {A E : Type} (r : A → List E → A → Prop) :
+    Nat → A → List E → A → Prop
+  | 0, x, t, z => x = z ∧ t = []
+  | n + 1, x, t, z =>
+    (x = z ∧ t = []) ∨
+      ∃ emitted y rest, r x emitted y ∧ ReflTransTraceN r n y rest z ∧ t = emitted ++ rest
+
+
 /-! ## Type-valued trace-producing reflexive transitive closure
 
 The `Type`-valued analogue of `ReflTransTrace`, standing to it as `ReflTransT`
