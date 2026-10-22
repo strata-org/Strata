@@ -135,6 +135,24 @@ private def preludePlusUserGraph : CallGraph :=
 -- preferredRoots when no preferred node is in the SCC: fall back to alphabetical
 #guard mutualGraph.computeRoots (preferredRoots := ["z"]) == ["a"]
 
+/-!
+# Callees that are not declared
+
+A function's callees include names that are not declared functions, such as a datatype
+constructor and selector. They get an entry too, and the callee closure reaches past them.
+-/
+
+private def datatypeCalleesGraph : CallGraph :=
+  buildCallGraph [("leaf", []), ("mid", ["leaf", "Pair..fst", "MkPair"]),
+                  ("top", ["Pair..fst", "MkPair", "mid"])]
+
+#guard datatypeCalleesGraph.callees.keys.mergeSort (· < ·)
+    == ["MkPair", "Pair..fst", "leaf", "mid", "top"]
+#guard datatypeCalleesGraph.callers.keys.mergeSort (· < ·)
+    == ["MkPair", "Pair..fst", "leaf", "mid", "top"]
+#guard (datatypeCalleesGraph.getCalleesClosure "top").mergeSort (· < ·)
+    == ["MkPair", "Pair..fst", "leaf", "mid"]
+
 end Core.CallGraph.Tests
 
 end
