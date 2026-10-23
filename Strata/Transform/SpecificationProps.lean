@@ -40,6 +40,8 @@ Canonical event-trace overapproximation properties:
 - `overapproximatesTraces_assertValid` / `overapproximatesTraces_allAsserts` —
   transport per-identifier or whole-trace assertion validity when the trace
   relation reflects the corresponding predicate.
+- `overapproximatesTracesUptoWhen_assertValid` — the per-identifier transport for
+  equal initial environments and any relation between final environments.
 - `OverapproximatesTracesUptoWhen.comp_trans_eq` — shared-start composition with
   stage-specific trace relations and a transitive output-state relation.
 - `overapproximatesTraces_stmts` — lift per-statement trace overapproximation to
@@ -229,6 +231,30 @@ theorem OverapproximatesTraces.rel_comp
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
   [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- A trace overapproximation with equal initial environments and any relation `Rout` between
+final environments transports validity of one assertion identifier when its trace relation
+reflects that validity. -/
+theorem overapproximatesTracesUptoWhen_assertValid
+    (I : ConditionInterp P) (Rtrace : Relation (Trace P)) (Rout : Relation (Env P))
+    (L₁ L₂ : EventLang P (Event P)) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (hreflect : ∀ trace trace', Rtrace trace trace' → ∀ aid,
+      Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace)
+    (hover : OverapproximatesTracesUptoWhen Rtrace (· = ·) Rout L₁ L₂ T pre params₁ params₂)
+    {st : L₁.StmtT} {st' : L₂.StmtT} {aid : AssertId P}
+    (ht : T st = some st') (hpre : pre st)
+    (hvalid : AssertValidOnTracesWhen L₂ I
+      (L₂.initEnvWF params₂ st') st' aid) :
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ st) st aid := by
+  intro ρ₀ cfg trace hinit htrace
+  have hr := hover st st' ht hpre ρ₀ ρ₀ rfl hinit
+  obtain ⟨cfg', trace', htrace', hrel⟩ := hr.1 cfg trace htrace
+  exact hreflect trace trace' hrel aid
+    (hvalid ρ₀ cfg' trace' hr.2.2.2 htrace')
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
 /-- A trace overapproximation transports validity of one assertion identifier
 when its trace relation reflects that validity. -/
 theorem overapproximatesTraces_assertValid
@@ -243,12 +269,9 @@ theorem overapproximatesTraces_assertValid
     (ht : T st = some st') (hpre : pre st)
     (hvalid : AssertValidOnTracesWhen L₂ I
       (L₂.initEnvWF params₂ st') st' aid) :
-    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ st) st aid := by
-  intro ρ₀ cfg trace hinit htrace
-  have hr := hover st st' ht hpre ρ₀ ρ₀ rfl hinit
-  obtain ⟨cfg', trace', htrace', hrel⟩ := hr.1 cfg trace htrace
-  exact hreflect trace trace' hrel aid
-    (hvalid ρ₀ cfg' trace' hr.2.2.2 htrace')
+    AssertValidOnTracesWhen L₁ I (L₁.initEnvWF params₁ st) st aid :=
+  overapproximatesTracesUptoWhen_assertValid I Rtrace (· = ·) L₁ L₂ T pre params₁ params₂
+    hreflect hover ht hpre hvalid
 
 omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
   [HasSubstFvar P] [HasInt P] [HasIntOps P] in

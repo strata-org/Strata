@@ -1279,6 +1279,34 @@ theorem List.Rel₂.getElem?_some {R : α → β → Prop}
     | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
     | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
 
+/-- Lists related position by position, concatenated, are related position by position. -/
+theorem List.Rel₂.append {R : α → β → Prop} {l₁ l₂ : List α} {l₁' l₂' : List β} :
+    Rel₂ R l₁ l₁' → Rel₂ R l₂ l₂' → Rel₂ R (l₁ ++ l₂) (l₁' ++ l₂')
+  | .nil, h => h
+  | .cons hab h1, h2 => .cons hab (h1.append h2)
+
+/-- A list related position by position to a nonempty list is nonempty. -/
+theorem List.Rel₂.ne_nil {R : α → β → Prop} {l : List α} {l' : List β} (h : Rel₂ R l l')
+    (hl : l ≠ []) : l' ≠ [] := by
+  cases h with
+  | nil => exact absurd rfl hl
+  | cons => exact List.cons_ne_nil _ _
+
+/-- A list related position by position to `l ++ [a]` is some `m ++ [b]`, with `m` related
+to `l` and `b` to `a`. -/
+theorem List.Rel₂.append_singleton {R : α → β → Prop} : ∀ {l : List α} {a : α} {l' : List β},
+    Rel₂ R (l ++ [a]) l' → ∃ m b, l' = m ++ [b] ∧ Rel₂ R l m ∧ R a b
+  | [], _, _, .cons hab .nil => ⟨[], _, rfl, .nil, hab⟩
+  | _ :: _, _, _, .cons hab h => by
+    obtain ⟨m, b, rfl, hm, hb⟩ := List.Rel₂.append_singleton h
+    exact ⟨_ :: m, b, rfl, .cons hab hm, hb⟩
+
+/-- Lists related position by position by `R` are related by any relation that `R` implies. -/
+theorem List.Rel₂.imp {R S : α → β → Prop} (H : ∀ a b, R a b → S a b) {l : List α}
+    {l' : List β} : Rel₂ R l l' → Rel₂ S l l'
+  | .nil => .nil
+  | .cons hab h => .cons (H _ _ hab) (h.imp H)
+
 
 /-! ### Zip / map lemmas -/
 

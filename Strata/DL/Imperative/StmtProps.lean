@@ -39,6 +39,10 @@ Equational theory for the boolean shape walkers defined in
   `Stmt`/`Block.not_defined_of_mem_definedVars` give the dual for names a statement
   list defines.  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
+- Per-constructor equations for `noLoops` (`Block.noLoops_cons`,
+  `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): a non-empty list has
+  no loops exactly when its head and its rest have none; a loop is not loop-free, and
+  any other statement has no loops exactly when its sub-lists have none.
 -/
 
 /-! ### Decomposition lemmas for the structural shape predicates
@@ -1865,6 +1869,43 @@ theorem Block.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
       rw [Stmt.mapExpr_eq_mapExprM fExpr mapCmd s, Block.mapExpr_eq_mapExprM fExpr mapCmd rest]; rfl
   termination_by sizeOf ss
 end
+
+/-! ## `noLoops` by constructor -/
+
+/-- A list has no loops exactly when its head and its rest have none. -/
+theorem Block.noLoops_cons (s : Stmt P C) (ss : List (Stmt P C)) :
+    Block.noLoops (s :: ss) = (Stmt.noLoops s && Block.noLoops ss) := by
+  simp [Block.noLoops, Stmt.noLoops, Block.allSubstmts]
+
+/-- A command has no loops. -/
+theorem Stmt.noLoops_cmd (c : C) : Stmt.noLoops (.cmd c : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- An `ite` has no loops exactly when its two branches have none. -/
+theorem Stmt.noLoops_ite (g : ExprOrNondet P) (tss ess : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.ite g tss ess md) = (Block.noLoops tss && Block.noLoops ess) := by
+  simp [Stmt.noLoops, Block.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A block has no loops exactly when its body has none. -/
+theorem Stmt.noLoops_block (l : String) (ss : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.block l ss md) = Block.noLoops ss := by
+  simp [Stmt.noLoops, Block.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A loop is not loop-free. -/
+theorem Stmt.noLoops_loop (g : ExprOrNondet P) (m : Option P.Expr) (inv : List (String × P.Expr))
+    (body : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.loop g m inv body md) = false := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- An `exit` has no loops. -/
+theorem Stmt.noLoops_exit (l : String) (md : MetaData P) :
+    Stmt.noLoops (.exit l md : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A type declaration has no loops. -/
+theorem Stmt.noLoops_typeDecl (tc : TypeConstructor) (md : MetaData P) :
+    Stmt.noLoops (.typeDecl tc md : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
 
 end -- public section
 

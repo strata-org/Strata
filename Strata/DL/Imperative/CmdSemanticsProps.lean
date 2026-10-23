@@ -26,7 +26,8 @@ evaluation relation `EvalCmd`. Key results:
   `substStores`/`substDefined`/`invStores` symmetry, `InitState`/`UpdateState`
   definedness and uniqueness).
 - `storeAgreement_storeWith`: a `SemanticStore.update` at a source-undefined slot
-  preserves `StoreAgreement`.
+  preserves `StoreAgreement`; `storeAgreement_iff`: `StoreAgreement σ σ'` holds exactly when,
+  at every variable, `σ` has the value of `σ'` or is undefined.
 - `EvalCmd_preserves_isSome`: a command never undefines an already-defined slot.
 - Exact-value framing: `evalCmd_preserves_eq_of_not_written` preserves the value
   of a slot the command neither defines nor modifies.
@@ -437,6 +438,16 @@ theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
     rintro rfl; rw [h_src_none] at h_x_def; exact absurd h_x_def (by simp)
   rw [h_agree x h_def]
   simp [SemanticStore.update, h_ne]
+
+/-- `σ` agrees with `σ'` wherever `σ` is defined exactly when, at every variable, `σ` has the
+value of `σ'` or is undefined. -/
+theorem storeAgreement_iff {P : PureExpr} {σ σ' : SemanticStore P} :
+    StoreAgreement σ σ' ↔ ∀ x, σ x = σ' x ∨ σ x = none := by
+  refine ⟨fun h x => ?_, fun h x hx => (h x).resolve_right fun h0 => ?_⟩
+  · cases hσ : σ x with
+    | none => exact .inr rfl
+    | some v => exact .inl (hσ ▸ h x fun y hy => by simp [List.mem_singleton.mp hy, hσ])
+  · simpa [h0] using hx x (List.mem_singleton_self x)
 
 /-- `InitState` never undefines a slot: its target becomes `some`, others are
 unchanged. -/
