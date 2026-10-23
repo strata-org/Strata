@@ -386,6 +386,8 @@ private theorem ValEquiv_eq_iff {sctx : SortContext} {τ : TermType}
       exact ⟨fun hab => by rw [← hax, ← hby]; exact hab, fun hxy => by rw [hax, hby]; exact hxy⟩
     | real => simp [denoteSort, denotePrimSort] at h
     | regex => simp [denoteSort, denotePrimSort] at h
+termination_by sizeOf τ
+decreasing_by all_goals (try subst_vars) <;> simp_wf <;> omega
 
 /-- **`ValEquiv` is total from both sides** at every denotable sort: every SMT value has a `ValEquiv`-related
     realization and vice versa. -/
@@ -509,6 +511,8 @@ private theorem ValEquiv_cover {sctx : SortContext} (ty : TermType)
       · intro x
         refine ⟨cast (hsort id args h).symm x, ?_⟩
         rw [ValEquiv_constr_heq hne]; exact cast_heq _ _
+termination_by sizeOf ty
+decreasing_by all_goals (try subst_vars) <;> simp_wf <;> omega
 end
 
 /-- Extract the underlying equality from `ValEquiv` at `int`. -/
