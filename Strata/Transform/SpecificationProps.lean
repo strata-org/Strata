@@ -44,6 +44,9 @@ Canonical event-trace overapproximation properties:
   equal initial environments and any relation between final environments.
 - `OverapproximatesTracesUptoWhen.comp_trans_eq` — shared-start composition with
   stage-specific trace relations and a transitive output-state relation.
+- `OverapproximatesTracesUptoWhen.mono_trace` — trace-relation weakening (`Rtrace
+  ⊆ Rtrace'`), covariant.  Collapses the `RComp R R` that `comp_trans_eq` produces
+  for two stages sharing a transitive trace relation `R` back to the single `R`.
 - `overapproximatesTraces_stmts` — lift per-statement trace overapproximation to
   statement lists when the trace relation relates `[]` and respects append.
 
@@ -62,7 +65,9 @@ Properties of the `Overapproximates` family (monotonicity and composition):
 - `overapproximates_id` / `underapproximates_id` / `semanticallyEquivalent_id` —
   the identity transform inhabits each spec.
 - `EnvStoreAgree_trans` — transitivity of the `EnvStoreAgree` output relation
-  (defined in `Specification`), used to chain the per-pass instances.
+  (defined in `Specification`), used to chain per-pass instances.
+- `envStoreAgree_of_extendsWith` — forget classified target-only bindings to
+  weaken `Env.ExtendsWith` into the common `EnvStoreAgree` output relation.
 
 ### Key results for `OverapproximatesAggressivelyUptoWhen`
 
@@ -343,7 +348,33 @@ theorem OverapproximatesTracesUptoWhen.comp_trans_eq
       exact ⟨ρ₂, trace₂, hrun₂, houtTrans _ _ _ hout₁ hout₂,
         ⟨trace₁, hrel₁, hrel₂⟩⟩
 
-
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Trace-relation weakening.  `Rtrace` occurs only covariantly in
+`OverapproximatesTracesUptoWhen` (it is the guarantee on the matched target
+trace), so replacing it by any coarser relation `Rtrace'` (with `Rtrace ⊆
+Rtrace'`) preserves the overapproximation. -/
+theorem OverapproximatesTracesUptoWhen.mono_trace
+    {EventT : Type}
+    {Rtrace Rtrace' : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hsub : ∀ t t', Rtrace t t' → Rtrace' t t')
+    (h : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesTracesUptoWhen Rtrace' Rin Rout L₁ L₂ T pre params₁ params₂ := by
+  intro st st' ht hpre ρ₀ ρ₀' hin hinit
+  obtain ⟨hprefix, hterm, hexit, hwf⟩ := h st st' ht hpre ρ₀ ρ₀' hin hinit
+  refine ⟨?_, ?_, ?_, hwf⟩
+  · intro cfg trace hrun
+    obtain ⟨cfg', trace', hrun', hrel⟩ := hprefix cfg trace hrun
+    exact ⟨cfg', trace', hrun', hsub _ _ hrel⟩
+  · intro ρ' trace hrun
+    obtain ⟨ρ'', trace', hrun', hout, hrel⟩ := hterm ρ' trace hrun
+    exact ⟨ρ'', trace', hrun', hout, hsub _ _ hrel⟩
+  · intro lbl ρ' trace hrun
+    obtain ⟨ρ'', trace', hrun', hout, hrel⟩ := hexit lbl ρ' trace hrun
+    exact ⟨ρ'', trace', hrun', hout, hsub _ _ hrel⟩
 
 
 
@@ -1015,6 +1046,15 @@ theorem EnvStoreAgree_trans {P : PureExpr} {ρ₁ ρ₂ ρ₃ : Env P}
     (h₁ : EnvStoreAgree ρ₁ ρ₂) (h₂ : EnvStoreAgree ρ₂ ρ₃) :
     EnvStoreAgree ρ₁ ρ₃ :=
   ⟨StoreAgreement.trans h₁.1 h₂.1, h₁.2.trans h₂.2⟩
+
+/-- `Env.ExtendsWith` weakens to `EnvStoreAgree`: a classified environment
+extension preserves store agreement on source-defined names and the failure
+flag, forgetting the target-only register classification and factory equality.
+This output-relation weakening allows composition across stages that use
+different environment relations. -/
+theorem envStoreAgree_of_extendsWith {P : PureExpr} {Extra : P.Ident → Prop}
+    {ρ ρ' : Env P} (h : Env.ExtendsWith Extra ρ ρ') : EnvStoreAgree ρ ρ' :=
+  ⟨h.2.2.toStoreAgreement, h.2.1⟩
 
 
 /-! ## Structured statements-specific results -/

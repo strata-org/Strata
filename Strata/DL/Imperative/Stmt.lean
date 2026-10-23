@@ -779,7 +779,7 @@ body declares no local variables.
 
 mutual
 /-- Returns true if every reachable loop's body declares no local vars. -/
-@[expose] def Stmt.loopBodyNoInits [HasFvars P] (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.loopBodyNoInits [HasVarsImp P C] (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.loopBodyNoInits bss
@@ -791,7 +791,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
-@[expose] def Block.loopBodyNoInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.loopBodyNoInits [HasVarsImp P C] (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest

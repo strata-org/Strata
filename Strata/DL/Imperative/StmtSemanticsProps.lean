@@ -20,6 +20,16 @@ public section
 
 /-! # Metatheory of statement-list small-step evaluation
 
+## Statement-level store and environment extension laws
+
+`StoreAgreement.of_projectStore` and `StoreAgreement.of_projectStore_parents`
+(block-scope `projectStore` survival for store agreement),
+`StoreExtendsWith.projectStore` (scope-projection of a classified store
+extension), and `Env.ExtendsWith.refl` / `Env.ExtendsWith.trans_union`
+(environment-extension reflexivity and composition).  These are the
+statement-level (`projectStore`- and `Env`-keyed) companions of the
+command-level store relations in `StoreRelationsProps`.
+
 ## Failure-flag semantics
 
 Key results for `StepStmt` / `StepStmtStar`:
@@ -2045,6 +2055,84 @@ theorem block_some_reaches_terminal (P : PureExpr) {CmdT : Type} [HasBoolOps P]
       | step _ _ _ h _ => cases h
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+/-- The projected inner store agrees with the unprojected inner store on
+`σ_parent`'s domain. Variables present in the parent are unchanged by
+projection; variables absent from the parent become `none` in the projection,
+but those don't satisfy `isDefined (projectStore _ _) [x]`, so
+`StoreAgreement` doesn't constrain them. -/
+theorem StoreAgreement.of_projectStore {P : PureExpr}
+    (σ_parent σ_inner : SemanticStore P) :
+    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
+  intro x h_def
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  unfold projectStore at h ⊢
+  by_cases hp : (σ_parent x).isSome
+  · simp [hp]
+  · simp [hp] at h
+
+namespace StoreExtendsWith
+
+/-- Projecting related inner stores through related parent stores preserves
+classified extension. -/
+theorem projectStore {P : PureExpr} {Extra : P.Ident → Prop}
+    {sourceParent targetParent sourceInner targetInner : SemanticStore P}
+    (hparent : StoreExtendsWith Extra sourceParent targetParent)
+    (hinner : StoreExtendsWith Extra sourceInner targetInner) :
+    StoreExtendsWith Extra
+      (Imperative.projectStore sourceParent sourceInner)
+      (Imperative.projectStore targetParent targetInner) := by
+  refine ⟨?_, ?_⟩
+  · intro ident hdefined
+    have hsourceSome :
+        (Imperative.projectStore sourceParent sourceInner ident).isSome = true :=
+      hdefined ident (List.mem_singleton.mpr rfl)
+    simp only [Imperative.projectStore] at hsourceSome ⊢
+    by_cases hsp : (sourceParent ident).isSome
+    · rw [if_pos hsp] at hsourceSome ⊢
+      have hparentEq : sourceParent ident = targetParent ident :=
+        hparent.1 ident (fun x hx => by
+          simpa [List.mem_singleton.mp hx] using hsp)
+      have htp : (targetParent ident).isSome := by
+        rw [← hparentEq]
+        exact hsp
+      rw [if_pos htp]
+      exact hinner.1 ident (fun x hx => by
+        simpa [List.mem_singleton.mp hx] using hsourceSome)
+    · rw [if_neg hsp] at hsourceSome
+      simp at hsourceSome
+  · intro ident htargetSome
+    simp only [Imperative.projectStore] at htargetSome ⊢
+    by_cases htp : (targetParent ident).isSome
+    · rw [if_pos htp] at htargetSome
+      rcases hparent.2 ident htp with hsp | hextra
+      · rcases hinner.2 ident htargetSome with hsi | hextra
+        · rw [if_pos hsp]
+          exact Or.inl hsi
+        · exact Or.inr hextra
+      · exact Or.inr hextra
+    · rw [if_neg htp] at htargetSome
+      simp at htargetSome
+
+end StoreExtendsWith
+
+namespace Env.ExtendsWith
+
+/-- Every environment extends itself. -/
+theorem refl {P : PureExpr} (Extra : P.Ident → Prop) (env : Env P) :
+    env.ExtendsWith Extra env :=
+  ⟨rfl, rfl, StoreExtendsWith.refl Extra _⟩
+
+/-- Environment extension composes while unioning extra-register classes. -/
+theorem trans_union {P : PureExpr} {Extra₁ Extra₂ : P.Ident → Prop}
+    {source middle target : Env P}
+    (h₁ : source.ExtendsWith Extra₁ middle)
+    (h₂ : middle.ExtendsWith Extra₂ target) :
+    source.ExtendsWith (fun ident => Extra₁ ident ∨ Extra₂ ident) target :=
+  ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1,
+   StoreExtendsWith.trans_union h₁.2.2 h₂.2.2⟩
+
+end Env.ExtendsWith
 
 /-- **Two-parent `projectStore` survival for `StoreAgreement`.**  Agreeing parents
 + agreeing inner stores ⟹ the block-projected stores agree (a projected key is

@@ -10,8 +10,9 @@ public import Strata.DL.Imperative.CmdTrace
 /-! # Deductive trace interpretation
 
 Defines semantic neutrality, assumption satisfaction, trace reachability,
-assertion validity and satisfiability, and cover satisfiability over interpreted
-command events.
+assertion validity and satisfiability, cover satisfiability, and compatibility
+conditions for environment-extending event relations over interpreted command
+events.
 The `*From` definitions are recursive workers carrying assumptions accumulated
 before the remaining trace.
 -/
@@ -31,6 +32,35 @@ structure ConditionInterp (P : PureExpr) where
   World : Type
   /-- Whether a captured event condition holds in a semantic world. -/
   holds : World → EventArg P → Prop
+
+/-! ## Compatibility with environment-extending event relations
+
+These predicates state when an abstract condition interpretation respects
+`EventArg.ExtendsEnv` and operationally true event stuttering under a selected
+class of factories. -/
+
+/-- A condition interpretation is *stable* under `allowedVarName`-classified environment
+extension when it assigns the same truth value to any two event conditions
+related by `EventArg.ExtendsEnv allowedVarName`. This is the compatibility premise that
+`TraceStuttersEnv allowedVarName allowedFactory` does not supply on its own: it fails
+precisely when a captured condition reads a target-only register classified by
+`allowedVarName`. -/
+@[expose] def ConditionInterp.StableUnderExtendsEnv
+    {P : PureExpr} (I : ConditionInterp P) (allowedVarName : P.Ident → Prop) : Prop :=
+  ∀ (world : I.World) (source target : EventArg P),
+    source.ExtendsEnv allowedVarName target → (I.holds world source ↔ I.holds world target)
+
+/-- A condition interpretation *accepts true stutter* for an allowed class
+of factories when every condition captured under an allowed factory that the
+evaluator reports as `true` holds in every world. Restricting the premise is
+necessary for interpretations tied to one expression factory: operational truth
+under an unrelated factory need not have meaning in that interpretation. -/
+@[expose] def ConditionInterp.TrueStutterHolds
+    {P : PureExpr} [HasBool P] (I : ConditionInterp P)
+    (allowedFactory : P.Factory → Prop) : Prop :=
+  ∀ (condition : EventArg P), allowedFactory condition.factory →
+    P.eval condition.factory condition.store condition.expr = some HasBool.tt →
+    ∀ world, I.holds world condition
 
 /-- An event is semantically neutral when its condition holds in every world. -/
 @[expose] def Event.neutral (I : ConditionInterp P) : Event P → Prop
