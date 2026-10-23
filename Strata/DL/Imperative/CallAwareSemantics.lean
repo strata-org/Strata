@@ -22,33 +22,28 @@ namespace Imperative
 
 public section
 
-/-- One call-aware event-trace CFG step: the generic `StepCFGE` driven by the
-call-aware command relation `EvalCmdExtE π`. -/
+/-- One call-aware event-trace CFG step. The CFG and environment are carried
+by the source and target configurations. -/
 abbrev StepCFGExtE
     {l : Type} [BEq l]
     {P : PureExpr}
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (fac : P.Factory)
-    (cfg : CFG l (DetBlock l (CmdExt P) P)) :
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     CFGConfig l (CmdExt P) P → List (Event P) → CFGConfig l (CmdExt P) P → Prop :=
-  _root_.Imperative.StepCFGE P (EvalCmdExtE π) fac cfg
+  _root_.Imperative.StepCFGE P (EvalCmdExtE π)
 
-/-- Multi-step call-aware event-trace CFG execution: the reflexive-transitive
-closure of `StepCFGExtE`, concatenating each step's events chronologically. -/
+/-- Reflexive-transitive call-aware event-trace CFG execution. -/
 abbrev StepCFGExtStarE
     {l : Type} [BEq l]
     {P : PureExpr}
     [DecidableEq P.Ident] [HasOldIdent P]
     [HasBool P] [HasBoolOps P] [HasFvar P] [HasFvars P]
     {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
-    (π : String → Option (Procedure P (CmdExt P) Hdr))
-    (fac : P.Factory)
-    (cfg : CFG l (DetBlock l (CmdExt P) P)) :
+    (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     CFGConfig l (CmdExt P) P → List (Event P) → CFGConfig l (CmdExt P) P → Prop :=
-  _root_.Imperative.StepCFGStarE P (EvalCmdExtE π) fac cfg
+  _root_.Imperative.StepCFGStarE P (EvalCmdExtE π)
 
 /-- One call-aware event-trace Kleene step: the generic `StepKleeneE` driven by
 the call-aware command relation `EvalCmdExtE π`. -/

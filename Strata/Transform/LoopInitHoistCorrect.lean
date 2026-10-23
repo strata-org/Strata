@@ -203,7 +203,7 @@ namespace LoopInitHoistLoopDriver
 /-! ## Iteration build helper. -/
 
 /-- Per-iteration construction for a determinised loop with no measure and no
-invariants: given the guard true at `ρ_pre`, well-formed Bool evaluation, and a
+invariants: given the guard true at `ρ_pre` and a
 body run reaching `.terminal ρ_body`, the loop steps from `ρ_pre` to the residual
 `.loop` stmts at `ρ_body`, with the loop-locals projected back out via
 `projectStore` and the factory restored to `fac`. -/
@@ -212,7 +212,6 @@ private theorem buildLoopIterationDet {P : PureExpr} [HasFvar P] [HasBool P] [Ha
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {ρ_pre ρ_body : Env P}
     (h_guard : P.eval ρ_pre.factory ρ_pre.store g = .some HasBool.tt)
-    (h_wfb : WellFormedSemanticEvalBool ρ_pre.factory)
     (h_body_run : StepStmtStar P (EvalCmd P)
         (.stmts body ρ_pre) (.terminal ρ_body)) :
     StepStmtStar P (EvalCmd P)
@@ -224,7 +223,7 @@ private theorem buildLoopIterationDet {P : PureExpr} [HasFvar P] [HasBool P] [Ha
       (.seq (.block .none ρ_pre.store
               (.stmts body ρ_pre))
             [.loop (.det g) none [] body md]) :=
-    .step_loop_enter h_guard h_wfb
+    .step_loop_enter h_guard
   have h_block_run : StepStmtStar P (EvalCmd P)
       (.block .none ρ_pre.store (.stmts body ρ_pre))
       (.terminal { ρ_body with store := projectStore ρ_pre.store ρ_body.store }) :=
@@ -282,14 +281,14 @@ public theorem loopDet_preserves_none_terminal_fuel {P : PureExpr} [HasFvars P] 
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         have h_ρ_post_eq : ρ_post = ρ := by
           match hrest with
           | .refl _ => rfl
           | .step _ _ _ hd _ => exact nomatch hd
         subst h_ρ_post_eq
         exact h_none
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         -- Peel one iteration WITHOUT a no-exit hypothesis: the seq decomposes to a
         -- `.block .none` reaching `.terminal`, which forces an inner `.terminal`.
         obtain ⟨ρ_block, h_block_term, h_loop_stmts, _⟩ :=
@@ -542,11 +541,10 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
   | succ n ih =>
     intro ρ_src ρ_hoist ρ_post h_agree h_hf h_fac hwfb hwfv hwf_def hwf_congr hwf_var
       h_def h_run hlen
-    have hwfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         have h_ρ_post_eq : ρ_post = ρ_src := by
           match hrest with
           | .refl _ => rfl
@@ -558,12 +556,12 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_hoist.store h_agree) ht
         refine ⟨ρ_hoist, ?_, ?_, ?_, ?_⟩
         · exact .step _ _ _
-            (.step_loop_exit h_cond_h hwfb_h)
+            (.step_loop_exit h_cond_h)
             (.refl _)
         · exact h_agree
         · exact h_hf
         · exact h_def
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
@@ -599,7 +597,6 @@ private theorem samenameLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars P
               { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
           simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
             (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h
-            hwfb_h
             h_body_h_run
         -- Next-iteration projected envs.
         let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
@@ -684,10 +681,10 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         match hrest with
         | .step _ _ _ hd _ => exact nomatch hd
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
@@ -697,7 +694,6 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
         have h_hf_body : ρ_h_body.hasFailure = ρ_src_body.hasFailure := h_hf
         have h_def_body : DTyped Dτ D ρ_h_body := h_def
-        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
         rcases seqT_reaches_exiting hrest with ⟨h_block_exit, hl⟩ | ⟨ρ₁, h_block_term, h_loop_stmts,
             hl⟩
         · -- inl: this iteration's body exits with `label`.
@@ -710,7 +706,7 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
           refine ⟨{ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }, ?_, ?_, ?_, ?_⟩
           · refine ReflTrans.step _ _ _
               (.step_loop_enter
-                h_cond_h h_wfb_h) ?_
+                h_cond_h) ?_
             refine ReflTrans_Transitive _ _ _ _
               (seq_inner_star P (EvalCmd P) _ _ _
                 (block_inner_star P (EvalCmd P) _ _ (none : Option String)
@@ -737,7 +733,7 @@ private theorem samenameLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
             simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
           let ρ_tgt_next : Env P :=
             { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }
@@ -925,11 +921,10 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
   | succ n ih =>
     intro ρ_src ρ_hoist ρ_post h_agree h_hf h_fac hwfb hwfv hwf_def hwf_congr hwf_var
       h_src_none h_tgt_none h_init h_run hlen
-    have hwfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         have h_ρ_post_eq : ρ_post = ρ_src := by
           match hrest with
           | .refl _ => rfl
@@ -941,13 +936,13 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_hoist.store h_agree) ht
         refine ⟨ρ_hoist, ?_, ?_, ?_, ?_, ?_⟩
         · exact .step _ _ _
-            (.step_loop_exit h_cond_h hwfb_h)
+            (.step_loop_exit h_cond_h)
             (.refl _)
         · exact h_agree
         · exact h_hf
         · intro y hy; exact h_src_none y hy
         · intro y hy; exact h_tgt_none y hy
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
@@ -982,7 +977,6 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
               { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
           simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
             (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h
-            hwfb_h
             h_body_h_run
         let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
         let ρ_tgt_next : Env P :=
@@ -1032,7 +1026,7 @@ private theorem dualUndefLoopDetSA_TE_fuel {P : PureExpr} [HasFvar P] [HasFvars 
           intro y hy
           exact loopDet_preserves_none_terminal (h_src_none y hy) (reflTransT_to_prop
             (ReflTransT.step _ _ _ (StepStmt.step_loop_enter
-              ht hwf) hrest))
+              ht) hrest))
 
 /-- Prop-level wrapper of `dualUndefLoopDetSA_TE_fuel`. -/
 public theorem dualUndefLoopDetSA_TE {P : PureExpr} [HasFvars P] [HasFvar P] [HasBoolOps P]
@@ -1103,10 +1097,10 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
     match h_run with
     | .step _ _ _ step hrest =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         match hrest with
         | .step _ _ _ hd _ => exact nomatch hd
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
@@ -1117,7 +1111,6 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
         have h_hf_body : ρ_h_body.hasFailure = ρ_src_body.hasFailure := h_hf
         have h_src_none_body : ∀ y ∈ U, ρ_src_body.store y = none := h_src_none
         have h_tgt_none_body : ∀ y ∈ U, ρ_h_body.store y = none := h_tgt_none
-        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
         rcases seqT_reaches_exiting hrest with ⟨h_block_exit, hl⟩ | ⟨ρ₁, h_block_term, h_loop_stmts,
             hl⟩
         · obtain ⟨ρ_inner, h_body_exit_T, h_ρpost_eq, hl2⟩ := blockT_none_reaches_exiting
@@ -1129,7 +1122,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
           refine ⟨{ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }, ?_, ?_, ?_⟩
           · refine ReflTrans.step _ _ _
               (.step_loop_enter
-                h_cond_h h_wfb_h) ?_
+                h_cond_h) ?_
             refine ReflTrans_Transitive _ _ _ _
               (seq_inner_star P (EvalCmd P) _ _ _
                 (block_inner_star P (EvalCmd P) _ _ (none : Option String)
@@ -1154,7 +1147,7 @@ private theorem dualUndefLoopDetSA_E_fuel {P : PureExpr} [HasFvar P] [HasFvars P
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
             simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
           let ρ_tgt_next : Env P :=
             { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }
@@ -1318,7 +1311,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
         by simpa [Config.getEnv] using (h_hf ▸ this)⟩
     | .step _ _ _ step hrest, hl_succ =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         have ha'_eq : a' = .terminal ρ_src := by
           match hrest with
           | .refl _ => rfl
@@ -1327,12 +1320,11 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
         have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
         exact ⟨.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist, .refl _,
           by simpa [Config.getEnv] using (h_hf ▸ this)⟩
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_hoist.store h_agree) ht
-        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
         let ρ_src_body : Env P := ρ_src
         let ρ_h_body : Env P := ρ_hoist
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
@@ -1344,7 +1336,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
             (.seq (.block .none ρ_hoist.store (.stmts body_h ρ_h_body))
               [.loop (.det g) none [] body_h md_h]) :=
           .step _ _ _ (StepStmt.step_loop_enter
-            h_cond_h h_wfb_h) (.refl _)
+            h_cond_h) (.refl _)
         rcases seqT_reaches_failing' P hrest h_a'_fail with hA | hB
         · -- CASE A: the failure is inside THIS iteration's body block.
           obtain ⟨d_blk, h_blk_run, hd_blk_fail, _⟩ := hA
@@ -1380,7 +1372,7 @@ public theorem dualUndefLoopDetSA_F_fuel {P : PureExpr} [HasFvars P] [HasFvar P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
             simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
           let ρ_tgt_next : Env P :=
             { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }
@@ -1517,7 +1509,7 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
         by simpa [Config.getEnv] using (h_hf ▸ this)⟩
     | .step _ _ _ step hrest, hl_succ =>
       cases step with
-      | step_loop_exit ht hwf =>
+      | step_loop_exit ht =>
         have ha'_eq : a' = .terminal ρ_src := by
           match hrest with
           | .refl _ => rfl
@@ -1526,12 +1518,11 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
         have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
         exact ⟨.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist, .refl _,
           by simpa [Config.getEnv] using (h_hf ▸ this)⟩
-      | step_loop_enter ht hwf =>
+      | step_loop_enter ht =>
         have h_cond_h : P.eval ρ_hoist.factory ρ_hoist.store g = .some HasBool.tt := by
           rw [h_fac]
           exact hwf_def g HasBool.tt ρ_src.store ρ_hoist.store
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_hoist.store h_agree) ht
-        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.factory := by rw [h_fac]; exact hwfb
         let ρ_src_body : Env P := ρ_src
         let ρ_h_body : Env P := ρ_hoist
         have h_agree_body : StoreAgreement ρ_src_body.store ρ_h_body.store := h_agree
@@ -1542,7 +1533,7 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
             (.seq (.block .none ρ_hoist.store (.stmts body_h ρ_h_body))
               [.loop (.det g) none [] body_h md_h]) :=
           .step _ _ _ (StepStmt.step_loop_enter
-            h_cond_h h_wfb_h) (.refl _)
+            h_cond_h) (.refl _)
         rcases seqT_reaches_failing' P hrest h_a'_fail with hA | hB
         · -- CASE A: the failure is inside THIS iteration's body block.
           obtain ⟨d_blk, h_blk_run, hd_blk_fail, _⟩ := hA
@@ -1578,7 +1569,7 @@ private theorem samenameLoopDetSA_F_fuel {P : PureExpr} [HasFvar P] [HasFvars P]
               (.stmts [.loop (.det g) none [] body_h md_h]
                 { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
             simpa [ρ_h_body] using buildLoopIterationDet (g := g) (body := body_h) (md := md_h)
-              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_wfb_h h_body_h_run
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) h_cond_h h_body_h_run
           let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
           let ρ_tgt_next : Env P :=
             { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }
@@ -2433,7 +2424,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
     match h_run with
     | .step _ _ _ h1 hr1 =>
       cases h1 with
-      | step_ite_true hg hwf =>
+      | step_ite_true hg =>
         obtain ⟨ρ_inner, h_branch, h_eq, _⟩ :=
           blockT_none_reaches_terminal (reflTrans_to_T hr1)
         obtain ⟨ρ_h_inner, h_branch_h, h_agree', h_hf', h_def'⟩ :=
@@ -2441,7 +2432,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
             (reflTransT_to_prop h_branch)
         subst h_eq
         refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store },
-          ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (by rw [h_fac]; exact hwf))
+          ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg))
             (ReflTrans_Transitive _ _ _ _
               (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store
                   h_branch_h)
@@ -2449,7 +2440,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
           StoreAgreement.of_projectStore_parents h_agree h_agree', ?_,
             DTyped.projectStore h_def h_def'⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
-      | step_ite_false hg hwf =>
+      | step_ite_false hg =>
         obtain ⟨ρ_inner, h_branch, h_eq, _⟩ :=
           blockT_none_reaches_terminal (reflTrans_to_T hr1)
         obtain ⟨ρ_h_inner, h_branch_h, h_agree', h_hf', h_def'⟩ :=
@@ -2457,7 +2448,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
             (reflTransT_to_prop h_branch)
         subst h_eq
         refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store },
-          ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (by rw [h_fac]; exact hwf))
+          ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg))
             (ReflTrans_Transitive _ _ _ _
               (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store
                   h_branch_h)
@@ -2469,7 +2460,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
     match h_run with
     | .step _ _ _ h1 hr1 =>
       cases h1 with
-      | step_ite_true hg hwf =>
+      | step_ite_true hg =>
         obtain ⟨ρ_inner, h_branch, h_eq, _⟩ :=
           blockT_none_reaches_exiting (reflTrans_to_T hr1)
         obtain ⟨ρ_h_inner, h_branch_h, h_agree', h_hf', h_def'⟩ :=
@@ -2477,7 +2468,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
             (reflTransT_to_prop h_branch)
         subst h_eq
         refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store },
-          ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (by rw [h_fac]; exact hwf))
+          ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg))
             (ReflTrans_Transitive _ _ _ _
               (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store
                   h_branch_h)
@@ -2485,7 +2476,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
           StoreAgreement.of_projectStore_parents h_agree h_agree', ?_,
             DTyped.projectStore h_def h_def'⟩
         · show ρ_h_inner.hasFailure = ρ_inner.hasFailure; exact h_hf'
-      | step_ite_false hg hwf =>
+      | step_ite_false hg =>
         obtain ⟨ρ_inner, h_branch, h_eq, _⟩ :=
           blockT_none_reaches_exiting (reflTrans_to_T hr1)
         obtain ⟨ρ_h_inner, h_branch_h, h_agree', h_hf', h_def'⟩ :=
@@ -2493,7 +2484,7 @@ private theorem ite_stmtSimSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
             (reflTransT_to_prop h_branch)
         subst h_eq
         refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store },
-          ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (by rw [h_fac]; exact hwf))
+          ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg))
             (ReflTrans_Transitive _ _ _ _
               (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store
                   h_branch_h)
@@ -2924,24 +2915,24 @@ private theorem ite_stmtSimFailSA {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     exact ⟨.stmt (.ite (.det g) tss_h ess_h md) ρ_h, .refl _,
       by simpa [Config.getEnv] using (h_hf ▸ hρ_s_fail)⟩
   · cases h1 with
-    | step_ite_true hg hwf =>
+    | step_ite_true hg =>
       obtain ⟨d_inner, h_inner_run, hd_inner_fail, _⟩ :=        blockT_none_reaches_failing' P
           (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         then_fail ρ_s ρ_h h_hf h_agree h_fac hwfb hwfv hwfd hwfc hwfvar h_def d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.block .none ρ_h.store d',
-        ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (by rw [h_fac]; exact hwf))
+        ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg))
           (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store h_branch_h),
         by simpa [Config.getEnv] using hd'_fail⟩
-    | step_ite_false hg hwf =>
+    | step_ite_false hg =>
       obtain ⟨d_inner, h_inner_run, hd_inner_fail, _⟩ :=        blockT_none_reaches_failing' P
           (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
         else_fail ρ_s ρ_h h_hf h_agree h_fac hwfb hwfv hwfd hwfc hwfvar h_def d_inner
           (reflTransT_to_prop h_inner_run) hd_inner_fail
       refine ⟨.block .none ρ_h.store d',
-        ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (by rw [h_fac]; exact hwf))
+        ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg))
           (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store h_branch_h),
         by simpa [Config.getEnv] using hd'_fail⟩
 
@@ -5159,12 +5150,11 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     exact hwfd g bv ρ_s.store ρ_h.store
       (storeAgreement_supplies_mono_premise ρ_s.store ρ_h.store h_agree) hg
   -- peel the ite: a run picks a branch (scoped via `.block .none`).
-  have peel : (P.eval ρ_s.factory ρ_s.store g = .some HasBool.tt ∧ WellFormedSemanticEvalBool
-      ρ_s.factory ∧
+  have peel : (P.eval ρ_s.factory ρ_s.store g = .some HasBool.tt ∧
         ∃ ρ_inner, StepStmtStar P (EvalCmd P) (.stmts tss ρ_s) (Env.outcomeConfig oc
             ρ_inner) ∧
           ρ_post = { ρ_inner with store := projectStore ρ_s.store ρ_inner.store }) ∨
-      (P.eval ρ_s.factory ρ_s.store g = .some HasBool.ff ∧ WellFormedSemanticEvalBool ρ_s.factory ∧
+      (P.eval ρ_s.factory ρ_s.store g = .some HasBool.ff ∧
         ∃ ρ_inner, StepStmtStar P (EvalCmd P) (.stmts ess ρ_s) (Env.outcomeConfig oc
             ρ_inner) ∧
           ρ_post = { ρ_inner with store := projectStore ρ_s.store ρ_inner.store }) := by
@@ -5173,11 +5163,11 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
       cases h_run with
       | step _ _ _ h1 hr1 =>
         cases h1 with
-        | step_ite_true hg hwf =>
-            exact .inl ⟨hg, hwf, blockT_none_reaches_outcome hr1⟩
-        | step_ite_false hg hwf =>
-            exact .inr ⟨hg, hwf, blockT_none_reaches_outcome hr1⟩
-  rcases peel with ⟨hg, hwf, ρ_inner, h_branch, h_eq⟩ | ⟨hg, hwf, ρ_inner, h_branch, h_eq⟩
+        | step_ite_true hg =>
+            exact .inl ⟨hg, blockT_none_reaches_outcome hr1⟩
+        | step_ite_false hg =>
+            exact .inr ⟨hg, blockT_none_reaches_outcome hr1⟩
+  rcases peel with ⟨hg, ρ_inner, h_branch, h_eq⟩ | ⟨hg, ρ_inner, h_branch, h_eq⟩
   · obtain ⟨ρ_post_h, h_branch_h, h_agree', h_hf'⟩ :=
       then_sim ρ_s ρ_h h_hf h_agree h_fac hwfb hwfv hwfd hwfc hwfvar h_src_none h_tgt_none
           h_init_t oc ρ_inner h_branch
@@ -5185,7 +5175,7 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store }, ?_,
       StoreAgreement.of_projectStore_parents h_agree h_agree', ?_⟩
     · refine stmt_to_singleton_stmts_outcome _ ρ_h _ oc ?_
-      exact .step _ _ _ (StepStmt.step_ite_true (guard_h hg) (by rw [h_fac]; exact hwf))
+      exact .step _ _ _ (StepStmt.step_ite_true (guard_h hg))
         (blockT_none_build_outcome _ ρ_h.store oc
             ρ_post_h h_branch_h)
     · show ρ_post_h.hasFailure = ρ_inner.hasFailure; exact h_hf'
@@ -5196,7 +5186,7 @@ private theorem hoistSimSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     refine ⟨{ ρ_post_h with store := projectStore ρ_h.store ρ_post_h.store }, ?_,
       StoreAgreement.of_projectStore_parents h_agree h_agree', ?_⟩
     · refine stmt_to_singleton_stmts_outcome _ ρ_h _ oc ?_
-      exact .step _ _ _ (StepStmt.step_ite_false (guard_h hg) (by rw [h_fac]; exact hwf))
+      exact .step _ _ _ (StepStmt.step_ite_false (guard_h hg))
         (blockT_none_build_outcome _ ρ_h.store oc
             ρ_post_h h_branch_h)
     · show ρ_post_h.hasFailure = ρ_inner.hasFailure; exact h_hf'
@@ -5828,7 +5818,7 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     exact ⟨.stmts [.ite (.det g) tss_h ess_h md] ρ_h, .refl _,
       by simpa [Config.getEnv] using (h_hf ▸ hρ_s_fail)⟩
   · cases h1 with
-    | step_ite_true hg hwf =>
+    | step_ite_true hg =>
       obtain ⟨d_inner, h_inner_run, hd_inner_fail, _⟩ :=
         blockT_none_reaches_failing' P (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
@@ -5839,9 +5829,9 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
         by simpa [Config.getEnv] using hd'_fail⟩
       refine .step _ _ _ StepStmt.step_stmts_cons ?_
       exact seq_inner_star P (EvalCmd P) _ _ _
-        (.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (by rw [h_fac]; exact hwf))
+        (.step _ _ _ (StepStmt.step_ite_true (guard_h hg))
           (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store h_branch_h))
-    | step_ite_false hg hwf =>
+    | step_ite_false hg =>
       obtain ⟨d_inner, h_inner_run, hd_inner_fail, _⟩ :=
         blockT_none_reaches_failing' P (reflTrans_to_T hr1) hd_fail
       obtain ⟨d', h_branch_h, hd'_fail⟩ :=
@@ -5852,7 +5842,7 @@ private theorem hoistSimFailSA_ite {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
         by simpa [Config.getEnv] using hd'_fail⟩
       refine .step _ _ _ StepStmt.step_stmts_cons ?_
       exact seq_inner_star P (EvalCmd P) _ _ _
-        (.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (by rw [h_fac]; exact hwf))
+        (.step _ _ _ (StepStmt.step_ite_false (guard_h hg))
           (block_inner_star P (EvalCmd P) _ _ .none ρ_h.store h_branch_h))
 
 /-- The `.ite .nondet` FAILING arm. -/

@@ -810,7 +810,7 @@ private def heapGlobalField : Field :=
     type := ⟨.UserDefined heapTypeName, syntheticSource⟩
     initializer := some emptyHeapInitializer }
 
-def heapParameterization (model: SemanticModel) (program : Program) : Except String Program := do
+def heapParameterization (model: SemanticModel) (program : LaurelProgram) : Except String LaurelProgram := do
   -- Instance procedures are already lifted to `staticProcedures` by an earlier
   -- pass, so they're covered by the calls below.
   let heapReaders ← computeReadsHeap program.staticProcedures
@@ -826,8 +826,8 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
   -- from `procs'` below, rather than lowered here too: lowering a cast BEFORE the heap transform
   -- stops `==` on a cast operand from taking the `Composite..ref!` rewrite, which changes what such
   -- a program proves.
-  let lowerRest : TransformM Program :=
-    mapProgramStmtExprM (lowerAsTypeNodesOnly .specification) { program with staticProcedures := [] }
+  let lowerRest : TransformM LaurelProgram :=
+    mapLaurelProgramStmtExprM (lowerAsTypeNodesOnly .specification) { program with staticProcedures := [] }
   let (restResult, state1) := lowerRest.run.run state0
   let program ← match restResult with
     | .ok p => pure p
@@ -881,7 +881,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
     types }
 
 /-- Pipeline pass: heap parameterization. -/
-public def heapParameterizationPass : LoweringPass where
+public def heapParameterizationPass : LaurelPass := .onUnordered {
   name := "HeapParameterization"
   creates := [
       NodeKind.StmtExpr.StaticCall,
@@ -892,7 +892,7 @@ public def heapParameterizationPass : LoweringPass where
       NodeKind.Pseudo.oldExpr,
       NodeKind.Pseudo.generatedReturn,
       NodeKind.Pseudo.statementExpression,
-      NodeKind.Program.staticFields.cons
+      NodeKind.LaurelProgram.staticFields.cons
     ]
   removes := [
       NodeKind.Pseudo.implicitHeap,
@@ -907,11 +907,13 @@ public def heapParameterizationPass : LoweringPass where
       NodeKind.TypeDefinition.Constrained,
       NodeKind.StmtExpr.Throw,
       NodeKind.StmtExpr.Try,
-      NodeKind.StmtExpr.Return.value.some
+      NodeKind.StmtExpr.Return.value.some,
+      NodeKind.LaurelProgram.staticFunctions.cons
     ]
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `TotalMap Composite (TotalMap Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
-  run := fun _ p m =>
+  }
+  fun _ p m =>
     match heapParameterization m p with
     | .ok p' => (p', [], {})
     | .error e => (p, [Message.fromString s!"Internal error in HeapParameterization: {e}" .strataBug], {})

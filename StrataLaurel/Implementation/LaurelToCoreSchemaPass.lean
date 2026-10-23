@@ -1019,7 +1019,7 @@ an inout argument is not a variable reference.
 -/
 private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression)
-    : TranslateM (List (Imperative.CallArg Core.Expression) × List Parameter × List String) := do
+    : TranslateM (List (Imperative.CallArg Core.Expression) × List Parameter × List Parameter × List String) := do
   let s ← get
   let (calleeInputs, calleeOutputs) := match s.model.get calleeId with
     | .staticProcedure proc => (proc.inputs, proc.outputs)
@@ -1046,7 +1046,7 @@ private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expressi
         callArgs := callArgs ++ [.inArg arg]
     else
       callArgs := callArgs ++ [.inArg arg]
-  return (callArgs, calleeOutputs, calleeInoutNames)
+  return (callArgs, calleeInputs, calleeOutputs, calleeInoutNames)
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -1126,11 +1126,40 @@ def translateStmt (stmt : StmtExprMd)
       let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
-        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
-        let outArgs : List (Imperative.CallArg Core.Expression) :=
-          (lhs.zip calleeOutputs).filterMap fun (target, output) =>
-            if calleeInoutNames.contains output.name.text then none else some (.outArg target)
-        return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
+        let (callArgs, calleeInputs, calleeOutputs, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
+        let model := (← get).model
+        let targetTypes : List HighTypeMd := targets.filterMap fun t => match t.val with
+          | .Declare param => some (param.type.getD ⟨.Unknown, t.source⟩)
+          | .Local name => some (model.get name).getType
+          | .Field _ _ => none
+        let mut callArgs := callArgs
+        let mut outArgs : List (Imperative.CallArg Core.Expression) := []
+        let mut tempInits : List Core.Statement := []
+        let mut copyBacks : List Core.Statement := []
+        for ((target, targetType), output) in (lhs.zip targetTypes).zip calleeOutputs do
+          if !calleeInoutNames.contains output.name.text then
+            outArgs := outArgs ++ [.outArg target]
+            continue
+          let some (i, initial) := (calleeInputs.findIdx? (·.name.text == output.name.text)).bind
+              fun i => coreArgs[i]?.map (i, ·)
+            | do
+              emitDiagnostic $ md.toDiagnostic
+                s!"inout output '{output.name.text}' of call to '{calleeId.text}' has no \
+                   matching argument, so its target cannot be assigned. This should not \
+                   happen after the preceding passes."
+                MessageKind.strataBug
+              modify fun st => { st with coreProgramHasSuperfluousErrors := true }
+              continue
+          let passedInPlace := match callArgs[i]? with
+            | some (.inoutArg v) => v == target && lhs.count target == 1
+            | _ => false
+          if passedInPlace then continue
+          let coreTy ← translateType targetType
+          let temp : Core.CoreIdent := ⟨s!"$inout_{← freshId}", ()⟩
+          tempInits := tempInits ++ [Core.Statement.init temp (LTy.forAll [] coreTy) (.det initial) md]
+          callArgs := callArgs.set i (.inoutArg temp)
+          copyBacks := copyBacks ++ [Core.Statement.set target (.fvar () temp (some coreTy)) md]
+        return inits ++ tempInits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md] ++ copyBacks
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args _ =>
@@ -1189,7 +1218,7 @@ def translateStmt (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
+        let (callArgs, _, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
         -- Generate throwaway LHS for output-only params so Core arity checking passes.
         let mut inits : List Core.Statement := []
         let mut outArgs : List (Imperative.CallArg Core.Expression) := []
@@ -1508,10 +1537,14 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
 
   pure { decls := coreDecls }
 
-public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
+public def laurelToCoreSchemaPass : LaurelPass where
   name := "LaurelToCoreSchema"
-  creates := [NodeKind.Pseudo.core]
-  removes := [NodeKind.Pseudo.orderedDeclarations]
+  removes := [
+      NodeKind.OrderedProgram.WithLaurelTypes
+    ]
+  creates := [
+      NodeKind.OrderedProgram.Core
+    ]
   unsupported := [
       NodeKind.StmtExpr.While.postTest.true,
       NodeKind.StmtExpr.IncrDecr,
@@ -1531,33 +1564,39 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
       NodeKind.StmtExpr.Hole.deterministic.true,
       NodeKind.CompositeType.typeArgs.cons,
       NodeKind.Pseudo.statementExpression,
-      NodeKind.Pseudo.unorderedDeclarations,
       NodeKind.Pseudo.letExpr,
       NodeKind.StmtExpr.InstanceCall,
       NodeKind.CompositeType.instanceProcedures.cons,
-      NodeKind.StmtExpr.This
+      NodeKind.StmtExpr.This,
+      NodeKind.Pseudo.imperativeFunction,
+      NodeKind.Program.Unordered
     ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
   - Laurel parameter definitions are translated to Core ones.
   - Laurel calling conventions are translated to Core ones."
-  run := fun options p fnModel =>
-    let procedureNames : Std.HashSet String := p.decls.foldl (fun r d => match d with
-      | .procedure proc => r.insert proc.name.text
-      | _ => r) {}
-    let initState : TranslateState :=
-      { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
-    let (coreProgramResult, translateState) :=
-      runTranslateM initState (translateLaurelToCore options p)
-    let diagnostics : List Message :=
-      -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
-      let d := translateState.diagnostics.eraseDups
-      if d.isEmpty then translateState.coreDiagnostics else d
-    match coreProgramResult with
-    | .ok coreProgram => (coreProgram, diagnostics, {})
-    | .error e =>
-      let diag := Message.fromString s!"Internal error in LaurelToCoreSchema: {e}" .strataBug
-      (default, diagnostics ++ [diag], {})
+  run := fun options input fnModel =>
+    match input with
+    | .Ordered (.WithLaurelTypes p) =>
+      let (output, diags, stats) : _ × List Message × Statistics :=
+        let procedureNames : Std.HashSet String := p.decls.foldl (fun r d => match d with
+          | .procedure proc => r.insert proc.name.text
+          | _ => r) {}
+        let initState : TranslateState :=
+          { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
+        let (coreProgramResult, translateState) :=
+          runTranslateM initState (translateLaurelToCore options p)
+        let diagnostics : List Message :=
+          -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
+          let d := translateState.diagnostics.eraseDups
+          if d.isEmpty then translateState.coreDiagnostics else d
+        match coreProgramResult with
+        | .ok coreProgram => (coreProgram, diagnostics, {})
+        | .error e =>
+          let diag := Message.fromString s!"Internal error in LaurelToCoreSchema: {e}" .strataBug
+          (default, diagnostics ++ [diag], {})
+      (.Ordered (.Core output), diags, stats)
+    | other => wrongProgram "LaurelToCoreSchema" other
 
 end -- public section
 end Laurel

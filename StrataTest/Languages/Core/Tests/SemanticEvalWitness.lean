@@ -6,7 +6,7 @@
 module
 
 import Strata.Languages.Core.StatementSemantics
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
 import all Strata.DL.Lambda.LExprEvalProps
 
 /-!

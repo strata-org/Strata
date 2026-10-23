@@ -217,9 +217,9 @@ public def elabDeriveLaurelOps : CommandElab := fun stx => do
   match stx with
   | `(command| derive_laurel_ops $progStx $[keep $filtStx?]?) =>
     let (program, sel) ← liftTermElabM do
-      let pe ← Term.elabTermEnsuringType progStx (mkConst ``Program)
+      let pe ← Term.elabTermEnsuringType progStx (mkConst ``LaurelProgram)
       Term.synthesizeSyntheticMVarsNoPostponing
-      let program ← unsafe Meta.evalExpr Strata.Laurel.Program (mkConst ``Program) pe
+      let program ← unsafe Meta.evalExpr Strata.Laurel.LaurelProgram (mkConst ``LaurelProgram) pe
       -- No `keep` clause ⇒ keep everything.
       let sel : String → Bool ←
         match filtStx? with

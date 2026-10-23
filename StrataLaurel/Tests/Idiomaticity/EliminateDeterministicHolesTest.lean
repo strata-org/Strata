@@ -27,7 +27,7 @@ namespace Strata.Laurel
     only the procedures the snippet declares plus the generated `$hole_*`. -/
 private def parseElimAndPrint : StrataDDM.Program → IO Unit :=
   runPassAfterForIdiomaticity eliminateDeterministicHolesPass
-    (fun p m => (inferHoleTypes m p).1)
+    (fun p m => (inferHoleTypes m (.Unordered p)).1.laurelProgram!)
 
 /-! ## Basic: single hole in various positions -/
 

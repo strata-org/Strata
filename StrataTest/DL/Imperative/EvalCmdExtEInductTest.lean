@@ -34,19 +34,19 @@ example {π π' : String → Option (Procedure P (CmdExt P) Hdr)}
   induction h using EvalCmdExtE.induct with
   | cmd_sem h => exact .cmd_sem h
   | call_sem hn hentry _ hexit ih =>
-    rcases ih with ⟨ss, ρ', hss, rfl, hrun⟩ | ⟨g, σ', f, hg, rfl, hrun⟩
+    rcases ih with ⟨ss, ρ', hss, rfl, hrun⟩ | ⟨g, ρ', hg, rfl, hrun⟩
     · exact .call_sem (hπ _ _ hn) hentry
         (hss ▸ .structured (hrun.imp fun _ _ _ _ _ ⟨_, h⟩ => h)) hexit
     · have hrun' := hrun.imp fun _ _ _ hs => hs.imp fun _ _ _ _ _ ⟨_, h⟩ => h
       exact .call_sem (hπ _ _ hn) hentry
-        (hg ▸ .cfg (CFGRunExtE_iff_stepCFGStarE.mpr hrun')) hexit
+        (hg ▸ .cfg hrun') hexit
 
 example {l CmdT EventT : Type} [BEq l] [HasVal P]
-    {EvalCmd : EvalCmdParamE P CmdT EventT} {fac : P.Factory}
-    {cfg : CFG l (DetBlock l CmdT P)} {t : l} {σ : SemanticStore P} {f : Bool}
+    {EvalCmd : EvalCmdParamE P CmdT EventT}
+    {cfg : CFG l (DetBlock l CmdT P)} {t : l} {ρ : Env P}
     {tr : List EventT} {c' : CFGConfig l CmdT P}
-    (h : StepCFGE P EvalCmd fac cfg (.atBlock t σ f) tr c') : tr = [] := by
-  generalize hc : CFGConfig.atBlock t σ f = c at h
+    (h : StepCFGE P EvalCmd (.atBlock cfg t ρ) tr c') : tr = [] := by
+  generalize hc : CFGConfig.atBlock cfg t ρ = c at h
   cases h using StepCFGE.casesRules <;> first | rfl | cases hc
 
 end EvalCmdExtEInductTest

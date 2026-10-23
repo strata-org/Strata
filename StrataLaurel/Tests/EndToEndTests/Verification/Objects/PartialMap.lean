@@ -357,7 +357,7 @@ procedure representationIsVisible(m: Map<int, bool>, k: int, v: bool)
 /-! ## A user alias over a partial map
 
 `Map<K, V>` is itself an alias, so an alias over it expands transitively. This also covers the
-alias reaching re-resolution: `resolveUnorderedCore` both registers aliases and puts them in the
+alias reaching re-resolution: `resolve` both registers aliases and puts them in the
 type lattice's `unfoldMap`, without which the name either fails to resolve at all or resolves
 without unfolding and then will not match the primitive it expands to. -/
 #eval testLaurelVerification <|

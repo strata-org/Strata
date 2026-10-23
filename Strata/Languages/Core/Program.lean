@@ -400,6 +400,24 @@ statement. -/
      | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
      | _ => true)
 
+/-- The attributes of every function `p` declares, by name, including the functions of
+    a recursive block. -/
+def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.FuncAttr) :=
+  p.decls.foldl (init := {}) fun acc d =>
+    match d with
+    | .func fn _ => acc.insert fn.name.name fn.attr
+    | .recFuncBlock fns _ => fns.foldl (fun a fn => a.insert fn.name.name fn.attr) acc
+    | _ => acc
+
+/-- Does no procedure in `p` carry a `requires` or `ensures` clause, free or
+    checked? -/
+@[expose] def Program.noProcedureContracts (p : Program) : Bool :=
+  p.decls.all fun d =>
+    match d with
+    | Core.Decl.proc q _md =>
+      q.spec.preconditions.isEmpty && q.spec.postconditions.isEmpty
+    | _ => true
+
 /-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
     `header.typeArgs`, which is what `GenOpaqueTypeParams` clears; the opaque
     type declarations it adds in their place are ordinary declared sorts. -/
@@ -428,6 +446,16 @@ statement. -/
 /-- Does every procedure in `p` have a structured body? -/
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
+
+/-- The calls in a declaration: a procedure's calls, and nothing for any other
+    declaration. -/
+def Decl.callSites : Decl → List CallSite
+  | .proc q _ => Procedure.callSites q
+  | _ => []
+
+/-- Every call in `p`, in declaration order and then in order within each body. -/
+def Program.callSites (p : Program) : List CallSite :=
+  p.decls.flatMap Decl.callSites
 
 end Core
 

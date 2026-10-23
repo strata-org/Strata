@@ -55,13 +55,12 @@ safe if the surrounding code needs no bare AST constructors.
 Everything under `Pseudo` is *not* a Laurel AST constructor. Most could still
 carry a predicate over a program the way Core's `ProgramFact.holds` does —
 `overload` is a relation over declarations, `heapVar` is a name lookup — but
-none carries one yet, so today they are taken on trust. A few never can:
-`generatedReturn` is byte-identical to any other `Return`, and `core` names a
-representation rather than a property of a Laurel program. Four reasons a name
+none carries one yet, so today they are taken on trust. One never can:
+`generatedReturn` is byte-identical to any other `Return`. Four reasons a name
 lands there:
 
-* **position-dependent** — `statementExpression` and `letExpr` depend on the
-  path from the root, not on any one field;
+* **position-dependent** — `statementExpression`, `letExpr` and `imperativeFunction`
+  depend on the path from the root, not on any one field;
 * **a relation over several declarations** — `overload` (two static procedures
   sharing a name), `coroutineOverride`;
 * **a generated name rather than AST structure** — `heapVar` (`$heap`), `box`,
@@ -161,9 +160,10 @@ inductive NodeKind where
   | CompositeType.instanceProcedures.cons
   | HighType.Applied
   | HighType.TVar
-  -- Program, Procedure, Body
-  | Program.staticProcedures.cons
-  | Program.staticFields.cons
+  -- LaurelProgram, Procedure, Body
+  | LaurelProgram.staticProcedures.cons
+  | LaurelProgram.staticFunctions.cons
+  | LaurelProgram.staticFields.cons
   | Procedure.inputs.cons
   /-- A coroutine: a procedure whose contracts are not `.Regular`. -/
   | Procedure.contracts.Coroutine
@@ -179,15 +179,12 @@ inductive NodeKind where
   -- Operations
   | Operation.AndThen
   | Operation.OrElse
+  -- `Program` representations
+  | Program.Unordered
+  | Program.Ordered
+  | OrderedProgram.WithLaurelTypes
+  | OrderedProgram.Core
   -- Not AST constructors; see the module documentation.
-  /-- The four representations the pipeline passes through. Planned refactor: a
-      top-level `inductive Program where | OnlyProcedures .. | ProceduresAndFunctions ..
-      | OrderedAndGroupedTopLevels .. | Core ..`, after which these four become
-      ordinary constructors and stop being `Pseudo`. -/
-  | Pseudo.laurelProgram
-  | Pseudo.unorderedDeclarations
-  | Pseudo.orderedDeclarations
-  | Pseudo.core
   /-- An `old` wrapping a compound expression: the complement of
       `StmtExpr.Old.value.Var.Local`, which no path can name. Planned refactor:
       split the AST's `Old` into two constructors, one taking an arbitrary
@@ -275,6 +272,12 @@ inductive NodeKind where
       it. Delete this kind then — but delete *both* declarations, since an `unsupported` left
       without a `removes` is a claim no pass backs. -/
   | Pseudo.letExpr
+  /-- A static function whose body is still in statement form (blocks, assignments, exits)
+      rather than a single expression. The Transparency pass creates it by copying transparent
+      procedure bodies into `staticFunctions`; `FunctionalRewrite` removes it by rewriting each
+      body into one expression; `LaurelToCoreSchemaPass` declares it `unsupported`, because a
+      Core function body must be an expression. -/
+  | Pseudo.imperativeFunction
   deriving BEq, Repr, DecidableEq, Hashable
 
 /-- Whether this shape can occur in a program *as authored* — i.e. whether it is present
@@ -293,9 +296,12 @@ inductive NodeKind where
     `true`. -/
 def NodeKind.inSource : NodeKind → Bool
   -- Introduced by a lowering pass; absent from any authored program.
-  | NodeKind.Pseudo.unorderedDeclarations   -- TransparencyPass
-  | NodeKind.Pseudo.orderedDeclarations     -- Ordering
-  | NodeKind.Pseudo.core                    -- LaurelToCoreSchema
+  | NodeKind.LaurelProgram.staticFunctions.cons  -- TransparencyPass
+  | NodeKind.Pseudo.imperativeFunction           -- TransparencyPass
+  | NodeKind.Pseudo.letExpr                      -- TransparencyPass, FunctionalRewrite
+  | NodeKind.Program.Ordered                     -- Ordering
+  | NodeKind.OrderedProgram.WithLaurelTypes      -- Ordering
+  | NodeKind.OrderedProgram.Core                 -- LaurelToCoreSchema
   | NodeKind.Pseudo.heapVar                 -- HeapParameterization declares `$heap`
   | NodeKind.Pseudo.box                     -- the generated `$Box` datatype
   | NodeKind.Pseudo.totalMap                -- the generated heap map type
@@ -306,10 +312,7 @@ def NodeKind.inSource : NodeKind → Bool
   | NodeKind.StmtExpr.Snapshot              -- YieldElim
   | NodeKind.StmtExpr.Old.label?.some       -- YieldElim's snapshot reads
   | NodeKind.StmtExpr.Hole.type.some => false  -- InferHoleTypes annotates holes
-  -- Everything else can be written, or arises directly from what was written. Note in
-  -- particular `Pseudo.letExpr`: a `var x := e` in a function body comes from
-  -- source, since TransparencyPass carries a transparent body's declarations into the
-  -- function it creates — which is why `InlineLocalVariables` exists at all.
+  -- Everything else can be written, or arises directly from what was written.
   | _ => true
 
 /-- The dotted path, for diagnostics: `StmtExpr.While.postTest.true`. -/

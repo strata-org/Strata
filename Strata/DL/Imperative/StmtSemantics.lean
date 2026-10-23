@@ -30,15 +30,14 @@ adopted as the primary semantics.
 -/
 
 /-- Execution environment: store, expression factory, and cumulative failure
-flag.
-
-The expression `factory` is read-only execution context. Commands, guards, and
-events read it from the active configuration as `ρ.factory`; every statement step
-preserves it, and leaving a block projects only the store. -/
+flag. -/
 structure Env (P : PureExpr) where
   /-- The current variable store. -/
   store : SemanticStore P
-  /-- The read-only expression factory used to evaluate expressions. -/
+  /-- The read-only expression factory used to evaluate expressions. Commands,
+      guards, and events read it from the active configuration as `ρ.factory`;
+      every statement step preserves it, and leaving a block projects only the
+      store. -/
   factory : P.Factory
   /-- Cumulative failure flag — `true` once any command has signalled failure. -/
   hasFailure : Bool := false
@@ -127,9 +126,7 @@ configuration's control shape and stores. -/
   | .seq inner statements => .seq (inner.withFailure hasFailure) statements
 
 /-- Events emitted by the active base command in the next statement step.
-Administrative configurations and non-command statements are silent.  The
-immutable factory is read from the active configuration's environment
-(`ρ.factory`). -/
+Administrative configurations and non-command statements are silent. -/
 @[expose] def Config.emittedEvents : Config P (Cmd P) → Trace P
   | .stmt (.cmd command) ρ => Cmd.emittedEvents P command ρ.factory ρ.store
   | .block _ _ inner => inner.emittedEvents
@@ -275,8 +272,7 @@ abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
       ∀ y, Q y → ∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := CmdT) s excludeScoped
 
 /-- Every store reachable from `c` — its operative store and the saved parent store
-    of every enclosing block — holds only values, measured against the immutable
-    factory carried in the active environment (`ρ.factory`). -/
+    of every enclosing block — holds only values. -/
 @[expose] def Config.storeWellDefined {P : PureExpr} [HasVal P] {CmdT : Type} :
     Config P CmdT → Prop
   | .stmt _ ρ => WellFormedStore ρ.store ρ.factory
@@ -295,15 +291,12 @@ variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
-The expression evaluator is `P.eval` (part of the `PureExpr` bundle), applied
-against the immutable factory carried in the active configuration's environment
-(`ρ.factory`).  The cumulative failure flag in `Env.hasFailure` is OR-ed with
-the per-command failure flag at each `step_cmd`.  Every step preserves the
-environment factory; blocks project only the store.
+The expression evaluator is `P.eval` (part of the `PureExpr` bundle).  The
+cumulative failure flag in `Env.hasFailure` is OR-ed with the per-command
+failure flag at each `step_cmd`.
 -/
 inductive StepStmt
-  (EvalCmd : EvalCmdParam P CmdT)
-  :
+  (EvalCmd : EvalCmdParam P CmdT) :
   Config P CmdT → Config P CmdT → Prop where
 
   /-- A command steps to terminal configuration if it evaluates successfully.
@@ -332,7 +325,6 @@ inductive StepStmt
       with `excludeScoped = true`). -/
   | step_ite_true :
     P.eval ρ.factory ρ.store c = .some HasBool.tt →
-    WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd
       (.stmt (.ite (.det c) tss ess _) ρ)
@@ -342,7 +334,6 @@ inductive StepStmt
       else branch (scoped via block wrapper). -/
   | step_ite_false :
     P.eval ρ.factory ρ.store c = .some HasBool.ff →
-    WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd
       (.stmt (.ite (.det c) tss ess _) ρ)
@@ -372,7 +363,6 @@ inductive StepStmt
       the same names. -/
   | step_loop_enter :
     P.eval ρ.factory ρ.store g = .some HasBool.tt →
-    WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd
       (.stmt (.loop (.det g) m inv body md) ρ)
@@ -384,7 +374,6 @@ inductive StepStmt
       loop invariants are not evaluated during execution. -/
   | step_loop_exit :
     P.eval ρ.factory ρ.store g = .some HasBool.ff →
-    WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd
       (.stmt (.loop (.det g) m inv body _) ρ)
@@ -512,8 +501,7 @@ trace and target, so they add no observable nondeterminism. Intended choices,
 such as nondeterministic conditionals and loops, remain nondeterministic. -/
 inductive StepStmtE
     {EventT : Type}
-    (EvalCmd : EvalCmdParamE P CmdT EventT)
-    :
+    (EvalCmd : EvalCmdParamE P CmdT EventT) :
     Config P CmdT → List EventT → Config P CmdT → Prop where
   /-- Execute one command and expose exactly the event list produced by its
   command semantics. -/
@@ -549,8 +537,7 @@ inductive StepStmtE
 concatenation. -/
 abbrev StepStmtStarE
     {EventT : Type}
-    (EvalCmd : EvalCmdParamE P CmdT EventT)
-    :
+    (EvalCmd : EvalCmdParamE P CmdT EventT) :
     Config P CmdT → List EventT → Config P CmdT → Prop :=
   ReflTransTrace (StepStmtE P EvalCmd)
 
@@ -595,19 +582,10 @@ def IsTerminal
 
 variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
-/-- Config-level `WellFormedSemanticEval` invariant on the immutable factory
-    carried in the active environment.  Since the factory is immutable during
-    execution, this reads it from the configuration's environment
-    (`ρ.factory`). The recursive definition supports proofs by configuration
-    shape. -/
-def Config.wfEval : Config P CmdT → Prop
-  | .stmt _ ρ => WellFormedSemanticEval (P := P) ρ.factory
-  | .stmts _ ρ => WellFormedSemanticEval (P := P) ρ.factory
-  | .terminal ρ => WellFormedSemanticEval (P := P) ρ.factory
-  | .exiting _ ρ => WellFormedSemanticEval (P := P) ρ.factory
-  | .block _ _ inner =>
-    WellFormedSemanticEval (P := P) inner.getEnv.factory ∧ Config.wfEval inner
-  | .seq inner _ => Config.wfEval inner
+/-- Config-level `WellFormedSemanticEval` invariant on the active environment's
+    factory. -/
+def Config.wfEval (c : Config P CmdT) : Prop :=
+  WellFormedSemanticEval (P := P) c.getEnv.factory
 
 end -- section
 

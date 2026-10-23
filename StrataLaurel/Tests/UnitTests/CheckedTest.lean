@@ -179,8 +179,8 @@ procedure boxOf(x: int) : Box<int> external;
 procedure doNothing(x: int) external;
 #end
 
-/-- The theory above as a Laurel `Program`, parsed at compile time. -/
-def smallTheory : Program :=
+/-- The theory above as a Laurel `LaurelProgram`, parsed at compile time. -/
+def smallTheory : LaurelProgram :=
   match TransM.run (Uri.file "<#strata>") (parseProgram smallTheoryDDM) with
   | .ok p => p
   | .error e => panic! s!"smallTheory parse error: {e}"
@@ -265,7 +265,7 @@ datatype AA { Shared() }
 datatype BB { Shared() }
 #end
 
-def collisionTheory : Program :=
+def collisionTheory : LaurelProgram :=
   match TransM.run (Uri.file "<#strata>") (parseProgram collisionTheoryDDM) with
   | .ok p => p
   | .error e => panic! s!"collisionTheory parse error: {e}"
@@ -282,7 +282,7 @@ program Laurel;
 datatype D { Sh(), Sh() }
 #end
 
-def collisionSameDatatype : Program :=
+def collisionSameDatatype : LaurelProgram :=
   match TransM.run (Uri.file "<#strata>") (parseProgram collisionSameDatatypeDDM) with
   | .ok p => p
   | .error e => panic! s!"collisionSameDatatype parse error: {e}"
@@ -302,7 +302,7 @@ opaque KeepMe
 opaque DropMe
 #end
 
-def keepTheory : Program :=
+def keepTheory : LaurelProgram :=
   match TransM.run (Uri.file "<#strata>") (parseProgram keepTheoryDDM) with
   | .ok p => p
   | .error e => panic! s!"keepTheory parse error: {e}"

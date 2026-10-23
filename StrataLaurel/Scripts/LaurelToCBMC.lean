@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Cli.Framework
 import StrataLaurel.Implementation
 
 /-! # LaurelToCBMC
@@ -29,14 +30,6 @@ Environment variables:
 -/
 
 open Strata
-
-/-- Strip well-known Strata file suffixes from a file path's basename. -/
-private def deriveBaseName (file : String) : String :=
-  let name := System.FilePath.fileName file |>.getD file
-  let suffixes := [".lr.st", ".laurel.st", ".st"]
-  match suffixes.find? (name.endsWith ·) with
-  | some sfx => (name.dropEnd sfx.length).toString
-  | none     => name
 
 /-- Read an environment variable, returning a default if unset or empty. -/
 private def getEnvOrDefault (var : String) (default : String) : IO String := do
@@ -88,7 +81,7 @@ def main (args : List String) : IO UInt32 := do
     unless ← path.pathExists do
       IO.eprintln s!"Error: file not found: {file}"
       return 1
-    let baseName := deriveBaseName file
+    let baseName := Strata.Cli.deriveBaseName [".lr.st", ".laurel.st", ".st"] file
 
     -- Use a temporary directory for intermediate files (cleaned up automatically)
     IO.FS.withTempDir fun tmpDir => do

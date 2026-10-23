@@ -102,7 +102,7 @@ private def totalCount (procs : List Procedure) : Nat :=
 /-- info: before: 11, after: 0, diagnostics: 0 -/
 #guard_msgs in
 #eval do
-  let parsed ← (Strata.parseLaurelText "<erasure-test>" source : IO Program)
+  let parsed ← (Strata.parseLaurelText "<erasure-test>" source : IO LaurelProgram)
   let resolved := resolve parsed
   let before := totalCount resolved.program.staticProcedures
   let (lowered, diags) := eliminateExceptionsTransform resolved.model resolved.program

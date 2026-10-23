@@ -22,7 +22,7 @@ namespace Strata.Laurel
 /-- Shapes with a column: those some pass declares `unsupported`, in the order the first
     pass to reject one appears. -/
 def tableShapes : List NodeKind :=
-  allPasses.foldl (init := []) fun acc p =>
+  laurelPipeline.foldl (init := []) fun acc p =>
     p.unsupported.foldl (init := acc) fun acc k => if acc.contains k then acc else acc ++ [k]
 
 /-- The owner segment and the segments after it, e.g.
@@ -64,7 +64,7 @@ def shapeLifelineTable : String :=
     (facts := shapes)
     (labels := shapeLabels.map (·.2))
     (factNames := shapes.map NodeKind.name)
-    (rows := allPasses.toList.map fun p =>
+    (rows := laurelPipeline.toList.map fun p =>
       ({ name := p.name
          requires := fun k => p.unsupported.contains k
          establishes := fun k => p.removes.contains k

@@ -164,7 +164,7 @@ def declaresOverrideOf (baseM : Procedure) (ct : CompositeType) : Bool :=
     `ancestorName`-typed receiver. Ordered most-derived first (deeper `ancestors`-distance
     first), so the generated `is`-chain tests the most specific type before its supertypes
     — required because a value `is` all of its ancestors. -/
-def descendantOverriders (model : SemanticModel) (program : Program)
+def descendantOverriders (model : SemanticModel) (program : LaurelProgram)
     (ancestorName : Identifier) (baseM : Procedure) : List CompositeType :=
   let composites := program.types.filterMap fun td =>
     match td with | .Composite ct => some ct | _ => none
@@ -225,7 +225,7 @@ structure DispatchFamily where
     unenumerated override. Resolution rejects an `extends` onto a type outside the
     program, so ancestry cannot silently escape `program.types`; this scan is therefore
     exhaustive for the authored program. -/
-def virtualDispatchFamilies (model : SemanticModel) (program : Program)
+def virtualDispatchFamilies (model : SemanticModel) (program : LaurelProgram)
     : List DispatchFamily :=
   program.types.flatMap fun td =>
     match td with
@@ -477,7 +477,7 @@ Lift every `proc ∈ ct.instanceProcedures` to a top-level static procedure
 named via `liftedProcName`, rewrite call sites that resolved to an instance
 procedure, and clear `instanceProcedures` on every composite.
 -/
-def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program × List Message :=
+def liftInstanceProcedures (model : SemanticModel) (program : LaurelProgram) : LaurelProgram × List Message :=
   -- Compute the virtual-dispatch families ONCE. Every downstream step — validation,
   -- Liskov checking (via the pass that shares this function), and dispatcher generation —
   -- consumes the same list, so the gate-parity invariant is structural and the per-family
@@ -552,16 +552,19 @@ def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program
   -- Step 3: rewrite call sites everywhere expressions can appear (procedure
   -- bodies and contracts, constrained-type constraint/witness, constant
   -- initializers).
-  (mapProgramStmtExpr (rewriteCallNode model) program, [])
+  (mapLaurelProgramStmtExpr (rewriteCallNode model) program, [])
 
 end -- public section
 
 /-- Pipeline pass: lift instance procedures to top-level static procedures
     and rewrite call sites to use the lifted names. -/
-public def liftInstanceProceduresPass : LoweringPass where
+public def liftInstanceProceduresPass : LaurelPass := .onUnordered {
   name := "LiftInstanceProcedures"
-  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
-  unsupported := [NodeKind.Pseudo.needsOverrideRules]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  unsupported := [
+      NodeKind.Pseudo.needsOverrideRules,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   removes := [
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.InstanceCall,
@@ -569,7 +572,7 @@ public def liftInstanceProceduresPass : LoweringPass where
       NodeKind.Pseudo.coroutineOverride
     ]
   documentation := "Lifts every procedure declared inside a `composite` block to a top-level static procedure named `<CompositeName>$<methodName>` and rewrites call sites resolved to an instance procedure (including `obj#method(args)` surface syntax) to point at the lifted name. Clears `instanceProcedures` on every composite. Must run before HeapParameterization."
-  needsResolves := true
-  run := fun _ p m => let (p', diags) := liftInstanceProcedures m p; (p', diags, {})
+  needsResolves := true }
+  fun _ p m => let (p', diags) := liftInstanceProcedures m p; (p', diags, {})
 
 end Strata.Laurel

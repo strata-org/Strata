@@ -351,6 +351,13 @@ def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   match mtys with
   | [] => [] | m :: mrest => LMonoTy.getTyConstructors m ++ go mrest
 
+/-- Whether `mty` mentions any of the type constructors named in `names`, at any depth. -/
+def LMonoTy.mentionsTyCon (names : List String) (mty : LMonoTy) : Bool :=
+  (LMonoTy.getTyConstructors mty).any fun c =>
+    match c with
+    | .tcons n _ => names.contains n
+    | _ => false
+
 ---------------------------------------------------------------------
 
 /--

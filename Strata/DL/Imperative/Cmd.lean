@@ -225,6 +225,16 @@ def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
 @[expose] def getLhs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
 
+/-- The arguments a call passes for its callee's input formals, in order: its `in`
+    and `inout` arguments. -/
+@[expose] def inputArgs (args : List (CallArg P)) : List (CallArg P) :=
+  args.filter fun | .outArg _ => false | _ => true
+
+/-- The arguments a call passes for its callee's output formals, in order: its
+    `inout` and `out` arguments. -/
+@[expose] def resultArgs (args : List (CallArg P)) : List (CallArg P) :=
+  args.filter fun | .inArg _ => false | _ => true
+
 def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
   go args newExprs
 where

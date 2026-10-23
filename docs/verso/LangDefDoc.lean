@@ -15,7 +15,7 @@ import Strata.DL.Imperative.KleeneStmtSemantics
 import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
 import Strata.DL.Lambda.Denote.LExprResolveAnnotated
@@ -502,8 +502,17 @@ function Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) : ReturnType
 };
 ```
 
-A function may be prefixed with `inline` to request inlining during the partial
-evaluation transform, when applied.
+A function may be prefixed with `inline` to allow its calls to be replaced by its
+body. Inlining is a request, not a guarantee. The `simplify` phase expands a call to an
+`inline` function only where the copy cannot compound: when every parameter the body
+uses more than once receives a closed value (a literal or a constructor applied to
+closed values) or a single variable or constant, or, for an argument that is a
+constructor application, when the expanded call folds to something smaller. Symbolic
+evaluation then expands a call only when all its arguments are closed values. So
+`dup(3)` still folds to `6`, while `dup(dup(y))` keeps its outer call. A call to a
+function with a precondition is never expanded. Calls to a function that takes,
+returns or builds a function value are always expanded, because expanding them is what
+removes the lambdas the SMT encoder cannot represent.
 
 ### Recursive Functions
 
@@ -784,6 +793,15 @@ call ProcName([out/inout] e₁, ..., [out/inout] eₙ);
 ```
 
 Note that `out` and `inout` keywords can only be attached when `eᵢ` is a variable.
+
+A call's arguments must match the procedure's parameters, in order: an argument
+without a keyword for each input parameter, `inout x` for each `inout` parameter
+and `out x` for each `out` parameter. An `inout` parameter is passed as one
+variable, as in `call P(inout x)`, not as a value and a separate result, as in
+`call P(x, out x)`. The variables passed for a call's `out` and `inout` parameters
+must be distinct: a variable may not be passed for two results of the same call,
+as in `call P(out x, out x)` or `call P(inout x, out x)`. Strata rejects any other
+call.
 
 ### Body and verification
 

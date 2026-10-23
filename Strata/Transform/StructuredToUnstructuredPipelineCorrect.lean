@@ -22,6 +22,10 @@ The whole-pipeline correctness proof.  The key results are:
 - `pipeline_overapproximates_upto_via_passes` — the abstract-form top-level
   correctness: the whole-pipeline `OverapproximatesUptoWhen` instance, composing
   the three per-pass instances.
+- `pipeline_source_noEscape` — the explicit source no-escape guarantee accompanying
+  the refinement: under `PipelinePre`, the source statement list never reaches a
+  top-level `.exiting`, so `Lang.cfg`'s collapse of the escaping outcome into
+  termination (`exitingCfg := fun _ => .terminal`) loses no source behavior.
 - `pipelinePre_nil` — the syntactic precondition gate is inhabited.
 
 The pipeline definitions themselves live in `StructuredToUnstructuredPipeline`. -/
@@ -78,8 +82,7 @@ variable [HasFvar P] [HasFvars P] [HasBoolOps P]
 /-- Under `PipelinePre`, `nondetElim` overapproximates the source imperative-block
 language by itself up to `EnvStoreAgree`, with source kind `pipelineKind` and target
 kind `s2uKind`. -/
-private theorem nondetElim_overapproximates_upto [HasSubstFvar P] [LawfulHasVal P]
-    :
+private theorem nondetElim_overapproximates_upto [HasSubstFvar P] [LawfulHasVal P] :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (EnvStoreAgree (P := P))
@@ -225,8 +228,7 @@ private theorem hpre_ndelim_hoist :
 transitive) into one source-`imperativeBlock` → `cfg` instance, with the monadic
 composition of the three pass transforms and `pre = pre_src`.  The source
 language's `initEnvWF` is keyed on the combined `pipelineKind`. -/
-private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [LawfulHasVal P]
-    :
+private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [LawfulHasVal P] :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (EnvStoreAgree (P := P))
@@ -280,8 +282,7 @@ private theorem pipeline_transform_eq (ss : List (Stmt P (Cmd P))) :
 whole-pipeline refinement: `fun ss => some (s2uPipeline ss)` overapproximates the
 source statement-list language by the unstructured CFG language up to
 `EnvStoreAgree`. -/
-theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P] [LawfulHasVal P]
-    :
+theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P] [LawfulHasVal P] :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (EnvStoreAgree (P := P))
@@ -297,6 +298,19 @@ theorem pipeline_overapproximates_upto_via_passes [HasSubstFvar P] [LawfulHasVal
       (fun s => (fun s => some (Block.hoistLoopPrefixInits s)) s >>=
         (fun s => some (stmtsToCFG s))))
       = (fun ss => some (s2uPipeline ss)) from funext pipeline_transform_eq] at h
+
+omit [LawfulHasFvar P] [LawfulHasIdent P] in
+/-- **A `PipelinePre` source never escapes via a top-level exit.**
+
+`Lang.cfg` maps its generic exiting outcome to `.terminal` because CFGs have no
+escaping state. This theorem preserves the source-side guarantee separately:
+`PipelinePre` requires every exit to be caught by an enclosing block, so no
+source execution can reach `.exiting`. -/
+theorem pipeline_source_noEscape [HasSubstFvar P]
+    (ss : List (Stmt P (Cmd P))) (hpre : PipelinePre ss)
+    (ρ₀ : Env P) (label : String) (ρ' : Env P) :
+    ¬ StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.exiting label ρ') :=
+  block_exitsCoveredByBlocks_noEscape P (EvalCmd P) ss hpre.h_covered ρ₀ label ρ'
 
 /-- **The syntactic precondition is inhabited.**  The empty program satisfies
 `PipelinePre`, ruling out global vacuity of the `fun ss => PipelinePre ss`

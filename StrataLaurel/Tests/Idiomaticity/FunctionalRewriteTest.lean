@@ -38,8 +38,8 @@ namespace Strata.Laurel
 /-- Parse, resolve, run `functionalRewritePass`, print the rewritten function
     bodies. `functionalRewritePass` takes functions whose `return`s have already
     been eliminated, so `eliminateReturnStatements` runs as the input-shaping
-    predecessor and the procedures are placed in the `functions` bucket (the pass
-    rewrites function copies; `coreProcedures` are left alone).
+    predecessor and the procedures are placed in `staticFunctions` (the pass
+    rewrites function copies; `staticProcedures` are left alone).
 
     `prelude := false`: a prelude operator wrapper such as `$add` is itself a
     bodied function, so with the prelude attached the pass binds each one's output
@@ -51,8 +51,8 @@ namespace Strata.Laurel
     The snippets therefore avoid operators entirely so they resolve without it. -/
 private def printRewritten (program : StrataDDM.Program) : IO Unit :=
   runCorePassForIdiomaticity functionalRewritePass
-    (fun p _ => { functions := (eliminateReturnStatements p).staticProcedures,
-                  coreProcedures := [], datatypes := [], constants := [] })
+    (fun p _ => { staticFunctions := (eliminateReturnStatements (.Unordered p)).laurelProgram!.staticProcedures,
+                  staticProcedures := [], staticFields := [], types := [], constants := [] })
     program (prelude := false)
 
 /-! ## A guard early exit becomes an if-expression

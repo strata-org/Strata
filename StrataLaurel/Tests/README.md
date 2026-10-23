@@ -58,9 +58,9 @@ The only thing an idiomaticity test is allowed to do is parse the program, resol
 
 There is one file per pass, and the driver comes in a small family for the shapes a pass can take, all sharing `runPassForIdiomaticityCore`:
 
-- `runPassForIdiomaticity` — a `Program → Program` lowering pass (the common case).
+- `runPassForIdiomaticity` — a lowering pass over the resolved program (the common case).
 - `runPassAfterForIdiomaticity` — a lowering pass whose input a predecessor must prepare (e.g. `EliminateDeterministicHoles` after `InferHoleTypes`); the predecessor is input-shaping, run in the `prepare` argument, so the test still pins ONE pass.
-- `runProgramToCorePassForIdiomaticity` / `runCorePassForIdiomaticity` — a pass that outputs, or both takes and outputs, `UnorderedCoreWithLaurelTypes` (e.g. `transparencyPass`, `functionalRewritePass`).
+- `runProgramToCorePassForIdiomaticity` / `runCorePassForIdiomaticity` — a pass that splits the procedures into `staticFunctions` and `staticProcedures`, or runs on a program already split that way (e.g. `transparencyPass`, `functionalRewritePass`). These print the functions as well as the procedures.
 
 Pass `prelude := false` for a pass that TRANSFORMS the prelude procedures themselves (e.g. `Contracts`, `FunctionalRewrite`, `TransparencyPass` derive helper procedures from every prelude procedure, under names `dropPrelude` cannot recognise); such a pass's snippet must avoid every operator, since `+`, `>`, `==`, `&&` and friends are calls to prelude wrapper procedures and will not resolve without it.
 

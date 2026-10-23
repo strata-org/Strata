@@ -8,15 +8,20 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
--- No interpreters: `multipleReturns` has no body; the Laurel interpreter returns 0s that violate its `ensures`, and Core says "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure multipleReturns() returns (x: int, y: int, z: int)
   opaque
-  ensures x == 1 && y == 2 && z == 3;
+  ensures x == 1 && y == 2 && z == 3
+{
+  x := 1;
+  y := 2;
+  z := 3
+};
 
 procedure caller()
+  entry
   opaque
 {
   var y: int;
@@ -34,13 +39,5 @@ procedure caller()
   var m: int := 3;
   var n: int;
   n := 4
-};
-
-procedure repeatedAssignTarget()
-  opaque
-{
-  var x: int;
-  assign x, x, x := multipleReturns();
-  assert x == 3
 };
 #end

@@ -74,9 +74,57 @@ def extractFromStatements
   extractGo pathConditions ss #[]
 end
 
+/-- Give every parameter of `proc` whose name is in `taken` a fresh name in its body.
+
+    A body's parameters reach the obligations as free variables under their own
+    names. One named like a function or constant would be read as that function,
+    constrained by its axioms, so a check on the parameter could hold for the
+    constant's value instead. Each clashing parameter is renamed to `x@n`, the first
+    such name that no function, constant, parameter, variable of the body or
+    earlier fresh name has.
+
+    This matters only for a program whose procedures still carry their parameters, as
+    in a pipeline that runs `simplify` in place of symbolic evaluation. The obligation
+    program symbolic evaluation builds has procedures without parameters, its former
+    parameters renamed apart already, so there the rename does nothing. -/
+def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Statements) :
+    Statements :=
+  let params := proc.header.inputs ++ proc.header.outputs
+  let bodyNames := (Statements.allExprs ss).flatMap (fun e => (HasFvars.getFvars e).map (·.name)) ++
+    (Imperative.Block.definedVars (P := Expression) (C := Command) ss false).map (·.name)
+  let used := taken ++ params.map (·.1.name) ++ bodyNames
+  let fresh (used : List String) (x : String) : String :=
+    let rec go (n : Nat) (fuel : Nat) : String :=
+      match fuel with
+      | 0 => s!"{x}@{n}"
+      | fuel + 1 =>
+        let c := s!"{x}@{n}"
+        if used.contains c then go (n + 1) fuel else c
+    go 1 (used.length + 1)
+  (params.foldl (init := (ss, used)) fun (ss, used) (x, ty) =>
+    if taken.contains x.name then
+      let name := fresh used x.name
+      let x' : Expression.Ident := ⟨name, x.metadata⟩
+      (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
+    else (ss, used)).1
+
 /-- Extract proof obligations from a program. Axioms become global assumptions
     and `distinct` declarations become distinctness facts. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
+  -- Constants are 0-ary functions; `renameShadowingParams` keeps parameters apart
+  -- from them, and from the constructors, testers and destructors a datatype
+  -- declaration generates, a nullary constructor being a constant too.
+  let funcNames : List String := p.decls.flatMap fun
+    | .func f _ => [f.name.name]
+    | .recFuncBlock fs _ => fs.map (·.name.name)
+    | .type (.data d) _ =>
+      match Lambda.genBlockFactory (T := CoreLParams) d with
+      | .ok F => F.toArray.toList.map (·.name.name)
+      | .error _ => d.flatMap fun dt => dt.constrs.flatMap fun c =>
+          c.name.name :: c.testerName ::
+            c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
+              [n, n ++ Lambda.unsafeDestructorSuffix]
+    | _ => []
   -- Accumulate global path-condition facts (axioms and distinct groups) and
   -- obligations as we walk declarations in order.
   let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
@@ -102,8 +150,15 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
           "extracting obligations")
       | none => .ok (globalPc, allObs)
     | .proc proc _md => do
+      -- Only the body is walked, so a contract would be dropped: an `ensures`
+      -- left unchecked, a `requires` missing from the path condition.
+      if !(proc.spec.preconditions.isEmpty && proc.spec.postconditions.isEmpty) then
+        throw ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
+          "' still carries a requires or ensures clause; obligations can only be " ++
+          "extracted from procedures without a contract")
       let obs ← match proc.body with
         | .structured ss =>
+          let ss := renameShadowingParams funcNames proc ss
           -- `globalPC` is accumulated newest-first (via ::) which
           -- is what RevPathConditions expects.
           extractFromStatements ⟨[globalPc]⟩ ss

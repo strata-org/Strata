@@ -5,7 +5,7 @@
 -/
 module
 
-meta import all Strata.DL.Lambda.Semantics
+meta import all Strata.DL.Lambda.LExprEvalSound
 meta import all Strata.DL.Lambda.LExprEval
 
 ---------------------------------------------------------------------

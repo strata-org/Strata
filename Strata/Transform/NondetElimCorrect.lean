@@ -110,7 +110,6 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
     (h_none : ρ.store ident = none)
     (hwf_var : WellFormedSemanticEvalVar ρ.factory)
     (hwf_mono : WellFormedSemanticEvalMono ρ.factory)
-    (hwfb : WellFormedSemanticEvalBool ρ.factory)
     (h_branch : StepStmtStar P (EvalCmd P)
       (.stmts (if b then tss else ess)
         ({ ρ with store := SemanticStore.update ρ.store ident (if b then HasBool.tt else HasBool.ff) } : Env P))
@@ -134,7 +133,6 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
       (step_init_havoc_to ident HasBool.boolTy v md ρ h_none hval hwf_var)
   have h_guard : P.eval ρ.factory ρg.store (HasFvar.mkTypedFvar ident HasBool.boolTy) = some v :=
     eval_mkTypedFvar_storeWith ρ.factory ρ.store ident v (LawfulHasVal.valueOfTy_isVal _ _ _ hval) hwf_var hwf_mono
-  have hwfb' : WellFormedSemanticEvalBool ρ.factory := hwfb
   have h_blk : StepStmtStar P (EvalCmd P)
       (.block .none ρg.store (.stmts (if b then tss else ess) ρg))
       (Env.outcomeConfig oc ({ ρt' with store := projectStore ρg.store ρt'.store } : Env P)) :=
@@ -145,10 +143,10 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
     refine .step _ _ _ .step_stmts_cons ?_
     cases b with
     | true =>
-      exact .step _ _ _ (.step_seq_inner (.step_ite_true h_guard hwfb'))
+      exact .step _ _ _ (.step_seq_inner (.step_ite_true h_guard))
         (seq_nil_outcome _ _ oc h_blk)
     | false =>
-      exact .step _ _ _ (.step_seq_inner (.step_ite_false h_guard hwfb'))
+      exact .step _ _ _ (.step_seq_inner (.step_ite_false h_guard))
         (seq_nil_outcome _ _ oc h_blk)
   exact ReflTrans_Transitive _ _ _ _ h1 h2
 
@@ -191,7 +189,6 @@ theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Has
     (h_none : ρ.store ident = none)
     (hwf_var : WellFormedSemanticEvalVar ρ.factory)
     (hwf_mono : WellFormedSemanticEvalMono ρ.factory)
-    (hwfb : WellFormedSemanticEvalBool ρ.factory)
     (h_branch : StepStmtStar P (EvalCmd P)
       (.stmts (if b then tss else ess)
         ({ ρ with store := SemanticStore.update ρ.store ident (if b then HasBool.tt else HasBool.ff) } : Env P)) d)
@@ -225,8 +222,8 @@ theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasFvars P] [Has
   have h_ite : StepStmtStar P (EvalCmd P)
       (.stmt (.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md) ρg) dblk := by
     cases b with
-    | true => exact .step _ _ _ (.step_ite_true h_guard hwfb) h_blk_run
-    | false => exact .step _ _ _ (.step_ite_false h_guard hwfb) h_blk_run
+    | true => exact .step _ _ _ (.step_ite_true h_guard) h_blk_run
+    | false => exact .step _ _ _ (.step_ite_false h_guard) h_blk_run
   obtain ⟨d', h2, hd'⟩ :=
     stmt_to_singleton_stmts_fail
       (.ite (.det (HasFvar.mkTypedFvar ident HasBool.boolTy)) tss ess md) ρg dblk h_ite hdblk
@@ -256,12 +253,12 @@ theorem loop_det_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
     {ρ ρ' : Env P} {oc : Option String}
     (hstar : ReflTransT (StepStmt P (EvalCmd P))
       (.stmt (.loop (.det e) m inv body md) ρ) (Env.outcomeConfig oc ρ')) :
-    (P.eval ρ.factory ρ.store e = some HasBool.ff ∧ WellFormedSemanticEvalBool ρ.factory ∧
+    (P.eval ρ.factory ρ.store e = some HasBool.ff ∧
         ∃ (hrest : ReflTransT (StepStmt P (EvalCmd P))
             (.terminal ρ)
             (Env.outcomeConfig oc ρ')),
           hrest.len < hstar.len) ∨
-    (P.eval ρ.factory ρ.store e = some HasBool.tt ∧ WellFormedSemanticEvalBool ρ.factory ∧
+    (P.eval ρ.factory ρ.store e = some HasBool.tt ∧
         ∃ (hrest : ReflTransT (StepStmt P (EvalCmd P))
             (.seq (.block .none ρ.store (.stmts body ρ))
               [.loop (.det e) m inv body md])
@@ -271,17 +268,17 @@ theorem loop_det_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool
   | none =>
     simp only [Env.outcomeConfig] at hstar ⊢
     match hstar with
-    | .step _ _ _ (StepStmt.step_loop_exit h_cond hwfb_s) hrest =>
-      exact .inl ⟨h_cond, hwfb_s, hrest, by simp only [ReflTransT.len]; omega⟩
-    | .step _ _ _ (StepStmt.step_loop_enter h_cond hwfb_s) hrest =>
-      exact .inr ⟨h_cond, hwfb_s, hrest, by simp only [ReflTransT.len]; omega⟩
+    | .step _ _ _ (StepStmt.step_loop_exit h_cond) hrest =>
+      exact .inl ⟨h_cond, hrest, by simp only [ReflTransT.len]; omega⟩
+    | .step _ _ _ (StepStmt.step_loop_enter h_cond) hrest =>
+      exact .inr ⟨h_cond, hrest, by simp only [ReflTransT.len]; omega⟩
   | some lbl =>
     simp only [Env.outcomeConfig] at hstar ⊢
     match hstar with
-    | .step _ _ _ (StepStmt.step_loop_exit h_cond hwfb_s) hrest =>
-      exact .inl ⟨h_cond, hwfb_s, hrest, by simp only [ReflTransT.len]; omega⟩
-    | .step _ _ _ (StepStmt.step_loop_enter h_cond hwfb_s) hrest =>
-      exact .inr ⟨h_cond, hwfb_s, hrest, by simp only [ReflTransT.len]; omega⟩
+    | .step _ _ _ (StepStmt.step_loop_exit h_cond) hrest =>
+      exact .inl ⟨h_cond, hrest, by simp only [ReflTransT.len]; omega⟩
+    | .step _ _ _ (StepStmt.step_loop_enter h_cond) hrest =>
+      exact .inr ⟨h_cond, hrest, by simp only [ReflTransT.len]; omega⟩
 
 /-- First-step inversion of a *nondeterministic* loop run reaching an outcome
 (`Env.outcomeConfig oc ρ'`).  The first step is either `step_loop_nondet_exit`
@@ -710,12 +707,12 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
   induction n generalizing oc ρ_src ρ_tgt ρ' with
   | zero =>
     rcases loop_det_step_first_inv hstarT with
-      ⟨_, _, _, hl⟩ | ⟨_, _, _, hl⟩
+      ⟨_, _, hl⟩ | ⟨_, _, hl⟩
     · exact absurd (Nat.lt_of_lt_of_le hl hlen) (Nat.not_lt_zero _)
     · exact absurd (Nat.lt_of_lt_of_le hl hlen) (Nat.not_lt_zero _)
   | succ n ih =>
     rcases loop_det_step_first_inv hstarT with
-      ⟨h_cond, hwfb_s, hrest, hl⟩ | ⟨h_cond, hwfb_s, hrest, hl⟩
+      ⟨h_cond, hrest, hl⟩ | ⟨h_cond, hrest, hl⟩
     · have hlen : hstarT.len ≤ n + 1 := hlen
       cases oc with
       | none =>
@@ -731,7 +728,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
         subst hρ'_eq
         refine ⟨h_src_fresh, ρ_tgt, ?_, ?_, ?_, ?_⟩
         · exact .step _ _ _ (StepStmt.step_loop_exit
-            h_cond_t (h_fac_eq ▸ hwf.bool)) (.refl _)
+            h_cond_t) (.refl _)
         · simpa using h_agree
         · simp [h_fail_eq]
         · simpa using h_tgt_fresh
@@ -832,7 +829,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
         simp only [Env.outcomeConfig] at h_loop_tgt
         refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_fresh_out⟩
         refine .step _ _ _ (StepStmt.step_loop_enter
-          h_cond_t (h_fac_eq ▸ hwf.bool)) ?_
+          h_cond_t) ?_
         have h_body_tgt' : StepStmtStar P (EvalCmd P)
             (.stmts body' ρ_tgt)
             (.terminal ρ_inner_tgt) := by
@@ -868,7 +865,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
             · rw [if_pos hp]; exact h_inner_fresh t h_suf
             · rw [if_neg hp]
           · refine .step _ _ _ (StepStmt.step_loop_enter
-              h_cond_t (h_fac_eq ▸ hwf.bool)) ?_
+              h_cond_t) ?_
             have h_body_tgt' : StepStmtStar P (EvalCmd P)
                 (.stmts body' ρ_tgt)
                 (.exiting lbl ρ_inner_tgt) := by
@@ -952,7 +949,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
           simp only [Env.outcomeConfig] at h_loop_tgt
           refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_fresh_out⟩
           refine .step _ _ _ (StepStmt.step_loop_enter
-            h_cond_t (h_fac_eq ▸ hwf.bool)) ?_
+            h_cond_t) ?_
           have h_body_tgt' : StepStmtStar P (EvalCmd P)
               (.stmts body' ρ_tgt)
               (.terminal ρ_inner_tgt) := by
@@ -1023,7 +1020,7 @@ private theorem loop_nondet_exit_close_sa {P : PureExpr} [HasFvar P] [HasFvars P
     subst hρ'_eq
     refine ⟨h_src_fresh, ρ_tgt, ?_, ?_, ?_, ?_⟩
     · exact .step _ _ _ (StepStmt.step_loop_exit
-        h_guard_ff (h_fac_eq ▸ hwf.bool)) (.refl _)
+        h_guard_ff) (.refl _)
     · exact h_agree
     · exact h_fail_eq
     · exact h_tgt_fresh
@@ -1258,7 +1255,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
           refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_fresh_out⟩
           -- Assemble: enter (guard tt), block runs body'++[havoc], step_seq_done, recurse.
           refine .step _ _ _ (StepStmt.step_loop_enter
-            h_guard_tt (h_fac_eq ▸ hwf.bool)) ?_
+            h_guard_tt) ?_
           have h_block_run : StepStmtStar P (EvalCmd P)
               (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
                 ρ_tgt))
@@ -1361,7 +1358,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
           simp only [Env.outcomeConfig] at h_loop_tgt
           refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_fresh_out⟩
           refine .step _ _ _ (StepStmt.step_loop_enter
-            h_guard_tt (h_fac_eq ▸ hwf.bool)) ?_
+            h_guard_tt) ?_
           have h_block_run : StepStmtStar P (EvalCmd P)
               (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
                 ρ_tgt))
@@ -1403,7 +1400,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
             -- trailing havoc is skipped (the body' exit propagates), block
             -- mismatch (.none), seq exit skips the loop tail.
             refine .step _ _ _ (StepStmt.step_loop_enter
-              h_guard_tt (h_fac_eq ▸ hwf.bool)) ?_
+              h_guard_tt) ?_
             have h_body_tgt' : StepStmtStar P (EvalCmd P)
                 (.stmts body' ρ_tgt)
                 (.exiting lbl ρ_inner_tgt) := by
@@ -1557,7 +1554,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
           simp only [Env.outcomeConfig] at h_loop_tgt
           refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_fresh_out⟩
           refine .step _ _ _ (StepStmt.step_loop_enter
-            h_guard_tt (h_fac_eq ▸ hwf.bool)) ?_
+            h_guard_tt) ?_
           have h_block_run : StepStmtStar P (EvalCmd P)
               (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
                 ρ_tgt))
@@ -2195,7 +2192,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     have h_unique_t : (Block.initVars tss).Nodup := (List.nodup_append.mp h_unique_pair).1
     have h_unique_e : (Block.initVars ess).Nodup := (List.nodup_append.mp h_unique_pair).2.1
     cases hstep with
-    | step_ite_true h_cond hwfb_s =>
+    | step_ite_true h_cond =>
       obtain ⟨ρ_inner, hbranch_inner, h_ρ'_eq⟩ :=
         blockT_none_reaches_outcome hbranch
       have h_no_writes_t : SrcNoGenWrites (P := P) Q tss := by
@@ -2223,7 +2220,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           exact hwf.mono e HasBool.tt ρ_src.store ρ_tgt.store
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_tgt.store h_agree) h_cond
         refine stmt_to_singleton_stmts_outcome _ ρ_tgt _ oc ?_
-        refine .step _ _ _ (StepStmt.step_ite_true h_cond_t (h_fac_eq ▸ hwf.bool)) ?_
+        refine .step _ _ _ (StepStmt.step_ite_true h_cond_t) ?_
         exact blockT_none_build_outcome _ ρ_tgt.store oc ρ_out h_run
       · exact StoreAgreement.of_projectStore_parents h_agree h_off'
       · exact h_fail'
@@ -2242,7 +2239,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           have h_fresh_σ₁ : GenFreshStore Q σ₁ ρ_out.store := by rw [h_eq1]; exact h_fresh_out
           exact (GenFreshStore_mono h_step12 h_fresh_σ₁) s h_suf h_notin
         · rw [if_neg hp]
-    | step_ite_false h_cond hwfb_s =>
+    | step_ite_false h_cond =>
       obtain ⟨ρ_inner, hbranch_inner, h_ρ'_eq⟩ :=
         blockT_none_reaches_outcome hbranch
       have h_no_writes_e : SrcNoGenWrites (P := P) Q ess := by
@@ -2274,7 +2271,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           exact hwf.mono e HasBool.ff ρ_src.store ρ_tgt.store
             (storeAgreement_supplies_mono_premise ρ_src.store ρ_tgt.store h_agree) h_cond
         refine stmt_to_singleton_stmts_outcome _ ρ_tgt _ oc ?_
-        refine .step _ _ _ (StepStmt.step_ite_false h_cond_t (h_fac_eq ▸ hwf.bool)) ?_
+        refine .step _ _ _ (StepStmt.step_ite_false h_cond_t) ?_
         exact blockT_none_build_outcome _ ρ_tgt.store oc ρ_out h_run
       · exact StoreAgreement.of_projectStore_parents h_agree h_off'
       · exact h_fail'
@@ -2301,7 +2298,6 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
       have := GenFreshStore_gen_slot_none ndelimItePrefix h_tgt_fresh h_wf_gen (hQgen.1 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
-    have hwfb_t : WellFormedSemanticEvalBool ρ_tgt.factory := h_fac_eq ▸ hwf.bool
     have hwf_def_t : WellFormedSemanticEvalMono ρ_tgt.factory := h_fac_eq ▸ hwf.mono
     have h_step01 : StringGenState.GenStep σ σ₁ := by
       have := StringGenState.GenStep.of_gen ndelimItePrefix σ; rw [hgen] at this; exact this
@@ -2376,7 +2372,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         simp only [hgen]
         have := step_ndelim_ite_prefix_outcome true (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
-          ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run
+          ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t h_run
         simpa [ρ_tgt_g] using this
       · exact StoreAgreement.of_projectStore_parents h_off_g h_off'
       · exact h_fail'
@@ -2428,7 +2424,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         simp only [hgen]
         have := step_ndelim_ite_prefix_outcome false (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
-          ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run
+          ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwf_def_t h_run
         simpa [ρ_tgt_g] using this
       · exact StoreAgreement.of_projectStore_parents h_off_g h_off'
       · exact h_fail'
@@ -3560,14 +3556,14 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_a'_fail
       exact ⟨.stmt (.loop (.det e) m inv body' md) ρ_tgt, .refl _,
         by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
-    | .step _ _ _ (StepStmt.step_loop_exit hg_false hwfb_step) hrest, hl_succ =>
+    | .step _ _ _ (StepStmt.step_loop_exit hg_false) hrest, hl_succ =>
       have ha''_eq : a' = .terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) :=
         reflTransT_from_terminal P (by simpa only [Bool.or_false] using hrest)
       rw [ha''_eq] at h_a'_fail
       have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
       exact ⟨.stmt (.loop (.det e) m inv body' md) ρ_tgt, .refl _,
         by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
-    | .step _ _ _ (StepStmt.step_loop_enter hg_true hwfb_step) hrest, hl_succ =>
+    | .step _ _ _ (StepStmt.step_loop_enter hg_true) hrest, hl_succ =>
       have h_cond_t : P.eval ρ_tgt.factory ρ_tgt.store e = some HasBool.tt := by
         rw [h_fac_eq]
         exact hwf.mono e HasBool.tt ρ_src.store ρ_tgt.store
@@ -3577,7 +3573,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
           (.seq (.block .none ρ_tgt.store (.stmts body' ρ_tgt))
             [.loop (.det e) m inv body' md]) :=
         .step _ _ _ (StepStmt.step_loop_enter
-          h_cond_t (h_fac_eq ▸ hwf.bool)) (.refl _)
+          h_cond_t) (.refl _)
       rcases seqT_reaches_failing' P hrest h_a'_fail with hA | hB
       · -- CASE A: the failure is inside THIS iteration's body block.
         obtain ⟨d_blk, h_blk_run, hd_blk_fail, _⟩ := hA
@@ -3807,7 +3803,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
             [.loop (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) g) HasBool.boolTy)) m inv
               (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md]) :=
         .step _ _ _ (StepStmt.step_loop_enter
-          h_guard_tt (h_fac_eq ▸ hwf.bool)) (.refl _)
+          h_guard_tt) (.refl _)
       have h_g_some_tgt : (ρ_tgt.store (HasIdent.ident (P := P) g)).isSome = true := by
         rw [h_guard_def]; rfl
       rcases seqT_reaches_failing' P hrest h_a'_fail with hA | hB
@@ -4115,7 +4111,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         (by rw [Stmt.initVars_ite]; exact List.mem_append_right _ hy)
     obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step h_reach h_c_fail h_ρsrc_nofail
     cases hstep with
-    | step_ite_true h_cond hwfb_s =>
+    | step_ite_true h_cond =>
       have h_no_writes_t : SrcNoGenWrites (P := P) Q tss := by
         intro t hQ hmem
         rcases List.mem_append.mp hmem with hd | hm
@@ -4137,9 +4133,9 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         by simpa [Config.getEnv] using hd_tgt_fail⟩
       refine .step _ _ _ StepStmt.step_stmts_cons ?_
       exact seq_inner_star P (EvalCmd P) _ _ []
-        (.step _ _ _ (StepStmt.step_ite_true h_cond_t (h_fac_eq ▸ hwf.bool))
+        (.step _ _ _ (StepStmt.step_ite_true h_cond_t)
           (block_inner_star P (EvalCmd P) _ _ .none ρ_tgt.store h_run_tgt))
-    | step_ite_false h_cond hwfb_s =>
+    | step_ite_false h_cond =>
       have h_no_writes_e : SrcNoGenWrites (P := P) Q ess := by
         intro t hQ hmem
         rcases List.mem_append.mp hmem with hd | hm
@@ -4165,7 +4161,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         by simpa [Config.getEnv] using hd_tgt_fail⟩
       refine .step _ _ _ StepStmt.step_stmts_cons ?_
       exact seq_inner_star P (EvalCmd P) _ _ []
-        (.step _ _ _ (StepStmt.step_ite_false h_cond_t (h_fac_eq ▸ hwf.bool))
+        (.step _ _ _ (StepStmt.step_ite_false h_cond_t)
           (block_inner_star P (EvalCmd P) _ _ .none ρ_tgt.store h_run_tgt))
   | .ite .nondet tss ess md, h_no_writes, h_tgt_init_undef, h_unique, h_reach =>
     rcases hgen : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
@@ -4174,7 +4170,6 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       have := GenFreshStore_gen_slot_none ndelimItePrefix h_tgt_fresh h_wf_gen (hQgen.1 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
-    have hwfb_t : WellFormedSemanticEvalBool ρ_tgt.factory := h_fac_eq ▸ hwf.bool
     have hwf_def_t : WellFormedSemanticEvalMono ρ_tgt.factory := h_fac_eq ▸ hwf.mono
     have h_step01 : StringGenState.GenStep σ σ₁ := by
       have := StringGenState.GenStep.of_gen ndelimItePrefix σ; rw [hgen] at this; exact this
@@ -4241,7 +4236,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
       exact step_ndelim_ite_prefix_fail true (HasIdent.ident (P := P) g)
         (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
-        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run_tgt hd_tgt_fail
+        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwf_def_t h_run_tgt hd_tgt_fail
     | step_ite_nondet_false =>
       have h_step12 : StringGenState.GenStep σ₁ (Block.nondetElimM tss σ₁).2 :=
         Block.nondetElimM_genStep tss σ₁
@@ -4267,7 +4262,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
       exact step_ndelim_ite_prefix_fail false (HasIdent.ident (P := P) g)
         (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
-        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwf_def_t hwfb_t h_run_tgt hd_tgt_fail
+        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwf_def_t h_run_tgt hd_tgt_fail
   | .loop (.det e) m inv body md, h_no_writes, h_tgt_init_undef, h_unique, h_reach =>
     have h_no_writes_body : SrcNoGenWrites (P := P) Q body := by
       have h_dv : Stmt.definedVars (P := P) (.loop (.det e) m inv body md) false

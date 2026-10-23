@@ -25,6 +25,8 @@ Key theorems:
     rules of `StepCFGE`, derived from `StepCFGE.step_admin`.
   * `StepCFGE.casesRules` — case analysis on a `StepCFGE` step by CFG rule.
   * `StepCFGE.imp` — `StepCFGE` is monotone in its command relation.
+  * `StepCFGE.preserves_factory` / `StepCFGStarE.preserves_factory` — one-step
+    and traced CFG executions preserve the environment's expression factory.
   * `StepDetCFGStar_trans` — transitivity of the deterministic-CFG multi-step run.
   * `EvalCmds_prefix_to_StepCFG_chain` / `EvalCmds_to_StepCFG_chain` — lift an
     `EvalCmds` command-replay into a `StepCFG` chain.
@@ -39,34 +41,41 @@ Key theorems:
     (Reusable CFG-simulation building blocks consumed by the S2U proof.) -/
 
 /-- `StepCFG` is deterministic: from a single source config, at most one target
-    is reachable in one step.  The `fac` index (fixed across the relation) pins
-    each `condGoto` condition to one value, so `goto_true` and `goto_false` cannot
-    both fire; `fetch`/`finish` are structurally functional and `step_cmd` inherits
-    determinism from `EvalCmd` (`hcmd`).  This machine-checks the determinism the
-    `StepCFG` docstring claims, guarding against a later constructor addition
-    silently reintroducing nondeterminism. -/
+    is reachable in one step.  The shared source config carries the factory in its
+    `Env` (`ρ.factory`), which pins each `condGoto` condition to one value, so
+    `goto_true` and `goto_false` cannot both fire; `fetch`/`finish` are structurally
+    functional and `step_cmd` inherits determinism from `EvalCmd` (`hcmd`).  This
+    machine-checks the determinism the `StepCFG` docstring claims, guarding against a
+    later constructor addition silently reintroducing nondeterminism. -/
 theorem StepCFG.deterministic
     {l CmdT : Type} [BEq l] {P : PureExpr} {EvalCmd : EvalCmdParam P CmdT}
-    {fac : P.Factory}
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
-    {cfg : CFG l (DetBlock l CmdT P)} {s t₁ t₂ : CFGConfig l CmdT P}
+    {s t₁ t₂ : CFGConfig l CmdT P}
     (hcmd : ∀ σ c σ₁ f₁ σ₂ f₂,
-      EvalCmd fac σ c σ₁ f₁ → EvalCmd fac σ c σ₂ f₂ → σ₁ = σ₂ ∧ f₁ = f₂)
-    (h₁ : StepCFG P EvalCmd fac cfg s t₁)
-    (h₂ : StepCFG P EvalCmd fac cfg s t₂) :
+      EvalCmd s.getEnv.factory σ c σ₁ f₁ →
+      EvalCmd s.getEnv.factory σ c σ₂ f₂ → σ₁ = σ₂ ∧ f₁ = f₂)
+    (h₁ : StepCFG P EvalCmd s t₁)
+    (h₂ : StepCFG P EvalCmd s t₂) :
     t₁ = t₂ := by
   cases h₁ <;> cases h₂ <;> first | rfl | skip
-  case fetch.fetch hlk₁ _ hlk₂ =>
+  case fetch.fetch =>
     -- `List.lookup` is functional: the two fetched blocks agree.
-    obtain rfl : _ = _ := Option.some.inj (hlk₁.symm.trans hlk₂); rfl
-  case step_cmd.step_cmd he₁ _ _ he₂ =>
+    simp_all
+  case step_cmd.step_cmd =>
     -- `EvalCmd` is deterministic (`hcmd`): resulting store and flag are unique.
+    -- The shared source config pins the factory `ρ.factory`, so both evaluations
+    -- run under the same factory and `hcmd` applies.
+    rename_i he₁ _ _ he₂
     obtain ⟨hσ, hf⟩ := hcmd _ _ _ _ _ _ he₁ he₂; rw [hσ, hf]
-  case goto_true.goto_false htt _ _ _ _ hff =>
-    -- `fac` pins the condition, so `tt = ff` — impossible.
-    exact absurd (htt.symm.trans hff) (by simp [HasBool.tt_is_not_ff])
-  case goto_false.goto_true hff _ _ _ _ htt =>
-    exact absurd (htt.symm.trans hff) (by simp [HasBool.tt_is_not_ff])
+  case goto_true.goto_false =>
+    -- The shared source config pins the condition, so `tt = ff` — impossible.
+    exact absurd
+      ((‹P.eval _ _ _ = some HasBool.tt›).symm.trans ‹P.eval _ _ _ = some HasBool.ff›)
+      (by simp [HasBool.tt_is_not_ff])
+  case goto_false.goto_true =>
+    exact absurd
+      ((‹P.eval _ _ _ = some HasBool.tt›).symm.trans ‹P.eval _ _ _ = some HasBool.ff›)
+      (by simp [HasBool.tt_is_not_ff])
 
 /-- Store-agreement transport through a `.block`-step projection, tolerant of
 factory restoration: the outer env's factory field may be restored to any parent
@@ -96,9 +105,9 @@ theorem EvalCmds_prefix_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P]
     {pre suf : List (Cmd P)} {f : Bool}
     (h_cmds : EvalCmds P (EvalCmd P) δ σ pre σ' f) :
     ∀ (t : String) (tr : DetTransferCmd String P) (f_base : Bool),
-      StepCFGStar P (EvalCmd P) δ cfg
-        (.inBlock t (pre ++ suf) tr σ f_base)
-        (.inBlock t suf tr σ' (f_base || f)) := by
+      StepCFGStar P (EvalCmd P)
+        (.inBlock cfg t (pre ++ suf) tr { store := σ, factory := δ, hasFailure := f_base })
+        (.inBlock cfg t suf tr { store := σ', factory := δ, hasFailure := f_base || f }) := by
   induction h_cmds with
   | eval_cmds_none =>
     intro t tr f_base
@@ -107,9 +116,11 @@ theorem EvalCmds_prefix_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P]
   | eval_cmds_some hcmd hcmds ih =>
     rename_i δ' σ_in c σ_mid failed cs_t σ_out f_t
     intro t tr f_base
-    have h1 : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) δ cfg
-        (.inBlock t ((c :: cs_t) ++ suf) tr σ_in f_base)
-        (.inBlock t (cs_t ++ suf) tr σ_mid (f_base || failed)) :=
+    have h1 : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P)
+        (.inBlock cfg t ((c :: cs_t) ++ suf) tr
+          { store := σ_in, factory := δ, hasFailure := f_base })
+        (.inBlock cfg t (cs_t ++ suf) tr
+          { store := σ_mid, factory := δ, hasFailure := f_base || failed }) :=
       StepCFG.step_cmd hcmd
     have h2 := ih t tr (f_base || failed)
     have h_or :
@@ -127,9 +138,9 @@ theorem EvalCmds_to_StepCFG_chain {P : PureExpr} [HasFvar P] [HasFvars P] [HasBo
     {cs : List (Cmd P)} {f : Bool}
     (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f) :
     ∀ (t : String) (tr : DetTransferCmd String P) (f_base : Bool),
-      StepCFGStar P (EvalCmd P) δ cfg
-        (.inBlock t cs tr σ f_base)
-        (.inBlock t [] tr σ' (f_base || f)) := by
+      StepCFGStar P (EvalCmd P)
+        (.inBlock cfg t cs tr { store := σ, factory := δ, hasFailure := f_base })
+        (.inBlock cfg t [] tr { store := σ', factory := δ, hasFailure := f_base || f }) := by
   intro t tr f_base
   simpa using
     EvalCmds_prefix_to_StepCFG_chain (cfg := cfg)
@@ -560,12 +571,10 @@ theorem single_cmd_eval {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
 
 /-- Transitivity of the deterministic-CFG multi-step run. -/
 theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    {fac : P.Factory}
-    {cfg : CFG String (DetBlock String (Cmd P) P)}
     {a b c : CFGConfig String (Cmd P) P}
-    (h₁ : StepDetCFGStar fac cfg a b)
-    (h₂ : StepDetCFGStar fac cfg b c) :
-    StepDetCFGStar fac cfg a c :=
+    (h₁ : StepDetCFGStar a b)
+    (h₂ : StepDetCFGStar b c) :
+    StepDetCFGStar a c :=
   ReflTrans_Transitive _ _ _ _ h₁ h₂
 
 /-- Run a deterministic block from `.atBlock t` to the selected successor of a
@@ -579,24 +588,26 @@ theorem run_block_goto {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {f_base f : Bool} {t : String} {b : Bool}
     (h_lkp : List.lookup t cfg.blocks = .some ⟨cs, .condGoto c tlbl elbl md⟩)
     (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f)
-    (h_cond : P.eval δ σ' c = .some (if b then HasBool.tt else HasBool.ff))
-    (hwfb : WellFormedSemanticEvalBool δ)
-    (hwfcongr : WellFormedSemanticEvalExprCongr δ) :
-    StepCFGStar P (EvalCmd P) δ cfg
-      (.atBlock t σ f_base)
-      (.atBlock (if b then tlbl else elbl) σ' (f_base || f)) := by
-  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) δ cfg
-      (.atBlock t σ f_base)
-      (.inBlock t cs (.condGoto c tlbl elbl md) σ f_base) :=
+    (h_cond : P.eval δ σ' c = .some (if b then HasBool.tt else HasBool.ff)) :
+    StepCFGStar P (EvalCmd P)
+      (.atBlock cfg t { store := σ, factory := δ, hasFailure := f_base })
+      (.atBlock cfg (if b then tlbl else elbl)
+        { store := σ', factory := δ, hasFailure := f_base || f }) := by
+  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P)
+      (.atBlock cfg t { store := σ, factory := δ, hasFailure := f_base })
+      (.inBlock cfg t cs (.condGoto c tlbl elbl md)
+        { store := σ, factory := δ, hasFailure := f_base }) :=
     StepCFG.fetch h_lkp
   have h_chain := EvalCmds_to_StepCFG_chain
                     (cfg := cfg) h_cmds t (.condGoto c tlbl elbl md) f_base
-  have h_goto : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) δ cfg
-      (.inBlock t [] (.condGoto c tlbl elbl md) σ' (f_base || f))
-      (.atBlock (if b then tlbl else elbl) σ' (f_base || f)) := by
+  have h_goto : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P)
+      (.inBlock cfg t [] (.condGoto c tlbl elbl md)
+        { store := σ', factory := δ, hasFailure := f_base || f })
+      (.atBlock cfg (if b then tlbl else elbl)
+        { store := σ', factory := δ, hasFailure := f_base || f }) := by
     cases b with
-    | true => exact StepCFG.goto_true h_cond hwfb hwfcongr
-    | false => exact StepCFG.goto_false h_cond hwfb hwfcongr
+    | true => exact StepCFG.goto_true h_cond
+    | false => exact StepCFG.goto_false h_cond
   exact ReflTrans.step _ _ _ h_fetch
     (ReflTrans_Transitive _ _ _ _ h_chain
       (ReflTrans.step _ _ _ h_goto (ReflTrans.refl _)))
@@ -610,18 +621,20 @@ theorem run_block_finish {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     {f_base f : Bool} {t : String}
     (h_lkp : List.lookup t cfg.blocks = .some ⟨cs, .finish md⟩)
     (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f) :
-    StepCFGStar P (EvalCmd P) δ cfg
-      (.atBlock t σ f_base)
-      (.terminal σ' (f_base || f)) := by
-  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) δ cfg
-      (.atBlock t σ f_base)
-      (.inBlock t cs (.finish md) σ f_base) :=
+    StepCFGStar P (EvalCmd P)
+      (.atBlock cfg t { store := σ, factory := δ, hasFailure := f_base })
+      (.terminal { store := σ', factory := δ, hasFailure := f_base || f }) := by
+  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P)
+      (.atBlock cfg t { store := σ, factory := δ, hasFailure := f_base })
+      (.inBlock cfg t cs (.finish md)
+        { store := σ, factory := δ, hasFailure := f_base }) :=
     StepCFG.fetch h_lkp
   have h_chain := EvalCmds_to_StepCFG_chain
                     (cfg := cfg) h_cmds t (.finish md) f_base
-  have h_finish : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) δ cfg
-      (.inBlock t [] (.finish md) σ' (f_base || f))
-      (.terminal σ' (f_base || f)) :=
+  have h_finish : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P)
+      (.inBlock cfg t [] (.finish md)
+        { store := σ', factory := δ, hasFailure := f_base || f })
+      (.terminal { store := σ', factory := δ, hasFailure := f_base || f }) :=
     StepCFG.finish
   exact ReflTrans.step _ _ _ h_fetch
     (ReflTrans_Transitive _ _ _ _ h_chain
@@ -633,69 +646,67 @@ section StepCFGE
 
 variable {l CmdT EventT : Type} [BEq l] {P : PureExpr}
   {EvalCmd : EvalCmdParamE P CmdT EventT}
-  {fac : P.Factory} [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
+  [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
   {cfg : CFG l (DetBlock l CmdT P)}
 
 /-- Fetch: look up block `t` in the CFG and start executing its commands. -/
-theorem StepCFGE.fetch {t : l} {b : DetBlock l CmdT P} {σ : SemanticStore P} {f : Bool}
+theorem StepCFGE.fetch {t : l} {b : DetBlock l CmdT P} {ρ : Env P}
     (h : List.lookup t cfg.blocks = .some b) :
-    StepCFGE P EvalCmd fac cfg
-      (.atBlock t σ f) []
-      (.inBlock t b.cmds b.transfer σ f) := .step_admin (.fetch h)
+    StepCFGE P EvalCmd
+      (.atBlock cfg t ρ) []
+      (.inBlock cfg t b.cmds b.transfer ρ) := .step_admin (.fetch h)
 
 /-- Empty residual + true branch: jump to `.atBlock` of the true label. -/
-theorem StepCFGE.goto_true {σ : SemanticStore P} {c : P.Expr} {t tlbl elbl : l}
-    {md : MetaData P} {f : Bool}
-    (h : P.eval fac σ c = .some HasBool.tt)
-    (hb : WellFormedSemanticEvalBool (P := P) fac)
-    (hc : WellFormedSemanticEvalExprCongr (P := P) fac) :
-    StepCFGE P EvalCmd fac cfg
-      (.inBlock t [] (.condGoto c tlbl elbl md) σ f) []
-      (.atBlock tlbl σ f) := .step_admin (.goto_true h hb hc)
+theorem StepCFGE.goto_true {ρ : Env P} {c : P.Expr} {t tlbl elbl : l}
+    {md : MetaData P}
+    (h : P.eval ρ.factory ρ.store c = .some HasBool.tt) :
+    StepCFGE P EvalCmd
+      (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) []
+      (.atBlock cfg tlbl ρ) := .step_admin (.goto_true h)
 
 /-- Empty residual + false branch: jump to `.atBlock` of the false label. -/
-theorem StepCFGE.goto_false {σ : SemanticStore P} {c : P.Expr} {t tlbl elbl : l}
-    {md : MetaData P} {f : Bool}
-    (h : P.eval fac σ c = .some HasBool.ff)
-    (hb : WellFormedSemanticEvalBool (P := P) fac)
-    (hc : WellFormedSemanticEvalExprCongr (P := P) fac) :
-    StepCFGE P EvalCmd fac cfg
-      (.inBlock t [] (.condGoto c tlbl elbl md) σ f) []
-      (.atBlock elbl σ f) := .step_admin (.goto_false h hb hc)
+theorem StepCFGE.goto_false {ρ : Env P} {c : P.Expr} {t tlbl elbl : l}
+    {md : MetaData P}
+    (h : P.eval ρ.factory ρ.store c = .some HasBool.ff) :
+    StepCFGE P EvalCmd
+      (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) []
+      (.atBlock cfg elbl ρ) := .step_admin (.goto_false h)
 
 /-- Empty residual + `finish`: halt at `.terminal`. -/
-theorem StepCFGE.finish {t : l} {md : MetaData P} {σ : SemanticStore P} {f : Bool} :
-    StepCFGE P EvalCmd fac cfg
-      (.inBlock t [] (.finish md) σ f) []
-      (.terminal σ f) := .step_admin .finish
+theorem StepCFGE.finish {t : l} {md : MetaData P} {ρ : Env P} :
+    StepCFGE P EvalCmd
+      (.inBlock cfg t [] (.finish md) ρ) []
+      (.terminal ρ) := .step_admin .finish
 
 /-- Case analysis on a `StepCFGE` step by CFG rule: `step_cmd` and the four
 control-flow rules `fetch`, `goto_true`, `goto_false`, `finish`, each with its own
 premises.  Usable as `cases h using StepCFGE.casesRules`. -/
 theorem StepCFGE.casesRules
-    {motive : ∀ c tr c', StepCFGE P EvalCmd fac cfg c tr c' → Prop}
+    {motive : ∀ c tr c', StepCFGE P EvalCmd c tr c' → Prop}
     {c : CFGConfig l CmdT P} {tr : List EventT} {c' : CFGConfig l CmdT P}
-    (h : StepCFGE P EvalCmd fac cfg c tr c')
-    (step_cmd : ∀ {σ c σ' emitted t cs tr f} (h : EvalCmd fac σ c σ' emitted),
-      motive (.inBlock t (c :: cs) tr σ f) emitted (.inBlock t cs tr σ' f) (.step_cmd h))
-    (fetch : ∀ {t b σ f} (h : List.lookup t cfg.blocks = .some b),
-      motive (.atBlock t σ f) [] (.inBlock t b.cmds b.transfer σ f) (.fetch h))
-    (goto_true : ∀ {σ c t tlbl elbl md f} (h : P.eval fac σ c = .some HasBool.tt)
-      (hb : WellFormedSemanticEvalBool (P := P) fac)
-      (hc : WellFormedSemanticEvalExprCongr (P := P) fac),
-      motive (.inBlock t [] (.condGoto c tlbl elbl md) σ f) [] (.atBlock tlbl σ f)
-        (.goto_true h hb hc))
-    (goto_false : ∀ {σ c t tlbl elbl md f} (h : P.eval fac σ c = .some HasBool.ff)
-      (hb : WellFormedSemanticEvalBool (P := P) fac)
-      (hc : WellFormedSemanticEvalExprCongr (P := P) fac),
-      motive (.inBlock t [] (.condGoto c tlbl elbl md) σ f) [] (.atBlock elbl σ f)
-        (.goto_false h hb hc))
-    (finish : ∀ {t md σ f},
-      motive (.inBlock t [] (.finish md) σ f) [] (.terminal σ f) .finish) :
+    (h : StepCFGE P EvalCmd c tr c')
+    (step_cmd : ∀ {cfg ρ c σ' emitted t cs tr} (h : EvalCmd ρ.factory ρ.store c σ' emitted),
+      motive (.inBlock cfg t (c :: cs) tr ρ) emitted
+        (.inBlock cfg t cs tr { ρ with store := σ' }) (.step_cmd h))
+    (fetch : ∀ {cfg t b ρ} (h : List.lookup t cfg.blocks = .some b),
+      motive (.atBlock cfg t ρ) [] (.inBlock cfg t b.cmds b.transfer ρ) (.fetch h))
+    (goto_true : ∀ {cfg ρ c t tlbl elbl md} (h : P.eval ρ.factory ρ.store c = .some HasBool.tt),
+      motive (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) [] (.atBlock cfg tlbl ρ)
+        (.goto_true h))
+    (goto_false : ∀ {cfg ρ c t tlbl elbl md} (h : P.eval ρ.factory ρ.store c = .some HasBool.ff),
+      motive (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) [] (.atBlock cfg elbl ρ)
+        (.goto_false h))
+    (finish : ∀ {cfg t md ρ},
+      motive (.inBlock cfg t [] (.finish md) ρ) [] (.terminal ρ) .finish) :
     motive c tr c' h := by
   rcases h with h | h
   · exact step_cmd h
-  · cases h <;> first | apply_assumption <;> assumption | contradiction
+  · cases h with
+    | fetch hlk => exact fetch hlk
+    | step_cmd hbad => simp [noCommandEvalE] at hbad
+    | goto_true hcond => exact goto_true hcond
+    | goto_false hcond => exact goto_false hcond
+    | finish => exact finish
 
 /-- Monotonicity of `StepCFGE` in the command relation: if `EvalCmd` implies
 `EvalCmd'` pointwise, every `StepCFGE` step for `EvalCmd` is a `StepCFGE` step
@@ -704,9 +715,32 @@ uses the hypothesis. -/
 theorem StepCFGE.imp
     {EvalCmd' : EvalCmdParamE P CmdT EventT}
     (h_imp : ∀ fac σ c σ' emitted, EvalCmd fac σ c σ' emitted → EvalCmd' fac σ c σ' emitted)
-    {c tr c'}
-    (h : StepCFGE P EvalCmd fac cfg c tr c') :
-    StepCFGE P EvalCmd' fac cfg c tr c' := by grind [StepCFGE]
+    {c : CFGConfig l CmdT P} {tr : List EventT} {c' : CFGConfig l CmdT P}
+    (h : StepCFGE P EvalCmd c tr c') :
+    StepCFGE P EvalCmd' c tr c' := by
+  -- Only `step_cmd` consults the command relation; `step_admin` reuses the
+  -- command-free control-flow step unchanged.
+  rcases h with h | h
+  · exact .step_cmd (h_imp _ _ _ _ _ h)
+  · exact .step_admin h
+
+/-- A CFG event step preserves the expression factory in its environment. -/
+theorem StepCFGE.preserves_factory
+    {c : CFGConfig l CmdT P} {tr : List EventT} {c' : CFGConfig l CmdT P}
+    (h : StepCFGE P EvalCmd c tr c') :
+    c.getEnv.factory = c'.getEnv.factory := by
+  cases h with
+  | step_cmd => rfl
+  | step_admin h => cases h <;> rfl
+
+/-- A traced CFG execution preserves the expression factory. -/
+theorem StepCFGStarE.preserves_factory
+    {c : CFGConfig l CmdT P} {tr : List EventT} {c' : CFGConfig l CmdT P}
+    (h : StepCFGStarE P EvalCmd c tr c') :
+    c.getEnv.factory = c'.getEnv.factory := by
+  induction h with
+  | refl => rfl
+  | step _ _ _ _ _ hstep _ ih => exact hstep.preserves_factory.trans ih
 
 end StepCFGE
 

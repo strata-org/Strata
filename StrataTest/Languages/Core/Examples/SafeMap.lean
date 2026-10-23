@@ -53,7 +53,7 @@ spec {
     assume [count_eq_zero]: count == 0;
     assume [registry_empty]: (forall i : int :: {registry[i]} registry[i] == None());
 
-    call Register(101, 500, registry, count, out registry, out count);
+    call Register(101, 500, inout registry, inout count);
 
     var result : OptionInt;
     call GetValue(101, registry, out result);

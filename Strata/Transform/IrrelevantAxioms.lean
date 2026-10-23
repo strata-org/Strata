@@ -81,6 +81,7 @@ def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog => do

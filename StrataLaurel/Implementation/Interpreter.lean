@@ -285,7 +285,7 @@ structure ProgramIndex where
 
 structure EvalState where
   stack    : StackFrame
-  program  : Program
+  program  : LaurelProgram
   index    : ProgramIndex := {}
   /-- Composite instances, indexed by the address a `Value.ref` carries.
       A single growable array rather than a map per object, so allocation is a
@@ -973,7 +973,7 @@ private def literalValue? : StmtExpr → Option Value
     | _ => none
   | _ => none
 
-def buildIndex (p : Program) : ProgramIndex :=
+def buildIndex (p : LaurelProgram) : ProgramIndex :=
   let composites : Std.HashMap String CompositeType :=
     p.types.foldl (init := {}) fun acc t =>
       match t with
@@ -2173,13 +2173,19 @@ partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Proced
     | b => match b.implementation with
       | some body => pure body
       | none => do
-          -- No body: every output is unconstrained, so it answers its type's
-          -- default, except an in-out parameter, which keeps its argument.
-          let index := (← get).index
-          return proc.outputs.toArray.map fun o =>
-            match (proc.inputs.zip argVals).find? (·.1.name.text == o.name.text) with
-            | some (_, v) => v
-            | none => defaultValue index o.type.val
+          -- The procedure stands for code outside the program, so whatever a call to it
+          -- could change is that code's to determine, not this interpreter's to pick as it
+          -- picks an unassigned local.
+          let undetermined :=
+            (proc.outputs.head?.map fun o => s!"its output '{o.name.text}'") <|>
+            (if (bodyModifies b).any (!·.targets.isEmpty) then
+              some "the state its `modifies` clause names" else none) <|>
+            (proc.writesGlobals.head?.map fun g => s!"the global '{g.text}' it writes") <|>
+            (if proc.throwsType.isSome then some "whether it throws" else none)
+          if let some what := undetermined then
+            evalError s!"procedure '{proc.name.text}' has no implementation, so {what} is \
+                         undetermined"
+          return #[]
   let withParams : StackFrame :=
     (proc.inputs.zip argVals).foldl
       (fun acc (param, v) => acc.insert param.name.text v) {}
@@ -2250,7 +2256,7 @@ inductive Outcome where
     top-level `return` is treated as a clean exit just like falling off the end;
     accumulated failures survive it. Runs exactly one entry — the test harness
     iterates over `entry`-marked procedures and calls this once per entry. -/
-def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : Program)
+def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message × Outcome) := do
   try
     let initState : EvalState :=
@@ -2370,7 +2376,7 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : Program
 /-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw` or
     exhausted fuel becomes an `IO` error, and only the display state and
     assertion failures are returned. -/
-def evalProgram (cfg : ExternalBackend) (opts : Options) (p : Program)
+def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message) := do
   let (display, failures, outcome) ← evalProgramWithOutcome cfg opts p
   match outcome with

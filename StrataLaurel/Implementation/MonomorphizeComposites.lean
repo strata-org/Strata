@@ -771,7 +771,7 @@ private def topoSortMonomorphs (mono : List TypeDefinition) : List TypeDefinitio
     composite at its typevar (`idp<T>(x:T)`) stays on the CallElim freshening path (the
     hybrid). The body case is load-bearing: a body-local `Box<T>` on the freshening path
     has no Core representation, so its field write would survive un-lowered (a StrataBug). -/
-private def indexGenerics (program : Program) (model : SemanticModel)
+private def indexGenerics (program : LaurelProgram) (model : SemanticModel)
     : Std.HashMap String (List Identifier) × Std.HashMap String CompositeType × Std.HashMap String Procedure :=
   Id.run do
   let mut genComposites : Std.HashMap String (List Identifier) := {}
@@ -816,7 +816,7 @@ private def indexGenerics (program : Program) (model : SemanticModel)
     in the program, both the composite instantiations its type slots name and the PROCEDURE
     instantiation of each call to an indexed poly proc, inferred from the arg types via
     `inferProcInst`. -/
-private def collectSeeds (program : Program) (model : SemanticModel)
+private def collectSeeds (program : LaurelProgram) (model : SemanticModel)
     (genComposites : Std.HashMap String (List Identifier))
     (ctx : TypeLattice)
     (polyProcDefs : Std.HashMap String Procedure) : Seeds := Id.run do
@@ -840,7 +840,7 @@ private def collectSeeds (program : Program) (model : SemanticModel)
   -- The same walk the final rewrite folds over, so the two cannot disagree about where to look. A
   -- position missed here is not benign: the rewrite renames a type or a callee whose monomorph the
   -- worklist never emitted, and re-resolution reports the dangling name as a `strata-bug`.
-  let (_, (insts', procInsts, seedDiags)) := (mapProgramStmtExprM (m := StateM Seeds)
+  let (_, (insts', procInsts, seedDiags)) := (mapLaurelProgramStmtExprM (m := StateM Seeds)
     (fun e => do
       modify (fun (i, p, d) => (recordInsts (collectInStmt genComposites e) i, p, d))
       match e.val with
@@ -861,8 +861,8 @@ private def collectSeeds (program : Program) (model : SemanticModel)
 /-- The monomorphization transform over a whole program. Returns the rewritten
     program plus any diagnostics (e.g. a divergent recursive generic that exceeds
     the instantiation-depth bound). -/
-def monomorphizeComposites (program : Program) (model : SemanticModel)
-    : Program × List Message := Id.run do
+def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
+    : LaurelProgram × List Message := Id.run do
   -- 1. Index the generic composites + the poly procs that materialize them.
   let (genComposites, genDefs, polyProcDefs) := indexGenerics program model
   if genComposites.isEmpty then return (program, [])
@@ -1004,9 +1004,9 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- one pass later as a re-resolution `strata-bug` naming an undefined procedure, which says nothing
   -- about which walk was too narrow.
   let (program', rewriteSt) :=
-    (mapProgramStmtExprM (m := StateM RewriteState) (rewritePolyCallNode model ctx polyProcDefs {})
+    (mapLaurelProgramStmtExprM (m := StateM RewriteState) (rewritePolyCallNode model ctx polyProcDefs {})
       program).run {}
-  let program' := mapProgramStmtExpr (rewriteStmt genComposites) program'
+  let program' := mapLaurelProgramStmtExpr (rewriteStmt genComposites) program'
   let renamed := rewriteSt.renamed.map fun (pinst, source) => (procInstKey pinst, source)
   let emittedProcs : Std.HashSet String :=
     staticProcs'.foldl (fun s p => s.insert p.name.text) {}
@@ -1018,16 +1018,19 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   return (program', diags)
 
 /-- Pipeline pass: monomorphize generic composites. -/
-def monomorphizeCompositesPass : LoweringPass where
+def monomorphizeCompositesPass : LaurelPass := .onUnordered {
   name := "MonomorphizeComposites"
+  unsupported := [
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   creates := [NodeKind.TypeDefinition.Composite]
   -- Only the generic composite *definitions* are gone program-wide. `HighType.Applied` and
   -- `HighType.TVar` survive over generic datatypes and polymorphic procedures, which this
   -- pass leaves alone, so neither can be declared here.
   removes := [NodeKind.CompositeType.typeArgs.cons]
   needsResolves := true
-  documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Runs before heap parameterization."
-  run := fun _ p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})
+  documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Runs before heap parameterization." }
+  fun _ p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})
 
 end -- public section
 end Strata.Laurel

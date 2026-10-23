@@ -12,7 +12,9 @@ public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.LExprWFProps
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LExprType
-public import Strata.DL.Lambda.Semantics
+public import Strata.DL.Lambda.OperationalSemantics
+public import Strata.DL.Lambda.OperationalSemanticsProps
+public import Strata.DL.Lambda.LExprEvalSound
 public import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 public import Strata.DL.Lambda.Denote.LExprResolveAnnotated
 public import Strata.DL.Lambda.TypeFactory

@@ -28,7 +28,7 @@ spec {
 };
 
 procedure ProcCaller (inout g : int, out x : int) {
-  call Proc(g, out g);
+  call Proc(inout g);
   // Fails; `g_eq_15` requires of Proc ignored here.
   assert [g_eq_15_internal]: (g == 15);
 };
