@@ -1267,7 +1267,7 @@ procedure '_': [ERROR] cannot evaluate a `loop` statement: eliminate loops befor
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) loopProgram)
 
 /-- info: rejected: ❌ Symbolic evaluation error.
-procedure 'cfgProc': [ERROR] CFG bodies not supported yet -/
+toCoreProofObligationProgram: procedure 'cfgProc' has a CFG body; symbolic evaluation supports only structured bodies. -/
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) cfgBodiedProgram)
 
@@ -1411,7 +1411,7 @@ private def mixedProgram : Program :=
        .proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [] } } default] }
 
 /-- info: rejected: ❌ Symbolic evaluation error.
-procedure '_': [ERROR] CFG bodies not supported yet -/
+toCoreProofObligationProgram: procedure '_' has a CFG body; symbolic evaluation supports only structured bodies. -/
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) mixedProgram)
 

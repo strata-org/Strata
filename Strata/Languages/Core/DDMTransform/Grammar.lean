@@ -986,30 +986,40 @@ op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
 op transfer_return : Transfer =>
   "return;";
 
-// A single CFG basic block: label, commands, transfer
+// The commands of a CFG basic block. The newline after them is printed only
+// when there is at least one command, so a block with only a transfer prints
+// no blank line.
+category CFGCmds;
+op cfg_cmds_nil () : CFGCmds =>;
+@[scope(cmds)]
+op cfg_cmds (@[nonempty] cmds : NewlineSepBy Statement) : CFGCmds => cmds "\n";
+
+// A single CFG basic block: label, commands, transfer. The transfer is in scope
+// of the block's own commands, so its condition sees the locals they declare.
 category CFGBlock;
 @[scope(cmds)]
-op cfg_block (label : Ident, cmds : Seq Statement, tr : Transfer) : CFGBlock =>
-  label ":" " {\n" indent(2, cmds) "  " tr "\n}";
+op cfg_block (label : Ident, cmds : CFGCmds, @[scope(cmds)] tr : Transfer) : CFGBlock =>
+  label ":" " {" indent(2, "\n" cmds tr) "\n}";
 
 // A list of CFG blocks
 category CFGBlocks;
-op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b;
+op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b:0;
 // `@[scope(b)]` makes `b`'s declarations visible to every textually-later
 // block. Visibility is purely left-to-right in source order — it is not
 // goto/dominance aware, so a block cannot see declarations in a block written
 // after it, even when the control-flow graph reaches it only via that later
 // block. If a later block re-declares a propagated name it silently shadows
-// the earlier one (ordinary nested-scope shadowing). Nothing downstream acts
-// on these declarations yet (the translator stubs CFG procedures), so name
-// resolution is currently the only consumer of this contract.
+// the earlier one (ordinary nested-scope shadowing). The type checker scopes a
+// CFG-local by dominance instead, and requires every declaration of a local to
+// have the same type, so the declaration name resolution picks and the one the
+// type checker picks agree on the local's type.
 op cfg_blocks_cons (b : CFGBlock, @[scope(b)] rest : CFGBlocks) : CFGBlocks =>
-  b "\n" rest;
+  b:0 "\n" rest:0;
 
 // CFG body: entry label + blocks
 category CFGBody;
 op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
-  "cfg " entry " {\n" indent(2, blocks) "\n}";
+  "cfg " entry " {\n  " indent(2, blocks:0) "\n}";
 
 // Procedure with CFG body
 op command_cfg_procedure (annots : Option MetadataAnn,

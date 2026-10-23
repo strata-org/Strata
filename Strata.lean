@@ -181,6 +181,7 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF
 import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.ProcedureTypeProps
 import Strata.Languages.Core.DatatypeTypeSpec
 import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Util.Random

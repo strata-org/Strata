@@ -144,6 +144,20 @@ def CFG.stripDetMetaData (cfg : CFG Label (DetBlock Label Cmd P)) :
     CFG Label (DetBlock Label Cmd P) :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) => (lbl, blk.stripMetaData) }
 
+/-- The labels a transfer command can jump to, without repeats (a `goto l` is
+`condGoto tt l l` and has the single target `l`). -/
+@[expose] def DetTransferCmd.targets [BEq Label] : DetTransferCmd Label P → List Label
+  | .condGoto _ lt lf _ => if lt == lf then [lt] else [lt, lf]
+  | .finish _ => []
+
+/-- Free variables of a transfer command's guard. -/
+@[expose] def DetTransferCmd.guardFvars [HasFvars P] : DetTransferCmd Label P → List P.Ident
+  | .condGoto p _ _ _ => HasFvars.getFvars p
+  | .finish _ => []
+
+/-- The block labels of a CFG, in order. -/
+@[expose] def CFG.labels (cfg : CFG Label Block) : List Label := cfg.blocks.map Prod.fst
+
 --------
 
 open Std (ToFormat Format format)

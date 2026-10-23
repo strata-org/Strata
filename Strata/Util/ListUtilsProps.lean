@@ -8,6 +8,7 @@ module
 public import Strata.Util.ListUtils
 import all Strata.Util.ListUtils
 import Std.Data.HashMap.Lemmas
+import Std.Data.HashSet.Lemmas
 
 /-!
 # Properties of list utilities
@@ -21,6 +22,8 @@ Miscellaneous list lemmas: `Forall`/`Rel₂`, `Disj`, `Subset`,
 * `List.Disjoint_app`, `List.Disjoint_Nodup_iff`
 * `List.nodup_uniq`, `List.length_dedup_of_subset_le`
 * `List.length_eq_of_nodup_of_mem_iff`, `List.inj_implies_nodup`, `List.sum_size_le`
+* `List.nodupB_eq_true_iff` — the linear `nodupB` check decides `Nodup`
+* `List.mem_groupValuesByKey`, `List.of_mem_groupValuesByKey` — membership in `groupValuesByKey`
 -/
 
 public section
@@ -1250,6 +1253,131 @@ theorem lookup_of_mem_nodup
       simp only [lookup, h_neq]
       exact ih h_nodup_tl h_tl
 
+/-- The `nodupB` worker started from the set `seen` accepts `l` exactly when `l`
+has no duplicates and no element of `l` is in `seen`. -/
+private theorem nodupB_go_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    [LawfulHashable α] (l : List α) (seen : Std.HashSet α) :
+    nodupB.go l seen = true ↔ l.Nodup ∧ ∀ x ∈ l, seen.contains x = false := by
+  induction l generalizing seen with
+  | nil => simp [nodupB.go]
+  | cons a as ih =>
+    -- An element of `as` is absent from `seen.insert a` iff it differs from `a`
+    -- and is absent from `seen`.
+    have hins : ∀ y, (seen.insert a).contains y = false ↔ a ≠ y ∧ seen.contains y = false := by
+      intro y
+      rw [Std.HashSet.contains_insert, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+    unfold nodupB.go
+    split
+    · rename_i ha
+      simp only [Bool.false_eq_true, false_iff, not_and]
+      intro _ hall
+      have hna := hall a List.mem_cons_self
+      simp_all
+    · rename_i ha
+      rw [ih (seen.insert a)]
+      constructor
+      · rintro ⟨hnd, hnot⟩
+        refine ⟨List.nodup_cons.mpr ⟨fun hmem => ((hins a).mp (hnot a hmem)).1 rfl, hnd⟩, ?_⟩
+        intro x hx
+        rcases List.mem_cons.mp hx with rfl | hx
+        · simpa using ha
+        · exact ((hins x).mp (hnot x hx)).2
+      · rintro ⟨hnd, hall⟩
+        obtain ⟨ha_notin, hnd'⟩ := List.nodup_cons.mp hnd
+        refine ⟨hnd', fun y hy => (hins y).mpr ⟨?_, hall y (List.mem_cons_of_mem _ hy)⟩⟩
+        rintro rfl
+        exact ha_notin hy
+
+/-- `nodupB` decides `List.Nodup`: it accepts a list exactly when the list has no
+duplicate elements. -/
+theorem nodupB_eq_true_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (l : List α) : l.nodupB = true ↔ l.Nodup := by
+  unfold nodupB
+  rw [nodupB_go_iff]
+  simp
+
+/-- If `nodupB` accepts a list, the list has no duplicate elements. -/
+theorem nodup_of_nodupB {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    {l : List α} (h : l.nodupB = true) : l.Nodup :=
+  (nodupB_eq_true_iff l).mp h
+
+/-- Folding more pairs into a `groupValuesByKey` accumulator keeps every value already
+recorded under each key. -/
+private theorem groupValuesByKey_fold_mono {K V : Type} [BEq K] [Hashable K] [LawfulBEq K]
+    {keep : V → Bool} (l : List (K × V)) (acc : Std.HashMap K (List V)) (y : K) (M : V)
+    (hM : M ∈ acc.getD y []) :
+    M ∈ (l.foldl (fun acc p =>
+      if keep p.2 then acc.insert p.1 (p.2 :: acc.getD p.1 []) else acc)
+      acc).getD y [] := by
+  induction l generalizing acc with
+  | nil => exact hM
+  | cons p rest ih =>
+    simp only [List.foldl_cons]
+    apply ih
+    split
+    · rw [Std.HashMap.getD_insert]
+      split
+      · rename_i hpy
+        have hpy' : p.1 = y := by simpa using hpy
+        subst hpy'
+        exact List.mem_cons_of_mem _ hM
+      · exact hM
+    · exact hM
+
+/-- A pair of `l` whose value passes `keep` has its value recorded under its key
+in `groupValuesByKey keep l`. -/
+theorem mem_groupValuesByKey {K V : Type} [BEq K] [Hashable K] [LawfulBEq K]
+    {keep : V → Bool} {l : List (K × V)} {x : K} {L : V}
+    (hm : (x, L) ∈ l) (hk : keep L = true) :
+    L ∈ (groupValuesByKey keep l).getD x [] := by
+  unfold groupValuesByKey
+  generalize ({} : Std.HashMap K (List V)) = acc
+  induction l generalizing acc with
+  | nil => simp at hm
+  | cons p rest ih =>
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.mp hm with hp | hp
+    · subst hp
+      apply groupValuesByKey_fold_mono
+      simp only [hk, ite_true, Std.HashMap.getD_insert, beq_self_eq_true]
+      exact List.mem_cons_self
+    · exact ih hp _
+
+/-- Folding pairs into a `groupValuesByKey` accumulator records a value under a key only
+if that pair was folded in or the value was already there. -/
+private theorem groupValuesByKey_fold_sub {K V : Type} [BEq K] [Hashable K] [LawfulBEq K]
+    {keep : V → Bool} (l : List (K × V)) (acc : Std.HashMap K (List V)) (y : K) (M : V)
+    (hM : M ∈ (l.foldl (fun acc p =>
+      if keep p.2 then acc.insert p.1 (p.2 :: acc.getD p.1 []) else acc)
+      acc).getD y []) :
+    M ∈ acc.getD y [] ∨ (y, M) ∈ l := by
+  induction l generalizing acc with
+  | nil => exact Or.inl hM
+  | cons p rest ih =>
+    simp only [List.foldl_cons] at hM
+    rcases ih _ hM with h | h
+    · split at h
+      · rw [Std.HashMap.getD_insert] at h
+        split at h
+        · rename_i hpy
+          have hpy' : p.1 = y := by simpa using hpy
+          rcases List.mem_cons.mp h with h | h
+          · subst h; subst hpy'; exact Or.inr List.mem_cons_self
+          · subst hpy'; exact Or.inl h
+        · exact Or.inl h
+      · exact Or.inl h
+    · exact Or.inr (List.mem_cons_of_mem _ h)
+
+/-- Every value recorded under key `x` in `groupValuesByKey keep l` comes from a pair
+`(x, value)` of `l`. -/
+theorem of_mem_groupValuesByKey {K V : Type} [BEq K] [Hashable K] [LawfulBEq K]
+    {keep : V → Bool} {l : List (K × V)} {x : K} {L : V}
+    (h : L ∈ (groupValuesByKey keep l).getD x []) : (x, L) ∈ l := by
+  unfold groupValuesByKey at h
+  rcases groupValuesByKey_fold_sub l {} x L h with h | h
+  · simp at h
+  · exact h
+
 end List
 
 theorem List.Rel₂.head {R : α → β → Prop} (h : Rel₂ R (a :: as) (b :: bs)) : R a b := by
@@ -1687,31 +1815,6 @@ theorem acc_cons_shift {a : α} {out acc tail : List α}
     (h : out = (a :: acc).reverse ++ tail) : out = acc.reverse ++ (a :: tail) := by
   rw [h, List.reverse_cons, List.append_assoc]
   rfl
-
-/-- If a `for` loop whose body never returns `done` succeeds, the body yields on every
-    element. -/
-theorem List.forIn_yield_ok_mem {α ε} (l : List α)
-    (b : α → Except ε (ForInStep PUnit)) (u : PUnit)
-    (hne : ∀ x ∈ l, b x ≠ Except.ok (ForInStep.done PUnit.unit))
-    (h : forIn l PUnit.unit (fun x _ => b x) = Except.ok u) :
-    ∀ x ∈ l, b x = Except.ok (ForInStep.yield PUnit.unit) := by
-  induction l with
-  | nil => intro x hx; cases hx
-  | cons a as ih =>
-    simp only [List.forIn_cons] at h
-    intro x hx
-    cases hb : b a with
-    | error _ => rw [hb] at h; simp only [bind, Except.bind] at h; contradiction
-    | ok step =>
-      cases step with
-      | done _ => exact absurd (by rw [hb]) (hne a (List.mem_cons_self ..))
-      | yield r =>
-        cases r
-        rw [hb] at h
-        simp only [bind, Except.bind] at h
-        rcases List.mem_cons.mp hx with rfl | hx'
-        · rw [hb]
-        · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
 
 /-- Zipping position-wise `R`-related lists with one list `tys` and filtering by a test on the
     `tys` component keeps them related, with equal `tys` components. -/

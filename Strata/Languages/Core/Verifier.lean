@@ -846,19 +846,23 @@ def evalProgramDecls (options : VerifyOptions) (program : Program)
 def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
-  -- Precondition: nondeterministic `if *` / `while *` guards must have been
-  -- eliminated (by `nondetElim`) first. `Core.Statement.eval` rejects such a
-  -- guard per-path, but `Program.eval` isolates per-procedure `Env.error`, so
-  -- that rejection would not surface here and its path's obligations would be
+  -- Preconditions: every procedure body is structured, and nondeterministic
+  -- `if *` / `while *` guards have been eliminated (by `nondetElim`).
+  -- Symbolic evaluation rejects a CFG body or such a guard only by setting
+  -- `Env.error` for that procedure or path, and `Program.eval` keeps that error
+  -- local, so the rejection would not surface here and the obligations would be
   -- dropped silently. Check the input structurally and fail loudly instead.
   match program.decls.findSome? (fun d => match d with
     | .proc proc _ => (match proc.body with
-        | .structured ss => if Imperative.Block.noNondetGuards ss then none else some proc.header.name.1
-        | .cfg _ => none)
+        | .structured ss =>
+          if Imperative.Block.noNondetGuards ss then none
+          else some s!"procedure '{proc.header.name.1}' contains a nondeterministic \
+            if/loop guard; run nondetElim before symbolic evaluation."
+        | .cfg _ =>
+          some s!"procedure '{proc.header.name.1}' has a CFG body; symbolic \
+            evaluation supports only structured bodies.")
     | _ => none) with
-  | some name => throw (Message.fromString
-      s!"toCoreProofObligationProgram: procedure '{name}' contains a \
-         nondeterministic if/loop guard; run nondetElim before symbolic evaluation.")
+  | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
   | none => pure ()
   let (decls, deferred, stats) ← evalProgramDecls options program moreFns
   -- Convert the evaluation Env's deferred obligations into a procedure body:

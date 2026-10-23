@@ -715,6 +715,71 @@ procedure p (n : int)
 #guard_msgs in
 #eval roundtrip testNestedLoopDeclaringBodyRoundtrip
 
+-- A CFG body using every transfer form (`goto l`, `goto a, b`, `branch`,
+-- `return`), a spec, a block with no commands, and a local read by a later
+-- block.
+private def testCFGRoundtrip : Program :=
+#strata
+program Core;
+
+procedure P (c : bool, out y : int)
+spec {
+  ensures [P_ensures_0]: int.ge(y, 0);
+  } cfg entry {
+  entry: {
+    goto left, right;
+  }
+  left: {
+    var x : int;
+    x := 1;
+    goto mid;
+  }
+  mid: {
+    y := x;
+    branch (c) goto done else goto right;
+  }
+  right: {
+    y := 2;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testCFGRoundtrip
+
+-- A block that declares a nondeterministic `bool` and branches on it in the same
+-- block. The printer keeps the declaration and the `branch`; it does not mistake
+-- them for the hidden choice variable of a `goto a, b`.
+private def testCFGOwnLocalBranchRoundtrip : Program :=
+#strata
+program Core;
+
+procedure P (out y : int)
+cfg entry {
+  entry: {
+    var b : bool;
+    branch (b) goto t else goto f;
+  }
+  t: {
+    y := 1;
+    return;
+  }
+  f: {
+    y := 0;
+    return;
+  }
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testCFGOwnLocalBranchRoundtrip
+
 end Strata.Test.Roundtrip
 
 end

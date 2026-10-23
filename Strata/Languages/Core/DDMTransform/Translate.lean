@@ -2057,10 +2057,17 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
   let .op op := arg
     | TransM.error s!"translateCFGBlock expected op {repr arg}"
   let label ← translateIdent String op.args[0]!
-  -- Translate commands - handle both Seq and empty cases
-  let stmts : Array Arg := match op.args[1]! with
-    | .seq _ _ arr => arr
-    | other => #[other]  -- single statement or empty
+  -- `cfg_cmds_nil` has no commands; `cfg_cmds` holds a non-empty sequence.
+  let stmts : Array Arg ← match op.args[1]! with
+    | .op cmdsOp =>
+      match cmdsOp.name with
+      | q`Core.cfg_cmds_nil => pure #[]
+      | q`Core.cfg_cmds =>
+        match cmdsOp.args[0]! with
+        | .seq _ _ arr => pure arr
+        | other => TransM.error s!"translateCFGBlock: expected command sequence, got {repr other}"
+      | _ => TransM.error s!"translateCFGBlock: unknown commands op {repr cmdsOp.name}"
+    | other => TransM.error s!"translateCFGBlock: expected commands op, got {repr other}"
   let mut cmds : Array Core.Command := #[]
   let mut bindings := bindings
   for s in stmts do
