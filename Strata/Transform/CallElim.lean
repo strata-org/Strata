@@ -7,6 +7,8 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.CallWF
 import Strata.DL.Lambda.LExprType
 
 /-! # Call Elimination Transformation -/
@@ -57,9 +59,13 @@ def callElimCmd (s : Statement)
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
-        let some p := (← get).currentProgram | throw (Strata.Message.fromString "program not available")
+        let some p := (← get).currentProgram | throw (md.toDiagnostic "program not available")
 
-        let some proc := Program.Procedure.find? p procName | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
+        let some proc := Program.Procedure.find? p procName
+          | throw (wellFormedCallsBreach "Call elimination" md
+              (undeclaredProcedureMessage procName))
+        if let some msg := callArgsError? procName proc callArgs then
+          throw (wellFormedCallsBreach "Call elimination" md msg)
 
         -- Per-call-site type-variable instantiation for polymorphic procedures.
         -- The inlined contract carries the callee's source type vars (`x : T`). Copied
@@ -89,14 +95,20 @@ def callElimCmd (s : Statement)
         let inputNames := instantiatedInputs.keys
         let outputNames := instantiatedOutputs.keys
         -- Inout params referenced via "old" in a postcondition, paired as
-        -- (caller argument variable, callee parameter name). `lhs` is positionally
-        -- aligned with the callee's outputs, so the pairing recovers the callee
-        -- parameter name even when the caller passes a differently-named variable.
-        -- The caller variable drives the snapshot init; the callee parameter drives
-        -- the type lookup and the "old" substitution key that appears in the spec.
-        let oldPairs := (lhs.zip outputNames).filter fun (_arg, param) =>
-          inputNames.contains param && -- Inout param (an output that is also an input)
-          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld param.name))
+        -- (caller argument variable, callee parameter name). The variable is the
+        -- `inout` argument at the parameter's input position, whose value on entry
+        -- is the parameter's `old` value. The caller variable drives the
+        -- snapshot init; the callee parameter drives the type lookup and the
+        -- "old" substitution key that appears in the spec.
+        let oldPairs := (inputNames.zip (CallArg.inputArgs callArgs)).filterMap
+          fun (param, arg) => match arg with
+            | .inoutArg v =>
+              if outputNames.contains param && -- Inout param (an input that is also an output)
+                  postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any
+                    (fun (id, _) => id == CoreIdent.mkOld param.name)) then
+                some (v, param)
+              else none
+            | _ => none
         let oldVars := oldPairs.map (·.1)
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
@@ -225,13 +237,16 @@ def callElimPipelinePhase : PipelinePhase where
   -- havocs the call's outputs. `noBetaRedexes`, because instantiating the
   -- callee's contract can leave an application of an abstraction behind when a
   -- function-typed formal is given one.
-  requires := factSet![.noCFGBodies]
+  -- `wellFormedCalls`, because the replacement pairs each argument with the
+  -- callee's parameter at its position.
+  requires := factSet![.wellFormedCalls, .noCFGBodies]
   establishes := factSet![.noCalls]
   -- `typeAnnotated` is absent: the substitutions that replace a callee's
   -- parameters with the caller's variables build those references unannotated,
   -- so a fully annotated input does not stay one.
-  preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants,
-                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+  -- `wellFormedCalls` holds of the output, which has no calls.
+  preserves := factSet![.wellFormedCalls, .noCFGBodies, .noLoops, .noLoopInvariants,
+                      .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions]
 

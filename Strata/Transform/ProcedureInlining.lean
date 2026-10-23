@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.CallWF
 
 /-! # Procedure Inlining Transformation -/
 
@@ -223,7 +224,10 @@ def inlineCallCmd
         let some currProcName := (← get).currentProcedureName
           | throw (Strata.Message.fromString "currentProcedure not set")
         let some proc := Program.Procedure.find? p procName
-          | throw (Strata.Message.fromFormat f!"Procedure {procName} not found in program")
+          | throw (wellFormedCallsBreach "Procedure inlining" md
+              (undeclaredProcedureMessage procName))
+        if let some msg := callArgsError? procName proc callArgs then
+          throw (wellFormedCallsBreach "Procedure inlining" md msg)
 
         let n ← bumpCounter inlineCounterKey
         let pfx := inlinePrefix n
@@ -351,11 +355,15 @@ def procedureInliningPipelinePhase
   -- `runProgramUntil` throws on a CFG body, and a callee with a CFG body
   -- cannot be inlined into structured code. Which calls are inlined is up to
   -- `doInline`, so the phase cannot claim `noCalls`, and the callee's `init`s
-  -- are why it cannot claim `staticSingleAssignment` either.
+  -- are why it cannot claim `staticSingleAssignment` either. It requires
+  -- `wellFormedCalls` because it pairs each argument with the callee's parameter at
+  -- its position, and preserves it because the calls it copies in were well-formed
+  -- in the callee and its renaming is one-to-one.
   modelPreservingPipelinePhase "inlineProcedures"
-    (requires := factSet![.noCFGBodies])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+    (requires := factSet![.wellFormedCalls, .noCFGBodies])
+    (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog =>

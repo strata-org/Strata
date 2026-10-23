@@ -61,23 +61,6 @@ def Body.getCfg : Body P C → Except String (DetCFG P C)
   | .cfg c => .ok c
   | .structured _ => .error "expected CFG body, got structured"
 
-/-- Variables read (referenced in expressions) by a CFG body. -/
-@[simp]
-def DetCFG.getVars [HasVarsImp P C] [HasFvars P] (cfg : DetCFG P C) : List P.Ident :=
-  cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap HasVarsImp.readVars ++
-    (match blk.transfer with
-      | .condGoto p _ _ _ => HasFvars.getFvars p
-      | .finish _ => [])
-
-/-- Get variables referenced in the body. For a CFG body, this includes the
-variables read by the guard of each conditional transfer (`condGoto`), mirroring
-how the structured form collects the condition variables of `if`/`while`. -/
-@[simp]
-def Body.getVars [HasVarsImp P C] [HasFvars P] : Body P C → List P.Ident
-  | .structured ss => ss.flatMap HasVarsImp.readVars
-  | .cfg c => DetCFG.getVars c
-
 /-- Is this body abstract (no implementation)? Only empty structured bodies
     are abstract. CFG bodies always have an implementation. -/
 @[simp]
@@ -198,11 +181,38 @@ instance [DecidableEq C] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq
 /-! ### Variable analysis for procedures, their bodies, and CFGs. -/
 
 instance [HasFvars P] [HasVarsImp P C] : HasVarsImp P (DetCFG P C) where
-  definedVars cfg excludeScoped := cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap (fun c => HasVarsImp.definedVars c excludeScoped)
+  -- CFGs have a flat scope, so definitions always include every command-level
+  -- declaration. Current transfer commands neither define nor modify variables.
+  definedVars cfg _ := cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap (fun c => HasVarsImp.definedVars c false)
   modifiedVars cfg := cfg.blocks.flatMap fun (_, blk) =>
     blk.cmds.flatMap HasVarsImp.modifiedVars
-  readVars := DetCFG.getVars
+  -- Conditional transfers read their guard; `finish` reads nothing.
+  readVars cfg := cfg.blocks.flatMap fun (_, blk) =>
+    blk.cmds.flatMap HasVarsImp.readVars ++
+      match blk.transfer with
+      | .condGoto guard _ _ _ => HasFvars.getFvars guard
+      | .finish _ => []
+
+/-- The declared types of every `init` command across all blocks of a CFG.  The
+    CFG analog of `Block.initTypes`. -/
+@[expose] def DetCFG.initTypes [HasInitTypesImp P C] (cfg : DetCFG P C) :
+    List P.Ty :=
+  cfg.blocks.flatMap fun (_, blk) => blk.cmds.flatMap (HasInitTypesImp.initTypes (P := P))
+
+/-- Every init-type a CFG declares has a `valueOfTy` witness in the factory `f`;
+    types absent from the CFG need no witness.  The CFG analog of
+    `Block.InitTypesInhabited`. -/
+@[expose] def DetCFG.InitTypesInhabited [HasVal P] [HasInitTypesImp P C]
+    (f : P.Factory) (cfg : DetCFG P C) : Prop :=
+  ∀ ty ∈ DetCFG.initTypes cfg, ∃ v, HasVal.valueOfTy f v ty
+
+/-- Variables read by a body. CFG reads include command expressions and
+conditional-transfer guards through the `HasVarsImp (DetCFG P C)` instance. -/
+@[simp] def Body.readVars [HasFvars P] [HasVarsImp P C] :
+    Body P C → List P.Ident
+  | .structured ss => ss.flatMap HasVarsImp.readVars
+  | .cfg cfgBody => HasVarsImp.readVars cfgBody
 
 instance [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Body P C) where
   definedVars b excludeScoped := match b with
@@ -211,7 +221,7 @@ instance [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Body P C) where
   modifiedVars b := match b with
     | .structured ss => HasVarsImp.modifiedVars ss
     | .cfg cfgBody => HasVarsImp.modifiedVars cfgBody
-  readVars := Body.getVars
+  readVars := Body.readVars
 
 /-- A procedure reads the free variables of its contract clauses and the read
     variables of its body, minus its own input formals. -/
@@ -219,7 +229,7 @@ def Procedure.getVars [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr]
     (p : Procedure P C Hdr) : List P.Ident :=
   (p.spec.postconditions.values.map Check.expr).flatMap HasFvars.getFvars ++
   (p.spec.preconditions.values.map Check.expr).flatMap HasFvars.getFvars ++
-  Body.getVars p.body |> List.filter
+  Body.readVars p.body |> List.filter
     (fun x => (ProcedureHeader.inputParams p.header).all (fun f => !(P.EqIdent x f).decide))
 
 instance [HasFvars P] [HasVarsImp P C] [ProcedureHeader P Hdr] :

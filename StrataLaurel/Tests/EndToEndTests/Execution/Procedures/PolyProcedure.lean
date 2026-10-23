@@ -589,3 +589,65 @@ procedure bad<T>(x: T, z: T) returns (r: T)
 { r := x };
 procedure uncalledFalseContract() opaque { assert 1 == 1 };
 #end
+
+-- Calls inside a GENERIC caller at instantiations in the caller's own `U`, with no annotation to
+-- fix them: a constructor call that only a sibling argument, a variable or a call, instantiates, a
+-- global-writing call, and contracted calls nested around a constructor call. The last assertion
+-- is false, so the others are not vacuous.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+var g: int := 0
+datatype Pair<A, B> { MkPair(fst: A, snd: B) }
+datatype Option<T> { Nothing(), Some(value: T) }
+procedure idp<T>(x: T) returns (r: T) opaque { r := x };
+procedure f<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+procedure bump<T>(x: T) returns (r: T) opaque { g := g + 1; r := x };
+procedure pick<T>(a: T, o: Option<T>) returns (r: Option<T>) opaque ensures r == o { r := o };
+procedure w<U>(x: U, p: Pair<U, int>, q: Pair<U, bool>) opaque {
+  var m := pick(p, Nothing());
+  var n := pick(q, Nothing());
+  assert m == Nothing() && n == Nothing();
+  pick(idp(p), Nothing());
+  pick(idp(q), Nothing());
+  bump(p);
+  bump(q);
+  var k := f(f(MkPair(x, 5)));
+  var l := f(f(MkPair(x, true)));
+  assert Pair..snd(k) == 5 && Pair..snd(l);
+  assert Pair..snd(k) == 6
+//^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure callsAtTheCallersTypeVariable()
+  entry
+  opaque
+{
+  w(1, MkPair(1, 5), MkPair(1, true))
+};
+#end
+
+-- A nested call handed a slot in its outer callee's own type variable, which only a later argument
+-- fixes, at one of the caller's: `mapEmpty()` gets `mapSet`'s `Map<int, V>`, and `Leaf()` gets
+-- `Node`'s `Tree<T>`. The last assertion is false, so the other is not vacuous.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+datatype Tree<T> { Leaf(), Node(l: Tree<T>, v: T) }
+procedure f<T>(x: T) returns (r: T) opaque ensures r == x { r := x };
+procedure w<U, V>(u: U, v: V) opaque {
+  var m := mapSet(mapEmpty(), 3, f(u));
+  var t := Node(Leaf(), u);
+  var s := Node(Leaf(), v);
+  assert mapGet(m, 3) == u && Tree..v!(t) == u && Tree..v!(s) == v;
+  assert Tree..v!(t) != u
+//^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+procedure calleeTypeVariableInASlot()
+  entry
+  opaque
+{
+  w(1, true)
+};
+#end

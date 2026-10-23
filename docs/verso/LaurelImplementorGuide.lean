@@ -34,7 +34,7 @@ def laurelPipelineDocsMarkdown : String :=
   let renderKinds (label : String) (ks : List NodeKind) : List String :=
     if ks.isEmpty then []
     else [s!"  - {label}: " ++ ", ".intercalate (ks.map fun k => s!"`{k}`")]
-  let entries := allPasses.map fun pass =>
+  let entries := laurelPipeline.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
     let decls :=
       renderKinds "Creates" pass.creates
@@ -85,7 +85,7 @@ Every edge is derived from the passes' declared node kinds:\n\n"
   md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
   md := md ++ "```\n"
   let mut idx := 1
-  for pass in allPasses do
+  for pass in laurelPipeline do
     let beforeDeps := (edges.filter (·.1 == pass.name)).map fun e => s!" → {e.2.1}"
     let afterDeps := (edges.filter (·.2.1 == pass.name)).map fun e => s!" ← {e.1}"
     let deps := beforeDeps ++ afterDeps
@@ -232,16 +232,25 @@ leaked it. The same distance applies to the other eliminated constructs.
 
 ## Translation Pipeline
 
-The Laurel to Core translation pipeline uses these IRs:
-- Laurel
-- UnorderedCoreWithLaurelTypes
-- CoreWithLaurelTypes
-- Core
+The Laurel to Core translation pipeline uses three IRs, held by `Program`:
+- `Program.Unordered`, holding a `LaurelProgram`
+- `Program.Ordered (.WithLaurelTypes _)`, holding a `CoreWithLaurelTypes`
+- `Program.Ordered (.Core _)`, holding a `Core.Program`
 
-Most of the passes are in the Laurel IR.
-The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
-The ordering pass goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`.
-And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
+Every pass is a `LaurelPass`, which runs on a `Program`, so the pipeline is a single list of
+passes. Passes built only on the generic traversals (`mapProgramStmtExprM`,
+`mapProgramProceduresM`, `mapProgramHighTypesM`) run on any IR. A pass that needs one IR
+matches on its constructor, declares the other constructors `unsupported`, and reports a
+Strata bug if it is given any other IR.
+
+Most passes run on `Program.Unordered`. The transparency pass splits a `LaurelProgram`'s
+procedures into `staticFunctions` and `staticProcedures`; it `creates`
+`LaurelProgram.staticFunctions.cons`, which the earlier lowering passes declare `unsupported`,
+and the `Pseudo` shapes that the passes after it `remove` before the LaurelToCoreSchemaPass,
+which declares them `unsupported`. The ordering pass goes from `Program.Unordered` to
+`Program.Ordered (.WithLaurelTypes _)`, and the LaurelToCoreSchemaPass from there to
+`Program.Ordered (.Core _)`; each `removes` its input constructor and `creates` its output
+one, so a pass placed where its IR is not live fails the build.
 
 ## Passes
 

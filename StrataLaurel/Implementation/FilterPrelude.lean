@@ -221,7 +221,7 @@ private def insertNew (key : String) (deps : Std.HashSet String) (context : Stri
     For procedures with `invokeOn`, adds reverse dependencies so that
     needing the invoked function also pulls in the axiom procedure.
     Returns `Except.error` if two declarations bind the same name. -/
-private def buildDependencyMap (prog : Laurel.Program)
+private def buildDependencyMap (prog : Laurel.LaurelProgram)
     : Except String (Std.HashMap String (Std.HashSet String)) := do
   let action : DepM Unit := do
     for proc in prog.staticProcedures do
@@ -271,7 +271,7 @@ private partial def reachableNamesAux
       | none => reachableNamesAux depMap rest visited
 
 /-- Collect all names referenced by a user Laurel program. -/
-private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
+private def collectProgramRefs (prog : Laurel.LaurelProgram) : CollectState :=
   runCollect do
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
@@ -281,8 +281,8 @@ private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
 
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
-public def filterPrelude (prelude user : Laurel.Program)
-    : Except String Laurel.Program := do
+public def filterPrelude (prelude user : Laurel.LaurelProgram)
+    : Except String Laurel.LaurelProgram := do
   -- Dependency collection does not model prelude globals or constants.
   unless prelude.staticFields.isEmpty do
     throw "FilterPrelude: prelude contains static fields, which are not yet supported"

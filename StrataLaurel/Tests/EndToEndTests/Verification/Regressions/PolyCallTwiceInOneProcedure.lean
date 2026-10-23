@@ -44,6 +44,17 @@ procedure twoInstantiationsInGenericProcedureFalseTwin<U>(x: U) opaque {
   assert idp(1) == 2
 //^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
+// Both instantiations are the enclosing procedure's type parameters, so neither lifted local is
+// concrete.
+procedure twoTypeParametersInGenericProcedure<U, V>(u: U, v: V) opaque {
+  assert idp(u) == u || true;
+  assert idp(v) == v || true
+};
+procedure twoTypeParametersInGenericProcedureFalseTwin<U, V>(u: U, v: V) opaque {
+  assert idp(u) == u || true;
+  assert idp(v) == v
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 // A clause becomes a helper body, which this pass lifts in turn, so the collision is reachable from
 // `ensures` as well. Each call sits in a disjunct the body itself discharges, because a clause does
 // not assume the callee's postcondition.

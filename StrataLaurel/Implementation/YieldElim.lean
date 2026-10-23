@@ -412,7 +412,7 @@ private def collectResumeHasNextDiags (proc : Procedure) : List Message :=
 
 /-! ### Body-path entry point -/
 
-def runYieldElimBody (program : Program) : Program × List Message :=
+def runYieldElimBody (program : LaurelProgram) : LaurelProgram × List Message :=
   -- Reuse resolved preamble identifiers (uniqueIds included) for the calls this
   -- pass synthesizes: `$havocHeap` (env step) and `$and` (clause conjunction).
   -- Resolution is off after this pass, so heap-param's heap-effect lookup must
@@ -637,7 +637,7 @@ private def threadCallerBody (h1Resumes : Std.HashSet String) (body : StmtExprMd
 
 /-! ### Caller-path entry point -/
 
-def coroutineRelyHeap (program : Program) : Program × List Message :=
+def coroutineRelyHeap (program : LaurelProgram) : LaurelProgram × List Message :=
   -- Phase 1: transform resume procedures, collecting those that gained an H1
   -- input. The body-path rewrite already ran (lowering coroutine `$body` copies
   -- to regular procedures), so no `is_coroutine` procs remain; the generated
@@ -659,7 +659,7 @@ def coroutineRelyHeap (program : Program) : Program × List Message :=
     program.staticProcedures.flatMap fun proc =>
       (procResumeBodies proc).flatMap (resumeThreadingDiags h1Resumes ·)
   -- Phase 2: thread H1 through every caller body.
-  let program := mapProgramProcedures (fun proc =>
+  let program := mapLaurelProgramProcedures (fun proc =>
     mapProcedureBodiesM (m := Id) (threadCallerBody h1Resumes) proc) program
   (program, diags)
 
@@ -681,7 +681,7 @@ def coroutineRelyHeap (program : Program) : Program × List Message :=
 
     Scheduler-side `resume(...)` / `has_next(...)` outside coroutine bodies are
     not supported currently - this will be implemented in the next step. -/
-public def yieldElimPass : LoweringPass where
+public def yieldElimPass : LaurelPass := .onUnordered {
   name := "YieldElim"
   creates := [
       NodeKind.StmtExpr.Assert,
@@ -698,10 +698,13 @@ public def yieldElimPass : LoweringPass where
       NodeKind.Pseudo.overload
     ]
   removes := [NodeKind.StmtExpr.Yield, NodeKind.StmtExpr.OldGuarantee, NodeKind.StmtExpr.OldRelies]
-  unsupported := [NodeKind.StmtExpr.InstanceCall]
+  unsupported := [
+      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   documentation := "Lowers coroutine old-semantics. Body path (verifyCoroutine only): replaces every `yield` with an inline `assert ⋀guarantees; Snapshot $old_heap; havocHeap(); assume ⋀relies; Snapshot $old_heap` block. Caller path (always): threads the per-instance $h_rely_old (H1) snapshot heap through resume procedures and callers. Both lower `oldGuarantee`/`oldRelies` to labeled `Old` / `Snapshot` for HeapParameterization to consume (declaring the snapshot locals and threading $heap); resolution is disabled after this pass."
-  needsResolves := false
-  run := fun options p _ =>
+  needsResolves := false }
+  fun options p _ =>
     -- Body path is verify-only; the caller path (resume/caller lowering) always
     -- runs, since the non-verify elaboration path also emits the markers it lowers.
     let (p, bodyDiags) := if options.verifyCoroutine then runYieldElimBody p else (p, [])

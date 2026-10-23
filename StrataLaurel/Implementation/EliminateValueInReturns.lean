@@ -75,13 +75,13 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
 public section
 
 /-- Transform a program by eliminating value returns in all imperative procedures. -/
-def eliminateValueInReturnsTransform (program : Program) : Program  :=
-  { program with staticProcedures := program.staticProcedures.map eliminateValueReturnsInProc }
+def eliminateValueInReturnsTransform (program : Program) : Program :=
+  mapProgramProcedures eliminateValueReturnsInProc program
 
 end -- public section
 
 /-- Pipeline pass: eliminate value returns. -/
-public def eliminateValueInReturnsPass : LoweringPass where
+public def eliminateValueInReturnsPass : LaurelPass where
   name := "EliminateValueInReturns"
   creates := [NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.Block, NodeKind.StmtExpr.Return]
   removes := [NodeKind.StmtExpr.Return.value.some]

@@ -74,9 +74,9 @@ def corpusMetricsOf (name : String) (source : String) : IO CaseResult := do
         if vcr.isImplementationError || vcr.isTimeout || vcr.hasSMTError then acc + 1 else acc) 0
       return { translated := true, numVCs := results.size, numFailures := numFailures, numErrorOutcomes := numErrorOutcomes }
 
-/-- Parse a Laurel source string to a `Program` (used by the kind-checking pass in
+/-- Parse a Laurel source string to a `LaurelProgram` (used by the kind-checking pass in
     `checkCase`, which needs the program to re-run the diagnostic-capturing path). -/
-def corpusParse (name : String) (source : String) : IO Program := do
+def corpusParse (name : String) (source : String) : IO LaurelProgram := do
   let input := StrataDDM.Parser.stringInputContext name source
   let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input

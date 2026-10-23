@@ -79,7 +79,7 @@ private def writerProc : Procedure :=
       [⟨.Field (nn (.StaticCall (mkId "mk") [] [])) (mkId "x"), .unknown⟩]
       (nn (.LiteralInt 1)))) }
 
-private def program : Program :=
+private def program : LaurelProgram :=
   { staticProcedures := [mkProc, writerProc], staticFields := [], types := [objType, errType, otherErrType] }
 
 private def mentions (haystack needle : String) : Bool :=

@@ -22,7 +22,7 @@ def heapVarName : Identifier := "$heap"
 The Laurel Core prelude defines the heap model types and operations
 used by the Laurel-to-Core translator. These declarations are expressed
 in Laurel syntax via the `#strata program Laurel` macro and parsed into
-a `Laurel.Program` at compile time.
+a `Laurel.LaurelProgram` at compile time.
 
 The heap model uses:
 - `Composite` - datatype with a reference (int); `TypeHierarchy` adds the runtime type tag
@@ -68,7 +68,7 @@ procedure increment(heap: Heap): Heap
 #end
 
 /-- The Laurel Core prelude as a Laurel Program. -/
-def heapConstants : Program :=
+def heapConstants : LaurelProgram :=
   match Laurel.TransM.run
       (.file "StrataLaurel/Implementation/HeapParameterizationConstants.lean")
       (Laurel.parseProgram laurelPreludeDDM) (synthesized := true) with

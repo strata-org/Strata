@@ -248,7 +248,7 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
     procedures to `program.staticProcedures`. Consumes `virtualDispatchFamilies` (the same
     enumerator the dispatcher generator uses — see its docstring for the gate-parity
     invariant that makes this sound). -/
-def checkOverrideRefinement (model : SemanticModel) (program : Program) : Program :=
+def checkOverrideRefinement (model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
   let checkers : List Procedure :=
     (virtualDispatchFamilies model program).flatMap fun fam =>
       -- Emit a checker set for EVERY parent, not just the nearest (see `findOverriddenParents`).
@@ -259,17 +259,20 @@ def checkOverrideRefinement (model : SemanticModel) (program : Program) : Progra
 
 public section
 
-def checkOverrideRefinementPass : LoweringPass where
+def checkOverrideRefinementPass : LaurelPass := .onUnordered {
   name := "CheckOverrideRefinement"
+  unsupported := [
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   creates := [
-      NodeKind.Program.staticProcedures.cons,
+      NodeKind.LaurelProgram.staticProcedures.cons,
       NodeKind.StmtExpr.Assert,
       NodeKind.StmtExpr.Assume
     ]
   removes := [NodeKind.Pseudo.needsOverrideRules]
   needsResolves := true
-  run := fun _ p m => (checkOverrideRefinement m p, [], {})
-  documentation := "For every composite method that overrides an ancestor method, emits synthetic checker procedures that verify behavioral subtyping: the override's precondition is no stronger than the parent's (Parent.pre ⇒ Child.pre) and its postcondition is no weaker (Child.post ⇒ Parent.post). A failing checker is a Liskov violation. Purely additive; runs before LiftInstanceProcedures. This is the soundness prerequisite for dynamic dispatch."
+  documentation := "For every composite method that overrides an ancestor method, emits synthetic checker procedures that verify behavioral subtyping: the override's precondition is no stronger than the parent's (Parent.pre ⇒ Child.pre) and its postcondition is no weaker (Child.post ⇒ Parent.post). A failing checker is a Liskov violation. Purely additive; runs before LiftInstanceProcedures. This is the soundness prerequisite for dynamic dispatch." }
+  fun _ p m => (checkOverrideRefinement m p, [], {})
 
 end -- public section
 

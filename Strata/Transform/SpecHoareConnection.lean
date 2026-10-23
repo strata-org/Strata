@@ -26,15 +26,15 @@ must-termination, the converse also fails: a partial-correctness triple does not
 constrain intermediate prefixes of executions that never reach a terminal or
 exiting configuration.
 
-## Connection between `Hoare.Triple` and `OverapproximatesTraces`
+## Connection between `Hoare.TripleWith` and `OverapproximatesTraces`
 
-`Strata.Logic.Hoare.Triple` is `EventLang`-generic, so a triple proved about the
+`Strata.Logic.Hoare.TripleWith` is `EventLang`-generic, so a triple proved about the
 *target* of a translation transports back to the source along a trace
 overapproximation:
 
 - `overapproximatesTraces_triple` — a trace overapproximation
   (`OverapproximatesTraces` at trace-relation equality) preserves
-  `Hoare.Triple`.
+  `Hoare.TripleWith`.
 - `overapproximatesTracesWhen_triple` — the same for
   `OverapproximatesTracesWhen`, under a precondition on the source statement.
 
@@ -100,7 +100,7 @@ theorem triple_implies_assertValidOnTracesWhen
 
 namespace Transform
 
-variable {P : PureExpr} [HasBool P]
+variable {P : PureExpr}
 
 /-- If `T` overapproximates traces (up to trace equality) and an event-trace
     Hoare triple holds on `T(st)` in `L₂`, then the triple holds on `st` in `L₁`.
@@ -109,13 +109,14 @@ variable {P : PureExpr} [HasBool P]
     witnesses (both relations are `(· = ·)`), so substituting them recovers a
     target run over identical data for the target triple to discharge. -/
 theorem overapproximatesTraces_triple (L₁ L₂ : EventLang P (Event P))
+    (I : ConditionInterp P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
     (hsem : OverapproximatesTraces (· = ·) L₁ L₂ T params₁ params₂)
     {Pre Post : Env P → Prop}
-    (htriple : Strata.Logic.Hoare.Triple L₂ params₂ Pre s' Post) :
-    Strata.Logic.Hoare.Triple L₁ params₁ Pre st Post := by
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post) :
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   have hr := hsem st s' ht trivial ρ₀ ρ₀ rfl hinit
   refine htriple ρ₀ ρ' trace hpre hr.2.2.2 ?_
@@ -136,14 +137,15 @@ theorem overapproximatesTraces_triple (L₁ L₂ : EventLang P (Event P))
     transport is identical: equal environment and trace witnesses from the
     terminal/exiting simulations feed the target triple unchanged. -/
 theorem overapproximatesTracesWhen_triple (L₁ L₂ : EventLang P (Event P))
+    (I : ConditionInterp P)
     (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
     (hsem : OverapproximatesTracesWhen (· = ·) L₁ L₂ T pre params₁ params₂)
     {Pre Post : Env P → Prop}
-    (htriple : Strata.Logic.Hoare.Triple L₂ params₂ Pre s' Post)
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post)
     (hsource_pre : pre st) :
-    Strata.Logic.Hoare.Triple L₁ params₁ Pre st Post := by
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   have hr := hsem st s' ht hsource_pre ρ₀ ρ₀ rfl hinit
   refine htriple ρ₀ ρ' trace hpre hr.2.2.2 ?_

@@ -1217,6 +1217,7 @@ theorem stmt_definedVars_nil_of_noInits {P : PureExpr} [HasFvars P] (s : Stmt P 
   | .typeDecl t md => simp
   termination_by sizeOf s
 
+/-- An init-free (block of) statement(s) defines no variables. -/
 theorem block_definedVars_nil_of_noInits {P : PureExpr} [HasFvars P] (body : List (Stmt P (Cmd P)))
     (h_ni : Block.noInitsAnywhere body = true) :
     Block.definedVars body false = [] := by

@@ -38,7 +38,7 @@ spec {
   var a : bool, b : bool;
   g := true;
   g2 := false;
-  call T1(g, g2, out g, out g2, out a, out b);
+  call T1(inout g, inout g2, out a, out b);
   assert [T2_g2_eq_g]:     (g2 == g);
   assert [T2_g_true]:      (g == true);
   assert [T2_a_eq_false]:  (a == false);

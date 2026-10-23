@@ -103,8 +103,9 @@ private def bodyEvent (fac : Expression.Factory) : Event Expression :=
 
 /-- The callee body runs from `frame` to `finish` at `σ2`, emitting `bodyEvent`. -/
 private theorem calleeCFG_run (fac : Expression.Factory) :
-    StepCFGExtStarE calleeEnv fac calleeCFG
-      (.atBlock "entry" frame false) [bodyEvent fac] (.terminal σ2 false) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock calleeCFG "entry" ⟨frame, fac, false⟩) [bodyEvent fac]
+      (.terminal ⟨σ2, fac, false⟩) :=
   have hwf := coreEvaluator_WellFormedSemanticEvalVar fac
   have hy : σ1 yId = some HasBool.ff := by simp [σ1, frame, bind, tId, yId]
   .step _ [] _ _ _ (.fetch rfl) <|
@@ -123,7 +124,7 @@ private theorem callCmd_sem (fac : Expression.Factory) :
     EvalCmdExtE calleeEnv fac σ0 callCmd (bind σ0 xId HasBool.tt) [bodyEvent fac] := by
   have hbody : BigStepE calleeEnv callee.body ⟨frame, fac, false⟩ (projectStore frame σ2)
       [bodyEvent fac] :=
-    .cfg (CFGRunExtE_iff_stepCFGStarE (P := Expression).mpr (calleeCFG_run fac))
+    .cfg (calleeCFG_run fac)
   have h := EvalCmdExtE.call_sem (n := "callee") (callArgs := [.outArg xId]) (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := σ0) (σAO := frame)
     (by simp [calleeEnv])
@@ -131,7 +132,7 @@ private theorem callCmd_sem (fac : Expression.Factory) :
       .read_some (by simp [σ0, bind]) (HasBool.boolIsVal fac).2 .read_none,
       ⟨emptyStore, frame, .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩
     hbody
-    ⟨[HasBool.tt],
+    ⟨(by simp [Imperative.CallArg.getLhs]), [HasBool.tt],
       .read_some (by simp [projectStore, frame, σ2, bind, yId])
         (HasBool.boolIsVal fac).1 .read_none,
       .update_some (updateState_bind (v' := HasBool.ff) (by simp [σ0, bind])) .update_none⟩
@@ -157,8 +158,9 @@ private def callerCFG : DetCFG Expression Command :=
 
 /-- The caller CFG runs from `x ↦ false` to `finish` at `x ↦ true`. -/
 private theorem callerCFG_run (fac : Expression.Factory) :
-    StepCFGExtStarE calleeEnv fac callerCFG
-      (.atBlock "entry" σ0 false) [bodyEvent fac] (.terminal (bind σ0 xId HasBool.tt) false) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock callerCFG "entry" ⟨σ0, fac, false⟩) [bodyEvent fac]
+      (.terminal ⟨bind σ0 xId HasBool.tt, fac, false⟩) :=
   .step _ [] _ _ _ (.fetch rfl) <|
   .step _ [bodyEvent fac] _ [] _ (.step_cmd (callCmd_sem fac)) <|
   .step _ [] _ [] _ .finish (.refl _)
@@ -168,8 +170,7 @@ private theorem callerCFG_run (fac : Expression.Factory) :
 example (fac : Expression.Factory) :
     BigStepE calleeEnv (.cfg callerCFG) ⟨σ0, fac, false⟩ (bind σ0 xId HasBool.tt)
       [bodyEvent fac] := by
-  have h := BigStepE.cfg (ρ := ⟨σ0, fac, false⟩)
-    (CFGRunExtE_iff_stepCFGStarE (P := Expression).mpr (callerCFG_run fac))
+  have h := BigStepE.cfg (ρ := ⟨σ0, fac, false⟩) (callerCFG_run fac)
   have hσ : projectStore σ0 (bind σ0 xId HasBool.tt) = bind σ0 xId HasBool.tt := by
     funext i
     by_cases hi : i = xId <;> simp [projectStore, σ0, bind, emptyStore, hi]

@@ -213,6 +213,7 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog =>
       genOpaqueTypeParams prog

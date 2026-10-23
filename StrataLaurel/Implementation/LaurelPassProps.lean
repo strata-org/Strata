@@ -13,8 +13,8 @@ import all StrataLaurel.Implementation.MapStmtExpr
 # Lifting a NodeKind Specification to a Program
 
 `mapStmtExprUsedM_contains` (`MapStmtExprProps.lean`) takes a per-node obligation
-to one *expression*. This file takes one expression to a whole `Program`: the walk
-`mapProgramStmtExprM` threads a rewrite through every `Condition`, `Body`,
+to one *expression*. This file takes one expression to a whole `LaurelProgram`: the walk
+`mapLaurelProgramStmtExprM` threads a rewrite through every `Condition`, `Body`,
 `ModifiesGroup`, `ThrowsOnBlock`, `Procedure`, `TypeDefinition`, `Constant` and
 `Field` a program holds, and `lift_program` says the kinds follow.
 
@@ -23,22 +23,23 @@ None of it depends on which pass is running. A pass supplies three facts:
 * `hexpr` — its per-expression conclusion, from `mapStmtExprUsedM_contains`;
 * `htype` — that a type annotation's kinds move from `s` to `t`;
 * `hkeep` — that the *container* kinds (`containerKinds`: the `Owner.field.cons`
-  and `.some` refinements on `Program`/`Procedure`/`Body`/`CompositeType`, the
+  and `.some` refinements on `LaurelProgram`/`Procedure`/`Body`/`CompositeType`, the
   `TypeDefinition.*` kinds, `Condition.mode.Assume` and the two `HighType` kinds)
   move from `s` to `t`.
 
 `hkeep` is the one real restriction, and it is the honest one: these lemmas copy
 container kinds across untouched, so a pass that *removes* one of them — as
-`GlobalParameterization` does with `Program.staticFields.cons` — cannot use this
+`GlobalParameterization` does with `LaurelProgram.staticFields.cons` — cannot use this
 lift and needs its own. For a pass that only rewrites inside expressions,
 `hkeep` follows from its `removes` list by `decide`.
 
 ## Key results
 
 * `Lift` — the three facts a pass supplies;
-* `lift_program` — the whole-program conclusion;
+* `lift_program` — the whole-program conclusion, by way of `lift_laurelProgram` for a
+  `Program.Unordered`;
 * `lift_procedure`, `lift_bodies`, `lift_specs` — the intermediate steps, in case a
-  pass needs to stop short of a whole `Program`.
+  pass needs to stop short of a whole `LaurelProgram`.
 
 See `EliminateDoWhileProps.eliminateDoWhile_spec` for the whole chain in use.
 -/
@@ -305,8 +306,8 @@ private theorem lift_procedure [LawfulMonad m] (L : Lift f s t) {p : Procedure} 
 
 /-! ## The program
 
-`mapProgramStmtExprM` runs in four phases: every procedure (via
-`mapProgramProceduresM ∘ mapProcedureM`), then the type definitions' own
+`mapLaurelProgramStmtExprM` runs in four phases: every procedure (via
+`mapLaurelProgramProceduresM ∘ mapProcedureM`), then the type definitions' own
 expressions (a constrained type's constraint and witness, a composite's field
 initializers), then the constants, then the file-scope globals. Between them,
 positions not yet visited still live in the *input* set `s`, which is why the
@@ -314,10 +315,12 @@ phase postconditions mention both sets. -/
 
 /-- What the procedure phase establishes: the procedures are rewritten, the rest
     of the program is untouched (so still in `s`), and the two list lengths that
-    `Program.*.cons` kinds depend on are preserved. -/
-def AfterProcedures (s t : KindSet) (p prog : Program) : Prop :=
+    `LaurelProgram.*.cons` kinds depend on are preserved. -/
+def AfterProcedures (s t : KindSet) (p prog : LaurelProgram) : Prop :=
   (∀ proc ∈ prog.staticProcedures, Procedure.Contains t proc)
     ∧ prog.staticProcedures.length = p.staticProcedures.length
+    ∧ (∀ proc ∈ prog.staticFunctions, Procedure.Contains t proc)
+    ∧ prog.staticFunctions.length = p.staticFunctions.length
     ∧ (∀ td ∈ prog.types, TypeDefinition.ContainsOutsideProcedures s td)
     ∧ (∀ td ∈ prog.types, ∀ c : CompositeType, td = .Composite c →
         ∀ proc ∈ c.instanceProcedures, Procedure.Contains t proc)
@@ -328,17 +331,20 @@ def AfterProcedures (s t : KindSet) (p prog : Program) : Prop :=
 /-- **The generic program-level lift.** Rewriting every expression position of a
     program with `f` maps a `Contains s` program to a `Contains t` one. The pass
     supplies `Lift` — its per-expression fact plus the two carry-across facts —
-    and everything between one expression and a whole `Program` is done here
+    and everything between one expression and a whole `LaurelProgram` is done here
     once. -/
-theorem lift_program [LawfulMonad m] (L : Lift f s t) {p : Program} (h : Program.Contains s p) :
-    PostM (mapProgramStmtExprM f p) (Program.Contains t) := by
-  obtain ⟨⟨hstatic, htypeProcs⟩, hstaticCons, hfields, hfieldsCons, htypes, hconsts⟩ := h
-  rw [mapProgramStmtExprM, mapProgramProceduresM]
+theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} (h : LaurelProgram.Contains s p) :
+    PostM (mapLaurelProgramStmtExprM f p) (LaurelProgram.Contains t) := by
+  obtain ⟨⟨hstatic, hfuns, htypeProcs⟩, hstaticCons, hfunsCons, hfields, hfieldsCons, htypes, hconsts⟩ := h
+  rw [mapLaurelProgramStmtExprM, mapLaurelProgramProceduresM]
   -- Phase 1: every procedure (static, and every composite's methods).
   refine post_bind (Q := AfterProcedures s t p) ?_ (fun prog1 hprog1 => ?_)
   · refine post_bind (post_and
       (post_mapM p.staticProcedures _ (fun proc hproc => lift_procedure L (hstatic proc hproc)))
       (post_mapM_length _ _)) (fun procs1 hprocs1 => ?_)
+    refine post_bind (post_and
+      (post_mapM p.staticFunctions _ (fun proc hproc => lift_procedure L (hfuns proc hproc)))
+      (post_mapM_length _ _)) (fun funs1 hfuns1 => ?_)
     refine post_bind (post_and (post_mapM p.types _
         (P := fun td' => TypeDefinition.ContainsOutsideProcedures s td'
           ∧ (∀ c : CompositeType, td' = .Composite c →
@@ -367,10 +373,10 @@ theorem lift_program [LawfulMonad m] (L : Lift f s t) {p : Program} (h : Program
       | Datatype dt => exact post_pure ⟨htypes _ htd, by simp⟩
       | Opaque ot => exact post_pure ⟨htypes _ htd, by simp⟩
       | Alias ta => exact post_pure ⟨htypes _ htd, by simp⟩
-    refine post_pure ⟨hprocs1.1, by simpa using hprocs1.2,
+    refine post_pure ⟨hprocs1.1, by simpa using hprocs1.2, hfuns1.1, by simpa using hfuns1.2,
       fun td htd => (htypes1.1 td htd).1, fun td htd => (htypes1.1 td htd).2,
       by simpa using htypes1.2, rfl, rfl⟩
-  obtain ⟨hprocs, hprocsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq⟩ := hprog1
+  obtain ⟨hprocs, hprocsLen, hfunsAfter, hfunsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq⟩ := hprog1
   -- Phase 2: the type definitions' own expressions.
   refine post_bind (post_and (post_mapM prog1.types _
       (P := fun td' => TypeDefinition.ContainsOutsideProcedures t td'
@@ -438,15 +444,68 @@ theorem lift_program [LawfulMonad m] (L : Lift f s t) {p : Program} (h : Program
           post_pure ⟨L.type (hfields fld (by rw [← hfieldsEq]; exact hfld)).1,
             hinit'⟩)))
     (post_mapM_length _ _)) (fun fields2 hfields2 => ?_)
-  refine post_pure ⟨⟨hprocs, ?_⟩, ?_, hfields2.1, ?_,
+  refine post_pure ⟨⟨hprocs, hfunsAfter, ?_⟩, ?_, ?_, hfields2.1, ?_,
     fun td htd => (htypes2.1 td htd).1, hconsts2⟩
   · intro td htd c hc
     exact (htypes2.1 td htd).2 c hc
   · exact fun hne => mem_keep L (hstaticCons (ne_nil_of_length hprocsLen hne)) (by simp [containerKinds])
+  · exact fun hne => mem_keep L (hfunsCons (ne_nil_of_length hfunsLen hne)) (by simp [containerKinds])
   · refine fun hne => mem_keep L (hfieldsCons ?_) (by simp [containerKinds])
     have hlen : fields2.length = p.staticFields.length := by
       rw [hfields2.2, hfieldsEq]
     exact ne_nil_of_length hlen hne
+
+private theorem lift_constant [LawfulMonad m] (L : Lift f s t) {c : Constant}
+    (h : Constant.Contains s c) : PostM (mapConstantStmtExprM f c) (Constant.Contains t) := by
+  rw [mapConstantStmtExprM]
+  exact post_bind (lift_optExpr L h.2) (fun init' hinit' => post_pure ⟨L.type h.1, hinit'⟩)
+
+private theorem lift_datatypes (L : Lift f s t) {dts : List DatatypeDefinition}
+    (h : ∀ d ∈ dts, NodeKind.TypeDefinition.Datatype ∈ s ∧ DatatypeDefinition.Contains s d) :
+    ∀ d ∈ dts, NodeKind.TypeDefinition.Datatype ∈ t ∧ DatatypeDefinition.Contains t d :=
+  fun d hd => ⟨mem_keep L (h d hd).1 (by simp [containerKinds]),
+    fun ctor hctor arg harg => Parameter.mono L ((h d hd).2 ctor hctor arg harg)⟩
+
+private theorem lift_orderedDecl [LawfulMonad m] (L : Lift f s t) {d : OrderedDecl}
+    (h : OrderedDecl.Contains s d) :
+    PostM (mapOrderedDeclStmtExprM f d) (OrderedDecl.Contains t) := by
+  cases d with
+  | funcs funcs isRecursive =>
+    simp only [mapOrderedDeclStmtExprM, mapOrderedDeclProceduresM]
+    exact post_bind (post_mapM funcs _ (fun proc hproc => lift_procedure L (h proc hproc)))
+      (fun _ h' => post_pure h')
+  | procedure proc =>
+    simp only [mapOrderedDeclStmtExprM, mapOrderedDeclProceduresM]
+    exact post_bind (lift_procedure L h) (fun _ h' => post_pure h')
+  | datatypes dts =>
+    simp only [mapOrderedDeclStmtExprM, mapOrderedDeclProceduresM]
+    exact post_pure (lift_datatypes L h)
+  | opaqueType ot =>
+    simp only [mapOrderedDeclStmtExprM, mapOrderedDeclProceduresM]
+    exact post_pure trivial
+  | constant c =>
+    simp only [mapOrderedDeclStmtExprM]
+    exact post_bind (lift_constant L h) (fun _ h' => post_pure h')
+
+theorem lift_program [LawfulMonad m] (L : Lift f s t) {p : Program} (h : Program.Contains s p) :
+    PostM (mapProgramStmtExprM f p) (Program.Contains t) := by
+  cases p with
+  | Unordered p =>
+    simp only [mapProgramStmtExprM, Program.mapM]
+    exact post_bind (lift_laurelProgram L h.2) (fun _ h' =>
+      post_pure ⟨mem_keep L h.1 (by simp [containerKinds]), h'⟩)
+  | Ordered p =>
+    obtain ⟨hk, hp⟩ := h
+    cases p with
+    | WithLaurelTypes p =>
+      simp only [mapProgramStmtExprM, Program.mapM]
+      exact post_bind (post_mapM p.decls _ (fun d hd => lift_orderedDecl L (hp.2 d hd)))
+        (fun _ h' => post_pure ⟨mem_keep L hk (by simp [containerKinds]),
+          mem_keep L hp.1 (by simp [containerKinds]), h'⟩)
+    | Core _ =>
+      simp only [mapProgramStmtExprM, Program.mapM]
+      exact post_pure ⟨mem_keep L hk (by simp [containerKinds]),
+        mem_keep L hp (by simp [containerKinds])⟩
 
 end -- public section
 

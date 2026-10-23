@@ -217,9 +217,10 @@ private def testProc : Procedure :=
 private def testProgram : Program :=
   { decls := [.proc testProc .empty] }
 
--- Passing `x == x` (which contains output variable `x` inside an expression) should fail.
+-- The inout parameter `x` takes an `inout` argument, so an input value for it with
+-- its result as a separate `out x` is refused.
 /--
-info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters appearing in both inputs and outputs) must be simple variable references
+info: error: [call Foo(x == x, out x, out y);]: Ill-formed call: the call to Foo passes an input value for x, which is an inout parameter and must be passed as inout
 -/
 #guard_msgs in
 #eval do
@@ -228,13 +229,24 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
     [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ans
 
--- Passing a bare variable `x` as an inout argument should succeed.
+-- The same holds when the input value is the variable `x` itself.
+/--
+info: error: [call Foo(x, out x, out y);]: Ill-formed call: the call to Foo passes an input value for x, which is an inout parameter and must be passed as inout
+-/
+#guard_msgs in
+#eval do
+  let env := TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
+  let ans ← typeCheck LContext.default env testProgram none
+    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+  return format ans
+
+-- Passing `x` as an `inout` argument succeeds.
 /-- info: ok: () -/
 #guard_msgs in
 #eval do
   let env := TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let _ ← typeCheck LContext.default env testProgram none
-    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+    [.cmd (.call "Foo" [.inoutArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ()
 
 end CallOutArgTests

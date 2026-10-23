@@ -39,7 +39,7 @@ private def emptyModel : SemanticModel :=
 
 /-- A void throwing procedure with the given transparent body and cases. -/
 private def throwingProc (body : StmtExpr)
-    (throwsOn : List ThrowsOnBlock := []) : Program :=
+    (throwsOn : List ThrowsOnBlock := []) : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "p"
         inputs := []
@@ -55,7 +55,7 @@ private def throwingProc (body : StmtExpr)
     types := [] }
 
 /-- The carrier name the lowering chose (the void procedure's only output). -/
-private def carrierOf (prog : Program) : String :=
+private def carrierOf (prog : LaurelProgram) : String :=
   let (lowered, _) := eliminateExceptionsTransform emptyModel prog
   match lowered.staticProcedures with
   | [p] => match p.outputs with

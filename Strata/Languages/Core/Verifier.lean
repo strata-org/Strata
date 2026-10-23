@@ -21,6 +21,7 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
+public import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
 import Strata.DL.SMT.StringLit
@@ -697,29 +698,6 @@ def buildEnv (options : VerifyOptions) (program : Program)
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
   return (E, stats)
 
-/-- Pre-compute the per-constructor axioms for a recursive function with a
-    `@[cases]` parameter and store them in the function's `axioms` field.
-
-    Previously these axioms were generated on the fly inside the SMT encoder
-    (`toSMTOp` → `Lambda.genRecursiveAxioms`), which forced the encoder to carry
-    an expression evaluator alongside the factory and datatypes. Generating them
-    here — as part of building the obligation program — lets the encoder consume
-    `func.axioms` directly and keeps it independent of transient evaluation
-    state.
-
-    Non-recursive functions, recursive functions without `@[cases]`
-    (e.g. int-recursive functions encoded as pure UFs), and functions that
-    already carry these axioms are returned unchanged. -/
-def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
-    (exprEval : Expression.Expr → Expression.Expr) (func : Lambda.LFunc CoreLParams) :
-    Except Message (Lambda.LFunc CoreLParams) := do
-  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
-    match Lambda.genRecursiveAxioms func tf exprEval () with
-    | .ok recAxioms => .ok { func with axioms := func.axioms ++ recAxioms }
-    | .error msg => throw (Message.fromFormat msg)
-  else
-    .ok func
-
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
     suitable for downstream phases (CSE, SMT encoding). -/
@@ -741,7 +719,17 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
       s!"toCoreProofObligationProgram: procedure '{name}' contains a \
          nondeterministic if/loop guard; run nondetElim before symbolic evaluation.")
   | none => pure ()
-  let (E, declStats) ← buildEnv options program factory
+  -- Symbolic evaluation gets both the factory and the program without the unconditional
+  -- `inline` attribute, so expanding such a call is the Simplify phase's decision.
+  --
+  -- `inline` is kept on a function whose expansion is the only thing that removes a lambda,
+  -- since SMT cannot encode one. Pruning the program matters as much as pruning the factory:
+  -- `Program.eval` registers each function it walks, so a declaration's attribute would
+  -- otherwise reach the evaluator untouched.
+  let carriers := Core.Simplify.lambdaCarriers program
+  let evalFactory := Core.Simplify.withoutInline carriers factory
+  let evalProgram := Core.Simplify.withoutInlineProgramWith carriers program
+  let (E, declStats) ← buildEnv options evalProgram evalFactory
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
@@ -805,7 +793,16 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     evalFuncs.mapM (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
   -- `.toFunc` drops only `concreteEval`; all other data survives into the
   -- obligation program and the SMT factory built by `buildEnv`.
-  let funcDecls := evalFuncs.map fun func => Decl.func func.toFunc .empty
+  --
+  -- Attributes come from the program as written, not from the pruned copy symbolic
+  -- evaluation walked: withholding `inline` governs how this function evaluates, and
+  -- a program it emits should still describe the declarations the input had.
+  let declaredAttrs := program.funcAttrs
+  let funcDecls := evalFuncs.map fun func =>
+    let f := func.toFunc
+    match declaredAttrs[f.name.name]? with
+    | some attr => Decl.func { f with attr := attr } .empty
+    | none => Decl.func f .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
   let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
@@ -1502,9 +1499,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT.
 
-    The procedure filter comes first, then the entry shape assertions — which
-    turn throws from inside `runProgram` into rejections naming the facts — so
-    every statement-level transform after them may rely on structured bodies. -/
+    `assertWellFormedCalls` comes first, so an ill-formed call is reported in
+    every procedure, including ones the procedure filter then drops. The filter
+    follows, and then `assertNoCFGBodies`, which turns a throw from inside
+    `runProgram` into a rejection naming the fact, so every statement-level
+    transform after it may rely on structured bodies. -/
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
@@ -1515,10 +1514,10 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     | some ps =>
       [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
     | none => []
-  -- The filter runs before the entry assertions, because both facts are
-  -- properties of every declaration: a caller naming structured procedures to
-  -- verify should not be refused for an excluded CFG body.
-  filterPhases ++ [assertNoCFGBodiesPhase,
+  -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
+  -- procedures to verify is not refused for an excluded CFG body.
+  [ProgramFact.assertPhase .wellFormedCalls] ++ filterPhases ++
+    [ProgramFact.assertPhase .noCFGBodies,
       callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -1535,7 +1534,7 @@ def typeCheckPipelinePhase
     (establishes := factSet![.typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions])
     fun prog => do
@@ -1558,7 +1557,8 @@ def symbolicEvalPipelinePhase
   -- obligations with `ite *`.
   modelPreservingPipelinePhase "symbolicEval"
     (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
-    (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm])
+    (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm,
+                             .noProcedureContracts])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,
                          .noPolymorphicProcedures,
@@ -1586,6 +1586,7 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
   [genOpaqueTypeParamsPipelinePhase,
    typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
+   simplifyPhase,
    nondetElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
@@ -1617,7 +1618,7 @@ def corePipelinePhases
     them; they are required by `LoopElim`, which is where they matter. -/
 def backEndRequiredFacts : ProgramFactSet :=
   factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
-           .noBetaRedexes, .noPrecondsFromFuncs, .hasObligationForm,
+           .noBetaRedexes, .noPrecondsFromFuncs, .hasObligationForm, .noProcedureContracts,
            .noPolymorphicProcedures, .noPolymorphicFunctions,
            .typeAnnotated]
 
@@ -1752,7 +1753,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
     : EIO Message VCResult := do
-  let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+  -- Formatting the whole program is costly on a large one, so it is done only when the debug
+  -- trace below shows it.
+  let prog : Unit → Format := fun _ => f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
   let ans ← IO.toEIO
       (fun e => Message.fromFormat f!"{e}")
       (discharge assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
@@ -1768,7 +1771,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       | _ => true
     if traceInQuiet || options.verbose >= VerboseMode.debug then
       dbg_trace f!"\n\nObligation {obligation.label}: {vcError}\
-                   {if options.verbose >= VerboseMode.debug then prog else ""}"
+                   {if options.verbose >= VerboseMode.debug then prog () else ""}"
     return { obligation := obligation,
              outcome := Except.error vcError,
              verbose := options.verbose,
@@ -2363,6 +2366,14 @@ def verify (program : Program)
       | .ok vp => pure vp.phases
       | .error err =>
         throw (Message.fromFormat f!"❌ Cannot assemble a verification pipeline.\n{err}")
+  -- `recursiveAxioms` decides from `recursiveFnsAsDefineFunRec` whether the back end needs
+  -- the axioms, so it must read the options the back end runs with, whatever options the
+  -- caller built the phase with. Otherwise the solver could get neither the axioms nor a
+  -- `define-fun-rec` definition. Its contract does not depend on the options, so the
+  -- rebuilt phase composes exactly as the one it replaces.
+  let pipelinePhases := pipelinePhases.map fun p =>
+    if p.phase.name == (recursiveAxiomsPhase).phase.name then recursiveAxiomsPhase options
+    else p
   let phases := pipelinePhases.map (·.phase)
   let (oblProgram, factory, pipelineStats) ← pctx.withPhase "programTransformations" do
     let (prog, state) ← runTransforms program pipelinePhases

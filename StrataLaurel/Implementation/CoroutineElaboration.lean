@@ -1065,8 +1065,8 @@ private def rewriteCallerProcedureForVerification (coros : CoroutineSet)
     invokeOn := proc.invokeOn.map f }, diags)
 
 private def rewriteCallerProgramForVerification (coros : CoroutineSet)
-    (coroByName : Std.HashMap String Procedure) (p : Program)
-    : Program × List Message :=
+    (coroByName : Std.HashMap String Procedure) (p : LaurelProgram)
+    : LaurelProgram × List Message :=
   if coros.isEmpty then (p, []) else
   let f := mapStmtExpr (rewriteCallerNode coros)
   let (procs, diags) := p.staticProcedures.foldl
@@ -1081,7 +1081,7 @@ private def rewriteCallerProgramForVerification (coros : CoroutineSet)
     constants := p.constants.map fun c =>
       { c with type := rewriteCallerType coros c.type, initializer := c.initializer.map f } }, diags)
 
-private def rewriteCallerProgram (coros : CoroutineSet) (p : Program) : Program :=
+private def rewriteCallerProgram (coros : CoroutineSet) (p : LaurelProgram) : LaurelProgram :=
   if coros.isEmpty then p else
   let f := mapStmtExpr (rewriteCallerNode coros)
   { p with
@@ -1105,7 +1105,7 @@ private def rewriteCallerProgram (coros : CoroutineSet) (p : Program) : Program 
     runs, `co#resume(...)` folds into a static call to
     `<c>State$resume`. Regular procedures pass through unchanged except
     for the caller rewrite. -/
-def elaborateCoroutines (_ : SemanticModel) (p : Program) : Program :=
+def elaborateCoroutines (_ : SemanticModel) (p : LaurelProgram) : LaurelProgram :=
   let (coroutines, regulars) := p.staticProcedures.partition Procedure.is_coroutine
   let generatedTypes : List TypeDefinition := coroutines.map fun proc =>
     let naming := fieldNaming proc
@@ -1117,7 +1117,7 @@ def elaborateCoroutines (_ : SemanticModel) (p : Program) : Program :=
     coroutineConstructor naming proc (coroutineToComposite naming proc) entry
   let coros : CoroutineSet :=
     coroutines.foldl (fun s c => s.insert c.name.text) ∅
-  let elaborated : Program :=
+  let elaborated : LaurelProgram :=
     { p with
       staticProcedures := regulars ++ generatedCtors,
       types := p.types ++ generatedTypes }
@@ -1128,8 +1128,8 @@ def elaborateCoroutines (_ : SemanticModel) (p : Program) : Program :=
 
     The opaque resume takes `(self, <coroutine inputs>, <resumes>)` and its
     relies/guarantees reference the coroutine inputs directly. -/
-private def elaborateForVerification (_ : SemanticModel) (p : Program)
-    : Program × List Message :=
+private def elaborateForVerification (_ : SemanticModel) (p : LaurelProgram)
+    : LaurelProgram × List Message :=
   let (coroutines, regulars) := p.staticProcedures.partition Procedure.is_coroutine
   let generatedTypes : List TypeDefinition := coroutines.map fun proc =>
     let naming := fieldNaming proc
@@ -1192,14 +1192,17 @@ private def elaborateForVerification (_ : SemanticModel) (p : Program)
   -- can type each spawn-argument snapshot from the corresponding input.
   let coroByName : Std.HashMap String Procedure :=
     coroutines.foldl (fun m c => m.insert c.name.text c) ∅
-  let elaborated : Program :=
+  let elaborated : LaurelProgram :=
     { p with
       staticProcedures := regulars ++ generatedCtors ++ bodyProcs,
       types := p.types ++ generatedTypes }
   rewriteCallerProgramForVerification coros coroByName elaborated
 
-public def coroutineElaborationPass : LoweringPass where
+public def coroutineElaborationPass : LaurelPass := .onUnordered {
   name := "CoroutineElaboration"
+  unsupported := [
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   creates := [
       NodeKind.TypeDefinition.Composite,
       NodeKind.CompositeType.instanceProcedures.cons,
@@ -1215,8 +1218,8 @@ public def coroutineElaborationPass : LoweringPass where
   -- `elaborateForVerification`, which keeps the original body and its yields for
   -- `YieldElim` to lower. `Resume`/`HasNext` go on both paths via the caller rewrite.
   documentation := "Replaces each `coroutine` declaration with a generated state-machine composite (with `resume` and `has_next` instance procedures) and a spawn constructor, and rewrites callers (`resume(co[, v])` → `co#resume([v])`, `has_next(co)` → `co#has_next()`, type annotations `co: c` → `co: cState`). Must run before LiftInstanceProcedures so the generated instance calls are lifted. Under `verifyCoroutine`, elaborates instead for the rely/guarantee verification path (see `YieldElim`)."
-  needsResolves := true
-  run := fun options p m =>
+  needsResolves := true }
+  fun options p m =>
     if options.verifyCoroutine then
       let (p', diags) := elaborateForVerification m p
       (p', diags, {})

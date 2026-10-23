@@ -141,7 +141,7 @@ procedure divBad(a: int, b: int)
 -- the `catch` branch (so `out` ends at 99, never 1). A case with nothing to say
 -- about the thrown value needs no `ensures` at all; the guard alone forces the
 -- throw.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and the Core interpreter ignores the guard.
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and the Core interpreter ignores the guard.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -1123,7 +1123,7 @@ allocate a composite exception value, which the interpret path does not support 
 -- Backwards direction: the handler learns `id < 0` without seeing the body. The case
 -- guards on `id < 0`, and because stating cases enumerates them, the exhaustiveness
 -- claim `isBad ==> id < 0` is available to callers.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and Core says "condition did not reduce to bool".
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -1151,7 +1151,7 @@ procedure caller(id: int) returns (out: int)
 
 -- Forwards direction: the case's guard *forces* the throw for that input, so the
 -- normal path is unreachable and the handler's assignment is the only outcome.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and Core says "condition did not reduce to bool".
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;

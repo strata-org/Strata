@@ -79,9 +79,9 @@ After this pass the program contains only non-deterministic `Hole` nodes.
 
 Assumes `inferHoleTypes` has already annotated holes with types.
 -/
-def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
+def eliminateDeterministicHoles (program : LaurelProgram) : LaurelProgram × Statistics :=
   let initState : ElimHoleState := {}
-  let (program, finalState) := (mapProgramProceduresM elimProcedure program).run initState
+  let (program, finalState) := (mapLaurelProgramProceduresM elimProcedure program).run initState
   let stats := ({} : Statistics)
     |>.increment s!"{ElimHoleStats.holesEliminated}" finalState.counter
   ({ program with staticProcedures := finalState.generatedFunctions ++ program.staticProcedures }, stats)
@@ -89,14 +89,17 @@ def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
 end -- public section
 
 /-- Pipeline pass: eliminate deterministic holes. -/
-public def eliminateDeterministicHolesPass : LoweringPass where
+public def eliminateDeterministicHolesPass : LaurelPass := .onUnordered {
   name := "EliminateDeterministicHoles"
-  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
   removes := [NodeKind.StmtExpr.Hole.deterministic.true]
-  unsupported := [NodeKind.StmtExpr.Hole.type.none]
+  unsupported := [
+      NodeKind.StmtExpr.Hole.type.none,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
-  needsResolves := true
-  run := fun _ p _m =>
+  needsResolves := true }
+  fun _ p _m =>
     let (p', stats) := eliminateDeterministicHoles p
     (p', [], stats)
 

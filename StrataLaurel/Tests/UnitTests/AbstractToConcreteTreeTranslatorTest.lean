@@ -22,19 +22,19 @@ open StrataDDM.Elab (parseStrataProgramFromDialect)
 
 namespace Strata.Laurel
 
-private def parseFromStrata (strataProgram : StrataDDM.Program) : IO Program := do
+private def parseFromStrata (strataProgram : StrataDDM.Program) : IO LaurelProgram := do
   match Laurel.TransM.run (Strata.Uri.file "test") (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program => pure program
 
-private def laurelToText (prog : Program) : String :=
+private def laurelToText (prog : LaurelProgram) : String :=
   -- Trim trailing whitespace per line to avoid whitespace-sensitive test issues
   let text := (formatProgram prog).pretty
   let lines := text.splitOn "\n" |>.map (fun s => (s.trimAsciiEnd).toString)
   "\n".intercalate lines
 
 /-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
-private def roundtripViaDDM (prog : Program) : IO String := do
+private def roundtripViaDDM (prog : LaurelProgram) : IO String := do
   let strataProgram := programToStrata prog
   match Laurel.TransM.run (.file "AbstractToConcreteTreeTranslatorTest.lean")
       (Laurel.parseProgram strataProgram) with
@@ -648,7 +648,7 @@ private def node {t : Type} (v : t) : AstNode t := { val := v, source := default
 private def declTarget (nm : String) (ty : HighType) : AstNode Variable :=
   node (.Declare { name := mkId nm, type := some (node ty) })
 
-private def resolvedMultiAssign : Program :=
+private def resolvedMultiAssign : LaurelProgram :=
   { staticProcedures := [
       { name := mkId "p", inputs := [], outputs := [],
         preconditions := [], decreases := none,

@@ -164,7 +164,6 @@ private theorem prefixInitEnv_append (a b : List Statement) (ρ : Imperative.Env
     rw [ih]
 
 private theorem PrefixStepsOK_append (π : String → Option Procedure)
-
     (a b : List Statement) (ρ : Imperative.Env Expression) :
     PrefixStepsOK π (a ++ b) ρ ↔
       PrefixStepsOK π b ρ ∧ PrefixStepsOK π a (prefixInitEnv b ρ) := by
@@ -664,7 +663,6 @@ private theorem ensuresToAsserts_mem_is_assert
     every atomic call reports success under the failure-flag semantics, then
     `ProcedureAssertsValid` holds for the procedure. -/
 theorem procBodyVerify_procedureCorrect
-
     (procName : String) (proc : Procedure) (p : Program)
     (md : Imperative.MetaData Core.Expression)
     (st : CoreTransformState)
@@ -895,7 +893,7 @@ theorem procBodyVerify_procedureCorrect
     -- ρ_proj coincides with ρ' by h_ρ'_eq.
     let ρ_proj : Env Expression := { ρ_inner with store := projectStore ρ₀.store ρ_inner.store }
     have h_ρ_proj_eq : ρ_proj = ρ' := by simp [ρ_proj, h_ρ'_eq]
-    -- The run preserves the immutable factory, so the projected env's factory is ρ₀'s.
+    -- Factory preservation identifies the projected env's factory with ρ₀'s.
     have h_fac_proj : ρ_proj.factory = ρ₀.factory := by
       have h := Imperative.star_preserves_factory Expression (EvalCommand π) h_term
       simp only [Config.getEnv] at h

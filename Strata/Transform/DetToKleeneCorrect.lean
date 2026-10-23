@@ -207,6 +207,7 @@ private def loop_sim
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
     (ρ₀ ρ' : Env P) (n : Nat)
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
     (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P))
       (.stmt (.loop (.det g) m ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
@@ -220,11 +221,11 @@ private def loop_sim
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (StepStmt.step_loop_exit _ _) hrest, hlen =>
+    | .step _ _ _ (StepStmt.step_loop_exit _) hrest, hlen =>
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (StepStmt.step_loop_enter hg hwfb) hrest, hlen =>
+    | .step _ _ _ (StepStmt.step_loop_enter hg) hrest, hlen =>
       let ρ₀' : Env P := ρ₀
       have hρ₀_eq : ρ₀' = ρ₀ := rfl
       -- New shape: hrest : .seq (.block .none ρ₀'.store (.stmts body ρ₀')) [loop] →*T .terminal ρ'.
@@ -265,7 +266,7 @@ private def loop_sim
         rw [heq_ρ_block]; exact (star_preserves_factory P (EvalCmd P) hterm_body_eq).symm
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ_block) (.terminal ρ_x) := by
-        have hih := ih ρ_block ρ_x (hfac_block.symm ▸ hwfv) h_loop_T_T
+        have hih := ih ρ_block ρ_x (hfac_block.symm ▸ hwfb) (hfac_block.symm ▸ hwfv) h_loop_T_T
           (by simp [ReflTransT.len] at hlen; omega)
         exact hih
       -- Build Kleene execution: step_loop_step → .seq (.block ρ₀.store (.stmt (assume; b) ρ₀)) (.loop ...)
@@ -453,7 +454,7 @@ private theorem simulation [LawfulHasVal P]
           have hcov_ess := stmtToKleene_some_exitsCovered.blockHelper [] ess e ht_ess
           cases hstar with
           | step _ _ _ h1 r1 => cases h1 with
-            | step_ite_true hcond hwfb =>
+            | step_ite_true hcond =>
               have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
               match block_reaches_terminal P (EvalCmd P) r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
@@ -467,7 +468,7 @@ private theorem simulation [LawfulHasVal P]
               | .inr ⟨lbl, ρ_inner, hexit, _⟩ =>
                 exact absurd hexit (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) tss
                   hcov_tss ρ₀ lbl ρ_inner)
-            | step_ite_false hcond hwfb =>
+            | step_ite_false hcond =>
               have hsz_ess : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
               match block_reaches_terminal P (EvalCmd P) r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
@@ -529,7 +530,7 @@ private theorem simulation [LawfulHasVal P]
             fun ρ₀ ρ' hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h
           have hcov := stmtToKleene_some_exitsCovered.blockHelper [] body b hb
           have hstarT := reflTrans_to_T hstar
-          exact loop_sim g m' body md b sim_body hcov ρ₀ ρ' hstarT.len hwfv
+          exact loop_sim g m' body md b sim_body hcov ρ₀ ρ' hstarT.len hwfb hwfv
             hstarT (Nat.le_refl _)
         | .nondet =>
           have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_nondet m' inv body md ns ht
@@ -628,6 +629,7 @@ private noncomputable def loop_canfail_sim
     (hcov : Block.exitsCoveredByBlocks
       (P := P) (CmdT := Cmd P) [] body)
     (ρ₀ : Env P) {cfg : Config P (Cmd P)}
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
     (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P))
       (.stmt (.loop (.det g) m ([] : List (String × P.Expr)) body md) ρ₀) cfg)
@@ -637,12 +639,12 @@ private noncomputable def loop_canfail_sim
         (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) cfg' := by
   match hstarT with
   | .refl _ => exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (StepStmt.step_loop_exit _ _) hrest =>
+  | .step _ _ _ (StepStmt.step_loop_exit _) hrest =>
     have hcfg_eq : cfg = .terminal ρ₀ := by
       match hrest with | .refl _ => rfl | .step _ _ _ h _ => exact nomatch h
     subst hcfg_eq
     exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (StepStmt.step_loop_enter hg hwfb) hrest_seq =>
+  | .step _ _ _ (StepStmt.step_loop_enter hg) hrest_seq =>
     let ρ₀' : Env P := ρ₀
     have hρ₀_eq : ρ₀' = ρ₀ := rfl
     have h_assume : StepKleeneStar P (EvalCmd P)
@@ -697,7 +699,7 @@ private noncomputable def loop_canfail_sim
       have hwfv_block : WellFormedSemanticEvalVal (P := P) ρ_block.factory := hfac_block.symm ▸ hwfv
       have ⟨kcfg_loop, hkf_loop, hkstar_loop⟩ :=
         loop_canfail_sim g m body md b sim_body_canfail sim_body_terminal
-          hcov ρ_block hwfv_block h_loop_T hf_loop
+          hcov ρ_block (hfac_block.symm ▸ hwfb) hwfv_block h_loop_T hf_loop
       have heq_ρ_block_full : ρ_block =
           { ρ_inner with store := projectStore ρ₀.store ρ_inner.store } := by
         have hstore : ρ₀'.store = ρ₀.store := by rw [hρ₀_eq]
@@ -880,7 +882,7 @@ private theorem canfail_simulation [LawfulHasVal P]
           cases hstar with
           | refl => exact ⟨.stmt _ ρ₀, hfcfg, .refl _⟩
           | step _ _ _ h1 r1 => cases h1 with
-            | step_ite_true hcond hwfb_ite =>
+            | step_ite_true hcond =>
               have hsz_tss : Block.sizeOf tss ≤ n := by simp_all [Stmt.sizeOf]; omega
               have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 tss t hsz_tss ht_tss ρ₀ hwfb hwfv
@@ -890,9 +892,9 @@ private theorem canfail_simulation [LawfulHasVal P]
                   (.step _ _ _ .step_block
                     (kleene_block_inner_star ρ₀.store _ _
                       (ReflTrans_Transitive _ _ _ _
-                        (kleene_assume_then (kleene_assume_terminal hcond hwfb_ite))
+                        (kleene_assume_then (kleene_assume_terminal hcond hwfb))
                         hkstar)))⟩
-            | step_ite_false hcond hwfb_ite =>
+            | step_ite_false hcond =>
               have hsz_ess : Block.sizeOf ess ≤ n := by simp_all [Stmt.sizeOf]; omega
               have ⟨inner', hf', hstar'⟩ := block_canfail_to_inner r1 hfcfg
               have ⟨kcfg, hkf, hkstar⟩ := ih.2 ess e hsz_ess ht_ess ρ₀ hwfb hwfv
@@ -903,7 +905,7 @@ private theorem canfail_simulation [LawfulHasVal P]
                     (kleene_block_inner_star ρ₀.store _ _
                       (ReflTrans_Transitive _ _ _ _
                         (kleene_assume_then (kleene_assume_terminal
-                          ((hwfb ρ₀.store c).2.mp hcond) hwfb_ite))
+                          ((hwfb ρ₀.store c).2.mp hcond) hwfb))
                         hkstar)))⟩
         | .nondet =>
           have ⟨t, e, ht_tss, ht_ess, hns⟩ :=
@@ -943,7 +945,7 @@ private theorem canfail_simulation [LawfulHasVal P]
             (fun ρ₀ ρ' hwfb' hwfv' h =>
               (simulation n).2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h)
             (stmtToKleene_some_exitsCovered.blockHelper [] body b hb)
-            ρ₀ hwfv (reflTrans_to_T hstar) hfcfg
+            ρ₀ hwfb hwfv (reflTrans_to_T hstar) hfcfg
         | .nondet =>
           have ⟨hinv_empty, b, hb, hns⟩ := loop_transform_some_nondet m' inv body md ns ht
           subst hns
@@ -1002,8 +1004,7 @@ omit [HasOps P] in
     provided the evaluator is well-formed.
     The exiting case is ruled out since the transform returns `none` for
     `.exit` sub-statements. -/
-theorem detToKleene_overapproximates [LawfulHasVal P]
-    :
+theorem detToKleene_overapproximates [LawfulHasVal P] :
     Transform.Overapproximates (Lang.det) (Lang.kleene (P := P))
       (StmtToKleeneStmt (P := P)) () () := by
   intro st ns ht _ ρ₀ ρ₀' heq hwf

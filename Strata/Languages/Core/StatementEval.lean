@@ -7,6 +7,8 @@ module
 
 import all Strata.Languages.Core.Statement
 import Strata.DL.Lambda.LExprType
+import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.CallWF
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Imperative.StmtEval
@@ -208,6 +210,9 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call pname callArgs md =>
+    if let some msg := callError? E.program pname callArgs then
+      (c, CmdEval.updateError E (.Misc (illFormedCallText msg)))
+    else
     let lhs := CallArg.getLhs callArgs
     let inArgs := CallArg.getInputExprs callArgs
     Command.inlineCallContract E lhs pname inArgs md
@@ -328,25 +333,6 @@ private def createUnreachableAssertObligations
     (fun (label, md) =>
       let propType := Imperative.convertMetaDataPropertyType md
       (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
-
-/--
-Substitute free variables in an expression with their current values from the
-environment, excluding the given parameter names (which are treated as bound,
-not free). The replacement values come from the environment state and must be
-closed (no dangling bvars).
-
-Parameters are excluded because they are bound within the expression and should
-not be substituted with values from the enclosing scope.
--/
-def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
-  let freeVars := Lambda.LExpr.freeVars e
-  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
-  -- The replacement expressions must be closed (no dangling bvars).
-  let sm := freeVarsToCapture.filterMap (fun fv =>
-    match env.exprEnv.state.find? fv.fst with
-    | some (_, val) => some (fv.fst, val)
-    | none => none)
-  Lambda.LExpr.substFvars e sm
 
 /--
 An environment with an optional exit label.
@@ -818,6 +804,9 @@ def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   | .cmd c =>
     Imperative.Cmd.run E c
   | .call pname args _md =>
+    if let some msg := callError? E.program pname args then
+      CmdEval.updateError E (.Misc (illFormedCallText msg))
+    else
     Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end

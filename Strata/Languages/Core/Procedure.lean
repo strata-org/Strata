@@ -323,5 +323,12 @@ def Procedure.stripMetaData (p : Procedure) : Procedure :=
     | .cfg c => .cfg (DetCFG.stripMetaData c)
   { p with body := body' }
 
+/-- The calls in `p`'s body: structured bodies in statement order, CFG bodies in
+    block order. -/
+def Procedure.callSites (p : Procedure) : List CallSite :=
+  match p.body with
+  | .structured ss => Statements.callSites ss
+  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Command.callSites
+
 end
 end Core

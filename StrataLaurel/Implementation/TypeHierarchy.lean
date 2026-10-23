@@ -38,7 +38,7 @@ We use this to translate `<value> is <Type>`.
 The runtime type of `<value>` is used for the outer TotalMap lookup while `<Type>` for the inner one.
 
 -/
-def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : Except String (List Constant) := do
+def generateTypeHierarchyDecls (model : SemanticModel) (program: LaurelProgram) : Except String (List Constant) := do
   let composites := program.types.filterMap fun td => match td with
     | .Composite ct => some ct
     | _ => none
@@ -155,7 +155,7 @@ Type hierarchy transformation pass (Laurel → Laurel).
 3. Generates the `TypeTag` datatype with one constructor per composite type
 4. Generates type hierarchy constants (`ancestorsFor<Type>`, `ancestorsPerType`)
 -/
-def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except String Program := do
+def typeHierarchyTransform (model: SemanticModel) (program : LaurelProgram) : Except String LaurelProgram := do
   let compositeNames := program.types.filterMap fun td =>
     match td with
     | .Composite ct => some ct.name.text
@@ -183,7 +183,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
   -- position this missed would keep its `.IsType` node while losing the annotation that node
   -- needs, which the re-resolution after the pass reports as a `strata-bug`.
   let withHelpers := { program with staticProcedures := program.staticProcedures ++ downcastHelpers }
-  let (lowered, _) := (mapProgramStmtExprM rewriteTypeHierarchyNode withHelpers).run {}
+  let (lowered, _) := (mapLaurelProgramStmtExprM rewriteTypeHierarchyNode withHelpers).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", syntheticSource⟩
   let remainingTypes := lowered.types.map fun td =>
@@ -196,7 +196,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
           else c }
       else td
     | _ => td
-  let transformed : Program :=
+  let transformed : LaurelProgram :=
     { lowered with
       types := [typeTagDatatype] ++ remainingTypes,
       constants := lowered.constants ++ typeHierarchyConstants }
@@ -207,20 +207,24 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except S
   -- type position is covered uniformly.
   let compositeSet : Std.HashSet String :=
     compositeNames.foldl (init := {}) (·.insert ·)
-  pure (mapProgramHighTypes (compositeRefToComposite compositeSet) transformed)
+  pure (mapLaurelProgramHighTypes (compositeRefToComposite compositeSet) transformed)
 
 /-- Pipeline pass: type hierarchy transform. -/
-public def typeHierarchyTransformPass : LoweringPass where
+public def typeHierarchyTransformPass : LaurelPass := .onUnordered {
   name := "TypeHierarchyTransform"
   creates := [NodeKind.StmtExpr.StaticCall, NodeKind.StmtExpr.IfThenElse, NodeKind.Pseudo.typeTag]
-  unsupported := [NodeKind.Pseudo.implicitHeap]
+  unsupported := [
+      NodeKind.Pseudo.implicitHeap,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   removes := [
       NodeKind.StmtExpr.IsType,
       NodeKind.StmtExpr.New
     ]
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
-  run := fun _ p m =>
+  }
+  fun _ p m =>
     match typeHierarchyTransform m p with
     | .ok p' => (p', [], {})
     | .error e => (p, [Message.fromString e .strataBug], {})

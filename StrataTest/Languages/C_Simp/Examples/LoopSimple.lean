@@ -141,7 +141,7 @@ VCs:
 Label: entry_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@1)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@1)
 pre: int.ge(n@1, 0)
 Obligation:
 int.le(0, n@1) && true
@@ -149,7 +149,7 @@ int.le(0, n@1) && true
 Label: assert_measure_pos
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@1)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@1)
 pre: int.ge(n@1, 0)
 Obligation:
 int.ge(int.sub(n@1, 0), 0)
@@ -157,7 +157,7 @@ int.ge(int.sub(n@1, 0), 0)
 Label: measure_decreases
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@1)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@1)
 assume_guard: int.lt(i@1, n@1)
 assume_invariant_0: int.le(i@1, n@1) && int.div(int.mul(i@1, int.sub(i@1, 1)), 2) == sum@1
 assume_measure_pos: int.ge(int.sub(n@1, i@1), 0)
@@ -168,7 +168,7 @@ int.lt(int.sub(n@1, int.add(i@1, 1)), int.sub(n@1, i@1))
 Label: measure_imp_not_guard
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@1)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@1)
 assume_guard: int.lt(i@1, n@1)
 assume_invariant_0: int.le(i@1, n@1) && int.div(int.mul(i@1, int.sub(i@1, 1)), 2) == sum@1
 assume_measure_pos: int.ge(int.sub(n@1, i@1), 0)
@@ -179,7 +179,7 @@ if int.le(int.sub(n@1, int.add(i@1, 1)), 0) then !(int.lt(int.add(i@1, 1), n@1))
 Label: arbitrary_iter_maintain_invariant_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@1)
+<label_ite_cond_true: int.lt(0, n)>: int.lt(0, n@1)
 assume_guard: int.lt(i@1, n@1)
 assume_invariant_0: int.le(i@1, n@1) && int.div(int.mul(i@1, int.sub(i@1, 1)), 2) == sum@1
 assume_measure_pos: int.ge(int.sub(n@1, i@1), 0)
@@ -191,13 +191,13 @@ Label: sum_assert
 Property: assert
 Assumptions:
 pre: int.ge(n@1, 0)
-<label_ite_cond_true: int.lt(i, n)>: if int.lt(0, n@1) then int.lt(0, n@1) else true
+<label_ite_cond_true: int.lt(0, n)>: if int.lt(0, n@1) then int.lt(0, n@1) else true
 assume_guard: if int.lt(0, n@1) then int.lt(i@1, n@1) else true
 assume_invariant_0: if int.lt(0, n@1) then int.le(i@1, n@1) && int.div(int.mul(i@1, int.sub(i@1, 1)), 2) == sum@1 else true
 assume_measure_pos: if int.lt(0, n@1) then int.ge(int.sub(n@1, i@1), 0) else true
 not_guard: if int.lt(0, n@1) then !(int.lt(i@2, n@1)) else true
 invariant_0: if int.lt(0, n@1) then int.le(i@2, n@1) && int.div(int.mul(i@2, int.sub(i@2, 1)), 2) == sum@2 else true
-<label_ite_cond_false: !(int.lt(i, n))>: if if int.lt(0, n@1) then false else true then if int.lt(0, n@1) then false else true else true
+<label_ite_cond_false: !(int.lt(0, n))>: if if int.lt(0, n@1) then false else true then if int.lt(0, n@1) then false else true else true
 Obligation:
 int.div(int.mul(n@1, int.sub(n@1, 1)), 2) == (if int.lt(0, n@1) then sum@2 else 0)
 
@@ -205,13 +205,13 @@ Label: post
 Property: assert
 Assumptions:
 pre: int.ge(n@1, 0)
-<label_ite_cond_true: int.lt(i, n)>: if int.lt(0, n@1) then int.lt(0, n@1) else true
+<label_ite_cond_true: int.lt(0, n)>: if int.lt(0, n@1) then int.lt(0, n@1) else true
 assume_guard: if int.lt(0, n@1) then int.lt(i@1, n@1) else true
 assume_invariant_0: if int.lt(0, n@1) then int.le(i@1, n@1) && int.div(int.mul(i@1, int.sub(i@1, 1)), 2) == sum@1 else true
 assume_measure_pos: if int.lt(0, n@1) then int.ge(int.sub(n@1, i@1), 0) else true
 not_guard: if int.lt(0, n@1) then !(int.lt(i@2, n@1)) else true
 invariant_0: if int.lt(0, n@1) then int.le(i@2, n@1) && int.div(int.mul(i@2, int.sub(i@2, 1)), 2) == sum@2 else true
-<label_ite_cond_false: !(int.lt(i, n))>: if if int.lt(0, n@1) then false else true then if int.lt(0, n@1) then false else true else true
+<label_ite_cond_false: !(int.lt(0, n))>: if if int.lt(0, n@1) then false else true then if int.lt(0, n@1) then false else true else true
 Obligation:
 true
 

@@ -184,7 +184,7 @@ private def loopInvariantWellFormedness (program : Program) : Program :=
 public section
 
 /-- Pipeline pass: check loop invariant well-formedness at the loop head. -/
-public def loopInvariantWellFormednessPass : LoweringPass where
+public def loopInvariantWellFormednessPass : LaurelPass where
   name := "LoopInvariantWellFormedness"
   creates := [
       NodeKind.StmtExpr.IfThenElse,
