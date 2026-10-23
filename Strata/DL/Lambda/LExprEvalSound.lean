@@ -83,11 +83,73 @@ private theorem eval_StepStar_factory_terminal
     exact h_per_eM i hi_args
   rw [hA, hB]
 
----------------------------------------------------------------------
--- Helper lemma: for the concreteEval factory case. When concreteEval
--- succeeds on evaluated args, we relate the result to original args
--- via the Step relation using eval_fn + concreteEval_eraseMetadata.
+/-- A call whose arguments step to `stepped_args`, which agree up to metadata with
+    `vals`, steps to an expression that agrees up to metadata with the evaluation of
+    `concreteEval md vals`: the call fires `eval_fn`, and `concreteEval_eraseMetadata`
+    relates its result to the evaluator's. -/
+private theorem eval_StepStar_factory_ceval_of_stepped
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
+    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
+    [Traceable LExpr.EvalProvenance Tbase.Metadata]
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) (n : Nat)
+    (hWF : FactoryWF F)
+    (op_expr : LExpr Tbase.mono)
+    (args : List (LExpr Tbase.mono))
+    (lfunc : LFunc Tbase)
+    (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (h_ceval : lfunc.concreteEval = some ceval)
+    (md : Tbase.Metadata) (vals stepped_args : List (LExpr Tbase.mono))
+    (e'_ceval : LExpr Tbase.mono)
+    (h_ceval_succ : ceval md vals = some e'_ceval)
+    (h_stepped_len : args.length = stepped_args.length)
+    (h_per_step : ∀ i (hi : i < args.length),
+      StepStar F env (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩))
+    (h_args_eM : stepped_args.map LExpr.eraseMetadata = vals.map LExpr.eraseMetadata)
+    (ih : ∀ (e : LExpr Tbase.mono),
+      ∃ (e' : LExpr Tbase.mono),
+        StepStar F env e e' ∧
+        e'.eraseMetadata = (LExpr.eval n F env e).fst.eraseMetadata) :
+    ∃ (e' : LExpr Tbase.mono),
+      StepStar F env e e' ∧
+      e'.eraseMetadata = (LExpr.eval n F env e'_ceval).fst.eraseMetadata := by
+  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
+  obtain ⟨e_stepped, h_step_e, h_eM_stepped⟩ :=
+    StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
+  have h_vals_len : vals.length = args.length := by
+    have := congrArg List.length h_args_eM; simp at this; omega
+  have h_eM_eq : e_stepped.eraseMetadata =
+      (LExpr.mkApp e.metadata op_expr vals).eraseMetadata := by
+    rw [h_eM_stepped, LExpr.eraseMetadata_mkApp, h_args_eM]
+  have h_call_mkApp : F.callOfLFunc
+      (LExpr.mkApp e.metadata op_expr args) = some (op_expr, args, lfunc) := by
+    subst h_op_eq
+    simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
+    simp only [h_get] at h_call
+    exact h_call
+  have h_call_eval : F.callOfLFunc (LExpr.mkApp e.metadata op_expr vals) =
+      some (op_expr, vals, lfunc) :=
+    callOfLFunc_mkApp_op F e.metadata op_expr args vals lfunc ⟨m_op, name_op, ty_op, h_op_eq⟩
+      h_call_mkApp h_vals_len
+  obtain ⟨op_s, args_s, h_call_s, h_args_s_eM, _⟩ :=
+    callOfLFunc_some_of_eraseMetadata_eq F (LExpr.mkApp e.metadata op_expr vals)
+      e_stepped false h_eM_eq.symm op_expr vals lfunc h_call_eval
+  have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
+  have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
+  obtain ⟨res_s, h_ceval_s, h_res_eM⟩ :=
+    h_wf_fn.concreteEval_eraseMetadata ceval h_ceval md e.metadata vals args_s e'_ceval
+      h_args_s_eM h_ceval_succ
+  have h_step_eval : Step F env e_stepped res_s :=
+    Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval h_ceval_s.symm
+  obtain ⟨e_final, h_step_final, h_eM_final⟩ := ih res_s
+  refine ⟨e_final, ReflTrans_Transitive _ _ _ _ h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
+  rw [h_eM_final]
+  exact eval_eraseMetadata_invariant F env res_s e'_ceval n hWF h_res_eM.symm
 
+/-- The concreteEval factory case of `eval_StepStar`: when `concreteEval` succeeds on
+    the evaluated arguments, the call steps to an expression that agrees up to
+    metadata with the evaluation of its result. -/
 private theorem eval_StepStar_factory_ceval
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
@@ -111,7 +173,6 @@ private theorem eval_StepStar_factory_ceval
     ∃ (e' : LExpr Tbase.mono),
       StepStar F env e e' ∧
       e'.eraseMetadata = (LExpr.eval n F env e'_ceval).fst.eraseMetadata := by
-  obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
   let stepped_args := args.map (fun a => (ih a).choose)
   have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
   have h_per_step : ∀ i (hi : i < args.length),
@@ -121,57 +182,63 @@ private theorem eval_StepStar_factory_ceval
     have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
       simp [stepped_args]
     rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
-  have h_per_eM : ∀ i (hi : i < args.length),
-      (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
-        (LExpr.eval n F env (args.get ⟨i, hi⟩)).fst.eraseMetadata := by
-    intro i hi
-    have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
-      simp [stepped_args]
-    rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
-  obtain ⟨e_stepped, h_step_e, h_eM_stepped⟩ :=
-    StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
   have h_args_eM : stepped_args.map LExpr.eraseMetadata =
       (args.map (fun a => (LExpr.eval n F env a).fst)).map LExpr.eraseMetadata := by
-    apply List.ext_getElem (by simp [stepped_args])
-    intro i hi1 hi2
-    simp only [List.getElem_map]
-    have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
-    exact h_per_eM i hi_args
-  have h_eM_eq : e_stepped.eraseMetadata =
-      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).eraseMetadata := by
-    rw [h_eM_stepped, LExpr.eraseMetadata_mkApp, h_args_eM]
-  have h_call_mkApp : F.callOfLFunc
-      (LExpr.mkApp e.metadata op_expr args) = some (op_expr, args, lfunc) := by
-    subst h_op_eq
-    simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
-    simp only [h_get] at h_call
-    exact h_call
-  have h_call_eval : F.callOfLFunc
-      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))) =
-      some (op_expr, args.map (fun a => (LExpr.eval n F env a).fst), lfunc) :=
-    callOfLFunc_mkApp_op F e.metadata op_expr args
-      (args.map (fun a => (LExpr.eval n F env a).fst)) lfunc ⟨m_op, name_op, ty_op, h_op_eq⟩
-      h_call_mkApp (by simp)
-  obtain ⟨op_s, args_s, h_call_s, h_args_s_eM, _⟩ :=
-    callOfLFunc_some_of_eraseMetadata_eq F
-      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst)))
-      e_stepped false h_eM_eq.symm op_expr (args.map (fun a => (LExpr.eval n F env a).fst)) lfunc
-      h_call_eval
-  have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
-  have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
-  obtain ⟨res_s, h_ceval_s, h_res_eM⟩ :=
-    h_wf_fn.concreteEval_eraseMetadata ceval h_ceval
-      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).metadata
-      e.metadata
-      (args.map (fun a => (LExpr.eval n F env a).fst)) args_s e'_ceval
-      h_args_s_eM h_ceval_succ
-  have h_step_eval : Step F env e_stepped res_s :=
-    Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval h_ceval_s.symm
-  obtain ⟨e_final, h_step_final, h_eM_final⟩ := ih res_s
-  refine ⟨e_final, ReflTrans_Transitive _ _ _ _ h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
-  rw [h_eM_final]
-  exact eval_eraseMetadata_invariant F env res_s e'_ceval n hWF h_res_eM.symm
+    simp only [stepped_args, List.map_map]
+    apply List.map_congr_left
+    intro a _
+    exact (ih a).choose_spec.2
+  exact eval_StepStar_factory_ceval_of_stepped F env e n hWF op_expr args lfunc h_call ceval
+    h_ceval _ _ stepped_args e'_ceval h_ceval_succ h_stepped_len h_per_step h_args_eM ih
 
+/-- The `shortCircuit` case of `eval_StepStar`: a call of a `shortCircuit` function
+    steps to an expression that agrees up to metadata with `evalShortCircuit`'s
+    result. Only the first argument steps before `concreteEval` fires; the others
+    are handed to it as they are. -/
+private theorem eval_StepStar_shortCircuit
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
+    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
+    [Traceable LExpr.EvalProvenance Tbase.Metadata]
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) (n : Nat)
+    (hWF : FactoryWF F)
+    (op_expr : LExpr Tbase.mono)
+    (args : List (LExpr Tbase.mono))
+    (lfunc : LFunc Tbase)
+    (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
+    (a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (h_sc : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval))
+    (ih : ∀ (e : LExpr Tbase.mono),
+      ∃ (e' : LExpr Tbase.mono),
+        StepStar F env e e' ∧
+        e'.eraseMetadata = (LExpr.eval n F env e).fst.eraseMetadata) :
+    ∃ (e' : LExpr Tbase.mono),
+      StepStar F env e e' ∧
+      e'.eraseMetadata = (LExpr.evalShortCircuit n F env e op_expr a rest ceval).fst.eraseMetadata := by
+  obtain ⟨h_args, h_ceval⟩ := LExpr.shortCircuitCall?_some h_sc
+  subst h_args
+  unfold LExpr.evalShortCircuit
+  simp only [LExpr.combineEvalResValueFlag_eq_pair]
+  split
+  · rename_i e'_ceval h_if
+    have h_ceval_succ : ceval e.metadata ((LExpr.eval n F env a).fst :: rest) = some e'_ceval := by
+      split at h_if
+      · exact h_if
+      · simp at h_if
+    obtain ⟨a_s, h_step_a, h_eM_a⟩ := ih a
+    have h_len : (a :: rest).length = (a_s :: rest).length := by simp
+    have h_per_step : ∀ i (hi : i < (a :: rest).length),
+        StepStar F env ((a :: rest).get ⟨i, hi⟩) ((a_s :: rest).get ⟨i, h_len ▸ hi⟩) := by
+      intro i hi
+      cases i with
+      | zero => exact h_step_a
+      | succ j => exact ReflTrans.refl _
+    exact eval_StepStar_factory_ceval_of_stepped F env e n hWF op_expr (a :: rest) lfunc h_call
+      ceval h_ceval e.metadata _ (a_s :: rest) e'_ceval h_ceval_succ h_len h_per_step
+      (by simp [h_eM_a]) ih
+  · have h := eval_StepStar_factory_terminal F env e n op_expr (a :: rest) lfunc h_call ih
+    simpa only [List.map_cons] using h
 
 ---------------------------------------------------------------------
 -- Main theorem
@@ -209,6 +276,11 @@ theorem eval_StepStar
       split
       · -- Factory case
         rename_i op_expr args lfunc h_call
+        split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          exact eval_StepStar_shortCircuit F env e fuel hWF op_expr args lfunc h_call
+            a rest ceval h_sc ih
         split
         · -- Inline: step args, fire expand_fn, use eval_eraseMetadata_invariant to bridge
           rename_i h_inline
