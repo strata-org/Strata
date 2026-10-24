@@ -734,7 +734,8 @@ public def heapParameterizationPass : LaurelPass := .onUnordered {
       NodeKind.StmtExpr.Throw,
       NodeKind.StmtExpr.Try,
       NodeKind.StmtExpr.Return.value.some,
-      NodeKind.LaurelProgram.staticFunctions.cons
+      NodeKind.LaurelProgram.staticFunctions.cons,
+      NodeKind.Pseudo.unstableFieldReceiver
     ]
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `TotalMap int (TotalMap Field $Box)`, keyed by the reference of a `Composite`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam and ModifiesClauses. These are logically one pass.

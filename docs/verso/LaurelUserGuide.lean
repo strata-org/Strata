@@ -1742,7 +1742,10 @@ statement position.
 Because an operand may itself assign or call, the order operands run in is observable, so it is
 fixed: evaluation is *left to right* everywhere. That covers the items of a block and the
 arguments of a call — if one argument mutates state that a later one reads, the later one sees the
-mutation, and an earlier one does not.
+mutation, and an earlier one does not. It covers an assignment too: its targets come before its
+value, so `x#f := v` evaluates `x` before `v` and stores into the object `x` named then, even if
+`v` reassigns `x`. A front end for a language that evaluates the right-hand side first must bind it
+to a local before the assignment.
 
 Three constructs deliberately do not evaluate all of their operands:
 
@@ -1751,9 +1754,7 @@ Three constructs deliberately do not evaluate all of their operands:
 - `if` evaluates only the branch it takes.
 
 That is the whole of it — there is no other laziness, and nothing is reordered or evaluated more
-than once, with one exception: an update operator applied to a *field* evaluates the receiver
-twice, so keep the receiver side-effect-free (see
-{ref "assignment-and-update-operators"}[*Assignment and update operators*]).
+than once, except in a loop's condition, which should be pure (see {ref "while"}[*While*]).
 
 The eager `&` and `|` exist precisely so that the choice is yours: they evaluate both operands
 whatever the left one says. Where the operands are pure the two spellings agree, and the
@@ -1810,8 +1811,7 @@ procedure updateOperators()
 
 Each compound form means what it looks like: `x op= y` is `x := x op y`. Increment and decrement
 are currently restricted to `int` and to constrained types over `int`. Both families accept a
-field lvalue, but an update operator on a field duplicates the receiver expression, so keep the
-receiver side-effect-free — bind it to a local first if it is not.
+field lvalue.
 
 ## Operators
 
@@ -1964,6 +1964,9 @@ Because `if` binds loosely, parenthesise it when it is an operand: `(if c then 1
 ## Loops and labelled exits
 
 ### While
+%%%
+tag := "while"
+%%%
 
 ```laurel
 procedure whileLoop(n: int) returns (i: int)
@@ -1983,8 +1986,9 @@ Invariants are optional as far as the grammar is concerned; they are what verifi
 are covered under {ref "loop-invariants"}[*Loop invariants*].
 
 Keep the loop condition pure. An effectful condition is currently evaluated once before the loop
-rather than at every iteration, so hoist the effect yourself and update a plain variable in the
-body.
+rather than at every iteration, and a field access in it may evaluate its receiver more than once,
+or, when it stores, after the stored value, so that a check depending on the receiver's effect can
+verify wrongly. Hoist the effect yourself and update a plain variable in the body.
 
 ### For
 

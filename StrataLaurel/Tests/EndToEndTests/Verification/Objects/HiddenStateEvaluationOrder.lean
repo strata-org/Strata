@@ -212,3 +212,159 @@ procedure usePre(c: Child)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
+
+/-! A field store evaluates its receiver, then its value, and samples the heap after
+    both: `flip(p, q)#b := false` keeps the write `flip` makes to `q`, and the store to
+    `a#r#b` goes to the box `a#r` held before `setR` replaced it. A field read samples
+    the heap after its receiver: `{ setB(p); p }#b` reads the `true` that `setB` wrote.
+    An update operator evaluates its receiver once: `{ i := i + 1; x }#g += 2` adds 1 to
+    `i`. -/
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box {
+  var b: bool
+  var g: int
+}
+composite A {
+  var r: Box
+}
+procedure flip(p: Box, q: Box) returns (o: Box)
+  opaque
+  ensures q#b && o == p
+  modifies q
+{
+  q#b := true;
+  return p
+};
+procedure setR(a: A, c: Box) returns (o: bool)
+  opaque
+  ensures a#r == c && o
+  modifies a
+{
+  a#r := c;
+  return true
+};
+procedure storeKeepsTheReceiversWrite()
+  opaque
+{
+  var p: Box := new Box;
+  var q: Box := new Box;
+  q#b := false;
+  flip(p, q)#b := false;
+  assert q#b
+};
+procedure storeEvaluatesTheReceiverBeforeTheValue()
+  opaque
+{
+  var a: A := new A;
+  var b0: Box := new Box;
+  var c: Box := new Box;
+  a#r := b0;
+  b0#b := true;
+  c#b := true;
+  a#r#b := setR(a, c) && false;
+  assert !b0#b && c#b
+};
+procedure setB(q: Box)
+  opaque
+  ensures q#b
+  modifies q
+{
+  q#b := true
+};
+procedure readSamplesTheHeapAfterItsReceiver()
+  opaque
+{
+  var p: Box := new Box;
+  p#b := false;
+  var r: bool := { setB(p); p }#b;
+  assert r
+};
+procedure updateOperatorEvaluatesTheReceiverOnce()
+  opaque
+{
+  var i: int := 0;
+  var x: Box := new Box;
+  x#g := 0;
+  { i := i + 1; x }#g += 2;
+  { i := i + 1; x }#g++;
+  assert i == 2 && x#g == 3
+};
+#end
+
+/-! A loop condition reads through its receiver's current object each time it is tested, also
+    where the receiver has an effect: the loop below ends, so the assertion after it is reported.
+    This guards that a receiver in a loop's condition is not bound once before the loop. -/
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box {
+  var g: int
+}
+procedure assignInAReceiverInALoopCondition()
+  opaque
+{
+  var a: Box := new Box;
+  var c: Box := new Box;
+  a#g := 1;
+  c#g := 0;
+  var i: int := 0;
+  var x: Box := a;
+  while ({ i := i + 1; x }#g > 0)
+    invariant x == a || x == c
+  {
+    x := c
+  };
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! A store in a loop's condition stays outside its receiver when the stored value names a local
+    the receiver declares: here the value's `k` is the global, which a store moved into the `if`'s
+    branch would read as the branch's `k`. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var k: int := 5
+composite P {
+  var f: int
+}
+procedure conditionStoreKeepsAValueThatNamesItsReceiversLocal(p: P, b: bool)
+  opaque
+  modifies p
+{
+  while (((if b then { var k: int := 1; p } else p)#f := k) < 0) {
+  };
+  assert p#f == k;
+  assert p#f == 1
+//^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! In a loop's condition a read through a call follows the store in the call's argument, on an
+    unconstrained field too: the condition reads 5, so the body runs. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite P {
+  var f: int
+}
+procedure pick(q: P) returns (r: P)
+{
+  r := q
+};
+procedure conditionReadsThroughACallAfterItsArgumentStores(p: P)
+  opaque
+  modifies p
+{
+  p#f := 3;
+  while (pick({ p#f := 5; p })#f == 5) {
+    assert 1 == 2
+//  ^^^^^^^^^^^^^ error: assertion could not be proved
+  }
+};
+#end

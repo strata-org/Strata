@@ -633,3 +633,155 @@ procedure driveInvariant()
   var d: int := resume(co, false)
 };
 #end
+
+/-! ## A store across a suspension goes to the receiver it took first
+
+A field store evaluates its receiver before its value, so before a `yield` in the value,
+and a resume does not evaluate it again. The caller replaces `s#r` while the body is
+suspended, and each store still goes to the box `s#r` held before its `yield`: `b` for
+the block value, `c` for the value the second resume sends. -/
+
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
+#eval testLaurelExecution laurelOnly <|
+#strata
+program Laurel;
+composite Box {
+  var x: int
+}
+composite Slot {
+  var r: Box
+}
+coroutine storer(s: Slot) yields (v: int) resumes (w: int)
+  modifies *
+{
+  v := 0;
+  s#r#x := { yield; 5 };
+  s#r#x := yield
+};
+
+procedure driveStoreAcrossSuspension()
+  entry
+  opaque
+  modifies *
+{
+  var s: Slot := new Slot;
+  var b: Box := new Box;
+  var c: Box := new Box;
+  var d: Box := new Box;
+  b#x := 0;
+  c#x := 0;
+  d#x := 0;
+  s#r := b;
+  var co: storer := storer(s);
+  resume(co);
+  s#r := c;
+  resume(co, 0);
+  assert b#x == 5 && c#x == 0;
+  s#r := d;
+  resume(co, 7);
+  assert c#x == 7 && d#x == 0
+};
+#end
+
+/-! ## Both interpreters store across a suspension into the receiver it took first
+
+`x := yield` keeps its receiver across the suspension on the elaborated path too, also when the
+receiver is a generic instance method's result: the caller replaces `c#cur` before the second
+resume, and the store still goes to `b`. -/
+
+#eval testLaurelExecution interpreters <|
+#strata
+program Laurel;
+composite Box<T> {
+  var x: T
+}
+composite Cell {
+  var cur: Box<int>
+  procedure pick<U>(self: Cell, b: Box<U>) returns (r: Box<U>) opaque ensures r == b { r := b };
+}
+coroutine picker(c: Cell) resumes (n: int)
+  modifies *
+{
+  c#pick(c#cur)#x := yield
+};
+
+procedure drivePicker()
+  entry
+  opaque
+  modifies *
+{
+  var c: Cell := new Cell;
+  var b: Box<int> := new Box<int>;
+  var d: Box<int> := new Box<int>;
+  b#x := 0;
+  d#x := 0;
+  c#cur := b;
+  var co: picker := picker(c);
+  resume(co, 1);
+  c#cur := d;
+  resume(co, 7);
+  assert b#x == 7 && d#x == 0
+};
+#end
+
+/-! ## A suspension inside a receiver
+
+A store's or an update operator's receiver may itself suspend, here in a call's argument:
+`bump` adds 1 to `s#n` once per receiver, not again when the body resumes, and each target is
+the box `s#r` names after the resume. -/
+
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
+#eval testLaurelExecution laurelOnly <|
+#strata
+program Laurel;
+composite Box {
+  var x: int
+}
+composite Slot {
+  var r: Box
+  var n: int
+}
+procedure bump(s: Slot) returns (k: int)
+  opaque
+  modifies s
+{
+  s#n := s#n + 1;
+  k := s#n
+};
+procedure pick(s: Slot, k: int, w: int) returns (b: Box)
+  opaque
+{
+  b := s#r
+};
+coroutine suspendingReceivers(s: Slot) yields (v: int) resumes (w: int)
+  modifies *
+{
+  v := 0;
+  pick(s, bump(s), yield)#x := s#n;
+  pick(s, bump(s), yield)#x++
+};
+
+procedure driveSuspendingReceivers()
+  entry
+  opaque
+  modifies *
+{
+  var s: Slot := new Slot;
+  var b: Box := new Box;
+  var c: Box := new Box;
+  var d: Box := new Box;
+  b#x := 0;
+  c#x := 0;
+  d#x := 10;
+  s#n := 0;
+  s#r := b;
+  var co: suspendingReceivers := suspendingReceivers(s);
+  resume(co);
+  s#r := c;
+  resume(co, 0);
+  assert s#n == 2 && c#x == 1 && b#x == 0;
+  s#r := d;
+  resume(co, 0);
+  assert s#n == 2 && d#x == 11
+};
+#end

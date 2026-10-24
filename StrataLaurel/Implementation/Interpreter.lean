@@ -744,7 +744,8 @@ so a `yield` that sits inside a larger expression would re-run whatever that
 expression evaluated before it. Before a coroutine body runs, every such `yield`
 is lifted into a statement of its own, `var $yN := yield`, and every operand the
 expression evaluates before it is lifted into a temporary in the same left-to-right
-order. The rest of the expression then reads the temporaries, so a resume replays
+order; an assignment's field targets come before its value, so their receivers are
+among them. The rest of the expression then reads the temporaries, so a resume replays
 nothing. `&&`, `||`, `==>`, an `if` in expression position and a `while` condition
 only evaluate part of themselves, so they are lifted into the equivalent statements.
 The temporaries' leading `$` keeps them apart from every user name. -/
@@ -813,9 +814,13 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
   | .Var (.Field target field) => do
       let (pre, t') ← liftExpr target
       pure (pre, ⟨.Var (.Field t' field), src⟩)
+  | .IncrDecr mode op ⟨.Field target field, tsrc⟩ => do
+      let (pre, t') ← liftExpr target
+      pure (pre, ⟨.IncrDecr mode op ⟨.Field t' field, tsrc⟩, src⟩)
   | .Assign targets value => do
+      let (pt, targets') ← liftTargets targets
       let (pre, v') ← liftExpr value
-      pure (pre, ⟨.Assign targets v', src⟩)
+      pure (pt ++ pre, ⟨.Assign targets' v', src⟩)
   | .CompoundAssign op (⟨.Local x, tsrc⟩) rhs => do
       let old ← liftFresh
       let (pre, rhs') ← liftExpr rhs
@@ -900,6 +905,20 @@ private partial def liftArgs (args : List StmtExprMd) : LiftM (List StmtExprMd �
         out := out ++ [a]
     pure (pre, out)
 
+/-- The targets of an assignment that suspends, each field target's receiver lifted
+    into a temporary: the receiver runs before the value, so before its `yield`, and a
+    resume must not run it again. -/
+private partial def liftTargets (targets : List VariableMd)
+    : LiftM (List StmtExprMd × List VariableMd) := do
+  let lifted ← targets.mapM fun t => do
+    match t.val with
+    | .Field recv field => do
+        let (pre, recv') ← liftExpr recv
+        let r ← liftFresh
+        pure (pre ++ [liftDecl r recv'], (⟨.Field (liftVar r recv.source) field, t.source⟩ : VariableMd))
+    | _ => pure ([], t)
+  pure ((lifted.map (·.1)).flatten, lifted.map (·.2))
+
 /-- A statement, as the statements that replace it. -/
 private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
   let src := s.source
@@ -907,7 +926,10 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .Block stmts label invs dec => do
       let stmts' ← stmts.flatMapM liftStmt
       pure [⟨.Block stmts' label invs dec, src⟩]
-  | .Assign _ ⟨.Yield, _⟩ | .Yield | .Var (.Declare _) => pure [s]
+  | .Assign targets ⟨.Yield, ysrc⟩ => do
+      let (pt, targets') ← liftTargets targets
+      pure (pt ++ [⟨.Assign targets' ⟨.Yield, ysrc⟩, src⟩])
+  | .Yield | .Var (.Declare _) => pure [s]
   | .IfThenElse c thn els => do
       let (pc, c') ← liftExpr c
       let thn' ← liftStmtBlock thn
@@ -1484,8 +1506,9 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
   | .Assign targets value => do
       match targets with
       | [t] => do
+          let write ← assignTarget cfg t.val
           let v ← evalExprMd cfg value
-          assignTo cfg t.val v
+          write v
           pure v
       | _ => do
           evalStmt cfg ⟨.Assign targets value, value.source⟩
@@ -1593,11 +1616,14 @@ partial def writeField (target : Value) (name : String) (v : Value) : EvalM Unit
   | v' => liftM (m := IO) (throw (IO.userError
       s!"field write '{name}' on a non-composite {reprVariant v'}"))
 
-/-- Assign to one target, whichever kind it is. -/
-partial def assignTo (cfg : ExternalBackend) (target : Variable) (v : Value) : EvalM Unit := do
+/-- How to assign to one target, whichever kind it is. A field target's receiver
+    is evaluated here, so a caller evaluates the targets before the value: Laurel
+    evaluates left to right. -/
+partial def assignTarget (cfg : ExternalBackend) (target : Variable) : EvalM (Value → EvalM Unit) := do
   match target with
-  | .Declare param => modify fun s => { s with stack := declareLocal s.stack param.name.text v }
-  | .Local name => modify fun s =>
+  | .Declare param =>
+      pure fun v => modify fun s => { s with stack := declareLocal s.stack param.name.text v }
+  | .Local name => pure fun v => modify fun s =>
       -- A local always wins; otherwise a known global is updated in place. An
       -- unknown name goes to `stack`, which is what the assign-before-declare
       -- shapes the front ends emit rely on.
@@ -1607,7 +1633,7 @@ partial def assignTo (cfg : ExternalBackend) (target : Variable) (v : Value) : E
       else { s with stack := s.stack.insert name.text v }
   | .Field tgt field => do
       let tv ← evalExprMd cfg tgt
-      writeField tv field.text v
+      pure fun v => writeField tv field.text v
 
 /-- The current value of an update target, and how to write it back, with any
     receiver evaluated exactly once. -/
@@ -1616,7 +1642,7 @@ partial def readForUpdate (cfg : ExternalBackend) (target : Variable)
   match target with
   | .Local name => do
       let v ← evalExpr cfg (.Var (.Local name))
-      pure (v, fun nv => assignTo cfg (.Local name) nv)
+      pure (v, ← assignTarget cfg (.Local name))
   | .Field tgt field => do
       let tv ← evalExprMd cfg tgt
       let v ← readField tv field.text
@@ -1697,20 +1723,22 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
   | ⟨.Assign targets value, _⟩ => do
       match targets with
       | [t] => do
+          let write ← assignTarget cfg t.val
           let v ← match value.val with
             | .Yield => evalYield
             | _ => evalExprMd cfg value
-          assignTo cfg t.val v
+          write v
       | _ => do
           -- Multiple targets only arise from a call with multiple outputs, so the
           -- right-hand side is evaluated once and its outputs distributed.
+          let writes ← targets.mapM (assignTarget cfg ·.val)
           modify fun s => { s with callSite := value.source }
           let outs ← evalCallOutputs cfg value.val
           if outs.size != targets.length then
             liftM (m := IO) (throw (IO.userError
               s!"assignment expects {targets.length} values, call produced {outs.size}"))
-          for (t, v) in targets.zip outs.toList do
-            assignTo cfg t.val v
+          for (write, v) in writes.zip outs.toList do
+            write v
   -- A bare declaration with no initializer.
   | ⟨.Var (Variable.Declare param), _⟩ => do
       if let some ⟨.UserDefined n, _⟩ := param.type then

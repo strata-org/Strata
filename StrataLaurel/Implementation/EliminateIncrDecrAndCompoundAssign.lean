@@ -61,9 +61,10 @@ namespace EliminateIncrDecr
 /-- Reconstruct the read-side `StmtExprMd` for a `Variable`.
 
     A `.Field` target duplicates the object subtree into the read operand (the lowering
-    emits `target op rhs`). This is sound — and term-size cost only, not a correctness
-    risk — because a field read lowers to the pure, obligation-free `readField` lookup,
-    so both copies read the same `$heap` at the same point. (Revisit if field reads ever
+    emits `target op rhs`). For a receiver of known type outside a loop's condition this costs
+    term size only, because such a receiver may be repeated (`Pseudo.unstableFieldReceiver`) and a
+    field read lowers to the pure, obligation-free `readField` lookup, so both copies read the same
+    `$heap` at the same point; any other receiver is evaluated twice. (Revisit if field reads ever
     gain a precondition.) -/
 @[expose] public def targetAsRead (target : VariableMd) : StmtExprMd :=
   let source := target.source
@@ -150,6 +151,7 @@ public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
       NodeKind.StmtExpr.Var.var.Field
     ]
   removes := [NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign]
+  unsupported := [NodeKind.Pseudo.unstableFieldReceiver]
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
   run := fun _ p _m => (eliminateIncrDecrAndCompoundAssign p, [], {})
 

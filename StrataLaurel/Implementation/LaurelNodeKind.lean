@@ -262,6 +262,21 @@ inductive NodeKind where
       subtree, and which callees count as imperative depends on the program's static
       procedures — neither is an `Owner.field.Leaf` path. -/
   | Pseudo.imperativeShortCircuit
+  /-- A field access of known owner, outside a loop's condition, whose receiver, evaluated again
+      or later within the access, could repeat an effect or name another object.
+      `BindFieldReceivers` removes it by binding the receiver to a local. A receiver of unknown
+      type stays, as no local can hold it, and so does one in a loop's condition:
+      `LiftImperativeExpressions` evaluates its statements once before the loop, where a binding
+      would fix the receiver for every test, so there the access only moves after the statements
+      of a block, `if`, one-argument call or cast receiver.
+      `EliminateIncrDecrAndCompoundAssign` and `ConstrainedTypeElim` cannot handle one because
+      they repeat a receiver, `HeapParameterization` because it evaluates a store's value before
+      its receiver and reads the heap before a receiver.
+
+      `Pseudo` because the shape is a field access together with a property of its receiver
+      subtree, of its store, and of what the program's procedures write — not an
+      `Owner.field.Leaf` path. -/
+  | Pseudo.unstableFieldReceiver
   /-- A statement-shaped construct sitting in an expression position. Planned
       refactor: split `StmtExpr` into `inductive Stmt` and `inductive Expr`, with
       an `Expr` constructor `StmtExpr (stmt : Stmt)` embedding the former in the
@@ -348,6 +363,7 @@ def NodeKind.isPseudo : NodeKind → Bool
   | NodeKind.Pseudo.coroutineOverride
   | NodeKind.Pseudo.generatedReturn
   | NodeKind.Pseudo.imperativeShortCircuit
+  | NodeKind.Pseudo.unstableFieldReceiver
   | NodeKind.Pseudo.statementExpression
   | NodeKind.Pseudo.letExpr
   | NodeKind.Pseudo.imperativeFunction

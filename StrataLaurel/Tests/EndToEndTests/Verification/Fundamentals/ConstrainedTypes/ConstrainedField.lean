@@ -152,3 +152,245 @@ procedure readQuantifiedField(c: Counter, d: Counter)
   assert d#count > 3
 };
 #end
+
+/-! A constrained field's receiver is evaluated once, read or stored: `{ i := i + 1; c }#count`
+    increments `i` once either way. ConstrainedTypeElim reads a store used as a value back from the
+    object stored to, also where the store replaces its own receiver (`x#r#r := v` stores into `x`
+    when `x#r` is `x`, which guards that a store's own target counts as a change), and a store is
+    checked on that object. A receiver that declares a local is not repeated: the store through one is checked,
+    and the read through one in a transparent body holds. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+constrained nat = x: int where x >= 0 witness 0
+
+composite Counter {
+  var count: nat
+}
+
+composite Node {
+  var r: Node
+}
+
+procedure readEvaluatesAnEffectfulReceiverOnce(c: Counter)
+  opaque
+{
+  var i: int := 0;
+  var r: int := { i := i + 1; c }#count;
+  assert i == 1 && r >= 0
+};
+
+procedure storeEvaluatesAnEffectfulReceiverOnce(c: Counter)
+  opaque
+  modifies c
+{
+  var i: int := 0;
+  { i := i + 1; c }#count := 9;
+  assert i == 1
+};
+
+procedure storeThatReplacesItsReceiverIsTheValueStored()
+  opaque
+{
+  var x: Node := new Node;
+  var v: Node := new Node;
+  var w: Node := new Node;
+  x#r := x;
+  v#r := w;
+  var res: Node := x#r#r := v;
+  assert res == v && x#r == v
+};
+
+procedure readThroughADeclaringReceiverInATransparentBody(c: Counter) returns (r: int)
+{
+  r := { var t: Counter := c; t }#count
+};
+
+procedure callsTheTransparentBody(c: Counter)
+  opaque
+{
+  assert readThroughADeclaringReceiverInATransparentBody(c) == c#count
+};
+
+procedure storeThroughADeclaringReceiverIsChecked(c: Counter)
+  opaque
+  modifies c
+{
+  { var t: Counter := c; t }#count := -1
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! A read through a receiver of a constrained composite type checks nothing about the receiver,
+    whose constraint a store into the object may have broken, also where the receiver is bound:
+    this guards that a bound receiver's local is typed at the field's owner, `Box`, rather than at
+    `CB`. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+composite Box {
+  var v: int
+}
+
+constrained CB = b: Box where b#v >= 0 witness <??>
+//                                             ^^^^ error: assertion does not hold
+
+procedure readThroughABrokenConstraint(c: CB)
+  opaque
+  modifies *
+{
+  c#v := 0 - 5;
+  var i: int := 0;
+  var r: int := { i := i + 1; c }#v;
+  assert i == 1 && r == 0 - 5
+};
+#end
+
+/-! In a loop's condition, where receivers stay unbound, an access follows its receiver's
+    statements, also through an `if`, a one-argument call or a cast: `{ i := i + 1; c }#count`
+    counts once in a read, a store or an update operator, and `{ var t: Counter := c; t }#count`
+    declares `t` once. Invariants, also a `goto` loop's, are bound like the body, so an invariant
+    can read through a call or a cast. -/
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+constrained nat = x: int where x >= 0 witness 0
+
+composite Counter {
+  var count: nat
+}
+
+procedure conditionStoresThroughItsReceiverOnce(c: Counter)
+  opaque
+  modifies c
+{
+  var i: int := 0;
+  while (({ i := i + 1; c }#count := 1) > 5) {
+  };
+  assert i == 1;
+  while (({ i := i + 1; c }#count += 1) > 5) {
+  };
+  assert i == 2;
+  while (({ var u: Counter := c; u }#count := { var m: int := 3; m }) > 5) {
+  };
+  assert c#count == 3;
+  while (({ var t: Counter := c; t }#count := 0 - 1) > 5) {
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+  }
+};
+
+procedure conditionIncrementsThroughItsReceiverOnce(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := 3;
+  var i: int := 0;
+  while (({ i := i + 1; c }#count++) > 5) {
+  };
+  assert i == 1 && c#count == 4;
+  assert i != 1
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure conditionEvaluatesAnIfReceiverOnce(c: Counter, b: bool)
+  opaque
+  modifies c
+{
+  c#count := 3;
+  var i: int := 0;
+  while ((if b then { i := i + 1; c } else { i := i + 1; c })#count > 5) {
+  };
+  assert i == 1;
+  assert i != 1
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure pick(c: Counter) returns (r: Counter)
+{
+  r := c
+};
+
+procedure conditionEvaluatesACallOrCastReceiverOnce(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := 3;
+  var i: int := 0;
+  while (pick({ i := i + 1; c })#count > 5) {
+  };
+  assert i == 1;
+  while (pick({ c#count := c#count + 1; c })#count > 5) {
+  };
+  assert c#count == 4;
+  while (({ i := i + 1; c } as Counter)#count > 5) {
+  };
+  assert i == 2;
+  while (pick({ var u: Counter := c; u })#count > 5) {
+  };
+  assert i != 2
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure conditionAndInvariantThroughADeclaringReceiver(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := 3;
+  var j: int := 0;
+  while ({ var t: Counter := c; t }#count > j)
+    invariant { var t: Counter := c; t }#count == 3
+  {
+    j := j + 1
+  };
+  assert c#count == 3;
+  assert c#count != 3
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure invariantsReadThroughACallOrACast(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := 0;
+  var n: int := 0;
+  while (n < 3)
+    invariant pick(c)#count == 0 && (c as Counter)#count == 0 && 0 <= n && n <= 3
+  {
+    n := n + 1
+  };
+  {
+    if (n >= 6) then { exit loop };
+    n := n + 1;
+    goto loop
+  } loop
+    invariant pick(c)#count == 0 && (c as Counter)#count == 0 && 3 <= n && n <= 6;
+  while (n < 9)
+    invariant pick(c)#count == 1
+//            ^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+  {
+    n := n + 1
+  }
+};
+
+procedure gotoLoopEvaluatesItsReceiversOnce(c: Counter)
+  opaque
+  modifies c
+{
+  c#count := 0;
+  var i: int := 0;
+  var n: int := 0;
+  {
+    if (n >= 3) then { exit loop };
+    var r: int := { i := i + 1; c }#count;
+    n := n + 1;
+    goto loop
+  } loop
+    invariant { var t: Counter := c; t }#count == 0 && 0 <= n && n <= 3 && i == n;
+  assert i == 3;
+  assert i != 3
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end

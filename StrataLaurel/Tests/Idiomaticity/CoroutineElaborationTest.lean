@@ -262,4 +262,88 @@ procedure driver()
 };
 #end
 
+/-! ## Full elaboration: a store receives a yield
+
+`s#r#x := yield` stores into the box `s#r` held at the yield, though the caller
+may replace `s#r` before the resume: the suspend state keeps the receiver in a
+`$receiver0` field typed `Box<int>`, the base of `s#r`'s constrained type, and
+the resume state stores through it. Likewise `p#inner`, a `Box<T>` field of a
+`Pair<int>`, goes into a `Box<int>` field. `s#x := yield` keeps its receiver, a
+promoted input only the coroutine writes. -/
+
+/--
+info: composite Box<T> { var x: T }
+constrained Boxed = b: Box<int> where true witness <??>
+composite Cell { var x: int var r: Boxed }
+composite Pair<T> { var inner: (Box<T>) }
+composite storeState { var $pc: int var s: Cell var p: (Pair<int>) var $receiver0: (Box<int>) var $receiver1: (Box<int>)procedure resume(self: storeState, n: int)
+  requires self#$pc != 0
+  opaque
+  modifies self
+  modifies *
+while(true) if self#$pc == 1
+  then {
+    self#$receiver1#x := n;
+    self#$pc := 0
+  }
+  else if self#$pc == 4
+    then {
+      self#$receiver0#x := n;
+      self#$receiver1 := self#p#inner;
+      self#$pc := 1;
+      return
+    }
+    else if self#$pc == 7
+      then {
+        self#s#x := n;
+        self#$receiver0 := self#s#r;
+        self#$pc := 4;
+        return
+      }
+      else if self#$pc == 8
+        then {
+          self#$pc := 7;
+          return
+        }
+        else return ;procedure has_next(self: storeState)
+  returns (result: bool)
+return self#$pc != 0; }
+procedure store(s: Cell, p: (Pair<int>))
+  returns ($co: storeState)
+  opaque
+  ensures $co#$pc == 8
+  ensures $co#s == s
+  ensures $co#p == p
+{
+  $co := new storeState;
+  $co#$pc := 8;
+  $co#s := s;
+  $co#p := p
+};
+-/
+#guard_msgs in
+#eval printFull <|
+#strata
+program Laurel;
+composite Box<T> {
+  var x: T
+}
+constrained Boxed = b: Box<int> where true witness <??>
+composite Cell {
+  var x: int
+  var r: Boxed
+}
+composite Pair<T> {
+  var inner: Box<T>
+}
+
+coroutine store(s: Cell, p: Pair<int>) resumes (n: int)
+  modifies *
+{
+  s#x := yield;
+  s#r#x := yield;
+  p#inner#x := yield
+};
+#end
+
 end Laurel

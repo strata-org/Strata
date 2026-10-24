@@ -18,6 +18,7 @@ import StrataLaurel.Implementation.EliminateDoWhileProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
 import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
+import StrataLaurel.Implementation.BindFieldReceivers
 import StrataLaurel.Implementation.CopyMutatedInputs
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
@@ -149,6 +150,7 @@ def laurelPipeline : Array LaurelPass := #[
   -- helpers, `$asFunction` copies), so each such declaration shares its opaque types.
   opaqueUnusedTypeParamsPass,
   eliminateDoWhilePass,
+  bindFieldReceiversPass,
   eliminateIncrDecrAndCompoundAssignPass,
   -- Placement rationale in the pass's module header.
   copyMutatedInputsPass,

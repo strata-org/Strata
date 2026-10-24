@@ -337,6 +337,31 @@ private def coroutineLinearizationDiags (p : LaurelProgram) : List Message :=
     | .Opaque _ (some impl) _ => unsupportedYieldBlockDiags impl
     | _ => []
 
+/-- Evaluate the receiver of each `r#f := yield` target before the suspend: the
+    resume runs after the environment had its turn, and must store into the
+    object `r` held at the yield. The receiver goes into a fresh `$receiver{n}`
+    field of the state composite, typed as `r` (its type arguments applied, a
+    constrained type unfolded), and that field's list is returned. A promoted
+    local's receiver (`self#x`) stays, since only the coroutine writes it. Runs on
+    the promoted body. -/
+private def bindYieldReceivers (model : SemanticModel) (lattice : TypeLattice)
+    (body : StmtExprMd) : StmtExprMd × List Field :=
+  let bind (target : VariableMd) : StateM (List Field) (List StmtExprMd × VariableMd) := do
+    let .Field recv f := target.val | return ([], target)
+    if recv.val matches .This | .Var (.Field ⟨.This, _⟩ _) then return ([], target)
+    let fields ← get
+    let r : Identifier := s!"$receiver{fields.length}"
+    let type := lattice.unfold (computeExprTypeWith (some lattice) model recv)
+    set (fields ++ [{ name := r, isMutable := true, type : Field }])
+    return ([⟨.Assign [selfFieldTarget r recv.source] recv, recv.source⟩],
+      ⟨.Field (selfFieldRead r recv.source) f, target.source⟩)
+  (mapStmtExprM (m := StateM (List Field)) (fun e => do
+    let .Assign targets value := e.val | return e
+    unless value.val matches .Yield do return e
+    let bound ← targets.mapM bind
+    if bound.all (·.1.isEmpty) then return e
+    return block (bound.flatMap (·.1) ++ [⟨.Assign (bound.map (·.2)) value, e.source⟩])) body).run []
+
 /-- Linearization state: the accumulated `(stateId, body)` arms and a
     fresh-id counter. State ids start at 1 (`endState = 0` is reserved). -/
 private structure LinState where
@@ -685,11 +710,12 @@ private def guardWithEnd (c : Condition) : Condition :=
                          asserted when the coroutine has run off the end,
                          vacuous while still suspended.
       * `requires` (construction) → belongs on the *constructor* (see below) -/
-private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
-    (composite : CompositeType) : CompositeType :=
+private def populateCoroutineComposite (model : SemanticModel) (lattice : TypeLattice)
+    (naming : FieldNaming) (proc : Procedure) (composite : CompositeType) : CompositeType :=
   match proc.body with
   | .Opaque haltPosts (some impl) coroutineModifies =>
-    let promoted := rewriteStmtExpr naming impl
+    let (promoted, receiverFields) :=
+      bindYieldReceivers model lattice (rewriteStmtExpr naming impl)
     -- The resumed value is `resume`'s parameter. Laurel's surface allows
     -- a list, but the canonical `resumes (y: U)` has one binding; we read
     -- the first as the `x := yield` target.
@@ -795,16 +821,18 @@ private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
         body := .Transparent
           { val := .Return [pcNeqEnd], source := .unknown } }
     { composite with
+      fields := composite.fields ++ receiverFields
       instanceProcedures := resumeProc :: hasNextProc :: composite.instanceProcedures }
   | _ => composite
 
 /-- The entry state id for a coroutine body — the `$pc` value the
     constructor must initialize. Mirrors the `linearizeBody` allocation
     so the constructor and the dispatcher agree. -/
-private def coroutineEntryState (naming : FieldNaming) (proc : Procedure) : Nat :=
+private def coroutineEntryState (model : SemanticModel) (lattice : TypeLattice)
+    (naming : FieldNaming) (proc : Procedure) : Nat :=
   match proc.body with
   | .Opaque _ (some impl) _ =>
-    let promoted := rewriteStmtExpr naming impl
+    let promoted := (bindYieldReceivers model lattice (rewriteStmtExpr naming impl)).1
     let resumeParam : Option Identifier := proc.resumes.head?.map (·.name)
     (linearizeBody naming resumeParam promoted).2
   | _ => endState
@@ -1177,15 +1205,16 @@ private def rewriteCallerProgram (coros : CoroutineSet) (p : LaurelProgram) : La
     runs, `co#resume(...)` folds into a static call to
     `<c>State$resume`. Regular procedures pass through unchanged except
     for the caller rewrite. -/
-def elaborateCoroutines (_ : SemanticModel) (p : LaurelProgram) : LaurelProgram :=
+def elaborateCoroutines (model : SemanticModel) (p : LaurelProgram) : LaurelProgram :=
   let (coroutines, regulars) := p.staticProcedures.partition Procedure.is_coroutine
+  let lattice := TypeLattice.ofTypes p.types
   let generatedTypes : List TypeDefinition := coroutines.map fun proc =>
     let naming := fieldNaming proc
     let shell := coroutineToComposite naming proc
-    .Composite (populateCoroutineComposite naming proc shell)
+    .Composite (populateCoroutineComposite model lattice naming proc shell)
   let generatedCtors : List Procedure := coroutines.map fun proc =>
     let naming := fieldNaming proc
-    let entry := coroutineEntryState naming proc
+    let entry := coroutineEntryState model lattice naming proc
     coroutineConstructor naming proc (coroutineToComposite naming proc) entry
   let coros : CoroutineSet :=
     coroutines.foldl (fun s c => s.insert c.name.text) ∅

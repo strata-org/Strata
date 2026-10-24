@@ -95,9 +95,10 @@ first `resumes` binding, and this utility has no enclosing-procedure context.
 Resolution types `yield` from `Context.resumeType` instead, so nothing needs it
 from here.
 
-`fieldType?`, when given, types a field at its holder's type, which `model` does not know.
+`lattice?`, when given, types a field at its holder's type and an instance call at the type
+arguments its receiver and arguments bind, neither of which `model` records.
 -/
-def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Option HighTypeMd))
+def computeExprTypeWith (lattice? : Option TypeLattice)
     (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match _: expr with
   | AstNode.mk val source =>
@@ -114,28 +115,36 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   -- Field access
   | .Var (.Field target fieldName) =>
     let declared := (model.get fieldName).getType
-    match fieldType? with
-    | some fieldType =>
-      (fieldType fieldName (computeExprTypeWith fieldType? model target)).getD declared
-    | none => declared
+    match lattice?, model.get fieldName with
+    | some lattice, .field declType fld =>
+      (lattice.fieldTypeAt declType fld.type (computeExprTypeWith lattice? model target)).getD
+        declared
+    | _, _ => declared
   -- Pure field update returns the same type as the target
-  | .PureFieldUpdate target _ _ => computeExprTypeWith fieldType? model target
+  | .PureFieldUpdate target _ _ => computeExprTypeWith lattice? model target
   -- Calls — the callee's return type at this call site, so a generic callee reports its
   -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
   -- argument temp from the argument itself and needs that instantiation.
   | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
-  | .InstanceCall _ callee _ => getCallType source model callee []
+  | .InstanceCall target callee args =>
+    match lattice?, model.get callee with
+    | some lattice, .instanceProcedure _ proc =>
+      let argTys := computeExprTypeWith lattice? model target ::
+        args.attach.map fun ⟨a, _⟩ => computeExprTypeWith lattice? model a
+      let subst := (callSiteTypeSubst lattice (fun _ => false) (proc.inputs.map (·.type)) argTys).1
+      substTypeVars subst (procResultTypeAt source proc [])
+    | _, _ => getCallType source model callee []
   -- Control flow
   -- A then-branch typed `Unknown`, as a hole is, takes the else-branch's type, as in `Resolution`.
   | .IfThenElse _ thenBranch elseBranch =>
-    let thenTy := computeExprTypeWith fieldType? model thenBranch
+    let thenTy := computeExprTypeWith lattice? model thenBranch
     match thenTy.val, elseBranch with
-    | .Unknown, some e => computeExprTypeWith fieldType? model e
+    | .Unknown, some e => computeExprTypeWith lattice? model e
     | _, _ => thenTy
   | .Block stmts _ _ _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
-        computeExprTypeWith fieldType? model last
+        computeExprTypeWith lattice? model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
   | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
@@ -144,9 +153,9 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   -- Its target's type, as `Synth.assign` types it.
   | .Assign [⟨.Local id, _⟩] _ => (model.get id).getType
   | .Assign [⟨.Field target fieldName, src⟩] _ =>
-    computeExprTypeWith fieldType? model ⟨.Var (.Field target fieldName), src⟩
+    computeExprTypeWith lattice? model ⟨.Var (.Field target fieldName), src⟩
   | .Assign [⟨.Declare ⟨_, some ty⟩, _⟩] _ => ty
-  | .Assign _ value => computeExprTypeWith fieldType? model value
+  | .Assign _ value => computeExprTypeWith lattice? model value
   | .IncrDecr _ _ target =>
     -- The expression's type is the type of the target variable.
     match target.val with
@@ -172,12 +181,12 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   -- Verification specific
   | .Quantifier _ _ _ _ => ⟨ .TBool, source ⟩
   | .Assigned _ => ⟨ .TBool, source ⟩
-  | .Old v _ => computeExprTypeWith fieldType? model v
-  | .OldGuarantee v => computeExprTypeWith fieldType? model v
-  | .OldRelies v => computeExprTypeWith fieldType? model v
+  | .Old v _ => computeExprTypeWith lattice? model v
+  | .OldGuarantee v => computeExprTypeWith lattice? model v
+  | .OldRelies v => computeExprTypeWith lattice? model v
   | .Fresh _ => ⟨ .TBool, source ⟩
   -- Proof related
-  | .ProveBy v _ => computeExprTypeWith fieldType? model v
+  | .ProveBy v _ => computeExprTypeWith lattice? model v
   | .ContractOf _ _ => default -- TODO: implement
   -- Special
   | .Abstract =>default -- TODO: implement
@@ -186,7 +195,7 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   -- `resume(t)` is `t`'s first `yields` binding (see `getResumeType`); `yield`
   -- would be the enclosing coroutine's first `resumes` binding (see above).
   | .Yield => ⟨ .Unknown, source ⟩
-  | .Resume target _ => getResumeType source model (computeExprTypeWith fieldType? model target)
+  | .Resume target _ => getResumeType source model (computeExprTypeWith lattice? model target)
   | .HasNext _ => ⟨ .TBool, source ⟩
   -- Snapshot artifact: `Snapshot` is a statement, so it types as `TVoid`.
   | .Snapshot _ => ⟨ .TVoid, source ⟩

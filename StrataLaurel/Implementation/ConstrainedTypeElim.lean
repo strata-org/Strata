@@ -236,9 +236,10 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
     -- heap field of `mixedHeapFields`, so nothing is assumed there.
     --
     -- On the READ: hoisting to the enclosing statement could reference a local that
-    -- statement declares. The duplicated read is pure (`readField(heap, obj, field)`);
-    -- `.Assign` needs a read-back because its RHS may not be. Bottom-up traversal
-    -- leaves the copy inside the assume unvisited, as `.Quantifier` relies on too.
+    -- statement declares. The duplicated read is pure (`readField(heap, obj, field)`), and so
+    -- is its receiver outside a loop's condition (`Pseudo.unstableFieldReceiver`); `.Assign`
+    -- needs a read-back because its RHS may not be. Bottom-up traversal leaves the copy inside
+    -- the assume unvisited, as `.Quantifier` relies on too.
     --
     -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
     -- write, so the `Datatype` branch over-approximates.
@@ -544,7 +545,8 @@ public def constrainedTypeElimPass : LaurelPass := .onUnordered {
   name := "ConstrainedTypeElim"
   unsupported := [
       NodeKind.LaurelProgram.staticFunctions.cons,
-      NodeKind.StmtExpr.Return.value.some
+      NodeKind.StmtExpr.Return.value.some,
+      NodeKind.Pseudo.unstableFieldReceiver
     ]
   creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
   removes := [NodeKind.TypeDefinition.Constrained, NodeKind.StmtExpr.IsType, NodeKind.StmtExpr.AsType]

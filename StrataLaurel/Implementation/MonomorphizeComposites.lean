@@ -249,10 +249,7 @@ private def diamondConflict? (ctx : TypeLattice) (declared actual : HighType)
     its holder's instantiation (`h#d` with `h: H<int>` and `d: DG<X>` is a `DG<int>`): typed as
     declared, the receiver would look abstract and the diamond check would skip it. -/
 private def argType (ctx : TypeLattice) (model : SemanticModel) (a : StmtExprMd) : HighTypeMd :=
-  let fieldTypeAt := fun fieldName holderTy => match model.get fieldName with
-    | .field declType fld => ctx.fieldTypeAt declType fld.type holderTy
-    | _ => none
-  { computeExprTypeWith (some fieldTypeAt) model a with source := a.source }
+  { computeExprTypeWith (some ctx) model a with source := a.source }
 
 /-- Report a call one of whose arguments is a diamond for its parameter (`diamondConflict?`), since
     `Resolution` records such a call at whatever the expected type supplies. Both sides are
