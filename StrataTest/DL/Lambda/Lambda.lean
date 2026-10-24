@@ -101,6 +101,22 @@ private def evalBool (e : LExpr TestParams.mono) : Except Strata.Message (LExpr 
 #guard_msgs in
 #eval format $ evalBool esM[((~Bool.Implies #true) (y : bool))]
 
+/-! The first operand need only evaluate to a literal; when both operands are known the
+result is the evaluated second operand; and a decided result drops an ill-defined second
+operand. -/
+
+/-- info: (y : bool) -/
+#guard_msgs in
+#eval format $ evalBool esM[((~Bool.And ((~Int.Lt #1) #2)) (y : bool))]
+
+/-- info: #false -/
+#guard_msgs in
+#eval format $ evalBool esM[((~Bool.Implies #true) #false)]
+
+/-- info: #false -/
+#guard_msgs in
+#eval format $ evalBool esM[((~Bool.And #false) ((~Int.Div #1) #0))]
+
 /-! Only the first operand decides: a known second operand alone does not fold. -/
 
 /-- info: (~Bool.And (y : bool) #false) -/
@@ -108,8 +124,11 @@ private def evalBool (e : LExpr TestParams.mono) : Except Strata.Message (LExpr 
 #eval format $ evalBool esM[((~Bool.And (y : bool)) #false)]
 
 /-! A deep chain alternating a decided and a symbolic first operand,
-`true && (z && (true && (z && …)))`, evaluates each node once, so depth 800
-reduces to the chain of its symbolic conjuncts. -/
+`true && (z && (true && (z && …)))`, reduces to the chain of its symbolic conjuncts.
+The evaluator visits each node once, so depth 6400 takes well under a second, whereas
+re-evaluating each residual would take minutes. The test bounds the wall-clock time at
+20 s, since `maxHeartbeats` does not limit `#eval`. The evaluation takes about 0.2 s, so
+the bound leaves two orders of magnitude for a slow or loaded machine. -/
 
 private def bAnd (x y : LExpr TestParams.mono) : LExpr TestParams.mono :=
   LExpr.mkApp () esM[~Bool.And] [x, y]
@@ -122,12 +141,25 @@ private def symbolicChain : Nat → LExpr TestParams.mono
   | 0 => esM[(y : bool)]
   | n + 1 => bAnd esM[(z : bool)] (symbolicChain n)
 
+/-- Evaluates the chain of the given depth, returning whether it reduced to the expected
+    residual and how many milliseconds that took. The evaluation sits in `IO.lazyPure`, so
+    it runs between the two clock reads. -/
+private def timedChain (depth : Nat) : IO (Bool × Nat) := do
+  match (LState.init : LState TestParams).addFactory (IntBoolFactory : @Factory TestParams) with
+  | .error _ => return (false, 0)
+  | .ok σ =>
+    let t0 ← IO.monoMsNow
+    let ok ← IO.lazyPure fun _ =>
+      (LExpr.evalWithLState (3 * depth + 100) σ (andChain depth)).fst.eraseMetadata ==
+        (symbolicChain depth).eraseMetadata
+    let t1 ← IO.monoMsNow
+    return (ok, t1 - t0)
+
 /-- info: true -/
 #guard_msgs in
-#eval match (LState.init : LState TestParams).addFactory (IntBoolFactory : @Factory TestParams) with
-  | .ok σ => (LExpr.evalWithLState 2000 σ (andChain 800)).fst.eraseMetadata ==
-      (symbolicChain 800).eraseMetadata
-  | .error _ => false
+#eval do
+  let (ok, ms) ← timedChain 6400
+  return ok && ms < 20000
 
 end Test
 
