@@ -409,11 +409,10 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     the *same* value for every input, which lets a caller prove more than "arbitrary" —
     see the module docstring.
 
-    `typeArgs` carries the enclosing function's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: in a polymorphic function (`f<T>(x : T)`) the
-    mirrored inputs and the declared type mention `T`, so the generated hole must bind
-    `T` too, or `T` is a free type variable at Core and the program fails to type-check.
-    Empty for a monomorphic function.
+    `typeArgs` carries the enclosing function's type parameters: in a polymorphic
+    function (`f<T>(x : T)`) the mirrored inputs and the declared type mention `T`, so
+    the generated hole must bind `T` too, or `T` is a free type variable at Core and the
+    program fails to type-check. Empty for a monomorphic function.
 
     The body is `.Opaque [] none []`, which the Core schema translation turns into a
     function with no body, i.e. an uninterpreted one. That is the already-eliminated
