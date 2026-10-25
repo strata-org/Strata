@@ -72,7 +72,7 @@ procedure strConcat(a: string, b: string) : string
 // A user datatype named `Box` must also survive: `HeapParameterization` generates
 // its own `$Box`, which is a distinct, reserved name. NB this file stops at
 // resolution, so it cannot see a later pass reserving the name — the end-to-end
-// guarantee is pinned by the source-compatibility cases in `GenericCompositeTest`.
+// guarantee is pinned by the source-compatibility cases in `Execution/Types/Composites/GenericComposite.lean`.
 datatype Box { MkUserBox(contents: int) }
 
 procedure useThem(x: int, s: string) opaque {

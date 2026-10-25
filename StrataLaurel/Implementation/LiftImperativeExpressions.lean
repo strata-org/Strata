@@ -673,8 +673,8 @@ When `procedureNames` is non-empty, only procedures whose name appears in the
 list are transformed; all others are left unchanged. When `procedureNames` is
 empty, no procedures are transformed.
 -/
-def liftExpressionAssignments (program : Program)
-    (model : SemanticModel) (imperativeCallees : List String) : Except String Program :=
+def liftExpressionAssignments (program : LaurelProgram)
+    (model : SemanticModel) (imperativeCallees : List String) : Except String LaurelProgram :=
   let initState : LiftState := { model := model, imperativeCallees := imperativeCallees }
   let transform := program.staticProcedures.mapM transformProcedure
   let (result, _) := (ExceptT.run transform).run initState
@@ -685,32 +685,26 @@ def liftExpressionAssignments (program : Program)
 end -- public section
 
 /--
-Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
-`UnorderedCoreWithLaurelTypes`. Only procedures whose names appear in the core
-procedure list are transformed; functions are left unchanged.
+Apply `liftExpressionAssignments` to the static procedures of a program whose
+functions are in `staticFunctions`. Calls to the static procedures are the
+imperative ones; the static functions are left unchanged.
 -/
-def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
-    (model : SemanticModel) : Except String UnorderedCoreWithLaurelTypes := do
-  let imperativeCallees := uc.coreProcedures.map (·.name.text)
-  let liftedProgram ← liftExpressionAssignments
-    { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
-    model imperativeCallees
-  pure { uc with
-    functions := uc.functions
-    coreProcedures := liftedProgram.staticProcedures
-  }
+def liftImperativeExpressionsInCore (program : LaurelProgram)
+    (model : SemanticModel) : Except String LaurelProgram :=
+  liftExpressionAssignments program model (program.staticProcedures.map (·.name.text))
 
-public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+public def liftImperativeExpressionsPass : LaurelPass := .onUnordered {
   name := "LiftImperativeExpressions"
   creates := [NodeKind.StmtExpr.Var, NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.Block]
   removes := [NodeKind.Pseudo.statementExpression]
   -- Hoisting an imperative call out of a short-circuited operand would run it
   -- unconditionally, so `DesugarShortCircuit` must have guarded those first.
   unsupported := [NodeKind.Pseudo.imperativeShortCircuit,
-    NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign]
+    NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign
+    ]
   documentation := "Lifts assignments, assertions, assumptions and calls to a configurable list of procedures, that appear in expression contexts, to preceding statements. Lifting is necessary because Strata Core does not support assignments, assumes, asserts and calls to Core procedures within expressions. The pass introduces fresh temporary variables where needed. Lifting expressions that occur in conditional control flow that is also in an expression, can require duplicating some of that control flow. If we do not encode the heap before the lifting pass, we will need to lift any calls to heap mutating procedures, since they are implicitly mutating. The Laurel resolver should be able to tell us which procedures are heap mutating, so this is simple."
-  needsResolves := true
-  run := fun _ p m =>
+  needsResolves := true }
+  fun _ p m =>
     match liftImperativeExpressionsInCore p m with
     | .ok p' => (p', [], {})
     | .error e => (p, [Message.fromString s!"Internal error in LiftImperativeExpressions: {e}" .strataBug], {})

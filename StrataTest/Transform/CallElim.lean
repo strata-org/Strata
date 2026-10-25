@@ -38,7 +38,7 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool) {
   var b : bool;
-  call f(i, j, k, out j, out b);
+  call f(i, inout j, k, out b);
 };
 #end
 
@@ -77,7 +77,7 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   var b : bool;
-  call f(i, j, k, k, l, out j, out b);
+  call f(i, inout j, k, k, l, out b);
 };
 #end
 
@@ -119,7 +119,7 @@ spec {
 };
 procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   var b : bool;
-  call f(i, j, k, k && i || j, l, out j, out b);
+  call f(i, inout j, k, k && i || j, l, out b);
 };
 #end
 
@@ -162,7 +162,7 @@ spec {
 };
 procedure h(inout j : bool, k : bool) {
   var b : bool;
-  call f(j, k, k, out j, out b);
+  call f(inout j, k, k, out b);
 };
 #end
 

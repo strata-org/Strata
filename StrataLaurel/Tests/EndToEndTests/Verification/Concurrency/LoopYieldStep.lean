@@ -26,11 +26,11 @@ tests, each pinning a specific semantic:
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## Positive: incrementing body, monotonic guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -54,7 +54,7 @@ coroutine incMonotonic(s: Cell)
 
 /-! ## Negative: incrementing body, equality guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -79,7 +79,7 @@ coroutine incBreaksEquality(s: Cell)
 
 /-! ## Negative: decrementing body, monotonic guarantee. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

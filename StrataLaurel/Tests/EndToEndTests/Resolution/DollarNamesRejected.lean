@@ -252,3 +252,22 @@ procedure useThem()
   assert my$dt..my$arg(d) == 3
 };
 #end
+
+-- An OUTPUT parameter named `$heap` is the case that matters most for this rule: the heap
+-- passes synthesize a `$heap` inout on every heap-writing procedure, so a user output of
+-- that name would collide with a generated one rather than merely look odd. The leading-`$`
+-- check rejects it before any pass runs, which is why the collision never has to be
+-- detected later.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Inner { var v: int }
+procedure userHeapOutput() returns ($heap: int)
+//                                  ^^^^^ error: parameter name '$heap' is reserved for the compiler-generated heap variable; rename it
+  opaque
+{
+  var o: Inner := new Inner;
+  o#v := 5;
+  $heap := 0
+};
+#end

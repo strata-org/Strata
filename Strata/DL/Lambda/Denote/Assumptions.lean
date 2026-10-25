@@ -6,7 +6,7 @@
 module
 
 import all Strata.DL.Lambda.Denote.LExprAnnotated
-import all Strata.DL.Lambda.Semantics
+import all Strata.DL.Lambda.OperationalSemanticsProps
 import all Strata.DL.Lambda.TypeFactoryWF
 import all Strata.DL.Lambda.FactoryWF
 public import Strata.DL.Lambda.LExpr

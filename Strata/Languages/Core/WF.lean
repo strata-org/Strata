@@ -9,6 +9,7 @@ public import Strata.Util.ListUtilsProps
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWF
 
 public section
 
@@ -50,12 +51,13 @@ structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
 
+/-- A call to `procName` with arguments `callArgs` is well-formed in `p`: the callee
+    is a declared procedure, the arguments match its signature, and the result
+    variables are distinct. -/
 structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg Expression)) : Prop where
   defined : (Program.Procedure.find? p procName).isSome
-  arglen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.inputs.length = (CallArg.getInputExprs callArgs).length
-  outlen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.outputs.length = (CallArg.getLhs callArgs).length
+  argsMatch : (Program.Procedure.find? p procName = some proc) →
+          ArgsMatchSignature proc callArgs
   lhsWF : (CallArg.getLhs callArgs).Nodup
   wfargs : Forall (WFargProp p) (CallArg.getInputExprs callArgs)
 

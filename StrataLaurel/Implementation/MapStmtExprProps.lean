@@ -20,7 +20,7 @@ specification (see `LaurelNodeKindProps.lean` for what the declarations mean):
 if the rewrite maps every rebuilt node into the output set, so does the whole
 traversal. A pass's own proof is then only the per-node obligation —
 `EliminateDoWhileProps.rewriteNode_contains` is one, and the plumbing from there
-to `Program` is in that same file.
+to `LaurelProgram` is in that same file.
 
 ## Key results
 

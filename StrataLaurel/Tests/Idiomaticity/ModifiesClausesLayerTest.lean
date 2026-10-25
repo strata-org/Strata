@@ -16,7 +16,8 @@ through the whole pipeline. Two families:
    procedure — the e2e suites only catch that incidentally.
 
 2. *The enumerated-frame split under a guard.* With the optimization on, a
-   group whose targets are individual references lowers to the assume/assert
+   group whose targets are individual references, in a procedure that cannot
+   allocate (`cModel.heapAllocators` is empty), lowers to the assume/assert
    pair (callers get the quantifier-free enumerated frame, the body checks the
    quantified one) — for unguarded AND guarded groups alike, both halves under
    the group's guard. Gating the split on unguarded groups would silently make
@@ -26,6 +27,12 @@ through the whole pipeline. Two families:
 Procedures are built directly as ASTs: the layer under test runs after heap
 parameterization, whose output shape (a `$heap` output, resolved targets) is
 easiest to state explicitly.
+
+This test does NOT use the shared `runPassForIdiomaticity` driver: the driver
+resolves the program to build the `SemanticModel` the pass reads, but these cases
+supply a hand-built `SemanticModel` describing the post-heap-parameterization
+shape (which `resolve` would not reconstruct from the AST), so they call
+`transformModifiesClauses` directly.
 -/
 
 meta import StrataLaurel.Implementation.ModifiesClauses

@@ -557,7 +557,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noPolymorphicFunctions])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .typeAnnotated])
     fun prog => monomorphizeFunctions prog

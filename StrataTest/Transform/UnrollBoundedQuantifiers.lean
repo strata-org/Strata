@@ -2401,7 +2401,7 @@ procedure P ()
   if * {
     if * {
       assume [ls]: Sequence.length(s) == 2;
-      assert [assume_e0_calls_Sequence.select_0]: true && int.lt(0, Sequence.length(s));
+      assert [assume_e0_calls_Sequence.select_0]: int.lt(0, Sequence.length(s));
     } else {
       assume [ls]: Sequence.length(s) == 2;
       assume [e0]: Sequence.select(s, 0) == 5;
@@ -2481,7 +2481,7 @@ procedure P ()
 {
   if * {
     assume [li]: Sequence.length(idx) == 1;
-    assert [assume_i0_calls_Sequence.select_0]: true && int.lt(0, Sequence.length(idx));
+    assert [assume_i0_calls_Sequence.select_0]: int.lt(0, Sequence.length(idx));
   } else {
     assume [li]: Sequence.length(idx) == 1;
     assume [i0]: Sequence.select(idx, 0) == 2;
@@ -2649,5 +2649,43 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify binderCapBoundaryPgm (options := noUnrolling) (pipeline := unrollingPipeline)
+
+/-! ### A lemma, under the axioms declared before it
+
+A lemma is checked under the axioms before it, so its quantifier over `s` unrolls with
+the length and elements they pin. `t`'s facts come after its lemma, which therefore
+keeps its quantifier. The pass is applied directly: the default order's symbolic
+evaluation turns lemmas into obligations before this pass would run. -/
+
+def lemmaPgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+const t : Sequence int;
+axiom [len]: Sequence.length(s) == 2;
+axiom [e0]: Sequence.select!(s, 0) == 5;
+axiom [e1]: Sequence.select!(s, 1) == 6;
+lemma [ls]: forall i : int :: (int.le(0, i) && int.lt(i, Sequence.length(s))) ==> int.le(0, Sequence.select!(s, i));
+lemma [lt]: forall i : int :: (int.le(0, i) && int.lt(i, Sequence.length(t))) ==> int.le(0, Sequence.select!(t, i));
+axiom [tlen]: Sequence.length(t) == 1;
+axiom [t0]: Sequence.select!(t, 0) == 7;
+#end
+
+/-- The lemmas after type checking and this pass. -/
+private def unrolledLemmas (pgm : StrataDDM.Program) : IO Unit := do
+  let phases := [Core.passTypeCheck noUnrolling, Core.passUnrollBoundedQuantifiers]
+  match ← (Core.runTransforms (toCore pgm) phases (initState := initState)).toBaseIO with
+  | .error e => IO.println s!"{e}"
+  | .ok (p, _) =>
+    for d in p.stripMetaData.decls do
+      if let .lemma l _ := d then IO.println s!"{l.name}: {Std.format l.e}"
+
+/--
+info: ls: true
+lt: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(t)) ==> int.le(0, Sequence.select!(t, i))
+-/
+#guard_msgs in
+#eval unrolledLemmas lemmaPgm
 
 end Strata

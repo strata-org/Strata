@@ -126,8 +126,8 @@ Label: r_bounded
 Property: assert
 Assumptions:
 n_pos: int.ge(n@1, 0)
-<label_ite_cond_true: int.le(n, limit)>: if int.le(n@1, 10) then int.le(n@1, 10) else true
-<label_ite_cond_false: !(int.le(n, limit))>: if if int.le(n@1, 10) then false else true then if int.le(n@1, 10) then false else true else true
+<label_ite_cond_true: int.le(n, 10)>: if int.le(n@1, 10) then int.le(n@1, 10) else true
+<label_ite_cond_false: !(int.le(n, 10))>: if if int.le(n@1, 10) then false else true then if int.le(n@1, 10) then false else true else true
 Obligation:
 int.le(if int.le(n@1, 10) then n@1 else 10, 10)
 

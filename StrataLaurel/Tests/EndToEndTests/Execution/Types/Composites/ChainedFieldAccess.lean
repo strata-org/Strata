@@ -214,3 +214,113 @@ procedure runAll() entry
   chainedWriteIsolationFails()
 };
 #end
+
+/-! ## Chaining THROUGH a generic composite's field
+
+The chains above are all between ordinary composites. Here the middle link is a field whose
+declared type is the generic composite's own type parameter (`Pair<A, B>`'s `b: B`), so the
+field's type only becomes a composite at the instantiation — `Pair<int, Z>` makes `p#b` a
+`Z`, which is what lets `p#b#az` resolve at all. `targetTypeName` therefore has to look the
+inner field up in the MONOMORPHIZED holder's scope; against the generic declaration `b` has
+type `B`, which has no fields.
+
+Both blocks mark an `entry`, so the chain is also WALKED: `p#b#az` is read through the
+monomorphized holder at runtime, not only resolved. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Z { var az: int }
+composite W { var aw: int }
+composite Zw { var z2: W }
+composite Pair<A, B> { var a: A
+ var b: B }
+
+// Read through the generic field.
+procedure genericChainedRead()
+  entry
+  opaque
+  modifies *
+{
+  var p: Pair<int, Z> := new Pair<int, Z>;
+  var zz: Z := new Z;
+  zz#az := 5;
+  p#b := zz;
+  assert p#b#az == 5
+};
+
+// Write through the generic field, then read it back.
+procedure genericChainedWrite()
+  entry
+  opaque
+  modifies *
+{
+  var p: Pair<int, Z> := new Pair<int, Z>;
+  var zz: Z := new Z;
+  p#b := zz;
+  p#b#az := 7;
+  assert p#b#az == 7
+};
+
+// Three levels, the first of which is the generic field: resolution has to recurse through
+// the monomorphized type rather than stopping at the first ordinary composite.
+procedure genericChainedThreeLevels()
+  entry
+  opaque
+  modifies *
+{
+  var p: Pair<int, Zw> := new Pair<int, Zw>;
+  var zz: Zw := new Zw;
+  var ww: W := new W;
+  ww#aw := 9;
+  zz#z2 := ww;
+  p#b := zz;
+  assert p#b#z2#aw == 9
+};
+#end
+
+-- SOUNDNESS twin: the chained read through the generic field is constrained, so a false
+-- claim must fail rather than pass on a field that resolved to something unconstrained.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Z { var az: int }
+composite Pair<A, B> { var a: A
+ var b: B }
+
+procedure genericChainedReadFalse()
+  entry
+  opaque
+  modifies *
+{
+  var p: Pair<int, Z> := new Pair<int, Z>;
+  var zz: Z := new Z;
+  zz#az := 5;
+  p#b := zz;
+  assert p#b#az == 6
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- The generic chain resolves fields that genuinely exist and no more: `nope` is on neither
+-- `Pair` nor the `Z` its `b` field became, so the chain must still be rejected. Looking the
+-- field up in the monomorphized holder's scope is what makes `p#b#az` work; it must not also
+-- make `p#b#nope` work.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Z { var az: int }
+composite Pair<A, B> { var a: A
+ var b: B }
+
+procedure genericChainedUnknownField()
+  opaque
+  modifies *
+{
+  var p: Pair<int, Z> := new Pair<int, Z>;
+  var zz: Z := new Z;
+  p#b := zz;
+  assert p#b#nope == 5
+//           ^^^^ error: Resolution failed: 'nope' is not defined
+};
+#end

@@ -579,7 +579,8 @@ inductive StmtExpr : Type where
 
       `typeArgs` carries the call's INFERRED type arguments, in the callee's
       declaration order, for a generic callee — `Resolution` stamps them once it
-      has determined every one (and reports the call when it cannot). Empty for a
+      has determined every one (and reports the call when it cannot); a generic
+      destructor carries its receiver's, in its datatype's order. Empty for a
       monomorphic callee, and empty on a freshly parsed tree: there is no surface
       syntax for type arguments at a call, so this is a resolution output, not
       something the user writes. Deliberately NOT defaulted: a defaulted field is
@@ -1974,8 +1975,8 @@ private def TypeLattice.headIsAlias (ctx : TypeLattice) (a b : HighTypeMd) : Boo
     number of aliases therefore never runs out on a program whose aliases terminate, and a cyclic one
     stops with the pair unranked rather than looping.
 
-    `.TVar` is deliberately not gradual here, unlike in `isConsistent`, because a type still
-    mentioning a variable is not a candidate for ranking in the first place. -/
+    `.TVar` is deliberately not gradual here, unlike in `isConsistent`: a candidate in the
+    caller's own type variables is the call's instantiation, not a wildcard. -/
 private def TypeLattice.atLeastAsPrecise (ctx : TypeLattice) (a b : HighTypeMd)
     (budget : Nat := ctx.unfoldMap.size) : Bool :=
   match budget, ctx.headIsAlias a b with
@@ -2182,7 +2183,7 @@ def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Opt
     "what do the ARGUMENTS say"; `Synth.staticCall` additionally pairs the declared return type
     against the expected type, and then requires every type parameter to be determined —
     reporting the call when one is not (see `callSiteDeterminedTypeParams`, which is what that
-    check must consult, since a `T ↦ T` binding is dropped here yet still counts as determined).
+    check must consult).
 
     Each parameter matches under its OWN accumulator and the results are merged here, so a
     type variable occurring in two parameters (`$eq<T>(x: T, y: T)`) is reconciled by
@@ -2192,9 +2193,11 @@ def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Opt
     Genuine disagreements are returned in the second component for the caller to report, and
     the first binding is kept so one bad slot cannot poison the others.
 
-    A binding whose type still MENTIONS a type variable is dropped rather than recorded: that
-    is the abstract-internal-call case (`outer<T>`'s body calling `inner(b)` at `b : Box<T>`),
-    where binding `T ↦ T` teaches nothing and would read as if inference had succeeded.
+    The `tvarInScope` filter is the one `callSiteDeterminedTypeParams` applies to an argument.
+    Inside `outer<T>`, `inner(b)` at `b : Box<T>` is instantiated at `outer`'s `T`. A variable the
+    call site does not declare names nothing there, like `mapSet`'s own `V` in the slot
+    `mapSet(mapEmpty(), k, f(v))` hands `mapEmpty()`; kept, that `V ↦ V` is consistent with
+    anything and could win over `f(v)`'s type.
 
     Actuals are `unfold`ed first so an alias-typed argument (`type IM = TotalMap int bool`) matches
     a `TotalMap K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
@@ -2206,7 +2209,8 @@ def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Opt
     `IntBox` (where `IntBox extends Base<int>`) binds nothing while determinacy sees `Base<int>`
     among the ancestors and reports success, so the callee's `T` stays a bare variable that
     `isConsistent` waves through and Core then rejects. -/
-def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
+def callSiteTypeSubst (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
+    (params actuals : List HighTypeMd)
     : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
   let candidates : List (String × HighTypeMd) :=
     (params.zip actuals).flatMap fun (p, a) =>
@@ -2224,8 +2228,9 @@ def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
       | none => []
       | some bindings =>
         bindings.toList.filterMap fun (name, ty) =>
-          if mentionsTVar ty then none
-          else some (name, ({ val := ty, source := a.source } : HighTypeMd))
+          if (tvarIdents ty).all tvarInScope then
+            some (name, ({ val := ty, source := a.source } : HighTypeMd))
+          else none
   let names := (candidates.map (·.1)).eraseDups
   names.foldl (init := ({}, [])) fun (subst, conflicts) name =>
     let forName := (candidates.filter (·.1 == name)).map (·.2)
@@ -2273,12 +2278,8 @@ def callSiteTypeSubst (ctx : TypeLattice) (params actuals : List HighTypeMd)
       | none => (subst, conflicts)
 
 /-- The type-parameter names a call site DETERMINES, which is a different question from the
-    one `callSiteTypeSubst` answers. That function drops a binding whose type still mentions a
-    type variable, because recording `T ↦ T` sharpens nothing; but the parameter was still
-    determined — by `T`, which is simply not concrete *yet*. Inside a generic body
-    (`mapGet<K,V>`'s `select(m, k)` at `m : TotalMap K ($MapEntry V)`) every binding has that
-    shape, so reading determinacy off `callSiteTypeSubst`'s result would call the whole prelude
-    under-annotated.
+    one `callSiteTypeSubst` answers: that function binds nothing from an ambiguous diamond,
+    which counts as determined here (see below).
 
     Used only to decide whether to REPORT an un-inferable type argument. Concreteness is
     separately guaranteed: a `.TVar` binding here means the enclosing entity is itself generic,
@@ -2680,9 +2681,11 @@ structure Constant where
 A Laurel program consisting of static procedures, static fields, type
 definitions, and constants.
 -/
-structure Program where
+structure LaurelProgram where
   /-- Top-level procedures not attached to any type. -/
   staticProcedures : List Procedure
+  /-- Top-level functions. Empty in a front end's program; the Transparency pass fills it. -/
+  staticFunctions : List Procedure := []
   /-- Top-level fields (global variables). -/
   staticFields : List Field
   /-- User-defined type definitions (see the `TypeDefinition` constructors). -/

@@ -1248,3 +1248,73 @@ procedure containsBoxWithoutInsert(b: Box<int>)
   assert 1 == 1
 };
 #end
+
+/-! ## Declared global effects on a BODILESS procedure
+
+`reads`/`writes` on an opaque spec declare the global effects of a procedure with no body.
+Effects are otherwise inferred from statements, and a bodiless procedure has none, so the
+declaration is the only evidence — the role `modifies` plays for the heap. Whether the
+declaration is ACCEPTED is a resolution question and lives in
+`Resolution/GlobalVarTests.lean`; whether it carries the right facts to the caller is this
+one, and only verification can answer it.
+
+`writes g` makes the procedure a global writer, so `g` is threaded as an inout and the
+caller's knowledge of `g` is replaced by what the postcondition states. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setsGTo7()
+  opaque
+  ensures g == 7
+  writes g;
+procedure callerSees()
+  opaque
+{
+  setsGTo7();
+  assert g == 7
+};
+#end
+
+/-! `reads g` threads `g` as a plain input, and a postcondition may relate the result
+    to it. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure echoesG() returns (r: int)
+  opaque
+  ensures r == g
+  reads g;
+procedure callerReads()
+  opaque
+{
+  var v: int := echoesG();
+  assert v == g
+};
+#end
+
+/-! Without a postcondition the caller's prior knowledge of `g` is correctly
+    invalidated: the declared write alone says the value may change. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure clobbersG()
+  opaque
+  writes g;
+procedure callerCannotAssume()
+  opaque
+{
+  var before: int := g;
+  clobbersG();
+  assert g == before
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end

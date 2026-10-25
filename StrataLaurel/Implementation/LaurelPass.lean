@@ -8,6 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import StrataLaurel.Implementation.SemanticModel
 public import StrataLaurel.Implementation.LaurelNodeKind
+public import StrataLaurel.Implementation.Program
 public import Strata.Util.Statistics
 public import Strata.Languages.Core.Options
 
@@ -43,8 +44,38 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   /-- Quantifier-free modifies frame for single-reference clauses. Set-valued entries
-      keep the quantified frame. If the procedure's modifies clause contains sets,
-      this option has no effect. Use with the verifier's `useArrayTheory`. -/
+      keep the quantified frame, and so does a procedure that may allocate. If the
+      procedure's modifies clause contains sets, this option has no effect. Use with
+      the verifier's `useArrayTheory`.
+
+      The exclusion of procedures that may allocate is a temporary restriction. The
+      enumerated frame says that every heap row the clause does not name is
+      unchanged, including the rows of objects the call allocates, while the body
+      only checks that for objects that already existed. `increment` leaves `data`
+      unchanged, so a fresh object already has a row in the pre-state heap, and a
+      formula that reads it can contradict the callee's writes. Without the
+      restriction this proves `false`:
+
+      ```
+      procedure mkBump(c: Node) returns (t: Node)
+        opaque
+        ensures t#v == old(t#v) + 1
+        ensures t != c
+        modifies c
+      { var u: Node := new Node; u#v := u#v + 1; return u };
+
+      procedure callerProvesFalse(c: Node) opaque modifies c
+      { var t: Node := mkBump(c); assert false };
+      ```
+
+      Preventing reads from objects that are not yet allocated in the state being
+      read would let allocating procedures keep the enumerated frame. That is not a
+      trivial change. A field read under `old` is only one way to reach such a row:
+      a function called under `old`, a datatype argument, and a quantifier over a
+      composite type reach it too. Checking those reads also needs references
+      stored in the heap to be allocated, which the encoding does not maintain:
+      `new` leaves fields unset, and a hole can hold any reference.
+      `ModifiesFrameSoundness.lean` §6 pins the shapes. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
   /-- Verify coroutines via rely/guarantee.
@@ -77,14 +108,7 @@ structure LaurelTranslateOptions where
 instance : Inhabited LaurelTranslateOptions where
   default := {}
 
-/-- The parameter-free metadata of a pass, independent of the `Input`/`Output`
-    types it operates on. `LaurelPass` extends this so that passes with
-    different parameterizations (e.g. `LaurelPass Program Program` and
-    `LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes`)
-    share a common, type-parameter-free view that can be collected into a
-    single homogeneous list.
-
-    The four `NodeKind` lists describe the pass's effect on the shapes present
+/-- The four `NodeKind` lists describe the pass's effect on the shapes present
     in the program. Pipeline ordering is *derived* from them rather than declared
     pass-by-pass: `LaurelCompilationPipeline.orderingFailures` folds the live shape set
     over the pipeline and checks each pass's `unsupported` list against it. -/
@@ -104,20 +128,29 @@ structure PassMeta where
       removed by the time it runs. -/
   unsupported : List NodeKind := []
 
-/-- A single Laurel-to-Laurel pass. Each pass receives the current program and
+/-- A single pass over a `Program`. Each pass receives the current program and
     semantic model and returns the (possibly modified) program, accumulated
-    diagnostics, and statistics. Extends `PassMeta` with the `run` action; the
-    metadata fields remain directly accessible (e.g. `p.name`). -/
-structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
+    diagnostics, and statistics. -/
+structure LaurelPass extends PassMeta where
   /-- The pass action. -/
-  run : LaurelTranslateOptions → Input → SemanticModel → Output × List Message × Statistics
+  run : LaurelTranslateOptions → Program → SemanticModel → Program × List Message × Statistics
 
-abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
+/-- The result of a pass given a `Program` constructor it does not run on: the program
+    unchanged, with a `.strataBug` diagnostic naming the pass. -/
+def wrongProgram (passName : String) (program : Program) : Program × List Message × Statistics :=
+  (program, [Message.fromString
+    s!"Internal error: pass '{passName}' cannot run on a {program.kind} program" .strataBug], {})
 
-/-- Project a `LaurelPass` to its parameter-free metadata, discarding the
-    `run` action and the `Input`/`Output` type parameters. -/
-abbrev LaurelPass.meta {Input Output : Type} (p : LaurelPass Input Output) : PassMeta :=
-  p.toPassMeta
+/-- A pass that only runs on `Program.Unordered`. Declares `Program.Ordered` unsupported and
+    reports `wrongProgram` on any other IR. -/
+def LaurelPass.onUnordered (passMeta : PassMeta)
+    (run : LaurelTranslateOptions → LaurelProgram → SemanticModel →
+      LaurelProgram × List Message × Statistics) : LaurelPass where
+  toPassMeta := { passMeta with unsupported := passMeta.unsupported ++ [NodeKind.Program.Ordered] }
+  run := fun opts input model =>
+    match input with
+    | .Unordered p => let (p', d, s) := run opts p model; (.Unordered p', d, s)
+    | other => wrongProgram passMeta.name other
 
 end -- public section
 

@@ -252,7 +252,10 @@ private def mkTempAssignments (model : SemanticModel) (args : List StmtExprMd)
     let paramType := match inputParams[i]? with
       | some p => if mentionsTVar p.type.val then computeExprType model arg else p.type
       | none => { val := .Unknown, source := src }
-    let param : Parameter? := { name := mkId tempName, type := some paramType }
+    -- `Unknown`, as for an argument this pass already rewrote, has no Core sort: re-resolution
+    -- types the local from `arg` instead.
+    let type := if mentionsUnknown paramType.val then none else some paramType
+    let param : Parameter? := { name := mkId tempName, type }
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName))) src]
   return (decls, refs)
@@ -343,9 +346,7 @@ private def mkPostAssumes (info : ContractInfo)
 
 /-- Names of the callee's inout parameters: those appearing in both the input and
     output lists. By the Laurel inout convention an inout is declared by giving the
-    input and output the same name, so at a call site the inout argument is the same
-    variable as the corresponding output target — and the Core lowering relies on
-    that identity. -/
+    input and output the same name. -/
 private def ContractInfo.inoutNames (info : ContractInfo) : List String :=
   info.inputParams.filterMap fun p =>
     if info.outputParams.any (·.name.text == p.name.text) then some p.name.text else none
@@ -354,10 +355,10 @@ private def ContractInfo.inoutNames (info : ContractInfo) : List String :=
 
     Ordinary inputs are passed via their snapshot temp (so pre/postconditions can
     reference the pre-call value). Inout inputs, however, are passed as the
-    *original* argument variable rather than the temp: the call mutates that
-    variable in place, so it must coincide with the corresponding output target
-    (the Laurel inout invariant). The temp is still created and used by
-    `mkPostAssumes` to supply the inout's pre-state to `$post*`. -/
+    *original* argument variable rather than the temp, so that the Core call can
+    update it in place when it is also the corresponding output target. The temp
+    is still created and used by `mkPostAssumes` to supply the inout's pre-state
+    to `$post*`. -/
 private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprMd) : List StmtExprMd :=
   let inout := info.inoutNames
   tempRefs.zipIdx.map fun (tempRef, i) =>
@@ -377,7 +378,8 @@ private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (arg
       let mut outputRefs : List StmtExprMd := []
       for p in info.outputParams do
         let tempName ← freshTemp
-        outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
+        let type := some (typeAtCall model callee typeArgs p.type)
+        outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type }) src]
         outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
       let callWithOutputs : StmtExprMd :=
         -- `typeArgs` re-attached. Dropping it is not cosmetic here: this rebuilt call becomes the
@@ -529,7 +531,7 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
-def lowerContracts (model : SemanticModel) (program : Program) : Program :=
+def lowerContracts (model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
   let contractInfoMap := collectContractInfo program.staticProcedures
   -- `contractInfoMap` is built from the *original* procedures, before the helpers
   -- exist. That is what keeps a helper from being treated as a contracted
@@ -559,19 +561,19 @@ def lowerContracts (model : SemanticModel) (program : Program) : Program :=
 
   { program with staticProcedures := allProcs }
 
-public def contractPass : LoweringPass where
+public def contractPass : LaurelPass := .onUnordered {
   name := "Contracts"
   creates := [NodeKind.StmtExpr.Assert, NodeKind.StmtExpr.Assume]
   removes := [NodeKind.Procedure.preconditions.cons, NodeKind.Body.postconditions.cons]
   unsupported := [
       NodeKind.StmtExpr.Return,
-      NodeKind.Program.staticFields.cons,
-      NodeKind.Pseudo.overload
+      NodeKind.LaurelProgram.staticFields.cons,
+      NodeKind.Pseudo.overload,
+      NodeKind.LaurelProgram.staticFunctions.cons
     ]
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
-  needsResolves := true
-  run := fun _ p m =>
-    (lowerContracts m p, [], {})
+  needsResolves := true }
+  fun _ p m => (lowerContracts m p, [], {})
 
 end -- public section
 end Strata.Laurel

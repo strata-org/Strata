@@ -29,7 +29,7 @@ private def mkProc (name : String) (body : StmtExprMd)
   { name := mkId name, inputs := [], outputs := [], preconditions,
     decreases := none, body := .Transparent body }
 
-private def mkProgram (procs : List Procedure) : Program :=
+private def mkProgram (procs : List Procedure) : LaurelProgram :=
   { staticProcedures := procs, staticFields := [], types := [] }
 
 /-- The exact diagnostic `validateFullyAnnotated` must emit for `name`. -/
@@ -45,7 +45,7 @@ private def expectedBug (name : String) : String :=
 --    user error, so post-resolution this tree only exists via a bug)
 -- ============================================================
 
-private def unannotatedVar : Program := mkProgram [
+private def unannotatedVar : LaurelProgram := mkProgram [
   mkProc "p" (mk (.IfThenElse (mk (.LiteralBool true))
     (mk (.Block [mk (.Var (.Declare { name := mkId "x", type := none }))] none))
     none))
@@ -61,7 +61,7 @@ private def unannotatedVar : Program := mkProgram [
 --      procedure p() { assign a, var y := 1 };
 -- ============================================================
 
-private def unannotatedAssignTarget : Program := mkProgram [
+private def unannotatedAssignTarget : LaurelProgram := mkProgram [
   mkProc "p" (mk (.Assign
     [⟨.Local (mkId "a"), default⟩,
      ⟨.Declare { name := mkId "y", type := none }, default⟩]
@@ -77,7 +77,7 @@ private def unannotatedAssignTarget : Program := mkProgram [
 --      procedure p() requires (var z) { };
 -- ============================================================
 
-private def unannotatedInSpec : Program := mkProgram [
+private def unannotatedInSpec : LaurelProgram := mkProgram [
   mkProc "p" (mk (.Block [] none))
     (preconditions := [{ condition := mk (.Var (.Declare { name := mkId "z", type := none })) }])
 ]
@@ -91,7 +91,7 @@ private def unannotatedInSpec : Program := mkProgram [
 --    via a bug; the validator covers the arm regardless.
 -- ============================================================
 
-private def unannotatedIncrDecr : Program := mkProgram [
+private def unannotatedIncrDecr : LaurelProgram := mkProgram [
   mkProc "p" (mk (.IncrDecr .Pre .Incr
     ⟨.Declare { name := mkId "x", type := none }, default⟩))
 ]
@@ -105,7 +105,7 @@ private def unannotatedIncrDecr : Program := mkProgram [
 --    as an `op=` target, so this tree also only exists via a bug.
 -- ============================================================
 
-private def unannotatedCompoundAssign : Program := mkProgram [
+private def unannotatedCompoundAssign : LaurelProgram := mkProgram [
   mkProc "p" (mk (.CompoundAssign .Add
     ⟨.Declare { name := mkId "y", type := none }, default⟩
     (mk (.LiteralInt 1))))
@@ -120,7 +120,7 @@ private def unannotatedCompoundAssign : Program := mkProgram [
 --      procedure p() { var x: int; var y: bool := true };
 -- ============================================================
 
-private def annotated : Program := mkProgram [
+private def annotated : LaurelProgram := mkProgram [
   mkProc "p" (mk (.Block [
     mk (.Var (.Declare { name := mkId "x", type := some ⟨.TInt, default⟩ })),
     mk (.Assign [⟨.Declare { name := mkId "y", type := some ⟨.TBool, default⟩ }, default⟩]
@@ -139,7 +139,7 @@ private def annotated : Program := mkProgram [
 --    (resolution infers `int` and rewrites to `var x: int := 5`)
 -- ============================================================
 
-private def inferProgram : Program := mkProgram [
+private def inferProgram : LaurelProgram := mkProgram [
   mkProc "p" (mk (.Block [
     mk (.Assign [⟨.Declare { name := mkId "x", type := none }, default⟩]
       (mk (.LiteralInt 5)))

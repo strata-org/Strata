@@ -48,10 +48,10 @@ This module provides three related formulations:
    initial-state restriction; `AllAssertsValidOnTracesWhen` /
    `AllAssertsValidOnTraces` cover whole-trace validity.
 
-3. **`Hoare.Triple`.** A partial-correctness triple `{Pre} s {Post}` requires
+3. **`Hoare.TripleWith`.** A partial-correctness triple `{Pre} s {Post}` requires
    every terminating or exiting `EventLang` run to emit an assertion-valid
    trace, and requires `Post` whenever that trace is `Trace.Reachable`.
-   Conditions are interpreted by `EvaluatorBasedInterp P`.
+   Conditions are interpreted by a supplied `ConditionInterp P`.
 
 The Hoare-triple definitions and structural rules live in
 `Strata.DL.Imperative.Logic.HoareTemplate`. A triple validates completed traces;
@@ -73,7 +73,7 @@ There are two complementary ways to describe correctness of a transformation:
    `EventLang`.
 
 Both styles are bilingual and can relate different source and target languages.
-Trace overapproximation with equality traces also preserves `Hoare.Triple`
+Trace overapproximation with equality traces also preserves `Hoare.TripleWith`
 through `overapproximatesTraces_triple`, because the simulated target run has
 the same trace and final environment as the source run.
 
@@ -202,7 +202,7 @@ occurrence satisfiable with its preceding assumptions. -/
 /-! ## Style B — Hoare logic
 
 The Hoare-logic layer lives in `Strata.DL.Imperative.Logic.HoareTemplate` and does
-not depend on this module.  Its language-agnostic `Strata.Logic.Hoare.Triple` is
+not depend on this module.  Its language-agnostic `Strata.Logic.Hoare.TripleWith` is
 stated over `EventLang`; the Imperative-specific `Imperative.Logic.Hoare` layer
 supplies structural rules and `PostWF`.
 

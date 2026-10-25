@@ -54,15 +54,18 @@ import Strata.Util.Statistics
 ## Laurel Compilation Pipeline
 
 Orchestrates the Laurel-to-Laurel lowering passes and the final translation
-to Strata Core. The pipeline is:
+to Strata Core. Every pass runs on a `Program`, and `laurelPipeline` is the
+single list of passes:
 
-1. Prepend core definitions for Laurel.
-2. Run a sequence of Laurel-to-Laurel lowering passes (resolution, heap
-   parameterization, type hierarchy, modifies clauses, hole inference,
+1. Prepend core definitions for Laurel and resolve.
+2. Run the Laurel-to-Laurel lowering passes on a `Program.Unordered`
+   (heap parameterization, type hierarchy, modifies clauses, hole inference,
    desugaring, lifting, constrained type elimination, contract pass).
-3. Run the transparency pass to produce an `UnorderedCoreWithLaurelTypes`.
-4. Group and order declarations into a `CoreWithLaurelTypes`.
-5. Translate the `CoreWithLaurelTypes` to a `Core.Program`.
+3. The transparency pass splits the procedures into `staticFunctions` and
+   `staticProcedures`, which the unordered-core passes rewrite.
+4. The ordering pass groups and orders declarations into a
+   `Program.Ordered (.WithLaurelTypes _)`.
+5. The Core schema pass translates that to a `Program.Ordered (.Core _)`.
 -/
 
 open Core (VCResult VCResults VerifyOptions)
@@ -111,10 +114,10 @@ public section
 
 /-- Like `translate` but also returns the lowered Laurel program (after all
     Laurel-to-Laurel passes, before the final translation to Core). -/
-abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × Program × Statistics
+abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × LaurelProgram × Statistics
 
-/-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
-def laurelPipeline : Array LoweringPass := #[
+/-- The ordered sequence of passes, from a Laurel program to a Core program. -/
+def laurelPipeline : Array LaurelPass := #[
   -- Coroutine elaboration emits instance procedures, so it must precede instance lifting.
   coroutineElaborationPass,
   -- Behavioral-subtyping (Liskov) check for method overrides: purely additive (appends
@@ -177,7 +180,13 @@ def laurelPipeline : Array LoweringPass := #[
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
   loopInvariantWellFormednessPass,
-  contractPass
+  contractPass,
+  transparencyPass,
+  functionalRewritePass,
+  liftImperativeExpressionsPass,
+  inlineLocalVariablesPass,
+  orderingPass,
+  laurelToCoreSchemaPass
 ]
 
 def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
@@ -186,23 +195,29 @@ def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
   else postPassDiags.filter fun e => e.kind != .warning && !initialDiags.contains e
 
 /--
-Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
-program, the semantic model, accumulated diagnostics, and merged statistics.
+Run every pass of `laurelPipeline` on a program, returning the final program, the
+last Laurel program it passed through, the accumulated diagnostics, the diagnostics
+of the last pass that ran, and merged statistics.
 
 When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
-program state after each named Laurel pass is written to
-`{prefix}.{n}.{passName}.laurel.st`.
+program state after each pass is written to
+`{prefix}.{n}.{passName}.{Program.fileExtension}`.
 -/
 private def runLaurelPasses
     (options: LaurelTranslateOptions)
-    (pctx : Strata.Pipeline.PipelineContext) (program : Program)
-    : PipelineM (Program × SemanticModel × List Message × Statistics) := do
+    (pctx : Strata.Pipeline.PipelineContext) (program : LaurelProgram)
+    : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics) := do
   -- Must run HERE, before the prelude is prepended below and before the first resolve:
   -- see `validateNoDollarNames`. Bails out rather than resolving, so the diagnostic
   -- lands on the declaration rather than on a later collision.
   let dollarDiags := validateNoDollarNames program
-  if dollarDiags.any (·.kind != .warning) then
-    return (program, { nextId := 1, compositeCount := 0, refToDef := {} }, dollarDiags, {})
+  let staticFunctionDiags := program.staticFunctions.map fun proc =>
+    diagnosticFromSource proc.name.source
+      s!"'{proc.name.text}' is a static function; an input program may not declare static functions, which the transparency pass introduces"
+      MessageKind.userError
+  let inputDiags := dollarDiags ++ staticFunctionDiags
+  if inputDiags.any (·.kind != .warning) then
+    return (.Unordered program, program, inputDiags, [], {})
 
   -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
   -- `Result` datatype that the exceptional-channel lowering targets is *not*
@@ -222,20 +237,22 @@ private def runLaurelPasses
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
                   (reservedNames := options.reservedNames)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
-  let (program, model) := (result.program, result.model)
-
-  let mut program := program
-  let mut model := model
+  let mut laurelProgram := result.program
+  let mut program : Program := .Unordered result.program
+  let mut model := result.model
   let mut allDiags : List Message := result.errors.toList
+  let mut lastDiags : List Message := []
   let mut allStats : Statistics := {}
 
   if result.errors.any (·.kind != .warning) then
-    return (program, model, allDiags, allStats)
+    return (program, laurelProgram, allDiags, lastDiags, allStats)
 
   for pass in laurelPipeline do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
+    if let .Unordered p := program then laurelProgram := p
     allDiags := allDiags ++ diags
+    lastDiags := diags
     allStats := allStats.merge stats
     -- A pass that reported a real (non-warning) error has REJECTED the program; no later pass
     -- should transform an already-invalid program. Each subsequent pass is an independent chance
@@ -246,108 +263,108 @@ private def runLaurelPasses
     -- rejection is order-INDEPENDENT (it does not rely on a later re-resolve or the final gate to
     -- catch it). A pass emitting only warnings continues.
     if diags.any (·.kind != .warning) then
-      return (program, model, allDiags, allStats)
+      return (program, laurelProgram, allDiags, lastDiags, allStats)
     -- Run resolve after the pass if needed
     if pass.needsResolves then
-      let result := resolve program (some model) (gradualTypes := options.gradualTypes)
-                      (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-                      (reservedNames := options.reservedNames)
-      -- `newPostPassResolutionErrors` (mainline) subsumes poly's earlier explicit cascade guard:
-      -- it returns `#[]` when the program ALREADY has a non-warning error (initial resolution
-      -- failed, or an earlier pass reported one — depth-cap `notYetImplemented` on a divergent
-      -- generic, `EliminateExceptions` rejecting a two-output `throws` proc, or a surface error
-      -- restated over a monomorphized name like `Box$a1$bool`). In that case a "new" re-resolution
-      -- error is a downstream CASCADE, not a compiler bug, so it must NOT be folded as `.strataBug`;
-      -- an empty `newErrors` skips the fold below, and the pass loop stops naturally.
-      let newErrors := newPostPassResolutionErrors resolutionErrors allDiags result.errors
-      if !newErrors.isEmpty then
-        -- On an otherwise-valid program, a new re-resolution error is a genuine post-transform
-        -- COMPILER failure (dangling monomorph ref, unresolved inherited field) — fold it as a
-        -- StrataBug so it fails loud (translated=false).
-        --
-        -- EXCEPTION — a user identifier colliding with a pass-generated name is NOT a compiler
-        -- bug: `$`, the `$aN$` tag shape, and the reserved internal type names (`Heap`, `Field`,
-        -- `TypeTag`, `Composite`) are all legal in source, so a user can declare one.
-        -- Such a collision surfaces as a NEW `Duplicate definition` — and a duplicate can ONLY be
-        -- a user/generated clash (two user names would have clashed in the first resolve; two
-        -- generated names are worklist-deduped), so a genuine internal failure is always a "not
-        -- defined" dangling ref, never a duplicate. Report the duplicate as a plain `UserError`
-        -- with a rename hint. Location is usually good but incidental: the generated type is
-        -- prepended to `program.types`, so the user declaration is the second registrant that
-        -- `defineNameCheckDup` blames, carrying its real `FileRange`; a purely-synthetic colliding
-        -- name (`$heap`/`$impl`, `source := none`) can still lose location.
-        let isUserCollision (d : Message) : Bool :=
-          (d.message.splitOn "Duplicate definition").length > 1
-        -- EXCEPTION — a poly `throws` escape mismatch is a genuine USER error deferred to
-        -- here, not a compiler bug. A poly `throws (e:T)` cannot be checked at the initial
-        -- resolution (T is not concrete), so `validateExceptionEscapes` defers it and re-runs
-        -- post-`MonomorphizeComposites`, where the clone's throws type is concrete and an
-        -- `int </: bool` escape surfaces as a NEW `.userError` (from `checkProcedureThrows`).
-        -- Wrapping it as an internal `.strataBug` would misblame the compiler for the user's
-        -- unsound throws contract, so pass these through unchanged. The marker is the
-        -- SAME string constant `checkProcedureThrows` weaves into its diagnostic, so this
-        -- cross-module match is compile-time-guaranteed to stay in sync — rewording a message
-        -- can't silently desync the classifier. (Matching on `MessageKind` instead cannot work:
-        -- a genuine dangling-ref failure is also a `.userError`.)
-        let isExceptionContract (d : Message) : Bool :=
-          (d.message.splitOn escapeNotSubtypeMarker).length > 1
-        let asStrataBug (d : Message) : Message :=
-          { d with
-              message :=
-                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
-              kind := .strataBug }
-        -- Fold a new re-resolution error: an exception-contract escape is a deferred user error
-        -- (passed through as its native `.userError`); anything else is a genuine compiler bug.
-        let foldNewError (d : Message) : Message :=
-          if isExceptionContract d then d else asStrataBug d
-        let collisions := newErrors.toList.filter isUserCollision
-        if collisions.isEmpty then
-          -- No collision ⇒ every new error is a genuine post-transform compiler failure,
-          -- except a deferred poly-throws escape (folded as its native user error).
-          let newDiags := newErrors.toList.map foldNewError
-          emit pass.name "laurel.st" program
-          return (program, model, allDiags ++ newDiags, allStats)
-        else
-          -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
-          -- mismatches restated over the doubly-defined name (a composite named `Field`/
-          -- `TypeTag` clashing with a lowering-generated datatype yields `expected 'Composite',
-          -- got 'Field'` follow-ons) — is not an independent compiler bug and must not be blamed
-          -- on the compiler. Report each collision as a clean `.userError` with a rename hint.
-          -- The doubly-defined name is quoted in the collision message (`Duplicate definition
-          -- 'X'`); a cascade follow-on always MENTIONS that name, so we drop only the new errors
-          -- that reference a colliding name and still fail loud (`.strataBug`) on any OTHER new
-          -- error — a genuinely independent post-transform failure that merely co-occurred is
-          -- NOT masked. (Renaming the identifier removes the collision and routes every new error
-          -- through the fail-loud branch above, so nothing is ever permanently hidden.)
-          let collidingNames : List String :=
-            collisions.filterMap (fun d => (d.message.splitOn "'")[1]?)
-          let mentionsColliding (d : Message) : Bool :=
-            collidingNames.any (fun n => (d.message.splitOn n).length > 1)
-          let hinted := collisions.map fun d =>
+      match program with
+      | .Unordered p =>
+        let result := resolve p (some model) (gradualTypes := options.gradualTypes)
+                        (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+                        (reservedNames := options.reservedNames)
+        -- `newPostPassResolutionErrors` (mainline) subsumes poly's earlier explicit cascade guard:
+        -- it returns `#[]` when the program ALREADY has a non-warning error (initial resolution
+        -- failed, or an earlier pass reported one — depth-cap `notYetImplemented` on a divergent
+        -- generic, `EliminateExceptions` rejecting a two-output `throws` proc, or a surface error
+        -- restated over a monomorphized name like `Box$a1$bool`). In that case a "new" re-resolution
+        -- error is a downstream CASCADE, not a compiler bug, so it must NOT be folded as `.strataBug`;
+        -- an empty `newErrors` skips the fold below, and the pass loop stops naturally.
+        let newErrors := newPostPassResolutionErrors resolutionErrors allDiags result.errors
+        if !newErrors.isEmpty then
+          -- On an otherwise-valid program, a new re-resolution error is a genuine post-transform
+          -- COMPILER failure (dangling monomorph ref, unresolved inherited field) — fold it as a
+          -- StrataBug so it fails loud (translated=false).
+          --
+          -- EXCEPTION — a user identifier colliding with a pass-generated name is NOT a compiler
+          -- bug: `$`, the `$aN$` tag shape, and the reserved internal type names (`Heap`, `Field`,
+          -- `TypeTag`, `Composite`) are all legal in source, so a user can declare one.
+          -- Such a collision surfaces as a NEW `Duplicate definition` — and a duplicate can ONLY be
+          -- a user/generated clash (two user names would have clashed in the first resolve; two
+          -- generated names are worklist-deduped), so a genuine internal failure is always a "not
+          -- defined" dangling ref, never a duplicate. Report the duplicate as a plain `UserError`
+          -- with a rename hint. Location is usually good but incidental: the generated type is
+          -- prepended to `program.types`, so the user declaration is the second registrant that
+          -- `defineNameCheckDup` blames, carrying its real `FileRange`; a purely-synthetic colliding
+          -- name (`$heap`/`$impl`, `source := none`) can still lose location.
+          let isUserCollision (d : Message) : Bool :=
+            (d.message.splitOn "Duplicate definition").length > 1
+          -- EXCEPTION — a poly `throws` escape mismatch is a genuine USER error deferred to
+          -- here, not a compiler bug. A poly `throws (e:T)` cannot be checked at the initial
+          -- resolution (T is not concrete), so `validateExceptionEscapes` defers it and re-runs
+          -- post-`MonomorphizeComposites`, where the clone's throws type is concrete and an
+          -- `int </: bool` escape surfaces as a NEW `.userError` (from `checkProcedureThrows`).
+          -- Wrapping it as an internal `.strataBug` would misblame the compiler for the user's
+          -- unsound throws contract, so pass these through unchanged. The marker is the
+          -- SAME string constant `checkProcedureThrows` weaves into its diagnostic, so this
+          -- cross-module match is compile-time-guaranteed to stay in sync — rewording a message
+          -- can't silently desync the classifier. (Matching on `MessageKind` instead cannot work:
+          -- a genuine dangling-ref failure is also a `.userError`.)
+          let isExceptionContract (d : Message) : Bool :=
+            (d.message.splitOn escapeNotSubtypeMarker).length > 1
+          let asStrataBug (d : Message) : Message :=
             { d with
                 message :=
-                  s!"{d.message} (this name collides with one introduced by an internal lowering \
-                     pass; rename the identifier — a reserved internal type name (e.g. `Heap`, \
-                     `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
-                     `$aN$` instantiation-tag shape can clash with a synthetic name)"
-                kind := .userError }
-          let independent := newErrors.toList.filter fun d =>
-            !isUserCollision d && !mentionsColliding d
-          let newDiags := hinted ++ independent.map foldNewError
-          emit pass.name "laurel.st" program
-          return (program, model, allDiags ++ newDiags, allStats)
-      program := result.program
-      model := result.model
-    emit pass.name "laurel.st" program
+                  s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
+                kind := .strataBug }
+          -- Fold a new re-resolution error: an exception-contract escape is a deferred user error
+          -- (passed through as its native `.userError`); anything else is a genuine compiler bug.
+          let foldNewError (d : Message) : Message :=
+            if isExceptionContract d then d else asStrataBug d
+          let collisions := newErrors.toList.filter isUserCollision
+          if collisions.isEmpty then
+            -- No collision ⇒ every new error is a genuine post-transform compiler failure,
+            -- except a deferred poly-throws escape (folded as its native user error).
+            let newDiags := newErrors.toList.map foldNewError
+            emit pass.name "laurel.st" p
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+          else
+            -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
+            -- mismatches restated over the doubly-defined name (a composite named `Field`/
+            -- `TypeTag` clashing with a lowering-generated datatype yields `expected 'Composite',
+            -- got 'Field'` follow-ons) — is not an independent compiler bug and must not be blamed
+            -- on the compiler. Report each collision as a clean `.userError` with a rename hint.
+            -- The doubly-defined name is quoted in the collision message (`Duplicate definition
+            -- 'X'`); a cascade follow-on always MENTIONS that name, so we drop only the new errors
+            -- that reference a colliding name and still fail loud (`.strataBug`) on any OTHER new
+            -- error — a genuinely independent post-transform failure that merely co-occurred is
+            -- NOT masked. (Renaming the identifier removes the collision and routes every new error
+            -- through the fail-loud branch above, so nothing is ever permanently hidden.)
+            let collidingNames : List String :=
+              collisions.filterMap (fun d => (d.message.splitOn "'")[1]?)
+            let mentionsColliding (d : Message) : Bool :=
+              collidingNames.any (fun n => (d.message.splitOn n).length > 1)
+            let hinted := collisions.map fun d =>
+              { d with
+                  message :=
+                    s!"{d.message} (this name collides with one introduced by an internal lowering \
+                       pass; rename the identifier — a reserved internal type name (e.g. `Heap`, \
+                       `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
+                       `$aN$` instantiation-tag shape can clash with a synthetic name)"
+                  kind := .userError }
+            let independent := newErrors.toList.filter fun d =>
+              !isUserCollision d && !mentionsColliding d
+            let newDiags := hinted ++ independent.map foldNewError
+            emit pass.name "laurel.st" p
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+        program := .Unordered result.program
+        laurelProgram := result.program
+        model := result.model
+      | other =>
+        return (program, laurelProgram, allDiags ++ [Message.fromString
+          s!"Internal error: pass '{pass.name}' needs re-resolution, which a {other.kind} program does not support" .strataBug],
+          lastDiags, allStats)
+    emit pass.name program.fileExtension program
 
-  return (program, model, allDiags, allStats)
-
-/-- The ordered sequence of passes on the unordered Core representation. -/
-private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
-  functionalRewritePass,
-  liftImperativeExpressionsPass,
-  inlineLocalVariablesPass
-]
+  return (program, laurelProgram, allDiags, lastDiags, allStats)
 
 /--
 Soundness backstop: a discarded Core program (`none`) MUST carry at least
@@ -369,104 +386,31 @@ def ensureDiscardDiagnosed (programPresent : Bool) (diags : List Message)
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 
-When `keepAllFilesPrefix` is provided, the program state after each named
-Laurel-to-Laurel pass is written to `{prefix}.{n}.{passName}.laurel.st`.
+When `keepAllFilesPrefix` is provided, the program state after each pass is
+written to `{prefix}.{n}.{passName}.{Program.fileExtension}`.
 -/
-def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
+def translateWithLaurel (options : LaurelTranslateOptions) (program : LaurelProgram)
     (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
     : IO TranslateResultWithLaurel := do
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-  let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
-
-  if passDiags.any (·.kind != .warning) then
-    return (none, passDiags, program, stats)
-
-  -- Sanity check: `LiftInstanceProcedures` should have cleared every
-  -- composite's `instanceProcedures` list.
-  let mut passDiags := passDiags
-  unless passDiags.any (·.kind != .warning) do
-    for td in program.types do
-      if let .Composite ct := td then
-        for proc in ct.instanceProcedures do
-          passDiags := passDiags ++ [diagnosticFromSource proc.name.source
-            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
-            MessageKind.strataBug]
-
-  if passDiags.any (·.kind != .warning) then
-    return (none, passDiags, program, stats)
-
-  let unorderedCore := (transparencyPass.run options program model).1
-  emit "transparencyPass" "core.st" unorderedCore
-  let mut unorderedCore := unorderedCore
-  let mut fnModel := model
-  let mut ucDiags : List Message := []
-
-  -- Re-resolve after transparency pass (needed for synthetic variables it introduces,
-  -- e.g. proof-procedure guard variables).
-  if transparencyPass.needsResolves then
-    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-    -- Thread the same gradual-type and coercion hooks as every other resolve site: this
-    -- pass must see the same type lattice as the main `resolve`, or the widen arm (gated
-    -- on `realizeCoercion.isSome`) and the `toBool` truthiness hook differ between passes
-    -- and a well-formed gradually-typed program is rejected here. See the note on
-    -- `resolveUnorderedCore` in `Resolution.lean`.
-    let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
-                              options.gradualTypes options.realizeCoercion options.toBool options.reservedNames
-    if !errors.isEmpty then
-      let newDiags := errors.toList.map fun d =>
-        { d with
-            message :=
-              s!"Internal error: resolution after '{transparencyPass.name}' introduced this diagnostic: {d.message}"
-            kind := .strataBug }
-      return (none, passDiags ++ ucDiags ++ newDiags, program, stats)
-    unorderedCore := uc'
-    fnModel := m'
-
-  for pass in unorderedCorePipeline do
-    let (uc, passPassDiags, _) := pass.run options unorderedCore fnModel
-    unorderedCore := uc
-    ucDiags := ucDiags ++ passPassDiags
-    if pass.needsResolves then
-      let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes options.gradualTypes options.realizeCoercion options.toBool options.reservedNames
-      if !errors.isEmpty then
-        let newDiags := errors.toList.map fun d =>
-          { d with message :=
-              s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}" }
-        emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
-        return (none, passDiags ++ ucDiags ++ newDiags, program, stats)
-      unorderedCore := uc'
-      fnModel := m'
-    emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
-
-  -- An error introduced by an unordered-core pass (e.g. an assignment to an
-  -- inlined local) prevents producing a Core program, just like Laurel pass
-  -- errors above.
-  if ucDiags.any (·.kind != .warning) then
-    return (none, passDiags ++ ucDiags, program, stats)
-
-  let coreWithLaurelTypes := (orderingPass.run options unorderedCore model).1
-
-  emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run options coreWithLaurelTypes fnModel
-  let mut allDiagnostics: List Message := passDiags ++ ucDiags ++ coreDiagnostics;
-
-  emit "Core" "core.st" coreProgram
-  let coreProgramOption :=
-    if coreDiagnostics.isEmpty then some coreProgram else none
+  let (program, laurelProgram, diags, lastDiags, stats) ← runLaurelPasses options pctx program
+  if diags.any (·.kind != .warning) then
+    return (none, diags, laurelProgram, stats)
+  let coreProgramOption := match program with
+    | .Ordered (.Core coreProgram) => if lastDiags.isEmpty then some coreProgram else none
+    | _ => none
   -- Backstop invariant: if the program was discarded, it must carry at least
   -- one (non-warning) diagnostic, otherwise the discard is silent. This nets
   -- any future discard path that forgets to emit a diagnostic.
-  allDiagnostics := ensureDiscardDiagnosed coreProgramOption.isSome allDiagnostics
-  return (coreProgramOption, allDiagnostics, program, stats)
+  return (coreProgramOption, ensureDiscardDiagnosed coreProgramOption.isSome diags, laurelProgram, stats)
 
 /--
 Translate Laurel Program to Core Program.
 -/
-def translate (options : LaurelTranslateOptions) (program : Program) : IO TranslateResult := do
+def translate (options : LaurelTranslateOptions) (program : LaurelProgram) : IO TranslateResult := do
   let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
@@ -508,7 +452,7 @@ exit codes match those of a stringified exception. Tests that need the
 structured error as a value (to render it to `line:col`) call
 `verifyToMessagesCapturing` instead.
 -/
-def verifyToVcResults (program : Program)
+def verifyToVcResults (program : LaurelProgram)
     (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List Message) := do
   let (coreProgramOption, translateDiags) ← translate options.translateOptions program
@@ -541,7 +485,7 @@ is the path the non-throwing consumers (`verifyToDiagnostics`,
 fold-capturing paths share the `runVerify` boundary, so they can't drift from the
 throwing path on verify options or temp-dir handling.
 -/
-def verifyToMergedResults (program : Program)
+def verifyToMergedResults (program : LaurelProgram)
     (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List Message) := do
   -- Unlike `verifyToVcResults` (which THROWS a verify-phase error to preserve the CLI's
@@ -557,7 +501,7 @@ def verifyToMergedResults (program : Program)
     | .ok results => return (some results.mergeByAssertion, translateDiags)
     | .error coreDiag => return (none, translateDiags ++ [coreDiag])
 
-def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
+def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : LaurelProgram)
     (options : LaurelVerifyOptions := default) : IO (Array Diagnostic) := do
   let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
@@ -567,7 +511,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
   | none => []
   return (translationDiags ++ vcDiags).toArray
 
-def verifyToMessages (program : Program) (options : LaurelVerifyOptions := default)
+def verifyToMessages (program : LaurelProgram) (options : LaurelVerifyOptions := default)
     : IO (Array Message) := do
   let results ← verifyToMergedResults program options
   let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
@@ -590,7 +534,7 @@ def verifyToMessages (program : Program) (options : LaurelVerifyOptions := defau
     Shares the `runVerify` boundary with `verifyToVcResults`, differing only in
     that it returns the captured `.error` as a value instead of re-throwing it —
     so the two can't drift apart on verify options or temp-dir handling. -/
-def verifyToMessagesCapturing (program : Program)
+def verifyToMessagesCapturing (program : LaurelProgram)
     (options : LaurelVerifyOptions := default) : IO (Array Message) := do
   let (coreProgramOption, translateDiags) ← translate options.translateOptions program
   match coreProgramOption with
@@ -605,10 +549,6 @@ def verifyToMessagesCapturing (program : Program)
 
 end -- public section
 
-public def allPasses: Array PassMeta := laurelPipeline.map (fun p => p.meta) ++
-  [transparencyPass.meta] ++
-  unorderedCorePipeline.map (fun p => p.meta) ++
-  [orderingPass.meta, laurelToCoreSchemaPass.meta]
 
 /-- A pass whose declarations are not satisfied by the pipeline order. -/
 public structure OrderingFailure where
@@ -654,7 +594,7 @@ public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.
   let mut lastRemover : Std.HashMap NodeKind String := {}
   let mut failures : List OrderingFailure := []
   let mut deps : List PassDependency := []
-  for p in allPasses do
+  for p in laurelPipeline do
     for k in p.creates do
       if p.removes.contains k then
         failures := failures ++

@@ -219,8 +219,7 @@ private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
     the function's preconditions, become hypotheses of each lemma, so they
     are not assumed by any other obligation. The preconditions'
     well-formedness is checked by the function's own well-formedness lemmas,
-    and the generated axioms do not use partial functions. A lemma's name is
-    made to differ from every name in `taken`, the program's declarations. -/
+    and the generated axioms do not use partial functions. -/
 private def mkTermCheckLemmas
     (func : Function)
     (recFuncNames : List String)
@@ -228,7 +227,6 @@ private def mkTermCheckLemmas
     (funcKindMap : List (String × DecreasesKind × List Expression.Ident × List LMonoTy))
     (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
-    (taken : List String)
     (md : Imperative.MetaData Expression)
     : Except String (List Decl) := do
   let some body := func.body | return []
@@ -277,8 +275,7 @@ private def mkTermCheckLemmas
   let hyps := rankHyps ++ func.preconditions.map (·.expr)
   return obligations.mapIdx fun i ob =>
     let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp () boolImpliesOp [p, body]
-    .lemma { name := Lemma.freshName taken s!"{func.name.name}_terminates_{i}",
-             typeArgs := func.typeArgs,
+    .lemma { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
              e := Lemma.forallOver func.inputs.toList e } md
 
 /-- Result of generating adtRank declarations for a mutual datatype block. -/
@@ -306,11 +303,11 @@ private def mkAdtRankDecls
     and termination-checking lemmas for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
   -- Generated lemmas are named away from every declaration of the program.
-  let taken := p.decls.flatMap fun d => d.names.map (·.name)
+  let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
   let (changed, newDecls) ← transformDecls taken p.decls TypeFactory.default {}
   return (changed, { decls := newDecls })
 where
-  transformDecls (taken : List String) (decls : List Decl) (tf : @TypeFactory Unit)
+  transformDecls (taken : Std.HashSet String) (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)
       : CoreTransformM (Bool × List Decl) := do
     let mut acc : Array Decl := #[]
@@ -318,6 +315,7 @@ where
     let mut remaining := decls
     let mut tf := tf
     let mut emittedAdtRank := emittedAdtRank
+    let mut taken := taken
     while h : remaining ≠ [] do
       let d := remaining.head h
       let rest := remaining.tail
@@ -370,14 +368,27 @@ where
         -- Step 3: Generate one lemma per recursive call site, stating that the
         -- measure decreases there. Each function lists its lemmas.
         let recNames := funcs.map (·.name.name)
-        let termDeclss ← funcs.mapM fun func => do
+        -- A lemma whose name is already declared, or chosen for an earlier
+        -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
+        let mut revTermDeclss : List (List Decl) := []
+        for func in funcs do
           let callerKind := funcKindMap.find? (fun (n, _, _, _) => n == func.name.name)
-          match callerKind with
-          | none => return []
-          | some (_, kind, _, _) =>
-            match mkTermCheckLemmas func recNames kind funcKindMap allAdtRank.axioms tf taken md with
-            | .error msg => do throwErr msg; return []
-            | .ok r => return r
+          let decls ← match callerKind with
+            | none => pure []
+            | some (_, kind, _, _) =>
+              match mkTermCheckLemmas func recNames kind funcKindMap allAdtRank.axioms tf md with
+              | .error msg => do throwErr msg; pure []
+              | .ok r => pure r
+          let mut revNamed : List Decl := []
+          for d in decls do
+            match d with
+            | .lemma l md' =>
+              let name := Lemma.freshName taken l.name
+              taken := taken.insert name
+              revNamed := .lemma { l with name } md' :: revNamed
+            | _ => revNamed := d :: revNamed
+          revTermDeclss := revNamed.reverse :: revTermDeclss
+        let termDeclss := revTermDeclss.reverse
         let termDecls := termDeclss.flatten
         incrementStat s!"{Stats.termCheckLemmasGenerated}" termDecls.length
         let funcs' := (funcs.zip termDeclss).map fun (func, decls) =>
@@ -423,7 +434,7 @@ def termCheckPipelinePhase : PipelinePhase :=
     (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       TermCheck.termCheck prog

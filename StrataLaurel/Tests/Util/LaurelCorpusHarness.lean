@@ -16,11 +16,15 @@ meta import StrataLaurel.Implementation.LaurelCompilationPipeline
 /-!
 # Laurel corpus-case harness — shared test infrastructure
 
-The `Case`/`checkCase` harness used by the feature corpora (`GenericCompositeTest`,
-`GenericDatatypeTest`, `GenericMethodTest`, `PolyProcedureTest`,
-`PolymorphicFunctionTest`): each case pairs a Laurel source with its expected `Expect`,
+The `Case`/`checkCase` harness: each case pairs a Laurel source with its expected `Expect`,
 asserted at one point (a mismatch throws → fails the build under `#guard_msgs`). Verdicts
 come from the VC-results path (`verifyToMergedResults`).
+
+Its one remaining user is `DynamicDispatchTest`. Prefer the inline `// ^^^` annotation form
+(`testLaurelExecution` / `testLaurelVerification` / `testLaurelResolution`) for new
+feature tests: this harness asserts only counters and a `MessageKind`, so it does not pin a
+diagnostic's LOCATION or wording, and it lives outside the `EndToEndTests` tree that the
+test README makes the home for feature coverage.
 -/
 
 meta section
@@ -70,9 +74,9 @@ def corpusMetricsOf (name : String) (source : String) : IO CaseResult := do
         if vcr.isImplementationError || vcr.isTimeout || vcr.hasSMTError then acc + 1 else acc) 0
       return { translated := true, numVCs := results.size, numFailures := numFailures, numErrorOutcomes := numErrorOutcomes }
 
-/-- Parse a Laurel source string to a `Program` (used by the kind-checking pass in
+/-- Parse a Laurel source string to a `LaurelProgram` (used by the kind-checking pass in
     `checkCase`, which needs the program to re-run the diagnostic-capturing path). -/
-def corpusParse (name : String) (source : String) : IO Program := do
+def corpusParse (name : String) (source : String) : IO LaurelProgram := do
   let input := StrataDDM.Parser.stringInputContext name source
   let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input

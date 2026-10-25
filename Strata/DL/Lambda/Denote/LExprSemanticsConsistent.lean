@@ -6,7 +6,7 @@
 module
 import all Strata.DL.Lambda.LTyProps
 
-import all Strata.DL.Lambda.Semantics
+import all Strata.DL.Lambda.LExprEvalSound
 import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 

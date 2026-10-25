@@ -397,7 +397,7 @@ def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List
 end -- public section
 
 /-- Pipeline pass: infer hole types. -/
-public def inferHoleTypesPass : LoweringPass where
+public def inferHoleTypesPass : LaurelPass where
   name := "InferHoleTypes"
   creates := [NodeKind.StmtExpr.Hole.type.some]
   removes := [NodeKind.StmtExpr.Hole.type.none]

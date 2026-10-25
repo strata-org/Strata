@@ -32,12 +32,6 @@ structure ConditionInterp (P : PureExpr) where
   /-- Whether a captured event condition holds in a semantic world. -/
   holds : World → EventArg P → Prop
 
-/-- Interpretation of event conditions using the partial evaluator. -/
-@[expose] def EvaluatorBasedInterp (P : PureExpr) [HasBool P] :
-    ConditionInterp P where
-  World := Unit
-  holds := fun _ c => P.eval c.factory c.store c.expr = some HasBool.tt
-
 /-- An event is semantically neutral when its condition holds in every world. -/
 @[expose] def Event.neutral (I : ConditionInterp P) : Event P → Prop
   | .assert condition | .assume condition | .cover condition =>

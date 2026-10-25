@@ -95,12 +95,17 @@ private abbrev eqMM (F : Factory TP) (e1 e2 : LExpr TP.mono) : Option Bool :=
 #guard_msgs in
 #eval eqMM emptyFactory esM[λ %0] esM[#1]
 
-/-! ### Real constant equality tests -/
+/-! ### Rational number constant equality test -/
 
--- Different real constants are incomparable (eql cannot decide inequality)
-/-- info: none -/
+-- Equal rational values are equal
+/-- info: some true -/
 #guard_msgs in
-#eval eqMM emptyFactory (LExpr.realConst () 1) (LExpr.realConst () 2)
+#eval eqMM emptyFactory (LExpr.rationalConst () (1 / 2)) (LExpr.rationalConst () (2 / 4))
+
+-- Different rational values are not equal
+/-- info: some false -/
+#guard_msgs in
+#eval eqMM emptyFactory (LExpr.rationalConst () (1 / 2)) (LExpr.rationalConst () (2 / 3))
 
 /-! ### Datatype constructor equality tests -/
 

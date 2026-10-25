@@ -1149,16 +1149,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     return .strConst () x
   | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst () (StrataDDM.Decimal.toRat x)
+    return .rationalConst () (StrataDDM.Decimal.toRat x)
   | .fn _ q`Core.fracLit, [na, da] =>
     let num ← translateNat na
     let den ← translateNat da
     if den == 0 then
       -- A zero denominator is invalid user input, so record the error
-      -- and fall back to `realConst 0`.
-      TransM.recordError "fracLit: denominator must be non-zero" (.realConst () 0)
+      -- and fall back to `rationalConst 0`.
+      TransM.recordError "fracLit: denominator must be non-zero" (.rationalConst () 0)
     else
-      return .realConst () (Core.FracLit.fracDecode num den)
+      return .rationalConst () (Core.FracLit.fracDecode num den)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa

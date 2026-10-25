@@ -10,25 +10,32 @@ public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Logic.LangDef
 import all Strata.Languages.Core.Factory
 
-/-! # Core `Lang` bundles and their initial-environment well-formedness
+/-! # Core language bundles and initial-environment well-formedness
 
-The Core instances of `Strata.Logic.Lang`, together with the well-formedness
-predicates that gate them.  Split out from `Strata.Transform.CoreSpecification`
-so that a program logic over Core (`Strata.Languages.Core.Logic.Hoare`) can be
-stated without depending on the transform-specification framework, mirroring
+The Core instances of `Strata.Logic.Lang` and `Strata.Logic.EventLang`, together
+with the well-formedness predicates that gate them. Split out from
+`Strata.Transform.CoreSpecification` so that Core program logics do not depend
+on the transform-specification framework, mirroring
 `Strata.DL.Imperative.Logic.LangDef` on the Imperative side.
 
 ## Contents
 
-- **`InitEnvWFParams`** — the parameter record (reserved fresh-prefixes and the
-  already-declared function names) threaded into both gates.
-- **`InitEnvWF`** / **`BlockInitEnvWF`** — the statement- and block-level gates.
-  Both extend `Imperative.WellFormedSemanticEval` on the environment's own
-  factory (`ρ.factory`) and add Core-specific store, freshness and def-use
-  conditions.
-- **`Lang.core`** — the `Lang` for Core statements, gated on `InitEnvWF`.
-- **`Lang.coreBlock`** — the `Lang` for Core statement lists, gated on
-  `BlockInitEnvWF`.
+- **`InitEnvWFParams`** — reserved fresh prefixes and already-declared function
+  names, shared by all Core initial-environment gates.
+- **`InitEnvWF`** / **`BlockInitEnvWF`** — gates for a structured statement or
+  statement list. They extend `Imperative.WellFormedSemanticEval` with Core
+  store, freshness, def-use, and initialization conditions.
+- **`CFGInitEnvWF`** — the corresponding gate for an unstructured CFG. Its
+  CFG-wide analyses require every external read/update to have an entry slot,
+  every CFG-local declaration to start undefined, and every declared init-type
+  to be inhabited in the factory. Unlike the structured gates, it has no
+  `defUseOk` field: arbitrary control flow requires a path-sensitive definite-
+  assignment analysis rather than `Block.defUseWellFormed`'s list order.
+- **`Lang.core`** / **`Lang.coreBlock`** — non-event language bundles for Core
+  statements and statement lists.
+- **`EventLang.core`** / **`EventLang.coreBlock`** / **`EventLang.coreCFG`** —
+  event-trace bundles for statements, statement lists, and CFGs, gated by
+  `InitEnvWF`, `BlockInitEnvWF`, and `CFGInitEnvWF`, respectively.
 -/
 
 public section
@@ -109,6 +116,42 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
   /-- Every init-type the block declares has a value witness in `ρ`'s factory. -/
   initTypesInhabited : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss
 
+/-- Initial-environment well-formedness for a Core CFG. This mirrors
+`BlockInitEnvWF`'s store, freshness, factory, and init-type conditions using
+CFG-wide analyses. It deliberately omits `BlockInitEnvWF.defUseOk`: that check
+relies on structured list order, whereas arbitrary CFG control flow needs a
+path-sensitive definite-assignment analysis. -/
+structure CFGInitEnvWF (params : InitEnvWFParams)
+    (cfg : Core.DetCFG) (ρ : Imperative.Env Expression) : Prop
+    extends WellFormedSemanticEval (P := Expression) ρ.factory where
+  /-- The initial store contains only values. -/
+  storeWellDefined : Imperative.WellFormedStore ρ.store ρ.factory
+  /-- External reads and updates have an existing slot at CFG entry. -/
+  readWritesDefined : ∀ n ∈
+      HasVarsImp.modifiedVars (P := Expression) cfg ++
+        HasVarsImp.definedVars (P := Expression) cfg false ++
+        HasVarsImp.readVars (P := Expression) cfg,
+    n ∉ HasVarsImp.definedVars (P := Expression) cfg false → (ρ.store n).isSome
+  /-- CFG-local declarations start without a slot. -/
+  defsUndefined : ∀ n ∈ HasVarsImp.definedVars (P := Expression) cfg false,
+    (ρ.store n).isNone
+  /-- CFG-local declarations avoid prefixes reserved by earlier transforms. -/
+  definedVarsNotReserved :
+    ∀ n ∈ HasVarsImp.definedVars (P := Expression) cfg false,
+    ∀ p ∈ params.prefixIdents,
+    ¬ p.toList.isPrefixOf n.name.toList
+  /-- Existing variables also avoid reserved prefixes. -/
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
+  /-- Every builtin referenced by the CFG is included among the declared functions. -/
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every init-type the CFG declares has a value witness in `ρ`'s factory.  The
+      CFG analog of `BlockInitEnvWF.initTypesInhabited`; the CFG's blocks contain
+      `init … .nondet` commands, so every declared type needs a value witness. -/
+  initTypesInhabited : Imperative.DetCFG.InitTypesInhabited
+    (P := Expression) (C := Command) ρ.factory cfg
+
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
     (π : String → Option Procedure) :
@@ -149,6 +192,14 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
   Imperative.Logic.EventLang.imperativeBlockE
     Expression Command (EvalCommandE π)
     ⟨InitEnvWFParams, BlockInitEnvWF⟩
+
+/-- Core event language for deterministic CFG procedure bodies, gated by
+`CFGInitEnvWF`. -/
+@[expose] def EventLang.coreCFG
+    (π : String → Option Procedure) :
+    Strata.Logic.EventLang Expression (Event Expression) :=
+  Imperative.Logic.EventLang.cfgE
+    Expression Command (EvalCommandE π) InitEnvWFParams CFGInitEnvWF
 
 end Core.Logic
 

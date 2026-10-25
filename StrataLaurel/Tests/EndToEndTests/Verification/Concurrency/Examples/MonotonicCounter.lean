@@ -5,7 +5,7 @@
 -/
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 
 def prog :=
@@ -31,7 +31,7 @@ coroutine incMonotonic(s: Cell)
 
 #end
 
-#eval testCoroutine <| prog
+#eval testLaurelVerification (options := coroutineOptions) <| prog
 
 /-! ## Two coroutines with incompatible contracts.
 
@@ -79,4 +79,4 @@ coroutine dec(s: Cell)
 
 #end
 
-#eval testCoroutine <| progTwo
+#eval testLaurelVerification (options := coroutineOptions) <| progTwo

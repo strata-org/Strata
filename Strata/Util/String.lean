@@ -88,4 +88,10 @@ def hexDigits : Nat → Nat → List Char
 def hexValue (ds : List Char) : Nat :=
   ds.foldl (fun acc d => acc * 16 + hexVal d) 0
 
+/-! ### Counting in prose -/
+
+/-- `n` followed by `singular` or `plural` to agree with it. -/
+def countOf (n : Nat) (singular plural : String) : String :=
+  s!"{n} {if n == 1 then singular else plural}"
+
 end

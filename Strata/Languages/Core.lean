@@ -17,13 +17,15 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 import Strata.Transform.TerminationCheck
 import Strata.Transform.UnrollBoundedQuantifiers
+import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
-import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.Simplify
 
 /-! ## Strata Core Transform & Verification API
 
@@ -200,13 +202,26 @@ def Core.passTermCheck : Core.PipelinePhase :=
 def Core.passPrecondElim : Core.PipelinePhase :=
   _root_.Core.precondElimPipelinePhase
 
-/-- Replace polymorphic procedures with instances at the types used. -/
-def Core.passMonomorphizeProcedures : Core.PipelinePhase :=
-  _root_.Core.monomorphizeProceduresPipelinePhase
+/-- Replace the type parameters of procedures and lemmas by fresh opaque types. -/
+def Core.passGenOpaqueTypeParams : Core.PipelinePhase :=
+  _root_.Core.genOpaqueTypeParamsPipelinePhase
 
 /-- Replace polymorphic functions with instances at the types used. -/
 def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
   _root_.Core.monomorphizeFunctionsPipelinePhase
+
+/-- Partially evaluate the program: fold constants, substitute known values, expand calls
+    whose expansion cannot compound, and drop definitions nothing reads. -/
+def Core.passSimplify : Core.PipelinePhase :=
+  _root_.Core.simplifyPhase
+
+/-- Attach per-constructor axioms to recursive `@[cases]` functions, which symbolic
+    evaluation otherwise generates. For a pipeline that runs `simplify` in its place.
+    `Core.verify` rebuilds this phase from its own options, so whether it generates the
+    axioms always matches whether the back end emits `define-fun-rec`. -/
+def Core.passRecursiveAxioms (options : Core.VerifyOptions := Core.VerifyOptions.default) :
+    Core.PipelinePhase :=
+  _root_.Core.recursiveAxiomsPhase options
 
 /-- Replace non-deterministic guards with havoc and assumption. -/
 def Core.passNondetElim : Core.PipelinePhase :=
@@ -337,35 +352,21 @@ belongs to `verify` alone or to a shared set of commands is not settled, so
 nothing advertises the flags yet; the rendered text names `--phases` and
 `--display-phases` as the intended spelling for whoever wires them up. -/
 
-/-- The name of the `assert` phase for a fact: `assert` followed by the fact's
-    name with its first letter capitalized, so `noCFGBodies` gives
-    `assertNoCFGBodies`, which is what the default pipeline's first phase is
-    already called. -/
-def Core.assertPhaseName (f : Core.ProgramFact) : String :=
-  "assert" ++ (match f.name.toList with
-               | [] => ""
-               | c :: rest => String.ofList (c.toUpper :: rest))
+/-- The name of the `assert` phase for a fact (`Core.ProgramFact.assertPhaseName`). -/
+def Core.assertPhaseName (f : Core.ProgramFact) : String := f.assertPhaseName
 
 /-- The `assert<Fact>` phase a name denotes, if any: for a fact `F` with an
-    executable check, `assertPhaseName F` is a phase that checks `F` and passes
-    the program through. A fact without a check (`typeAnnotated`) has no assert
-    form, so `none`. -/
+    executable check, `assertPhaseName F` is `assertPhase F`. A fact without a
+    check (`typeAnnotated`) has no assert form, so `none`. -/
 def Core.assertPhaseFor (phaseName : String) : Option Core.PipelinePhase :=
-  (Core.ProgramFact.all.find? fun f => phaseName == Core.assertPhaseName f).bind
-    fun f =>
-      if h : f.check?.isSome = true then
-        some (Core.assertFactPhase phaseName f
-                s!"❌ Expected {f.name}, but the program does not satisfy it." h)
-      else none
+  (Core.ProgramFact.all.find? fun f => phaseName == f.assertPhaseName).bind
+    fun f => if h : f.check?.isSome = true then some (f.assertPhase h) else none
 
-/-- The phase that checks `f` on the program and passes it through. A fact with no
-    executable check has no such phase, and `by decide` refuses it where it is written:
-    `assertPhase .typeAnnotated` does not compile, since confirming annotations are
-    present would not establish that they are right. -/
+/-- The phase that checks `f` on the program and passes it through
+    (`Core.ProgramFact.assertPhase`). -/
 def Core.assertPhase (f : Core.ProgramFact) (hc : f.check?.isSome = true := by decide) :
     Core.PipelinePhase :=
-  Core.assertFactPhase (Core.assertPhaseName f) f
-    s!"❌ Expected {f.name}, but the program does not satisfy it." hc
+  f.assertPhase hc
 
 /-- The flag names a command offers for working with phases. The command supplies them
     because this package's help text refers to them and only the command knows how it

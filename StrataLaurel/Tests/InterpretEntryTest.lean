@@ -40,7 +40,7 @@ private def markedEntryNames (core : Core.Program) : List String :=
         the marker (not a by-name `__main__`/`main` lookup) drove selection.
       * one line per entry: `ok` or the runtime error (e.g. a failed `assert`).
     Contracts run as runtime assertions, matching the interpret command. -/
-private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
+private def runMarkedEntries (laurel : Laurel.LaurelProgram) (fuel : Nat := 10000) :
     IO Unit := do
   let core ← match ← Strata.laurelToCore laurel with
     | .ok core => pure core
@@ -72,7 +72,7 @@ private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
         | some e => IO.println s!"{name}: {format (Imperative.EvalError.toFormat e)}"
 
 /-- Parse a Laurel `#strata` program for use with `runMarkedEntries`. -/
-private def parse (pgm : StrataDDM.Program) : IO Laurel.Program :=
+private def parse (pgm : StrataDDM.Program) : IO Laurel.LaurelProgram :=
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram pgm) with
   | .ok p => pure p
   | .error e => throw (IO.userError s!"parse error: {e}")

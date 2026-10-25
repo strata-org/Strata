@@ -45,7 +45,10 @@ composite Container {
 
 procedure modifyOne(c: Container)
   opaque
-  modifies c;
+  modifies c
+{
+  c#value := c#value + 1
+};
 
 procedure stress()
   opaque
@@ -90,7 +93,10 @@ composite Container {
 
 procedure modifyOne(c: Container)
   opaque
-  modifies c;
+  modifies c
+{
+  c#value := c#value + 1
+};
 
 procedure stress()
   opaque

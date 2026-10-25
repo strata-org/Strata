@@ -365,3 +365,89 @@ procedure main()
 //^^^^^^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
 };
 #end
+
+/-! The Laurel interpreter refuses a call to a procedure with no implementation that could
+change something: an output (an in-out one included), a `modifies` target, a written global,
+or whether it throws. Each assertion below would pass if the interpreter guessed instead (a
+default output, the argument for an in-out one, the heap and globals left as they were, no
+throw), and the verifier rejects each. -/
+
+/-- error: procedure 'positive' has no implementation, so its output 'r' is undetermined
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure positive() returns (r: int) opaque ensures r > 0;
+procedure main() entry opaque { assert positive() == 0 };
+#end
+
+/-- error: procedure 'bump' has no implementation, so its output 'x' is undetermined
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure bump(x: int) returns (x: int) opaque ensures x == old(x) + 1;
+procedure main() entry opaque {
+  var y: int := 7;
+  y := bump(y);
+  assert y == 7
+};
+#end
+
+/-- error: procedure 'clear' has no implementation, so the state its `modifies` clause names is undetermined
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+composite Box { var v: int }
+procedure clear(b: Box) opaque modifies b;
+procedure main() entry opaque modifies * {
+  var b: Box := new Box;
+  b#v := 1;
+  clear(b);
+  assert b#v == 1
+};
+#end
+
+/-- error: procedure 'clobber' has no implementation, so the global 'g' it writes is undetermined
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure clobber() opaque writes g;
+procedure main() entry opaque {
+  var before: int := g;
+  clobber();
+  assert g == before
+};
+#end
+
+/-- error: procedure 'mayThrow' has no implementation, so whether it throws is undetermined
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+composite E {}
+procedure mayThrow() throws (e: E) opaque;
+procedure main() entry opaque {
+  var out: int := 0;
+  try { mayThrow(); out := 1 } catch c { out := 99 };
+  assert out == 1
+};
+#end
+
+/-! A call that can change nothing, such as one that only reads a global, still runs. -/
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure peek() opaque reads g;
+procedure main() entry opaque { peek() };
+#end

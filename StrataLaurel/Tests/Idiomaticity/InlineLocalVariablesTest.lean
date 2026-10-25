@@ -19,23 +19,20 @@ compare its printed body against the expected output.
 
 meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.InlineLocalVariables
-import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Parse + resolve a program, then inline local variables in every procedure,
-    printing each rewritten procedure and any diagnostics it produced. -/
-private meta def printInlined (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let resolved := (resolve laurelProgram).program
-  for proc in resolved.staticProcedures do
-    let (proc', diags) := inlineLocalVariablesInFunction proc
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc')))
-    for d in diags do
-      IO.println s!"diagnostic: {d.message}"
+/-- Parse, resolve, run `inlineLocalVariablesPass`, print the rewritten
+    procedures. The pass runs on the resolved procedures placed in
+    `staticFunctions` (it rewrites function copies); the driver drops the prelude
+    wrappers from them before printing. -/
+private meta def printInlined : StrataDDM.Program → IO Unit :=
+  runCorePassForIdiomaticity inlineLocalVariablesPass
+    (fun p _ => { staticFunctions := p.staticProcedures, staticProcedures := [],
+                  staticFields := [], types := [], constants := [] })
 
 /-! ## A chain of `let`-style declarations is fully inlined -/
 

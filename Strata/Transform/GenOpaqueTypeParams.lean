@@ -13,12 +13,17 @@ public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprType
 import all Strata.DL.Imperative.Stmt
 
-/-! # Monomorphize Procedures
+/-! # Generalize Type Parameters to Opaque Types
 
-The `MonomorphizeProcedures` program transformation monomorphizes every
-polymorphic procedure so that no procedure's types mention type variables. It
-monomorphizes polymorphic lemmas the same way: a lemma's type parameters are
-replaced by fresh opaque types in its formula.
+The `GenOpaqueTypeParams` program transformation replaces each type parameter
+of a polymorphic procedure by a fresh opaque type, so that no procedure's types
+mention type variables. It treats polymorphic lemmas the same way: a lemma's
+type parameters are replaced by fresh opaque types in its formula.
+
+This is universal generalization, not monomorphization: a type parameter is
+not instantiated at the types it is used at (as `MonomorphizeFunctions` does
+for functions) but replaced by one arbitrary type, so proving the result proves
+the original at every instantiation.
 
 ## Where it runs
 
@@ -27,8 +32,8 @@ This pass runs in `corePipelinePhases` immediately *before* `typeCheckPhase`
 of this position matter:
 
 * `CallElim` has already run, so no procedure body contains a `call` and each
-  procedure can be monomorphized independently of the others.
-* `typeCheckPhase` which runs after `MonomorphizeProcedures` clears `header.typeArgs`
+  procedure can be processed independently of the others.
+* `typeCheckPhase` which runs after `GenOpaqueTypeParams` clears `header.typeArgs`
   and instantiates the signature to fresh internal type variables such as
   `$__ty0`, so running before it lets each procedure still carry its declared
   type parameters in `header.typeArgs` under their original source names
@@ -57,13 +62,13 @@ For each procedure whose `header.typeArgs` is `x₁, …, xₖ`:
 
 The statement-level substitution reuses the type checker's `Core.Statement.subst`
 (`StatementType.lean`, which in turn uses `Command.subst` and `Lambda.LTy.subst`).
-Only structured bodies are monomorphized: a CFG body is reported as an error.
+Only structured bodies are supported: a CFG body is reported as an error.
 -/
 
 public section
 
 namespace Core
-namespace MonomorphizeProcedures
+namespace GenOpaqueTypeParams
 
 open Lambda Imperative
 open Strata.Util (HMap)
@@ -85,7 +90,7 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
     | .structured ss => pure (Procedure.Body.structured (ss.map (Core.Statement.Statement.subst S)))
     | .cfg _ =>
       throw (Strata.Message.fromString
-        "MonomorphizeProcedures: CFG procedure bodies are not supported")
+        "GenOpaqueTypeParams: CFG procedure bodies are not supported")
   return { proc with
     header := { proc.header with
       typeArgs := [],
@@ -127,11 +132,11 @@ def mkOpaqueSubst (name : String) (tyVars : List TyIdentifier) :
     opaqueDecls := Decl.type (.con { name := nm.name, params := [] }) .empty :: opaqueDecls
   return (opaqueDecls.reverse, [HMap.ofList pairs.reverse])
 
-/-- Monomorphize a single procedure.  One fresh opaque type is minted per
+/-- Replace the type parameters of a single procedure by opaque types.  One fresh opaque type is minted per
     declared type parameter (`header.typeArgs`); the opaque type declarations are
     returned first, followed by the substituted procedure.  A procedure with no
     type parameters is returned unchanged. -/
-def monomorphizeProc (proc : Procedure) (md : MetaData Expression) :
+def genOpaqueProc (proc : Procedure) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
   let tyVars := proc.header.typeArgs.uniq
   if tyVars.isEmpty then
@@ -141,9 +146,9 @@ def monomorphizeProc (proc : Procedure) (md : MetaData Expression) :
     let proc' ← substProc S proc
     return opaqueDecls ++ [Decl.proc proc' md]
 
-/-- Monomorphize a lemma: a lemma holds at every instantiation of its type
+/-- Replace the type parameters of a lemma by opaque types: a lemma holds at every instantiation of its type
     parameters, so it is checked at fresh opaque types, as a procedure is. -/
-def monomorphizeLemma (l : Lemma) (md : MetaData Expression) :
+def genOpaqueLemma (l : Lemma) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
   let tyVars := l.typeArgs.uniq
   if tyVars.isEmpty then
@@ -152,8 +157,8 @@ def monomorphizeLemma (l : Lemma) (md : MetaData Expression) :
     let (opaqueDecls, S) ← mkOpaqueSubst l.name tyVars
     return opaqueDecls ++ [Decl.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
 
-/-- Monomorphize every procedure and lemma in the program, introducing opaque
-    types for the type parameters of each polymorphic one. -/
+/-- Introduce opaque types for the type parameters of every polymorphic
+    procedure and lemma in the program. -/
 def run (p : Program) : CoreTransformM Program := do
   let out ← p.decls.foldlM (init := (#[] : Array Decl)) fun acc decl => do
     match decl with
@@ -168,49 +173,50 @@ def run (p : Program) : CoreTransformM Program := do
         match proc.body with
         | .cfg _ =>
           throw (Strata.Message.fromFormat
-            f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} has a CFG \
-               body; monomorphization only handles structured bodies.")
+            f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} has a CFG \
+               body; only structured bodies are supported.")
         | .structured ss =>
           if !(Statements.noCalls ss) then
             throw (Strata.Message.fromFormat
-              f!"❌ MonomorphizeProcedures: procedure {proc.header.name.name} still \
-                 contains a call; eliminate calls before monomorphizing.")
+              f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} still \
+                 contains a call; eliminate calls before running this pass.")
           else
-            let contrib ← monomorphizeProc proc md
+            let contrib ← genOpaqueProc proc md
             pure (acc ++ contrib.toArray)
     | .lemma l md => do
-      let contrib ← monomorphizeLemma l md
+      let contrib ← genOpaqueLemma l md
       pure (acc ++ contrib.toArray)
     | _ => pure (acc.push decl)
   return { decls := out.toList }
 
-end MonomorphizeProcedures
+end GenOpaqueTypeParams
 
 open Core.Transform in
-/-- `CoreTransformM` runner for `MonomorphizeProcedures`, suitable for use with
+/-- `CoreTransformM` runner for `GenOpaqueTypeParams`, suitable for use with
     `Core.Transform.run`.  Reports whether any opaque type declaration was
-    introduced (which happens iff some procedure or lemma was monomorphized). -/
-def monomorphizeProcedures (p : Program) : CoreTransformM (Bool × Program) := do
-  let p' ← MonomorphizeProcedures.run p
+    introduced (which happens iff some procedure or lemma had type parameters). -/
+def genOpaqueTypeParams (p : Program) : CoreTransformM (Bool × Program) := do
+  let p' ← GenOpaqueTypeParams.run p
   return (p'.decls.length != p.decls.length, p')
 
-/-- Pipeline phase for `MonomorphizeProcedures`.  Model-preserving: replacing an
+/-- Pipeline phase for `GenOpaqueTypeParams`.  Model-preserving: replacing an
     implicitly universally-quantified type variable with a fresh, arbitrary
     opaque type is universal generalization (∀-introduction), which preserves
     the proof obligation and introduces no spurious models. -/
-def monomorphizeProceduresPipelinePhase : PipelinePhase :=
-  -- Monomorphizing each procedure on its own is sound only once no body
+def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
+  -- Processing each procedure on its own is sound only once no body
   -- contains a call, which is why `noCalls` is required and not merely
   -- convenient.
-  modelPreservingPipelinePhase "monomorphizeProcedures"
+  modelPreservingPipelinePhase "genOpaqueTypeParams"
     (requires := factSet![.noCFGBodies, .noCalls])
     (establishes := factSet![.noPolymorphicProcedures])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog =>
-      monomorphizeProcedures prog
+      genOpaqueTypeParams prog
 
 end Core
 

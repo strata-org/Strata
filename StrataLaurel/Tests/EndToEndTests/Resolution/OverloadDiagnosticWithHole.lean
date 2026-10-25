@@ -78,3 +78,71 @@ procedure holeComparedToString(s: string) opaque {
   assert true
 };
 #end
+
+/-! ## A hole in a GENERIC callee's slot
+
+The rule above blanks only the slots whose declared type mentions a type variable, which is
+what lets a hole in a *concrete* slot of a partly-generic signature still be typed. Both
+halves need pinning, because they fail in opposite directions: blanking every slot turns the
+first case into "could not infer type", and blanking none makes the second report Core's
+internal `$hole_N$asFunction` instead of a user-level error.
+
+`InferHoleTypes` should be part of Laurel resolution. Typing a hole from its context is a
+resolution question, and "this hole has no type to take" is the same question answered
+negatively. It is not done there today: `inferHoleTypesPass` runs in the lowering pipeline, so
+`resolve` says nothing about holes either way. That is why ALL THREE cases below run the full
+pipeline under `testLaurelExecution` — on `testLaurelResolution` none of them can fail, the
+rejecting two because their diagnostic is never emitted and the accepting one because the pass
+whose output it describes never runs. Moving the pass into resolution would let all three use
+`testLaurelResolution` and mean something.
+
+Only the ACCEPTING case runs: it marks an `entry`, so the typed hole is also executed. The
+other two are verification-only because they pin a REJECTION — `could not infer type` comes
+out of `inferHoleTypesPass` during Laurel→Core, so the Core path stops there, and the
+standalone Laurel interpreter never runs that pass at all and so would report nothing while
+the annotation waited to fire. -/
+
+-- A hole in the `int` slot of `f<T>(x: int, y: T)`: concrete, so it is typed from the
+-- parameter and the program resolves. On the full pipeline, so that blanking every slot in
+-- `InferHoleTypes` would actually break it.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure f<T>(x: int, y: T) opaque;
+procedure holeInConcreteSlotOfGenericCallee() entry opaque {
+  var b: bool := true;
+  f(<?>, b);
+  assert 1 == 1
+};
+#end
+
+-- A hole in the `T` slot has nothing to take a type from — `T` is uninstantiated at
+-- hole-typing time — so it is reported as a user-level inference failure.
+-- Verification-only: the annotated rejection comes from `inferHoleTypesPass` (Laurel→Core),
+-- which neither interpreter path can report — see the note above.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure f<T>(x: int, y: T) opaque;
+procedure holeInGenericSlot() opaque {
+  f(1, <?>);
+//     ^^^ error: could not infer type
+  assert 1 == 1
+};
+#end
+
+-- The same shape through a built-in: `select<K, V>(map: TotalMap K V, key: K)`'s key slot is
+-- a type variable too, even though it is instantiated at `int` by the map argument. This is
+-- the case that makes the rule's granularity visible — the slots of `select` differ, unlike
+-- `$eq`'s two identical `T`s.
+-- Verification-only for the same reason as the case above.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure holeInMapKeySlot() opaque {
+  var m: TotalMap int bool := mapConst(false);
+  var b: bool := select(m, <?>);
+//                         ^^^ error: could not infer type
+  assert b == b
+};
+#end

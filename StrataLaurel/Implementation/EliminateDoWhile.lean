@@ -91,7 +91,7 @@ def eliminateDoWhile (program : Program) : Program :=
   (mapProgramStmtExprM EliminateDoWhile.rewriteNode program |>.run {}).fst
 
 /-- Pipeline pass: eliminate post-test (`do … while`) loops. -/
-public def eliminateDoWhilePass : LoweringPass where
+public def eliminateDoWhilePass : LaurelPass where
   name := "EliminateDoWhile"
   creates := [
       NodeKind.StmtExpr.While,

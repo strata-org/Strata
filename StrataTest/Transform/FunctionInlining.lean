@@ -451,7 +451,7 @@ obligation can be raised. -/
 
 /-! No caller can run that ordering, though: the pipeline validator refuses it. -/
 
-/-- info: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `noCFGBodies` — phase #5 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+/-- info: phase #3 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `wellFormedCalls, noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
 #guard_msgs in
 #eval match Core.validatePipeline inliningSplicedEarly with
       | .ok _ => Std.Format.text "accepted"
