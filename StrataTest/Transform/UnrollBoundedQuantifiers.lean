@@ -2401,7 +2401,7 @@ procedure P ()
   if * {
     if * {
       assume [ls]: Sequence.length(s) == 2;
-      assert [assume_e0_calls_Sequence.select_0]: true && int.lt(0, Sequence.length(s));
+      assert [assume_e0_calls_Sequence.select_0]: int.lt(0, Sequence.length(s));
     } else {
       assume [ls]: Sequence.length(s) == 2;
       assume [e0]: Sequence.select(s, 0) == 5;
@@ -2481,7 +2481,7 @@ procedure P ()
 {
   if * {
     assume [li]: Sequence.length(idx) == 1;
-    assert [assume_i0_calls_Sequence.select_0]: true && int.lt(0, Sequence.length(idx));
+    assert [assume_i0_calls_Sequence.select_0]: int.lt(0, Sequence.length(idx));
   } else {
     assume [li]: Sequence.length(idx) == 1;
     assume [i0]: Sequence.select(idx, 0) == 2;

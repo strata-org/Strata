@@ -614,4 +614,12 @@ noncomputable def Term.denoteTypedArgs {σ : SortInterp} {𝒜 : ArrayTheory}
           (Term.denoteTypedArgs ufInterp env divByZero modByZero ts tys htc_rest)
 end
 
+/- Realize `Term.denoteTyped`'s unfolding lemmas here, inside a proof so that they are exported:
+downstream proofs that unfold `Term.denoteTyped` then reuse them instead of each regenerating them
+(several seconds). -/
+private theorem Term.denoteTyped_realize_eqns : True := by
+  have := @Term.denoteTyped.eq_def
+  have := @Term.denoteTyped.eq_1
+  trivial
+
 end Strata.SMT.DenoteTyped

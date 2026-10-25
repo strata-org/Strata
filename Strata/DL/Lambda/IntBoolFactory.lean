@@ -431,14 +431,115 @@ def intGeFunc : WFLFunc T :=
 
 /-! ### Boolean Operations -/
 
+/-- A Boolean connective that the evaluator also folds when only its first operand is known.
+    `absorb` is the first-operand value that decides the result on its own, as `decided`
+    (`false` for `and`, `true` for `or` and implies); with the other first-operand value the
+    result is the second operand, whatever it is, since `true && y`, `false || y` and
+    `true → y` are all `y`. The `shortCircuit` attribute makes the evaluator call
+    `concreteEval` once the first operand is a value, before it evaluates the second
+    operand, and then evaluate only what `concreteEval` returns.
+
+    Dropping the second operand is sound even when it is ill-defined (say, a partial
+    function applied outside its domain): functions denote total functions, so such an
+    operand still has some Boolean value, and `false && y = false` holds for all of them. -/
+def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
+  let mkConst := LambdaLeanType.mkConst (ValTy := Bool) T
+  let cevalB := LambdaLeanType.cevalTy (ValTy := Bool) T
+  ⟨{ name := n,
+     inputs := [(binaryParam1Name, .bool), (binaryParam2Name, .bool)],
+     output := .bool,
+     attr := #[.shortCircuit],
+     concreteEval := some (fun md args => match args with
+       | [x, y] => match cevalB x with
+         | some a => if a == absorb then some (mkConst md decided) else some y
+         | none => none
+       | _ => none) }, {
+    arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
+    concreteEval_argmatch := by
+      intro fn md args res hfn heval
+      simp at hfn; subst hfn
+      match args with
+      | [] | [_] | _ :: _ :: _ :: _ => simp at heval
+      | [_, _] => rfl
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp [ListMap.values] at hity
+      rcases hity with rfl | rfl <;> simp [LMonoTy.freeVars, LMonoTys.freeVars]
+    output_typevars_in_typeArgs := by simp [LMonoTy.freeVars, LMonoTys.freeVars]
+    typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_freeVars := by
+      intro ceval h md args res heval z hz
+      simp at h; subst h
+      match args, heval with
+      | [x, y], heval =>
+        simp only [] at heval
+        match hcx : cevalB x with
+        | none => simp [hcx] at heval
+        | some a =>
+          simp only [hcx] at heval
+          split at heval
+          · simp only [Option.some.injEq] at heval; subst heval
+            rw [LambdaLeanType.mkConst_closed] at hz; simp at hz
+          · simp only [Option.some.injEq] at heval; subst heval
+            exact ⟨y, by simp, hz⟩
+    concreteEval_eraseMetadata := by
+      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      simp at h; subst h
+      match args1, heval with
+      | [x1, y1], heval =>
+        have hlen : args2.length = 2 := by
+          have := congrArg List.length hmap; simp at this; omega
+        match args2, hlen with
+        | [x2, y2], _ =>
+          simp [List.map] at hmap
+          obtain ⟨hxeq, hyeq⟩ := hmap
+          have hcx := LambdaLeanType.cevalTy_eraseMetadata (ValTy := Bool) T x1 x2 hxeq
+          simp only [] at heval ⊢
+          match hcx1 : cevalB x1 with
+          | none => simp [hcx1] at heval
+          | some a =>
+            have hcx2 : cevalB x2 = some a := by
+              change LambdaLeanType.cevalTy T x2 = some a; rw [← hcx]; exact hcx1
+            simp only [hcx2]
+            simp only [hcx1] at heval
+            split at heval
+            · rename_i hg
+              simp only [Option.some.injEq] at heval; subst heval
+              exact ⟨mkConst md2 decided, by simp [hg],
+                LambdaLeanType.mkConst_eraseMetadata T md1 md2 decided⟩
+            · rename_i hg
+              simp only [Option.some.injEq] at heval; subst heval
+              exact ⟨y2, by simp [hg], hyeq⟩
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := by intro p hp; simp at hp
+    shortCircuit_substFvars := by
+      intro _ ceval h _ md a rest sm
+      simp at h; subst h
+      match rest with
+      | [] | _ :: _ :: _ => simp
+      | [y] =>
+        simp only [List.map_cons, List.map_nil]
+        generalize cevalB a = c
+        cases c with
+        | none => rfl
+        | some b =>
+          simp only
+          split
+          · simp [mkConst, LambdaLeanType.mkConst, LExpr.substFvars, LExpr.boolConst,
+              LExpr.substFvars.substFvarsAux]
+          · rfl
+  }⟩
+
 def boolAndFunc : WFLFunc T :=
-  binaryOp "Bool.And" Bool.and
+  shortCircuitOp "Bool.And" false false
 
 def boolOrFunc : WFLFunc T :=
-  binaryOp "Bool.Or" Bool.or
+  shortCircuitOp "Bool.Or" true true
 
 def boolImpliesFunc : WFLFunc T :=
-  binaryOp (InValTy := Bool) "Bool.Implies" (!· || ·)
+  shortCircuitOp "Bool.Implies" false true
 
 def boolEquivFunc : WFLFunc T :=
   binaryOp (InValTy := Bool) "Bool.Equiv" (· == ·)
