@@ -1162,14 +1162,13 @@ $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
-The callee is resolved against either an instance procedure or a
-static procedure (the latter handles uniformly-dispatched call syntax
-where the receiver is forwarded as `self`). Output arity is forwarded
-identically to
+The receiver synthesizes a composite $`C`, and $`\mathit{Owner}` is the most
+specific of $`C` and its ancestors that declares the callee. Output arity is
+forwarded identically to
 {name Strata.Laurel.Resolution.Synth.staticCall}`Synth.staticCall`'s
 single-vs-multi split. In both call families the single- and multi-output
 rules differ only in the *output* arity; argument checking is the same, and

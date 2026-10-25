@@ -341,6 +341,16 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     simp at this
     omega
 
+/-- The name and kind of the procedure or type `target` names, if it names one. Such a name is
+    `.Unknown` by itself (`ResolvedNode.getType`), never because of an earlier error. -/
+private def nonValueName? (target : StmtExprMd) :
+    ResolveM (Option (String × ResolvedNodeKind)) := do
+  let .Var (.Local ref) := target.val | pure none
+  let some (_, node) := (← get).scope.get? ref.text | pure none
+  pure <| if node.kind matches .staticProcedure | .instanceProcedure | .compositeType
+      | .constrainedType | .datatypeDefinition | .typeAlias | .coroutineType | .opaqueType
+    then some (ref.text, node.kind) else none
+
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
   let s ← get
@@ -1012,20 +1022,13 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
     `none` for every other resolution kind — unresolved names (whose
     `getCallInfo` `paramTypes` is `[]` purely because the name was not found),
     datatype constructors/testers, parameters, and constants — so that the
-    over-arity check in the call rules does not fire on those (which would
+    over-arity check in `Synth.staticCall` does not fire on those (which would
     duplicate the already-reported name-resolution error, or wrongly flag a
-    constructor/parameter/constant call).
-
-    For an instance procedure the implicit `self` receiver is not supplied
-    positionally at an `InstanceCall` site, so it is dropped here exactly as
-    the `dropSelf` logic in `Synth.instanceCall` does. `dropSelf` is passed by
-    the caller: `false` for `Synth.staticCall` (no `self`), and `true` for an
-    instance procedure reached through `Synth.instanceCall`. -/
-private def procArity (callee : Identifier) (dropSelf : Bool) : ResolveM (Option Nat) := do
+    constructor/parameter/constant call). -/
+private def procArity (callee : Identifier) : ResolveM (Option Nat) := do
   match (← get).scope.get? callee.text with
-  | some (_, .staticProcedure proc) => pure (some proc.inputs.length)
-  | some (_, .instanceProcedure _ proc) =>
-    pure (some (if dropSelf then proc.inputs.length - 1 else proc.inputs.length))
+  | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
+    pure (some proc.inputs.length)
   | _ => pure none
 
 /-! ## Overloaded static procedures
@@ -3808,7 +3811,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
   -- defined"). Args are resolved above regardless, so errors inside surplus
   -- arguments are still reported. The return type is unchanged to suppress
   -- cascading errors. Under-arity (too few args) is deliberately not flagged.
-  if let some arity ← procArity callee (dropSelf := false) then
+  if let some arity ← procArity callee then
     if args.length > arity then
       let diag := diagnosticFromSource source
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
@@ -3824,27 +3827,28 @@ def Synth.staticCall (exprMd : StmtExprMd)
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
-    Γ ⊢ target ⇒ _                                            (Instance-Call)
-    Γ(callee) = instance- or static-procedure
+    Γ ⊢ target ⇒ C                                            (Instance-Call)
+    Γ(Owner$callee) = instance-procedure
       with inputs [self; Ts] and output [T'] (single output)
     Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
     Γ ⊢ InstanceCall target callee args ⇒ T'
 
-    Γ ⊢ target ⇒ _                                            (Instance-Call-Multi)
-    Γ(callee) = instance- or static-procedure
+    Γ ⊢ target ⇒ C                                            (Instance-Call-Multi)
+    Γ(Owner$callee) = instance-procedure
       with inputs [self; Ts] and outputs [T_1; …; T_n] (n ≥ 2)
     Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
     Γ ⊢ InstanceCall target callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
     A callee with *zero* outputs synthesizes `TVoid` (the n = 0 case).
-    The two rules differ only in *output* arity. Target is synthesized;
-    callee resolves to an instance or static procedure; arguments are
+    The two rules differ only in *output* arity. Target synthesizes a composite
+    `C`, and `Owner` is the most specific of `C` and its ancestors that declares
+    `callee`; arguments are
     checked pairwise against the callee's parameter types after dropping
     `self`. As in `Synth.staticCall`, supplying *more* arguments than the
     callee declares (compared against the post-`self` parameter count) emits
-    an over-arity diagnostic when the callee genuinely resolves to a
+    an over-arity diagnostic when the callee resolves to an instance
     procedure, while surplus arguments against any other resolution kind are
     still checked against `Unknown` with no arity diagnostic. Like
     `Synth.staticCall`, the push is bidirectional so block- and
@@ -3861,29 +3865,28 @@ def Synth.staticCall (exprMd : StmtExprMd)
     **Ambiguity.** With no single most-specific declarer
     (`MemberResolution.ambiguous`) the call reports the ambiguity and stops, typed
     `Unknown`, binding no candidate: binding one would propagate a return type that
-    contradicts the ambiguity. Arguments are still checked, against `Unknown`, so an
-    error in one is not masked. -/
+    contradicts the ambiguity. A call on a receiver that is not a composite stops the same
+    way, and is reported unless an error already rejects the program: one for the receiver,
+    or, for an `Unknown` receiver other than a hole or the name of a procedure or a type,
+    any earlier one, which may be what typed it (`var x;` does). Arguments are still
+    checked, against `Unknown`, so an error in one is not masked. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : FileRange)
     (h : exprMd.val = .InstanceCall target callee args)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
+  let errorsBefore := (← get).errors.size
   let (target', targetTy) ← Synth.resolveStmtExpr target
+  let unbound : ResolveM (StmtExpr × HighTypeMd) := do
+    let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Check.resolveStmtExpr a { val := .Unknown, source := a.source })
+    return (.InstanceCall target' callee args', { val := .Unknown, source := callee.source })
   -- An instance procedure is registered under the container-scoped key
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
-  -- produces. Look the method up under that key, derived from the receiver's
-  -- type; fall back to the bare callee name when the target's type can't be
-  -- determined (an unresolved name, which already reported its own error).
-  -- A legitimate `obj#method(…)` has a COMPOSITE receiver, so `targetTypeName` yields
-  -- `some TypeName` and we look the method up under the container-scoped key `TypeName$method`
-  -- (the lifted static proc). When it yields `none` the receiver is NOT a composite — either an
-  -- already-errored target (type `.Unknown`, stay quiet — it reported its own error) or a
-  -- resolved NON-composite (`z : int`), which has no methods. REJECT the latter: without this,
-  -- the bare-`callee` fallback below would silently bind `z#sideEffect(…)` to an unrelated
-  -- top-level static procedure `sideEffect`, leaving an instance call that
-  -- `LiftInstanceProcedures` does not lift and Core translation reports as a strata-bug.
+  -- produces, so the method is looked up under its composite's key.
   let lookupKey ← match (← targetTypeName target') with
     | some tyName => do
       -- An instance procedure is registered ONLY under its DECLARING type's key, so an
@@ -3913,60 +3916,56 @@ def Synth.instanceCall (exprMd : StmtExprMd)
         modify fun st => { st with errors := st.errors.push diag }
         -- Exit before binding a candidate (see **Ambiguity** above); arguments
         -- are still checked so an error in one is not masked.
-        let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
-          have := hMem
-          Check.resolveStmtExpr a { val := .Unknown, source := a.source })
-        return (.InstanceCall target' callee args',
-                { val := .Unknown, source := callee.source })
+        return (← unbound)
       | .undeclared =>
         -- No ancestor declares it; use the receiver's own key so the standard
         -- "not defined" diagnostic names the receiver type.
         pure (containerScopedName (mkId tyName) callee)
     | none =>
-      unless targetTy.val matches .Unknown | .TVoid do
+      -- A receiver that is not a composite leaves nothing to bind; unreported, the call would
+      -- reach Core translation unlifted. **Ambiguity** above says when the report is skipped.
+      let named? ← nonValueName? target'
+      let byItself := target'.val matches .Hole .. || named?.isSome
+      let since := if targetTy.val matches .Unknown && !byItself then 0 else errorsBefore
+      unless (← get).errors.any (·.kind != .warning) (start := since) do
+        let receiver := match named? with
+          | some (name, kind) => s!"the {kind.name} '{name}', which is not a value"
+          | none =>
+            if targetTy.val matches .Unknown then "a receiver of unknown type"
+            else "a non-composite receiver"
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
-          s!"'{callee.text}' is called with '#' on a non-composite receiver; instance-method calls require a composite receiver") }
-      pure callee
-  let resolved ← resolveRef lookupKey source
-    (expected := #[.instanceProcedure, .staticProcedure])
+          s!"'{callee.text}' is called with '#' on {receiver}; instance-method calls require a composite receiver") }
+      return (← unbound)
+  let resolved ← resolveRef lookupKey source (expected := #[.instanceProcedure])
   -- Preserve the user-facing callee text for diagnostics; only stamp the
   -- resolved `uniqueId` from the container-scoped lookup.
   let callee' := { callee with uniqueId := resolved.uniqueId }
-  -- The callee resolves to either an instance- or a static-procedure. An
-  -- instance procedure's first parameter is the implicit `self` receiver,
-  -- which is not supplied positionally here, so it must be dropped before
-  -- pairing parameter types with `args`. A static procedure (also accepted
-  -- on this path) has no `self`, so all its parameters are real and none may
-  -- be dropped. We distinguish the two by the same scope lookup `getCallInfo`
-  -- uses.
-  let method? : Option (Identifier × Procedure) := match (← get).scope.get? lookupKey.text with
-    | some (_, .instanceProcedure owner proc) => some (owner, proc)
-    | _ => none
-  let dropSelf := method?.isSome
+  -- A key that names no instance procedure, which `resolveRef` has reported, binds nothing.
+  let some (_, .instanceProcedure owner proc) := (← get).scope.get? lookupKey.text
+    | return (← unbound)
   -- The receiver is the lifted call's first argument, with `self` its parameter. Not for a method
   -- that redeclares a type parameter of its composite: the re-resolution after the lift reports
   -- that clash as a duplicate definition.
-  if let some (owner, proc) := method? then
-    let ownerParams := match (← get).scope.get? owner.text with
-      | some (_, .compositeType ct) => ct.typeArgs
-      | _ => []
-    if let self :: params := proc.inputs then
-      if (!ownerParams.isEmpty || !proc.typeArgs.isEmpty)
-          && !proc.typeArgs.any (fun tv => ownerParams.any (·.text == tv.text)) then
-        let receiver? := some (self.type, targetTy)
-        let proc := { proc with inputs := params }
-        let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee proc args
-          (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
-          receiver?
-        let (_, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst source
-          receiver?
-        -- An `.InstanceCall` has no slot for the inferred type arguments; the re-resolution after
-        -- `LiftInstanceProcedures` records them on the static call it becomes.
-        return (.InstanceCall target' callee' args', ty)
-  let (retTy, paramTypes) ← getCallInfo lookupKey
-  let callParamTypes :=
-    if dropSelf then (match paramTypes with | _ :: rest => rest | [] => [])
-    else paramTypes
+  let ownerParams := match (← get).scope.get? owner.text with
+    | some (_, .compositeType ct) => ct.typeArgs
+    | _ => []
+  if let self :: params := proc.inputs then
+    if (!ownerParams.isEmpty || !proc.typeArgs.isEmpty)
+        && !proc.typeArgs.any (fun tv => ownerParams.any (·.text == tv.text)) then
+      let receiver? := some (self.type, targetTy)
+      let proc := { proc with inputs := params }
+      let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee proc args
+        (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
+        receiver?
+      let (_, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst source
+        receiver?
+      -- An `.InstanceCall` has no slot for the inferred type arguments; the re-resolution after
+      -- `LiftInstanceProcedures` records them on the static call it becomes.
+      return (.InstanceCall target' callee' args', ty)
+  let retTy := procReturnType lookupKey proc
+  -- The first parameter is the implicit `self` receiver, which is not supplied
+  -- positionally here, so it is dropped before pairing parameter types with `args`.
+  let callParamTypes := (proc.inputs.drop 1).map (·.type)
   -- As in `Synth.staticCall`: pad surplus arguments with `.Unknown` carrying
   -- the argument's own source so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
@@ -3977,15 +3976,11 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     Check.resolveStmtExpr a paramTy)
   -- Over-arity check (mirrors `Synth.staticCall`): reject calls supplying more
   -- arguments than the callee declares, comparing against the post-`self`
-  -- parameter count. `procArity` is given the same `dropSelf` flag computed
-  -- above, so an instance procedure's implicit `self` is excluded; it returns
-  -- `none` for any non-procedure resolution, leaving the Unknown-padding (and
-  -- no duplicate diagnostic) for those. Args are resolved above regardless.
-  if let some arity ← procArity lookupKey dropSelf then
-    if args.length > arity then
-      let diag := diagnosticFromSource source
-        s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
-      modify fun s => { s with errors := s.errors.push diag }
+  -- parameter count. Args are resolved above regardless.
+  if args.length > callParamTypes.length then
+    let diag := diagnosticFromSource source
+      s!"call to '{callee}' expects {callParamTypes.length} argument(s) but {args.length} were provided"
+    modify fun s => { s with errors := s.errors.push diag }
   pure (.InstanceCall target' callee' args', retTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
