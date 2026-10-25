@@ -11,12 +11,9 @@ open Strata
 
 /-! # A `#` call needs a composite receiver
 
-`z#sideEffect(-1)` on an `int` receiver has no method to bind to, and the tempting fallback —
-binding it to the same-named top-level `sideEffect` — is UNSOUND rather than merely loose.
-`LiftInstanceProcedures` and `ContractPass` inject the callee's precondition only for a
-genuine instance call, so a `#` call silently rerouted to a static procedure would drop that
-procedure's `requires` entirely. The program below would then verify while calling
-`sideEffect(-1)` against `requires x > 0`.
+`z#sideEffect(-1)` on an `int` receiver has no method to bind to. The tempting fallback,
+binding it to the same-named top-level `sideEffect`, leaves an instance call that
+`LiftInstanceProcedures` does not lift, and Core translation reports it as a strata-bug.
 
 So it is rejected at resolution. The positive side — real instance calls on composite
 receivers, including through a field-selected receiver and on generic composites — is in
