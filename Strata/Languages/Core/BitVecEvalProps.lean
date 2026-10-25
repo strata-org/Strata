@@ -191,6 +191,10 @@ private theorem eval_bvPredicate_value
     exact Lambda.isValue_const_true f () (.boolConst b)
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
+  dsimp only
+  rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
+    (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, bvPredicate, Lambda.binaryOp])]
+  dsimp only
   simp only [bvPredicate, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
@@ -252,6 +256,10 @@ private theorem eval_bvBinary_value
     exact Lambda.isValue_const_true f () (.bitvecConst width a)
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
+  dsimp only
+  rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
+    (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, bvBinary, Lambda.binaryOp])]
+  dsimp only
   simp only [bvBinary, Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide

@@ -132,6 +132,10 @@ theorem eval_boolNot_value_iff
     simp [Lambda.boolNotFunc, Lambda.unaryOp]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
+  dsimp only
+  rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
+    (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, Lambda.boolNotFunc, Lambda.unaryOp])]
+  dsimp only
   simp only [Lambda.boolNotFunc, Lambda.unaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
@@ -446,6 +450,10 @@ private theorem eval_intBinOp_value_of_numerals
     intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.intConst]
   simp only [Lambda.LExpr.eval]
   rw [if_neg (by simp [hcan]), hcall]
+  dsimp only
+  rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
+    (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, Lambda.binaryOp])]
+  dsimp only
   simp only [Lambda.binaryOp]
   rw [dif_neg (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide

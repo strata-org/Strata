@@ -27,6 +27,11 @@ inductive FuncAttr where
   | evalIfValue (paramIdx : Nat)
   /-- Inline the function body when all arguments are values. -/
   | inlineIfAllValues
+  /-- Evaluate the first argument alone, and if it is a value, apply concrete
+      evaluation to it and the other arguments as they are, before evaluating them.
+      Concrete evaluation either decides the result from the first argument or
+      returns the rest of the computation, which is then evaluated once. -/
+  | shortCircuit
   deriving DecidableEq, Repr, Inhabited, BEq
 
 open Std (ToFormat Format format)
@@ -38,6 +43,7 @@ instance : ToFormat FuncAttr where
     | .evalIfConstr i => f!"evalIfConstr {i}"
     | .evalIfValue i => f!"evalIfValue {i}"
     | .inlineIfAllValues => "inlineIfAllValues"
+    | .shortCircuit => "shortCircuit"
 
 instance : ToFormat (Array FuncAttr) where
   format attrs := Format.joinSep (attrs.toList.map format) ", "
@@ -57,6 +63,10 @@ def FuncAttr.findEvalIfValue (attrs : Array FuncAttr) : Option Nat :=
 /-- Return `true` if the attributes contain `inlineIfAllValues`. -/
 def FuncAttr.hasInlineIfAllValues (attrs : Array FuncAttr) : Bool :=
   attrs.any (· == .inlineIfAllValues)
+
+/-- Return `true` if the attributes contain `shortCircuit`. -/
+@[expose] def FuncAttr.hasShortCircuit (attrs : Array FuncAttr) : Bool :=
+  attrs.toList.any fun | .shortCircuit => true | _ => false
 
 end Strata.DL.Util
 end

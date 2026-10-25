@@ -1034,6 +1034,14 @@ where
 
 end
 
+/- Realize `denoteTerm`'s unfolding lemmas here, inside a proof so that they are exported:
+downstream proofs that unfold `denoteTerm` then reuse them instead of each regenerating them
+(several seconds). -/
+private theorem denoteTerm_realize_eqns : True := by
+  have := @denoteTerm.eq_def
+  have := @denoteTerm.eq_1
+  trivial
+
 
 /--
 Interpret a ground boolean term in the empty context.

@@ -23,7 +23,7 @@ public section
 /-!
 # `noOldFvars` for successfully type-checked preconditions
 
-A precondition is resolved against `envWithInputs` (`setupInputEnv`:
+A precondition is resolved against `envWithInputs` (`Procedure.typeCheck`:
 `pushEmptyContext` + inputs); the corresponding well-formedness field
 `WFPreProp.noOldFvars` inspects `getFvars` of the STORED (unresolved) expression.
 

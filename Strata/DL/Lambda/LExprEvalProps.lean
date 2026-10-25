@@ -59,6 +59,98 @@ variable {Tbase : LExprParams}
 
 /-! ## Part I: Properties of `eval` -/
 
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- If `shortCircuitCall?` returns `(a, rest, ceval)`, then `args = a :: rest` and
+    `lfunc.concreteEval = some ceval`. -/
+public theorem LExpr.shortCircuitCall?_some {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
+    {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
+    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    (h : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval)) :
+    args = a :: rest ∧ lfunc.concreteEval = some ceval := by
+  unfold LExpr.shortCircuitCall? at h
+  split at h
+  · split at h
+    · rename_i a' rest' ceval' h_ce
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      exact ⟨rfl, h_ce⟩
+    · simp at h
+  · simp at h
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- A function without the `shortCircuit` attribute takes the ordinary call path. -/
+public theorem LExpr.shortCircuitCall?_of_not_attr {lfunc : LFunc Tbase}
+    (args : List (LExpr Tbase.mono))
+    (h : Strata.DL.Util.FuncAttr.hasShortCircuit lfunc.attr = false) :
+    LExpr.shortCircuitCall? lfunc args = none := by
+  unfold LExpr.shortCircuitCall?; rw [h]; rfl
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `shortCircuitCall?` depends only on the shape of the argument list. -/
+private theorem LExpr.shortCircuitCall?_map_none {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
+    (f : LExpr Tbase.mono → LExpr Tbase.mono)
+    (h : LExpr.shortCircuitCall? lfunc args = none) :
+    LExpr.shortCircuitCall? lfunc (args.map f) = none := by
+  unfold LExpr.shortCircuitCall? at h ⊢
+  split at h
+  · rename_i hsc
+    rw [if_pos hsc]
+    cases args <;> cases hce : lfunc.concreteEval <;> simp_all
+  · rename_i hsc
+    rw [if_neg hsc]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `shortCircuitCall?` on a mapped argument list returns the mapped pieces. -/
+private theorem LExpr.shortCircuitCall?_map_some {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
+    {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
+    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    (f : LExpr Tbase.mono → LExpr Tbase.mono)
+    (h : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval)) :
+    LExpr.shortCircuitCall? lfunc (args.map f) = some (f a, rest.map f, ceval) := by
+  have hsc : Strata.DL.Util.FuncAttr.hasShortCircuit lfunc.attr = true := by
+    unfold LExpr.shortCircuitCall? at h; split at h
+    · assumption
+    · simp at h
+  obtain ⟨rfl, hce⟩ := LExpr.shortCircuitCall?_some h
+  unfold LExpr.shortCircuitCall?
+  rw [if_pos hsc, List.map_cons, hce]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `shortCircuitCall?` declines every argument list of the length of one it declines. -/
+private theorem LExpr.shortCircuitCall?_none_of_length {lfunc : LFunc Tbase}
+    {args₁ args₂ : List (LExpr Tbase.mono)}
+    (h : LExpr.shortCircuitCall? lfunc args₁ = none) (hl : args₁.length = args₂.length) :
+    LExpr.shortCircuitCall? lfunc args₂ = none := by
+  unfold LExpr.shortCircuitCall? at h ⊢
+  split at h
+  · rename_i hsc
+    rw [if_pos hsc]
+    cases args₁ <;> cases args₂ <;> cases hce : lfunc.concreteEval <;> simp_all
+  · rename_i hsc
+    rw [if_neg hsc]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `shortCircuitCall?` accepts every non-empty argument list once it accepts one. -/
+private theorem LExpr.shortCircuitCall?_cons {lfunc : LFunc Tbase}
+    {args : List (LExpr Tbase.mono)} {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
+    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    (h : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval))
+    (b : LExpr Tbase.mono) (rest' : List (LExpr Tbase.mono)) :
+    LExpr.shortCircuitCall? lfunc (b :: rest') = some (b, rest', ceval) := by
+  have hsc : Strata.DL.Util.FuncAttr.hasShortCircuit lfunc.attr = true := by
+    unfold LExpr.shortCircuitCall? at h; split at h
+    · assumption
+    · simp at h
+  obtain ⟨_, hce⟩ := LExpr.shortCircuitCall?_some h
+  unfold LExpr.shortCircuitCall?
+  rw [if_pos hsc, hce]
+
 /-! ### `eval_value_isValue`
 
 If `eval n F env e = (_, .value _)`, the `.fst` component satisfies
@@ -243,6 +335,28 @@ private theorem evalCore_value_isValue
   exact key _ rfl h
 
 
+/-- Helper: if `evalShortCircuit` returns `.value _`, the result is a value. -/
+private theorem evalShortCircuit_value_isValue
+    (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (e op_expr a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
+        LExpr.isValue F (LExpr.eval n' F env e').fst = true)
+    {b : Bool} (h : (LExpr.evalShortCircuit n' F env e op_expr a rest ceval).snd = .value b) :
+    LExpr.isValue F (LExpr.evalShortCircuit n' F env e op_expr a rest ceval).fst = true := by
+  simp only [LExpr.evalShortCircuit, LExpr.combineEvalResValueFlag_eq_pair] at h ⊢
+  split
+  · rename_i e' _
+    rename_i heq
+    simp only [heq] at h
+    rcases h_split : (LExpr.eval n' F env e').snd with _ | b0 | _
+    · rw [h_split] at h; simp [LExpr.EvalResult.combineValueFlag] at h
+    · exact ih_eval _ b0 h_split
+    · rw [h_split] at h; simp [LExpr.EvalResult.combineValueFlag] at h
+  · rename_i heq
+    simp only [heq] at h
+    exact absurd h LExpr.EvalResult.noConfusion
+
 /-- If `eval` returns `.value _`, the resulting expression satisfies `isValue`. -/
 theorem eval_value_isValue
     (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
@@ -276,6 +390,11 @@ theorem eval_value_isValue
         split at hp
         · -- callOfLFunc = some (op_expr, args, lfunc)
           rename_i op_expr args lfunc h_call
+          split at hp
+          · -- shortCircuit call
+            subst hp
+            exact evalShortCircuit_value_isValue n' F env e op_expr _ _ _
+              (fun e' b' h' => ih e' h') hv
           subst hp
           split
           · -- dite true branch: match computeTypeSubst
@@ -492,6 +611,35 @@ theorem eval_getVars_subset
         have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
         have h_wf := hWF.lfuncs_wf lfunc h_mem
         obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some h_call
+        split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          obtain ⟨h_args, h_ce⟩ := LExpr.shortCircuitCall?_some h_sc
+          subst h_args
+          have h_arg : ∀ x ∈ a :: rest, ∀ z, z ∈ LExpr.LExpr.getVars x →
+              z ∈ LExpr.LExpr.getVars e :=
+            fun x hx z hz => callOfLFunc_getVars_args F e op_expr (a :: rest) lfunc h_call x hx z hz
+          simp only [LExpr.evalShortCircuit, LExpr.combineEvalResValueFlag_eq_pair]
+          split
+          · rename_i e' h_if
+            intro hy
+            have h_ceval : ceval e.metadata ((LExpr.eval n' F env a).fst :: rest) = some e' := by
+              split at h_if
+              · exact h_if
+              · simp at h_if
+            obtain ⟨x, hx_mem, hyx⟩ :=
+              h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval y (ih _ y hy)
+            rcases List.mem_cons.mp hx_mem with rfl | hx_rest
+            · exact h_arg a (by simp) y (ih a y hyx)
+            · exact h_arg x (by simp [hx_rest]) y hyx
+          · intro hy
+            rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨x, hx_mem, hyx⟩
+            · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
+            · rcases List.mem_cons.mp hx_mem with rfl | hx_rest
+              · exact h_arg _ (by simp) y (ih a y hyx)
+              · rw [List.mem_map] at hx_rest
+                obtain ⟨x0, hx0, rfl⟩ := hx_rest
+                exact h_arg x0 (by simp [hx0]) y (ih x0 y hyx)
         split
         · -- inline
           rename_i h_cond
@@ -781,6 +929,36 @@ theorem eval_env_congr
               rw [ih_as h_rest]
           exact h_aux args h_all_mem
         simp only [h_argsFull]
+        split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          obtain ⟨h_args, h_ce⟩ := LExpr.shortCircuitCall?_some h_sc
+          subst h_args
+          have h_arg : ∀ x ∈ a :: rest, LExpr.eval n' F env₁ x = LExpr.eval n' F env₂ x := by
+            intro x hx; apply ih x; intro z hz
+            exact hag z (callOfLFunc_getVars_args F e op_expr (a :: rest) lfunc h_call x hx z hz)
+          simp only [LExpr.evalShortCircuit, LExpr.combineEvalResValueFlag_eq_pair]
+          rw [h_arg a (by simp)]
+          split
+          · rename_i e' h_if
+            have h_ceval : ceval e.metadata ((LExpr.eval n' F env₂ a).fst :: rest) = some e' := by
+              split at h_if
+              · exact h_if
+              · simp at h_if
+            have h_ih_new : LExpr.eval n' F env₁ e' = LExpr.eval n' F env₂ e' := by
+              apply ih; intro x hx
+              obtain ⟨y, hy_mem, hxy⟩ :=
+                h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval x hx
+              rcases List.mem_cons.mp hy_mem with rfl | hy_rest
+              · exact hag x (callOfLFunc_getVars_args F e op_expr _ lfunc h_call a (by simp) x
+                  (eval_getVars_subset hIdent F env₂ hWF henv₂ n' a x hxy))
+              · exact hag x (callOfLFunc_getVars_args F e op_expr _ lfunc h_call y
+                  (by simp [hy_rest]) x hxy)
+            rw [h_ih_new]
+          · have hrest : rest.map (fun x => (LExpr.eval n' F env₁ x).fst) =
+                rest.map (fun x => (LExpr.eval n' F env₂ x).fst) :=
+              List.map_congr_left (fun x hx => by rw [h_arg x (by simp [hx])])
+            rw [hrest]
         split
         · -- inline
           rename_i h_cond
@@ -1325,6 +1503,68 @@ private theorem evalCore_value_true_mono
     simp only [LExpr.evalCore] at h ⊢
     exact evalIte_value_true_mono n' F env _ _ _ _ _ ih_eval h
 
+/-- A fully-reduced `evalShortCircuit` result carries over to any fuel and
+    environment at which `eval` reproduces the fully-reduced results of the first
+    fuel and environment. Gives both fuel monotonicity and the frame lemma. -/
+private theorem evalShortCircuit_value_true_transfer
+    (n₁ n₂ : Nat) (F : @Factory Tbase) (env₁ env₂ : Env Tbase)
+    (e op_expr a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (v : LExpr Tbase.mono)
+    (ih_eval : ∀ e' v', LExpr.eval n₁ F env₁ e' = (v', .value true) →
+        LExpr.eval n₂ F env₂ e' = (v', .value true))
+    (h : LExpr.evalShortCircuit n₁ F env₁ e op_expr a rest ceval = (v, .value true)) :
+    LExpr.evalShortCircuit n₂ F env₂ e op_expr a rest ceval = (v, .value true) := by
+  unfold LExpr.evalShortCircuit at h ⊢
+  simp only [LExpr.combineEvalResValueFlag_eq_pair] at h ⊢
+  split at h
+  · rename_i e' h_if
+    simp only [Prod.mk.injEq] at h
+    obtain ⟨h_fst, h_snd⟩ := h
+    obtain ⟨h_e', h_a⟩ := (andValue_eq_valueTrue_iff _ _).mp h_snd
+    have ha_lift := ih_eval a _ (Prod.ext rfl ((isValueTrue_eq_true_iff _).mp h_a))
+    have he_lift := ih_eval e' _ (Prod.ext h_fst h_e')
+    rw [ha_lift]
+    dsimp only
+    rw [h_if]
+    dsimp only
+    rw [he_lift]
+    simp [LExpr.EvalResult.combineValueFlag, LExpr.EvalResult.isValueTrue]
+  · simp at h
+
+/-- `evalShortCircuit` is fully reduced exactly when the first argument is, to a
+    value on which the concrete evaluator succeeds, and the evaluator's result is. -/
+private theorem evalShortCircuit_eq_value_true_iff
+    (n : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (e op_expr a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (v : LExpr Tbase.mono) :
+    LExpr.evalShortCircuit n F env e op_expr a rest ceval = (v, .value true) ↔
+      ∃ a' e', LExpr.eval n F env a = (a', .value true) ∧ LExpr.isValue F a' = true ∧
+        ceval e.metadata (a' :: rest) = some e' ∧ LExpr.eval n F env e' = (v, .value true) := by
+  unfold LExpr.evalShortCircuit
+  simp only [LExpr.combineEvalResValueFlag_eq_pair]
+  constructor
+  · intro h
+    split at h
+    · rename_i e' h_if
+      simp only [Prod.mk.injEq] at h
+      obtain ⟨h_fst, h_snd⟩ := h
+      obtain ⟨h_e', h_a⟩ := (andValue_eq_valueTrue_iff _ _).mp h_snd
+      split at h_if
+      · rename_i hval
+        exact ⟨_, e', Prod.ext rfl ((isValueTrue_eq_true_iff _).mp h_a), hval, h_if,
+          Prod.ext h_fst h_e'⟩
+      · simp at h_if
+    · simp at h
+  · rintro ⟨a', e', ha, hval, hce, he'⟩
+    rw [ha]
+    dsimp only
+    rw [if_pos hval, hce]
+    dsimp only
+    rw [he']
+    simp [LExpr.EvalResult.combineValueFlag, LExpr.EvalResult.isValueTrue]
+
 /-- **Fuel monotonicity for `.value true`.** If `eval m F env e = (v, .value true)`,
     then `eval (m+1) F env e = (v, .value true)`. -/
 theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
@@ -1395,6 +1635,18 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
       split
       · rename_i op_expr args lfunc h_call
         split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          intro h
+          have h_lift := evalShortCircuit_value_true_transfer n' (n'+1) F env env e op_expr
+            a rest ceval v (fun e' v' hev => ih e' v' hev) h
+          simp only [LExpr.eval]
+          rw [if_neg h_not_can, h_call]
+          dsimp only
+          rw [h_sc]
+          exact h_lift
+        rename_i h_sc
+        split
         · -- inline branch
           rename_i h_cond
           have h_body_isSome : lfunc.body.isSome = true := by
@@ -1423,6 +1675,8 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
             show LExpr.eval (n'+1+1) F env e = (v, .value true)
             conv => lhs; rw [LExpr.eval]
             rw [if_neg h_not_can, h_call]
+            dsimp only
+            rw [h_sc]
             dsimp only
             split
             · rename_i h_cond_lift
@@ -1467,6 +1721,8 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
               conv => lhs; rw [LExpr.eval]
               rw [if_neg h_not_can, h_call]
               dsimp only
+              rw [h_sc]
+              dsimp only
               split
               · rename_i h_cond_lift
                 exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
@@ -1499,6 +1755,8 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                 show LExpr.eval (n'+1+1) F env e = (v, .value true)
                 conv => lhs; rw [LExpr.eval]
                 rw [if_neg h_not_can, h_call]
+                dsimp only
+                rw [h_sc]
                 dsimp only
                 split
                 · rename_i h_cond_lift
@@ -1935,6 +2193,18 @@ theorem eval_frame
       split
       · rename_i op_expr args lfunc h_call
         split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          intro h
+          have h_lift := evalShortCircuit_value_true_transfer n' n' F env env' e op_expr
+            a rest ceval v (fun e' v' hev => ih e' v' hev) h
+          simp only [LExpr.eval]
+          rw [if_neg h_not_can, h_call]
+          dsimp only
+          rw [h_sc]
+          exact h_lift
+        rename_i h_sc
+        split
         · -- inline branch
           rename_i h_cond
           have h_body_isSome : lfunc.body.isSome = true := by
@@ -1961,6 +2231,8 @@ theorem eval_frame
             show LExpr.eval (n'+1) F env' e = (v, .value true)
             conv => lhs; rw [LExpr.eval]
             rw [if_neg h_not_can, h_call]
+            dsimp only
+            rw [h_sc]
             dsimp only
             split
             · rename_i h_cond_lift
@@ -2005,6 +2277,8 @@ theorem eval_frame
               conv => lhs; rw [LExpr.eval]
               rw [if_neg h_not_can, h_call]
               dsimp only
+              rw [h_sc]
+              dsimp only
               split
               · rename_i h_cond_lift
                 exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
@@ -2037,6 +2311,8 @@ theorem eval_frame
                 show LExpr.eval (n'+1) F env' e = (v, .value true)
                 conv => lhs; rw [LExpr.eval]
                 rw [if_neg h_not_can, h_call]
+                dsimp only
+                rw [h_sc]
                 dsimp only
                 split
                 · rename_i h_cond_lift
@@ -3010,13 +3286,14 @@ theorem eval_call_not_full_snd
     (triple : LExpr Tbase.mono × List (LExpr Tbase.mono) × LFunc Tbase)
     (hcall : F.callOfLFunc e = some triple)
     (hcanF : LExpr.isValue F e = false)
+    (hsc : LExpr.shortCircuitCall? triple.2.2 triple.2.1 = none)
     (hfull : (triple.2.1.all fun a => (LExpr.eval n F env a).snd.isValueTrue) = false) :
     (LExpr.eval (n + 1) F env e).snd ≠ .value true := by
   obtain ⟨op_expr, args, lfunc⟩ := triple
-  simp only at hfull
+  simp only at hfull hsc
   simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
     LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair,
-    hcanF, hcall, hfull]
+    hcanF, hcall, hsc, hfull]
   -- Every leaf is either under an impossible `false = true`, or `.nonvalue`, or
   -- `combineValueFlag _ false`; none is `.value true`.
   repeat' split
@@ -3044,6 +3321,7 @@ theorem call_node_eval_eq
     (op_expr : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (lfunc : LFunc Tbase)
     (hcall : F.callOfLFunc e = some (op_expr, args, lfunc))
     (hcanF : LExpr.isValue F e = false)
+    (hsc : LExpr.shortCircuitCall? lfunc args = none)
     (hfull : (args.all fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).snd.isValueTrue) = true)
     (ih : ∀ (e v : LExpr Tbase.mono),
       LExpr.eval n' F σ' (e.substFvars sm) = (v, .value true) ↔
@@ -3118,7 +3396,8 @@ theorem call_node_eval_eq
         simp at hcall)
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair,
-      hcanFL, hcallL, hcanF, hcall, hfst, hbit, hmeta]
+      hcanFL, hcallL, hcanF, hcall, hfst, hbit, hmeta, hsc,
+      LExpr.shortCircuitCall?_map_none (LExpr.substFvars · sm) hsc]
     split
     · -- `isValue` guard: rewritten to `false`, so this branch is impossible.
       exact absurd ‹false = true› (by simp)
@@ -3186,6 +3465,60 @@ theorem call_node_eval_eq
     · exact absurd (congrArg Prod.snd h) hL
     · exact absurd (congrArg Prod.snd h) hR
 
+/-- The rename commutation at a call of a `shortCircuit` function. Its first
+    argument is evaluated alone, and the concrete evaluator, which receives the other
+    arguments unevaluated, commutes with renaming them (`shortCircuit_substFvars`). -/
+private theorem shortCircuit_node_eval_eq
+    (n' : Nat) (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
+    (sm : Map Tbase.Identifier (LExpr Tbase.mono))
+    (hVar : VarOnly sm)
+    (e : LExpr Tbase.mono)
+    (op_expr : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (lfunc : LFunc Tbase)
+    (a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (hcall : F.callOfLFunc e = some (op_expr, args, lfunc))
+    (hcanF : LExpr.isValue F e = false)
+    (hsc : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval))
+    (ih : ∀ (e v : LExpr Tbase.mono),
+      LExpr.eval n' F σ' (e.substFvars sm) = (v, .value true) ↔
+        LExpr.eval n' F (substStoreExpr σ' sm) e = (v, .value true))
+    (v : LExpr Tbase.mono) :
+    (LExpr.eval (n' + 1) F σ' (LExpr.substFvars e sm) = (v, .value true))
+      ↔ (LExpr.eval (n' + 1) F (substStoreExpr σ' sm) e = (v, .value true)) := by
+  have hcanFL : LExpr.isValue F (LExpr.substFvars e sm) = false := by
+    rw [isValue_substFvars_eq F sm hVar e]; exact hcanF
+  have hcallL : F.callOfLFunc (LExpr.substFvars e sm)
+      = some (op_expr, args.map (LExpr.substFvars · sm), lfunc) :=
+    callOfLFunc_substFvars F e sm op_expr args lfunc hcall
+  have hscL := LExpr.shortCircuitCall?_map_some (LExpr.substFvars · sm) hsc
+  have hmeta : (LExpr.substFvars e sm).metadata = e.metadata :=
+    substFvars_metadata_of_ne_fvar e sm (fun m x ty heq => by
+      rw [heq, callOfLFunc_fvar_none F m x ty] at hcall
+      simp at hcall)
+  have h_wf := hWF.lfuncs_wf lfunc (callOfLFunc_func_mem F _ _ _ lfunc false hcall)
+  have hattr : Strata.DL.Util.FuncAttr.hasShortCircuit lfunc.attr = true := by
+    unfold LExpr.shortCircuitCall? at hsc; split at hsc
+    · assumption
+    · simp at hsc
+  obtain ⟨_, hce⟩ := LExpr.shortCircuitCall?_some hsc
+  have hcomm := h_wf.shortCircuit_substFvars hattr ceval hce
+  simp only [LExpr.eval, hcanFL, hcallL, hcanF, hcall, hscL, hsc, Bool.false_eq_true, if_false]
+  rw [evalShortCircuit_eq_value_true_iff, evalShortCircuit_eq_value_true_iff, hmeta]
+  constructor
+  · rintro ⟨a', e', ha, hval, hce', he'⟩
+    rw [hcomm] at hce'
+    cases hc : ceval e.metadata (a' :: rest) with
+    | none => rw [hc] at hce'; simp at hce'
+    | some e'' =>
+      rw [hc] at hce'
+      simp only [Option.map_some, Option.some.injEq] at hce'
+      subst hce'
+      exact ⟨a', e'', (ih a a').mp ha, hval, hc, (ih e'' v).mp he'⟩
+  · rintro ⟨a', e'', ha, hval, hce', he'⟩
+    refine ⟨a', e''.substFvars sm, (ih a a').mpr ha, hval, ?_, (ih e'' v).mpr he'⟩
+    rw [hcomm, hce']
+    rfl
+
 /-- The per-fuel `eval`-level rename commutation, as a value-true SYNC
     BICONDITIONAL: at every fuel, the renamed syntax evaluated in the renamed
     store reaches a fully-reduced value `v` iff the original expression in the
@@ -3229,13 +3562,17 @@ theorem eval_rename_commute
         have hcallL : F.callOfLFunc (LExpr.substFvars e sm)
             = some (op_expr, args.map (LExpr.substFvars · sm), lfunc) :=
           callOfLFunc_substFvars F e sm op_expr args lfunc hcall
+        rcases hsc : LExpr.shortCircuitCall? lfunc args with _ | ⟨a, rest, ceval⟩
+        rotate_left
+        · exact shortCircuit_node_eval_eq n' F σ' hWF sm hVar e op_expr args lfunc a rest ceval
+            hcall hcanF hsc ih v
         -- Case on whether the pullback-side arguments are all fully reduced.
         by_cases hfull :
             (args.all fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).snd.isValueTrue) = true
         · -- All args full: the residual `.fst` lists coincide and every reducing
           -- leaf shares a CLOSED reduct, so the value-true biconditional holds.
           exact call_node_eval_eq hIdent n' F σ' hWF hwfs sm hVar e op_expr args lfunc
-            hcall hcanF hfull ih v
+            hcall hcanF hsc hfull ih v
         · -- Some arg not full: neither call node reaches `.value true`, so both
           -- directions of the biconditional are vacuous.
           have hfullFalse : (args.all fun a =>
@@ -3249,11 +3586,11 @@ theorem eval_rename_commute
             exact absurd (congrArg Prod.snd hL)
               (eval_call_not_full_snd n' F σ' (LExpr.substFvars e sm)
                 (op_expr, args.map (LExpr.substFvars · sm), lfunc) hcallL hcanFL
-                hfullFalseL)
+                (LExpr.shortCircuitCall?_map_none (LExpr.substFvars · sm) hsc) hfullFalseL)
           · intro hR
             exact absurd (congrArg Prod.snd hR)
               (eval_call_not_full_snd n' F (substStoreExpr σ' sm) e
-                (op_expr, args, lfunc) hcall hcanF hfullFalse)
+                (op_expr, args, lfunc) hcall hcanF hsc hfullFalse)
     | none =>
       cases e with
       | const m c =>
@@ -3648,6 +3985,73 @@ end evalFully_forms
 -- This is a key structural property of eval: metadata is only used for provenance
 -- tracking and does not affect the computation.
 
+/-- The `shortCircuit` case of `eval_eraseMetadata_invariant`, given the invariant at
+    the lower fuel. -/
+private theorem evalShortCircuit_eraseMetadata
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
+    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
+    [Traceable LExpr.EvalProvenance Tbase.Metadata]
+    (F : @Factory Tbase) (env : Env Tbase) (n' : Nat) (lfunc : LFunc Tbase)
+    (h_wf : LFuncWF lfunc)
+    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (hce : lfunc.concreteEval = some ceval)
+    (e₁ e₂ op₁ op₂ a₁ a₂ : LExpr Tbase.mono) (rest₁ rest₂ : List (LExpr Tbase.mono))
+    (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
+    (h_a : a₁.eraseMetadata = a₂.eraseMetadata)
+    (h_rest : rest₁.map LExpr.eraseMetadata = rest₂.map LExpr.eraseMetadata)
+    (ih : ∀ (e₁ e₂ : LExpr Tbase.mono), e₁.eraseMetadata = e₂.eraseMetadata →
+      (LExpr.eval n' F env e₁).fst.eraseMetadata = (LExpr.eval n' F env e₂).fst.eraseMetadata) :
+    (LExpr.evalShortCircuit n' F env e₁ op₁ a₁ rest₁ ceval).fst.eraseMetadata =
+      (LExpr.evalShortCircuit n' F env e₂ op₂ a₂ rest₂ ceval).fst.eraseMetadata := by
+  have hr1 := ih a₁ a₂ h_a
+  have hval := isValue_eraseMetadata_eq F _ _ hr1
+  have hargs : ((LExpr.eval n' F env a₁).fst :: rest₁).map LExpr.eraseMetadata =
+      ((LExpr.eval n' F env a₂).fst :: rest₂).map LExpr.eraseMetadata := by
+    simp only [List.map_cons, hr1, h_rest]
+  have hrest_ev : ∀ (l₁ l₂ : List (LExpr Tbase.mono)),
+      l₁.map LExpr.eraseMetadata = l₂.map LExpr.eraseMetadata →
+      (l₁.map (fun x => (LExpr.eval n' F env x).fst)).map LExpr.eraseMetadata =
+        (l₂.map (fun x => (LExpr.eval n' F env x).fst)).map LExpr.eraseMetadata := by
+    intro l₁
+    induction l₁ with
+    | nil => intro l₂ h; cases l₂ <;> simp_all
+    | cons x xs ihl =>
+      intro l₂ h
+      cases l₂ with
+      | nil => simp at h
+      | cons y ys =>
+        simp only [List.map_cons, List.cons.injEq] at h ⊢
+        exact ⟨ih _ _ h.1, ihl ys h.2⟩
+  have hrebuild :
+      (LExpr.mkApp e₁.metadata op₁
+          ((LExpr.eval n' F env a₁).fst :: rest₁.map (fun x => (LExpr.eval n' F env x).fst))
+        ).eraseMetadata =
+      (LExpr.mkApp e₂.metadata op₂
+          ((LExpr.eval n' F env a₂).fst :: rest₂.map (fun x => (LExpr.eval n' F env x).fst))
+        ).eraseMetadata := by
+    rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp, h_op]
+    simp only [List.map_cons, hr1, hrest_ev rest₁ rest₂ h_rest]
+  unfold LExpr.evalShortCircuit
+  simp only [LExpr.combineEvalResValueFlag_eq_pair]
+  by_cases hv : LExpr.isValue F (LExpr.eval n' F env a₁).fst = true
+  · rw [if_pos hv, if_pos (hval ▸ hv)]
+    cases hc₁ : ceval e₁.metadata ((LExpr.eval n' F env a₁).fst :: rest₁) with
+    | some r₁ =>
+      obtain ⟨r₂, hc₂, hr⟩ :=
+        h_wf.concreteEval_eraseMetadata ceval hce _ e₂.metadata _ _ r₁ hargs hc₁
+      rw [hc₂]
+      exact ih _ _ hr
+    | none =>
+      cases hc₂ : ceval e₂.metadata ((LExpr.eval n' F env a₂).fst :: rest₂) with
+      | some r₂ =>
+        obtain ⟨r₁, hc₁', _⟩ :=
+          h_wf.concreteEval_eraseMetadata ceval hce _ e₁.metadata _ _ r₂ hargs.symm hc₂
+        rw [hc₁] at hc₁'; simp at hc₁'
+      | none => exact hrebuild
+  · rw [if_neg hv, if_neg (by rwa [← hval])]
+    exact hrebuild
+
 theorem eval_eraseMetadata_invariant
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
@@ -3819,6 +4223,20 @@ theorem eval_eraseMetadata_invariant
         -- sides. The corresponding equalities rule out mismatched branches.
         have h_computeTypeSubst_eq :=
           computeTypeSubst_eraseMetadata_congr lfunc op_expr₁ op₂ _ _ h_op_eM h_eval_args_eM
+        rcases hsc₁ : LExpr.shortCircuitCall? lfunc args₁ with _ | ⟨a₁, rest₁, ceval⟩
+        rotate_left
+        · -- shortCircuit call
+          obtain ⟨rfl, hce⟩ := LExpr.shortCircuitCall?_some hsc₁
+          cases args₂ with
+          | nil => simp at h_len
+          | cons a₂ rest₂ =>
+            rw [LExpr.shortCircuitCall?_cons hsc₁ a₂ rest₂]
+            simp only [List.map_cons, List.cons.injEq] at h_args_eM_raw
+            exact evalShortCircuit_eraseMetadata F env n' lfunc
+              (hWF.lfuncs_wf lfunc (callOfLFunc_func_mem F _ _ _ lfunc false h_call₁)) ceval hce
+              e₁ e₂ op_expr₁ op₂ a₁ a₂ rest₁ rest₂ h_op_eM h_args_eM_raw.1 h_args_eM_raw.2 ih
+        rw [LExpr.shortCircuitCall?_none_of_length hsc₁ h_len]
+        dsimp only
         split
         · -- LHS inline condition holds
           rename_i h_inline₁

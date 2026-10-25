@@ -325,6 +325,67 @@ instance : OutPrim LMonoTy.bool Bool where
     rw [denote_boolConst tcInterp opInterp fvarVal vt .nil h]
     rfl
 
+/-- `concreteEval` consistency for a short-circuiting Boolean connective (`shortCircuitOp`):
+when the first operand is `absorb` the result is the constant `decided`, and otherwise it
+is the second operand itself, which need not be a literal. In that second case the
+interpretation decodes the reified denotation of the second operand, which is that
+denotation again. -/
+private theorem shortCircuit_consistent
+    (func : LFunc T)
+    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (hin : (List.map Prod.snd func.inputs) = [LMonoTy.bool, LMonoTy.bool])
+    (hout : func.output = LMonoTy.bool)
+    (hce : func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? func.name.name = some func)
+    (absorb decided : Bool)
+    (hbeh : ∀ md x y, ceval md [x, y] =
+      (match InPrim.cevalIn (inTy := LMonoTy.bool) x with
+       | some a =>
+         if a == absorb then some (OutPrim.mkOut (outTy := LMonoTy.bool) md decided) else some y
+       | none => none)) :
+    LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
+  intro vt fvarVal md tySubst argExprs resultExpr heval
+  simp only []
+  intro h_args h_result
+  have hb : LMonoTy.subst tySubst LMonoTy.bool = LMonoTy.bool :=
+    LMonoTy.subst_no_relevant_keys _ _ (by rw [InPrim.closed (inTy := LMonoTy.bool)]; simp)
+  have hIT : (List.map (LMonoTy.subst tySubst) (List.map Prod.snd func.inputs))
+      = [LMonoTy.bool, LMonoTy.bool] := by
+    rw [hin]; simp [hb]
+  have hOT : LMonoTy.subst tySubst func.output = LMonoTy.bool := by rw [hout]; exact hb
+  revert h_args h_result
+  rw [hIT, hOT]
+  intro h_args h_result
+  cases h_args with
+  | @cons a b as bs hx htail =>
+    cases htail with
+    | @cons a2 b2 as2 bs2 hy htail2 =>
+      cases htail2
+      rw [hbeh md a a2] at heval
+      cases hca : InPrim.cevalIn (inTy := LMonoTy.bool) a with
+      | none => rw [hca] at heval; simp at heval
+      | some av =>
+        rw [hca] at heval
+        simp only [List.map_cons, List.map_nil, LSort.mkArrow, opInterp, hlook, hce,
+                   gatherEval, denoteArgs, List.nil_append, List.cons_append]
+        show LExpr.denote tcInterp opInterp fvarVal vt HList.nil resultExpr LMonoTy.bool h_result
+            = gatherEval ceval
+                [reifyAt (LMonoTy.substTyVars vt LMonoTy.bool)
+                    (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a LMonoTy.bool hx),
+                 reifyAt (LMonoTy.substTyVars vt LMonoTy.bool)
+                    (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a2 LMonoTy.bool hy)]
+                (LMonoTy.substTyVars vt LMonoTy.bool)
+        rw [OutPrim.gather_eq (outTy := LMonoTy.bool), hbeh default,
+            InPrim.reify_ceval fvarVal vt a hx av hca]
+        simp only at heval ⊢
+        cases hg : (av == absorb)
+        · simp only [hg, Bool.false_eq_true, if_false, Option.some.injEq] at heval ⊢
+          subst heval
+          rfl
+        · simp only [hg, if_true, Option.some.injEq] at heval ⊢
+          subst heval
+          exact OutPrim.denote_decode fvarVal vt md default decided h_result
+
 /-- If `denoteInt` decodes an expression, it is the corresponding integer literal. -/
 private theorem denoteInt_some (x : LExpr T.mono) (a : Int)
     (h : LExpr.denoteInt x = some a) : ∃ m, x = LExpr.const m (LConst.intConst a) := by
@@ -473,7 +534,8 @@ private theorem eval_consistent :
          | exact binaryOp_consistent (inTy := LMonoTy.string) (outTy := LMonoTy.string) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
          | exact binaryOp_consistent (inTy := LMonoTy.string) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
          | exact binaryOp_consistent (inTy := .bitvec _) (outTy := .bitvec _) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := .bitvec _) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl))
+         | exact binaryOp_consistent (inTy := .bitvec _) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
+         | exact shortCircuit_consistent _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl))
     | injection hce
     | (rcases hwf with hwf | hwf)
     | subst hwf

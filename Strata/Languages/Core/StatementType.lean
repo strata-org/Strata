@@ -16,6 +16,17 @@ import Strata.Languages.Core.CmdType
 public section
 
 namespace Core
+
+/-- Instantiate `h`'s type parameters with fresh type variables, shared by its
+    inputs and outputs. -/
+def Procedure.Header.instantiate (C : Lambda.LContext CoreLParams)
+    (Env : Lambda.TEnv CoreLParams.IDMeta) (h : Procedure.Header) :
+    Except Std.Format (@Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit ×
+                       Lambda.TEnv CoreLParams.IDMeta) := do
+  let (sig, Env) ← Lambda.LMonoTySignature.instantiate C Env h.typeArgs (h.inputs ++ h.outputs)
+  let (inp, out) := sig.splitAt h.inputs.length
+  return (inp, out, Env)
+
 namespace Statement
 
 open Lambda Imperative
@@ -57,7 +68,7 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                              Types of {lhs} should have been known."
          | some (lhs_tys, Env) =>
            let _ ← Env.freeVarChecks args |>.mapError Message.fromFormat
-           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError Message.fromFormat
+           let (inp_sig, ret_sig, Env) ← proc.header.instantiate C Env |>.mapError Message.fromFormat
            let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst ret_sig.values
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
@@ -65,7 +76,6 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError Message.fromFormat
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
-           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError Message.fromFormat
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => Message.fromFormat (format e))

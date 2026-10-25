@@ -41,16 +41,6 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
               Variables actually modified: {modifiedVars}\n\
               Modification allowed for these variables: {allowedVars}"
 
-private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (proc : Procedure) (sourceLoc : FileRange) :
-    Except Message (@Lambda.LMonoTySignature Unit × Core.Expression.TyEnv) := do
-  let Env := Env.pushEmptyContext
-  let (inp_mty_sig, Env) ← Lambda.LMonoTySignature.instantiate C Env proc.header.typeArgs
-                            proc.header.inputs |>.mapError (fun e => Message.withRange sourceLoc e)
-  let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
-  let Env := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
-  return (inp_mty_sig, Env)
-
 -- Error message prefix for errors in processing procedure pre/post conditions.
 def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
     (md : MetaData Expression) : Message :=
@@ -81,8 +71,12 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   checkNoDuplicates proc fileRange
   checkModificationRights proc fileRange
 
+  let (inp_mty_sig, out_mty_sig, Env) ← proc.header.instantiate C Env.pushEmptyContext
+                                          |>.mapError (fun e => Message.withRange fileRange e)
+
   -- Temporarily add the formals into the context.
-  let (inp_mty_sig, envWithInputs) ← setupInputEnv C Env proc fileRange
+  let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
+  let envWithInputs := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
 
   -- Type check preconditions.
   -- Note: `envWithInputs` does not have the return variables in the context,
@@ -92,16 +86,14 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
                                             proc.spec.preconditions proc.header.name
 
   -- Temporarily add returns into the context.
-  let (out_mty_sig, envWithOutputs) ← Lambda.LMonoTySignature.instantiate C
-                                        envAfterPreconds proc.header.typeArgs
-                                        proc.header.outputs |>.mapError (fun e => Message.withRange fileRange e)
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList out_lty_sig)
+  let envWithOutputs := envAfterPreconds.addInNewestContext (T := CoreLParams)
+                          (Strata.Util.HMap.ofList out_lty_sig)
 
   -- Add "old" variables for in-out parameters (those in both inputs and outputs)
   -- so that postconditions and body can reference `old x`.
   let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
-    proc.header.getInoutParams.toList.map fun (id, ty) =>
+    (getInoutParams inp_mty_sig out_mty_sig).toList.map fun (id, ty) =>
       (CoreIdent.mkOld id.name, .forAll [] ty)
   let envWithOldVars := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList oldInoutBindings)
 

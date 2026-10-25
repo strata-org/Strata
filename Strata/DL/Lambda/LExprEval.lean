@@ -230,6 +230,18 @@ def EvalResult.combineValueFlag (r : EvalResult) (b : Bool) : EvalResult :=
   | nil => rfl
   | cons a as ih => simp [ih]
 
+/-- The pieces `eval` needs to evaluate a call of a `shortCircuit` function: its
+    first argument, the other arguments, and the concrete evaluator. `none` when the
+    function lacks the attribute or a concrete evaluator, or the call has no argument. -/
+@[expose] def shortCircuitCall? (lfunc : LFunc TBase) (args : List (LExpr TBase.mono)) :
+    Option (LExpr TBase.mono × List (LExpr TBase.mono) ×
+      (TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))) :=
+  if FuncAttr.hasShortCircuit lfunc.attr then
+    match args, lfunc.concreteEval with
+    | a :: rest, some ceval => some (a, rest, ceval)
+    | _, _ => none
+  else none
+
 
 mutual
 /--
@@ -252,60 +264,63 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
     else
       match F.callOfLFunc e with
       | some (op_expr, args, lfunc) =>
-        let argResults := args.map (fun a => eval n' F env a)
-        let argsAllFull := argResults.all (fun r => r.snd.isValueTrue)
-        let args := argResults.map Prod.fst
-        let constrArgAt (idx : Option Nat) :=
-          match idx with
-          | some i => (args[i]? |>.map (isConstrApp F)).getD false
-          | none => false
-        let valueArgAt (idx : Option Nat) :=
-          match idx with
-          | some i => (args[i]? |>.map (isValue F)).getD false
-          | none => false
-        if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
-          constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
-          (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
-          -- Inline a function only if it has a body.
-          let body := lfunc.body.get (by simp_all)
-          -- Apply type substitution to instantiate polymorphic type variables.
-          match LFunc.computeTypeSubst lfunc op_expr args with
-          | some tySubst =>
-            let body := body.applyTypeSubst tySubst
-            let input_map := lfunc.inputs.keys.zip args
-            let new_e := substFvarsLifting body input_map
-            combineEvalResValueFlag argsAllFull (eval n' F env new_e)
-          | none => (e, .nonvalue) -- cannot happen in well-typed terms
-        else
-          let new_e := @mkApp TBase.mono e.metadata op_expr args
-          if -- Case 1: All arguments in the function call are concrete.
-            -- We can, provided a denotation function, evaluate this function
-            -- call.
-            args.all (isValue F) ||
-            -- Case 2: Some functions (e.g. Eliminators) only require the designated
-            -- arg to be a constructor
-            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
-            -- Case 3: Some functions (e.g. regex) only require the designated
-            -- arg to be a value (e.g. a constant string)
-            valueArgAt (FuncAttr.findEvalIfValue lfunc.attr) then
-            match lfunc.concreteEval with
-            | none =>
-              -- No concrete evaluation available. The rebuilt call can still
-              -- be a value: constructor applications (and partial
-              -- applications) of value arguments are values (e.g.
-              -- `Cons (1+1) nil` rebuilds to `Cons 2 nil`, which is a value).
-              -- Canonicity alone decides value-hood; `argsAllFull` tempers
-              -- the every-step-fully-reduced bit as everywhere else.
-              combineEvalResValueFlag argsAllFull
-                (new_e, if isValue F new_e then .value true else .nonvalue)
-            | some ceval =>
-              match ceval new_e.metadata args with
-              | .some e' =>
-                combineEvalResValueFlag argsAllFull (eval n' F env e')
-              | .none => (new_e, .nonvalue)
+        match shortCircuitCall? lfunc args with
+        | some (a, rest, ceval) => evalShortCircuit n' F env e op_expr a rest ceval
+        | none =>
+          let argResults := args.map (fun a => eval n' F env a)
+          let argsAllFull := argResults.all (fun r => r.snd.isValueTrue)
+          let args := argResults.map Prod.fst
+          let constrArgAt (idx : Option Nat) :=
+            match idx with
+            | some i => (args[i]? |>.map (isConstrApp F)).getD false
+            | none => false
+          let valueArgAt (idx : Option Nat) :=
+            match idx with
+            | some i => (args[i]? |>.map (isValue F)).getD false
+            | none => false
+          if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
+            constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
+            (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
+            -- Inline a function only if it has a body.
+            let body := lfunc.body.get (by simp_all)
+            -- Apply type substitution to instantiate polymorphic type variables.
+            match LFunc.computeTypeSubst lfunc op_expr args with
+            | some tySubst =>
+              let body := body.applyTypeSubst tySubst
+              let input_map := lfunc.inputs.keys.zip args
+              let new_e := substFvarsLifting body input_map
+              combineEvalResValueFlag argsAllFull (eval n' F env new_e)
+            | none => (e, .nonvalue) -- cannot happen in well-typed terms
           else
-            -- At least one argument in the function call is symbolic.
-            (new_e, .nonvalue)
+            let new_e := @mkApp TBase.mono e.metadata op_expr args
+            if -- Case 1: All arguments in the function call are concrete.
+              -- We can, provided a denotation function, evaluate this function
+              -- call.
+              args.all (isValue F) ||
+              -- Case 2: Some functions (e.g. Eliminators) only require the designated
+              -- arg to be a constructor
+              constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
+              -- Case 3: Some functions (e.g. regex) only require the designated
+              -- arg to be a value (e.g. a constant string)
+              valueArgAt (FuncAttr.findEvalIfValue lfunc.attr) then
+              match lfunc.concreteEval with
+              | none =>
+                -- No concrete evaluation available. The rebuilt call can still
+                -- be a value: constructor applications (and partial
+                -- applications) of value arguments are values (e.g.
+                -- `Cons (1+1) nil` rebuilds to `Cons 2 nil`, which is a value).
+                -- Canonicity alone decides value-hood; `argsAllFull` tempers
+                -- the every-step-fully-reduced bit as everywhere else.
+                combineEvalResValueFlag argsAllFull
+                  (new_e, if isValue F new_e then .value true else .nonvalue)
+              | some ceval =>
+                match ceval new_e.metadata args with
+                | .some e' =>
+                  combineEvalResValueFlag argsAllFull (eval n' F env e')
+                | .none => (new_e, .nonvalue)
+            else
+              -- At least one argument in the function call is symbolic.
+              (new_e, .nonvalue)
       | none =>
         -- Not a call of a factory function - go through evalCore
         evalCore n' F env e
@@ -338,6 +353,22 @@ def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.
 -- eager evaluation to support recursive functions, where the branches may
 -- contain recursive calls that need to be unfolded. If we ever need a lazy mode
 -- again, we should add a flag.
+/-- A call of a `shortCircuit` function: evaluate the first argument `a` alone. If it
+    is a value, apply `ceval` to it and the other arguments `rest` unevaluated, and
+    evaluate whatever it returns. Otherwise, or if `ceval` declines, evaluate `rest`
+    and rebuild the call. Each argument is evaluated at most once, so a chain such as
+    `true && (z && (true && …))` takes time linear in its depth. -/
+def evalShortCircuit (n' : Nat) (F : @Factory TBase) (env : Env TBase)
+    (e op_expr a : LExpr TBase.mono) (rest : List (LExpr TBase.mono))
+    (ceval : TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))
+    : LExpr TBase.mono × EvalResult :=
+  let r1 := eval n' F env a
+  match (if isValue F r1.fst then ceval e.metadata (r1.fst :: rest) else none) with
+  | some e' => combineEvalResValueFlag r1.snd.isValueTrue (eval n' F env e')
+  | none =>
+    (@mkApp TBase.mono e.metadata op_expr (r1.fst :: rest.map (fun x => (eval n' F env x).fst)),
+      .nonvalue)
+
 def evalIte (n' : Nat) (F : @Factory TBase) (env : Env TBase) (m: TBase.Metadata)
     (c t f : LExpr TBase.mono) : LExpr TBase.mono × EvalResult :=
   let cRes := eval n' F env c

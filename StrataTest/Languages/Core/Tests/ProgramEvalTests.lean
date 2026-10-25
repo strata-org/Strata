@@ -61,8 +61,11 @@ func Real.Lt :  ((x : real) (y : real)) → bool;
 func Real.Le :  ((x : real) (y : real)) → bool;
 func Real.Gt :  ((x : real) (y : real)) → bool;
 func Real.Ge :  ((x : real) (y : real)) → bool;
+@[shortCircuit]
 func Bool.And :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Or :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Implies :  ((x : bool) (y : bool)) → bool;
 func Bool.Equiv :  ((x : bool) (y : bool)) → bool;
 func Bool.Not :  ((x : bool)) → bool;
