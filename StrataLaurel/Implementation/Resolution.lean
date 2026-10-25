@@ -954,12 +954,10 @@ private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd
   | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := callee.source }
 
 /-- Concretize a field's declared type at an access site: substitute the field's DECLARING
-    composite's params with the holder's args. Else raw `.TVar T` hits the wildcard and a
-    cross-type write is wrongly accepted (imprecise, not unsound — Core havocs the read back).
-    - OWN: `{D.params := holderArgs}`.
-    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware:
-      `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
-    Only ever more concrete; identity on polymorphic accesses; raw-type fallback otherwise. -/
+    composite's params with the holder's args (`TypeLattice.fieldTypeAt`). Else raw `.TVar T`
+    hits the wildcard and a cross-type write is wrongly accepted (imprecise, not unsound — Core
+    havocs the read back). Only ever more concrete; identity on polymorphic accesses; raw-type
+    fallback otherwise. -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -967,37 +965,7 @@ private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier
   -- Need the field's declaring composite + raw type.
   match fieldName'.uniqueId.bind s.idToNode.get? with
   | some (.field declType fld) =>
-    let ctx := s.typeLattice
-    -- Peel the holder to (base name, concrete args).
-    let holderTy' := ctx.unfold holderTy
-    let holder? : Option (String × List HighTypeMd) := match holderTy'.val with
-      | .UserDefined n => some (n.text, [])
-      | .Applied base args => (highBaseName? base.val).map (fun n => (n.text, args))
-      | _ => none
-    match holder? with
-    | none => pure raw
-    | some (holderName, holderArgs) =>
-      -- The concrete args the holder supplies *for the declaring composite* D.
-      let declArgs? : Option (List HighTypeMd) :=
-        if holderName == declType.text then some holderArgs
-        else (ctx.substitutedAncestors holderName holderArgs).findSome? fun anc =>
-          match anc.val with
-          | .UserDefined n => if n.text == declType.text then some [] else none
-          | .Applied base args =>
-            match highBaseName? base.val with
-            | some n => if n.text == declType.text then some args else none
-            | none => none
-          | _ => none
-      match declArgs?, ctx.parentExprMap.get? declType.text with
-      | some declArgs, some (declParams, _) =>
-        -- Arity must match for the substitution to be meaningful; the legacy bare
-        -- `new C` form (no args) lands here as a mismatch → safe raw fallback.
-        if declParams.length == declArgs.length && !declParams.isEmpty then
-          let subst : Std.HashMap String HighTypeMd :=
-            (declParams.zip declArgs).foldl (fun m (p, a) => m.insert p.text a) {}
-          pure (substTypeVars subst fld.type)
-        else pure raw
-      | _, _ => pure raw
+    pure ((s.typeLattice.fieldTypeAt declType fld.type holderTy).getD raw)
   | _ => pure raw
 
 /-- Get the call return type and parameter types for a callee from scope. -/
@@ -1833,19 +1801,15 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
       s!"cannot infer {what} {names} of '{callee.text}': {hint}"
     modify fun s => { s with errors := s.errors.push diag }
   -- RECORD the instantiation, in the callee's declaration order, so a downstream pass reads it
-  -- off the node instead of recovering it from context: `LaurelToCoreSchemaPass` needs it for
-  -- the external generic primitives, which never monomorphize, and a pass that introduces a
-  -- local for a call declares the local at it (`typeAtCall`).
+  -- off the node instead of recovering it from context: `MonomorphizeComposites` clones the callee
+  -- at it, `LaurelToCoreSchemaPass` needs it for the external generic primitives, which never
+  -- monomorphize, and a pass that introduces a local for a call declares the local at it
+  -- (`typeAtCall`).
   --
   -- Stamped only when every parameter is bound: a partial list would be worse than none, since
   -- position carries meaning. `unbound` above has already reported anything missing.
   let inferredTypeArgs : List HighTypeMd :=
-    -- Not while any argument is still `Unknown`. Holes are typed LATER (`InferHoleTypes`), so a
-    -- tree that still contains one has not finished inferring: freezing an instantiation now
-    -- records a premature answer and the hole is then never resolved ("holes should have been
-    -- eliminated before translation"). The re-resolution after hole inference records it.
-    if argTys.any (fun t => mentionsUnknown t.val) then []
-    else if proc.typeArgs.isEmpty then []
+    if proc.typeArgs.isEmpty then []
     else
       let bound := proc.typeArgs.map (fun tv => subst[tv.text]?)
       -- A `.TVar` from the enclosing generic body is fine: `MonomorphizeComposites` substitutes

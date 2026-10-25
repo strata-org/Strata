@@ -337,3 +337,107 @@ procedure h(x: Box<int>)
   opaque
 { assert 1 == 1 };
 #end
+
+/-! ## A call is cloned at the instantiation Resolution recorded on it
+
+Here only the expected type fixes `T`, past a hole argument too. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure fresh<T>() returns (r: Box<T>) opaque { r := new Box<T> };
+procedure fresh2<T>(y: int) returns (r: Box<T>) opaque { r := new Box<T> };
+
+procedure expectedTypeOnly(a: int) opaque modifies * {
+  var c: Box<int> := fresh();
+  c#v := a;
+  assert c#v == a
+};
+
+procedure expectedTypeOnlyPastHole(a: int) opaque modifies * {
+  var c: Box<int> := fresh2(<?>);
+  c#v := a;
+  assert c#v == a
+};
+#end
+
+-- Resolution's instantiation can say more than the arguments' raw types: a constrained actual
+-- binds its base (`mk(a)` with `a: int8` is `mk<int>`), as does one of a constrained composite
+-- type; a subtype and its supertype bind the supertype; a field of a generic composite is typed at
+-- its holder's instantiation; and an argument that is itself a generic call, also inside a
+-- conditional or a block, is typed at that call's instantiation.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained int8 = x: int where x >= -128 && x <= 127 witness 0
+composite Animal { }
+composite Dog extends Animal { }
+composite Box<T> { var v: T }
+composite Pair<T> { var fst: Box<T> }
+constrained CB = b: Box<int> where true witness <??>
+procedure mk<T>(x: T) returns (r: Box<T>) opaque ensures r#v == x { r := new Box<T>; r#v := x };
+procedure pair<T>(a: T, b: T) returns (r: Box<T>)
+  opaque ensures r#v == a { r := new Box<T>; r#v := a };
+procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v { r := b#v };
+
+procedure constrainedActual(a: int8) opaque { var c := mk(a); assert c#v == a };
+
+procedure constrainedCompositeActual(c: CB) opaque { var k: int := get(c); assert k == c#v };
+
+procedure subtypeAndSupertype(d: Dog, an: Animal) opaque { var c := pair(d, an); assert c#v == d };
+
+procedure genericField(p: Pair<int>) opaque { var k: int := get(p#fst); assert k == p#fst#v };
+
+procedure nestedInConditional(c: bool, a: int) opaque {
+  var k: int := get(if c then mk(a) else mk(a));
+  assert k == a
+};
+
+procedure nestedInBlock(a: int) opaque { var k: int := get({ mk(a) }); assert k == a };
+#end
+
+-- A call short of an argument is cloned at its record too, so it draws the arity error a
+-- monomorphic callee draws.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure get2<T>(b: Box<T>, y: int) returns (r: T) opaque { r := b#v };
+
+procedure tooFewArguments(b: Box<int>) opaque {
+  var k: int := get2(b)
+//^^^^^^^^^^^^^^^^^^^^^ error: Ill-formed call
+};
+#end
+
+/-! ## A caller at its own type variable is monomorphized too
+
+Neither `g<S>` nor `f<S>` touches a generic composite, but `g`'s `f(x)` and `f`'s `id2(x)` can
+only be renamed in a clone of their caller, where `S` is concrete. An uncalled such caller is
+checked at a witness, like any monomorphized procedure. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure id2<T>(x: T) returns (r: T)
+  opaque ensures r == x { var b: Box<T> := new Box<T>; b#v := x; r := b#v };
+procedure f<S>(x: S) returns (r: S) opaque ensures r == x { r := id2(x) };
+procedure g<S>(x: S) returns (r: S) opaque ensures r == x { r := f(x) };
+
+procedure openCallerTransitive(a: int) opaque { var k: int := g(a); assert k == a };
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure id2<T>(x: T) returns (r: T)
+  opaque ensures r == x { var b: Box<T> := new Box<T>; b#v := x; r := b#v };
+procedure f<S>(x: S) returns (r: S)
+  opaque
+  ensures r != x
+//        ^^^^^^ error: postcondition could not be proved
+{ r := id2(x) };
+#end

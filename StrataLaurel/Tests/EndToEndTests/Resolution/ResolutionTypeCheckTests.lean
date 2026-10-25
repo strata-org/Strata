@@ -2035,7 +2035,7 @@ procedure exactHeadActual() opaque {
 /-! Two parents reaching the ancestor at the SAME instantiation is one candidate, not an ambiguity:
 distinctness is `highEq`, so the lift still applies and the mismatch is still reported. A diamond
 whose parents fix the argument DIFFERENTLY binds nothing instead of picking a witness, and
-`MonomorphizeComposites.inferProcInst` rejects it later naming both instantiations — see
+`MonomorphizeComposites.checkDiamond` rejects it later naming both instantiations — see
 `DynamicDispatchTest`'s `inherited_generic_diamond_*` cases. -/
 
 #eval testLaurelResolution <|
