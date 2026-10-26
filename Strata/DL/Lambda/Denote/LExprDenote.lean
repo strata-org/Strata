@@ -55,7 +55,7 @@ protected abbrev LSort.string : LSort := .tcons "string" []
 
 end
 
-def LSort_eqb (s1 s2: LSort) : Bool :=
+@[expose] public def LSort_eqb (s1 s2: LSort) : Bool :=
   match s1, s2 with
   | .tcons n1 a1, .tcons n2 a2 =>
     n1 == n2 && LSort_eqb_list a1 a2
@@ -66,19 +66,19 @@ where LSort_eqb_list : List LSort → List LSort → Bool
   | x :: xs, y :: ys => LSort_eqb x y && LSort_eqb_list xs ys
   | _, _ => false
 
-theorem LSort.ind (P : LSort → Prop)
+public theorem LSort.ind (P : LSort → Prop)
     (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
     (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
   | .tcons name args => htcons name args (fun x _ => ind P htcons hbitvec x)
   | .bitvec n => hbitvec n
 
-def LSort.rec' (P : LSort → Sort u)
+@[expose] public def LSort.rec' (P : LSort → Sort u)
     (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
     (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
   | .tcons name args => htcons name args (fun x _ => rec' P htcons hbitvec x)
   | .bitvec n => hbitvec n
 
-private theorem LSort_eqb_list_eq
+public theorem LSort_eqb_list_eq
     (ih : ∀ x ∈ a1, ∀ s2, LSort_eqb x s2 = true → x = s2)
     (heq : LSort_eqb.LSort_eqb_list a1 a2 = true) : a1 = a2 := by
   induction a1 generalizing a2 with
@@ -93,7 +93,7 @@ private theorem LSort_eqb_list_eq
       · exact ih h (List.mem_cons_self ..) h2 hh
       · exact iht (fun x hx => ih x (List.mem_cons_of_mem _ hx)) ht
 
-private theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
+public theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
   s1 = s2 := by
   induction s1 using LSort.ind generalizing s2 with
   | htcons n1 a1 ih =>
@@ -111,7 +111,7 @@ private theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
 
 instance : BEq LSort := ⟨LSort_eqb⟩
 
-private theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
+public theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
   intro a; induction a using LSort.ind with
   | htcons n args ih =>
     simp [LSort_eqb]
@@ -122,7 +122,7 @@ private theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
       exact ⟨ih x (List.mem_cons_self ..), ihxs (fun z hz => ih z (List.mem_cons_of_mem _ hz))⟩
   | hbitvec => simp [LSort_eqb]
 
-instance : DecidableEq LSort := fun a b =>
+public instance : DecidableEq LSort := fun a b =>
   if h : LSort_eqb a b then isTrue (LSort_eqb_eq h)
   else isFalse (fun heq => h (heq ▸ LSort_eqb_refl a))
 
@@ -788,7 +788,7 @@ public theorem denote_op
       HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt) := by rfl
 
 /-- Unfolding lemma for `denote` of a free variable. -/
-theorem denote_fvar
+public theorem denote_fvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -801,7 +801,7 @@ theorem denote_fvar
       HasTypeA.fvar_inv h ▸ fvarVal name (ty.substTyVars vt) := by rfl
 
 /-- Unfolding lemma for `denote` of a bound variable. -/
-theorem denote_bvar
+public theorem denote_bvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -834,7 +834,7 @@ public theorem denote_app
   exact (Denotes_denote hd_app).symm
 
 /-- Unfolding lemma for `denote` of an abstraction. -/
-theorem denote_abs
+public theorem denote_abs
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -874,7 +874,7 @@ public theorem denote_eq_true
   exact (Denotes_denote (Denotes.eq_true bvarVal (h := h_eq) hd1 hd2)).symm
 
 /-- Unfolding lemma for `denote` of `eq` when operands are not equal. -/
-theorem denote_eq_false
+public theorem denote_eq_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -978,7 +978,7 @@ public theorem denote_quant_all_true
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .all` when the body is false for some value. -/
-theorem denote_quant_all_false
+public theorem denote_quant_all_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -997,7 +997,7 @@ theorem denote_quant_all_false
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .exist` when the body is true for some value. -/
-theorem denote_quant_exist_true
+public theorem denote_quant_exist_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -1016,7 +1016,7 @@ theorem denote_quant_exist_true
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .exist` when the body is false for all values. -/
-theorem denote_quant_exist_false
+public theorem denote_quant_exist_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
