@@ -918,7 +918,7 @@ procedure u() opaque { assert 1 == 1 };"},
   -- TYPE-ARGUMENT-AMBIGUOUS DIAMOND: `D<X>` inherits the generic `GBaseD`'s method through TWO
   -- parents that fix `GBaseD`'s type argument DIFFERENTLY (`MidBD → GBaseD<bool>`, `LGD<X> →
   -- GBaseD<X>`), so a `D<int>` reaches `GBaseD` at both `GBaseD<bool>` and `GBaseD<int>`. The
-  -- inherited call's type argument is genuinely undetermined; `checkDiamond` REJECTS it with a
+  -- inherited call's type argument is genuinely undetermined; `settleCallNode` REJECTS it with a
   -- clean `userError` (naming both instantiations + the disambiguating upcast), where the record
   -- alone would clone it at the `int` the expected type supplies.
   -- The disambiguation is available today via an upcast (`var b: GBaseD<int> := d; b#get()`), which

@@ -2188,7 +2188,7 @@ def ancestorLiftCandidates (ctx : TypeLattice) (declared actual : HighType) : Li
     `none` also for an ambiguous diamond — two distinct instantiations of the declared head, as
     when `D` extends both `Base<int>` and `Base<bool>`. Binding off an arbitrary witness would
     make the call report a type argument the program never fixed, so nothing is bound and the case
-    is left to `MonomorphizeComposites.checkDiamond`, which rejects it with a diagnostic naming
+    is left to `MonomorphizeComposites.settleCallNode`, which rejects it with a diagnostic naming
     both instantiations and the disambiguating upcast. `callSiteDeterminedTypeParams` deliberately
     differs here: see its own note.
 
@@ -2336,7 +2336,7 @@ def callSiteDeterminedTypeParams (ctx : TypeLattice)
   -- An ambiguous diamond (two parents fixing the ancestor's argument differently) counts as
   -- DETERMINED here, on ANY witness — which is why this reads the raw candidates rather than
   -- `callSiteAncestorLift?`, whose whole job is to refuse an arbitrary witness. That is
-  -- deliberately not this function's call to make: `MonomorphizeComposites.checkDiamond` already
+  -- deliberately not this function's call to make: `MonomorphizeComposites.settleCallNode` already
   -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
   -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
   -- too late to be a clean user error — an inherited call is an `.InstanceCall` at first

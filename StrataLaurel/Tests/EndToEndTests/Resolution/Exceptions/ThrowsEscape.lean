@@ -109,3 +109,16 @@ procedure handled()
   r := 0
 };
 #end
+
+-- Allowed: an `if` whose then-branch is a hole is typed at its else-branch's declared `Err`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Err {}
+procedure holeBranch(b: bool, x: Err)
+  throws (e: Err)
+  opaque
+{
+  throw (if b then <?> else x)
+};
+#end

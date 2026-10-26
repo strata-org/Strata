@@ -19,3 +19,13 @@ procedure foo()
 //^^^ error: could not infer type
 };
 #end
+
+-- A hole as an `if`'s then-branch is typed at the else-branch's `int`.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure holeBranch(b: bool, x: int) opaque {
+  assert (if b then <?> else x) == x
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end

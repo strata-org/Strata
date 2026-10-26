@@ -126,7 +126,12 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
   | .InstanceCall _ callee _ => getCallType source model callee []
   -- Control flow
-  | .IfThenElse _ thenBranch _ => computeExprTypeWith fieldType? model thenBranch
+  -- A then-branch typed `Unknown`, as a hole is, takes the else-branch's type, as in `Resolution`.
+  | .IfThenElse _ thenBranch elseBranch =>
+    let thenTy := computeExprTypeWith fieldType? model thenBranch
+    match thenTy.val, elseBranch with
+    | .Unknown, some e => computeExprTypeWith fieldType? model e
+    | _, _ => thenTy
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
@@ -136,6 +141,11 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
+  -- Its target's type, as `Synth.assign` types it.
+  | .Assign [⟨.Local id, _⟩] _ => (model.get id).getType
+  | .Assign [⟨.Field target fieldName, src⟩] _ =>
+    computeExprTypeWith fieldType? model ⟨.Var (.Field target fieldName), src⟩
+  | .Assign [⟨.Declare ⟨_, some ty⟩, _⟩] _ => ty
   | .Assign _ value => computeExprTypeWith fieldType? model value
   | .IncrDecr _ _ target =>
     -- The expression's type is the type of the target variable.

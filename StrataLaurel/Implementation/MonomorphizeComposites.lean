@@ -29,8 +29,8 @@ Instantiations are collected from every type position (fields, datatype ctor arg
 constrained type's base, constants, static fields, procedure signatures, and body +
 contract statements) and from `new C<τ>` allocation sites, then driven to a fixpoint by a
 depth-capped worklist that also clones poly procedures materializing a generic composite.
-The pipeline reads, top to bottom: `indexGenerics` and `indexOpenCallers` → `collectSeeds`, the
-diamond check (`checkDiamond`) and the call renaming (`rewritePolyCallNode`) → fixpoint drain
+The pipeline reads, top to bottom: `indexGenerics` and `indexOpenCallers` → `collectSeeds`, call
+settling (`settleCallNode`) and renaming (`rewritePolyCallNode`) → fixpoint drain
 (`processWorklistItem`) → uncalled-proc witnesses → `topoSortMonomorphs` → rewrite all
 type/`new` positions.
 -/
@@ -425,31 +425,42 @@ private def diamondConflict? (ctx : TypeLattice) (declared actual : HighType)
   let other ← rest.find? (fun a => !highEq a hit)
   return (head.text, hit.val, other.val)
 
-/-- The type of call argument `a` under the clone substitution `subst`, located at `a`, as
-    `Resolution` typed it. A field is typed at its holder's instantiation (`h#d` with `h: H<int>`
-    and `d: DG<X>` is a `DG<int>`): typed as declared, the receiver would look abstract and the
-    diamond check would skip it. -/
-private def argType (ctx : TypeLattice) (model : SemanticModel)
-    (subst : Std.HashMap String HighTypeMd) (a : StmtExprMd) : HighTypeMd :=
+/-- The type of call argument `a`, located at `a`, as `Resolution` typed it. A field is typed at
+    its holder's instantiation (`h#d` with `h: H<int>` and `d: DG<X>` is a `DG<int>`): typed as
+    declared, the receiver would look abstract and the diamond check would skip it. -/
+private def argType (ctx : TypeLattice) (model : SemanticModel) (a : StmtExprMd) : HighTypeMd :=
   let fieldTypeAt := fun fieldName holderTy => match model.get fieldName with
     | .field declType fld => ctx.fieldTypeAt declType fld.type holderTy
     | _ => none
-  { substTypeVars subst (computeExprTypeWith (some fieldTypeAt) model a) with source := a.source }
+  { computeExprTypeWith (some fieldTypeAt) model a with source := a.source }
 
 /-- Report a call one of whose arguments is a diamond for its parameter (`diamondConflict?`), since
     `Resolution` records such a call at whatever the expected type supplies. Both sides are
     `unfold`ed, as `Resolution` matches them, so a constrained type over the diamond is refused too.
 
-    Run before any call is renamed, so that `model` types a nested call by its record, and never
-    over a clone's body, whose ids are cleared. -/
-private def checkDiamond (model : SemanticModel) (ctx : TypeLattice)
-    (polyProcDefs : Std.HashMap String Procedure) (subst : Std.HashMap String HighTypeMd)
-    (e : StmtExprMd) : StateM (List Message) StmtExprMd := do
-  let .StaticCall callee args _ := e.val | return e
+    In a clone, then rebind the record to what the arguments bind under `subst`, the record
+    supplying the rest, as `Resolution` lets an argument's binding win over the expected type. A
+    record made in a generic body need not suit a clone: an argument typed at the body's own type
+    variable binds nothing there, so the expected type decided it. Outside a clone the record
+    stands. A binding that mentions a type variable is dropped, and an argument type that mentions
+    one other than `binders`, as a catch binding's thrower's, is not substituted: `subst` replaces
+    by name, and that variable may be spelled like one of `binders`.
+
+    Run before any call is renamed, so that `model` types a nested call by its record, as settled
+    already, and never over a clone's body, whose ids are cleared. -/
+private def settleCallNode (model : SemanticModel) (ctx : TypeLattice)
+    (polyProcDefs : Std.HashMap String Procedure) (binders : List Identifier)
+    (subst : Std.HashMap String HighTypeMd) (e : StmtExprMd) : StateM (List Message) StmtExprMd := do
+  let .StaticCall callee args tyArgs := e.val | return e
   let some calleeDef := polyProcDefs.get? callee.text | return e
-  let conflict? := (calleeDef.inputs.zip args).findSome? fun (param, a) =>
-    let aty := argType ctx model subst a
-    (diamondConflict? ctx (ctx.unfold param.type).val (ctx.unfold aty).val).map (aty, ·)
+  let params := calleeDef.inputs.map (·.type)
+  let argTys := args.map fun a =>
+    let t := argType ctx model a
+    if (tvarIdents t.val).all fun v => binders.any (·.uniqueId == v.uniqueId) then
+      substTypeVars subst t
+    else t
+  let conflict? := (params.zip argTys).findSome? fun (param, aty) =>
+    (diamondConflict? ctx (ctx.unfold param).val (ctx.unfold aty).val).map (aty, ·)
   if let some (aty, headName, t1, t2) := conflict? then
     -- `formatHighTypeVal` is the SAME renderer the grammar back-translation uses, so the
     -- upcast hint (`var b: <t1> := …`) is real surface syntax rather than a hand-rolled
@@ -461,7 +472,10 @@ private def checkDiamond (model : SemanticModel) (ctx : TypeLattice)
          argument cannot be determined. Upcast the receiver to the intended one \
          (e.g. `var b: {fmt t1} := …`) to disambiguate."
       MessageKind.userError])
-  return e
+  if binders.isEmpty then return e
+  let argSubst := (callSiteTypeSubst ctx (fun _ => false) params argTys).1
+  let settled := (calleeDef.typeArgs.zip tyArgs).map fun (tv, t) => argSubst.getD tv.text t
+  return { e with val := .StaticCall callee args settled }
 
 /-- Threaded through a poly-call rewrite traversal. -/
 private structure RewriteState where
@@ -471,10 +485,10 @@ private structure RewriteState where
   leftOpen : Bool := false
 
 /-- Rewrite ONE node: a `StaticCall` to an indexed poly procedure becomes a call to the monomorph at
-    the instantiation `Resolution` recorded on it, so that the clone re-resolves as the call did,
-    and the instantiation is kept in `renamed`. `subst` makes an enclosing clone's abstract type
-    arguments concrete (`T` inside `outer<T>` cloned at int becomes `int`); it is empty outside a
-    clone body.
+    the instantiation `Resolution` recorded on it, as `settleCallNode` left it, so that the clone
+    re-resolves as the call did, and the instantiation is kept in `renamed`. `subst` makes an
+    enclosing clone's abstract type arguments concrete (`T` inside `outer<T>` cloned at int becomes
+    `int`); it is empty outside a clone body.
 
     A call whose instantiation is missing or not concrete is LEFT unchanged and NOT discovered:
     inside a generic body the clone discovers it once `subst` is concrete, and anywhere else it
@@ -490,8 +504,7 @@ private def rewritePolyCallNode (polyProcDefs : Std.HashMap String Procedure)
     return e
   let pinst := (calleeDef.name.text, targs)
   modify fun st => { st with renamed := st.renamed ++ [pinst] }
-  -- `procInstKey` bakes the instantiation into the name, so the recorded type arguments are now
-  -- redundant and are dropped.
+  -- `procInstKey` bakes the instantiation into the name, so the type arguments are dropped.
   return { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
 
 /-- Discover and rewrite polymorphic-procedure CALLS inside a (pristine, resolved)
@@ -507,10 +520,11 @@ private def discoverRewritePolyCalls (model : SemanticModel)
     (polyProcDefs : Std.HashMap String Procedure)
     (subst : Std.HashMap String HighTypeMd) (pproc : Procedure)
     : Procedure × List ProcInst × List Message :=
-  let diags :=
-    ((mapProcedureM (mapStmtExprM (checkDiamond model ctx polyProcDefs subst)) pproc).run []).2
+  let (settled, diags) :=
+    (mapProcedureM (mapStmtExprM (settleCallNode model ctx polyProcDefs pproc.typeArgs subst))
+      pproc).run []
   let (pproc', st) :=
-    (mapProcedureM (mapStmtExprM (rewritePolyCallNode polyProcDefs subst)) pproc).run {}
+    (mapProcedureM (mapStmtExprM (rewritePolyCallNode polyProcDefs subst)) settled).run {}
   (pproc', st.renamed, diags)
 
 /-- Collect generic-composite instantiations from a procedure's body StmtExpr type
@@ -800,7 +814,7 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   -- 1b. Index, too, the poly procs that call an indexed one at their own type variables.
   let polyProcDefs := indexOpenCallers program polyProcDefs
 
-  -- The type lattice over the whole program, for the diamond check and field typing. Built once
+  -- The type lattice over the whole program, for settling calls and typing fields. Built once
   -- here (from `program.types`) and threaded through, so the ancestor walk sees the FULL `extends`
   -- chain (concrete hops included) rather than only the generic composites `genDefs` records.
   let ctx := TypeLattice.ofTypes program.types
@@ -810,7 +824,7 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   -- cannot disagree. The diamond check runs first, while `model` still types every argument.
   let insts := collectSeeds program genComposites
   let seedDiags := ((mapLaurelProgramStmtExprM (m := StateM (List Message))
-    (checkDiamond model ctx polyProcDefs {}) program).run []).2
+    (settleCallNode model ctx polyProcDefs [] {}) program).run []).2
   let (program, seeded) := (mapLaurelProgramStmtExprM (m := StateM RewriteState)
     (rewritePolyCallNode polyProcDefs {}) program).run {}
   let procInsts : Std.HashMap String ProcInst :=
@@ -854,8 +868,9 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   -- "for all T". Genuinely arbitrary cardinality requires the encoder to mint a fresh
   -- uninterpreted sort, which is exactly what a witness cannot do from the Laurel side. Distinct
   -- type vars get distinct witness NAMES, but those names flatten to the same sort.
-  -- (A value-`T` poly proc touching no generic composite is instead kept verbatim as a
-  -- polymorphic Core proc, its body VC always emitted — checked by a different path.)
+  -- (A value-`T` poly proc touching no generic composite, nor leaving a call to one of these
+  -- unrenamed, is instead kept verbatim as a polymorphic Core proc, its body VC always emitted —
+  -- checked by a different path.)
   for (pname, pproc) in polyProcDefs.toList do
     unless st.clonedBases.contains pname do
       let witnessArgs : List HighType := (List.range pproc.typeArgs.length).map (fun i =>
