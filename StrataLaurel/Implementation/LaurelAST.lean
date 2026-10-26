@@ -1860,7 +1860,7 @@ def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
     -- Only a composite -- bare (`Box`) or applied (`Box<int>`) -- has an ancestry to
     -- walk; `highBaseName?` peels the head off either spelling.
     let ancestry : List HighTypeMd :=
-      match first.val with
+      match (ctx.unfold first).val with
       | .UserDefined r => ctx.substitutedAncestors r.text []
       | .Applied base args =>
         match highBaseName? base.val with

@@ -140,6 +140,25 @@ procedure demo(x: int) returns (r: int) opaque {
 #guard_msgs in
 #eval report compositeLub
 
+/-- An alias thrown first joins through its target; a binding at the alias itself keeps the
+    alias's name. -/
+private def aliasLub := r"
+composite Err {}
+composite ParseErr extends Err {}
+type PE = ParseErr
+procedure demo(x: int, p: PE, e: Err) returns (r: int) opaque {
+  try { if x < 0 then { throw p } else { throw e } } catch c { r := 1 }
+};
+procedure alone(p: PE) returns (r: int) opaque {
+  try { throw p } catch c { r := 1 }
+};
+"
+
+/-- info: demo: Err
+alone: PE -/
+#guard_msgs in
+#eval report aliasLub
+
 /-! ## Generic exception types keep their type arguments
 
 The join is stated over types, not over the `extending` graph's node names, because a
