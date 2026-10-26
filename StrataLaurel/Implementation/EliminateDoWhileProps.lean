@@ -277,7 +277,7 @@ private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) 
     · exact hc ▸ hlit
     · exact hc ▸ hblock
   refine ⟨⟨by simp [sampleProgram], by simp [sampleProgram], by simp [sampleProgram]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro hne; trivial
   · intro hne; trivial
   · intro fld hfld
@@ -290,6 +290,8 @@ private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) 
   · intro hne; trivial
   · intro td htd; simp [sampleProgram] at htd
   · intro c hc; simp [sampleProgram] at hc
+  · intro f hf; simp [sampleProgram] at hf
+  · intro hne; trivial
 
 /-- The loop in the global's initializer is eliminated: the output's kinds avoid
     `StmtExpr.While.postTest.true`, because `outSet` removes it and `creates` does

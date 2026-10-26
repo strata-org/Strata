@@ -1258,6 +1258,7 @@ private structure TopLevel where
   proc : Option Procedure := none
   type : Option TypeDefinition := none
   field : Option Field := none
+  heapField : Option HeapField := none
 
 private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
   let .op op := arg
@@ -1311,6 +1312,14 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
       | _ => TransM.error s!"global '{name.text}' has a malformed initializer"
     return { field := some { name := name, isMutable := true, type := fieldType,
                              initializer := some initializer } }
+  | q`Laurel.heapFieldCommand, #[fieldArg, locationArg] =>
+    let field ← parseField fieldArg
+    let location ← match locationArg with
+      | .option _ (some (.op locOp)) => match locOp.name, locOp.args with
+        | q`Laurel.heapFieldLocation, #[nameArg] => translateIdent nameArg
+        | _, _ => TransM.error s!"heap field '{field.name.text}' has a malformed location"
+      | _ => pure field.name
+    return { heapField := some { toField := field, location } }
   | q`Laurel.globalVarCommand, #[nameArg, _typeArg] =>
     let name ← translateIdent nameArg
     TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
@@ -1321,7 +1330,7 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
 /-- Translate one non-global top-level command, preserving the existing public API. -/
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let topLevel ← parseTopLevelWithGlobals arg
-  if topLevel.field.isSome then
+  if topLevel.field.isSome || topLevel.heapField.isSome then
     TransM.error
       "parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got `Laurel.globalVarCommand`"
   return (topLevel.proc, topLevel.type)
@@ -1333,8 +1342,9 @@ def parseProgram (prog : StrataDDM.Program) : TransM Laurel.LaurelProgram := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
   let mut fields : List Field := []
+  let mut heapFields : List HeapField := []
   for op in prog.commands do
-    let { proc := procOpt, type := typeOpt, field := fieldOpt } ←
+    let { proc := procOpt, type := typeOpt, field := fieldOpt, heapField := heapFieldOpt } ←
       parseTopLevelWithGlobals (.op op)
     match procOpt with
     | some proc => procedures := procedures ++ [proc]
@@ -1345,10 +1355,14 @@ def parseProgram (prog : StrataDDM.Program) : TransM Laurel.LaurelProgram := do
     match fieldOpt with
     | some field => fields := fields ++ [field]
     | none => pure ()
+    match heapFieldOpt with
+    | some field => heapFields := heapFields ++ [field]
+    | none => pure ()
   return {
     staticProcedures := procedures
     staticFields := fields
     types := types
+    heapFields := heapFields
   }
 
 end

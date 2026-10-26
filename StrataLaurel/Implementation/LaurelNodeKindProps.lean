@@ -303,6 +303,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
     NodeKind.LaurelProgram.staticProcedures.cons,
     NodeKind.LaurelProgram.staticFunctions.cons,
     NodeKind.LaurelProgram.staticFields.cons,
+    NodeKind.LaurelProgram.heapFields.cons,
     NodeKind.Procedure.inputs.cons,
     NodeKind.Procedure.contracts.Coroutine,
     NodeKind.Procedure.preconditions.cons,
@@ -601,6 +602,8 @@ the structural kinds (`LaurelProgram.staticProcedures.cons`, `Procedure.inputs.c
     ∧ ConsKind s p.staticFields NodeKind.LaurelProgram.staticFields.cons
     ∧ (∀ td ∈ p.types, TypeDefinition.ContainsOutsideProcedures s td)
     ∧ (∀ c ∈ p.constants, Constant.Contains s c)
+    ∧ (∀ f ∈ p.heapFields, Field.Contains s f.toField)
+    ∧ ConsKind s p.heapFields NodeKind.LaurelProgram.heapFields.cons
 
 /-- Every kind occurring anywhere in the program is in `s`. -/
 @[expose] def LaurelProgram.Contains (s : KindSet) (p : LaurelProgram) : Prop :=

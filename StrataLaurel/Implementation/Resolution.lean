@@ -314,6 +314,15 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
       | _ => pure none
     | none => pure none
   | .Var (.Field inner fieldName) => do
+    let innerIsRef := match inner.val with
+      | .StaticCall callee [_] _ => callee.text == compositeRefAccessor
+      | _ => false
+    if innerIsRef then
+      if let some (_, .field owner fld) := s.scope.get? fieldName.text then
+        if owner.text == heapFieldOwner then
+          return match fld.type.val with
+            | .UserDefined typRef => some typRef.text
+            | _ => none
     match (← targetTypeName inner) with
     | none => pure none
     | some innerTy =>
@@ -362,6 +371,10 @@ private def nonValueName? (target : StmtExprMd) :
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
     (source : FileRange) (holderTy : HighTypeMd) : ResolveM Identifier := do
   match ((← get).typeLattice.unfold holderTy).val with
+  | .TInt =>
+    if let some (defId, .field owner _) := (← get).scope.get? fieldName.text then
+      if owner.text == heapFieldOwner then
+        return { fieldName with uniqueId := some defId }
   -- A type variable's name keys no composite, even one that shares it.
   | .TVar _ => pure ()
   | holder =>
@@ -455,6 +468,28 @@ private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
     all_goals (have hsz := AstNode.sizeOf_val_lt arg; rw [_h] at hsz)
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
+
+private def datatypeLookup : ResolveM (String → Option DatatypeDefinition) := do
+  let scope := (← get).scope
+  pure fun n => match scope.get? n with
+    | some (_, .datatypeDefinition d) => some d
+    | _ => none
+
+private partial def checkCtorFieldTypeArgsNotConstrained (ty : HighTypeMd) : ResolveM Unit := do
+  match ty.val with
+  | .Applied base args =>
+    let permitted ← match base.val with
+      | .UserDefined name =>
+        match (← get).scope.get? name.text with
+        | some (_, .datatypeDefinition dt) => pure !(dt.isRecursive (← datatypeLookup))
+        | _ => pure false
+      | _ => pure false
+    if permitted then args.forM checkTypeArgNotConstrained
+  | .TSet et => checkCtorFieldTypeArgsNotConstrained et
+  | .TMap kt vt => do
+    checkCtorFieldTypeArgsNotConstrained kt
+    checkCtorFieldTypeArgsNotConstrained vt
+  | _ => pure ()
 
 /-- Whether `ty` mentions one of `typeParams` anywhere, not just at its head.
 
@@ -674,7 +709,18 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
       | _ => resolveHighType base
     let args' ← args.mapM resolveHighType
     -- Reject constrained (subset) types used as type arguments (upstream guard).
-    args'.forM checkTypeArgNotConstrained
+    let constrainedArgsAllowed ← match base.val with
+      | .UserDefined name =>
+        match (← get).scope.get? name.text with
+        | some (_, .datatypeDefinition dt) => pure !(dt.isRecursive (← datatypeLookup))
+        | _ => pure false
+      | _ => pure false
+    if constrainedArgsAllowed then
+      args'.forM fun a => match a.val with
+        | .UserDefined _ | .Applied _ _ => pure ()
+        | _ => checkTypeArgNotConstrained a
+    else
+      args'.forM checkTypeArgNotConstrained
     -- Type-argument arity check for a generic ALIAS (`unfoldMap`) or generic
     -- COMPOSITE (`parentExprMap`) — #1394 adds both, which upstream's
     -- `checkTypeApplication` (called on the base above) does not cover (it only
@@ -3964,8 +4010,8 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     be. Shared by both operators, so their wording cannot drift and the reason is worded by the
     same match that decides the rejection.
     `is`/`as` are only implemented for composite types — lowering keys off a runtime type tag
-    only composites carry (`TypeHierarchy`), and only a composite target has a `downcast$T` helper
-    (`HeapParameterization`). A non-composite target that slips through reaches lowering and fails
+    only composites carry, and only a composite target has a `downcast$T` helper (both
+    `LowerComposite`). A non-composite target that slips through reaches lowering and fails
     as an internal error (dangling `downcast$T`, or a silently mis-verifying `.Hole`); rejecting it
     here turns that into a clean diagnostic. Rejected shapes:
     - datatype / primitive / collection: no type tag, no `downcast$T`.
@@ -3981,8 +4027,8 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
     A gradual dynamic-top `.UserDefined` (e.g. Python's `Any`, registered in `gradualTypes`) is
     deliberately NOT exempted here: it IS rejected as a non-composite target. `coerce` would accept
     it at resolution (it is a boxable wildcard), but there is no downstream lowering for `as`/`is`
-    against a gradual top — `HeapParameterization` would synthesize a `downcast$Any` call and
-    `TypeHierarchy` an `Any_TypeTag`, neither of which is minted (both are composite-only), so a
+    against a gradual top — `LowerComposite` would synthesize a `downcast$Any` call and
+    an `Any_TypeTag`, neither of which is minted (both are composite-only), so a
     leaked gradual top faults as an internal error after re-resolution. Rejecting it up front keeps
     the guard and the (composite-only) lowering consistent and yields a clean user diagnostic.
     Reachability is nil today (no frontend builds `as`/`is` nodes against a gradual name), so this
@@ -4704,7 +4750,8 @@ private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
 /-- Whether `ty` may appear in a modifies clause. Uses `scope` to tell a value type from a
     heap reference. -/
 private def isHeapRelevantModifiesTarget (scope : Scope) (ty : HighType) : Bool :=
-  (classifyModifiesHighType (isValueTypeName scope) ty).isSome
+  (classifyModifiesHighType
+    (fun n => n.text != compositeTypeName.text && isValueTypeName scope n) ty).isSome
 
 /-- Report that a modifies entry was dropped — unless part of its type failed to resolve, in which
     case resolution already reported the real error and naming the type again only buries it. Any
@@ -4738,7 +4785,10 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     let fieldName' ← resolveFieldRef target' fieldName e.source ownerTy
     let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
     let ownerTy' := (ctx.unfold ownerTy).val
-    if isHeapRelevantModifiesTarget st.scope ownerTy' then
+    let isHeapField := match fieldName'.uniqueId.bind st.idToNode.get? with
+      | some (.field owner _) => owner.text == heapFieldOwner
+      | _ => false
+    if isHeapField || isHeapRelevantModifiesTarget st.scope ownerTy' then
       return some e'
     else
       reportDroppedModifies ownerTy' e.source
@@ -4978,6 +5028,11 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let init' ← field.initializer.mapM (Check.resolveStmtExpr · ty')
   return { field with name := name', type := ty', initializer := init' }
 
+def resolveHeapField (field : HeapField) : ResolveM HeapField := do
+  let ty' ← resolveHighType field.type
+  let resolved ← resolveRef field.name
+  return { field with name := { field.name with uniqueId := resolved.uniqueId }, type := ty' }
+
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
   let scopedKey := containerScopedName typeName proc.name
@@ -5097,6 +5152,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         let ctorName' ← resolveRef ctor.name
         let args' ← ctor.args.mapM fun (p: Parameter) => do
           let ty' ← resolveHighType p.type
+          checkCtorFieldTypeArgsNotConstrained ty'
           let resolved ← resolveRef (dt.destructorName p)
           -- Keep the original parameter name; only take the uniqueId from resolution.
           -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
@@ -5307,6 +5363,7 @@ def buildRefToDef (program : LaurelProgram) : Std.HashMap Nat ResolvedNode :=
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
   let map := program.staticFields.foldl (collectField · "$static" ·) map
+  let map := program.heapFields.foldl (collectField · heapFieldOwner ·.toField) map
   -- A coroutine's name resolves to a `coroutineType` (it names a type in
   -- `co: c` and a constructor in `c(args)`); regular procedures resolve to
   -- `staticProcedure`.
@@ -5490,7 +5547,7 @@ private def registerTypeScope (path : List String) : Nat → CompositeType → R
 
     It also builds every composite's field scope (`registerTypeScope`). -/
 private def preRegisterDefinitions (types : List TypeDefinition)
-    (constants : List Constant) (staticFields : List Field)
+    (constants : List Constant) (staticFields : List Field) (heapFields : List HeapField)
     (procs : List Procedure) : ResolveM Unit := do
   for td in types do
     match td with
@@ -5538,6 +5595,8 @@ private def preRegisterDefinitions (types : List TypeDefinition)
     let fieldName ← defineNameCheckDup field.name (.field "$static" field)
     if !(← get).currentScopeNames.contains qualifiedName then
       let _ ← defineNameCheckDup fieldName (.field "$static" field) (some qualifiedName)
+  for field in heapFields do
+    let _ ← defineNameCheckDup field.name (.field heapFieldOwner field.toField)
   -- Pre-register static procedures via upstream's overload-aware registration,
   -- but first tvarize each proc's signature over its own type params (#1394: `T`
   -- in `procedure f<T>` → `.TVar`; see `tvarizeProcSignature`). Monomorphic procs
@@ -5588,7 +5647,7 @@ private def stampBinderIds (program : LaurelProgram) : ResolveM LaurelProgram :=
 
 private def preRegisterTopLevel (program : LaurelProgram) : ResolveM Unit :=
   preRegisterDefinitions program.types program.constants program.staticFields
-    (program.staticFunctions ++ program.staticProcedures)
+    program.heapFields (program.staticFunctions ++ program.staticProcedures)
 
 /-! ## Exception-escape enforcement
 
@@ -7028,7 +7087,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
     match node.val with
     | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _
     | .Var (.Declare _) => true
-    -- `TypeHierarchy` expands `new` into a block that reads and increments `$heap`, and a
+    -- `new` lowers to an allocation that reads and increments `$heap`, and a
     -- file-scope initializer has no heap in scope. A composite-valued global is still declarable
     -- as `var c: C := <??>`. `..`, not `_`: `typeArgs` is a defaulted field, so `.New _` means
     -- `.New _ []` and would match `new C` alone, letting `new Box<int>` through.
@@ -7534,10 +7593,11 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField "$static")
+    let heapFields' ← program.heapFields.mapM resolveHeapField
     let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
     return { program with staticFunctions := staticFunctions', staticProcedures := staticProcs',
-                          staticFields := staticFields',
+                          staticFields := staticFields', heapFields := heapFields',
                           types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with

@@ -95,11 +95,12 @@ private def renderDecls (decls : List Std.Format) : String :=
     (see `dropPrelude`), then render its declarations — types, constants,
     file-scope fields, procedures — one per line group. The renderer
     `runPassForIdiomaticity` uses. -/
-def renderProgramForIdiomaticity (p : Laurel.LaurelProgram) : IO Unit :=
+public def renderProgramForIdiomaticity (p : Laurel.LaurelProgram) : IO Unit :=
   let p := dropPrelude p
   IO.println (renderDecls (
     (p.types.map Std.ToFormat.format) ++ (p.constants.map Std.ToFormat.format)
-      ++ (p.staticFields.map Std.ToFormat.format) ++ (p.staticProcedures.map Std.ToFormat.format)))
+      ++ (p.staticFields.map Std.ToFormat.format) ++ (p.heapFields.map Laurel.formatHeapField)
+      ++ (p.staticProcedures.map Std.ToFormat.format)))
 
 /-- Print a `LaurelProgram` that the Transparency pass has split into
     `staticFunctions` and `staticProcedures`, for an idiomaticity golden. It drops

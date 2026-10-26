@@ -55,7 +55,11 @@ structure AnalysisResult where
 private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := do
   match expr.val with
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
-    | .StaticCall callee _ _ => modify fun s => { s with callees := callee :: s.callees }
+    | .StaticCall callee _ _ =>
+        if callee.text == allocateProcName then
+          modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
+        else
+          modify fun s => { s with callees := callee :: s.callees }
     | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
     | .New .. => modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
     | .Assign assignTargets _ =>

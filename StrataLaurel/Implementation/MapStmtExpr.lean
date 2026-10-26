@@ -274,8 +274,8 @@ def liftedProcName (typeName methodName : Identifier) : Identifier :=
   {mkId s!"{typeName.text}${methodName.text}" with source := methodName.source}
 
 /-- Name of the synthesized downcast helper for type `T`: `downcast$T`. Minted by
-    `TypeHierarchy` (the definition `function downcast$T(p: T): T requires (p is T)`) and
-    `HeapParameterization` (the `AsType`-arm call site). -/
+    `LowerComposite`, both the definition `function downcast$T(p: T): T requires (p is T)`
+    and the `AsType` call site. -/
 def downcastProcName (typeName : Identifier) : Identifier :=
   {mkId s!"downcast${typeName.text}" with source := typeName.source}
 
@@ -918,7 +918,10 @@ def mapLaurelProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (progr
   let staticFields ← program.staticFields.mapM fun field => do
     let initializer ← field.initializer.mapM mapExpr
     pure { field with initializer }
-  return { program with types, constants, staticFields }
+  let heapFields ← program.heapFields.mapM fun field => do
+    let initializer ← field.initializer.mapM mapExpr
+    pure { field with initializer }
+  return { program with types, constants, staticFields, heapFields }
 
 /-- Pure version of `mapLaurelProgramStmtExprM`. -/
 def mapLaurelProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : LaurelProgram) : LaurelProgram :=
@@ -1043,6 +1046,8 @@ def mapLaurelProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (prog
     staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
     staticFunctions := ← program.staticFunctions.mapM (mapProcedureHighTypesM f)
     staticFields := ← program.staticFields.mapM (mapFieldHighTypesM f)
+    heapFields := ← program.heapFields.mapM fun hf => do
+      pure { hf with toField := ← mapFieldHighTypesM f hf.toField }
     types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
     constants := ← program.constants.mapM (mapConstantHighTypesM f) }
 

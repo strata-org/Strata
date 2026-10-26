@@ -203,6 +203,8 @@ def LaurelProgram.containsB (s : NodeKind → Bool) (p : LaurelProgram) : Bool :
     && consB s p.staticFields NodeKind.LaurelProgram.staticFields.cons
     && p.types.all (TypeDefinition.containsOutsideProceduresB s)
     && p.constants.all (fun c => containsTypeB s c.type && c.initializer.all (Laurel.containsB s))
+    && p.heapFields.all (Field.containsB s ·.toField)
+    && consB s p.heapFields NodeKind.LaurelProgram.heapFields.cons
 
 private def Constant.containsB (s : NodeKind → Bool) (c : Constant) : Bool :=
   containsTypeB s c.type && c.initializer.all (Laurel.containsB s)
@@ -310,11 +312,12 @@ private theorem TypeDefinition.containsOutsideProceduresB_sound (s : NodeKind �
 private theorem LaurelProgram.containsB_sound (s : NodeKind → Bool) (p : LaurelProgram)
     (h : LaurelProgram.containsB s p = true) : LaurelProgram.Contains (KindSet.ofPred s) p := by
   simp only [LaurelProgram.containsB, Bool.and_eq_true, and_assoc] at h
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := h
   refine ⟨⟨all_sound (Procedure.containsB_sound s) h1, all_sound (Procedure.containsB_sound s) h2,
       fun td htd c hc => ?_⟩,
     consB_sound h4, consB_sound h5, all_sound (Field.containsB_sound s) h6, consB_sound h7,
-    all_sound (TypeDefinition.containsOutsideProceduresB_sound s) h8, fun c hc => ?_⟩
+    all_sound (TypeDefinition.containsOutsideProceduresB_sound s) h8, fun c hc => ?_,
+    all_sound (fun f hf => Field.containsB_sound s f.toField hf) h10, consB_sound h11⟩
   · have hprocs := List.all_eq_true.mp h3 td htd
     subst hc
     exact all_sound (Procedure.containsB_sound s) hprocs

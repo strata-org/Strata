@@ -535,15 +535,15 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
   · -- .Var (.Field target f) arm
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     refine postM_bind_any fun fieldName' => ?_
-    by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold tp.snd).val
-    · simp only [hheap, ite_true]
-      exact postM_pure (by
-        intro x hx
-        simp only [Option.mem_def, Option.some.injEq] at hx
-        subst hx
-        exact clean_var_field _ _ _ htp)
-    · simp only [hheap]
-      exact postM_bind_any fun _ => postM_pure (by simp)
+    dsimp only
+    split <;> split
+    all_goals first
+      | exact postM_pure (by
+          intro x hx
+          simp only [Option.mem_def, Option.some.injEq] at hx
+          subst hx
+          exact clean_var_field _ _ _ htp)
+      | exact postM_bind_any fun _ => postM_pure (by simp)
   · -- wildcard arm
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     obtain ⟨e', ty⟩ := tp
@@ -1158,10 +1158,12 @@ theorem phase1_clean (program : LaurelProgram) :
       let types' ← program.types.mapM resolveTypeDefinition
       let constants' ← program.constants.mapM resolveConstant
       let staticFields' ← program.staticFields.mapM (resolveField "$static")
+      let heapFields' ← program.heapFields.mapM resolveHeapField
       let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
       let staticProcs' ← program.staticProcedures.mapM resolveProcedure
       return { staticProcedures := staticProcs', staticFunctions := staticFunctions',
-               staticFields := staticFields', types := types', constants := constants' : LaurelProgram })
+               staticFields := staticFields', heapFields := heapFields', types := types',
+               constants := constants' : LaurelProgram })
       CleanProgram := by
   refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun td _ =>
@@ -1170,6 +1172,7 @@ theorem phase1_clean (program : LaurelProgram) :
       resolveConstant_clean masterCheck c)) fun constants' hconsts => ?_
   refine postM_bind (postM_mapM _ _ (fun f _ =>
       resolveField_clean masterCheck "$static" f)) fun staticFields' hfields => ?_
+  refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticFunctions' hfuncs => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>

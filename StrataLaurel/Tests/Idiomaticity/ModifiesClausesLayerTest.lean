@@ -36,6 +36,7 @@ shape (which `resolve` would not reconstruct from the AST), so they call
 -/
 
 meta import StrataLaurel.Implementation.ModifiesClauses
+meta import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 
 meta section
 
@@ -177,5 +178,16 @@ bodiless named target: (no conditions)
   IO.println s!"named target, enumerated on: {exec [{ targets := [cRef] }] true false}"
   IO.println s!"guarded named target: {exec [{ targets := [cRef], guard := guard? }] false false}"
   IO.println s!"bodiless named target: {exec [{ targets := [cRef] }] false true}"
+
+private def setNotModified : StmtExprMd :=
+  buildNotModifiedForEntry ⟨.Var (.Local (mkId "$modifies_obj")), .unknown⟩
+    ⟨.Var (.Local (mkId "$modifies_fld")), .unknown⟩
+    (.set ⟨.Var (.Local (mkId "s")), .unknown⟩) .unknown
+
+/--
+info: !exists($modifies_member: Composite) => select(s, $modifies_member) & Composite..ref!($modifies_member) == $modifies_obj
+-/
+#guard_msgs in
+#eval IO.println (formatStmtExpr setNotModified)
 
 end

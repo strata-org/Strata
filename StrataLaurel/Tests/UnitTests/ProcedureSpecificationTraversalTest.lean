@@ -9,6 +9,7 @@ import StrataLaurel.Implementation.HeapAnalysis
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataLaurel.Implementation.LiftInstanceProcedures
+import StrataLaurel.Implementation.LowerComposite
 
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 import StrataLaurel.Implementation.InferHoleTypes
@@ -290,13 +291,18 @@ private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
               | .Var (.Local name) => name.text == "$heap"
               | _ => false) &&
               (match receiver.val with
-              | .Var (.Local name) => name.text == "cell"
+              | .StaticCall ref [⟨.Var (.Local name), _⟩] _ =>
+                  ref.text == "Composite..ref!" && name.text == "cell"
               | _ => false) &&
               (match field.val with
               | .StaticCall name [] _ => name.text == "Cell.value"
               | _ => false)
         | _ => false
   | _ => false
+
+private def lowerThenHeapParameterize (resolved : ResolutionResult) : Except String LaurelProgram := do
+  let lowered ← lowerComposite resolved.model resolved.program
+  heapParameterization (resolve lowered (some resolved.model)).program
 
 private def heapSpecificationsHasExpectedValues (proc : Procedure) : Bool :=
   let decreasesIsExpected := match proc.decreases with
@@ -328,7 +334,7 @@ private def checkHeapSpecifications : IO Unit := do
   let everySpecificationsFieldRead :=
     [preconditionAnalysis, decreasesAnalysis, invokeOnAnalysis, axiomAnalysis].all fun result =>
       result.readsHeapDirectly && !result.writesHeapDirectly
-  let lowered ← IO.ofExcept (heapParameterization resolved.model resolved.program)
+  let lowered ← IO.ofExcept (lowerThenHeapParameterize resolved)
   let readerAfter := (findProcedure lowered "reader").get!
   let writerAfter := (findProcedure lowered "writer").get!
   -- The heap is a file-scope global, threaded into signatures by
@@ -435,7 +441,7 @@ private def impureSpecificationCallProgram : LaurelProgram :=
 
 private def checkSpecificationCalls : IO Unit := do
   let resolved := resolve specificationCallProgram
-  let lowered ← IO.ofExcept (heapParameterization resolved.model resolved.program)
+  let lowered ← IO.ofExcept (lowerThenHeapParameterize resolved)
   let caller := (findProcedure lowered "specificationCaller").get!
   let callsRemainPure := match caller.decreases, caller.invokeOn, caller.axioms with
     | some writerMeasure, some readerTrigger, [writerAxiom, readerAxiom] =>
@@ -605,7 +611,7 @@ private def checkEmptySpecifications : IO Unit := do
     (findAnyProcedure lifted "Cell$instanceEmptySpecifications").get!
   let liftedResolved := resolve lifted
   let heapLowered ← IO.ofExcept
-    (heapParameterization liftedResolved.model liftedResolved.program)
+    (lowerThenHeapParameterize liftedResolved)
   let staticAfterHeap :=
     (findAnyProcedure heapLowered "staticEmptySpecifications").get!
   let instanceAfterHeap :=

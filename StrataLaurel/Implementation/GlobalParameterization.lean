@@ -15,7 +15,7 @@ import StrataLaurel.Implementation.LiftInstanceProcedures
 import StrataLaurel.Implementation.EliminateExceptions
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.HeapParameterizationConstants
--- For the pass-ordering metadata below: this pass must run after the heap trio and
+-- For the pass-ordering metadata below: this pass must run after the heap passes and
 -- before the contract pass.
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.ContractPass

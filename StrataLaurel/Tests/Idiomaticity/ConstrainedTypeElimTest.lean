@@ -21,12 +21,26 @@ unchecked (`StmtExpr.Return.value.some` is in the pass's `unsupported` list).
 meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.EliminateValueInReturns
+import StrataLaurel.Implementation.LowerComposite
 import StrataLaurel.Implementation.MonomorphizeComposites
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
+
+private meta def runAfterLowerComposite (program : StrataDDM.Program)
+    (monomorphize : Bool := false) : IO Unit := do
+  let resolved := resolve (withBuiltins (← translateLaurel program))
+  let resolved := if monomorphize then
+      resolve (monomorphizeComposites resolved.program resolved.model).1 (some resolved.model)
+    else resolved
+  let returned := (eliminateValueInReturnsTransform (.Unordered resolved.program)).laurelProgram!
+  let some lowered := (lowerComposite resolved.model returned).toOption
+    | IO.println "LowerComposite failed"
+  let reresolved := resolve lowered (some resolved.model)
+  let (out, _, _) := constrainedTypeElimPass.run {} (.Unordered reresolved.program) reresolved.model
+  renderProgramForIdiomaticity out.laurelProgram!
 
 /--
 info: procedure nat$constraint(x: int): bool
@@ -183,38 +197,50 @@ procedure f() opaque {
 };
 #end
 
--- Composite field of constrained type: a field constraint axiom procedure, the
--- field read assumed in range, and the output checked where the body assigns it.
+-- Composite field of constrained type, after `LowerComposite` as in the pipeline: a
+-- field constraint axiom procedure over the heap field's `int` reference, the field
+-- read assumed in range, and the output checked where the body assigns it.
 /--
-info: composite Ctr { var n: int }
+info: datatype TypeTag { Ctr_TypeTag }
+datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
+const ancestorsForCtr: TotalMap TypeTag bool := update(mapConst(false), Ctr_TypeTag(), true)
+const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(mapConst(mapConst(false)), Ctr_TypeTag(), ancestorsForCtr())
+$heapfield var Ctr.n: int
 procedure nat$constraint(x: int): bool
 {
   $result := x >= 0;
   return
 };
-procedure getN(c: Ctr): int
+procedure getN(c: Composite): int
 {
   $result := {
-    assume nat$constraint(c#n);
-    c#n
+    assume nat$constraint(Composite..ref!(c)#Ctr.n);
+    Composite..ref!(c)#Ctr.n
   };
   assert nat$constraint($result);
   return
 };
+procedure downcast$Ctr(p: Composite)
+  returns (r: Composite)
+  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Ctr_TypeTag())
+{
+  r := p
+};
+procedure $allocate()
+  returns (r: int)external;
 procedure $witness_nat()
   opaque
 {
   var $witness: int := 0;
   assert nat$constraint($witness)
 };
-procedure $fieldConstraint_Ctr$n($o: Ctr)
-  invokeOn $o#n
+procedure $fieldConstraint_Ctr$n($r: int)
+  invokeOn $r#Ctr.n
   opaque
-  ensures nat$constraint($o#n);
+  ensures nat$constraint($r#Ctr.n);
 -/
 #guard_msgs in
-#eval runPassAfterForIdiomaticity constrainedTypeElimPass
-  (fun p _ => (eliminateValueInReturnsTransform (.Unordered p)).laurelProgram!) <|
+#eval runAfterLowerComposite <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -290,9 +316,15 @@ procedure partial(b: bool) returns (r: nat) { if b then { r := 1 } };
 -- in one heap location. A constraint they all have (`n`) gets one axiom, and a field they declare
 -- at different types (`v`, of `Box<int8>` and `Box<nat>`, which `toBox` instantiates) none.
 /--
-info: composite $Family$Box { }
-composite Box$a1$int8 extends $Family$Box { var v: int var n: int }
-composite Box$a1$nat extends $Family$Box { var v: int var n: int }
+info: datatype TypeTag { Box$a1$int8_TypeTag, Box$a1$nat_TypeTag }
+datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
+const ancestorsForBox$a1$int8: TotalMap TypeTag bool := update(mapConst(false), Box$a1$int8_TypeTag(), true)
+const ancestorsForBox$a1$nat: TotalMap TypeTag bool := update(mapConst(false), Box$a1$nat_TypeTag(), true)
+const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(update(mapConst(mapConst(false)), Box$a1$int8_TypeTag(), ancestorsForBox$a1$int8()), Box$a1$nat_TypeTag(), ancestorsForBox$a1$nat())
+$heapfield var Box$a1$int8.v: int as Box.v
+$heapfield var Box$a1$int8.n: int as Box.n
+$heapfield var Box$a1$nat.v: int as Box.v
+$heapfield var Box$a1$nat.n: int as Box.n
 procedure int8$constraint(x: int): bool
 {
   $result := x >= -128 && x <= 127;
@@ -310,17 +342,31 @@ procedure user(m: (TotalMap int int), k: (TotalMap int int))
   toBox$a1$nat(k)
 };
 procedure toBox$a1$int8(m: (TotalMap int int))
-  returns (r: Box$a1$int8)
+  returns (r: Composite)
   opaque
 {
-  r := new Box$a1$int8
+  r := MkComposite($allocate(), Box$a1$int8_TypeTag())
 };
 procedure toBox$a1$nat(m: (TotalMap int int))
-  returns (r: Box$a1$nat)
+  returns (r: Composite)
   opaque
 {
-  r := new Box$a1$nat
+  r := MkComposite($allocate(), Box$a1$nat_TypeTag())
 };
+procedure downcast$Box$a1$int8(p: Composite)
+  returns (r: Composite)
+  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Box$a1$int8_TypeTag())
+{
+  r := p
+};
+procedure downcast$Box$a1$nat(p: Composite)
+  returns (r: Composite)
+  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Box$a1$nat_TypeTag())
+{
+  r := p
+};
+procedure $allocate()
+  returns (r: int)external;
 procedure $witness_int8()
   opaque
 {
@@ -333,13 +379,13 @@ procedure $witness_nat()
   var $witness: int := 0;
   assert nat$constraint($witness)
 };
-procedure $fieldConstraint_Box$a1$int8$n($o: Box$a1$int8)
-  invokeOn $o#n
+procedure $fieldConstraint_Box$a1$int8$n($r: int)
+  invokeOn $r#Box$a1$int8.n
   opaque
-  ensures int8$constraint($o#n);
+  ensures int8$constraint($r#Box$a1$int8.n);
 -/
 #guard_msgs in
-#eval runPassAfterForIdiomaticity constrainedTypeElimPass (fun p m => (monomorphizeComposites p m).1) <|
+#eval (runAfterLowerComposite (monomorphize := true)) <|
 #strata
 program Laurel;
 constrained int8 = x: int where x >= -128 && x <= 127 witness 0

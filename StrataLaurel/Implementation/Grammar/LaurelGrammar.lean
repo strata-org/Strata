@@ -35,6 +35,8 @@ module
 -- Rebuild trigger: declared global reads/writes on opaqueSpec.
 -- Rebuild trigger token: totalMapType rename (frees `Map` for the partial map)
 -- Rebuild trigger token: clause summaries and opaque type parameters print without parentheses
+-- Rebuild trigger token: heap field declarations ($heapfield, prec 0)
+-- Rebuild trigger token: heap field locations ($heapfield ... as Owner.field, prec 0)
 public import Strata.Init
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init

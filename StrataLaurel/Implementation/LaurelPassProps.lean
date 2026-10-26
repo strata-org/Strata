@@ -306,10 +306,11 @@ private theorem lift_procedure [LawfulMonad m] (L : Lift f s t) {p : Procedure} 
 
 /-! ## The program
 
-`mapLaurelProgramStmtExprM` runs in four phases: every procedure (via
+`mapLaurelProgramStmtExprM` runs in five phases: every procedure (via
 `mapLaurelProgramProceduresM ∘ mapProcedureM`), then the type definitions' own
 expressions (a constrained type's constraint and witness, a composite's field
-initializers), then the constants, then the file-scope globals. Between them,
+initializers), then the constants, then the file-scope globals, then the heap
+fields. Between them,
 positions not yet visited still live in the *input* set `s`, which is why the
 phase postconditions mention both sets. -/
 
@@ -327,6 +328,7 @@ def AfterProcedures (s t : KindSet) (p prog : LaurelProgram) : Prop :=
     ∧ prog.types.length = p.types.length
     ∧ prog.staticFields = p.staticFields
     ∧ prog.constants = p.constants
+    ∧ prog.heapFields = p.heapFields
 
 /-- **The generic program-level lift.** Rewriting every expression position of a
     program with `f` maps a `Contains s` program to a `Contains t` one. The pass
@@ -335,7 +337,8 @@ def AfterProcedures (s t : KindSet) (p prog : LaurelProgram) : Prop :=
     once. -/
 theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} (h : LaurelProgram.Contains s p) :
     PostM (mapLaurelProgramStmtExprM f p) (LaurelProgram.Contains t) := by
-  obtain ⟨⟨hstatic, hfuns, htypeProcs⟩, hstaticCons, hfunsCons, hfields, hfieldsCons, htypes, hconsts⟩ := h
+  obtain ⟨⟨hstatic, hfuns, htypeProcs⟩, hstaticCons, hfunsCons, hfields, hfieldsCons, htypes, hconsts,
+    hheap, hheapCons⟩ := h
   rw [mapLaurelProgramStmtExprM, mapLaurelProgramProceduresM]
   -- Phase 1: every procedure (static, and every composite's methods).
   refine post_bind (Q := AfterProcedures s t p) ?_ (fun prog1 hprog1 => ?_)
@@ -375,8 +378,9 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
       | Alias ta => exact post_pure ⟨htypes _ htd, by simp⟩
     refine post_pure ⟨hprocs1.1, by simpa using hprocs1.2, hfuns1.1, by simpa using hfuns1.2,
       fun td htd => (htypes1.1 td htd).1, fun td htd => (htypes1.1 td htd).2,
-      by simpa using htypes1.2, rfl, rfl⟩
-  obtain ⟨hprocs, hprocsLen, hfunsAfter, hfunsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq⟩ := hprog1
+      by simpa using htypes1.2, rfl, rfl, rfl⟩
+  obtain ⟨hprocs, hprocsLen, hfunsAfter, hfunsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq,
+    hheapEq⟩ := hprog1
   -- Phase 2: the type definitions' own expressions.
   refine post_bind (post_and (post_mapM prog1.types _
       (P := fun td' => TypeDefinition.ContainsOutsideProcedures t td'
@@ -444,8 +448,15 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
           post_pure ⟨L.type (hfields fld (by rw [← hfieldsEq]; exact hfld)).1,
             hinit'⟩)))
     (post_mapM_length _ _)) (fun fields2 hfields2 => ?_)
+  refine post_bind (post_and (post_mapM prog1.heapFields _
+      (P := fun hf => Field.Contains t hf.toField) (fun fld hfld =>
+      post_bind (lift_optExpr L (hheap fld (by rw [← hheapEq]; exact hfld)).2)
+        (fun init' hinit' =>
+          post_pure ⟨L.type (hheap fld (by rw [← hheapEq]; exact hfld)).1,
+            hinit'⟩)))
+    (post_mapM_length _ _)) (fun heap2 hheap2 => ?_)
   refine post_pure ⟨⟨hprocs, hfunsAfter, ?_⟩, ?_, ?_, hfields2.1, ?_,
-    fun td htd => (htypes2.1 td htd).1, hconsts2⟩
+    fun td htd => (htypes2.1 td htd).1, hconsts2, hheap2.1, ?_⟩
   · intro td htd c hc
     exact (htypes2.1 td htd).2 c hc
   · exact fun hne => mem_keep L (hstaticCons (ne_nil_of_length hprocsLen hne)) (by simp [containerKinds])
@@ -453,6 +464,10 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
   · refine fun hne => mem_keep L (hfieldsCons ?_) (by simp [containerKinds])
     have hlen : fields2.length = p.staticFields.length := by
       rw [hfields2.2, hfieldsEq]
+    exact ne_nil_of_length hlen hne
+  · refine fun hne => mem_keep L (hheapCons ?_) (by simp [containerKinds])
+    have hlen : heap2.length = p.heapFields.length := by
+      rw [hheap2.2, hheapEq]
     exact ne_nil_of_length hlen hne
 
 private theorem lift_constant [LawfulMonad m] (L : Lift f s t) {c : Constant}

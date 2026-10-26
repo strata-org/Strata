@@ -34,7 +34,7 @@ therefore the pass's real output, not a simplified stand-in.
 What is *not* exercised here is what the later passes do to that output — heap
 parameterization threading the inout `$heap` through a throwing call,
 `ModifiesClauses` building the `isGood`/`isBad`-guarded frames, and
-`TypeHierarchy` lowering the `is`-guards. Those are covered by the full-pipeline
+`LowerComposite` lowering the `is`-guards. Those are covered by the full-pipeline
 verifying tests (`ThrowsOnClause`, `TryCatchThrow`, `TryFinallyThrow`, …).
 The prelude is dropped from the output; the `Result` datatype the pass injects
 for a program that uses exceptions is kept, so it heads each golden.

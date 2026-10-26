@@ -172,7 +172,7 @@ private def boolTy : HighTypeMd := tyNode .TBool
     type on the Bad path. `errTy` is a real exception type (the declared `throws`
     type), never the erased heap `Composite`. -/
 private def resultTyOf (valTy errTy : HighTypeMd) : HighTypeMd :=
-  tyNode (.Applied (tyNode (.UserDefined (mkId resultDatatypeName))) [valTy, errTy])
+  ⟨.Applied (tyNode (.UserDefined (mkId resultDatatypeName))) [valTy, errTy], valTy.source⟩
 
 private def litBool (b : Bool) : StmtExprMd := nn (.LiteralBool b)
 private def localRef (name : String) : StmtExprMd := nn (.Var (.Local (mkId name)))
@@ -1141,8 +1141,8 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- throwing path — the escape check has already established that only subtypes of
   -- `T` escape. Emitted only for a composite `T`: `e is T` would be ill-formed for
   -- a non-composite one and would cascade a spurious "cannot test unrelated type".
-  -- The `is` test itself is lowered later, by heap parameterization and the
-  -- type-hierarchy transform, both of which run after this pass.
+  -- The `is` test itself is lowered later, by `LowerComposite`, which runs after
+  -- this pass.
   let throwsTypePosts : List Condition :=
     match proc.throwsType with
     | some tyNode =>

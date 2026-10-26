@@ -424,6 +424,8 @@ procedure getNestedBad(o: Outer) : nat
 
 procedure throwsNat(x: nat) : nat throws (e: Exception) { return x };
 procedure throwsNatBad(x: nat) : nat throws (e: Exception)
+//        ^^^^^^^^^^^^ error: assertion could not be proved
+//                               ^^^ error: postcondition could not be proved
 {
   return x - 1
 //^^^^^^^^^^^^ error: assertion could not be proved

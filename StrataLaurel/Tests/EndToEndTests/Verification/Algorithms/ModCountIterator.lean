@@ -84,8 +84,6 @@ procedure total(l: IntList) returns (s: int)
 // desired: verifies
   {
     var v: int := next(it);
-//                ^^^^^^^^ error: precondition could not be proved
-// desired: verifies
     s := s + v
   }
 };
@@ -164,7 +162,6 @@ procedure total(l: IntList) returns (s: int)
 //            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   {
     var v: int := next(it);
-//                ^^^^^^^^ error: precondition could not be proved
     append(l, 0);
     s := s + v
   }

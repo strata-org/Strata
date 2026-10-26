@@ -437,4 +437,7 @@ op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
 op typeAliasCommand(alias: TypeAliasDecl): Command => alias;
 op opaqueTypeCommand(ty: OpaqueTypeDecl): Command => ty;
+category HeapFieldLocation;
+op heapFieldLocation(location: Ident): HeapFieldLocation => " as " location;
+op heapFieldCommand(field: Field, location: Option HeapFieldLocation): Command => "$heapfield" field:0 location:0;
 

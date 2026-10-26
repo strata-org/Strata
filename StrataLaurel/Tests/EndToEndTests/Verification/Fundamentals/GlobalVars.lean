@@ -889,7 +889,7 @@ to sequence it against -- the initializer only reaches one when the globals pass
 emits it into an entry procedure's prologue, which happens after `new` is lowered.
 
 Diagnosed rather than left alone because the failure is otherwise silent: the type
-flattening at the end of the type-hierarchy pass rewrites the field's declared type
+flattening at the end of `LowerComposite` rewrites the field's declared type
 to `Composite` while the initializer still says `new C`, and nothing objects until
 something re-resolves the program.
 
@@ -949,7 +949,7 @@ procedure e()
 
 /-! ## An `is` type test inside a global's INITIALIZER.
 
-Guards `TypeHierarchy` lowering `is` program-wide, not procedure bodies alone. Four things make it
+Guards `LowerComposite` lowering `is` program-wide, not procedure bodies alone. Four things make it
 able to fail, each easy to lose in a simplification:
 
 - the reader is `entry`, so the global carries its initializer's value and the assert pins what the

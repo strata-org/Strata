@@ -49,29 +49,63 @@ partial def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighT
 def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
   ⟨resolveBaseType ptMap ty.val, ty.source⟩
 
-def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
-  match ty with | .UserDefined name => ptMap.contains name.text | _ => false
+abbrev DatatypeMap := Std.HashMap String DatatypeDefinition
 
-/-- Build a call to the constraint procedure for a constrained type, asserting
-    the constraint on the read-back expression `ref`. Returns `none` if `ty` is
-    not a constrained type.
+def buildDatatypeMap (types : List TypeDefinition) : DatatypeMap :=
+  types.foldl (init := {}) fun m td =>
+    match td with | .Datatype dt => m.insert dt.name.text dt | _ => m
 
-    `ref` is the expression whose value is checked (e.g. a local read
-    `x` or a field read `c#count`), allowing this to serve every assignment
-    target kind uniformly. -/
-def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (ref : StmtExprMd) (src : FileRange) : Option StmtExprMd :=
+structure CteCtx where
+  ptMap : ConstrainedTypeMap
+  dtMap : DatatypeMap := {}
+  mixed : Std.HashSet String := {}
+
+private def conjoin (src : FileRange) : List StmtExprMd → Option StmtExprMd
+  | [] => none
+  | e :: es => some (es.foldl (fun acc x => ⟨.StaticCall (mkId Operation.And.procName) [acc, x] [], src⟩) e)
+
+partial def constraintAtoms (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
+    (src : FileRange) : List StmtExprMd :=
   match ty with
-  | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩
-    else none
-  | _ => none
+  | .UserDefined name =>
+    if cx.ptMap.contains name.text then [⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩]
+    else []
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined dtName =>
+      match cx.dtMap.get? dtName.text with
+      | some dt =>
+        if dt.isRecursive cx.dtMap.get? || dt.typeArgs.length != args.length then [] else
+        let subst : Std.HashMap String HighTypeMd :=
+          (dt.typeArgs.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
+        dt.constructors.flatMap fun ctor =>
+          let tester : StmtExprMd := ⟨.StaticCall (mkId (dt.testerName ctor)) [ref] [], src⟩
+          let generic := ctor.args.filter fun p =>
+            p.type.val.mentionedNames.any fun n => dt.typeArgs.any (·.text == n)
+          let inner := generic.flatMap fun p =>
+            let read : StmtExprMd := ⟨.StaticCall (mkId (dt.unsafeDestructorName p)) [ref] [], src⟩
+            constraintAtoms cx (substTypeVars subst p.type).val read src
+          (conjoin src inner).toList.map fun body =>
+            ⟨.StaticCall (mkId Operation.Implies.procName) [tester, body] [], src⟩
+      | none => []
+    | _ => []
+  | _ => []
 
-/-- Build a call to the constraint procedure for a constrained type, checking a
-    local variable read, or `none` if not constrained. -/
-def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
+def constraintCallForExpr (cx : CteCtx) (ty : HighType)
+    (ref : StmtExprMd) (src : FileRange) : Option StmtExprMd :=
+  conjoin src (constraintAtoms cx ty ref src)
+
+def constraintCallFor (cx : CteCtx) (ty : HighType)
     (varName : Identifier) (src : FileRange) : Option StmtExprMd :=
-  constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
+  constraintCallForExpr cx ty ⟨.Var (.Local varName), src⟩ src
+
+def conditionsForExpr (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
+    (src : FileRange) : List Condition :=
+  (constraintCallForExpr cx ty ref src).toList.map (fun c => { condition := c })
+
+def conditionsFor (cx : CteCtx) (ty : HighType) (varName : Identifier)
+    (src : FileRange) : List Condition :=
+  conditionsForExpr cx ty ⟨.Var (.Local varName), src⟩ src
 
 /-- Generate a constraint procedure for a constrained type.
     For nested types, the procedure calls the parent's constraint procedure. -/
@@ -105,31 +139,31 @@ def resolveVariable (ptMap : ConstrainedTypeMap) (v : VariableMd) : VariableMd :
 
 /-- Resolve constrained types in type positions and inject constraint calls into quantifier bodies.
     Recursion into StmtExprMd children is handled by `mapStmtExpr`. -/
-def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprMd :=
+def resolveExprNode (cx : CteCtx) (expr : StmtExprMd) : StmtExprMd :=
   let source := expr.source
 
   match expr.val with
   | .Assign targets value =>
-    ⟨.Assign (targets.map (resolveVariable ptMap)) value, source⟩
+    ⟨.Assign (targets.map (resolveVariable cx.ptMap)) value, source⟩
   | .Var (.Declare param) =>
-    ⟨.Var (.Declare { param with type := param.type.map (resolveType ptMap ·) }), source⟩
+    ⟨.Var (.Declare { param with type := param.type.map (resolveType cx.ptMap ·) }), source⟩
   | .Quantifier mode param trigger body =>
-    let param' := { param with type := resolveType ptMap param.type }
+    let param' := { param with type := resolveType cx.ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
     -- created operator call won't be visited again, which is safe because
     -- `c` (from `constraintCallFor`) is a StaticCall with Identifier leaves
     -- that don't need further resolution.
     let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.And
-    let injected := match constraintCallFor ptMap param.type.val param.name (src := source) with
+    let injected := match constraintCallFor cx param.type.val param.name (src := source) with
       | some c => ⟨.StaticCall (mkId combiner.procName) [c, body] [], source⟩
       | none => body
     ⟨.Quantifier mode param' trigger injected, source⟩
-  | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source⟩
-  | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
+  | .AsType t ty => ⟨.AsType t (resolveType cx.ptMap ty), source⟩
+  | .IsType t ty => ⟨.IsType t (resolveType cx.ptMap ty), source⟩
   -- `Resolution.Check.holeNone` records the expected type on an untyped hole in check
   -- position. Resolve that annotation together with the surrounding declaration so no
   -- constrained type remains after this pass. This applies to both hole kinds.
-  | .Hole det ty => ⟨.Hole det (ty.map (resolveType ptMap ·)), source⟩
+  | .Hole det ty => ⟨.Hole det (ty.map (resolveType cx.ptMap ·)), source⟩
   | _ => expr
 
 /-- Per-node constrained-type elimination, applied bottom-up (with flattening)
@@ -148,19 +182,19 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
       with the constraint assumed on it as for an uninitialized declaration. A copy of the
       hole would not do: each occurrence of a hole is its own value.
     - All other nodes are returned unchanged; the traversal handles recursion. -/
-def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.HashSet String)
+def elimNode (cx : CteCtx) (model : SemanticModel)
     (resultUsed : Bool) (node : StmtExprMd) : StateM Nat (List StmtExprMd) := do
   let source := node.source
   match node.val with
   | .Var (.Declare ⟨name, some ty⟩) =>
-    let check := (constraintCallFor ptMap ty.val name (src := source)).toList.map
+    let check := (constraintCallFor cx ty.val name (src := source)).toList.map
       fun c => ⟨.Assume c, source⟩
     return [node] ++ check
   | .Assign targets _value =>
     let asserts: List StmtExprMd := targets.filterMap (fun target =>
       let ref : StmtExprMd := VariableMd.toReadbackExpr target
-      let ty : HighType := (computeExprType model ref).val
-      (constraintCallForExpr ptMap ty ref (src := source)).map (⟨.Assert · none, source⟩))
+      (constraintCallForExpr cx (computeExprType model ref).val ref (src := source)).map
+        (⟨.Assert · none, source⟩))
     let suffix := match targets with
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
       | _ => []
@@ -180,7 +214,7 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.H
     -- anyway -- `.Assign` checks each, and `IncrDecr` / `CompoundAssign` lower to
     -- `.Assign` first (LaurelCompilationPipeline runs
     -- eliminateIncrDecrAndCompoundAssign before constrainedTypeElim). The fact fails for a
-    -- field of `mixedFields`, so nothing is assumed there.
+    -- heap field of `mixedHeapFields`, so nothing is assumed there.
     --
     -- On the READ: hoisting to the enclosing statement could reference a local that
     -- statement declares. The duplicated read is pure (`readField(heap, obj, field)`);
@@ -189,19 +223,17 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.H
     --
     -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
     -- write, so the `Datatype` branch over-approximates.
-    let isMixed := match model.get fieldName with
-      | .field .. => (resolveQualifiedFieldName model fieldName).any mixed.contains
-      | _ => false
-    if isMixed then return [node] else
-    match constraintCallForExpr ptMap (computeExprType model node).val node (src := source) with
+    if cx.mixed.contains fieldName.text then return [node] else
+    match constraintCallForExpr cx (computeExprType model node).val node (src := source) with
     | some c => return [⟨.Assume c, source⟩, node]
     | none => return [node]
   | .Hole _ (some ty) =>
-    if !resultUsed || !isConstrainedType ptMap ty.val then return [node]
+    if !resultUsed || (constraintCallFor cx ty.val (mkId "") (src := source)).isNone then
+      return [node]
     let n ← modifyGet fun n => (n, n + 1)
     let h := mkId s!"$constrainedHole{n}"
     let decl : StmtExprMd := ⟨.Assign [⟨.Declare ⟨h, some ty⟩, source⟩] node, source⟩
-    let assume := (constraintCallFor ptMap ty.val h (src := source)).toList.map
+    let assume := (constraintCallFor cx ty.val h (src := source)).toList.map
       fun c => ⟨.Assume c, source⟩
     return [decl] ++ assume ++ [⟨.Var (.Local h), source⟩]
   | _ => return [node]
@@ -209,19 +241,18 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.H
 /-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
     traversal. A procedure body is a statement, so the top-level `resultUsed`
     is `false`. -/
-def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (mixed : Std.HashSet String)
-    (body : StmtExprMd) : StmtExprMd :=
-  (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model mixed) false body).run' 0
+def elimStmts (cx : CteCtx) (model : SemanticModel) (body : StmtExprMd) : StmtExprMd :=
+  (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode cx model) false body).run' 0
 
 /-- Assert each constrained output's constraint where a transparent body exits without
     having just assigned it: before a `return` that does not directly follow an assignment
     to an output, which is already asserted, and after the body for the path that falls
     off its end. -/
-private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter)
+private def addExitChecks (cx : CteCtx) (outputs : List Parameter)
     (body : StmtExprMd) : StmtExprMd :=
   let checks (at? : Option FileRange) : List StmtExprMd := outputs.filterMap fun p =>
     let src := at?.getD p.type.source
-    (constraintCallFor ptMap p.type.val p.name (src := src)).map (⟨.Assert · none, src⟩)
+    (constraintCallFor cx p.type.val p.name (src := src)).map (⟨.Assert · none, src⟩)
   let assignsOutput (s : StmtExprMd) : Bool := match s.val with
     | .Assign [⟨.Local n, _⟩] _ =>
       outputs.any fun p => p.name.text == n.text && p.name.uniqueId == n.uniqueId
@@ -250,14 +281,12 @@ private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter
   | .Return _ => ⟨.Block (checks (some body'.source) ++ [body']) none, body'.source⟩
   | _ => ⟨.Block (body' :: checks none) none, body'.source⟩
 
-def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (mixed : Std.HashSet String) (proc : Procedure) : Procedure :=
-  let inputRequires : List Condition := proc.inputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
-      fun c => { condition := c }
-  let outputEnsures : List Condition := proc.outputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
-      fun c => { condition := ⟨c.val, p.type.source⟩ }
+def elimProc (cx : CteCtx) (model : SemanticModel)
+    (proc : Procedure) : Procedure :=
+  let inputRequires : List Condition := proc.inputs.flatMap fun p =>
+    conditionsFor cx p.type.val p.name p.type.source
+  let outputEnsures : List Condition := proc.outputs.flatMap fun p =>
+    conditionsFor cx p.type.val p.name p.type.source
   let body' := match proc.body with
   -- A transparent body stays transparent: demoting it to `.Opaque` to carry
   -- `outputEnsures` would hide the body callers need to reason about the value
@@ -265,39 +294,39 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel)
   -- type constraints are asserted where the body exits instead.
   | .Transparent bodyExpr =>
     let constrained := proc.outputs.filter fun p =>
-      (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).isSome
-    if constrained.isEmpty then .Transparent (elimStmts ptMap model mixed bodyExpr) else
-    let body := elimStmts ptMap model mixed bodyExpr
-    .Transparent (addExitChecks ptMap constrained body)
+      (constraintCallFor cx p.type.val p.name (src := p.type.source)).isSome
+    if constrained.isEmpty then .Transparent (elimStmts cx model bodyExpr) else
+    let body := elimStmts cx model bodyExpr
+    .Transparent (addExitChecks cx constrained body)
   -- Output type-constraints go FIRST, before the user's own `ensures`. The order
   -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
   -- postcondition is well-formed given its outputs' type constraints --
   -- `returns (r: nonzero)` with `ensures 10 / r > 1` needs `r != 0`. Appended
   -- instead, the constraint would come too late to be assumed.
   | .Opaque postconds impl modif =>
-    let impl' := impl.map (elimStmts ptMap model mixed)
+    let impl' := impl.map (elimStmts cx model)
     .Opaque (outputEnsures ++ postconds) impl' modif
   | .Abstract postconds => .Abstract (outputEnsures ++ postconds)
   | .External => .External
-  let resolve := mapStmtExpr (resolveExprNode ptMap)
+  let resolve := mapStmtExpr (resolveExprNode cx)
   let proc := { proc with
     body := body'
-    inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
-    outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
+    inputs := proc.inputs.map fun p => { p with type := resolveType cx.ptMap p.type }
+    outputs := proc.outputs.map fun p => { p with type := resolveType cx.ptMap p.type }
     -- Prepend the generated input type-constraint requires, for the same ordering
     -- reason as `outputEnsures` above: `$pre_i` sees the `requires` clauses before
     -- it, so `(x: nonzero)` with `requires 10 / x > 1` needs `x != 0`.
     preconditions := inputRequires ++ proc.preconditions }
   mapProcedureM (m := Id) resolve proc
 
-private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
+private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source
 
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.Assign [⟨.Declare ⟨witnessId, some (resolveType ptMap ct.base)⟩, src⟩] ct.witness, src⟩
+    ⟨.Assign [⟨.Declare ⟨witnessId, some (resolveType cx.ptMap ct.base)⟩, src⟩] ct.witness, src⟩
   let assert : StmtExprMd :=
-    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
+    ⟨.Assert (constraintCallFor cx (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
@@ -305,21 +334,20 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     preconditions := []
     decreases := none }
 
-/-- The fields, named by `heapFieldName`, that two instantiations of a generic composite
-    (`families`) declare at different types. No instantiation may rely on such a field's
+/-- The heap fields whose location another heap field shares at a different type, as the
+    instantiations of a generic composite do. No instantiation may rely on such a field's
     constraint, as one object can be both: through `D<S> extends Box<S>, Box<int>` at
     `S := int8`, a `Box<int>` view sets a `Box<int8>`'s `v` to 1000. A type stored in another
     box, as `bool` is, is no exception: the `int` read off a `bool` box is one value, so two
     bounds assumed of it may contradict. -/
-private def mixedFields (families : Std.HashMap String (List CompositeType)) : Std.HashSet String :=
-  families.fold (init := {}) fun s _ family =>
-    family.foldl (init := s) fun s ct => ct.fields.foldl (init := s) fun s f =>
-      if family.any (·.fields.any fun g => g.name.text == f.name.text && !highEq g.type f.type)
-      then s.insert (heapFieldName ct f.name.text) else s
+private def mixedHeapFields (heapFields : List HeapField) : Std.HashSet String :=
+  heapFields.foldl (init := {}) fun s f =>
+    if heapFields.any fun g => g.location.text == f.location.text && !highEq g.type f.type
+    then s.insert f.name.text else s
 
 /-- `ContractPass` turns an `invokeOn` trigger plus `ensures` into
 
-      forall (o: C) { o#f } => T$constraint(o#f)
+      forall (r: int) { r#C.f } => T$constraint(r#C.f)
 
     `elimNode` already restates this at each read, as a value-block
     `{ assume T$constraint(read); read }`. A value-block needs a statement position, so
@@ -334,7 +362,9 @@ private def mixedFields (families : Std.HashMap String (List CompositeType)) : S
     and Core fails with `Cannot find this fvar in the context! $heap`.
 
     Triggered on the field read itself, so it instantiates where a read appears
-    rather than for every object of type `C`.
+    rather than for every object of type `C`. Quantified over the `int` reference
+    rather than a `Composite`: z3 does not instantiate a trigger that applies the
+    `Composite` selector to a bound variable.
 
     The composite and field names are joined with `$`, not `_`: a `_` separator makes
     `A_b.c` and `A.b_c` mint the same name, and underscores are common enough in real
@@ -342,26 +372,21 @@ private def mixedFields (families : Std.HashMap String (List CompositeType)) : S
     contains `$`, which the duplicate-definition diagnostic already tells the author to
     rename, and matches `MonomorphizeComposites`' `$aN$` tags.
 
-    Core quantifies `o` over every object, not just `C`'s, and the instantiations of a generic
-    composite (`family`) share each field's heap location (`heapFieldOwner`): the first's
-    axioms hold for all, and a field of `mixedFields` has none. -/
-private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap) (mixed : Std.HashSet String)
-    (family : List CompositeType) (ct : CompositeType) : List Procedure :=
-  if family.head?.any (·.name.text != ct.name.text) then [] else
-  let src := ct.name.source
-  let objName : Identifier := mkId "$o"
-  let objRef : StmtExprMd := ⟨.Var (.Local objName), src⟩
-  ct.fields.filterMap fun f =>
-    if mixed.contains (heapFieldName ct f.name.text) then none else
-    let fieldRead : StmtExprMd := ⟨.Var (.Field objRef f.name), src⟩
-    (constraintCallForExpr ptMap f.type.val fieldRead (src := src)).map fun constraint =>
-      { name := mkId s!"$fieldConstraint_{ct.name.text}${f.name.text}"
-        inputs := [{ name := objName, type := ⟨.UserDefined ct.name, src⟩ }]
-        outputs := []
-        body := .Opaque [{ condition := constraint }] none []
-        preconditions := []
-        decreases := none
-        invokeOn := some fieldRead }
+    Core quantifies `r` over every reference, and heap fields sharing a location share its
+    storage: the first's axiom holds for all, and a field of `mixedHeapFields` has none. -/
+private def mkHeapFieldConstraintProc (cx : CteCtx) (f : HeapField) : Option Procedure :=
+  if cx.mixed.contains f.name.text then none else
+  let src := f.name.source
+  let refName : Identifier := mkId "$r"
+  let fieldRead : StmtExprMd := ⟨.Var (.Field ⟨.Var (.Local refName), src⟩ f.name), src⟩
+  (constraintCallForExpr cx f.type.val fieldRead (src := src)).map fun constraint =>
+    { name := mkId s!"$fieldConstraint_{f.name.text.replace "." "$"}"
+      inputs := [{ name := refName, type := ⟨.TInt, src⟩ }]
+      outputs := []
+      body := .Opaque [{ condition := constraint }] none []
+      preconditions := []
+      decreases := none
+      invokeOn := some fieldRead }
 
 /-- Eliminate constrained types within a composite type definition: resolve
     constrained field types to their base types and run constrained type
@@ -371,12 +396,11 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap) (mixed : Std.Has
     definitions from the program. Any reference to a constrained type left inside
     a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
     resolve in later passes and the final Core translation. -/
-def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (mixed : Std.HashSet String) (ct : CompositeType) (prepare : Procedure → Procedure := id) :
-    CompositeType :=
+def elimCompositeType (cx : CteCtx) (model : SemanticModel)
+    (ct : CompositeType) (prepare : Procedure → Procedure := id) : CompositeType :=
   { ct with
-    fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model mixed ∘ prepare) }
+    fields := ct.fields.map fun f => { f with type := resolveType cx.ptMap f.type }
+    instanceProcedures := ct.instanceProcedures.map (elimProc cx model ∘ prepare) }
 
 private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any ids.contains
@@ -384,19 +408,15 @@ private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool
 /-- Preserve constrained-global invariants while globals are still represented
     as fields. Readers require a valid incoming value; writers additionally
     guarantee a valid outgoing value. -/
-private def addConstrainedGlobalConditions (ptMap : ConstrainedTypeMap)
+private def addConstrainedGlobalConditions (cx : CteCtx)
     (effects : GlobalEffectsByProcId) (fields : List Field)
     (proc : Procedure) : Procedure :=
   let (requires, ensures) := fields.foldl (init := ([], []))
     fun (requires, ensures) field =>
-      let isConstrained := match field.type.val with
-        | .UserDefined name => ptMap.contains name.text
-        | _ => false
-      if !isConstrained then (requires, ensures) else
       let qualifiedName := { field.name with text := s!"$static.{field.name.text}" }
       let reference : StmtExprMd := ⟨.Var (.Local qualifiedName), field.name.source⟩
-      let condition := (constraintCallForExpr ptMap field.type.val reference
-        (src := field.type.source)).map fun call => ({ condition := call } : Condition)
+      let condition := conditionsForExpr cx field.type.val reference field.type.source
+      if condition.isEmpty then (requires, ensures) else
       let readers := match field.name.uniqueId with
         | some id => effects.readers.getD id {}
         | none => {}
@@ -404,9 +424,9 @@ private def addConstrainedGlobalConditions (ptMap : ConstrainedTypeMap)
         | some id => effects.writers.getD id {}
         | none => {}
       let requires := if procedureHasEffect readers proc || procedureHasEffect writers proc then
-        requires ++ condition.toList else requires
+        requires ++ condition else requires
       let ensures := if procedureHasEffect writers proc then
-        ensures ++ condition.toList else ensures
+        ensures ++ condition else ensures
       (requires, ensures)
   let body := if ensures.isEmpty then proc.body else match proc.body with
     | .Transparent implementation => .Opaque ensures (some implementation) []
@@ -420,36 +440,38 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     : LaurelProgram × List Message :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
+  let cx : CteCtx :=
+    { ptMap, dtMap := buildDatatypeMap program.types, mixed := mixedHeapFields program.heapFields }
   let constraintProcs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
-    | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let composites := program.types.filterMap fun | .Composite ct => some ct | _ => none
-  let families : Std.HashMap String (List CompositeType) := composites.foldr (init := {})
-    fun ct m => let owner := heapFieldOwner ct; m.insert owner (ct :: m.getD owner [])
-  let mixed := mixedFields families
-  let fieldAxiomProcedures := composites.flatMap fun ct =>
-    mkFieldConstraintProcs ptMap mixed (families.getD (heapFieldOwner ct) []) ct
+    | .Constrained ct => some (mkWitnessProc cx ct) | _ => none
+  let firstAtLocation := (program.heapFields.foldl (init := (([] : List HeapField), ({} : Std.HashSet String)))
+    fun (acc, seen) f =>
+      if seen.contains f.location.text then (acc, seen) else (acc ++ [f], seen.insert f.location.text)).1
+  let fieldAxiomProcedures := firstAtLocation.filterMap (mkHeapFieldConstraintProc cx)
   let instanceProcedures := program.types.flatMap fun
     | .Composite composite => composite.instanceProcedures
     | _ => []
   let allProcedures := program.staticProcedures ++ instanceProcedures
   let effects := computeGlobalEffectsByProcId model allProcedures program.staticFields
   let addGlobalConditions :=
-    addConstrainedGlobalConditions ptMap effects program.staticFields
+    addConstrainedGlobalConditions cx effects program.staticFields
   let prepared := program.staticProcedures.map addGlobalConditions
   ({ program with
     staticProcedures := constraintProcs ++
-      prepared.map (elimProc ptMap model mixed)
+      prepared.map (elimProc cx model)
                         ++ witnessProcedures ++ fieldAxiomProcedures
     staticFields := program.staticFields.map fun field =>
       { field with
         type := resolveType ptMap field.type
-        initializer := field.initializer.map (mapStmtExpr (resolveExprNode ptMap)) }
+        initializer := field.initializer.map (mapStmtExpr (resolveExprNode cx)) }
+    heapFields := program.heapFields.map fun field =>
+      { field with type := resolveType ptMap field.type }
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct =>
-          some (.Composite (elimCompositeType ptMap model mixed ct addGlobalConditions))
+          some (.Composite (elimCompositeType cx model ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained

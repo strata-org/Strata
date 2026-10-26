@@ -748,9 +748,9 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   -- would be dropped at emission with its contract UNCHECKED. To close the gap, synthesize a
   -- WITNESS: bind each type var to a FRESH composite (`$Witness$<proc>$<i>`), so the contract is
   -- checked somewhere rather than nowhere. Then drain again.
-  -- MEASURED LIMIT — this is NOT a sort of arbitrary cardinality. `TypeHierarchy` flattens every
-  -- composite to `datatype Composite { MkComposite(ref: int) }`, so a witness is isomorphic to
-  -- `int`: infinite, and in particular `exists y z : T. y != z` is PROVABLE at it (measured). A
+  -- MEASURED LIMIT — this is NOT a sort of arbitrary cardinality. `LowerComposite` flattens every
+  -- composite to `datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }`, so a witness
+  -- is no smaller than `int`: infinite, and in particular `exists y z : T. y != z` is PROVABLE at it (measured). A
   -- false-in-general contract therefore fails here only if it is false at an infinite type; one
   -- that holds at every type of size >= 2 but fails at a singleton is accepted. Real call sites
   -- are unaffected — each is monomorphized at its own concrete type and checked there — so the

@@ -281,6 +281,8 @@ structure ProgramIndex where
   testers : Std.HashMap String String := {}
   /-- Destructor name (`PyKey..ki`, and the `!` variant) → (constructor, index). -/
   destructors : Std.HashMap String (String × Nat × HighType) := {}
+  heapFields : Std.HashMap String (String × HighType) := {}
+  constants : Std.HashMap String StmtExprMd := {}
   deriving Inhabited
 
 structure EvalState where
@@ -1027,8 +1029,14 @@ def buildIndex (p : LaurelProgram) : ProgramIndex :=
            ts.insert (dt.testerName ctor) ctor.name.text,
            ds)
       | _ => (cs, ts, ds)
+  let heapFields := p.heapFields.foldl (init := {}) fun acc f =>
+    acc.insert f.name.text (f.location.text, f.type.val)
+  let constants := p.constants.foldl (init := {}) fun acc c =>
+    match c.initializer with
+    | some init => acc.insert c.name.text init
+    | none => acc
   { procs, procsById, methods, overloaded, procsNamed, compositeFields, typeAliases, witnesses,
-    ancestors, ctors, testers, destructors }
+    ancestors, ctors, testers, destructors, heapFields, constants }
 
 /-- The value a variable of type `t` holds before it is first assigned. Laurel gives
     it an arbitrary value, and the interpreter runs one execution, so it picks a
@@ -1410,6 +1418,8 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
             match lookupCallee st.index callee with
             | some proc => checkPreconditions cfg st.stmtSite proc argVals
             | none => missingPrelude name argVals
+          if name == allocateProcName && argVals.isEmpty then
+            return ← allocateObject
           match callBuiltin name argVals absent with
           | some act => liftM act
           | none =>
@@ -1532,6 +1542,11 @@ partial def missingPrelude (name : String) (args : List Value) : EvalM Unit := d
   if partialOpFails name args then
     evalError s!"'{name}' applied outside its precondition, and the program has no prelude declaration to report it"
 
+partial def allocateObject : EvalM Value := do
+  let addr := (← get).heap.size
+  modify fun s => { s with heap := s.heap.push { typeName := "", fields := {} } }
+  return .int ⟨Int.ofNat addr⟩
+
 /-- Read field `name` off a composite reference. -/
 partial def readField (target : Value) (name : String) : EvalM Value := do
   match target with
@@ -1543,6 +1558,18 @@ partial def readField (target : Value) (name : String) : EvalM Value := do
     match obj.fields[name]? with
     | some v => pure v
     | none => evalError s!"no field '{name}' on {obj.typeName}"
+  | .int ⟨i⟩ => do
+    let st ← get
+    let some obj := (if i < 0 then none else st.heap[i.toNat]?)
+      | if st.inOld then evalError "`old(...)` reads an object allocated after the procedure was entered"
+        else liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+    match st.index.heapFields[name]? with
+    | some (location, t) => match obj.fields[location]? with
+      | some v => pure v
+      | none => pure (defaultValue st.index t)
+    | none => match obj.fields[name]? with
+      | some v => pure v
+      | none => evalError s!"no heap field '{name}'"
   | v => evalError s!"field read '{name}' on a non-composite {reprVariant v}"
 
 /-- Write field `name` on a composite reference, in place. Every alias of the
@@ -1554,6 +1581,12 @@ partial def writeField (target : Value) (name : String) (v : Value) : EvalM Unit
     let some obj := st.heap[a]?
       | liftM (m := IO) (throw (IO.userError s!"dangling reference #{a}"))
     modify fun s => { s with heap := s.heap.set! a { obj with fields := obj.fields.insert name v } }
+  | .int ⟨i⟩ => do
+    let st ← get
+    let some obj := (if i < 0 then none else st.heap[i.toNat]?)
+      | liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+    let location := (st.index.heapFields[name]?.map (·.1)).getD name
+    modify fun s => { s with heap := s.heap.set! i.toNat { obj with fields := obj.fields.insert location v } }
   | v' => liftM (m := IO) (throw (IO.userError
       s!"field write '{name}' on a non-composite {reprVariant v'}"))
 
@@ -2086,9 +2119,14 @@ partial def invokeCallee (cfg : ExternalBackend) (site : FileRange) (callee : Id
   let index := (← get).index
   if callee.uniqueId.isNone && index.overloaded.contains callee.text then
     evalError s!"call to overloaded '{callee.text}' was not resolved, so its overload is unknown"
+  if callee.text == allocateProcName && argVals.isEmpty then
+    return #[← allocateObject]
   match lookupCallee index callee with
   | some proc => invokeProc cfg site proc argVals
-  | none => evalError s!"unknown procedure '{callee.text}'"
+  | none =>
+    match argVals, index.constants[callee.text]? with
+    | [], some init => do let v ← evalExprMd cfg init; pure #[v]
+    | _, _ => evalError s!"unknown procedure '{callee.text}'"
 
 /-- Check `proc`'s call-site preconditions against `argVals`, recording each one
     that is false at `site` and carrying on, as a failing `assert` does. A free

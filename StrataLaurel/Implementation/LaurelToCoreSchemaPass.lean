@@ -258,7 +258,7 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
     was resolved at, at every depth.
 
     A `mapConst` synthesized AFTER resolution carries no recorded `typeArgs`, leaving its
-    declared `TotalMap K V` uninstantiated. `TypeHierarchy` and `HeapParameterization` build
+    declared `TotalMap K V` uninstantiated. `LowerComposite` and `HeapParameterization` build
     such calls and key their tables by `TypeTag`, so for that shape the type is rebuilt as
     `TotalMap TypeTag (value type of the inner call)`. -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
@@ -623,7 +623,7 @@ ONLY to recover the key type of a `mapConst` call — a constant-map builtin who
 is not inferable from its single value argument. When the caller knows the binding is a
 `TotalMap K V`, `K` is threaded here so the emitted op is annotated `V → TotalMap K V` and the
 program round-trips as `mapConst<K>(v)`. When absent (internal calls, e.g. the
-`TypeHierarchy` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
+`LowerComposite` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
 propagated into subexpressions (every recursive call uses the `none` default).
 -/
 def translateExpr (expr : StmtExprMd)
@@ -925,7 +925,7 @@ def translateExpr (expr : StmtExprMd)
   | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" MessageKind.strataBug
   | .IsType _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" MessageKind.strataBug
-  | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
+  | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by lowerComposite" MessageKind.strataBug
   | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
   | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
   | .Old _ (some label) =>

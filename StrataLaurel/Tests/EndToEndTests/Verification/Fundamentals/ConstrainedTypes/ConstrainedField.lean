@@ -128,3 +128,27 @@ procedure readsBothFields(x: A_b, y: A)
   assert y#b_c >= 0
 };
 #end
+
+#eval testLaurelVerification
+    (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } }) <|
+#strata
+program Laurel;
+
+constrained nat = x: int where x >= 0 witness 0
+
+composite Counter {
+  var count: nat
+}
+
+procedure getCount(c: Counter) : nat
+{
+  return c#count
+};
+
+procedure readQuantifiedField(c: Counter, d: Counter)
+  requires forall(o: Counter) => o#count > 3
+  opaque
+{
+  assert d#count > 3
+};
+#end

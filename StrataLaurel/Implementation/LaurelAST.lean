@@ -2680,6 +2680,28 @@ def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Paramet
 def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
   s!"{dt.name.text}..{field.name.text}!"
 
+partial def HighType.mentionedNames : HighType → List String
+  | .UserDefined n | .TVar n => [n.text]
+  | .TSet et => et.val.mentionedNames
+  | .TMap kt vt => kt.val.mentionedNames ++ vt.val.mentionedNames
+  | .Applied base args => base.val.mentionedNames ++ args.flatMap (·.val.mentionedNames)
+  | .Intersection tys => tys.flatMap (·.val.mentionedNames)
+  | _ => []
+
+partial def DatatypeDefinition.isRecursive (lookup : String → Option DatatypeDefinition)
+    (dt : DatatypeDefinition) : Bool :=
+  let fieldNames (d : DatatypeDefinition) : List String :=
+    d.constructors.flatMap fun c => c.args.flatMap fun p => p.type.val.mentionedNames
+  let rec go (visited : Std.HashSet String) : List String → Bool
+    | [] => false
+    | n :: rest =>
+      if n == dt.name.text then true
+      else if visited.contains n then go visited rest
+      else match lookup n with
+        | some d => go (visited.insert n) (fieldNames d ++ rest)
+        | none => go (visited.insert n) rest
+  go {} (fieldNames dt)
+
 /-- A type alias, mapping a name to an existing type. Eliminated by the
     `TypeAliasElim` pass after the first resolution. -/
 structure TypeAlias where
@@ -2781,6 +2803,9 @@ structure Constant where
   type : HighTypeMd
   initializer : Option StmtExprMd := none
 
+structure HeapField extends Field where
+  location : Identifier
+
 /--
 A Laurel program consisting of static procedures, static fields, type
 definitions, and constants.
@@ -2796,6 +2821,7 @@ structure LaurelProgram where
   types : List TypeDefinition
   /-- Named constants. -/
   constants : List Constant := []
+  heapFields : List HeapField := []
   deriving Inhabited
 
 /-- Reserved internal name of a function's anonymous (short `: T`) return
@@ -2810,6 +2836,15 @@ structure LaurelProgram where
     output — it is rejected by `validateNoDollarNames` like any other name
     starting with `$`. -/
 def resultOutputName : String := "$result"
+
+def heapFieldOwner : String := "$heap"
+
+/-- The datatype every composite (object) reference is flattened to by `LowerComposite`. -/
+def compositeTypeName : Identifier := "Composite"
+
+def compositeRefAccessor : String := "Composite..ref!"
+
+def allocateProcName : String := "$allocate"
 
 /-- Reserved prefix stamped onto a call site whose overload resolution failed
     (no overload matched, or the call was ambiguous). The `UniqueOverloadNames`

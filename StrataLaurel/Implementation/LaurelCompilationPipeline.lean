@@ -22,7 +22,7 @@ import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.GlobalParameterization
-import StrataLaurel.Implementation.TypeHierarchy
+import StrataLaurel.Implementation.LowerComposite
 import StrataLaurel.Implementation.InferHoleTypes
 import StrataLaurel.Implementation.EliminateDeterministicHoles
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
@@ -154,29 +154,32 @@ def laurelPipeline : Array LaurelPass := #[
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
   eliminateValueInReturnsPass,
-  constrainedTypeElimPass,
   -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
   -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateExceptionsPass,
-  -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
-  -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
-  -- writes the heap); `ModifiesClauses` builds the frames. They share one
-  -- re-resolve, which binds those `$heap` references as `$static` fields.
+  -- `LowerComposite` replaces the composite types by the `Composite` datatype and the
+  -- program's heap fields, and allocation by `$allocate`; it re-resolves on its own, so
+  -- it runs before `YieldElim`, whose snapshot artifacts must reach
+  -- `HeapParameterization` without a re-resolve in between.
+  -- `HeapParameterization` then declares `$heap` as a file-scope global and rewrites
+  -- field access and allocation against it, and `ModifiesClauses` builds the frames.
+  -- `YieldElim` and those two share one re-resolve, which binds the `$heap` references
+  -- as `$static` fields.
   --
-  -- `globalParameterizationPass` runs after the trio: the heap global does not exist
-  -- until `HeapParameterization` declares it. Monomorphization precedes the trio (see
+  -- `globalParameterizationPass` runs after them: the heap global does not exist
+  -- until `HeapParameterization` declares it. Monomorphization precedes all of them (see
   -- `monomorphizeCompositesPass` above), so globals are layered onto already-
   -- monomorphized concrete procedures.
+  lowerCompositePass,
+  constrainedTypeElimPass,
   yieldElimPass,
   heapParameterizationPass,
-  typeHierarchyTransformPass,
   modifiesClausesTransformPass,
-  -- Threads `$heap` like any other global. Must follow the trio: the global does
-  -- not exist until `HeapParameterization` declares it, and `TypeHierarchy`
-  -- introduces further heap writes.
+  -- Threads `$heap` like any other global. Must follow `HeapParameterization`: the
+  -- global does not exist until it declares it.
   globalParameterizationPass,
   -- After global threading, so `old(g)` normalizes for an arbitrary global: a
   -- written global is by now an inout in the ordinary signature sense, which is
@@ -216,9 +219,11 @@ def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
   else postPassDiags.filter fun e => e.kind != .warning && !initialDiags.contains e
 
 private unsafe def sameDeclarationsUnsafe : LaurelProgram → LaurelProgram → Bool
-  | ⟨procs, fns, fields, types, consts⟩, ⟨procs', fns', fields', types', consts'⟩ =>
+  | ⟨procs, fns, fields, types, consts, heapFields⟩,
+    ⟨procs', fns', fields', types', consts', heapFields'⟩ =>
     ptrEqList procs procs' && ptrEqList fns fns' && ptrEqList fields fields'
       && ptrEqList types types' && ptrEqList consts consts'
+      && ptrEqList heapFields heapFields'
 
 /-- Whether `a` holds the very declaration objects `b` does. `false` in the logic, where
     it only costs a re-resolve. -/
@@ -391,11 +396,7 @@ private def runLaurelPasses
               collidingNames.any (fun n => (d.message.splitOn n).length > 1)
             let hinted := collisions.map fun d =>
               { d with
-                  message :=
-                    s!"{d.message} (this name collides with one introduced by an internal lowering \
-                       pass; rename the identifier — a reserved internal type name (e.g. `Heap`, \
-                       `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
-                       `$aN$` instantiation-tag shape can clash with a synthetic name)"
+                  message := s!"{d.message} ({generatedNameCollisionHint})"
                   kind := .userError }
             let independent := newErrors.toList.filter fun d =>
               !isUserCollision d && !mentionsColliding d

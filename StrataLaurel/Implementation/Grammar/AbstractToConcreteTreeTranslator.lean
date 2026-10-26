@@ -551,6 +551,13 @@ private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
               optionArg (f.initializer.map fun value =>
                 laurelOp "initializer" #[stmtExprToArg value])] }
 
+private def heapFieldCommandOp (f : HeapField) : StrataDDM.Operation :=
+  { ann := sr
+    name := { dialect := "Laurel", name := "heapFieldCommand" }
+    args := #[fieldToArg f.toField,
+              optionArg (if f.location.text == f.name.text then none
+                else some (laurelOp "heapFieldLocation" #[ident f.location.text]))] }
+
 /-- Convert a Laurel.LaurelProgram to a StrataDDM.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
@@ -559,9 +566,10 @@ private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
     so that a program with globals round-trips through source. -/
 def programToStrata (prog : Laurel.LaurelProgram) : StrataDDM.Program :=
   let fieldOps := prog.staticFields.map globalVarCommandOp |>.toArray
+  let heapFieldOps := prog.heapFields.map heapFieldCommandOp |>.toArray
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := (prog.staticFunctions ++ prog.staticProcedures).map procedureCommandOp |>.toArray
-  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ typeOps ++ procOps)
+  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ heapFieldOps ++ typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/
@@ -593,6 +601,7 @@ def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
 def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprValToArg s)
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
+def formatHeapField (f : HeapField) : Format := formatOp (heapFieldCommandOp f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
 def formatProcedure (proc : Procedure) : Format := formatOp (procedureToOp proc)
 def formatCompositeType (ct : CompositeType) : Format := formatOp (compositeToOp ct)

@@ -166,6 +166,7 @@ inductive NodeKind where
   | LaurelProgram.staticProcedures.cons
   | LaurelProgram.staticFunctions.cons
   | LaurelProgram.staticFields.cons
+  | LaurelProgram.heapFields.cons
   | Procedure.inputs.cons
   /-- A coroutine: a procedure whose contracts are not `.Regular`. -/
   | Procedure.contracts.Coroutine
@@ -194,29 +195,28 @@ inductive NodeKind where
       becomes the former and stops being `Pseudo`. -/
   | Pseudo.oldExpr
   /-- The heap held as a file-scope global (`$heap`, `HeapParameterizationConstants.heapVarName`).
-      `HeapParameterization` declares it; `TypeHierarchy` and `ModifiesClauses` build frames over
+      `HeapParameterization` declares it; `ModifiesClauses` builds frames over
       it while it is still a global; `GlobalParameterization` threads it through signatures and
       clears `staticFields`, which is what removes it. Note this does not capture the *other* half
-      of the modifies→globalParameterization dependency — that the heap trio shares one
-      re-resolve, ending at `ModifiesClauses`, which binds `$heap` references as `$static`
-      fields. `needsResolves` is not modelled by these declarations at all. -/
+      of the modifies→globalParameterization dependency — that `YieldElim`,
+      `HeapParameterization` and `ModifiesClauses` share one re-resolve, ending at
+      `ModifiesClauses`, which binds `$heap` references as `$static` fields. `needsResolves` is not modelled by these declarations at all. -/
   | Pseudo.heapVar
-  /-- Object state held implicitly, in each composite's own fields, rather than explicitly in
-      the heap. `HeapParameterization` removes it: it empties every composite's `fields`
-      and rewrites field access into `readField`/`updateField` over
-      `TotalMap Composite (TotalMap Field $Box)`. `TypeHierarchy` and `ModifiesClauses`
-      declare it `unsupported` because both work over that explicit form — the former lowers
-      `New`/type tests against it, the latter builds frames over `Composite` and `Field`.
+  /-- Object state held implicitly, in the program's heap fields (`LaurelProgram.heapFields`,
+      which `LowerComposite` declares in place of the composites' own fields), rather than
+      explicitly in the heap. `HeapParameterization` removes it: it clears `heapFields` and
+      rewrites field access into `readField`/`updateField` over
+      `TotalMap int (TotalMap Field $Box)`. `ModifiesClauses` declares it `unsupported`
+      because it builds frames over that explicit form, `int` references and `Field`.
 
-      This kind stands in for a refactor these three passes need. They are one logical unit —
-      `HeapParameterization` has `needsResolves := false` with the comment that resolution
-      should only run again after all three, because they share a single re-resolve — yet they
-      are three separate entries in the pipeline whose interdependence is only partly
-      expressible here. Two parts are missing: that the shared re-resolve ends at
+      `HeapParameterization` and `ModifiesClauses` are one logical unit —
+      `HeapParameterization` has `needsResolves := false` because the two share a single
+      re-resolve — yet they are separate entries in the pipeline whose interdependence is only
+      partly expressible here. Two parts are missing: that the shared re-resolve ends at
       `ModifiesClauses` (a `needsResolves` fact, which these declarations do not model at
-      all), and that `GlobalParameterization` must follow the whole trio. Merging them, or
-      giving the group an explicit representation, would let all of that be stated directly
-      instead of approximated by this label. -/
+      all), and that `GlobalParameterization` must follow both. Merging them, or giving the
+      group an explicit representation, would let all of that be stated directly instead of
+      approximated by this label. -/
   | Pseudo.implicitHeap  | Pseudo.box
   | Pseudo.totalMap
   | Pseudo.typeTag
@@ -317,7 +317,7 @@ def NodeKind.inSource : NodeKind → Bool
   | NodeKind.Pseudo.heapVar                 -- HeapParameterization declares `$heap`
   | NodeKind.Pseudo.box                     -- the generated `$Box` datatype
   | NodeKind.Pseudo.totalMap                -- the generated heap map type
-  | NodeKind.Pseudo.typeTag                 -- TypeHierarchy's `TypeTag` datatype
+  | NodeKind.Pseudo.typeTag                 -- LowerComposite's `TypeTag` datatype
   | NodeKind.Pseudo.asFunctionTwin          -- TransparencyPass's `$asFunction` twins
   | NodeKind.Pseudo.generatedReturn         -- returns in HeapParameterization's helper procedures
   | NodeKind.Pseudo.coroutineOverride       -- CoroutineElaboration's generated overrides
