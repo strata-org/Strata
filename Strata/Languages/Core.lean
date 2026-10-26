@@ -25,6 +25,7 @@ import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
 
 /-! ## Strata Core Transform & Verification API
@@ -242,6 +243,11 @@ def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.de
     Core.PipelinePhase :=
   _root_.Core.symbolicEvalPipelinePhase options moreFns
 
+/-- Erase the unread `init`s of an obligation program. In no default order: a pipeline that
+    wants it names it. -/
+def Core.passDeadDefElim : Core.PipelinePhase :=
+  _root_.Core.deadDefElimPipelinePhase
+
 /-- Extract common subexpressions introduced by partial evaluation. -/
 def Core.passCommonSubexprElim : Core.PipelinePhase :=
   _root_.Core.commonSubexprElimPhase
@@ -269,7 +275,8 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   Core.corePipelinePhases options
-    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining]
+    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
+        Core.passDeadDefElim]
 
 /-! ### Standard Core verification pipeline phases
 

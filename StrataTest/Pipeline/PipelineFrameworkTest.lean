@@ -798,6 +798,90 @@ exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSin
 #guard_msgs in
 #eval check withUnrolling
 
+/-! Dead-definition elimination is in no default order either. It requires `noCalls`, `noLoops`,
+`noPrecondsFromFuncs` and `typeAnnotated` and keeps every fact, so it fits after `symbolicEval`
+and leaves the facts at exit unchanged. -/
+
+private def withDeadDefElim : List PipelinePhase :=
+  (Strata.Core.splicePhasesAfter "symbolicEval" [Strata.Core.passDeadDefElim]
+    corePipelinePhases).toOption.getD corePipelinePhases
+
+/--
+info: accepted
+phases:
+  assertWellFormedCalls
+  assertNoCFGBodies
+  callElim
+  termCheck
+  precondElim
+  insertLoopInvariantAsserts
+  loopElim
+  genOpaqueTypeParams
+  typeCheck
+  monomorphizeFunctions
+  simplify
+  nondetElim
+  symbolicEval
+  deadDefElim
+  betaReduce
+  commonSubexprElim
+exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated
+-/
+#guard_msgs in
+#eval check withDeadDefElim
+
+/-! Run first, before `callElim`, `precondElim`, `loopElim` and `typeCheck`, the phase is
+rejected: its required `noCalls`, `noLoops`, `noPrecondsFromFuncs` and `typeAnnotated` do not
+hold yet. Erasing an unread `init` before `precondElim` would erase the precondition checks of
+the functions it calls. -/
+
+/--
+info: rejected: phase #1 `deadDefElim` requires:
+  • `noCalls`: no preceding phase guarantees it — phase #4 `callElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noLoops`: no preceding phase guarantees it — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noPrecondsFromFuncs`: no preceding phase guarantees it — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
+  • `typeAnnotated`: no preceding phase guarantees it — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+-/
+#guard_msgs in
+#eval report (Strata.Core.validatePipeline (Strata.Core.passDeadDefElim :: corePipelinePhases))
+
+/-! After `callElim`, `noCalls` holds, but `noLoops`, `noPrecondsFromFuncs` and
+`typeAnnotated` do not yet. -/
+
+/--
+info: rejected: phase #4 `deadDefElim` requires:
+  • `noLoops`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noPrecondsFromFuncs`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
+  • `typeAnnotated`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+-/
+#guard_msgs in
+#eval report (do
+  let phases ← Strata.Core.splicePhasesAfter "callElim"
+    [Strata.Core.passDeadDefElim] corePipelinePhases
+  Strata.Core.validatePipeline phases)
+
+/-! After `loopElim` and after `genOpaqueTypeParams`, every required fact holds except
+`typeAnnotated`, which only `typeCheck` establishes. Erasing an unread `init` before
+`typeCheck` would erase its type errors with it. -/
+
+/--
+info: rejected: phase #8 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+-/
+#guard_msgs in
+#eval report (do
+  let phases ← Strata.Core.splicePhasesAfter "loopElim"
+    [Strata.Core.passDeadDefElim] corePipelinePhases
+  Strata.Core.validatePipeline phases)
+
+/--
+info: rejected: phase #9 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs, noPolymorphicProcedures` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+-/
+#guard_msgs in
+#eval report (do
+  let phases ← Strata.Core.splicePhasesAfter "genOpaqueTypeParams"
+    [Strata.Core.passDeadDefElim] corePipelinePhases
+  Strata.Core.validatePipeline phases)
+
 /--
 info: accepted
 phases:

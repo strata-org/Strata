@@ -119,6 +119,9 @@ import Strata.Cli.DialectCommands
 import Strata.Cli.Framework
 import Strata.Cli.VerifyOptions
 
+-- Dead-definition elimination: its over-approximation proofs.
+import Strata.Transform.DeadDefElimCoreCorrect
+
  -- deletion candidates: nothing imports these modules:
 
 -- noimport:
