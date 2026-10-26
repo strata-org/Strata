@@ -64,7 +64,7 @@ There is one file per pass, and the driver comes in a small family for the shape
 
 Pass `prelude := false` for a pass that TRANSFORMS the prelude procedures themselves (e.g. `Contracts`, `FunctionalRewrite`, `TransparencyPass` derive helper procedures from every prelude procedure, under names `dropPrelude` cannot recognise); such a pass's snippet must avoid every operator, since `+`, `>`, `==`, `&&` and friends are calls to prelude wrapper procedures and will not resolve without it.
 
-A few tests legitimately cannot use the driver and say so in their headers: `LiftExpressionAssignments` (its lifter takes a `roots` argument the pass object does not expose, plus unresolved-input error paths), `GlobalParameterization` (a multi-pass sequence), and `ModifiesClausesLayer` (a hand-built `SemanticModel` that `resolve` would not reconstruct).
+A few tests legitimately cannot use the driver and say so in their headers: `LiftExpressionAssignments` (its lifter takes a `roots` argument the pass object does not expose, plus unresolved-input error paths), `GlobalParameterization` (a multi-pass sequence), and `ModifiesClausesLayer` (its input refers to `$heap`, so it takes that input and its model from `runPassesBefore`).
 
 # UnitTests
 

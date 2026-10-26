@@ -231,9 +231,9 @@ private unsafe def sameDeclarationsUnsafe : LaurelProgram → LaurelProgram → 
 private def sameDeclarations (_ _ : LaurelProgram) : Bool := false
 
 /--
-Run every pass of `laurelPipeline` on a program, returning the final program, the
-last Laurel program it passed through, the accumulated diagnostics, the diagnostics
-of the last pass that ran, and merged statistics.
+Run `passes` on a program, returning the final program, the last Laurel program it
+passed through, the accumulated diagnostics, the diagnostics of the last pass that ran,
+merged statistics, and the semantic model the next pass would receive.
 
 When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
 program state after each pass is written to
@@ -243,7 +243,7 @@ private def runLaurelPasses
     (options: LaurelTranslateOptions) (passes : Array LaurelPass)
     (inputRequirements : List InputRequirement)
     (pctx : Strata.Pipeline.PipelineContext) (program : LaurelProgram)
-    : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics) := do
+    : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics × SemanticModel) := do
   -- Must run HERE, before the prelude is prepended below and before the first resolve:
   -- see `validateNoDollarNames`. Bails out rather than resolving, so the diagnostic
   -- lands on the declaration rather than on a later collision.
@@ -254,7 +254,8 @@ private def runLaurelPasses
       MessageKind.userError
   let inputDiags := dollarDiags ++ staticFunctionDiags
   if inputDiags.any (·.kind != .warning) then
-    return (.Unordered program, program, inputDiags, [], {})
+    return (.Unordered program, program, inputDiags, [], {},
+      { nextId := 0, compositeCount := 0, refToDef := {} })
 
   -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
   -- `Result` datatype that the exceptional-channel lowering targets is *not*
@@ -282,7 +283,7 @@ private def runLaurelPasses
   let mut allStats : Statistics := {}
 
   if result.errors.any (·.kind != .warning) then
-    return (program, laurelProgram, allDiags, lastDiags, allStats)
+    return (program, laurelProgram, allDiags, lastDiags, allStats, model)
 
   let required := inputRequirements.map (·.kind)
   unless required.isEmpty || Program.containsB (fun k => !required.contains k) program do
@@ -291,7 +292,7 @@ private def runLaurelPasses
       let inputDiags := inputRequirements.filterMap fun r =>
         if present.contains r.kind then some (Message.fromString r.message MessageKind.userError)
         else none
-      return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats)
+      return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats, model)
 
   -- The program `model` was resolved from
   let mut resolved := result.program
@@ -311,7 +312,7 @@ private def runLaurelPasses
     -- rejection is order-INDEPENDENT (it does not rely on a later re-resolve or the final gate to
     -- catch it). A pass emitting only warnings continues.
     if diags.any (·.kind != .warning) then
-      return (program, laurelProgram, allDiags, lastDiags, allStats)
+      return (program, laurelProgram, allDiags, lastDiags, allStats, model)
     -- Run resolve after the pass if needed, unless the program is still the one `model` was
     -- resolved from: resolving that again rebuilds the same model (`ReresolutionIdsTest`).
     let unchanged := match program with
@@ -377,7 +378,7 @@ private def runLaurelPasses
             -- except a deferred poly-throws escape (folded as its native user error).
             let newDiags := newErrors.toList.map foldNewError
             emit pass.name "laurel.st" p
-            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats, model)
           else
             -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
             -- mismatches restated over the doubly-defined name (a composite named `Field`/
@@ -402,7 +403,7 @@ private def runLaurelPasses
               !isUserCollision d && !mentionsColliding d
             let newDiags := hinted ++ independent.map foldNewError
             emit pass.name "laurel.st" p
-            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats, model)
         program := .Unordered result.program
         laurelProgram := result.program
         resolved := result.program
@@ -410,10 +411,24 @@ private def runLaurelPasses
       | other =>
         return (program, laurelProgram, allDiags ++ [Message.fromString
           s!"Internal error: pass '{pass.name}' needs re-resolution, which a {other.kind} program does not support" .strataBug],
-          lastDiags, allStats)
+          lastDiags, allStats, model)
     emit pass.name program.fileExtension program
 
-  return (program, laurelProgram, allDiags, lastDiags, allStats)
+  return (program, laurelProgram, allDiags, lastDiags, allStats, model)
+
+/-- Run the passes of `laurelPipeline` before `pass`, for a test of a pass whose input only the
+    earlier passes produce. Returns the program and the semantic model the pass receives, and the
+    diagnostics so far; after an error the pipeline stops early, so the program and model are not
+    that input. A pass that is not in `laurelPipeline` is rejected. -/
+def runPassesBefore (pass : LaurelPass) (options : LaurelTranslateOptions) (program : LaurelProgram)
+    : IO (Program × SemanticModel × List Message) := do
+  let some idx := laurelPipeline.findIdx? (·.name == pass.name)
+    | throw (IO.userError s!"runPassesBefore: '{pass.name}' is not in laurelPipeline")
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
+  runPipelineM none do
+    let (program, _laurel, diags, _last, _stats, model) ←
+      runLaurelPasses options (laurelPipeline.take idx) [] pctx program
+    return (program, model, diags)
 
 /-- A pass whose declarations are not satisfied by the pipeline order. -/
 structure OrderingFailure where
@@ -652,7 +667,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : LaurelProg
       | .ok sel => pure sel
       | .error msg => return (none, [Message.fromString msg MessageKind.userError], program, {})
   runPipelineM options.keepAllFilesPrefix do
-  let (program, laurelProgram, diags, lastDiags, stats) ←
+  let (program, laurelProgram, diags, lastDiags, stats, _) ←
     runLaurelPasses options selection.passes selection.inputRequirements pctx program
   if diags.any (·.kind != .warning) then
     return (none, diags, laurelProgram, stats)
