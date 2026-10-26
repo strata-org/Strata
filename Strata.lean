@@ -150,6 +150,7 @@ import Strata.DL.Lambda.OperationalSemanticsProps
 import Strata.DL.Lambda.LExprEvalSound
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.Util.HListProps
+import Strata.Util.HMapsProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF

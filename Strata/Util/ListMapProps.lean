@@ -6,6 +6,7 @@
 module
 
 public import Strata.Util.ListMap
+public import Strata.Util.ListUtils
 import all Strata.Util.ListMap
 
 /-!
@@ -45,6 +46,140 @@ theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.sn
   | nil => rfl
   | cons p t ih => cases p; simp [ListMap.values, ih]
 
+
+/-- Every value in a map has a key. -/
+theorem ListMap.mem_values {α β : Type _} (m : ListMap α β) (c : β)
+    (hc : c ∈ ListMap.values m) : ∃ a : α, (a, c) ∈ ListMap.toList m := by
+  induction m with
+  | nil => simp [ListMap.values] at hc
+  | cons hd tl ih =>
+    rw [show ListMap.values (hd :: tl) = hd.2 :: ListMap.values tl from rfl] at hc
+    rcases List.mem_cons.mp hc with h | h
+    · refine ⟨hd.1, ?_⟩; subst h; simp [ListMap.toList]
+    · obtain ⟨a, ha⟩ := ih h
+      exact ⟨a, List.mem_cons_of_mem hd ha⟩
+
+/-- `values` distributes over append. -/
+theorem ListMap.values_append {α β : Type _} (m1 m2 : ListMap α β) :
+    ListMap.values (m1 ++ m2) = ListMap.values m1 ++ ListMap.values m2 := by
+  simp only [ListMap.values_eq_map_snd]
+  exact List.map_append
+
+/-- `values` of an append is the union of the two `values` lists. -/
+theorem ListMap.mem_values_append {α β : Type _} (m1 m2 : ListMap α β) (b : β) :
+    b ∈ ListMap.values (m1 ++ m2) ↔
+      b ∈ ListMap.values m1 ∨ b ∈ ListMap.values m2 := by
+  rw [ListMap.values_append, List.mem_append]
+
+/-- Mapping a function that keeps each value adds no values. -/
+theorem ListMap.mem_values_map_of_snd_eq {α β : Type _} (g : α × β → α × β)
+    (hg : ∀ x, (g x).2 = x.2) (l : ListMap α β) (b : β)
+    (hb : b ∈ ListMap.values (l.map g)) : b ∈ ListMap.values l := by
+  simp only [ListMap.values_eq_map_snd (l.map g : ListMap α β), ListMap.values_eq_map_snd,
+    List.map_map (l := l), List.mem_map (l := l), Function.comp_apply] at hb ⊢
+  obtain ⟨x, hx, hxe⟩ := hb
+  exact ⟨x, hx, by rw [← hg x]; exact hxe⟩
+
+/-- Filtering only removes values. -/
+theorem ListMap.mem_values_filter {α β : Type _} (q : α × β → Bool) (l : ListMap α β) (b : β)
+    (hb : b ∈ ListMap.values (l.filter q)) : b ∈ ListMap.values l := by
+  simp only [ListMap.values_eq_map_snd (l.filter q : ListMap α β), ListMap.values_eq_map_snd,
+    List.mem_map, List.mem_map (l := l)] at hb ⊢
+  obtain ⟨x, hx, hxe⟩ := hb
+  exact ⟨x, (List.mem_filter.mp hx).1, hxe⟩
+
+/-- Every value of `A.zip B` is in `B`. -/
+theorem ListMap.mem_values_zip {α β : Type _} (A : List α) : ∀ (B : List β) (x : β),
+    x ∈ ListMap.values (List.zip A B) → x ∈ B := by
+  induction A with
+  | nil => intro B x h; exact absurd h (by simp [ListMap.values])
+  | cons a rest ih =>
+    intro B x h
+    match B with
+    | [] => exact absurd h (by simp [ListMap.values])
+    | b :: brest =>
+      simp only [List.zip_cons_cons, ListMap.values, List.mem_cons] at h
+      rcases h with rfl | h
+      · exact List.mem_cons_self
+      · exact List.mem_cons_of_mem b (ih brest x h)
+
+/-- Maps with equal keys and position-wise `R`-related values agree pointwise. -/
+theorem ListMap.forall₂_pair_of_keys_values {α β : Type _} {R : β → β → Prop}
+    (m mR : ListMap α β) (hkeys : ListMap.keys m = ListMap.keys mR)
+    (hvals : List.Rel₂ R (ListMap.values m) (ListMap.values mR)) :
+    List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2) m mR := by
+  induction m generalizing mR with
+  | nil =>
+    cases mR with
+    | nil => exact List.Rel₂.nil
+    | cons hdR tlR => exact absurd hkeys (by simp [ListMap.keys])
+  | cons hd tl ih =>
+    cases mR with
+    | nil => exact absurd hkeys (by simp [ListMap.keys])
+    | cons hdR tlR =>
+      have hk : hd.1 = hdR.1 ∧ ListMap.keys tl = ListMap.keys tlR := by
+        simpa only [show ListMap.keys (hd :: tl) = hd.1 :: ListMap.keys tl from rfl,
+          show ListMap.keys (hdR :: tlR) = hdR.1 :: ListMap.keys tlR from rfl,
+          List.cons.injEq] using hkeys
+      rw [show ListMap.values (hd :: tl) = hd.2 :: ListMap.values tl from rfl,
+        show ListMap.values (hdR :: tlR) = hdR.2 :: ListMap.values tlR from rfl] at hvals
+      cases hvals with
+      | cons hhd htl => exact List.Rel₂.cons ⟨hk.1, hhd⟩ (ih tlR hk.2 htl)
+
+/-- Maps that agree pointwise (same key, `R`-related value at each position) have equal keys. -/
+theorem ListMap.keys_eq_of_forall₂_pair {α β : Type _} {R : β → β → Prop}
+    (m mR : ListMap α β)
+    (h : List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2) m mR) :
+    ListMap.keys m = ListMap.keys mR := by
+  induction h with
+  | nil => rfl
+  | @cons hd hdR tl tlR hhd _ ih =>
+    show hd.1 :: ListMap.keys tl = hdR.1 :: ListMap.keys tlR
+    rw [hhd.1, ih]
+
+/-- Maps that agree pointwise (same key, `R`-related value at each position) have position-wise
+    `R`-related values. -/
+theorem ListMap.forall₂_values_of_forall₂_pair {α β : Type _} {R : β → β → Prop}
+    (m mR : ListMap α β)
+    (h : List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2) m mR) :
+    List.Rel₂ R (ListMap.values m) (ListMap.values mR) := by
+  induction h with
+  | nil => exact List.Rel₂.nil
+  | @cons hd hdR tl tlR hhd _ ih =>
+    show List.Rel₂ R (hd.2 :: ListMap.values tl) (hdR.2 :: ListMap.values tlR)
+    exact List.Rel₂.cons hhd.2 ih
+
+/-- Filtering by a key predicate preserves pointwise agreement (same key, `R`-related value at
+    each position). -/
+theorem ListMap.forall₂_pair_filter {α β : Type _} (R : β → β → Prop) (p : α → Bool)
+    (m mR : ListMap α β)
+    (h : List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2) m mR) :
+    List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2)
+      (m.filter (fun q => p q.1)) (mR.filter (fun q => p q.1)) := by
+  induction h with
+  | nil => exact List.Rel₂.nil
+  | @cons a b l1 l2 hhd _ ih =>
+    by_cases hp : p a.1 = true
+    · have hpb : p b.1 = true := by rw [← hhd.1]; exact hp
+      simp only [List.filter_cons, hp, hpb, ite_true]
+      exact List.Rel₂.cons hhd ih
+    · have hpa : p a.1 = false := by simpa using hp
+      have hpb : p b.1 = false := by rw [← hhd.1]; exact hpa
+      simp only [List.filter_cons, hpa, hpb]
+      exact ih
+
+/-- Renaming keys by one function preserves pointwise agreement (same key, `R`-related value
+    at each position). -/
+theorem ListMap.forall₂_pair_mapKeys {α α' β : Type _} (R : β → β → Prop) (g : α → α')
+    (m mR : ListMap α β)
+    (h : List.Rel₂ (fun (q qR : α × β) => q.1 = qR.1 ∧ R q.2 qR.2) m mR) :
+    List.Rel₂ (fun (q qR : α' × β) => q.1 = qR.1 ∧ R q.2 qR.2)
+      (m.map (fun q => (g q.1, q.2))) (mR.map (fun q => (g q.1, q.2))) := by
+  induction h with
+  | nil => exact List.Rel₂.nil
+  | cons hhd _ ih =>
+    refine List.Rel₂.cons ⟨?_, hhd.2⟩ ih
+    simpa using congrArg g hhd.1
 
 ---------------------------------------------------------------------
 
@@ -91,6 +226,44 @@ theorem ListMap.keys.length :
   (ListMap.keys ls).length = ls.length := by
   induction ls <;> simp [keys]
   case cons h t ih => assumption
+
+/-- Extracting values preserves a list map's length. -/
+theorem ListMap.values_length (m : ListMap α β) :
+    (ListMap.values m).length = m.length := by
+  induction m with
+  | nil => rfl
+  | cons hd tl ih => simp only [ListMap.values, List.length_cons, ih]
+
+/-- Pairing a map's keys with as many values gives a map with those keys and those values. -/
+theorem listMap_keys_zip_values {α β : Type _} (m : ListMap α β) (vs : List β)
+    (h : m.values.length = vs.length) :
+    ListMap.keys (m.keys.zip vs) = m.keys ∧ ListMap.values (m.keys.zip vs) = vs := by
+  have hk : m.keys.length = m.length := ListMap.keys.length
+  have hv : m.values.length = m.length := ListMap.values_length m
+  have hle : m.keys.length ≤ vs.length := by omega
+  have hge : vs.length ≤ m.keys.length := by omega
+  exact ⟨by rw [ListMap.keys_eq_map_fst (m.keys.zip vs : ListMap α β), List.map_fst_zip hle],
+    by rw [ListMap.values_eq_map_snd (m.keys.zip vs : ListMap α β), List.map_snd_zip hge]⟩
+
+/-- A key's value in `m.keys.zip vs` is related to its value in `m` when the values of `m` are
+    related pointwise to `vs`. -/
+theorem ListMap.find?_zip_of_rel₂ {α β γ : Type} [DecidableEq α] {R : β → γ → Prop} :
+    ∀ (m : ListMap α β) (vs : List γ), List.Rel₂ R m.values vs →
+      ∀ x v', ListMap.find? (m.keys.zip vs) x = some v' → ∃ v, m.find? x = some v ∧ R v v'
+  | [], _, _, _, _, hfind => by simp [ListMap.keys, ListMap.find?] at hfind
+  | (k, v) :: m, vs, hrel, x, v', hfind => by
+    simp only [ListMap.values] at hrel
+    cases hrel with
+    | cons hhd htl =>
+      simp only [ListMap.keys, List.zip_cons_cons, ListMap.find?] at hfind ⊢
+      split at hfind
+      · rename_i hk
+        simp only [Option.some.injEq] at hfind
+        subst hfind
+        exact ⟨v, by simp [hk], hhd⟩
+      · rename_i hk
+        simp only [hk, ite_false]
+        exact find?_zip_of_rel₂ m _ htl x v' hfind
 
 end
 
@@ -860,6 +1033,16 @@ theorem Map.find?_insert_ne [DecidableEq α]
       simp [h_ne2]
     · rw [Map.insert_cons_of_ne h_eq]
       simp only [Map.find?]; split <;> simp_all
+
+/-- Lookup after inserting `k ↦ v` gives `v` at `k` and the old lookup elsewhere. -/
+theorem Map.find?_insert [DecidableEq α] (m : Map α β) (k k' : α) (v : β) :
+    Map.find? (m.insert k v) k' = if k' = k then some v else Map.find? m k' := by
+  split
+  · rename_i hkk
+    rw [hkk]
+    exact Map.find?_insert_self m k v
+  · rename_i hkk
+    exact Map.find?_insert_ne m k' k v hkk
 
 /-- `ListMap.keys` of a key-filtered list is the filtered key list. -/
 theorem listMap_keys_filter {α β : Type} (q : α → Bool) :

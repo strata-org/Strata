@@ -605,7 +605,58 @@ Replace all user-provided type annotations in an `LExpr` using `f`.
     .ite m (replaceUserProvidedType c f) (replaceUserProvidedType t f) (replaceUserProvidedType f_expr f)
   | .eq m e1 e2 => .eq m (replaceUserProvidedType e1 f) (replaceUserProvidedType e2 f)
 
+/-- Whether every user-provided type annotation in `e` satisfies `p`. -/
+@[expose] def allUserProvidedTypes {T : LExprParamsT} (e : LExpr T) (p : T.TypeType → Bool) :
+    Bool :=
+  match e with
+  | .const _ _ => true
+  | .op _ _ uty => uty.all p
+  | .bvar _ _ => true
+  | .fvar _ _ uty => uty.all p
+  | .app _ e1 e2 => allUserProvidedTypes e1 p && allUserProvidedTypes e2 p
+  | .abs _ _ uty e => uty.all p && allUserProvidedTypes e p
+  | .quant _ _ _ argTy tr e =>
+    argTy.all p && allUserProvidedTypes tr p && allUserProvidedTypes e p
+  | .ite _ c t f_expr =>
+    allUserProvidedTypes c p && allUserProvidedTypes t p && allUserProvidedTypes f_expr p
+  | .eq _ e1 e2 => allUserProvidedTypes e1 p && allUserProvidedTypes e2 p
+
+/-- The abstraction and quantifier binder annotations of an `LExpr`, in syntax order. -/
+@[expose] def binderAnnotations {T : LExprParamsT} : LExpr T → List T.TypeType
+  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => []
+  | .app _ e1 e2 => binderAnnotations e1 ++ binderAnnotations e2
+  | .abs _ _ uty e => uty.toList ++ binderAnnotations e
+  | .quant _ _ _ argTy tr e => argTy.toList ++ binderAnnotations tr ++ binderAnnotations e
+  | .ite _ c t f_expr => binderAnnotations c ++ binderAnnotations t ++ binderAnnotations f_expr
+  | .eq _ e1 e2 => binderAnnotations e1 ++ binderAnnotations e2
+
+/-- The free-variable annotations of an `LExpr`, in syntax order. -/
+@[expose] def fvarAnnotations {T : LExprParamsT} : LExpr T → List T.TypeType
+  | .const _ _ | .op _ _ _ | .bvar _ _ => []
+  | .fvar _ _ ty => ty.toList
+  | .app _ e1 e2 => fvarAnnotations e1 ++ fvarAnnotations e2
+  | .abs _ _ _ e => fvarAnnotations e
+  | .quant _ _ _ _ tr e => fvarAnnotations tr ++ fvarAnnotations e
+  | .ite _ c t f_expr => fvarAnnotations c ++ fvarAnnotations t ++ fvarAnnotations f_expr
+  | .eq _ e1 e2 => fvarAnnotations e1 ++ fvarAnnotations e2
+
+/-- The annotated operator nodes `.op o (some ty)` of an `LExpr`, as pairs `(o, ty)` in syntax
+    order. -/
+@[expose] def opAnnots {T : LExprParamsT} : LExpr T → List (Identifier T.base.IDMeta × T.TypeType)
+  | .const _ _ | .bvar _ _ | .fvar _ _ _ => []
+  | .op _ o ty => ty.toList.map (o, ·)
+  | .app _ e1 e2 => opAnnots e1 ++ opAnnots e2
+  | .abs _ _ _ e => opAnnots e
+  | .quant _ _ _ _ tr e => opAnnots tr ++ opAnnots e
+  | .ite _ c t f_expr => opAnnots c ++ opAnnots t ++ opAnnots f_expr
+  | .eq _ e1 e2 => opAnnots e1 ++ opAnnots e2
+
 end LExpr
+
+/-- Apply a function to every user-provided type annotation in an expression. -/
+def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
+    (e : LExpr T.mono) : LExpr T.mono :=
+  LExpr.replaceUserProvidedType e f
 
 end -- public section
 end Lambda

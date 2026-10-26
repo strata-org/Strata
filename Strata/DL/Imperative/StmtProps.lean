@@ -495,7 +495,7 @@ theorem Block.loopHasNoInvariants_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih => simp [Block.loopHasNoInvariants, ih, Bool.and_assoc]
 
 /-- `Block.modifiedVars` distributes over list append. -/
-theorem Block.modifiedVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
+theorem Block.modifiedVars_append [HasVarsImp P C] (xs ys : List (Stmt P C)) :
     Block.modifiedVars (xs ++ ys) = Block.modifiedVars xs ++ Block.modifiedVars ys := by
   induction xs with
   | nil => simp [Block.modifiedVars]

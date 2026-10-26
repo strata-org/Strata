@@ -44,6 +44,24 @@ account (newest-first).
 abbrev Subst := HMaps TyIdentifier LMonoTy
 abbrev Subst.empty : Subst := []
 
+/-- Remove every listed type-variable key from all substitution scopes. -/
+def Subst.removeKeys (S : Subst) : List TyIdentifier → Subst
+  | [] => S
+  | key :: keys => Subst.removeKeys (S.remove key) keys
+
+/-- The simultaneous substitution sending each name in `vars` to the value at the same
+    position in `vals`. -/
+def Subst.ofZip (vars : List TyIdentifier) (vals : List LMonoTy) : Subst :=
+  HMaps.ofScopes [List.zip vars vals]
+
+namespace LExpr
+
+/-- Build a single-scope substitution by assigning `g v` to every name in `l`. -/
+public def buildSubstFromFunction (l : List TyIdentifier) (g : TyIdentifier → LMonoTy) : SubstOne :=
+  l.foldr (fun v acc => acc.insert v (g v)) HMap.empty
+
+end LExpr
+
 instance : ToFormat Subst where
   format s := format (s.map (fun m => m.toList.mergeSort (fun a b => a.1 ≤ b.1)))
 
@@ -467,6 +485,56 @@ Apply the `new` substitution to the `old` one.
 -/
 def Subst.apply (new : SubstOne) (old : Subst) : Subst :=
   old.mapValues (LMonoTy.subst [new])
+
+/-- `S` followed by the renaming `ρ`: every value of `S` is renamed by `ρ`, and `ρ`'s own
+    entries form the oldest scope, so a key of `S` takes precedence over the same key in `ρ`. -/
+def Subst.renameAfter (S ρ : Subst) : Subst :=
+  S.mapValues (LMonoTy.subst ρ) ++ ρ
+
+/-! ### Ambient renaming
+
+Renaming each variable generated during a check (`gen`) to a pre-existing key bound to it. -/
+
+/-- Every key `r` in `R` is bound by `S` to a variable that `ρ` sends back to `r`. -/
+def AmbientRenaming (S ρ : Subst) (R : List TyIdentifier) : Prop :=
+  ∀ r ∈ R, ∃ g, HMaps.find? S r = some (.ftvar g) ∧ HMaps.find? ρ g = some (.ftvar r)
+
+/-- The variable a key is bound to, when it is bound to a variable. -/
+def ambientTarget (S : Subst) (k : TyIdentifier) : Option TyIdentifier :=
+  match HMaps.find? S k with
+  | some (.ftvar g) => some g
+  | _ => none
+
+/-- Keys of `S` not generated during the check that `S` binds to a variable generated during
+    it. -/
+def ambientKeys (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  (HMaps.keys S).filter fun k => !gen k && (ambientTarget S k).any gen
+
+/-- The generated variables some ambient key is bound to, each once. -/
+def ambientTargets (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  ((ambientKeys gen S).filterMap (ambientTarget S)).eraseDups
+
+/-- The representative of a generated variable: the first key in `ks` bound to it. -/
+def ambientRep (S : Subst) (ks : List TyIdentifier) (g : TyIdentifier) : TyIdentifier :=
+  (ks.find? fun k => ambientTarget S k == some g).getD g
+
+/-- The single-scope substitution sending `p.1` to the variable `p.2` for each pair `p` of `ρ`. -/
+def rhoSubst (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
+  [HMap.ofList (ρ.map fun p => (p.1, LMonoTy.ftvar p.2))]
+
+/-- The renaming sending each generated target to its representative. -/
+def ambientRenaming (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
+  rhoSubst ((ambientTargets gen S).map fun g => (g, ambientRep S (ambientKeys gen S) g))
+
+/-- The representatives of the ambient targets. -/
+def ambientReps (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  (ambientTargets gen S).map (ambientRep S (ambientKeys gen S))
+
+/-- `S` with each representative's binding to a generated variable flipped, renaming that
+    variable to the representative throughout. -/
+def ambientSubst (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
+  if (ambientKeys gen S).isEmpty then S else
+    Subst.removeKeys (Subst.renameAfter S (ambientRenaming gen S)) (ambientReps gen S)
 
 /-- `apply` preserves the key set (as membership). -/
 theorem Subst.mem_keys_apply_iff

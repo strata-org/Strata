@@ -155,6 +155,10 @@ inductive LTy : Type where
 
 abbrev LTys := List LTy
 
+/-- Apply a function to the body of a type scheme. -/
+@[expose] def mapLTyTys (f : LMonoTy → LMonoTy) : LTy → LTy
+  | .forAll vs mty => .forAll vs (f mty)
+
 ---------------------------------------------------------------------
 
 /--

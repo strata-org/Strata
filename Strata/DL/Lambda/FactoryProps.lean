@@ -152,6 +152,13 @@ theorem LExpr.applyTypeSubst_eq_replaceUserProvidedType {T : LExprParams}
     induction e <;> unfold replaceUserProvidedType <;> grind
   case isFalse => rfl
 
+/-- An unannotated free variable is fixed by `applyTypeSubst`. -/
+theorem LExpr.applyTypeSubst_fvar_none {T : LExprParams} (S : Subst) (m : T.Metadata)
+    (x : Identifier T.IDMeta) :
+    LExpr.applyTypeSubst (LExpr.fvar m x none : LExpr T.mono) S = LExpr.fvar m x none := by
+  rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
+  simp only [LExpr.replaceUserProvidedType, Option.map_none]
+
 /-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
 theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
     {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
@@ -398,6 +405,84 @@ theorem get?_ofArray_of_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
   exact get?_foldl_pushIfNew_of_mem fn a.toList Factory.default
     (by simpa using hmem) (Factory.default_empty fn.name.name) hnodup
 
+/-- Looking up a stored function's name returns that function. -/
+theorem getElem?_of_mem_toArray {T : LExprParams} (F : Lambda.Factory T) (fn : LFunc T)
+    (hmem : fn ∈ F.toArray) : F[fn.name.name]? = some fn := by
+  obtain ⟨hs, hget⟩ := Lambda.Factory.mem_name_eq_getElem hmem rfl
+  simp +instances only [Lambda.Factory.instMem, Lambda.Factory.mem] at hs
+  simp +instances only [Lambda.Factory.instGetElem?, Lambda.Factory.get?,
+    Lambda.Factory.get] at hget ⊢
+  split
+  · rename_i hnone
+    have hsome := Std.HashMap.mem_iff_isSome_getElem?.mp hs
+    rw [hnone] at hsome
+    exact absurd hsome (by simp)
+  · rename_i idx hidx
+    have hval : F.nameMap[fn.name.name] = idx := (Std.HashMap.getElem?_eq_some_iff.mp hidx).2
+    grind
+
+/-- Appending `fn :: rest` succeeds only if `fn`'s name is new and appending `rest` to the
+    extended factory succeeds. -/
+private theorem foldlM_tryPush_cons_inv {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (fn : LFunc T) (rest : List (LFunc T)) (F F' : Factory T)
+    (h : List.foldlM (fun F fn => Factory.tryPush F fn) F (fn :: rest) = .ok F') :
+    ∃ hfresh : ¬ (fn.name.name ∈ F),
+      List.foldlM (fun F fn => Factory.tryPush F fn) (F.push fn hfresh) rest = .ok F' := by
+  simp only [List.foldlM_cons, bind, Except.bind] at h
+  elim_err h with F1 h1
+  simp only [Factory.tryPush] at h1
+  elim_err h1 with hfresh
+  simp only [Except.ok.injEq] at h1
+  subst h1
+  exact ⟨hfresh, h⟩
+
+/-- Every function in the factory after appending a list was stored before or is in the list. -/
+theorem mem_foldlM_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
+    (l : List (LFunc T)) : ∀ (F F' : Lambda.Factory T),
+      l.foldlM (fun F fn => Lambda.Factory.tryPush F fn) F = .ok F' →
+      ∀ g ∈ F'.toArray, g ∈ F.toArray ∨ g ∈ l := by
+  induction l with
+  | nil =>
+    intro F F' h g hg
+    simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact Or.inl hg
+  | cons fn rest ih =>
+    intro F F' h g hg
+    obtain ⟨hfresh, h⟩ := foldlM_tryPush_cons_inv fn rest F F' h
+    rcases ih _ F' h g hg with hl | hr
+    · have hpush : g ∈ F.toArray.push fn := by
+        simpa only [Lambda.Factory.push] using hl
+      rcases Array.mem_push.mp hpush with h' | h'
+      · exact Or.inl h'
+      · exact Or.inr (by rw [h']; exact List.mem_cons_self)
+    · exact Or.inr (List.mem_cons_of_mem fn hr)
+
+/-- Every function in the factory after a successful push was stored before or is the pushed
+    one. -/
+theorem mem_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
+    {F F' : Lambda.Factory T} {fn : LFunc T} (h : F.tryPush fn = .ok F') :
+    ∀ g ∈ F'.toArray, g ∈ F.toArray ∨ g = fn := by
+  have hl : [fn].foldlM (fun F fn => Lambda.Factory.tryPush F fn) F = .ok F' := by
+    rw [List.foldlM_cons, h]
+    rfl
+  intro g hg
+  rcases mem_foldlM_tryPush [fn] F F' hl g hg with hold | hnew
+  · exact .inl hold
+  · exact .inr (List.mem_singleton.mp hnew)
+
+/-- A name is in the factory iff looking it up succeeds. -/
+theorem mem_iff_getElem?_isSome {T : LExprParams} (F : Factory T) (nm : String) :
+    nm ∈ F ↔ (F[nm]?).isSome = true := by
+  constructor
+  · intro hmem
+    obtain ⟨fn, hfn, hname⟩ := Array.mem_map.mp ((mem_iff_mem_names F nm).mp hmem)
+    rw [← hname, getElem?_of_mem_toArray F fn hfn]
+    rfl
+  · intro hsome
+    obtain ⟨fn, hfn⟩ := Option.isSome_iff_exists.mp hsome
+    exact getElem?_some_implies_mem hfn
+
 end Factory
 
 /-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
@@ -418,5 +503,54 @@ theorem callOfLFunc_func_mem
     simp only [h_gf] at h
     cases aPA <;> simp at h <;> split at h <;> simp at h
     all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
+
+/-! ### Successful appends have new, distinct names -/
+
+/-- A name the factory stores is still stored after another function is added. -/
+private theorem mem_push_of_mem {T : LExprParams} (F : Factory T) (fn : LFunc T)
+    (hnew : ¬ (fn.name.name ∈ F)) (n : String) (h : n ∈ F) : n ∈ F.push fn hnew := by
+  simp +instances only [Factory.instMem, Factory.mem, Factory.push] at h ⊢
+  grind
+
+/-- The name of a function just added to a factory is stored in it. -/
+private theorem name_mem_push {T : LExprParams} (F : Factory T) (fn : LFunc T)
+    (hnew : ¬ (fn.name.name ∈ F)) : fn.name.name ∈ F.push fn hnew := by
+  simp +instances only [Factory.instMem, Factory.mem, Factory.push]
+  grind
+
+/-- Appending a list of functions to a factory succeeds only if none of them carries a name
+    the factory stores. -/
+private theorem foldlM_tryPush_name_new {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (l : List (LFunc T)) : ∀ (F F' : Factory T),
+      List.foldlM (fun F fn => Factory.tryPush F fn) F l = .ok F' →
+      ∀ g ∈ l, ¬ (g.name.name ∈ F) := by
+  induction l with
+  | nil => intro _ _ _ g hg; exact absurd hg (by simp)
+  | cons fn rest ih =>
+    intro F F' h g hg
+    obtain ⟨hfresh, h⟩ := Factory.foldlM_tryPush_cons_inv fn rest F F' h
+    rcases List.mem_cons.mp hg with rfl | hg'
+    · exact hfresh
+    · intro hmem
+      exact ih _ F' h g hg' (mem_push_of_mem F fn hfresh g.name.name hmem)
+
+/-- Appending a list of functions to a factory succeeds only if their names are pairwise
+    distinct. -/
+theorem foldlM_tryPush_names_nodup {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (l : List (LFunc T)) : ∀ (F F' : Factory T),
+      List.foldlM (fun F fn => Factory.tryPush F fn) F l = .ok F' →
+      List.Nodup (l.map (·.name.name)) := by
+  induction l with
+  | nil => intro _ _ _; simp
+  | cons fn rest ih =>
+    intro F F' h
+    obtain ⟨hfresh, h⟩ := Factory.foldlM_tryPush_cons_inv fn rest F F' h
+    rw [List.map_cons, List.nodup_cons]
+    refine ⟨?_, ih _ F' h⟩
+    intro hmem
+    obtain ⟨g, hg, hgEq⟩ := List.mem_map.mp hmem
+    have hnew := foldlM_tryPush_name_new rest _ F' h g hg
+    rw [hgEq] at hnew
+    exact hnew (name_mem_push F fn hfresh)
 
 end Lambda

@@ -7,6 +7,7 @@ module
 
 public import Strata.Util.String
 import all Strata.Util.String
+import Strata.Util.ListUtilsProps
 import all Init.Data.Repr
 
 /-!
@@ -69,8 +70,9 @@ theorem digitLoop_extra (fuel₁ fuel₂ n : Nat) (ds : List Char)
 
 theorem digitChar_val {n : Nat} (h : n < 10) :
     n.digitChar.toNat - '0'.toNat = n := by
-  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cbv
+  have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by
+    omega
+  rcases hcases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
 
 theorem readBack_digitLoop (n : Nat) :
@@ -122,9 +124,10 @@ theorem isPrefixOf_append_self (pfx sfx : List Char) :
 
 theorem digitChar_is_digit (n : Nat) (h : n < 10) :
     '0' ≤ n.digitChar ∧ n.digitChar ≤ '9' := by
-  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by omega
+  have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 := by
+    omega
   -- Decide call can be safely replaced with `cbv` in `4.35.0`
-  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+  rcases hcases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
 
 theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)
@@ -188,6 +191,40 @@ theorem listCharToNat?_roundtrip (n : Nat) :
       rw [h]
     rw [this]
     exact readBack_digitLoop n
+
+/-- Every list of strings misses some string. -/
+theorem String.exists_notMem_strings (l : List String) : ∃ s : String, s ∉ l := by
+  have hlength : ∀ {s}, s ∈ l → s.length ≤ (String.join l).length := by
+    intro s hs
+    rw [String.length_join]
+    induction l with
+    | nil => exact absurd hs List.not_mem_nil
+    | cons hd tl ih =>
+      rw [List.map_cons, List.sum_cons]
+      rcases List.mem_cons.mp hs with hhd | htl
+      · subst hhd
+        omega
+      · have hle := ih htl
+        omega
+  refine ⟨(String.join l).push 'x', fun hmem => ?_⟩
+  have hle := hlength hmem
+  rw [String.length_push] at hle
+  omega
+
+/-- For every `n` and list `avoid`, there are `n` distinct strings outside `avoid`. -/
+theorem String.exists_freshStrings (n : Nat) (avoid : List String) :
+    ∃ fs : List String, fs.length = n ∧ fs.Nodup ∧ ∀ f ∈ fs, f ∉ avoid := by
+  induction n with
+  | zero => exact ⟨[], rfl, List.nodup_nil, by simp⟩
+  | succ k ih =>
+    obtain ⟨fs, hlen, hnd, havoid⟩ := ih
+    obtain ⟨s, hs⟩ := String.exists_notMem_strings (avoid ++ fs)
+    refine ⟨s :: fs, by simp [hlen], ?_, ?_⟩
+    · exact List.nodup_cons.mpr ⟨fun hc => hs (List.mem_append_right _ hc), hnd⟩
+    · intro f hf
+      rcases List.mem_cons.mp hf with heq | hmem
+      · exact heq ▸ (fun hc => hs (List.mem_append_left _ hc))
+      · exact havoid f hmem
 
 /-! ### Hex digits -/
 
@@ -267,5 +304,23 @@ theorem hexValue_hexDigits (w n : Nat) (h : n < 16 ^ w) :
     show hexValue (hexDigits w (n / 16) ++ [hexDigit (n % 16)]) = n
     rw [hexValue_append_digit, ih _ hlt, hd]
     omega
+
+/-- Appending decimal indices to a common string is injective in the index. -/
+theorem String.append_toString_inj (pfx : String) (i j : Nat)
+    (h : pfx ++ toString i = pfx ++ toString j) : i = j := by
+  have hlist : (pfx ++ toString i).toList = (pfx ++ toString j).toList := by rw [h]
+  rw [String.toList_append, String.toList_append] at hlist
+  exact Nat.toString_injective (String.toList_injective (List.append_cancel_left hlist))
+
+/-- Appending the indices below `k` to a common prefix produces distinct strings. -/
+theorem String.nodup_map_append_toString (pfx : String) (k : Nat) :
+    (List.map (fun i : Nat => pfx ++ toString i) (List.range k)).Nodup := by
+  exact List.nodup_map_of_injective _ _ (String.append_toString_inj pfx) List.nodup_range
+
+/-- `p.toList` is a prefix of `(p ++ s).toList`. -/
+theorem String.toList_isPrefixOf_toList_append (p s : String) :
+    p.toList.isPrefixOf (p ++ s).toList = true := by
+  rw [String.toList_append]
+  exact isPrefixOf_append_self p.toList s.toList
 
 end

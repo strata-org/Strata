@@ -63,6 +63,53 @@ theorem getVars_replaceUserProvidedType (e : LExpr Tbase.mono)
   | eq _ _ _ ih1 ih2 => simp only [LExpr.replaceUserProvidedType, LExpr.LExpr.getVars]; rw [ih1, ih2]
 
 omit [DecidableEq Tbase.IDMeta] in
+/-- Rewriting annotations by `f` rewrites each binder annotation by `f`. -/
+theorem binderAnnotations_replaceUserProvidedType (e : LExpr Tbase.mono)
+    (f : LMonoTy → LMonoTy) :
+    LExpr.binderAnnotations (LExpr.replaceUserProvidedType e f) =
+      (LExpr.binderAnnotations e).map f := by
+  induction e with
+  | const | op | bvar | fvar => rfl
+  | abs _ _ ty _ ih =>
+    cases ty <;> simp [LExpr.replaceUserProvidedType, LExpr.binderAnnotations, ih]
+  | quant _ _ _ ty _ _ iht ihb =>
+    cases ty <;> simp [LExpr.replaceUserProvidedType, LExpr.binderAnnotations, iht, ihb]
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.binderAnnotations, ih1, ih2,
+      List.map_append]
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.binderAnnotations, ih1, ih2, ih3,
+      List.map_append]
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.binderAnnotations, ih1, ih2,
+      List.map_append]
+
+omit [DecidableEq Tbase.IDMeta] in
+/-- Rewriting annotations by `f` rewrites each free-variable annotation by `f`. -/
+theorem fvarAnnotations_replaceUserProvidedType (e : LExpr Tbase.mono)
+    (f : LMonoTy → LMonoTy) :
+    LExpr.fvarAnnotations (LExpr.replaceUserProvidedType e f) =
+      (LExpr.fvarAnnotations e).map f := by
+  induction e with
+  | const | op | bvar => rfl
+  | fvar _ _ ty =>
+    cases ty <;> simp [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations]
+  | abs _ _ _ _ ih =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations, ih]
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations, iht, ihb,
+      List.map_append]
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations, ih1, ih2,
+      List.map_append]
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations, ih1, ih2, ih3,
+      List.map_append]
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.replaceUserProvidedType, LExpr.fvarAnnotations, ih1, ih2,
+      List.map_append]
+
+omit [DecidableEq Tbase.IDMeta] in
 /-- `applyTypeSubst` does not change the free variables (only type annotations). -/
 theorem getVars_applyTypeSubst (e : LExpr Tbase.mono) (S : Subst) :
     LExpr.LExpr.getVars (e.applyTypeSubst S) = LExpr.LExpr.getVars e := by
@@ -392,5 +439,130 @@ theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
   run'_output_eq (hasBVarPtrCache e) PtrCache.empty
 
 end LExpr
+
+/-- Two lists are pointwise equal up to metadata iff their metadata erasures are equal. -/
+theorem forall₂_iff_map_eraseMetadata_eq {T : LExprParams} (a₁ a₂ : List (LExpr T.mono)) :
+    List.Rel₂ (fun x y => LExpr.eraseMetadata x = LExpr.eraseMetadata y) a₁ a₂ ↔
+    a₁.map LExpr.eraseMetadata = a₂.map LExpr.eraseMetadata := by
+  constructor
+  · intro hfa
+    induction hfa with
+    | nil => rfl
+    | cons hxy _ ih => rw [List.map_cons, List.map_cons, hxy, ih]
+  · intro hmap
+    induction a₁ generalizing a₂ with
+    | nil =>
+      cases a₂ with
+      | nil => exact List.Rel₂.nil
+      | cons y ys => exact absurd hmap (by simp)
+    | cons x xs ih =>
+      cases a₂ with
+      | nil => exact absurd hmap (by simp)
+      | cons y ys =>
+        rw [List.map_cons, List.map_cons, List.cons.injEq] at hmap
+        exact List.Rel₂.cons hmap.1 (ih ys hmap.2)
+
+/-! ### Expressions that differ only in metadata -/
+
+/-- Erasing metadata preserves whether an expression is an operator reference, and which
+    operator at which type it names. -/
+theorem eraseMetadata_op_cases {T : LExprParams} (a b : LExpr T.mono)
+    (h : a.eraseMetadata = b.eraseMetadata) :
+    (∃ (m₁ m₂ : T.Metadata) (o : T.Identifier) (ty : Option LMonoTy),
+        a = .op m₁ o ty ∧ b = .op m₂ o ty)
+    ∨ ((∀ m o ty, a ≠ .op m o ty) ∧ (∀ m o ty, b ≠ .op m o ty)) := by
+  cases a
+  case op m₁ o ty =>
+    cases b
+    case op m₂ o₂ ty₂ =>
+      refine Or.inl ⟨m₁, m₂, o, ty, rfl, ?_⟩
+      have hinj := h
+      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.op.injEq] at hinj
+      grind
+    all_goals exact absurd h (by simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+  all_goals
+    refine Or.inr ⟨by intro m o ty; simp, ?_⟩
+    intro m o ty hb
+    subst hb
+    exact absurd h (by simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+
+/-- Two lists that differ only in metadata have entries that differ only in metadata. -/
+theorem getElem?_of_map_eraseMetadata_eq {T : LExprParams}
+    (a₁ a₂ : List (LExpr T.mono))
+    (h : a₁.map LExpr.eraseMetadata = a₂.map LExpr.eraseMetadata) (idx : Nat)
+    (r₁ : LExpr T.mono) (h₁ : a₁[idx]? = some r₁) :
+    ∃ r₂, a₂[idx]? = some r₂ ∧ r₁.eraseMetadata = r₂.eraseMetadata := by
+  have hg : (a₁.map LExpr.eraseMetadata)[idx]? = (a₂.map LExpr.eraseMetadata)[idx]? := by rw [h]
+  rw [List.getElem?_map, List.getElem?_map, h₁] at hg
+  cases h₂ : a₂[idx]? with
+  | none => rw [h₂] at hg; exact absurd hg (by simp)
+  | some r₂ =>
+    refine ⟨r₂, rfl, ?_⟩
+    rw [h₂] at hg
+    simpa only [Option.map_some, Option.some.injEq] using hg
+
+/-! ### Free variables, metadata, and fresh annotations -/
+
+/-- Applying a function to arguments introduces no variables beyond those of the function and
+    of the arguments. -/
+theorem getVars_mkApp {T : LExprParams} (m : T.Metadata) (f : LExpr T.mono)
+    (args : List (LExpr T.mono)) :
+    ∀ y ∈ LExpr.LExpr.getVars (LExpr.mkApp m f args),
+      y ∈ LExpr.LExpr.getVars f ∨ ∃ a ∈ args, y ∈ LExpr.LExpr.getVars a := by
+  induction args generalizing f with
+  | nil => intro y hy; exact Or.inl (by simpa only [LExpr.mkApp] using hy)
+  | cons a rest ih =>
+    intro y hy
+    simp only [LExpr.mkApp] at hy
+    rcases ih (.app m f a) y hy with h1 | ⟨b, hb, hby⟩
+    · simp only [LExpr.LExpr.getVars, List.mem_append] at h1
+      rcases h1 with h2 | h3
+      · exact Or.inl h2
+      · exact Or.inr ⟨a, by simp, h3⟩
+    · exact Or.inr ⟨b, by simp [hb], hby⟩
+
+/-- An iterated lambda has exactly the free variables of its body. -/
+theorem getVars_absMulti {T : LExprParams} (m : T.Metadata) (tys : List LMonoTy)
+    (body : LExpr T.mono) :
+    LExpr.LExpr.getVars (LExpr.absMulti m tys body) = LExpr.LExpr.getVars body := by
+  induction tys with
+  | nil => rfl
+  | cons t rest ih =>
+    show LExpr.LExpr.getVars
+      (LExpr.abs m "" (some t) (LExpr.absMulti m rest body)) = LExpr.LExpr.getVars body
+    simpa only [LExpr.LExpr.getVars] using ih
+
+/-- Erasing metadata reaches under an iterated lambda. -/
+theorem eraseMetadata_absMulti {T : LExprParams} (m : T.Metadata) (tys : List LMonoTy)
+    (body : LExpr T.mono) :
+    (LExpr.absMulti m tys body).eraseMetadata = LExpr.absMulti () tys body.eraseMetadata := by
+  induction tys with
+  | nil => rfl
+  | cons t rest ih =>
+    show (LExpr.abs m "" (some t) (LExpr.absMulti m rest body)).eraseMetadata
+      = LExpr.abs () "" (some t) (LExpr.absMulti () rest body.eraseMetadata)
+    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.abs.injEq, true_and]
+    simpa only [LExpr.eraseMetadata] using ih
+
+/-- A type variable can be chosen fresh for an expression and outside a specified list of names. -/
+theorem exists_fresh_ftvar_avoiding {T : LExprParams}
+    (y : Identifier T.IDMeta) (e : LExpr T.mono) (vs : List TyIdentifier) :
+    ∃ v : TyIdentifier,
+      LExpr.fresh ((y, some (LMonoTy.ftvar v)) : IdentT LMonoTy T.IDMeta) e ∧ v ∉ vs := by
+  obtain ⟨v, hv⟩ := String.exists_notMem_strings
+    ((LExpr.freeVars e).filterMap
+        (fun p => match p.2 with | some (.ftvar w) => some w | _ => none) ++ vs)
+  refine ⟨v, ?_, fun hmem => hv (List.mem_append_right _ hmem)⟩
+  simp only [LExpr.fresh]
+  intro hmem
+  exact hv (List.mem_append_left _
+    (List.mem_filterMap.mpr ⟨(y, some (LMonoTy.ftvar v)), hmem, rfl⟩))
+
+/-- Some type-variable annotation of `y` is fresh for any expression. -/
+theorem exists_fresh_ftvar {T : LExprParams}
+    (y : Identifier T.IDMeta) (e : LExpr T.mono) :
+    ∃ v : TyIdentifier, LExpr.fresh ((y, some (LMonoTy.ftvar v)) : IdentT LMonoTy T.IDMeta) e :=
+  let ⟨v, hv, _⟩ := exists_fresh_ftvar_avoiding y e []
+  ⟨v, hv⟩
 
 end Lambda

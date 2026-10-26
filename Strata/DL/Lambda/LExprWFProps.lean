@@ -9,6 +9,7 @@ public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
 public import Strata.Util.ListUtilsProps
+import Strata.Util.StringProps
 
 /-!
 ## Properties of Well-formed Lambda Expressions
@@ -653,6 +654,24 @@ theorem closed_implies_getVars_nil {T : LExprParams} (e : LExpr T.mono)
   simp [LExpr.closed, List.isEmpty_iff] at hc
   simp [hc]
 
+/-- If every user-provided annotation of an expression satisfies `p`, so does each of its binder
+    annotations. -/
+theorem allUserProvidedTypes_binderAnnotations {T : LExprParamsT} {p : T.TypeType → Bool} :
+    ∀ (e : LExpr T), LExpr.allUserProvidedTypes e p = true →
+      ∀ t ∈ LExpr.binderAnnotations e, p t = true := by
+  intro e
+  induction e <;> simp_all [LExpr.allUserProvidedTypes, LExpr.binderAnnotations, or_imp,
+    Option.all_eq_true]
+
+/-- If every user-provided annotation of an expression satisfies `p`, so does every free-variable
+    annotation. -/
+theorem allUserProvidedTypes_fvarAnnotations {T : LExprParamsT} {p : T.TypeType → Bool} :
+    ∀ (e : LExpr T), LExpr.allUserProvidedTypes e p = true →
+      ∀ t ∈ LExpr.fvarAnnotations e, p t = true := by
+  intro e
+  induction e <;> simp_all [LExpr.allUserProvidedTypes, LExpr.fvarAnnotations, or_imp,
+    Option.all_eq_true]
+
 /-! ## Properties of beta reduction
 
 Properties of the beta-reduction definitions in `Strata.DL.Lambda.LExprWF`
@@ -990,6 +1009,61 @@ theorem getOps_subset_betaReduceRedexesPreservingArgs {T : LExprParamsT}
     getOps e ⊆ getOps (betaReduceRedexesPreservingArgs e) := by
   unfold betaReduceRedexesPreservingArgs
   exact getOps_subset_betaReduceRedexesFuel (sizeOf e * (maxBvarMultiplicity e + 1)) e
+
+omit [DecidableEq T.IDMeta] in
+/-- An annotation map commutes with opening a bound variable, when also applied to the opened
+    variable's annotation. -/
+theorem replaceUserProvidedType_varOpen (f : LMonoTy → LMonoTy) (k : Nat)
+    (x : IdentT LMonoTy T.IDMeta) (e : LExpr T.mono) :
+    LExpr.replaceUserProvidedType (LExpr.varOpen k x e) f
+      = LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e f) := by
+  induction e generalizing k with
+  | const m c => rfl
+  | op m o uty => rfl
+  | bvar m i =>
+    show LExpr.replaceUserProvidedType
+        (if i == k then (LExpr.fvar m x.1 x.2 : LExpr T.mono) else .bvar m i) f
+      = if i == k then (LExpr.fvar m x.1 (x.2.map f) : LExpr T.mono) else .bvar m i
+    by_cases hik : (i == k) = true
+    · simp only [hik, ite_true]
+      simp [LExpr.replaceUserProvidedType]
+    · simp only [hik, Bool.false_eq_true, ite_false]
+      rfl
+  | fvar m y uty => rfl
+  | abs m name uty e' ih =>
+    show LExpr.abs m name (uty.map f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen (k + 1) x e') f)
+      = LExpr.abs m name (uty.map f)
+          (LExpr.varOpen (k + 1) (x.1, x.2.map f) (LExpr.replaceUserProvidedType e' f))
+    rw [ih (k + 1)]
+  | quant m qk name uty tr e' ihtr ih =>
+    show LExpr.quant m qk name (uty.map f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen (k + 1) x tr) f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen (k + 1) x e') f)
+      = LExpr.quant m qk name (uty.map f)
+          (LExpr.varOpen (k + 1) (x.1, x.2.map f) (LExpr.replaceUserProvidedType tr f))
+          (LExpr.varOpen (k + 1) (x.1, x.2.map f) (LExpr.replaceUserProvidedType e' f))
+    rw [ihtr (k + 1), ih (k + 1)]
+  | app m e1 e2 ih1 ih2 =>
+    show LExpr.app m (LExpr.replaceUserProvidedType (LExpr.varOpen k x e1) f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen k x e2) f)
+      = LExpr.app m (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e1 f))
+          (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e2 f))
+    rw [ih1 k, ih2 k]
+  | ite m c t e' ihc iht ih =>
+    show LExpr.ite m (LExpr.replaceUserProvidedType (LExpr.varOpen k x c) f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen k x t) f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen k x e') f)
+      = LExpr.ite m (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType c f))
+          (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType t f))
+          (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e' f))
+    rw [ihc k, iht k, ih k]
+  | eq m e1 e2 ih1 ih2 =>
+    show LExpr.eq m (LExpr.replaceUserProvidedType (LExpr.varOpen k x e1) f)
+        (LExpr.replaceUserProvidedType (LExpr.varOpen k x e2) f)
+      = LExpr.eq m (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e1 f))
+          (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e2 f))
+    rw [ih1 k, ih2 k]
 
 end LExpr
 
