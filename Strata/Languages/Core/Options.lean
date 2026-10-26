@@ -29,6 +29,18 @@ inductive VerificationMode where
   | deductive  -- Prove correctness (unknown is error)
   | bugFinding -- Find bugs assuming incomplete preconditions (only definite bugs are errors)
   | bugFindingAssumingCompleteSpec -- Find bugs assuming complete preconditions (any counterexample is error)
+  /-- Deductive, on the premise that the path condition of every obligation the evaluator
+      reduces to the literal `false` is satisfiable. That path condition holds the axioms,
+      preconditions, assumptions and branch conditions that lead to the obligation, including
+      the postconditions, invariants and function preconditions that call, loop and
+      precondition elimination introduce. An assert-like obligation (one that passes when
+      unreachable: an `assert`, or a division-by-zero, overflow or out-of-bounds check) is
+      reported failing without a solver call when its goal reduces to `false` and none of its
+      assumptions is literally `false`. Only such an assumption in the generated obligation marks
+      a path as dead, so which dead paths are recognized depends on the VC generator. At the
+      `full` check level such a failure is reported reachable on the premise. Passes mean what
+      they mean in `deductive`. -/
+  | deductiveAssumingSatisfiablePaths
   deriving Repr, DecidableEq
 
 instance : Inhabited VerificationMode where
@@ -39,17 +51,28 @@ def VerificationMode.ofString? (s : String) : Option VerificationMode :=
   | "deductive" => some .deductive
   | "bugFinding" => some .bugFinding
   | "bugFindingAssumingCompleteSpec" => some .bugFindingAssumingCompleteSpec
+  | "deductiveAssumingSatisfiablePaths" => some .deductiveAssumingSatisfiablePaths
   | _ => none
 
 def VerificationMode.toString : VerificationMode → String
   | .deductive => "deductive"
   | .bugFinding => "bugFinding"
   | .bugFindingAssumingCompleteSpec => "bugFindingAssumingCompleteSpec"
+  | .deductiveAssumingSatisfiablePaths => "deductiveAssumingSatisfiablePaths"
+
+/-- The modes that ask for validity and report what `deductive` reports. -/
+def VerificationMode.isDeductive : VerificationMode → Bool
+  | .deductive | .deductiveAssumingSatisfiablePaths => true
+  | .bugFinding | .bugFindingAssumingCompleteSpec => false
 
 instance : ToString VerificationMode := ⟨VerificationMode.toString⟩
 
 def VerificationMode.options : String :=
-  "'deductive' (prove correctness), 'bugFinding' (find bugs), or 'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions)"
+  "'deductive' (prove correctness), " ++
+  "'bugFinding' (find bugs), " ++
+  "'bugFindingAssumingCompleteSpec' (find bugs assuming complete preconditions), or " ++
+  "'deductiveAssumingSatisfiablePaths' " ++
+  "(prove correctness, assuming every path to an assertion can be taken)"
 
 def VerboseMode.ofBool (b : Bool) : VerboseMode :=
   match b with

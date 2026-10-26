@@ -982,7 +982,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
       let (satCheck, validCheck) := checksFor item.goal.property item.goal.md options
       -- A goal its own text settles, such as `assert true`, is decided here, as the
       -- per-obligation path decides it, without sending the solver anything.
-      match evaluatorResults (obligationOf item) satCheck validCheck with
+      match evaluatorResults (obligationOf item) options.checkMode satCheck validCheck with
       | (some sat, some valid) =>
         let outcome : VCOutcome := { satisfiabilityProperty := sat, validityProperty := valid }
         -- The evaluator's verdicts carry no counterexample.

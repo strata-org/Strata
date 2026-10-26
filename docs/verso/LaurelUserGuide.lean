@@ -3916,7 +3916,7 @@ right — an SMT query derived from wrong Core is rarely informative.
    * Print elapsed time per pipeline step — the first thing to try when a run is slow.
  *
    * `--check-mode MODE`
-   * `deductive` (default), `bugFinding`, or `bugFindingAssumingCompleteSpec`.
+   * `deductive` (default), `bugFinding`, `bugFindingAssumingCompleteSpec`, or `deductiveAssumingSatisfiablePaths`.
  *
    * `--check-level LEVEL`
    * `minimal` (default), `minimalVerbose`, or `full`; controls how many checks are emitted.

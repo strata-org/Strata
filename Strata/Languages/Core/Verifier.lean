@@ -1105,9 +1105,7 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
     in other modes, unreachable always fails. -/
 private def unreachableMsg (checkMode : VerificationMode) (passWhenUnreachable : Bool)
     (passMsg failMsg : α) : α :=
-  match checkMode with
-  | .deductive => if passWhenUnreachable then passMsg else failMsg
-  | _ => failMsg
+  if checkMode.isDeductive && passWhenUnreachable then passMsg else failMsg
 
 def label (o : VCOutcome) (property : Imperative.PropertyType)
     (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
@@ -1119,7 +1117,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
       -- Assert-like property (i.e. passes vacuously on unreachable paths).
-      if checkMode == .deductive then
+      if checkMode.isDeductive then
         match o.validityProperty with
         | .unsat => "pass"
         | .sat _ => "fail"
@@ -1155,7 +1153,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
-      if checkMode == .deductive then
+      if checkMode.isDeductive then
         match o.validityProperty with
         | .unsat => "✅"
         | .sat _ => "❌"
@@ -1478,14 +1476,57 @@ def checksFor (property : Imperative.PropertyType)
     match options.checkMode, options.checkLevel with
     | _, .full => (true, true)
     | .bugFindingAssumingCompleteSpec, _ => (true, true)
-    | .deductive, _ =>
+    | .deductive, _ | .deductiveAssumingSatisfiablePaths, _ =>
       if property.passWhenUnreachable then (false, true) else (true, false)
     | .bugFinding, _ => (true, false)
+
+/-- What `evaluatorResults` needs to know about a path condition, read in one pass over it. -/
+inductive PathConditionShape where
+  /-- Every entry only declares or defines a variable. Such a path condition is satisfiable: each
+      entry is sent to the solver as a `declare-fun` or a non-recursive `define-fun`, which some
+      model always satisfies.
+
+      The solver also receives axioms that are not entries of the path condition: those of the
+      built-in functions the definitions use, such as `mapConst`'s, and those attached to the
+      program's own functions (`func.axioms`, and the per-constructor axioms of recursive
+      functions). Taking the path condition to be satisfiable therefore assumes that these
+      axioms are satisfiable together. If they are not, an assertion the solver would pass
+      vacuously is reported failing; no assertion is ever reported passing because of this.
+      `Core.factoryInterp` models the built-ins' bodies and evaluators but not their axioms.
+      The evaluator also decides before encoding, so a definition the encoder cannot encode is
+      reported as this failure rather than as an analysis error. -/
+  | onlyDefinitions
+  /-- Some assumption is literally `false`: the evaluator already knows the path is dead. -/
+  | hasFalseAssumption
+  /-- Anything else. -/
+  | other
+  deriving DecidableEq
+
+/-- The shape of `obligation`'s path condition, read in one pass over its entries. -/
+def pathConditionShape (obligation : ProofObligation Expression) : PathConditionShape :=
+  obligation.assumptions.foldl (init := .onlyDefinitions) fun shape pc =>
+    pc.foldl (init := shape) fun shape entry =>
+      match shape, entry with
+      | .hasFalseAssumption, _ => .hasFalseAssumption
+      | _, .assumption _ e => if e.isFalse then .hasFalseAssumption else .other
+      | _, .distinct .. => .other
+      | shape, .varDecl .. => shape
+
+/-- Whether the premise of `deductiveAssumingSatisfiablePaths`, that every path to an assertion
+    can be taken, lets the evaluator decide that `obligation`, whose goal is literally `false`
+    and whose path condition has shape `shape`, fails: its path condition, whatever it holds, is
+    taken to be satisfiable without asking a solver. Covers are left to the solver, so they are
+    reported as in `deductive`, and so is a path condition with a literally false assumption,
+    which the evaluator already knows is dead. -/
+def usesSatisfiablePathsPremise (obligation : ProofObligation Expression)
+    (checkMode : VerificationMode) (shape : PathConditionShape) : Bool :=
+  checkMode == .deductiveAssumingSatisfiablePaths && obligation.property.passWhenUnreachable &&
+    shape != .hasFalseAssumption
 
 /-- The results the evaluator decides without a solver, for satisfiability and validity: `some r`
     when the obligation alone settles that check, `none` when a solver is needed. A check not
     asked for is `unknown`. -/
-def evaluatorResults (obligation : ProofObligation Expression)
+def evaluatorResults (obligation : ProofObligation Expression) (checkMode : VerificationMode)
     (satisfiabilityCheck validityCheck : Bool) : Option SMT.Result × Option SMT.Result :=
   -- Satisfiability is settled if the obligation is literally false (unsat).
   let sat : Option SMT.Result :=
@@ -1493,11 +1534,16 @@ def evaluatorResults (obligation : ProofObligation Expression)
     else if obligation.obligation.isFalse then some .unsat
     else none
   -- Validity is settled if the obligation is literally true (valid = unsat), or literally false
-  -- with no assumptions (invalid = sat).
+  -- with a path condition known to be satisfiable (invalid = sat): one that only declares or
+  -- defines variables, or one that `usesSatisfiablePathsPremise` takes to be satisfiable.
   let valid : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else if obligation.obligation.isFalse then
+      let shape := pathConditionShape obligation
+      if shape == .onlyDefinitions || usesSatisfiablePathsPremise obligation checkMode shape then
+        some (.sat [])
+      else none
     else none
   (sat, valid)
 
@@ -1521,7 +1567,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
-  let (peSatResult, peValResult) := evaluatorResults obligation satisfiabilityCheck validityCheck
+  let (peSatResult, peValResult) :=
+    evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck
   -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then

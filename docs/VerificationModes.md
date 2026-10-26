@@ -5,11 +5,12 @@
 
 # Verification Modes
 
-Strata supports three verification modes, selected via `--check-mode`:
+Strata supports four verification modes, selected via `--check-mode`:
 
 - **`deductive`** (default) — Prove correctness: every assertion must hold on all inputs.
 - **`bugFinding`** — Find bugs assuming incomplete preconditions: only definite bugs are errors.
 - **`bugFindingAssumingCompleteSpec`** — Find bugs assuming complete preconditions: any counterexample is an error.
+- **`deductiveAssumingSatisfiablePaths`** — Deductive, on the premise that every path to an assertion can be taken: an assertion whose goal is reduced by the evaluator to the literal `false` is an error without a solver call, unless one of its assumptions is literally `false`. Only such an assumption in the generated obligation marks a path as dead, so which dead paths are recognized depends on the VC generator. It is classified as `deductive` in the table below.
 
 ## Error Classification by Mode
 

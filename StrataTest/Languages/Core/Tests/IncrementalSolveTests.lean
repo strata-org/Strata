@@ -2198,6 +2198,58 @@ afterBranch: agree on 3, 3 with a counterexample
       for walkAll in [false, true] do
         bothWays name (parse p) { VerifyOptions.quiet with checkMode := mode } (walkAll := walkAll)
 
+/-! `deductiveAssumingSatisfiablePaths` reaches `evaluatorResults` through the incremental back
+end too, so the two back ends must agree under it as well. `foldedFalse` holds the goals the
+mode's premise decides (`folded`), ones it leaves to the solver (`dead`, under a literally false
+assumption, and the cover `never`), and one only a solver can decide (`solver`). -/
+
+private def foldedFalse :=
+#strata
+program Core;
+
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  assert [folded]: false;
+  if * {
+    assume [contra]: false;
+    assert [dead]: false;
+  }
+  cover [never]: false;
+  assert [solver]: int.lt(x, 0);
+};
+#end
+
+/--
+info: refutable: agree on 1, 1 with a counterexample
+refutable: agree on 1, 1 with a counterexample
+withCover: agree on 2, 1 with a counterexample
+withCover: agree on 2, 1 with a counterexample
+afterBranch: agree on 3, 1 with a counterexample
+afterBranch: agree on 3, 1 with a counterexample
+
+
+Obligation folded: failed!
+
+Result obtained during evaluation.
+foldedFalse: agree on 4, 1 with a counterexample
+
+
+Obligation folded: failed!
+
+Result obtained during evaluation.
+foldedFalse: agree on 4, 1 with a counterexample
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  for (name, p) in [("refutable", refutable), ("withCover", withCover),
+                    ("afterBranch", afterBranch), ("foldedFalse", foldedFalse)] do
+    for walkAll in [false, true] do
+      bothWays name (parse p)
+        { VerifyOptions.quiet with checkMode := .deductiveAssumingSatisfiablePaths }
+        (walkAll := walkAll)
+
 /-! A solver option the solver rejects gives every goal the verdict it gets without
 `--incremental`: cvc5 has no `timeout` option, and z3 none spelled `tlimit-per` or `:timeout`.
 A solver that cannot be started does the same. The two modes word the solver's message
