@@ -94,8 +94,11 @@ A bare `yield` types as `Unknown` here: its type is the enclosing coroutine's
 first `resumes` binding, and this utility has no enclosing-procedure context.
 Resolution types `yield` from `Context.resumeType` instead, so nothing needs it
 from here.
+
+`fieldType?`, when given, types a field at its holder's type, which `model` does not know.
 -/
-def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
+def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Option HighTypeMd))
+    (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   match _: expr with
   | AstNode.mk val source =>
   match _: val with
@@ -109,26 +112,31 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Var (.Local id) => (model.get id).getType
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
   -- Field access
-  | .Var (.Field _ fieldName) => (model.get fieldName).getType
+  | .Var (.Field target fieldName) =>
+    let declared := (model.get fieldName).getType
+    match fieldType? with
+    | some fieldType =>
+      (fieldType fieldName (computeExprTypeWith fieldType? model target)).getD declared
+    | none => declared
   -- Pure field update returns the same type as the target
-  | .PureFieldUpdate target _ _ => computeExprType model target
+  | .PureFieldUpdate target _ _ => computeExprTypeWith fieldType? model target
   -- Calls — the callee's return type at this call site, so a generic callee reports its
   -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
   -- argument temp from the argument itself and needs that instantiation.
   | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
   | .InstanceCall _ callee _ => getCallType source model callee []
   -- Control flow
-  | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
+  | .IfThenElse _ thenBranch _ => computeExprTypeWith fieldType? model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
-        computeExprType model last
+        computeExprTypeWith fieldType? model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
   | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
-  | .Assign _ value => computeExprType model value
+  | .Assign _ value => computeExprTypeWith fieldType? model value
   | .IncrDecr _ _ target =>
     -- The expression's type is the type of the target variable.
     match target.val with
@@ -158,12 +166,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Verification specific
   | .Quantifier _ _ _ _ => ⟨ .TBool, source ⟩
   | .Assigned _ => ⟨ .TBool, source ⟩
-  | .Old v _ => computeExprType model v
-  | .OldGuarantee v => computeExprType model v
-  | .OldRelies v => computeExprType model v
+  | .Old v _ => computeExprTypeWith fieldType? model v
+  | .OldGuarantee v => computeExprTypeWith fieldType? model v
+  | .OldRelies v => computeExprTypeWith fieldType? model v
   | .Fresh _ => ⟨ .TBool, source ⟩
   -- Proof related
-  | .ProveBy v _ => computeExprType model v
+  | .ProveBy v _ => computeExprTypeWith fieldType? model v
   | .ContractOf _ _ => default -- TODO: implement
   -- Special
   | .Abstract =>default -- TODO: implement
@@ -172,10 +180,14 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- `resume(t)` is `t`'s first `yields` binding (see `getResumeType`); `yield`
   -- would be the enclosing coroutine's first `resumes` binding (see above).
   | .Yield => ⟨ .Unknown, source ⟩
-  | .Resume target _ => getResumeType source model (computeExprType model target)
+  | .Resume target _ => getResumeType source model (computeExprTypeWith fieldType? model target)
   | .HasNext _ => ⟨ .TBool, source ⟩
   -- Snapshot artifact: `Snapshot` is a statement, so it types as `TVoid`.
   | .Snapshot _ => ⟨ .TVoid, source ⟩
+
+/-- `computeExprTypeWith` without a field hint. -/
+def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
+  computeExprTypeWith none model expr
 
 /-- `ty`, a type in `callee`'s signature, at the instantiation `typeArgs` a call to it records. A
     pass that introduces a local for one of the call's outputs declares it at this type: the callee's

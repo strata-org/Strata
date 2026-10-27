@@ -10,6 +10,7 @@ public import Strata.Cli.Framework
 public import Strata.Cli.VerifyOptions
 public import Strata.Cli.DialectCommands
 public import Strata.Languages.Core.Verifier
+public import Strata.Languages.Core.IncrementalSolve
 public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
 public import Strata.Languages.C_Simp.Verify
@@ -205,11 +206,16 @@ private def withContractsHint (resolver : PipelineResolver) (pflags : ParsedFlag
     msg ++ s!"\n\nTo see where each phase's requirements are met across this order, run {flag}."
   else msg
 
+/-- The `verify` command. `backendOf` gives the discharge and the sessions of the solver
+    backend an invocation selects, both `none` to use Core's own discharge and local solver
+    processes; the discharge serves Core and C_Simp programs alike. -/
 def verifyCommand (dialects : LoadedDialects)
-    (mkDischargeOf : ParsedFlags → Core.MkDischargeFn := fun _ => Core.mkDischargeFn)
     (extraFlags : List Flag := [])
     (checkOptions : Core.VerifyOptions → ParsedFlags → List String := fun _ _ => [])
-    (resolver : PipelineResolver := {}) : Command where
+    (resolver : PipelineResolver := {})
+    (backendOf : ParsedFlags → Core.VerifyOptions →
+      Option Core.MkDischargeFn × Option Core.IncrementalSolve.SessionFactory) :
+    Command where
   name := "verify"
   args := [ "file" ]
   flags := includeFlag :: verifyOptionsFlags ++ extraFlags ++ resolver.extraFlags ++ [
@@ -262,7 +268,6 @@ def verifyCommand (dialects : LoadedDialects)
         | .error msg => exitUserError (withContractsHint resolver pflags msg))]
   callback := fun v pflags => do
     let file := v[0]
-    let mkDischarge := mkDischargeOf pflags
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
     let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
       (inputFile := some file)
@@ -275,6 +280,7 @@ def verifyCommand (dialects : LoadedDialects)
     let optionIssues := checkOptions opts pflags
     unless optionIssues.isEmpty do
       exitUserError (String.intercalate "\n" optionIssues)
+    let (ownDischarge, mkSession) := backendOf pflags opts
     let choice ← match resolver.resolve pflags opts with
       | .ok c => pure c
       | .error msg => exitUserError (withContractsHint resolver pflags msg)
@@ -326,7 +332,7 @@ def verifyCommand (dialects : LoadedDialects)
       -- Full verification
       let vcResults ← try
         if file.endsWith ".csimp.st" then
-          C_Simp.verify pgm opts (mkDischarge := mkDischarge)
+          C_Simp.verify pgm opts (mkDischarge := ownDischarge.getD Core.mkDischargeFn)
         else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
           let ast ← match B3.Verifier.programToB3AST pgm with
             | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
@@ -350,7 +356,8 @@ def verifyCommand (dialects : LoadedDialects)
           throw <| IO.Error.userError "Boole dialect support requires the StrataBoole package"
         else
           Strata.Core.verify pgm inputCtx opts
-            (pipeline := pipeline) (mkDischarge := mkDischarge) (pipelineCtx := pctx)
+            (pipeline := pipeline) (mkDischarge := ownDischarge) (pipelineCtx := pctx)
+            (mkSession := mkSession)
       catch e =>
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
@@ -401,6 +408,19 @@ structure SolverBackend where
       (empty means every option is fine). -/
   checkOptions : Core.VerifyOptions → ParsedFlags → List String := fun _ _ => []
   mkDischarge : ParsedFlags → Core.MkDischargeFn
+  /-- The solvers `--incremental` walks the obligation tree with. Without them, or when this
+      answers `none` for an invocation, every obligation goes through `mkDischarge`, as
+      without `--incremental`. -/
+  mkSession : Option (ParsedFlags → Option Core.IncrementalSolve.SessionFactory) := none
+
+/-- The discharge and the sessions of the backend `--solver` selects, both `none` when no
+    backend answers to it, which leaves Core its own discharge and local solver processes. -/
+private def dispatchBackend (backends : List SolverBackend) (pflags : ParsedFlags)
+    (options : Core.VerifyOptions) :
+    Option Core.MkDischargeFn × Option Core.IncrementalSolve.SessionFactory :=
+  match backends.find? (·.name == options.solver) with
+  | none => (none, none)
+  | some b => (some (b.mkDischarge pflags), b.mkSession.bind (· pflags))
 
 /-- Build one discharge factory that picks a backend by the `--solver` value,
     falling back to the default process solver when none matches. -/
@@ -446,7 +466,8 @@ def buildCommandGroups (backends : List SolverBackend := [])
   -- Commands that don't parse backend-specific flags use the empty-flag dispatch.
   let mkDischarge := mkDischargeOf {}
   [ { name := "Core"
-      commands := [verifyCommand dialects mkDischargeOf extraFlags checkOptions resolver,
+      commands := [verifyCommand dialects extraFlags checkOptions resolver
+                     (dispatchBackend backends),
                    transformCommand dialects, checkCommand dialects, toIonCommand dialects,
                    printCommand dialects, diffCommand dialects]
       commonFlags := [includeFlag] } ] ++

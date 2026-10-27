@@ -2653,8 +2653,9 @@ tag := "verification-fundamentals"
 %%%
 
 A verification feature may be erased or approximated when a program is run concretely: `assume`
-is a no-op in the interpreter, and a contract on a bodiless procedure has no runtime meaning at
-all. Its behaviour under verification is therefore the behaviour that matters.
+is a no-op in the interpreter, `modifies` is not checked, and a contract on a bodiless procedure
+has no runtime meaning at all. Its behaviour under verification is therefore the behaviour that
+matters.
 
 This section covers the features that do not involve the heap, which are enough to specify code
 over plain values.

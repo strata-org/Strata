@@ -29,10 +29,9 @@ handlers, so the observable claims are:
     rejected.
 
 The first two cases are the construct's smoke test: they check that the whole shape,
-`finally` arm included, parses, resolves, type-checks, lowers, and runs. Every case has
-an `entry` and runs under the verifier and the Laurel interpreter. The cases that throw
-a composite skip the Core interpreter, which does not reduce an assertion over the
-heap their exception values live on.
+`finally` arm included, parses, resolves, type-checks, lowers, and runs. Each case that
+can be run has an `entry`, and runs under the verifier and both interpreters unless its
+block says why not.
 
 Those two throw rather than merely *having* a handler, which matters: a `try` whose
 body cannot throw gets a `catch` binding typed `Unknown`, and `EliminateExceptions`
@@ -89,8 +88,7 @@ procedure tryWithGuard() entry
 -- A caught `throw` skips the rest of the try body; the handler runs and control
 -- resumes after the `try`, so the handler's assignment is what is observed. The
 -- guard `c is MyError` is satisfied by the thrown value, so the clause fires.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -121,8 +119,7 @@ procedure runAll() entry
 -- later one. `ErrorA` is a subtype of `ErrorB`, and the thrown value is a plain
 -- `ErrorB`: it is not the more-specific `ErrorA` (so `is ErrorA` skips), but it
 -- is an `ErrorB` (so `is ErrorB` matches).
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite ErrorB {}
@@ -154,8 +151,7 @@ procedure runAll() entry
 -- First-match-wins with overlapping guards: a `ChildError` matches both the
 -- earlier `is ParentError` clause and the later `is ChildError` clause; the
 -- earlier one wins (r == 1, not 2).
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite ParentError {}
@@ -312,7 +308,8 @@ procedure runAll() entry
 -- checks a *condition* on it: the caught `IndexError` records the offending
 -- index, and on the handler path (reached only via the out-of-bounds throw) that
 -- recorded index is provably out of bounds.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
+-- No Core interpreter: a field read through an `as` cast does not reduce, so the assert
+-- "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -355,7 +352,8 @@ procedure runAll() entry
 -- refer to the original `Outer` (tag == 1), not the inner exception. This
 -- exercises the per-handler snapshot of the caught value (a single shared `$exc`
 -- is overwritten by the inner throw).
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
+-- No Core interpreter: a field read through an `as` cast does not reduce, so the assert
+-- "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -435,8 +433,7 @@ procedure noCommonAncestor(pick: bool)
 -- their least common ancestor (`Exception`), so a guard `e is Exception`
 -- type-checks and the program verifies. (A body throwing two *unrelated* types
 -- would be rejected — no common ancestor to type the binding at.)
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -471,8 +468,7 @@ procedure runAll() entry
 -- the only type that escapes the outer body is the unrelated `Gamma`. So the
 -- outer binding is typed at `Gamma` and the program verifies — rather than being
 -- rejected for "no common ancestor" over `Alpha`/`Beta`, which never reach it.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite InnerRoot {}
@@ -526,8 +522,7 @@ that a broken `$exc` would fail. -/
 -- type, even though the throw crossed the loop's lowered guard/havoc encoding on the
 -- way out. `assert c is Err` is vacuous if the handler never runs, and a genuine
 -- obligation if it does.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}

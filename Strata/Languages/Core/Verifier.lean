@@ -269,6 +269,18 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncod
     let s ← liftM (termTypeToSort solver v.ty)
     return (v.id, s)
   let outSort ← liftM (termTypeToSort solver uf.out)
+  -- The body is written over the parameters themselves. Left to `encodeTerm`, a parameter
+  -- would be declared as a global constant, which `declareNew` renames once the name is
+  -- taken, by an earlier function's parameter for instance: the body would then read that
+  -- constant in place of its argument. Bindings the parameters shadow are put back after.
+  let outer := (← get).varHandles
+  for (v, (n, s)) in f.args.zip argPairs do
+    let h ← liftM (solver.mkParam n s)
+    modify fun st => { st with varHandles := st.varHandles.insert v.id h }
+  let restore (m : Std.HashMap String τ) (v : TermVar) : Std.HashMap String τ :=
+    match outer.get? v.id with
+    | some h => m.insert v.id h
+    | none => m.erase v.id
   if f.isRec then
     -- Register the name before encoding the body, so the self-call inside it
     -- encodes to `id` instead of lazily declaring an uninterpreted twin.
@@ -276,9 +288,11 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncod
       base.functions := state.base.functions.insert uf id
       base.isFunUninterp := state.base.isFunUninterp.insert uf false }
     let bodyEnc ← encodeTerm solver f.body
+    modify fun st => { st with varHandles := f.args.foldl restore st.varHandles }
     liftM (solver.defineFunRec id argPairs outSort bodyEnc)
     return id
   let bodyEnc ← encodeTerm solver f.body
+  modify fun st => { st with varHandles := f.args.foldl restore st.varHandles }
   liftM (solver.defineFun id argPairs outSort bodyEnc)
   modifyGet fun state => (id, { state with
     base.functions := state.base.functions.insert uf id
@@ -301,7 +315,7 @@ private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : Abst
   return result
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
-private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
+def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context) : m Unit := do
   -- Validate that no datatype has arrow-typed fields (same check as batch path)
   match Core.validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
@@ -481,7 +495,8 @@ def sanitizeFilenameCapped (s : String) (maxLen : Nat := 128) : String :=
     let hexHash := String.ofList (Nat.toDigits 16 (hash s).toNat)
     String.ofList (sanitized.toList.take maxLen) ++ "_" ++ hexHash
 
-private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
+/-- Map a Core typed identifier to its SMT name and sort. -/
+def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
@@ -490,19 +505,22 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
 
 abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
-def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) : SolverM Unit := do
-  match solver with
-  | "z3" => do
-    -- These options are set by the standard Boogie implementation and are
-    -- generally good for the Boogie dialect, too, though we may want to
-    -- have more fine-grained criteria for when to use them.
-    Solver.setOption "smt.mbqi" "false"
-    Solver.setOption "auto_config" "false"
-  | "cvc5" => pure ()
-  | _ => pure ()
+/-- The `set-option`s every solver starts from. -/
+def solverPreludeOptions (solver : String) (solverOptions : Array (String × String)) :
+    Array (String × String) :=
+  -- These options are set by the standard Boogie implementation and are
+  -- generally good for the Boogie dialect, too, though we may want to
+  -- have more fine-grained criteria for when to use them.
+  let tuning := match solver with
+    | "z3" => #[("smt.mbqi", "false"), ("auto_config", "false")]
+    | _ => #[]
   -- Apply caller-supplied `--set-option NAME=VALUE`s last, so they override the
   -- built-in prelude (e.g. `--set-option smt.mbqi=true` for quantified lemmas).
-  solverOptions.forM fun (name, value) => Solver.setOption name value
+  tuning ++ solverOptions
+
+def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) :
+    SolverM Unit := do
+  (solverPreludeOptions solver solverOptions).forM fun (name, value) => Solver.setOption name value
 
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
@@ -517,6 +535,61 @@ def getSolverFlags (options : VerifyOptions) : Array String :=
     | "z3" => #[s!"-T:{options.solverTimeout}"]
     | _ => #[]
   produceModels ++ setTimeout
+
+/-- How a live solver is started for `--incremental`, and what it is told once started. The tree
+    walk and the one-shot incremental discharge both start their solvers from this, so a goal
+    gets the same time limit, and an `unknown` at that limit the same reading, whichever of the two
+    sends it. -/
+structure IncrementalLaunch where
+  /-- The command-line flags. -/
+  flags : Array String
+  /-- The `set-option`s sent after the solver starts, and again after every `(reset)`. -/
+  prelude : Array (String × String)
+  /-- The limit, in milliseconds, at which a check's `unknown` reads as a timeout; 0 for never. -/
+  timeLimitMs : Nat
+
+/-- Launch flags per backend for a live solver. Model generation is requested on the command line,
+    because a session resets its solver to cross to a branch it cannot extend, and `(reset)`
+    clears options while launch flags survive it. Without it cvc5 answers `(get-model)` with
+    "cannot get model unless model generation is enabled"; z3 produces models by default.
+
+    The timeout is per check: cvc5's `--tlimit` and z3's `-T` bound a whole run, which for a
+    session shared by many checks would make a later check fail for having been preceded by others,
+    so the verdict would depend on how many goals its worker happened to take. An obligation that
+    asks both checks, satisfiability and validity, so gets up to twice `--solver-timeout` here,
+    where the path that writes the query to a file gives both together one limit.
+
+    A solver started with a per-check limit (cvc5 and z3) keeps that limit as a bound. The user's
+    own time option for that solver replaces it, so only the last such value is sent, and only when
+    it is a positive number below the limit; the limit is sent in its place otherwise. A smaller
+    user limit makes the solver give up first, so its `unknown` stands as on the per-obligation
+    path; otherwise an `unknown` at the limit is a timeout. Without a limit (`--solver-timeout 0`)
+    the user's options are sent as given. -/
+def incrementalLaunch (options : VerifyOptions) : IncrementalLaunch :=
+  let limitMs := options.solverTimeout * 1000
+  let flags := match options.solver with
+    | "cvc5" =>
+      #["--quiet", "--lang", "smt", "--incremental", "--produce-models", s!"--tlimit-per={limitMs}"]
+    | "z3" => #["-in", s!"-t:{limitMs}"]
+    | _ => #[]
+  let timeKey : Option String := match options.solver with
+    | "z3" => some "timeout" | "cvc5" => some "tlimit-per" | _ => none
+  let (userOptions, ownLimit) := match timeKey with
+    | some key =>
+      if limitMs == 0 then (options.solverOptions, true) else
+      let opts : Array (String × String) := options.solverOptions
+      let given : Option (Option Nat) :=
+        (opts.filter (fun (p : String × String) => p.1 == key)).back?.map
+          fun (p : String × String) => p.2.trimAscii.toString.toNat?
+      let mine : Option Nat := given.bind fun v => v.filter fun n => 0 < n && n < limitMs
+      let rest := opts.filter (fun (p : String × String) => p.1 != key)
+      match given, mine with
+      | none, _ => (rest, false)
+      | some _, some n => (rest.push (key, toString n), true)
+      | some _, none => (rest.push (key, toString limitMs), false)
+    | none => (options.solverOptions, true)
+  { flags, prelude := solverPreludeOptions options.solver userOptions,
+    timeLimitMs := if ownLimit then 0 else limitMs }
 
 def dischargeObligation
   (options : VerifyOptions)
@@ -583,36 +656,20 @@ def dischargeObligationIncremental
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
-  let baseFlags := getSolverFlags options
-  let needsIncremental := satisfiabilityCheck && validityCheck
-  let solverSpecificFlags := match options.solver with
-    | "cvc5" =>
-      let base := #["--quiet", "--lang", "smt"]
-      if needsIncremental && !baseFlags.contains "--incremental" then
-        base ++ #["--incremental"]
-      else base
-    | "z3" => #["-in"]
-    | _ => #[]
-  let allFlags := solverSpecificFlags ++ baseFlags
+  let launch := incrementalLaunch options
   let encodeDecl (solver : Strata.SMT.AbstractSolver Term TermType
                             Strata.SMT.IncrementalEncodingM) :
       Strata.SMT.IncrementalEncodingM Imperative.SMT.EncodedObligation := do
-    let prelude : Strata.SMT.IncrementalEncodingM Unit := do
-      match options.solver with
-      | "z3" => do
-        solver.setOption "smt.mbqi" "false"
-        solver.setOption "auto_config" "false"
-      | _ => pure ()
-      -- Apply caller-supplied `--set-option`s last so they override the prelude.
-      options.solverOptions.forM fun (name, value) => solver.setOption name value
+    let prelude : Strata.SMT.IncrementalEncodingM Unit :=
+      launch.prelude.forM fun (name, value) => solver.setOption name value
     let (obligationId, ids, estate) ←
       _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
         (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
     return { obligationId, assumptionIds := ids, estate }
   Imperative.SMT.dischargeObligationIncremental (P := Core.Expression)
-    encodeDecl (typedVarToSMTFn ctx) vars options.solver allFlags
-    satisfiabilityCheck validityCheck
+    encodeDecl (typedVarToSMTFn ctx) vars options.solver launch.flags
+    satisfiabilityCheck validityCheck (timeLimitMs := launch.timeLimitMs)
 
 end -- public section
 end Core.SMT
@@ -1384,6 +1441,49 @@ def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
         (resultsByKey.insert k r, order.push k, uid)
   order.filterMap fun k => resultsByKey.get? k
 
+/-- The counterexample a pair of check results carries: the satisfiability check's model first,
+    then the validity check's, a candidate model from `unknown` counting too. -/
+def modelOfResults (ctx : SMT.Context) (satResult validityResult : SMT.Result) : LExprModel :=
+  match satResult, validityResult with
+  | .sat m, _ | _, .sat m | .unknown (some m), _ | _, .unknown (some m) =>
+    convertModel m (SMT.Context.getConstructorNames ctx)
+  | _, _ => []
+
+/-- Which of the two solver checks an obligation needs, shared by every back end so they agree on
+    what a verdict means. It is asked per obligation: an obligation
+    annotated for a full check always gets both, and in deductive mode a property that passes when
+    unreachable is checked only for validity while one that does not is checked only for
+    satisfiability. -/
+def checksFor (property : Imperative.PropertyType)
+    (md : Imperative.MetaData Expression) (options : VerifyOptions) : Bool × Bool :=
+  if Imperative.MetaData.hasFullCheck md then (true, true)
+  else
+    match options.checkMode, options.checkLevel with
+    | _, .full => (true, true)
+    | .bugFindingAssumingCompleteSpec, _ => (true, true)
+    | .deductive, _ =>
+      if property.passWhenUnreachable then (false, true) else (true, false)
+    | .bugFinding, _ => (true, false)
+
+/-- The results the evaluator decides without a solver, for satisfiability and validity: `some r`
+    when the obligation alone settles that check, `none` when a solver is needed. A check not
+    asked for is `unknown`. -/
+def evaluatorResults (obligation : ProofObligation Expression)
+    (satisfiabilityCheck validityCheck : Bool) : Option SMT.Result × Option SMT.Result :=
+  -- Satisfiability is settled if the obligation is literally false (unsat).
+  let sat : Option SMT.Result :=
+    if !satisfiabilityCheck then some .unknown
+    else if obligation.obligation.isFalse then some .unsat
+    else none
+  -- Validity is settled if the obligation is literally true (valid = unsat), or literally false
+  -- with no assumptions (invalid = sat).
+  let valid : Option SMT.Result :=
+    if !validityCheck then some .unknown
+    else if obligation.obligation.isTrue then some .unsat
+    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else none
+  (sat, valid)
+
 /--
 Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently
@@ -1404,18 +1504,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
-  -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
-  let peSatResult : Option SMT.Result :=
-    if !satisfiabilityCheck then some .unknown
-    else if obligation.obligation.isFalse then some .unsat
-    else none
-  -- Evaluator can determine validity if the obligation is literally true (valid = unsat)
-  -- or literally false with empty assumptions (invalid = sat)
-  let peValResult : Option SMT.Result :=
-    if !validityCheck then some .unknown
-    else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
-    else none
+  let (peSatResult, peValResult) := evaluatorResults obligation satisfiabilityCheck validityCheck
   -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
@@ -1670,6 +1759,18 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- Pass a result's two verdicts through the phases' model validation, as the default back end
+    does for each obligation it discharges, and record what each phase decided. -/
+def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCResult :=
+  match r.outcome with
+  | .error _ => r
+  | .ok o =>
+    let (sat, satLog) := o.satisfiabilityProperty.adjustForPhases phases r.obligation
+    let (valid, validLog) := o.validityProperty.adjustForPhases phases r.obligation
+    { r with outcome := .ok { o with
+        satisfiabilityProperty := sat, validityProperty := valid,
+        solverLog := o.solverLog.push (satLog ++ validLog).toArray } }
+
 /-- A discharge function encapsulates the solver backend. It takes assumption
     terms, the obligation term, the SMT context, and the satisfiability/validity
     check flags, and returns the solver results. The pipeline is parametrized
@@ -1794,12 +1895,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- unknown (some m) arises when the solver returns a candidate model it cannot
     -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
     -- to sat; we still want the model available for display.
-    let model := match satResult, validityResult with
-      | .sat m, _             => convertModel m (SMT.Context.getConstructorNames ctx)
-      | _, .sat m             => convertModel m (SMT.Context.getConstructorNames ctx)
-      | .unknown (some m), _ => convertModel m (SMT.Context.getConstructorNames ctx)
-      | _, .unknown (some m) => convertModel m (SMT.Context.getConstructorNames ctx)
-      | _, _                  => []
+    let model := modelOfResults ctx satResult validityResult
     -- Filter out managed variables from model display
     let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
     let model := model.filter fun (name, _) => !managedVarNames.contains name.name
@@ -1924,7 +2020,6 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
-private
 def isCSEGeneratedName (name : String) : Bool :=
   name.startsWith CSE.cseVarPrefix
 
@@ -1939,11 +2034,14 @@ def addFreeVarNames (refs : Std.HashSet String) (e : Expression.Expr) :
     Std.HashSet String :=
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) => refs.insert id.name) refs
 
-private
+/-- The variables a counterexample for `obligation` should report: those its goal and
+    assumptions reach, through the managed definitions they use, less the managed names
+    themselves. With `withDeclared`, a reachable variable the obligation declares without a value
+    is reported too, since a passive program declares its variables. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
-    (varDeclarations : List VarDeclaration) :
+    (varDeclarations : List VarDeclaration) (withDeclared : Bool := false) :
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   let managedNames := managedNameSet varDefinitions varDeclarations
   let definitions := obligation.assumptions.flatMap fun pathCondition =>
@@ -1961,8 +2059,10 @@ def collectModelVars
       | .varDecl _ _ .nondet => refs) refs)
     (addFreeVarNames {} obligation.obligation)
   let relevantNames := close definitions.length definitions rootRefs
+  let declared : Std.HashSet String :=
+    if withDeclared then Std.HashSet.ofList (varDeclarations.map (·.name)) else {}
   (ProofObligation.getVars obligation).filter fun (v, _) =>
-    relevantNames.contains v.name && !managedNames.contains v.name
+    relevantNames.contains v.name && (!managedNames.contains v.name || declared.contains v.name)
 where
   close : Nat → List (String × Expression.Expr) → Std.HashSet String →
       Std.HashSet String
@@ -1994,7 +2094,6 @@ def containsUnsupportedSMTString : Expression.Expr → Bool
   | .eq _ lhs rhs =>
     containsUnsupportedSMTString lhs || containsUnsupportedSMTString rhs
 
-private
 def hasUnsupportedStringCSEDefinition
     (obligation : Imperative.ProofObligation Expression) : Bool :=
   obligation.assumptions.any fun pathCondition =>
@@ -2020,7 +2119,7 @@ referenced by the obligation and by non-CSE path-condition entries, close
 transitively over CSE definition bodies, and retain only those definitions.
 The original entry ordering is preserved, so every retained dependency is
 still emitted before its users. -/
-private def pruneUnusedCSEDefinitions
+def pruneUnusedCSEDefinitions
     (obligation : Imperative.ProofObligation Expression) :
     Imperative.ProofObligation Expression :=
   let definitions := obligation.assumptions.flatMap fun pathCondition =>
@@ -2060,9 +2159,11 @@ where
       if needed'.size == needed.size then needed
       else close fuel definitions needed'
 
-private
-def verifySingleEnv (oblProgram : Program)
-    (factory : @Lambda.Factory CoreLParams)
+/-- Discharge `obligations`, in order, against the environment `E` built for the program they
+    come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
+    pruning the options ask for. `verifySingleEnv` sends a whole program's obligations through
+    here; a back end that has already read the obligations sends one at a time. -/
+def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
@@ -2077,19 +2178,7 @@ def verifySingleEnv (oblProgram : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext) :
     EIO Message (VCResults × Statistics) := do
-  -- Build SMT encoding context from the obligations program itself
-  let E ← EIO.ofExcept (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
   let p := E.program
-  -- Extract obligations from the obligations program via ObligationExtraction
-  let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
-    | .ok obs =>
-      -- Per-obligation pruning changes the shared oldest frame and defeats
-      -- prefix reuse. Pay that cost only when it isolates a CSE definition
-      -- whose string literal cannot be serialized for SMT-LIB.
-      if obs.any hasUnsupportedStringCSEDefinition
-      then pure (obs.map pruneUnusedCSEDefinitions)
-      else pure obs
-    | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
   -- Note: the encoder below reuses shared path-condition prefixes only between
   -- consecutive obligations.
   let mut stats : Statistics := ({} : Statistics)
@@ -2137,16 +2226,7 @@ def verifySingleEnv (oblProgram : Program)
       if !labels.contains obligation.label then continue
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
-      if Imperative.MetaData.hasFullCheck obligation.metadata then
-        (true, true)  -- fullCheck annotation: always run both
-      else
-        -- Derive checks from check mode and level
-        match options.checkMode, options.checkLevel with
-        | _, .full => (true, true)
-        | .bugFindingAssumingCompleteSpec, _ => (true, true)
-        | .deductive, _ =>
-          if obligation.property.passWhenUnreachable then (false, true) else (true, false)
-        | .bugFinding, _ => (true, false)
+      checksFor obligation.property obligation.metadata options
     -- The state encodes the *original* assumptions; `prunedAxiomLabels` applies
     -- the pruning as an emission-time label filter instead.
     let origObligation := obligation
@@ -2292,6 +2372,40 @@ def verifySingleEnv (oblProgram : Program)
     if let some diag := firstError then throw diag
   return (results, stats)
 
+/-- The obligations `extractObligations` reads from a program, with the unused CSE definitions
+    dropped from every one of them when one holds a string literal SMT-LIB cannot spell. -/
+def obligationsOf (oblProgram : Program) :
+    Except Message (ProofObligations Expression) :=
+  match Core.ObligationExtraction.extractObligations oblProgram with
+  | .ok obs =>
+    -- Per-obligation pruning changes the shared oldest frame and defeats
+    -- prefix reuse. Pay that cost only when it isolates a CSE definition
+    -- whose string literal cannot be serialized for SMT-LIB.
+    if obs.any hasUnsupportedStringCSEDefinition
+    then .ok (obs.map pruneUnusedCSEDefinitions)
+    else .ok obs
+  | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
+
+private
+def verifySingleEnv (oblProgram : Program)
+    (factory : @Lambda.Factory CoreLParams)
+    (options : VerifyOptions)
+    (counter : IO.Ref Nat) (tempDir : System.FilePath)
+    (axiomCache : Option IrrelevantAxioms.Cache := .none)
+    (axiomNames : List String := [])
+    (axiomProgram : Option Program := .none)
+    (externalPhases : List AbstractedPhase := [])
+    (corePhases : List AbstractedPhase := coreAbstractedPhases)
+    (mkDischarge : MkDischargeFn := mkDischargeFn)
+    (pctx : PipelineContext) :
+    EIO Message (VCResults × Statistics) := do
+  -- Build SMT encoding context from the obligations program itself
+  let E ← EIO.ofExcept
+    (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
+  let obligations ← EIO.ofExcept (obligationsOf oblProgram)
+  dischargeObligations E obligations options counter tempDir axiomCache axiomNames axiomProgram
+    externalPhases corePhases mkDischarge pctx
+
 /-- Construct the default `CoreSMTSolver` that discharges obligations
     sequentially using the batch or incremental SMT-LIB backend (selected
     by `options.incremental`). This is the standard solver used by `verify`
@@ -2392,11 +2506,18 @@ def verify (program : Program)
     if options.checkOnly then
       pure []
     else
-      let coreSMTSolver := solver.getD
-        (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
+      match solver with
+      | none =>
+        let coreSMTSolver := mkDefaultCoreSMTSolver options counter tempDir axiomCache?
           axiomNames (axiomProgram := program) externalPhases phases
-          (mkDischarge := mkDischarge) pctx)
-      pure [← coreSMTSolver factory oblProgram]
+          (mkDischarge := mkDischarge) pctx
+        pure [← coreSMTSolver factory oblProgram]
+      | some coreSMTSolver =>
+        -- A back end passed in does not know which phases produced the program it is given,
+        -- so its models are validated here, against the phases the default back end validates
+        -- them against, so a `sat` a phase cannot vouch for reports as `unknown`.
+        let (results, stats) ← coreSMTSolver factory oblProgram
+        pure [(results.map (·.validateModels (externalPhases ++ phases)), stats)]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

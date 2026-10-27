@@ -22,8 +22,7 @@ open Strata
 
 /-! ## 1. Basic instance method call: `c#reset()` -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Counter {
@@ -57,8 +56,7 @@ procedure runAll() entry
     Without per-composite scoping, `tick` would collide in the global scope
     during pre-registration. -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Counter {
@@ -110,8 +108,7 @@ procedure runAll() entry
 
 /-! ## 3. Method with multiple parameters: `c#setTo(v)` -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -144,8 +141,7 @@ procedure runAll() entry
 /-! ## 4. Boolean-typed field updated through an instance method, and read
     back via field access in the caller's `assert`. -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Widget {
@@ -180,8 +176,7 @@ procedure runAll() entry
     only `a`; the unused `b` parameter is included to confirm method
     dispatch picks the right receiver. -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Counter {
@@ -217,8 +212,7 @@ procedure runAll() entry
     confirms an extra (unused) method parameter doesn't break call
     dispatch or framing. -/
 
--- No Core interpreter: with an enumerated `modifies self` frame an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Account {

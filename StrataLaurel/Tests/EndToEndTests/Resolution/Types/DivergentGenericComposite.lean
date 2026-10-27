@@ -124,3 +124,20 @@ notYetImplemented: recursive generic composite 'Box' is not supported: its insta
 -/
 #guard_msgs in
 #eval runDivergentProgram divergentProcedureUncalled
+
+/-- A call written at an instantiation past the bound is rejected by the bound alone, without an
+    internal error for the clone the bound declined. -/
+private def callPastTheBound : StrataDDM.Program :=
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+procedure get<T>(b: Box<T>) returns (r: T) opaque { r := b#val };
+procedure deep(b: Box<Box<Box<Box<Box<Box<Box<Box<Box<int>>>>>>>>>) opaque { var x := get(b) };
+#end
+
+/--
+info: notYetImplemented: recursive generic composite 'Box' is not supported: its instantiations grow without bound (depth exceeds 8)
+notYetImplemented: recursive generic procedure 'get' is not supported: its instantiations grow without bound (depth exceeds 8)
+-/
+#guard_msgs in
+#eval runDivergentProgram callPastTheBound

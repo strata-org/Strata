@@ -24,14 +24,6 @@ public section
 Fuel-level and `evalFully` laws for concrete bitvector operations on
 `Core.Factory`. These facts expose the bitvector semantics needed by Hoare
 proofs over translated Core programs.
-
-Key results:
-- `coreEval_bvULe`, `coreEval_bvAnd`, and `coreEval_bvXor` evaluate registered
-  concrete operations at arbitrary bitwidths;
-- `bvULe_opInterp` identifies registered unsigned comparison with its Lean
-  semantics in every consistent interpretation of `Core.Factory`;
-- the `bv16`-named results remain as compatibility wrappers;
-- `eq_bitvecConst_of_eql_true` recovers equality with a bitvector constant.
 -/
 
 namespace Core

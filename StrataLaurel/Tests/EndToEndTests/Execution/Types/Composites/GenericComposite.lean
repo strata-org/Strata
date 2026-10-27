@@ -22,11 +22,9 @@ monomorphization bug that crossed two clones' field ids would then have to survi
 symbolic proof and two independent concrete executions to go unnoticed. The handful of
 cases that cannot be run name their reason at the block.
 
-The exception is a case calling a procedure whose body WRITES THE HEAP, which the Core
-interpreter cannot run: every assert in the caller reports `condition did not reduce to bool`.
-Such a case says `skipCoreInterpreter := true`; the standalone Laurel interpreter executes it. Its
-false twin is verification-only, because the verifier reports that failure as `could not be
-proved` where an interpreter says `does not hold`.
+The false twin of a case calling a procedure whose body WRITES THE HEAP is verification-only,
+because the verifier reports that failure as `could not be proved` where an interpreter says
+`does not hold`.
 
 What monomorphization has to get right, and what each case pins:
 * one instantiation — the field's declared `T` becomes the concrete type at the clone;
@@ -164,7 +162,7 @@ procedure genericAndPlainCoexist()
 -- A HEAP-MUTATING polymorphic call nested in the argument of another polymorphic call, at two
 -- instantiations in one non-generic caller. A fresh `Container`'s `value` is arbitrary, so
 -- `c#value == 0` holds only if the inner calls ran and their postconditions reached the caller.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container { var value: int }
@@ -208,7 +206,7 @@ procedure nestedHeapWriterPolyValuesFalseTwin()
 
 -- A poly heap-writer whose result is DISCARDED, at two instantiations. Its heap effect is not
 -- discarded, so `c#value == 0` holds only if a call's postcondition reached the caller.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container { var value: int }

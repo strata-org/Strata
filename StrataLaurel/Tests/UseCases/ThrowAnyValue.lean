@@ -27,10 +27,6 @@ the caught binding is typed at that single carrier.
 Boxing is what a front end needs when the *same* `try` can see values of unrelated
 kinds. It is not what a single primitive throw requires — that case needs no carrier
 at all, and is covered in `Throw.lean`.
-
-Run through `testLaurelVerification` (the verifier) rather than `testLaurelExecution`: the
-carrier is a composite, so these allocate on the heap, and the interpret path does not
-support the heap yet.
 -/
 
 -- `throw 42` — a number (not an Error) is boxed, caught, and unwrapped.
