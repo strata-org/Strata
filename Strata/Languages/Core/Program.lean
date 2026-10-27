@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.TypeDecl
 public import Strata.Languages.Core.Axiom
 public import Strata.Languages.Core.DDMTransform.FormatCore
@@ -197,6 +198,34 @@ def Program.init : Program :=
 
 instance : Inhabited Program where
   default := .init
+
+/-- Declarations that appear strictly before the first procedure named
+    `procName`. If no such procedure exists, this is every declaration. -/
+@[expose] def Program.declsBeforeProcedure (p : Program) (procName : String) : List Decl :=
+  p.decls.takeWhile fun d =>
+    match d with
+    | .proc proc _ => proc.header.name.name != procName
+    | _ => true
+
+/-- Extend `factory` with the functions in `decl`: a function declaration
+    adds itself, a recursive block adds all of its functions, and every other
+    declaration leaves the factory unchanged. -/
+@[expose] def Decl.addFunctionsToFactory
+    (factory : Expression.Factory) (decl : Decl) : Expression.Factory :=
+  match decl with
+  | .func f _ => factory.pushIfNew f.toLFunc
+  | .recFuncBlock fs _ =>
+      fs.foldl (fun factory f => factory.pushIfNew f.toLFunc) factory
+  | _ => factory
+
+/-- The initial expression factory visible at entry to the procedure named
+    `procName`: Core's built-ins extended with user-defined functions declared
+    before that procedure. Later declarations are intentionally excluded.
+    `pushIfNew` makes this total on malformed programs; program type checking
+    rejects the name collisions that it would otherwise ignore. -/
+@[expose] def Program.factoryBeforeProcedure
+    (p : Program) (procName : String) : Expression.Factory :=
+  (p.declsBeforeProcedure procName).foldl Decl.addFunctionsToFactory Core.Factory
 
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }

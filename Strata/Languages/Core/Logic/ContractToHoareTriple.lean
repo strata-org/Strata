@@ -81,7 +81,8 @@ TODO: Prove and require the closure invariant from the typed Core pipeline. If
 open or polymorphic contract clauses are instead supported directly, take
 `world` as an argument and thread that same valuation through the precondition,
 body trace interpretation, and postcondition. -/
-@[expose] def Procedure.checkAsPredicate (model : Lambda.Interp Core.Factory)
+@[expose] def Procedure.checkAsPredicate {factory : Expression.Factory}
+    (model : Lambda.Interp factory)
     (ρ : Imperative.Env Expression) (label : CoreLabel)
     (check : Procedure.Check) : Prop :=
   ∀ world, (DenoteBasedInterp model).holds world
@@ -89,14 +90,16 @@ body trace interpretation, and postcondition. -/
       expr := check.expr, metadata := check.md }
 
 /-- A procedure's preconditions in one model. -/
-@[expose] def Procedure.preAsPredicate (model : Lambda.Interp Core.Factory)
+@[expose] def Procedure.preAsPredicate {factory : Expression.Factory}
+    (model : Lambda.Interp factory)
     (proc : Procedure) (ρ : Imperative.Env Expression) : Prop :=
   ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
     Procedure.checkAsPredicate model ρ label check
 
 /-- A procedure's non-`free` postconditions in one model. -/
-@[expose] def Procedure.postAsPredicate (model : Lambda.Interp Core.Factory)
+@[expose] def Procedure.postAsPredicate {factory : Expression.Factory}
+    (model : Lambda.Interp factory)
     (proc : Procedure) (ρ : Imperative.Env Expression) : Prop :=
   ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.postconditions.toList →
@@ -139,13 +142,15 @@ the function.
     ∃ v, ρ.store id = some v ∧ Procedure.valueHasType ty v
 
 /-- Entry condition shared by structured and CFG readings of a procedure contract. -/
-@[expose] def Procedure.contractPre (model : Lambda.Interp Core.Factory)
+@[expose] def Procedure.contractPre {factory : Expression.Factory}
+    (model : Lambda.Interp factory)
     (proc : Procedure) (ρ : Imperative.Env Expression) : Prop :=
-  Procedure.preAsPredicate model proc ρ ∧ ρ.factory = Core.Factory ∧
+  Procedure.preAsPredicate model proc ρ ∧ ρ.factory = factory ∧
     Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ
 
 /-- Exit condition shared by structured and CFG readings of a procedure contract. -/
-@[expose] def Procedure.contractPost (model : Lambda.Interp Core.Factory)
+@[expose] def Procedure.contractPost {factory : Expression.Factory}
+    (model : Lambda.Interp factory)
     (proc : Procedure) (ρ : Imperative.Env Expression) : Prop :=
   Procedure.postAsPredicate model proc ρ
 
@@ -176,15 +181,17 @@ the function.
     captured contract clauses satisfy the world-independence invariant described
     on `checkAsPredicate`; that invariant is not yet carried as a hypothesis here.
 
-    The precondition pins the initial environment to `Core.Factory`, carries the
-    entry snapshots of inout parameters, and requires every input value to match
-    its declared type. Partial correctness means a diverging body satisfies any
-    postcondition. -/
+    The precondition pins the initial environment to
+    `p.factoryBeforeProcedure procName`, carries the entry snapshots of inout
+    parameters, and requires every input value to match its declared type.
+    On a well-formed program, the factory contains Core's built-ins and exactly
+    the user-defined functions declared before the procedure. Partial correctness
+    means a diverging body satisfies any postcondition. -/
 @[expose] def Procedure.contractTriple (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) : Prop :=
   ∃ proc, p.findProcByString? procName = some proc ∧
     Procedure.contractChecksTyped proc ∧
-    ∀ model : Lambda.Interp Core.Factory,
+    ∀ model : Lambda.Interp (p.factoryBeforeProcedure procName),
       match proc.body with
       | .structured bss =>
           TripleWithModel p.findProcByString? model params

@@ -9,6 +9,7 @@ import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
@@ -312,10 +313,11 @@ end
 
 /-- `∀ y : bool, y = y` denotes `true` in every world (independent of model, valuation,
     and the metadata carried by the event). -/
-private theorem forall_holds (model : Lambda.Interp Core.Factory)
+private theorem forall_holds {factory : Core.Expression.Factory}
+    (model : Lambda.Interp factory)
     (world : Core.Logic.DenoteValuation model)
     (σ : SemanticStore Core.Expression) (f : Core.Expression.Factory)
-    (md : Imperative.MetaData Core.Expression) (hf : f = Core.Factory) :
+    (md : Imperative.MetaData Core.Expression) (hf : f = factory) :
     (Core.Logic.DenoteBasedInterp model).holds world ⟨f, σ, "t", forallExpr, md⟩ := by
   refine .inl ⟨hf, ?_⟩
   have hcap : Core.Logic.capturedExpr
@@ -332,10 +334,11 @@ private theorem forall_holds (model : Lambda.Interp Core.Factory)
 
 /-- The `false` literal captured under the ambient factory never holds: its closed
 captured form denotes `false`, whatever metadata the event carries. -/
-private theorem false_not_holds (model : Lambda.Interp Core.Factory)
+private theorem false_not_holds {factory : Core.Expression.Factory}
+    (model : Lambda.Interp factory)
     (world : Core.Logic.DenoteValuation model)
     (σ : SemanticStore Core.Expression) (f : Core.Expression.Factory)
-    (md : Imperative.MetaData Core.Expression) (hf : f = Core.Factory) :
+    (md : Imperative.MetaData Core.Expression) (hf : f = factory) :
     ¬ (Core.Logic.DenoteBasedInterp model).holds world ⟨f, σ, "f", ff0, md⟩ := by
   rintro (⟨_, hex⟩ | ⟨hne, _⟩)
   · have hcap : Core.Logic.capturedExpr
@@ -348,12 +351,13 @@ private theorem false_not_holds (model : Lambda.Interp Core.Factory)
 /-- A `bool` variable `x` bound to `false` refutes the captured condition `x`: its closed
 captured form `false` denotes `false`, so `x` cannot hold in any world of any model.
 This is the shared kernel of the "assume/requires gates the false branch" argument. -/
-private theorem xFalse_notHolds (model : Lambda.Interp Core.Factory)
+private theorem xFalse_notHolds {factory : Core.Expression.Factory}
+    (model : Lambda.Interp factory)
     (ρ : Imperative.Env Core.Expression) (world : Core.Logic.DenoteValuation model)
     (lbl : Core.CoreLabel) (md : Imperative.MetaData Core.Expression)
     (hsem : Imperative.WellFormedSemanticEval (P := Core.Expression) ρ.factory)
     (hwfs : Imperative.WellFormedStore ρ.store ρ.factory)
-    (hfac : ρ.factory = Core.Factory)
+    (hfac : ρ.factory = factory)
     (hc : Core.Expression.eval ρ.factory ρ.store xExpr = some HasBool.ff) :
     ¬ (Core.Logic.DenoteBasedInterp model).holds world ⟨ρ.factory, ρ.store, lbl, xExpr, md⟩ := by
   rintro (⟨_hfac, hex⟩ | ⟨hne, _⟩)
@@ -544,8 +548,11 @@ private theorem xFalseEnv_blockWF :
     assumption, refuting the structured triple its contract names. -/
 theorem pNoAssume_contract_refuted :
     ¬ Core.Logic.Hoare.Procedure.contractTriple examplePgmAST testParams "pNoAssume" := by
+  have hfactory : examplePgmAST.factoryBeforeProcedure "pNoAssume" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
   obtain ⟨proc, hfind, _htyped, htriple⟩ := h
   obtain rfl : proc = pNoAssumeProc :=
     Option.some.inj (hfind.symm.trans pNoAssumeProc_named)

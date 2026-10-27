@@ -55,9 +55,10 @@ specified by its signature. -/
 /-- Every event-producing execution of `proc`'s body binds its declared outputs
     to values matching their types, provided its inputs do so at entry. -/
 @[expose] def Procedure.bodyOutputsTyped
+    (factory : Expression.Factory)
     (π : String → Option Procedure) (proc : Procedure) : Prop :=
   ∀ σ_entry fac σ_exit emitted,
-    fac = Core.Factory →
+    fac = factory →
     Procedure.inputAsPredicate proc
         { store := σ_entry, factory := fac, hasFailure := false } →
     CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
@@ -84,8 +85,9 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (hframe : ∀ proc, p.findProcByString? procName = some proc →
       Procedure.bodyFrame p.findProcByString? proc)
     (houtputs : ∀ proc, p.findProcByString? procName = some proc →
-      Procedure.bodyOutputsTyped p.findProcByString? proc)
-    (hentry : ∀ (model : Lambda.Interp Core.Factory)
+      Procedure.bodyOutputsTyped (p.factoryBeforeProcedure procName)
+        p.findProcByString? proc)
+    (hentry : ∀ (model : Lambda.Interp (p.factoryBeforeProcedure procName))
         (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
@@ -100,7 +102,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         | .cfg cfg =>
             CFGInitEnvWF params cfg
               { store := σAO, factory := ρ₀.factory, hasFailure := false })
-    (hexit : ∀ (model : Lambda.Interp Core.Factory)
+    (hexit : ∀ (model : Lambda.Interp (p.factoryBeforeProcedure procName))
         (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
@@ -113,9 +115,12 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       CallExit ρ₀.factory ρ₀.store proc callArgs ρ'.store σ' →
       Post { ρ₀ with store := σ' }) :
     Triple p.findProcByString? params Pre
-      [Statement.call procName callArgs md] Post := by
+      [Statement.call procName callArgs md] Post
+      (factory := p.factoryBeforeProcedure procName) := by
   obtain ⟨cproc, hcproc, _hctyped, htriple⟩ := hcontract
-  refine cmd p.findProcByString? params (Imperative.CmdExt.call procName callArgs md)
+  refine cmd (factory := p.factoryBeforeProcedure procName)
+    p.findProcByString? params
+    (Imperative.CmdExt.call procName callArgs md)
     Pre Post (fun model ρ₀ σ' emitted hpre hwf hstep => ?_)
   let I := DenoteBasedInterp model
   cases hstep with

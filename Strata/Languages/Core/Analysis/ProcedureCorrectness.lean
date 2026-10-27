@@ -29,8 +29,8 @@ public section
 - **`ProcedureAssertsValidOnTraces.denote`**,
   **`ProcedureAssertsSatisfiableOnTraces.denote`** — the same properties with
   conditions read by Lambda's denotational semantics: validity in every model
-  of `Core.Factory`, satisfiability in some model.
-- **`CoreVerifierModel`** — what a passing `VCResults` claims under each
+  of the factory visible before the entry procedure, satisfiability in some model.
+- **`CoreVerifierModel`** — the desirable property of Core's verifier under each
   verification mode.
 -/
 
@@ -328,22 +328,24 @@ structure ProcedureAssertsSatisfiableOnTraces (params : InitEnvWFParams)
 /-! ## Procedure correctness read by denotation
 
 Core reads conditions by Lambda's denotational semantics (`DenoteBasedInterp`)
-in a model of `Core.Factory`, as Core's Hoare triples do. These instances fix
-that reading: validity must hold in every model, satisfiability in some model. -/
+in a model of the factory visible before the entry procedure, matching
+`Procedure.contractTriple`. These instances fix that reading: validity must hold
+in every model, satisfiability in some model. -/
 
 /-- **Deductive correctness of a procedure on event traces, read by
-    denotation**: `ProcedureAssertsValidOnTraces` in every model of
-    `Core.Factory`. -/
+    denotation**: `ProcedureAssertsValidOnTraces` in every model of the factory
+    visible before the procedure. -/
 @[expose] def ProcedureAssertsValidOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∀ model : Lambda.Interp Core.Factory,
+  ∀ model : Lambda.Interp (p.factoryBeforeProcedure entryProcName),
     ProcedureAssertsValidOnTraces (Core.Logic.DenoteBasedInterp model) params entryProcName p
 
 /-- **Satisfiability of a procedure on event traces, read by denotation**:
-    `ProcedureAssertsSatisfiableOnTraces` in some model of `Core.Factory`. -/
+    `ProcedureAssertsSatisfiableOnTraces` in some model of the factory visible
+    before the procedure. -/
 @[expose] def ProcedureAssertsSatisfiableOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∃ model : Lambda.Interp Core.Factory,
+  ∃ model : Lambda.Interp (p.factoryBeforeProcedure entryProcName),
     ProcedureAssertsSatisfiableOnTraces (Core.Logic.DenoteBasedInterp model)
       params entryProcName p
 

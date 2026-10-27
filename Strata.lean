@@ -44,6 +44,7 @@ import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.ProcedureProps
+import Strata.Languages.Core.ProgramProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining

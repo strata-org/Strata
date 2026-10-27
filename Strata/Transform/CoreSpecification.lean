@@ -100,21 +100,13 @@ For verification, the initial environment of a procedure must satisfy the
 axioms and distincts that have been declared *before* the procedure in the
 program. -/
 
-/-- Declarations in `p` that appear strictly before the procedure named
-    `entryProcName`. -/
-@[expose] def declsBefore (entryProcName : String) (p : Program) : List Decl :=
-  p.decls.takeWhile fun d =>
-    match d with
-    | .proc proc _ => proc.header.name.name != entryProcName
-    | _ => true
-
 /-- The initial environment `ρ₀` satisfies all axioms and `distinct`
     declarations that appear in `p.decls` before the procedure named
     `entryProcName`. -/
 @[expose] def AxiomsBeforeProcedureDecl
     (entryProcName : String) (p : Program)
     (ρ₀ : Imperative.Env Expression) : Prop :=
-  (declsBefore entryProcName p).foldr
+  (p.declsBeforeProcedure entryProcName).foldr
     (fun d acc =>
       match d with
       | .ax a _ =>

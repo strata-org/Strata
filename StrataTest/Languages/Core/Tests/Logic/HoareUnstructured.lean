@@ -10,6 +10,7 @@ import Strata.Languages.Core.IntEvalProps
 
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProgramProps
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Imperative.Logic.HoareTemplate
@@ -734,6 +735,9 @@ private theorem post_holds (model : Lambda.Interp Core.Factory) (ρ : Imperative
 /-- The CFG `sum_to_n` meets its contract. -/
 theorem sum_to_n_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple sumToNAST testParams "sum_to_n" := by
+  have hfactory : sumToNAST.factoryBeforeProcedure "sum_to_n" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨sumToNProc, sumToN_find, by native_decide, ?_⟩
   intro model
   rw [sumToN_body]
@@ -907,8 +911,11 @@ private theorem ff_not_holds (model : Lambda.Interp Core.Factory)
 /-- The terminating `false_ens` procedure does not meet its contract. -/
 theorem false_ens_contract_refuted :
     ¬ Core.Logic.Hoare.Procedure.contractTriple falseEnsPgm testParams "false_ens" := by
+  have hfactory : falseEnsPgm.factoryBeforeProcedure "false_ens" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
   obtain ⟨proc, hfind, _htyped, htriple⟩ := h
   have hpe : proc = falseEnsProc := by
     have hf : falseEnsPgm.findProcByString? "false_ens" = some falseEnsProc := by native_decide
@@ -1100,6 +1107,9 @@ private theorem checkAsPredicate_eq_of_binds
     `result == x` on the projected final store. -/
 theorem copy_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple copyPgm testParams "copy" := by
+  have hfactory : copyPgm.factoryBeforeProcedure "copy" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨copyProc, copy_find, by native_decide, ?_⟩
   intro model
   rw [copy_body]
@@ -1307,7 +1317,8 @@ private theorem run_preserves_typed {π : String → Option Core.Procedure}
 /-- Every `copy` body run binds `result` to a value of its declared type. -/
 private theorem copy_body_outputs_typed :
     ∀ proc, copyPgm.findProcByString? "copy" = some proc →
-      Core.Logic.Hoare.Procedure.bodyOutputsTyped copyPgm.findProcByString? proc := by
+      Core.Logic.Hoare.Procedure.bodyOutputsTyped
+        (copyPgm.factoryBeforeProcedure "copy") copyPgm.findProcByString? proc := by
   intro proc hlk
   obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
   intro σ_entry fac σ_exit emitted _hfac hin hbody
@@ -1357,9 +1368,10 @@ private def CopyCallPost (ρ : Env Core.Expression) : Prop :=
 
 /-- When `result` and `x` are bound to integer literals, holding their equality
     denotationally in one world forces the literals to coincide. -/
-private theorem resultEq_inv (model : Lambda.Interp Core.Factory)
+private theorem resultEq_inv {factory : Core.Expression.Factory}
+    (model : Lambda.Interp factory)
     (ρ : Imperative.Env Core.Expression) (lbl : Core.CoreLabel) (check : Core.Procedure.Check)
-    (i av : Int) (hfac : ρ.factory = Core.Factory) (hexpr : check.expr = ensExprC)
+    (i av : Int) (hfac : ρ.factory = factory) (hexpr : check.expr = ensExprC)
     (hr : ρ.store resultId = some (Lambda.LExpr.intConst () i))
     (hx : ρ.store xIdC = some (Lambda.LExpr.intConst () av))
     (h : Core.Logic.Hoare.Procedure.checkAsPredicate model ρ lbl check) : i = av := by
@@ -1446,7 +1458,10 @@ private theorem copy_callentry_facts
     with an explicit `CFGInitEnvWF`. -/
 theorem copy_call_triple :
     Core.Logic.Hoare.Triple copyPgm.findProcByString? testParams CopyCallPre
-      [Core.Statement.call "copy" copyCall .empty] CopyCallPost := by
+      [Core.Statement.call "copy" copyCall .empty] CopyCallPost
+      (factory := copyPgm.factoryBeforeProcedure "copy") := by
+  have hfactory : copyPgm.factoryBeforeProcedure "copy" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)
   refine Core.Logic.Hoare.Procedure.call_of_contract copyPgm testParams
     "copy" copyCall .empty CopyCallPre CopyCallPost copy_meets_contract
     copy_body_frame copy_body_outputs_typed ?_ ?_
@@ -1458,7 +1473,7 @@ theorem copy_call_triple :
       copy_callentry_facts hfac (hfac ▸ hwf.toWellFormedSemanticEval)
         (hfac ▸ hwf.storeWellDefined) ha hce
     rw [copy_body]
-    refine ⟨⟨?_, hfac, ?_, ?_⟩, ?_⟩
+    refine ⟨⟨?_, hfac.trans hfactory.symm, ?_, ?_⟩, ?_⟩
     · intro label check hmem
       rw [show copyProc.spec.preconditions.toList = [] from by native_decide] at hmem
       simp at hmem
@@ -1523,7 +1538,8 @@ theorem copy_call_triple :
           (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
           (Prod.snd lc).expr = ensExprC := by native_decide
     have hiav : i = av :=
-      resultEq_inv model ρ' plabel pcheck i av (hρ'fac.trans hfac) hpexpr hrStore hxFinal
+      resultEq_inv model ρ' plabel pcheck i av
+        (hρ'fac.trans (hfac.trans hfactory.symm)) hpexpr hrStore hxFinal
         (hpost plabel pcheck hmem hattr)
     rw [hiav] at hrStore
     obtain ⟨_, outputVals, hRV, hUpd⟩ := hcallexit

@@ -30,10 +30,11 @@ It also provides concrete evaluation of the integer operators on `Core.Factory`,
 the arithmetic laws by the Core Hoare-logic tests.  A single generic reduction
 `eval_intBinOp_value_of_numerals` handles any `binaryOp` on two numerals; the per-operator
 fuel-level reductions `eval_intLt_value_of_numerals` / `eval_intLe_value_of_numerals` /
-`eval_intGe_value_of_numerals` / `eval_intAdd_value_of_numerals` /
-`eval_intMul_value_of_numerals` are thin wrappers over it.  The factory-membership facts
-`coreFactory_intLt` / `coreFactory_intLe` / `coreFactory_intGe` / `coreFactory_intAdd` /
-`coreFactory_intMul` share the generic `coreFactory_get?_of_mem`, and the `evalFully`-level
+`eval_intGe_value_of_numerals` / `eval_intGt_value_of_numerals` /
+`eval_intAdd_value_of_numerals` / `eval_intSub_value_of_numerals` /
+`eval_intMul_value_of_numerals` are thin wrappers over it. The factory-membership facts
+`coreFactory_intLt` / `coreFactory_intLe` / `coreFactory_intGe` / `coreFactory_intGt` /
+`coreFactory_intAdd` / `coreFactory_intSub` / `coreFactory_intMul` share the generic `coreFactory_get?_of_mem`, and the `evalFully`-level
 wrappers `coreEval_intLe_numeral` / `coreEval_intAdd_numeral` (with the operator expressions
 `coreIntLeOpExpr` / `coreIntAddOpExpr`) read specific guards directly.
 -/
@@ -515,6 +516,19 @@ theorem eval_intAdd_value_of_numerals
   eval_intBinOp_value_of_numerals (OutValTy := Int) f σ x y n a b "Int.Add" Int.add (by decide)
     hIAdd (Lambda.isValue_const_true f () (.intConst (a + b))) hx hy
 
+/-- Integer subtraction on numeral-valued arguments. -/
+theorem eval_intSub_value_of_numerals
+    (f : Expression.Factory) (σ : CoreStore) (x y : Expression.Expr)
+    (n : Nat) (a b : Int)
+    (hISub : f["Int.Sub"]? = some (Lambda.intSubFunc (T := CoreLParams)).func)
+    (hx : Lambda.LExpr.eval n f σ x = (Lambda.LExpr.intConst () a, .value true))
+    (hy : Lambda.LExpr.eval n f σ y = (Lambda.LExpr.intConst () b, .value true)) :
+    Lambda.LExpr.eval (n + 1) f σ
+        (.app () (.app () (Lambda.intSubFunc (T := CoreLParams)).opExpr x) y)
+      = (Lambda.LExpr.intConst () (a - b), .value true) :=
+  eval_intBinOp_value_of_numerals (OutValTy := Int) f σ x y n a b "Int.Sub" Int.sub (by decide)
+    hISub (Lambda.isValue_const_true f () (.intConst (a - b))) hx hy
+
 /-- Companion of `eval_intLt_value_of_numerals` for `Int.Ge`: when `x` and `y`
     reduce to integer numerals `a`, `b` at fuel `n`, the `Int.Ge x y` application
     reduces to `boolConst (a ≥ b)` at fuel `n+1`. -/
@@ -660,11 +674,31 @@ theorem coreFactory_intAdd :
     simp only [Array.toList_appendList]
     repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
+/-- `Int.Sub` resolves in the concrete `Core.Factory` to `intSubFunc`. -/
+theorem coreFactory_intSub :
+    (Core.Factory)["Int.Sub"]? = some (Lambda.intSubFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intSubFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intSubFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
 /-- `Int.Ge` resolves in the concrete `Core.Factory` to `intGeFunc`. -/
 theorem coreFactory_intGe :
     (Core.Factory)["Int.Ge"]? = some (Lambda.intGeFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intGeFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intGeFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
+    unfold WFFactoryArray
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
+
+/-- `Int.Gt` resolves in the concrete `Core.Factory` to `intGtFunc`. -/
+theorem coreFactory_intGt :
+    (Core.Factory)["Int.Gt"]? = some (Lambda.intGtFunc (T := CoreLParams)).func :=
+  coreFactory_get?_of_mem (wf := Lambda.intGtFunc (T := CoreLParams)) (by
+    refine Array.mem_map.mpr ⟨Lambda.intGtFunc (T := CoreLParams), ?_, rfl⟩
     rw [Array.mem_def]
     unfold WFFactoryArray
     simp only [Array.toList_appendList]
