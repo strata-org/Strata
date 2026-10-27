@@ -237,6 +237,12 @@ def parseModelDDM (modelStr : String) (declaredNames : Std.HashSet String := {})
   | .ok pairs => return pairs
   | .error _ => return []
 
+/-- The values of a parsed model, keyed by the unescaped name each key maps back to with
+    `Strata.SMT.Symbol.ofSMTString`; for a name given twice, the first pair wins. -/
+def modelValues (pairs : List (String × Strata.SMT.Term)) :
+    Std.HashMap String Strata.SMT.Term :=
+  pairs.foldr (fun p m => m.insert (Strata.SMT.Symbol.ofSMTString p.fst) p.snd) {}
+
 /--
 Process a parsed model (list of key-string / value-Term pairs) against the
 expected variables, matching each variable's SMT-encoded name to its
@@ -244,24 +250,18 @@ value in the model.
 
 The keys of `pairs` are escaped spellings, since the solver echoes what the emitter
 wrote through `Strata.SMT.Symbol.toSMTString`, while the `id` from `getSMTId` is the
-unescaped name. `findValue` maps the key back with `Strata.SMT.Symbol.ofSMTString`
-before comparing.
+unescaped name. `modelValues` maps each key back once, so each variable is a lookup.
 -/
 def processModel {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (pairs : List (String × Strata.SMT.Term))
     (E : Strata.SMT.EncoderState) : Except Format (Model P.Ident) := do
-  match vars with
-  | [] => return []
-  | (var, ty) :: vrest =>
+  let values := modelValues pairs
+  vars.mapM fun (var, ty) => do
     let id ← @getSMTId P.Ident P.Ty _ typedVarToSMTFn var ty E
-    let value ← findValue id pairs
-    let rest ← processModel typedVarToSMTFn vrest pairs E
-    .ok ((var, value) :: rest)
-  where findValue id pairs : Except Format Strata.SMT.Term :=
-    match pairs.find? (fun p => Strata.SMT.Symbol.ofSMTString p.fst == id) with
+    match values[id]? with
     | none => .error f!"Cannot find model for id: {id}"
-    | some p => .ok p.snd
+    | some value => .ok (var, value)
 
 /--
 Interprets the output of SMT solver.

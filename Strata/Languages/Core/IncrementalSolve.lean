@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Verifier
 public import Std.Sync.Mutex
 import Strata.Languages.Core.ObligationExtraction
+import Strata.Transform.CommonSubexprElim
 
 /-! # Walking a verification tree with long-lived solver sessions
 
@@ -643,11 +644,12 @@ where
   parse (modelText : String) : IO (Imperative.SMT.Model Expression.Ident) := do
     if modelText.isEmpty then return []
     let raw ← Imperative.SMT.parseModelDDM modelText estate.usedNames
-    -- `processModel` fails when any variable has no value; the variables that have one are kept.
-    return vars.filterMap fun v =>
-      match Imperative.SMT.processModel (Core.SMT.typedVarToSMTFn ctx) [v] raw estate with
-      | .ok [m] => some m
-      | _ => none
+    -- Matched as `processModel` matches, except that the variables with no value are skipped.
+    let values := Imperative.SMT.modelValues raw
+    return vars.filterMap fun (v, ty) =>
+      match Imperative.SMT.getSMTId (Core.SMT.typedVarToSMTFn ctx) v ty estate with
+      | .ok id => values[id]?.map (v, ·)
+      | .error _ => none
 
 /-- The obligation a goal stands for, in the shape every other back end reports. The path is
     the assumptions: `PathConditions` is a list of runs, which is what `WorkItem.path` already
@@ -708,9 +710,8 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     let newIfs := ctx.ifs.toArray.toList.filter fun fn => !s.declIfs.contains fn.id
     let newAxms := ctx.axms.toArray.toList.filter fun ax => !s.declAxms.contains ax
     -- The variables a counterexample reports: the ones the goal and its path reach, as the
-    -- per-obligation path chooses them, and the path's own declarations among those.
-    let vars := (collectModelVars (obligationOf item) r.varDefs r.varDecls
-        (withDeclared := true)).filterMap fun
+    -- per-obligation path chooses them.
+    let vars := (collectModelVars (obligationOf item) r.varDefs r.varDecls).filterMap fun
       | (v, some ty) => some (v, Lambda.LTy.forAll [] ty)
       | (_, none) => none
     let solveTime ← IO.mkRef (0 : Nat)
@@ -1124,7 +1125,7 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
         let defsOf (o : Imperative.ProofObligation Expression) : List String :=
           o.assumptions.flatMap fun pc => pc.filterMap fun
             | .varDecl name _ (.det _) =>
-              if isCSEGeneratedName name.name then some name.name else none
+              if CSE.isCSEGeneratedName name.name then some name.name else none
             | _ => none
         let keptDefs := Std.HashSet.ofList (defsOf (pruneUnusedCSEDefinitions ob))
         Std.HashSet.ofList ((defsOf ob).filter (!keptDefs.contains ·))

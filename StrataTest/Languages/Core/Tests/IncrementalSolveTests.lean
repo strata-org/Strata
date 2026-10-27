@@ -9,6 +9,7 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.IncrementalSolve
 meta import Strata.Languages.Core.ObligationExtraction
+meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Examples.EmbeddedData
 meta import StrataDDM.Elab
 meta import StrataDDM.BuiltinDialects.Init
@@ -2245,7 +2246,7 @@ several goals on one session, and the walk is compared with the per-obligation p
 /--
 info: chainOfThree: agree on 3
 twoGoals: agree on 2
-refutable: agree on 1
+refutable: agree on 1, 1 with a counterexample
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -2318,6 +2319,172 @@ leave the definition holding it out. -/
 #guard_msgs in
 #eval bothWays "cseHoistedLiteral walked" (parse cseHoistedLiteral) VerifyOptions.quiet
   (walkAll := true)
+
+/-! ### A counterexample reports the declared variables and no defined or generated name
+
+Whether a variable gets a value in a counterexample depends on whether its value is free, not on
+how it is encoded. Through the pipeline without symbolic evaluation, `var x` stays a declaration
+of the passive program, and the counterexample to `x >= 11` still gives `x` a value, without
+`--incremental`, with it, and with every goal walked, while a variable defined from `x` is left
+out. Through the default pipeline, common-subexpression elimination hoists `f(x + 1)` into a
+variable of its own, which the counterexample leaves out, while it reports `x`. -/
+
+/-- The names each goal's counterexample reports, without `--incremental`, with it,
+    and with every goal walked, and the generated names its path declares. -/
+private def modelNames (p : Core.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO Unit := do
+  for (mode, incremental, walkAll) in
+      [("per-obligation", false, false), ("incremental", true, false), ("walked", true, true)] do
+    let options := { VerifyOptions.quiet with incremental }
+    let solver := if walkAll then
+        some (Core.IncrementalSolve.coreSMTSolver options.parallelWorkers options
+          (axiomProgram := some p) (sendAlone := false))
+      else none
+    match ← (Strata.Core.verifyProgram p options (pipeline := pipeline)
+        (solver := solver)).toBaseIO with
+    | .ok rs =>
+      for r in rs do
+        let generated := r.obligation.assumptions.flatten.filterMap fun
+          | .varDecl name _ _ => if _root_.Core.CSE.isCSEGeneratedName name.name then some name.name
+            else none
+          | _ => none
+        IO.println s!"{mode} {r.obligation.label}: {r.lexprModel.map (·.1.name)}\
+          {if generated.isEmpty then "" else s!", generated {generated}"}"
+    | .error e => IO.println s!"{mode}: error {e}"
+
+private def declaredVar :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  assert [big]: int.ge(x, 11);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse declaredVar) (pipeline := withoutSymbolicEval)
+
+/-- A variable the passive program defines is left out, since its value follows from the ones
+    reported: `y := x + 1` reports `x` alone. -/
+private def definedVar :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  var y : int := int.add(x, 1);
+  assert [big]: int.ge(y, 11);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse definedVar) (pipeline := withoutSymbolicEval)
+
+/-- A chain of fifty definitions reaches `x` from the goal, and reports `x` alone: the closure
+    over definitions follows the whole chain, and leaves every defined link out. -/
+private def definitionChain :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  var x1 : int := int.add(x, 1);
+  var x2 : int := int.add(x1, 1);
+  var x3 : int := int.add(x2, 1);
+  var x4 : int := int.add(x3, 1);
+  var x5 : int := int.add(x4, 1);
+  var x6 : int := int.add(x5, 1);
+  var x7 : int := int.add(x6, 1);
+  var x8 : int := int.add(x7, 1);
+  var x9 : int := int.add(x8, 1);
+  var x10 : int := int.add(x9, 1);
+  var x11 : int := int.add(x10, 1);
+  var x12 : int := int.add(x11, 1);
+  var x13 : int := int.add(x12, 1);
+  var x14 : int := int.add(x13, 1);
+  var x15 : int := int.add(x14, 1);
+  var x16 : int := int.add(x15, 1);
+  var x17 : int := int.add(x16, 1);
+  var x18 : int := int.add(x17, 1);
+  var x19 : int := int.add(x18, 1);
+  var x20 : int := int.add(x19, 1);
+  var x21 : int := int.add(x20, 1);
+  var x22 : int := int.add(x21, 1);
+  var x23 : int := int.add(x22, 1);
+  var x24 : int := int.add(x23, 1);
+  var x25 : int := int.add(x24, 1);
+  var x26 : int := int.add(x25, 1);
+  var x27 : int := int.add(x26, 1);
+  var x28 : int := int.add(x27, 1);
+  var x29 : int := int.add(x28, 1);
+  var x30 : int := int.add(x29, 1);
+  var x31 : int := int.add(x30, 1);
+  var x32 : int := int.add(x31, 1);
+  var x33 : int := int.add(x32, 1);
+  var x34 : int := int.add(x33, 1);
+  var x35 : int := int.add(x34, 1);
+  var x36 : int := int.add(x35, 1);
+  var x37 : int := int.add(x36, 1);
+  var x38 : int := int.add(x37, 1);
+  var x39 : int := int.add(x38, 1);
+  var x40 : int := int.add(x39, 1);
+  var x41 : int := int.add(x40, 1);
+  var x42 : int := int.add(x41, 1);
+  var x43 : int := int.add(x42, 1);
+  var x44 : int := int.add(x43, 1);
+  var x45 : int := int.add(x44, 1);
+  var x46 : int := int.add(x45, 1);
+  var x47 : int := int.add(x46, 1);
+  var x48 : int := int.add(x47, 1);
+  var x49 : int := int.add(x48, 1);
+  var x50 : int := int.add(x49, 1);
+  assert [big]: int.gt(x50, 1000);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse definitionChain) (pipeline := withoutSymbolicEval)
+
+private def hoistedTerm :=
+#strata
+program Core;
+function f (x : int) : int;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(f(int.add(x, 1)), 0);
+  assume [small]: int.lt(f(int.add(x, 1)), 5);
+  assert [big]: int.gt(f(int.add(x, 1)), 10);
+};
+#end
+
+/--
+info: per-obligation big: [x], generated [$__cse.0]
+incremental big: [x], generated [$__cse.0]
+walked big: [x], generated [$__cse.0]
+-/
+#guard_msgs in
+#eval modelNames (parse hoistedTerm)
 
 /-! ### A goal the solver cannot be told fails alone, inside the walk
 

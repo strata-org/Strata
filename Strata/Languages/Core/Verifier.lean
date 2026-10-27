@@ -39,14 +39,17 @@ import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
 
+/-- The names the obligation's variable definitions give a `define-fun`. -/
+private def definedNameSet (varDefinitions : List Core.VarDefinition) : Std.HashSet String :=
+  varDefinitions.foldl (fun s d => s.insert d.name) ∅
+
 /-- The obligation's managed names — every define-fun/declare-fun name from its
     variable definitions and declarations — as a hash set for O(1) membership.
     Defined at the root namespace so it is visible unqualified from both the
     `Strata.SMT.Encoder` and `Core` namespaces. -/
 private def managedNameSet (varDefinitions : List Core.VarDefinition)
     (varDeclarations : List Core.VarDeclaration) : Std.HashSet String :=
-  varDeclarations.foldl (fun s d => s.insert d.name)
-    (varDefinitions.foldl (fun s d => s.insert d.name) ∅)
+  varDeclarations.foldl (fun s d => s.insert d.name) (definedNameSet varDefinitions)
 
 ---------------------------------------------------------------------
 
@@ -395,8 +398,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for id in assumptionIds do
     solver.assert id
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
+  let definedNames := definedNameSet varDefinitions
   let ids := estate.base.functions.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
+    if uf.args.isEmpty && Core.SMT.isReportedName definedNames uf.id then some id else none
   return (obligationId, ids, estate.base)
 
 /-- Encode a verification condition into SMT-LIB format, including check-sat
@@ -456,7 +460,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   let ids ← phase "writeObligation" do
     Core.SMT.writeCheckSatBlock obligationId obligationTerm md satisfiabilityCheck validityCheck
-      label managedNames |>.run' estate
+      label (definedNameSet varDefinitions) |>.run' estate
 
   return (ids, estate)
 
@@ -1840,6 +1844,8 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
         (captured := captured)
         (pctx := pctx)
 
+open CSE (isCSEGeneratedName)
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -1896,9 +1902,9 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
     -- to sat; we still want the model available for display.
     let model := modelOfResults ctx satResult validityResult
-    -- Filter out managed variables from model display
-    let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
-    let model := model.filter fun (name, _) => !managedVarNames.contains name.name
+    -- A counterexample reports the variables `Core.SMT.isReportedName` names.
+    let definedNames := definedNameSet varDefinitions
+    let model := model.filter fun (name, _) => Core.SMT.isReportedName definedNames name.name
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
@@ -2020,9 +2026,6 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
-def isCSEGeneratedName (name : String) : Bool :=
-  name.startsWith CSE.cseVarPrefix
-
 private
 def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
     Std.HashSet String :=
@@ -2034,14 +2037,39 @@ def addFreeVarNames (refs : Std.HashSet String) (e : Expression.Expr) :
     Std.HashSet String :=
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) => refs.insert id.name) refs
 
+/-- The names `roots` reach through `definitions`: the least set that contains `roots` and, for
+    every definition whose name it contains, the names `refs` returns for that definition's body.
+    A worklist expands each defined name once, so the cost is linear in the size of the
+    definitions, whatever their order and however long their chains. -/
+private
+def defClosure (refs : Expression.Expr → List String)
+    (definitions : List (String × Expression.Expr)) (roots : Std.HashSet String) :
+    Std.HashSet String :=
+  let bodies : Std.HashMap String (List Expression.Expr) :=
+    definitions.foldl (fun m (n, e) => m.insert n (e :: m.getD n [])) {}
+  -- A name enters the worklist once, when it is first reached, and only if it is defined, so
+  -- the fuel `definitions.length` never runs out.
+  go bodies definitions.length (roots.toList.filter bodies.contains) roots
+where
+  go (bodies : Std.HashMap String (List Expression.Expr)) :
+      Nat → List String → Std.HashSet String → Std.HashSet String
+    | 0, _, reached | _, [], reached => reached
+    | fuel + 1, n :: pending, reached =>
+      let (pending, reached) := (bodies.getD n []).foldl (fun acc e =>
+        (refs e).foldl (fun (pending, reached) v =>
+          if reached.contains v then (pending, reached)
+          else (if bodies.contains v then v :: pending else pending, reached.insert v)) acc)
+        (pending, reached)
+      go bodies fuel pending reached
+
 /-- The variables a counterexample for `obligation` should report: those its goal and
-    assumptions reach, through the managed definitions they use, less the managed names
-    themselves. With `withDeclared`, a reachable variable the obligation declares without a value
-    is reported too, since a passive program declares its variables. -/
+    assumptions reach, through the managed definitions they use, that
+    `Core.SMT.isReportedName` names. A variable the passive program declares (`var x`) is
+    reported; one it defines (`init x := e`) is not, since its value follows from the others. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
-    (varDeclarations : List VarDeclaration) (withDeclared : Bool := false) :
+    (varDeclarations : List VarDeclaration) :
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   let managedNames := managedNameSet varDefinitions varDeclarations
   let definitions := obligation.assumptions.flatMap fun pathCondition =>
@@ -2058,22 +2086,11 @@ def collectModelVars
         if managedNames.contains name.name then refs else addFreeVarNames refs rhs
       | .varDecl _ _ .nondet => refs) refs)
     (addFreeVarNames {} obligation.obligation)
-  let relevantNames := close definitions.length definitions rootRefs
-  let declared : Std.HashSet String :=
-    if withDeclared then Std.HashSet.ofList (varDeclarations.map (·.name)) else {}
+  let relevantNames :=
+    defClosure (fun e => (Lambda.LExpr.freeVars e).map (·.1.name)) definitions rootRefs
+  let definedNames := definedNameSet varDefinitions
   (ProofObligation.getVars obligation).filter fun (v, _) =>
-    relevantNames.contains v.name && (!managedNames.contains v.name || declared.contains v.name)
-where
-  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
-      Std.HashSet String
-    | 0, _, relevant => relevant
-    | fuel + 1, definitions, relevant =>
-      let relevant' := definitions.foldl (fun refs definition =>
-        if relevant.contains definition.1
-        then addFreeVarNames refs definition.2
-        else refs) relevant
-      if relevant'.size == relevant.size then relevant
-      else close fuel definitions relevant'
+    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name
 
 private
 def containsUnsupportedSMTString : Expression.Expr → Bool
@@ -2140,24 +2157,14 @@ def pruneUnusedCSEDefinitions
           else addCSEReferences refs rhs
         | .varDecl _ _ .nondet => refs) refs)
       (addCSEReferences {} obligation.obligation)
-    let needed := close definitions.length definitions rootRefs
+    let needed := defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
+      if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
           !isCSEGeneratedName name.name || needed.contains name.name
         | _ => true
     { obligation with assumptions }
-where
-  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
-      Std.HashSet String
-    | 0, _, needed => needed
-    | fuel + 1, definitions, needed =>
-      let needed' := definitions.foldl (fun refs definition =>
-        if needed.contains definition.1
-        then addCSEReferences refs definition.2
-        else refs) needed
-      if needed'.size == needed.size then needed
-      else close fuel definitions needed'
 
 /-- Discharge `obligations`, in order, against the environment `E` built for the program they
     come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
@@ -2315,7 +2322,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
               let (es, cf) ← es.syncAndEmit E.factory encState'.frames
                 encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
                 ctx obligationTerm obligation.metadata obligation.label
-                (managedNameSet varDefs varDecls) needSatCheck needValCheck
+                (managedNameSet varDefs varDecls) (definedNameSet varDefs) needSatCheck
+                needValCheck
               pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
