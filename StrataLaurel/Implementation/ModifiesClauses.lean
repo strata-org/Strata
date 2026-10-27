@@ -212,7 +212,8 @@ makes both halves trivial, not unsound). This keeps a lowered throwing
 procedure's normal frame — guarded on its result — as cheap for callers as a
 non-throwing procedure's. -/
 def transformModifiesClauses (model: SemanticModel)
-    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
+    (proc : Procedure) (useEnumeratedFrame : Bool) (executing : Bool := false) :
+    Except (Array Message) Procedure :=
   match proc.body with
   | .Opaque postconds impl modifiesGroups =>
       let src := proc.name.source
@@ -222,8 +223,10 @@ def transformModifiesClauses (model: SemanticModel)
         match guard? with
         | some g => mkMd (.StaticCall (mkId Operation.Implies.procName) [g, c] []) src
         | none => c
-      if !(hasHeapOut model proc) then
-        -- No heap to frame over; the groups are moot.
+      -- The groups are moot with no heap to frame over, and under concrete execution: the
+      -- run executes callee bodies rather than assuming their frames, and checking a frame
+      -- at the exit would halt it, since the frame's quantifier does not reduce.
+      if executing || !(hasHeapOut model proc) then
         .ok { proc with body := .Opaque postconds impl [] }
       else
         let framePosts : List Condition := modifiesGroups.flatMap fun g =>
@@ -263,9 +266,10 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : LaurelProgram) (useEnumeratedFrame : Bool) : LaurelProgram × List Message :=
+def modifiesClausesTransform (model: SemanticModel) (program : LaurelProgram)
+    (useEnumeratedFrame : Bool) (executing : Bool := false) : LaurelProgram × List Message :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
-    match transformModifiesClauses model proc useEnumeratedFrame with
+    match transformModifiesClauses model proc useEnumeratedFrame executing with
     | .ok proc' => (acc ++ [proc'], errs)
     | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
   ) ([], [])
@@ -295,6 +299,7 @@ public def modifiesClausesTransformPass : LaurelPass := .onUnordered {
   needsResolves := true }
   fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
+      (executing := options.analysisMode matches .Execute)
     (p', diags, {})
 
 end Strata.Laurel

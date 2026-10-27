@@ -142,6 +142,12 @@ private def isTimeoutOutput (output : IO.Process.Output) : Bool :=
       tok.trimAscii.toString == "timeout" || tok.trimAscii.toString == "timeout."
   hasWord output.stdout || hasWord output.stderr
 
+/-- A live solver's failure, by the words of its message: a timeout when they say so, else a
+    crash, which is how the path that writes the query to a file reads a solver's output. -/
+def failureOfMessage (detail : String) : SolverError :=
+  if isTimeoutOutput { exitCode := 0, stdout := detail, stderr := "" } then .timeout detail
+  else .crash detail
+
 ---------------------------------------------------------------------
 -- SMTDDM-based parsing
 ---------------------------------------------------------------------
@@ -360,6 +366,21 @@ structure EncodedObligation where
   assumptionIds : List String
   estate : Strata.SMT.EncoderState
 
+/-- SMT terms for the given program variables, as `get-value` asks for them. The encoder
+    state holds the declaration each variable received, and the variable's Core type is what
+    names it there. Variables the encoder never declared are skipped. -/
+def varTermsFor {P : PureExpr}
+    (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
+    (vars : List P.TypedIdent) (estate : Strata.SMT.EncoderState) : List Strata.SMT.Term :=
+  vars.filterMap fun (var, ty) =>
+    match typedVarToSMTFn var ty with
+    | .error _ => none
+    | .ok (smtName, termType) =>
+      let key : Strata.SMT.UF := { id := smtName, args := [], out := termType }
+      match estate.functions[key]? with
+      | none => none
+      | some encodedId => some (Strata.SMT.Term.var ⟨encodedId, termType⟩)
+
 /-- Discharge a proof obligation using a live (incremental) SMT solver.
     The encoder callback runs against the spawned solver to emit declarations
     and assertions; this helper orchestrates check-sat calls and model parsing. -/
@@ -370,27 +391,27 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent)
     (smtsolver : String) (solverFlags : Array String)
-    (satisfiabilityCheck validityCheck : Bool) :
+    (satisfiabilityCheck validityCheck : Bool) (timeLimitMs : Nat := 0) :
     IO (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
-  let solverState ← Strata.SMT.IncrementalSolver.spawn smtsolver solverFlags
+  -- A solver that cannot be started, or that answers something other than a verdict (as it does
+  -- after rejecting an option), fails this obligation alone, as on the path that writes the query
+  -- to a file.
+  let failure (e : IO.Error) : SolverError := failureOfMessage s!"{e}"
+  let solverState ← try Strata.SMT.IncrementalSolver.spawn smtsolver solverFlags timeLimitMs
+    catch e => return .error (failure e)
+  let solver := Strata.SMT.IncrementalSolver.mkIncrementalSolver solverState
   let action : Strata.SMT.IncrementalEncodingM
       (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
-    let solver := Strata.SMT.IncrementalSolver.mkIncrementalSolver
     let { obligationId, assumptionIds := _, estate } ← encodeDecl solver
     -- Build SMT terms for the user-declared variables rather than the boolean
     -- assumption IDs, so get-value returns their concrete values.
-    let userVarTerms : List Strata.SMT.Term :=
-      vars.filterMap fun (var, ty) =>
-        match typedVarToSMTFn var ty with
-        | .error _ => none
-        | .ok (smtName, termType) =>
-          let key : Strata.SMT.UF := { id := smtName, args := [], out := termType }
-          match estate.functions[key]? with
-          | none => none
-          | some encodedId => some (Strata.SMT.Term.var ⟨encodedId, termType⟩)
+    let userVarTerms := varTermsFor typedVarToSMTFn vars estate
     let getModelForVars : Strata.SMT.IncrementalEncodingM (Model P.Ident) := do
       if userVarTerms.isEmpty then return []
-      try
+      -- A model is best effort: a term that cannot be written for the solver raises this
+      -- monad's encoding error, and a solver that fails to answer raises an `IO.Error`. Either
+      -- leaves the model empty, and the verdict stands.
+      let fetch : Strata.SMT.IncrementalEncodingM (Model P.Ident) := do
         let pairs ← solver.getValue userVarTerms
         match pairs with
         | [(.prim (.string rawOutput), _)] =>
@@ -399,7 +420,8 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
           | .ok model => return model
           | .error _ => return []
         | _ => return []
-      catch _ => return []
+      tryCatchThe IO.Error (tryCatchThe Strata.SMT.StringLit.EncodingError fetch fun _ => return [])
+        fun _ => return []
     let decisionToResult (decision : Strata.SMT.Decision) :
         Strata.SMT.IncrementalEncodingM (Except SolverError (Result P.Ident)) := do
       match decision with
@@ -433,24 +455,18 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
         | .error e => return .error e
         | .ok r => valResult := r
     return .ok (satResult, valResult, estate)
-  let closeSolver (state : Strata.SMT.IncrementalSolverState) : IO Unit := do
-    let _ ← (Strata.SMT.IncrementalSolver.mkIncrementalSolver.close).run.run state
-    pure ()
-  let (result, state) ←
-    try
-      action.run.run solverState
-    catch e =>
-      try closeSolver solverState catch _ => pure ()
-      throw e
+  -- Closed on every exit, including an exception from encoding or from the solver, so a
+  -- failure here never leaves the solver process running. A solver that has already died
+  -- cannot be told to exit either, and that second failure must not hide the first.
+  let result ←
+    try Except.ok <$> action.run
+    catch e => pure (.error (failure e))
+    finally (try discard solver.close.run catch _ => pure ())
   match result with
-  | .ok result =>
-    closeSolver state
-    return result
-  | .error error =>
-    -- Serialization failed after the child process was spawned. Closing is
-    -- best-effort here so the original typed error remains the VC result.
-    try closeSolver state catch _ => pure ()
-    return .error (.encoding error)
+  | .error failed => return .error failed
+  | .ok (.ok result) => return result
+  -- Serialization failed: the typed error is this obligation's result.
+  | .ok (.error error) => return .error (.encoding error)
 
 /--
 Writes the proof obligation to file, discharge the obligation using SMT solver,

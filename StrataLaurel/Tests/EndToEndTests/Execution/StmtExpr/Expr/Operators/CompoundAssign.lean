@@ -154,7 +154,8 @@ procedure runAll() entry opaque {
 #end
 
 -- Compound assignment on composite-type fields, including chained targets.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
+-- No Core interpreter: real `/=` does not reduce, so `realFieldDiv`'s assert fails with
+-- "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;

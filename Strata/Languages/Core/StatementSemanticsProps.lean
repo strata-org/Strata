@@ -74,6 +74,8 @@ frames, beyond the remaining `updatedStates`/`InitVars`/`HavocVars` plumbing:
   failure-flag closure is a separate mutual inductive, so results over the
   generic closure transfer only through these theorems. `CoreStepStarE` directly
   reuses the generic `ReflTransTrace` closure.
+- `stmt_run_to_singleton_runE` / `singleton_run_to_stmt_runE`: a run of a
+  statement and a run of the one-element list holding it emit the same traces.
 -/
 
 namespace Core
@@ -2942,6 +2944,41 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := b
 
 theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
   exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
+
+
+/-! ## A statement and the one-element list holding it -/
+
+section SingletonRuns
+
+variable {π : String → Option Procedure}
+
+/-- A run of a statement is a run of the one-element list holding it, with the
+    same trace. -/
+theorem stmt_run_to_singleton_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmt s ρ) tr cfg) :
+    CoreStepStarE π (.stmts [s] ρ) tr (.seq cfg []) := by
+  have hcons : CoreStepE π (.stmts [s] ρ) [] (.seq (.stmt s ρ) []) :=
+    .step_admin .step_stmts_cons
+  simpa using ReflTransTrace.step _ _ _ _ _ hcons
+    (Imperative.seq_inner_starE _ (ss := []) h)
+
+/-- Every trace of the one-element list holding a statement is a trace of the
+    statement itself. -/
+theorem singleton_run_to_stmt_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmts [s] ρ) tr cfg) :
+    ∃ cfg', CoreStepStarE π (.stmt s ρ) tr cfg' := by
+  rcases Imperative.stmts_cons_headE _ h with ⟨_, rfl⟩ | h
+  · exact ⟨_, .refl _⟩
+  · rcases Imperative.seq_run_decomposeE _ h with
+      ⟨inner', _, hi⟩ | ⟨ρ₁, tr₁, tr₂, rfl, h1, h2⟩ | ⟨_, _, _, hi⟩
+    · exact ⟨_, hi⟩
+    · obtain ⟨rfl, _⟩ := Imperative.stmts_nil_runE _ h2
+      exact ⟨_, by simpa using h1⟩
+    · exact ⟨_, hi⟩
+
+end SingletonRuns
 
 end Core
 

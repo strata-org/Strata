@@ -77,8 +77,9 @@ private def procWithGroups (groups : List ModifiesGroup)
 /-- The frame conditions the transform attached (the test procedures start with
     zero postconditions, so every postcondition is a frame condition). -/
 private def framesOf (groups : List ModifiesGroup) (useEnumeratedFrame : Bool)
-    (bodiless : Bool := false) : List Condition :=
-  match transformModifiesClauses cModel (procWithGroups groups bodiless) useEnumeratedFrame with
+    (bodiless : Bool := false) (executing : Bool := false) : List Condition :=
+  match transformModifiesClauses cModel (procWithGroups groups bodiless) useEnumeratedFrame
+      executing with
   | .ok p => match p.body with
     | .Opaque posts _ _ => posts
     | _ => []
@@ -159,5 +160,22 @@ bodiless: Assume
     | cs => s!"unexpected condition count: {cs.length}"
   IO.println s!"with body: {mode false}"
   IO.println s!"bodiless: {mode true}"
+
+/-! ## 4. A concrete run gets none of these frames -/
+
+/--
+info: empty group: (no conditions)
+named target, enumerated on: (no conditions)
+guarded named target: (no conditions)
+bodiless named target: (no conditions)
+-/
+#guard_msgs in
+#eval do
+  let exec (groups : List ModifiesGroup) (enumerated bodiless : Bool) :=
+    describe (framesOf groups enumerated bodiless (executing := true))
+  IO.println s!"empty group: {exec [{ targets := [] }] false false}"
+  IO.println s!"named target, enumerated on: {exec [{ targets := [cRef] }] true false}"
+  IO.println s!"guarded named target: {exec [{ targets := [cRef], guard := guard? }] false false}"
+  IO.println s!"bodiless named target: {exec [{ targets := [cRef] }] false true}"
 
 end

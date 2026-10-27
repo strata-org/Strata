@@ -354,6 +354,7 @@ private def mockSolver : AbstractSolver String String MockM where
   mkForall _ cb := do let (body, _) ← cb []; pure body
   mkExists _ cb := do let (body, _) ← cb []; pure body
   declareNew name _ := pure name
+  mkParam name _ := pure name
   declareFun name _ _ := do modify (· ++ [name]); pure name
   defineFun name _ _ _ := modify (· ++ [name])
   declareSort name _ := pure name
@@ -364,6 +365,7 @@ private def mockSolver : AbstractSolver String String MockM where
   checkSatAssuming _ := pure .unsat
   getUnsatAssumptions := pure []
   getModel := pure []
+  getModelText _ := pure ""
   getValue _ := pure []
   termToSMTLibString t := pure t
   reset := pure ()

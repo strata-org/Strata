@@ -35,9 +35,9 @@ fresh name is generated and no substitution is applied — soundness rests on th
 `StoreAgreement` pipeline relation ignoring source-undefined slots, gated by
 `Block.uniqueInits`.
 
-This file keeps the pure same-name pass definitions plus the shape-independent
-helper lemmas consumed by the downstream proof files. The measure-free-loop
-precondition they use is `Block.noMeasureLoops` from `Stmt.lean`.
+This file keeps the pure same-name pass definitions. The `initVars` and
+`noInitsAnywhere` correspondence lemmas live in `StmtProps`. The
+measure-free-loop precondition is `Block.noMeasureLoops` from `Stmt.lean`.
 -/
 
 /-! ## Same-name lift and hoist (pure, no rename)
@@ -128,121 +128,5 @@ def Block.hoistLoopPrefixInits {P : PureExpr}
   | s :: rest => Stmt.hoistLoopPrefixInits s ++ Block.hoistLoopPrefixInits rest
   termination_by sizeOf ss
 end
-
-/-! ## Shape-independent helper lemmas
-
-These distribute the structural Bool walkers over `++` and assert their
-triviality on `.cmd`-only prelude lists. They do not mention the hoist pass
-itself and are consumed by the downstream proof files. -/
-
-/-- A list of non-init `.cmd`s contributes trivially to
-`Block.loopBodyNoInits`. -/
-private theorem Block.loopBodyNoInits_map_cmd {P : PureExpr} [HasFvars P]
-    (cs : List (Cmd P)) :
-    Block.loopBodyNoInits (cs.map Stmt.cmd) = true := by
-  induction cs with
-  | nil => simp [Block.loopBodyNoInits]
-  | cons c rest ih =>
-    simp [List.map_cons, Block.loopBodyNoInits,
-          Stmt.loopBodyNoInits, ih]
-
-/-- A list of `.cmd`s trivially has `loopHasNoInvariants = true`. -/
-private theorem Block.loopHasNoInvariants_map_cmd {P : PureExpr}
-    (cs : List (Cmd P)) :
-    Block.loopHasNoInvariants (cs.map Stmt.cmd : List (Stmt P (Cmd P))) = true := by
-  induction cs with
-  | nil => simp [Block.loopHasNoInvariants]
-  | cons c rest ih =>
-    simp [List.map_cons, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants, ih]
-
-mutual
-/-- No inits anywhere ⇒ the deep `initVars` list is empty (`= []`). -/
-private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
-    (s : Stmt P (Cmd P)) (h : Stmt.noInitsAnywhere s = true) :
-    Stmt.initVars s = [] := by
-  match s with
-  | .cmd c =>
-      cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
-  | .block lbl bss md =>
-      rw [Stmt.noInitsAnywhere] at h
-      simp only [Stmt.initVars_block]
-      exact Block.initVars_eq_nil_of_noInitsAnywhere bss h
-  | .ite g tss ess md =>
-      rw [Stmt.noInitsAnywhere, Bool.and_eq_true] at h
-      simp only [Stmt.initVars_ite]
-      rw [Block.initVars_eq_nil_of_noInitsAnywhere tss h.1,
-          Block.initVars_eq_nil_of_noInitsAnywhere ess h.2, List.append_nil]
-  | .loop g m inv bss md =>
-      rw [Stmt.noInitsAnywhere] at h
-      simp only [Stmt.initVars_loop]
-      exact Block.initVars_eq_nil_of_noInitsAnywhere bss h
-  | .exit lbl md => simp [Stmt.initVars]
-  | .typeDecl t md => simp [Stmt.initVars]
-  termination_by sizeOf s
-
-private theorem Block.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
-    (ss : List (Stmt P (Cmd P))) (h : Block.noInitsAnywhere ss = true) :
-    Block.initVars ss = [] := by
-  match ss with
-  | [] => simp [Block.initVars]
-  | s :: rest =>
-      rw [Block.noInitsAnywhere, Bool.and_eq_true] at h
-      simp only [Block.initVars_cons]
-      rw [Stmt.initVars_eq_nil_of_noInitsAnywhere s h.1,
-          Block.initVars_eq_nil_of_noInitsAnywhere rest h.2, List.append_nil]
-  termination_by sizeOf ss
-end
-
-mutual
-/-- Empty deep `initVars` list ⇒ no inits anywhere (converse of
-`initVars_eq_nil_of_noInitsAnywhere`). -/
-theorem Stmt.noInitsAnywhere_of_initVars_nil [HasFvars P]
-    (s : Stmt P (Cmd P)) (h : Stmt.initVars s = []) :
-    Stmt.noInitsAnywhere s = true := by
-  match s with
-  | .cmd c => cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
-  | .block lbl bss md =>
-      rw [Stmt.initVars_block] at h; simp only [Stmt.noInitsAnywhere]
-      exact Block.noInitsAnywhere_of_initVars_nil bss h
-  | .ite g tss ess md =>
-      rw [Stmt.initVars_ite, List.append_eq_nil_iff] at h
-      simp only [Stmt.noInitsAnywhere,
-        Block.noInitsAnywhere_of_initVars_nil tss h.1,
-        Block.noInitsAnywhere_of_initVars_nil ess h.2, Bool.and_true]
-  | .loop g m inv bss md =>
-      rw [Stmt.initVars_loop] at h; simp only [Stmt.noInitsAnywhere]
-      exact Block.noInitsAnywhere_of_initVars_nil bss h
-  | .exit lbl md => simp [Stmt.noInitsAnywhere]
-  | .typeDecl t md => simp [Stmt.noInitsAnywhere]
-  termination_by sizeOf s
-
-theorem Block.noInitsAnywhere_of_initVars_nil [HasFvars P]
-    (ss : List (Stmt P (Cmd P))) (h : Block.initVars ss = []) :
-    Block.noInitsAnywhere ss = true := by
-  match ss with
-  | [] => simp [Block.noInitsAnywhere]
-  | s :: rest =>
-      rw [Block.initVars_cons, List.append_eq_nil_iff] at h
-      simp only [Block.noInitsAnywhere,
-        Stmt.noInitsAnywhere_of_initVars_nil s h.1,
-        Block.noInitsAnywhere_of_initVars_nil rest h.2, Bool.and_true]
-  termination_by sizeOf ss
-end
-
-/-- On any block, `(Block.initVars ss).isEmpty = Block.noInitsAnywhere ss`:
-both walk the same tree and `.init` is the sole producer of an `initVars`
-entry. -/
-theorem Block.isEmpty_initVars_eq_noInitsAnywhere [HasFvars P]
-    (ss : List (Stmt P (Cmd P))) :
-    (Block.initVars ss).isEmpty = Block.noInitsAnywhere ss := by
-  rcases he : (Block.initVars ss).isEmpty with _ | _
-  · symm
-    rw [Bool.eq_false_iff, Ne]
-    intro hn
-    rw [Block.initVars_eq_nil_of_noInitsAnywhere ss hn] at he
-    simp at he
-  · symm
-    rw [List.isEmpty_iff] at he
-    exact Block.noInitsAnywhere_of_initVars_nil ss he
 
 end Imperative

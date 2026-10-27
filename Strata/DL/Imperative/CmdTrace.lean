@@ -5,16 +5,20 @@
 -/
 module
 
-public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.StoreRelations
 public import Strata.Util.ListUtils
 
 /-! # Imperative command traces
 
-Defines captured assertion, assumption, and cover events and chronological traces.
-Condition interpretation, deductive validity, cover satisfiability, feasibility,
-and neutrality live in `Strata.DL.Imperative.Logic.TraceInterp`.
-`SemanticStore` lives here because captured events depend on store snapshots;
-command evaluation builds on this module rather than the reverse, avoiding an
+Defines captured assertion, assumption, and cover events and chronological
+traces, together with the event-level environment-extension relations built
+directly on them.  Condition interpretation, deductive validity, cover
+satisfiability, feasibility, and neutrality live in
+`Strata.DL.Imperative.Logic.TraceInterp`.
+
+`SemanticStore` and `StoreExtendsWith` are defined in
+`Strata.DL.Imperative.StoreRelations`, which this module publicly imports.
+Command evaluation builds on this module rather than the reverse, avoiding an
 import cycle.
 -/
 
@@ -23,17 +27,6 @@ import cycle.
 namespace Imperative
 
 public section
-
-section
-
-variable (P : PureExpr)
-
-/-
-These are intended to be as generic as possible, not using any specific
-data structure. They'll probably usually be instantiated with map
-lookups.
--/
-abbrev SemanticStore := P.Ident → Option P.Expr
 
 /-! ### Event traces
 
@@ -73,7 +66,45 @@ inductive Event (P : PureExpr) where
 assumption observations. -/
 abbrev Trace (P : PureExpr) := List (Event P)
 
-end
+/-! ### Event environment-extension relations
+
+These compare captured events under store extension.  They are phrased directly
+over `StoreExtendsWith` (from `StoreRelations`) and so belong with the events
+themselves; their property proofs live in
+`Strata.DL.Imperative.Logic.TraceRelationsProps`.
+-/
+
+/-- Return the condition snapshot carried by an event. -/
+@[expose] def Event.condition {P : PureExpr} : Event P → EventArg P
+  | .assert condition | .assume condition | .cover condition => condition
+
+/-- An event may stutter when it is an assumption or assertion whose captured
+condition evaluates to true. Covers remain observable even when their condition
+is true. -/
+@[expose] def Event.isTrueAssumeOrAssert {P : PureExpr} [HasBool P] :
+    Event P → Prop
+  | .assume condition | .assert condition =>
+      P.eval condition.factory condition.store condition.expr = some HasBool.tt
+  | .cover _ => False
+
+/-- A target event argument extends a source event argument when all observable
+fields are unchanged and its target-only register bindings satisfy `Extra`. -/
+@[expose] def EventArg.ExtendsEnv {P : PureExpr} (Extra : P.Ident → Prop)
+    (source target : EventArg P) : Prop :=
+  source.factory = target.factory ∧
+  StoreExtendsWith Extra source.store target.store ∧
+  source.label = target.label ∧
+  source.expr = target.expr ∧
+  source.metadata = target.metadata
+
+/-- Events correspond under environment extension when they have the same kind
+and their captured arguments correspond under `EventArg.ExtendsEnv`. -/
+@[expose] def Event.ExtendsEnv {P : PureExpr} (Extra : P.Ident → Prop) :
+    Event P → Event P → Prop
+  | .assert source, .assert target => source.ExtendsEnv Extra target
+  | .assume source, .assume target => source.ExtendsEnv Extra target
+  | .cover source, .cover target => source.ExtendsEnv Extra target
+  | _, _ => False
 
 end -- public section
 end Imperative

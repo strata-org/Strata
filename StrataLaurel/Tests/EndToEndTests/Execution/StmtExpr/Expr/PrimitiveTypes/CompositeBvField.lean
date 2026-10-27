@@ -14,8 +14,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 
 program Laurel;

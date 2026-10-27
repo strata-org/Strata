@@ -376,3 +376,89 @@ procedure diamondFieldOnGenericReceiver()
   assert 1 == 1
 };
 #end
+
+/-! ## An inherited generic METHOD on a diamond
+
+`DG<int>` reaches `GBaseG` at both `GBaseG<bool>` and `GBaseG<int>`, so `innerG` has no single
+type argument at it, however the receiver is typed: through a constrained type, a generic field or
+a generic call's result (also one with a hole argument), and under an `if`, a block, an assignment
+or an `old`. The error is at the receiver, and once for a generic body cloned twice. A parameter
+that mentions no type variable takes the diamond by an upcast. An unused `var h: H<…>` makes its
+procedure monomorphized, without which neither of the last two cases would be checked. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite GBaseG<T> { var v: T }
+composite MidG extends GBaseG<bool> { }
+composite LG<X> extends GBaseG<X> { }
+composite DG<X> extends MidG, LG<X> { }
+constrained CD = d: DG<int> where true witness <??>
+composite H<X> { var d: DG<X> }
+composite K<X> { var h: H<X> }
+procedure mkDG<X>(x: X) returns (r: DG<X>) opaque;
+procedure mkDGh<X>(x: X, y: X) returns (r: DG<X>) opaque;
+procedure innerG<T>(p: GBaseG<T>) returns (r: T) opaque { r := p#v };
+
+procedure constrainedReceiver(c: CD) opaque {
+  var g: int := innerG(c)
+//                     ^ error: 'CD' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
+};
+
+procedure fieldReceiver(k: K<int>) opaque {
+  var g: int := innerG(k#h#d)
+//                         ^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure callResultReceiver() opaque {
+  var g: int := innerG(mkDG(1))
+//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure holeBuiltReceiver() opaque {
+  var g: int := innerG(mkDGh(1, <?>))
+//                     ^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure ifCallReceiver(b: bool) opaque {
+  var g: int := innerG(if b then mkDG(1) else mkDG(1))
+//                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure blockFieldReceiver(h: H<int>) opaque {
+  var g: int := innerG({ h#d })
+//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure assignCallReceiver() opaque {
+  var e: DG<int>;
+  var g: int := innerG(e := mkDG(1))
+//                     ^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure oldFieldReceiver(h: H<int>) opaque modifies h {
+  h#d := mkDG(2);
+  var g: int := innerG(old(h#d))
+//                     ^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+};
+
+procedure inGenericBody<S>(x: S, d: DG<int>) returns (r: S) opaque {
+  var h: H<S>;
+  var g: int := innerG(d);
+//                     ^ error: 'DG<int>' reaches 'GBaseG' at both
+  r := x
+};
+
+procedure callsItTwice(d: DG<int>) opaque {
+  var a: int := inGenericBody(1, d);
+  var b: bool := inGenericBody(true, d)
+};
+
+procedure upcastOnly<T>(b: GBaseG<bool>, x: T) returns (r: T)
+  opaque ensures r == x { var h: H<T>; r := x };
+
+procedure noTypeArgumentAtStake(d: DG<int>) opaque {
+  var r: int := upcastOnly(d, 1);
+  assert r == 1
+};
+#end

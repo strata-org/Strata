@@ -36,6 +36,7 @@ import Strata.DL.Imperative.Logic.TraceInterp
 import Strata.DL.Imperative.Logic.TraceInterpProps
 import Strata.Transform.Specification
 import Strata.Transform.CoreSpecification
+import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.SpecificationProps
 import Strata.Languages.Core.Logic.LangDef

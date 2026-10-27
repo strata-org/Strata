@@ -29,7 +29,8 @@ Instantiations are collected from every type position (fields, datatype ctor arg
 constrained type's base, constants, static fields, procedure signatures, and body +
 contract statements) and from `new C<τ>` allocation sites, then driven to a fixpoint by a
 depth-capped worklist that also clones poly procedures materializing a generic composite.
-The pipeline reads, top to bottom: `indexGenerics` → `collectSeeds` → fixpoint drain
+The pipeline reads, top to bottom: `indexGenerics` and `indexOpenCallers` → `collectSeeds`, the
+diamond check (`checkDiamond`) and the call renaming (`rewritePolyCallNode`) → fixpoint drain
 (`processWorklistItem`) → uncalled-proc witnesses → `topoSortMonomorphs` → rewrite all
 type/`new` positions.
 -/
@@ -73,10 +74,6 @@ private def tyDepth : HighType → Nat
   termination_by ty => ty
   decreasing_by ast_recursion_decreasing
 
--- `matchTypeArg` (the structural type-argument inference primitive this pass uses in
--- `inferProcInst`) lives in `LaurelAST`: `Resolution` needs it too, for call-site type-argument
--- inference, and this module imports `Resolution` — so it cannot be the owner.
-
 /-- Mangled monomorphic name for `C` instantiated at `args`, e.g. `Box$a1$int`,
     or `none` if any arg can't be tagged. Identifier-legal only
     (these become Core/SMT sort names — no `«»`/`,`). -/
@@ -119,10 +116,6 @@ private def instKey (i : Inst) : String := monoName i.1 i.2
 private abbrev ProcInst := String × List HighType
 
 private def procInstKey (p : ProcInst) : String := monoName p.1 p.2
-
-/-- Composite instantiations keyed by `instKey`, procedure instantiations keyed by `procInstKey`,
-    and the diagnostics inferring the latter produced. -/
-private abbrev Seeds := Std.HashMap String Inst × Std.HashMap String ProcInst × List Message
 
 /-- The SINGLE source of truth for the instantiation an explicit `new C<τ…>`
     denotes. Returns `some (C, args)` exactly when the `new` carries explicit type
@@ -412,163 +405,94 @@ private def cloneProcAt (proc : Procedure) (subst : Std.HashMap String HighTypeM
     throwsOn := proc.throwsOn.map sThrowsOn,
     body := body' }
 
-/-- Lift a composite actual type to the substituted-ancestor instantiation whose head matches a
-    declared parameter's head, so `matchTypeArg` can bind the callee's type args. Reuses
-    `TypeLattice.substitutedAncestors` (the SAME relation `isSubtype` uses), so it sees the full
-    `extends` chain via `parentExprMap` — every hop, generic or concrete — not just the generic
-    composites a `genDefs`-only walk would.
+/-- The two instantiations at which `actual` reaches a declared parameter's head
+    (`ancestorLiftCandidates`), if they differ up to `highEq`: a `D<int>` extending both
+    `Base<bool>` and `Base<int>` gives an inherited method of `Base` no single type argument.
 
-    Motivating case: an instance method INHERITED from a GENERIC parent lifts to
-    `Base$get<T>(self: Base<T>)`, and a call on a `Sub<int>` receiver arrives as
-    `matchTypeArg (declared Base<T>) (actual Sub<int>)`. The heads differ, so a raw match binds
-    nothing (`'Base$get' is not defined` downstream). `substitutedAncestors` remaps `Sub<int>` up
-    to the concrete `Base<int>`, which matches `Base<T>` head-to-head and binds `T := int`.
+    `none` while `actual` mentions a type variable (`D<S>` in a pristine generic body): an ancestor
+    may carry it (`Base<S>`), so no conflict is real yet, and the clone that makes `actual` concrete
+    decides the same call again. Deferring on `actual` rather than on the ancestors found keeps a
+    concrete conflict listed before an abstract parent from being reported twice.
 
-    AMBIGUITY: a doubly-inheriting descendant can reach the declared head at two different concrete
-    instantiations (`D<int>` via `Base<bool>` and `Base<int>`). Picking either arbitrarily binds the
-    type arg, so this returns `.error` with both; `inferProcInst` reports a clean disambiguation
-    `userError`. Uniqueness is up to `highEq`, so a redundant `extends` edge re-deriving one
-    instantiation is fine.
+    `none`, too, for a `declared` that mentions no type variable (`GBaseG<bool>`): it fixes no
+    type argument, so the diamond is passed by an upcast. -/
+private def diamondConflict? (ctx : TypeLattice) (declared actual : HighType)
+    : Option (String × HighType × HighType) := do
+  let head ← highBaseName? declared
+  guard (tyTag actual).isSome
+  guard !(tvarIdents declared).isEmpty
+  let hit :: rest := ancestorLiftCandidates ctx declared actual | none
+  let other ← rest.find? (fun a => !highEq a hit)
+  return (head.text, hit.val, other.val)
 
-    CONCRETENESS gate (keyed on the RECEIVER, see the inline comment for the order-independence
-    argument): decide only when `actual` is `tyTag`-concrete; while it still mentions a type
-    variable, DEFER (`.ok actual`) — the same call is re-examined once cloning makes it concrete.
-
-    Non-error cases all return `.ok`: same-head, non-composite, deferred, or no-match return the
-    actual unchanged; a unique match returns the lifted concrete instantiation. -/
-private def liftActualToParamHead (ctx : TypeLattice)
-    (declared actual : HighType) : Except (String × HighType × HighType) HighType :=
-  match highBaseName? declared, highBaseName? actual with
-  | some dHead, some aHead =>
-    if dHead.text == aHead.text then .ok actual
-    -- DEFER on an abstract receiver: while `actual` still mentions a type variable (`D<S>` on a
-    -- pristine poly-caller body), a `substitutedAncestors` head-match may carry that variable
-    -- (`Base<S>`), so any conflict seen now is not yet real — it is the SAME call that will be
-    -- re-examined once cloning makes the receiver concrete. Keying the defer on the RECEIVER (not
-    -- on which ancestor a search happens to pick) makes it order-INDEPENDENT: otherwise a concrete
-    -- conflict listed before an abstract sibling would be reported early on the pristine body AND
-    -- again on the concrete clone (a duplicate diagnostic). A concrete receiver yields all-concrete
-    -- ancestors (its args are substituted transitively), so the decision below is total and stable.
-    else if (tyTag actual).isNone then .ok actual
-    else
-      let aArgs : List HighTypeMd := match actual with
-        | .Applied _ args => args
-        | _ => []
-      -- all concrete here (guaranteed by the DEFER above)
-      let headMatches := (ctx.substitutedAncestors aHead.text aArgs).filter
-        (fun anc => (highBaseName? anc.val).any (·.text == dHead.text))
-      match headMatches with
-      | [] => .ok actual
-      | hit :: rest =>
-        -- UNIQUE up to `highEq` (a redundant edge re-deriving the same instantiation is fine);
-        -- otherwise two distinct concrete instantiations of the declared head — a genuine conflict.
-        match rest.find? (fun a => !highEq a hit) with
-        | none => .ok hit.val
-        | some other => .error (dHead.text, hit.val, other.val)
-  | _, _ => .ok actual
-
-/-- Infer a procedure instantiation from a call site: match each declared input
-    type against the corresponding argument's type (via `matchTypeArg`), then order
-    the resulting type-var bindings by the procedure's declared `typeArgs`. Returns
-    `none` if a binding is missing/inconsistent or arities differ — the call then
-    can't be monomorphized and is left for the loud downstream failure. `argTys` are
-    the actual argument types (see `argType`).
-
-    Each actual is first lifted via `liftActualToParamHead` so an inherited generic method
-    binds its type args (a no-op on same-head / non-composite params).
-
-    Returns `Except Message (Option ProcInst)`: `.error diag` when an actual reaches its
-    parameter's head at TWO conflicting instantiations (a doubly-inheriting diamond) — a
-    clean `userError` naming both and the disambiguating upcast, DISTINCT from the benign
-    `.ok none` (an actual not yet concrete enough to bind, deferred to a later fixpoint
-    round). The pipeline's post-pass loop stops on a real error-diag, so this clean
-    rejection is what the user sees rather than the downstream `'Base$get' is not defined`.
-
-    CONCRETENESS GATE: every inferred type arg must be `tyTag`-taggable (fully
-    concrete — no `.TVar`). This is load-bearing for the step-3 fixpoint: scanning a
-    poly proc's PRISTINE body sees its own internal poly calls over still-abstract
-    args (`outer<T>`'s body calls `inner(b)` with `b : Box<T>`), and `matchTypeArg`
-    would bind `T := .TVar T` — a bogus instantiation that clones an `inner$UNTAGGABLE`
-    whose signature still carries `Box<T>`, surviving to Core ("generic type
-    application reached Core translation"). Rejecting un-taggable bindings here means
-    those abstract internal calls are discovered ONLY when concrete — i.e. during
-    cloning, by `discoverRewritePolyCalls`, after `subst` makes the arg concrete. -/
-private def inferProcInst (ctx : TypeLattice)
-    (proc : Procedure) (argTys : List HighTypeMd)
-    : Except Message (Option ProcInst) := do
-  if proc.inputs.length != argTys.length then return none
-  let bindings? ← (proc.inputs.zip argTys).foldlM (init := some (∅ : Std.HashMap String HighType))
-    (fun acc? (param, aty) => do
-      match liftActualToParamHead ctx param.type.val aty.val with
-      | .ok lifted => return acc?.bind (fun m => matchTypeArg param.type.val lifted m)
-      | .error (headName, t1, t2) =>
-        -- `formatHighTypeVal` is the SAME renderer the grammar back-translation uses, so the
-        -- upcast hint (`var b: <t1> := …`) is real surface syntax rather than a hand-rolled
-        -- approximation that could print an uncompilable `_` on a shape it didn't special-case.
-        let fmt := fun (t : HighType) => toString (formatHighTypeVal t)
-        throw (diagnosticFromSource aty.source
-          s!"ambiguous type argument for inherited method: '{fmt aty.val}' reaches \
-             '{headName}' at both '{fmt t1}' and '{fmt t2}', so the type \
-             argument cannot be determined. Upcast the receiver to the intended one \
-             (e.g. `var b: {fmt t1} := …`) to disambiguate."
-          MessageKind.userError))
-  return bindings?.bind fun bindings =>
-    let ordered := proc.typeArgs.map (fun tv => bindings.get? tv.text)
-    if ordered.all (·.isSome) && (ordered.filterMap id).all (fun t => (tyTag t).isSome)
-    then some (proc.name.text, ordered.filterMap id) else none
-
-/-- `proc`'s result type at the instantiation `targs`. -/
-private def resultTypeAt (proc : Procedure) (targs : List HighType) : HighTypeMd :=
-  procResultTypeAt .unknown proc (targs.map (⟨·, .unknown⟩))
-
-/-- The type of call argument `a` under the clone substitution `subst`. A call this traversal renamed
-    reports the output recorded for its monomorph, since `model` cannot resolve the new name. -/
-private def argType (model : SemanticModel) (subst renamedOutputs : Std.HashMap String HighTypeMd)
-    (a : StmtExprMd) : HighTypeMd :=
-  let renamed? := match a.val with
-    | .StaticCall callee _ _ => renamedOutputs.get? callee.text
+/-- The type of call argument `a` under the clone substitution `subst`, located at `a`, as
+    `Resolution` typed it. A field is typed at its holder's instantiation (`h#d` with `h: H<int>`
+    and `d: DG<X>` is a `DG<int>`): typed as declared, the receiver would look abstract and the
+    diamond check would skip it. -/
+private def argType (ctx : TypeLattice) (model : SemanticModel)
+    (subst : Std.HashMap String HighTypeMd) (a : StmtExprMd) : HighTypeMd :=
+  let fieldTypeAt := fun fieldName holderTy => match model.get fieldName with
+    | .field declType fld => ctx.fieldTypeAt declType fld.type holderTy
     | _ => none
-  renamed?.getD (substTypeVars subst (computeExprType model a))
+  { substTypeVars subst (computeExprTypeWith (some fieldTypeAt) model a) with source := a.source }
+
+/-- Report a call one of whose arguments is a diamond for its parameter (`diamondConflict?`), since
+    `Resolution` records such a call at whatever the expected type supplies. Both sides are
+    `unfold`ed, as `Resolution` matches them, so a constrained type over the diamond is refused too.
+
+    Run before any call is renamed, so that `model` types a nested call by its record, and never
+    over a clone's body, whose ids are cleared. -/
+private def checkDiamond (model : SemanticModel) (ctx : TypeLattice)
+    (polyProcDefs : Std.HashMap String Procedure) (subst : Std.HashMap String HighTypeMd)
+    (e : StmtExprMd) : StateM (List Message) StmtExprMd := do
+  let .StaticCall callee args _ := e.val | return e
+  let some calleeDef := polyProcDefs.get? callee.text | return e
+  let conflict? := (calleeDef.inputs.zip args).findSome? fun (param, a) =>
+    let aty := argType ctx model subst a
+    (diamondConflict? ctx (ctx.unfold param.type).val (ctx.unfold aty).val).map (aty, ·)
+  if let some (aty, headName, t1, t2) := conflict? then
+    -- `formatHighTypeVal` is the SAME renderer the grammar back-translation uses, so the
+    -- upcast hint (`var b: <t1> := …`) is real surface syntax rather than a hand-rolled
+    -- approximation that could print an uncompilable `_` on a shape it didn't special-case.
+    let fmt := fun (t : HighType) => toString (formatHighTypeVal t)
+    modify (· ++ [diagnosticFromSource aty.source
+      s!"ambiguous type argument for inherited method: '{fmt aty.val}' reaches \
+         '{headName}' at both '{fmt t1}' and '{fmt t2}', so the type \
+         argument cannot be determined. Upcast the receiver to the intended one \
+         (e.g. `var b: {fmt t1} := …`) to disambiguate."
+      MessageKind.userError])
+  return e
 
 /-- Threaded through a poly-call rewrite traversal. -/
 private structure RewriteState where
-  /-- Every call this traversal renamed, with its instantiation and source. -/
-  renamed        : List (ProcInst × FileRange) := []
-  /-- The result type of each call this traversal renamed, keyed by monomorph name. The traversal
-      is bottom-up, so an enclosing call meets its argument already renamed, to a name `model`
-      cannot resolve. -/
-  renamedOutputs : Std.HashMap String HighTypeMd := {}
-  /-- Ambiguity diagnostics from `inferProcInst`. Surfaced by the caller (which stops the
-      pipeline) rather than left to the downstream dangling-reference internal error. -/
-  diags          : List Message := []
+  /-- The instantiation of every call this traversal renamed. -/
+  renamed  : List ProcInst := []
+  /-- Whether a call was left unrenamed, its instantiation missing or not concrete. -/
+  leftOpen : Bool := false
 
-/-- Rewrite ONE node: a `StaticCall` to an indexed poly procedure becomes a call to the monomorph
-    matching the instantiation inferred from its argument types, and that instantiation is
-    recorded. `subst` makes an enclosing clone's abstract argument types concrete (`Box<T>` inside
-    `outer<T>` cloned at int becomes `Box<int>`); it is empty outside a clone body.
+/-- Rewrite ONE node: a `StaticCall` to an indexed poly procedure becomes a call to the monomorph at
+    the instantiation `Resolution` recorded on it, so that the clone re-resolves as the call did,
+    and the instantiation is kept in `renamed`. `subst` makes an enclosing clone's abstract type
+    arguments concrete (`T` inside `outer<T>` cloned at int becomes `int`); it is empty outside a
+    clone body.
 
-    A call whose args yield no concrete binding is LEFT unchanged and NOT discovered: inside a
-    generic body the clone discovers it once `subst` is concrete, and anywhere else it fails loud
-    downstream (dangling poly callee at re-resolution) rather than silently mis-monomorphizing. -/
-private def rewritePolyCallNode (model : SemanticModel) (ctx : TypeLattice)
-    (polyProcDefs : Std.HashMap String Procedure) (subst : Std.HashMap String HighTypeMd)
-    (e : StmtExprMd) : StateM RewriteState StmtExprMd := do
-  let .StaticCall callee args _ := e.val | return e
+    A call whose instantiation is missing or not concrete is LEFT unchanged and NOT discovered:
+    inside a generic body the clone discovers it once `subst` is concrete, and anywhere else it
+    fails loud downstream (dangling poly callee at re-resolution) rather than silently
+    mis-monomorphizing. -/
+private def rewritePolyCallNode (polyProcDefs : Std.HashMap String Procedure)
+    (subst : Std.HashMap String HighTypeMd) (e : StmtExprMd) : StateM RewriteState StmtExprMd := do
+  let .StaticCall callee args tyArgs := e.val | return e
   let some calleeDef := polyProcDefs.get? callee.text | return e
-  let st ← get
-  match inferProcInst ctx calleeDef (args.map (argType model subst st.renamedOutputs)) with
-  | .error diag =>
-    set { st with diags := st.diags ++ [diag] }
+  let targs := tyArgs.map (substTypeVars subst · |>.val)
+  unless targs.length == calleeDef.typeArgs.length && targs.all (tyTag · |>.isSome) do
+    modify fun st => { st with leftOpen := true }
     return e
-  | .ok none => return e
-  | .ok (some pinst) =>
-    let key := procInstKey pinst
-    set { st with
-      renamed := st.renamed ++ [(pinst, e.source)]
-      renamedOutputs := st.renamedOutputs.insert key (resultTypeAt calleeDef pinst.2) }
-    -- `procInstKey` bakes the instantiation into the name, so any recorded type arguments are
-    -- now redundant and are dropped.
-    return { e with val := .StaticCall (mkId key) args [] }
+  let pinst := (calleeDef.name.text, targs)
+  modify fun st => { st with renamed := st.renamed ++ [pinst] }
+  -- `procInstKey` bakes the instantiation into the name, so the recorded type arguments are now
+  -- redundant and are dropped.
+  return { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
 
 /-- Discover and rewrite polymorphic-procedure CALLS inside a (pristine, resolved)
     procedure's StmtExpr slots — preconditions, decreases, invokeOn, and body — under
@@ -576,16 +500,18 @@ private def rewritePolyCallNode (model : SemanticModel) (ctx : TypeLattice)
     a cloned `outer<T>`'s body may call another poly proc `inner<T>(b: Box<T>)`.
 
     Argument types are computed against the PRISTINE body, which is why this must run before
-    cloning: a clone's ids are cleared and absent from `model`. Returns the rewritten procedure
-    plus the instantiations for the worklist. -/
+    cloning: a clone's ids are cleared and absent from `model`. Returns the rewritten procedure,
+    the instantiations for the worklist and the diamond diagnostics. -/
 private def discoverRewritePolyCalls (model : SemanticModel)
     (ctx : TypeLattice)
     (polyProcDefs : Std.HashMap String Procedure)
     (subst : Std.HashMap String HighTypeMd) (pproc : Procedure)
     : Procedure × List ProcInst × List Message :=
+  let diags :=
+    ((mapProcedureM (mapStmtExprM (checkDiamond model ctx polyProcDefs subst)) pproc).run []).2
   let (pproc', st) :=
-    (mapProcedureM (mapStmtExprM (rewritePolyCallNode model ctx polyProcDefs subst)) pproc).run {}
-  (pproc', st.renamed.map (·.1), st.diags)
+    (mapProcedureM (mapStmtExprM (rewritePolyCallNode polyProcDefs subst)) pproc).run {}
+  (pproc', st.renamed, diags)
 
 /-- Collect generic-composite instantiations from a procedure's body StmtExpr type
     slots (Declare types, `as`/`is`, quantifier binders, `new C<τ>`). Purely
@@ -676,7 +602,10 @@ private def processWorklistItem (genComposites : Std.HashMap String (List Identi
         -- enqueueing each callee instantiation; then clone the rewritten proc.
         let (pproc', discovered, ambigDiags) := discoverRewritePolyCalls model ctx polyProcDefs subst pproc
         let clone := cloneProcAt pproc' subst (monoName pname targs)
-        s := { s with procClones := s.procClones ++ [clone], diags := s.diags ++ ambigDiags }
+        -- A diamond that does not depend on `subst` was reported by the seeding check already, or
+        -- by an earlier clone's.
+        s := { s with procClones := s.procClones ++ [clone],
+                      diags := s.diags ++ ambigDiags.filter (!s.diags.contains ·) }
         for di in discovered do
           unless s.clonedProcs.contains (procInstKey di) do
             s := { s with worklist := s.worklist ++ [.inr di] }
@@ -769,8 +698,9 @@ private def topoSortMonomorphs (mono : List TypeDefinition) : List TypeDefinitio
     one of their own type vars — in the SIGNATURE (`f<T>(b: Box<T>)`) OR the BODY
     (`var t: Box<T>`). Those monomorphize per call site; a poly proc touching no generic
     composite at its typevar (`idp<T>(x:T)`) stays on the CallElim freshening path (the
-    hybrid). The body case is load-bearing: a body-local `Box<T>` on the freshening path
-    has no Core representation, so its field write would survive un-lowered (a StrataBug). -/
+    hybrid), unless it calls one that does at its typevar (`indexOpenCallers`). The body case
+    matters: a body-local `Box<T>` on the freshening path has no Core representation, so its
+    field write would survive un-lowered (a StrataBug). -/
 private def indexGenerics (program : LaurelProgram) (model : SemanticModel)
     : Std.HashMap String (List Identifier) × Std.HashMap String CompositeType × Std.HashMap String Procedure :=
   Id.run do
@@ -810,16 +740,31 @@ private def indexGenerics (program : LaurelProgram) (model : SemanticModel)
       polyProcDefs := polyProcDefs.insert proc.name.text proc
   return (genComposites, genDefs, polyProcDefs)
 
+/-- Add to `polyProcDefs`, to a fixpoint, every poly proc that leaves a call to one of them
+    unrenamed, as one at an instantiation its own type variables leave open (`f<S>(x: S)` calling
+    `id2(x)`, `id2` materializing a `Box<T>`). Such a call is renamed only in a clone of its caller,
+    where `S` is concrete, so the caller must be monomorphized too: on the freshening path it is
+    kept verbatim while its callee is replaced by clones, and the call dangles. A call without a
+    record dangles either way. -/
+private def indexOpenCallers (program : LaurelProgram)
+    (polyProcDefs : Std.HashMap String Procedure) : Std.HashMap String Procedure := Id.run do
+  let leavesOpen (defs : Std.HashMap String Procedure) (proc : Procedure) : Bool :=
+    ((mapProcedureM (mapStmtExprM (rewritePolyCallNode defs {})) proc).run {}).2.leftOpen
+  let mut defs := polyProcDefs
+  -- Each round but the last indexes another procedure, so there are at most as many as procedures.
+  for _ in program.staticProcedures do
+    let callers := program.staticProcedures.filter fun proc =>
+      !proc.typeArgs.isEmpty && !defs.contains proc.name.text && leavesOpen defs proc
+    if callers.isEmpty then break
+    defs := callers.foldl (fun m proc => m.insert proc.name.text proc) defs
+  return defs
+
 /-- Collect the SEED instantiations to start the worklist from: every COMPOSITE
     instantiation in a DECLARATION's type (composite fields, datatype ctor args, constants,
     static fields, proc params/outputs and throws); then, in one walk over every EXPRESSION
-    in the program, both the composite instantiations its type slots name and the PROCEDURE
-    instantiation of each call to an indexed poly proc, inferred from the arg types via
-    `inferProcInst`. -/
-private def collectSeeds (program : LaurelProgram) (model : SemanticModel)
-    (genComposites : Std.HashMap String (List Identifier))
-    (ctx : TypeLattice)
-    (polyProcDefs : Std.HashMap String Procedure) : Seeds := Id.run do
+    in the program, the composite instantiations its type slots name. -/
+private def collectSeeds (program : LaurelProgram)
+    (genComposites : Std.HashMap String (List Identifier)) : Std.HashMap String Inst := Id.run do
   let mut insts : Std.HashMap String Inst := {}
   let recordInsts (is : List Inst) (m : Std.HashMap String Inst) : Std.HashMap String Inst :=
     is.foldl (fun m i => m.insert (instKey i) i) m
@@ -838,25 +783,11 @@ private def collectSeeds (program : LaurelProgram) (model : SemanticModel)
     for p in proc.outputs do insts := recordInsts (collectInTy genComposites p.type) insts
     for t in proc.throwsType.toList do insts := recordInsts (collectInTy genComposites t) insts
   -- The same walk the final rewrite folds over, so the two cannot disagree about where to look. A
-  -- position missed here is not benign: the rewrite renames a type or a callee whose monomorph the
-  -- worklist never emitted, and re-resolution reports the dangling name as a `strata-bug`.
-  let (_, (insts', procInsts, seedDiags)) := (mapLaurelProgramStmtExprM (m := StateM Seeds)
-    (fun e => do
-      modify (fun (i, p, d) => (recordInsts (collectInStmt genComposites e) i, p, d))
-      match e.val with
-      | .StaticCall callee args _ =>
-        match polyProcDefs.get? callee.text with
-        | some pproc =>
-          match inferProcInst ctx pproc (args.map (computeExprType model)) with
-          | .ok (some pinst) => modify (fun (i, p, d) => (i, p.insert (procInstKey pinst) pinst, d))
-          -- `.ok none`: a call inside a poly procedure's own body, whose type args are not concrete
-          -- until that procedure is cloned. `discoverRewritePolyCalls` seeds it from the clone.
-          | .ok none => pure ()
-          | .error diag => modify (fun (i, p, d) => (i, p, d ++ [diag]))
-        | none => pure ()
-      | _ => pure ()
-      pure e) program).run (insts, {}, [])
-  return (insts', procInsts, seedDiags)
+  -- position missed here is not benign: the rewrite renames a type whose monomorph the worklist
+  -- never emitted, and re-resolution reports the dangling name as a `strata-bug`.
+  let (_, insts') := (mapLaurelProgramStmtExprM (m := StateM (Std.HashMap String Inst))
+    (fun e => do modify (recordInsts (collectInStmt genComposites e)); pure e) program).run insts
+  return insts'
 
 /-- The monomorphization transform over a whole program. Returns the rewritten
     program plus any diagnostics (e.g. a divergent recursive generic that exceeds
@@ -866,16 +797,24 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   -- 1. Index the generic composites + the poly procs that materialize them.
   let (genComposites, genDefs, polyProcDefs) := indexGenerics program model
   if genComposites.isEmpty then return (program, [])
+  -- 1b. Index, too, the poly procs that call an indexed one at their own type variables.
+  let polyProcDefs := indexOpenCallers program polyProcDefs
 
-  -- The type lattice over the whole program, used by `inferProcInst` to lift a receiver to the
-  -- substituted ancestor whose head matches an inherited method's declared `self` type. Built once
+  -- The type lattice over the whole program, for the diamond check and field typing. Built once
   -- here (from `program.types`) and threaded through, so the ancestor walk sees the FULL `extends`
   -- chain (concrete hops included) rather than only the generic composites `genDefs` records.
   let ctx := TypeLattice.ofTypes program.types
 
-  -- 2. Collect the seed composite + procedure instantiations from every type position.
-  -- `seedDiags` carries any ambiguous-diamond `userError`s found while seeding poly calls.
-  let (insts, procInsts, seedDiags) := collectSeeds program model genComposites ctx polyProcDefs
+  -- 2. Seed the composite instantiations from every type position, and the procedure ones by
+  -- renaming every call to an indexed poly proc in the program as resolved, so seeding and renaming
+  -- cannot disagree. The diamond check runs first, while `model` still types every argument.
+  let insts := collectSeeds program genComposites
+  let seedDiags := ((mapLaurelProgramStmtExprM (m := StateM (List Message))
+    (checkDiamond model ctx polyProcDefs {}) program).run []).2
+  let (program, seeded) := (mapLaurelProgramStmtExprM (m := StateM RewriteState)
+    (rewritePolyCallNode polyProcDefs {}) program).run {}
+  let procInsts : Std.HashMap String ProcInst :=
+    seeded.renamed.foldl (fun m pinst => m.insert (procInstKey pinst) pinst) {}
 
   -- 3. UNIFIED FIXPOINT — one fueled, depth-capped worklist over `Sum Inst ProcInst` that
   -- emits monomorph composites AND clones poly procedures; the two kinds feed each other:
@@ -993,28 +932,8 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
                      types := topoSortMonomorphs (types' ++ monoComposites) ++ witnessComposites,
                      staticProcedures := staticProcs',
                      constants := constants', staticFields := staticFields' }
-  -- 5. Rewrite statement-level types + new sites (`rewriteStmt`), AND rewrite
-  -- StaticCall callees that target a monomorphized poly procedure to the monomorph
-  -- name matching that call's inferred instantiation.
-  -- Calls are renamed before `rewriteStmt`, so an argument is typed as it was when seeded
-  -- (`new Box<int>`, not its monomorph). The rewrite's diagnostics are dropped: `collectSeeds` /
-  -- `discoverRewritePolyCalls` already reported them and stop the pipeline.
-  -- Recording each renamed callee makes "seeding is as wide as the rewrite" a property this pass
-  -- CHECKS rather than one maintained by hand: without it, a rename with no clone behind it surfaces
-  -- one pass later as a re-resolution `strata-bug` naming an undefined procedure, which says nothing
-  -- about which walk was too narrow.
-  let (program', rewriteSt) :=
-    (mapLaurelProgramStmtExprM (m := StateM RewriteState) (rewritePolyCallNode model ctx polyProcDefs {})
-      program).run {}
-  let program' := mapLaurelProgramStmtExpr (rewriteStmt genComposites) program'
-  let renamed := rewriteSt.renamed.map fun (pinst, source) => (procInstKey pinst, source)
-  let emittedProcs : Std.HashSet String :=
-    staticProcs'.foldl (fun s p => s.insert p.name.text) {}
-  diags := diags ++ (renamed.filter (!emittedProcs.contains ·.1)).map (fun (n, source) =>
-    diagnosticFromSource source
-      s!"a call was renamed to '{n}', but no clone of that instantiation was emitted: the seeding \
-         walk in 'collectSeeds' did not reach a call site the rewrite did"
-      MessageKind.strataBug)
+  -- 5. Rewrite statement-level types + new sites (`rewriteStmt`).
+  let program' := mapLaurelProgramStmtExpr (rewriteStmt genComposites) program
   return (program', diags)
 
 /-- Pipeline pass: monomorphize generic composites. -/

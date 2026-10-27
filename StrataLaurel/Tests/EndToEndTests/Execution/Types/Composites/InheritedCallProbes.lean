@@ -177,9 +177,8 @@ procedure runAll() entry
 /-! ## P6: GENERIC inherited call — a method inherited (not redeclared) from a GENERIC parent,
     called on a generic subtype. The lifted `GBase$get<T>(self: GBase<T>)` must bind `T := int`
     from a `GSub<int>` receiver, which needs the ancestor remap in BOTH the subtype/coercion
-    relation (`isSubtype`/`ancestorMatchesTarget`) AND monomorphization
-    (`inferProcInst`/`liftActualToParamHead`). Before those, this raised an internal error
-    ("expected 'GBase<T>', got 'GSub<int>'" then "'GBase$get' is not defined"). -/
+    relation (`isSubtype`/`ancestorMatchesTarget`) AND the call's type-argument inference
+    (`callSiteTypeSubst`). -/
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;

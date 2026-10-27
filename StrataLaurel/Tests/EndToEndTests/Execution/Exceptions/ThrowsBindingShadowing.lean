@@ -380,8 +380,7 @@ procedure catchBindingFullyFresh() returns (r: int)
 #end
 
 #guard_msgs in
--- No Core interpreter: calling an allocating procedure fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err { var code: int }

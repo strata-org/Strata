@@ -11,6 +11,7 @@ public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.PipelinePhasePrinter
 public import Strata.Transform.ProcedureInlining
+public import Strata.Languages.Core.IncrementalSolve
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
@@ -25,6 +26,7 @@ import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
 
 /-! ## Strata Core Transform & Verification API
@@ -242,6 +244,11 @@ def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.de
     Core.PipelinePhase :=
   _root_.Core.symbolicEvalPipelinePhase options moreFns
 
+/-- Erase the unread `init`s of an obligation program. In no default order: a pipeline that
+    wants it names it. -/
+def Core.passDeadDefElim : Core.PipelinePhase :=
+  _root_.Core.deadDefElimPipelinePhase
+
 /-- Extract common subexpressions introduced by partial evaluation. -/
 def Core.passCommonSubexprElim : Core.PipelinePhase :=
   _root_.Core.commonSubexprElimPhase
@@ -269,7 +276,8 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   Core.corePipelinePhases options
-    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining]
+    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
+        Core.passDeadDefElim]
 
 /-! ### Standard Core verification pipeline phases
 
@@ -449,15 +457,37 @@ def Core.verifyProgram
     (pipeline : Option (Core.ValidatedPipeline entryFacts) := none)
     (entryFactsHold : entryFacts.holds program :=
       by exact _root_.Core.ProgramFactSet.empty_holds _)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (mkDischarge : Option Core.MkDischargeFn := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     (fileMap : Option Lean.FileMap := none)
+    (solver : Option Core.CoreSMTSolver := none)
+    (mkSession : Option _root_.Core.IncrementalSolve.SessionFactory := none)
     : EIO String Core.VCResults := do
+  -- Only the per-obligation path writes SMT files, and only when it is not incremental: a
+  -- directory to keep them in turns `--incremental` off, and asking for them keeps that path.
+  let options := if options.vcDirectory.isSome then { options with incremental := false }
+    else options
+  -- `--incremental` walks the obligation tree, sharing one solver session down a branch,
+  -- unless an explicit `solver` is given. The tree is walked on the sessions `mkSession`
+  -- opens, or on local solver processes, but never on local processes for a caller with its
+  -- own `mkDischarge` and no sessions: that caller decides where queries go. Single goals go
+  -- through `mkDischarge` either way. Asking for a subset of the obligations keeps the
+  -- per-obligation path, the only one that filters by label.
+  let walkable := (mkSession.isSome || mkDischarge.isNone) && options.obligationsToVerify.isNone
+  let mkDischarge := mkDischarge.getD Core.mkDischargeFn
+  let solver := match solver with
+    | some s => some s
+    | none =>
+      if options.incremental && !options.alwaysGenerateSMT && walkable then
+        some (Core.IncrementalSolve.coreSMTSolver options.parallelWorkers options
+          (axiomProgram := some program) (session := mkSession) (mkDischarge := mkDischarge))
+      else none
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (Core.verify program tempDir options moreFns externalPhases
         (entryFacts := entryFacts) (pipeline := pipeline) (entryFactsHold := entryFactsHold)
         (mkDischarge := mkDischarge)
+        (solver := solver)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
@@ -477,8 +507,10 @@ def Core.verify
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
     (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (mkDischarge : Option Core.MkDischargeFn := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
+    (solver : Option Core.CoreSMTSolver := none)
+    (mkSession : Option _root_.Core.IncrementalSolve.SessionFactory := none)
     : IO Core.VCResults := do
   -- Run the translation within a pure phase so that we can capture the timing
   -- properly, and unwrap the error outside of it.
@@ -495,6 +527,8 @@ def Core.verify
     (pipeline := pipeline)
     (mkDischarge := mkDischarge)
     (pipelineCtx := pipelineCtx)
+    (solver := solver)
+    (mkSession := mkSession)
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 
