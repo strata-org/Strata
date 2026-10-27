@@ -530,6 +530,12 @@ discards its body unresolved, so a front end that reads the binding at the arm's
 (`c as T`) is not rejected for casting between unrelated types there. Any other guard shape — `false`,
 a conjunction — keeps its body resolved.
 
+A clause runs only when its guard holds, so its body sees the binding at what a guard testing it
+(or a disjunction of such tests) admits: the join of the tested types, where that narrows the
+binding's type, as Java types a catch parameter. A front end may read the binding uncast or at the
+arm's type (`c as T`). The pass declares the handler's copy of the binding at that type, through a
+downcast the guard discharges.
+
 *Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
 resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or
 a silent miscompile: a call to a `throws` procedure in a nested expression position (only a whole

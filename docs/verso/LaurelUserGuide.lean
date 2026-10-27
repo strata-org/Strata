@@ -2462,6 +2462,10 @@ procedure logFailure(which: int) returns (out: string)
 };
 ```
 
+In a guarded clause the binding has the type its guard tests, or for a multi-catch guard
+`e is A || e is B` their least common ancestor, when that is narrower: under
+`catch e when e is NotFound`, `e` is a `NotFound`.
+
 If the types reaching a `catch` share no common ancestor, Laurel reports an error
 rather than leaving the binding untyped. If the body throws nothing determinable,
 no exception can reach the clauses, and they are dropped as unreachable.

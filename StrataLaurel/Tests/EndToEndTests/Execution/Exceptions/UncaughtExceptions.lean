@@ -540,8 +540,7 @@ procedure unrelatedTestInBody(x: int) returns (r: int)
 };
 #end
 
--- A binding typed at a wider join than its arm (`RtEx`, because the body also
--- throws an `ArEx`) read at the arm type reads the arm's fields.
+-- A read at the arm type (`c as MyEx`), as a front end emits it, reads the arm's fields.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipVerification := true } <|
 #strata
 program Laurel;
@@ -560,6 +559,113 @@ procedure readAtArmType() entry opaque modifies * {
     r := (c as MyEx)#code
   };
   assert r == 5
+};
+#end
+
+-- So does the binding without the cast: the clause sees it at what its guard admits, the
+-- arm type, or for a multi-catch its alternatives' join (`Mid`).
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+composite RtEx {}
+composite Mid extends RtEx { var code: int }
+composite MyEx extends Mid {}
+composite OtEx extends Mid {}
+composite ArEx extends RtEx {}
+procedure readUncast() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    if b == 0 then { var a: ArEx := new ArEx; throw a };
+    var m: MyEx := new MyEx;
+    m#code := 5;
+    throw m
+  } catch c when c is MyEx {
+    var n: MyEx := c;
+    r := n#code
+  };
+  assert r == 5
+};
+procedure readMultiCatch() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    if b == 0 then { var a: ArEx := new ArEx; throw a };
+    var m: MyEx := new MyEx;
+    m#code := 5;
+    throw m
+  } catch c when c is MyEx || c is OtEx {
+    r := c#code
+  };
+  assert r == 5
+};
+procedure rethrowMultiCatchRun() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    try {
+      if b == 0 then { var a: ArEx := new ArEx; throw a };
+      var m: MyEx := new MyEx;
+      m#code := 1;
+      throw m
+    } catch c when c is MyEx || c is OtEx { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code };
+  assert r == 1
+};
+#end
+
+-- A multi-catch arm rethrows its binding at the alternatives' join (`Mid`), which the
+-- enclosing handler reads uncast.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Top {}
+composite Mid extends Top { var code: int }
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+procedure rethrowMultiCatch(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 1
+{
+  r := 0;
+  try {
+    try { if k > 0 then { var a: A := new A; a#code := 1; throw a } else { throw new C } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code }
+};
+procedure rethrowMultiCatchWrong(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 2
+//        ^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+{
+  r := 0;
+  try {
+    try { if k > 0 then { var a: A := new A; a#code := 1; throw a } else { throw new C } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code }
+};
+#end
+
+-- Narrowing to `A` keeps a cast to `B` that a `D extends A, B` makes possible.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Base {}
+composite A extends Base {}
+composite B extends Base { var code: int }
+composite D extends A, B {}
+composite C extends Base {}
+procedure castToCommonDescendantParent(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 3
+{
+  r := 0;
+  try {
+    if k > 0 then { var d: D := new D; d#code := 3; throw d } else { throw new C }
+  } catch c when c is A {
+    if c is D then { var b: B := c as B; r := b#code }
+  } catch c2 { r := 2 }
 };
 #end
 

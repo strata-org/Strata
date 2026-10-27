@@ -1031,7 +1031,8 @@ with the outer body's own `throw n` — is all that reaches the enclosing bindin
 and the handler's `d#x` would stop resolving, since `x` is declared on `Narrow`.
 The widening is still visible where it belongs: propagating out of the inner
 `try` into the narrower `$exc_0` is a downcast (`assume … is Narrow` then `as`),
-exactly as in case 11. -/
+exactly as in case 11. Inside the handler, `c` is a `Narrow` too: its snapshot is the
+downcast `$exc_1 as Narrow`, which the guard discharges. -/
 
 private def narrowedGuardedRethrow : StrataDDM.SourcedProgram :=
 #strata
@@ -1112,7 +1113,7 @@ procedure rethrowUnderNarrowingGuard(pick: bool): (Result<int, Narrow>)
               if $thrown & $exc_1 is Narrow
                 then {
                   $thrown := false;
-                  var $exc_c_2: Base := $exc_1;
+                  var $exc_c_2: Narrow := $exc_1 as Narrow;
                   {
                     $exc_1 := $exc_c_2;
                     $thrown := true;

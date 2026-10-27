@@ -367,4 +367,42 @@ procedure u() returns (r: int) opaque {
 #guard_msgs in
 #eval report liveGuardRethrow
 
+/-- A multi-catch clause sees its binding at its alternatives' join, so its rethrow
+    types the enclosing `catch` at `Mid`, not at the inner `try`'s join `Top`. -/
+private def multiCatchRethrow := r"
+composite Top {}
+composite Mid extends Top {}
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+procedure u(k: int) returns (r: int) opaque {
+  try {
+    try { if k > 0 then { throw new A } else { if k < 0 then { throw new B } else { throw new C } } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 1 }
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: Mid, Top, Top -/
+#guard_msgs in
+#eval report multiCatchRethrow
+
+/-- A guard wider than the binding does not widen it: the rethrow types the enclosing
+    `catch` at `A`, not `Base`. -/
+private def widerGuardRethrow := r"
+composite Base {}
+composite A extends Base {}
+procedure u() returns (r: int) opaque {
+  try {
+    try { throw new A } catch c when c is Base { throw c }
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: A, A -/
+#guard_msgs in
+#eval report widerGuardRethrow
+
 end Strata.Laurel

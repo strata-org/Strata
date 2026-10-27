@@ -388,8 +388,9 @@ structure Condition where
 
 /--
 A `catch` clause: a mandatory binding bound to the caught value (typed at
-the least common ancestor of the exception types thrown in the `try` body), an
-optional predicate guard, and a handler body. A `Try` holds an ordered list of
+the least common ancestor of the exception types thrown in the `try` body, and in
+the body at what a guard admits, see `catchClauseBindingType`), an optional
+predicate guard, and a handler body. A `Try` holds an ordered list of
 these; clauses are tried in order, first-match-wins, and an absent predicate is
 a catch-all. Type dispatch is written as a guard, e.g. `catch e when e is T`.
 See the Exceptions section of the Laurel User Guide.

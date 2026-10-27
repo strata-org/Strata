@@ -803,8 +803,9 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     -- this try's `$exc`; without the snapshot a later use of this handler's
     -- binding would read that inner exception instead. Skipped when the binding
     -- is unused, to avoid an inert local in the common case. The snapshot is
-    -- typed at this try's LCA (the binding's own type), so `e#field` in the
-    -- handler needs no downcast.
+    -- typed as resolution typed the binding in the handler (`catchClauseBindingType`),
+    -- through a downcast the guard discharges where that narrows this try's LCA, so
+    -- `e#field` in the handler needs no downcast.
     -- Matched by id: lowered `hStmts` may hold id-less locals spelled like a user binding.
     let (bindDecls, hStmts) ←
       match c.binding.uniqueId with
@@ -812,7 +813,10 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         if hStmts.any (localOccursById eid) then do
           let bid ← freshNat
           let bindLocal := s!"$exc_{c.binding.text}_{bid}"
-          pure ([declInit bindLocal excTy (localRef excVar)],
+          let clauseTy := Resolution.catchClauseBindingType lattice (·.uniqueId == some eid) excTy c.predicate
+          let init := if highEq clauseTy excTy then localRef excVar
+            else asTypeOf (localRef excVar) clauseTy
+          pure ([declInit bindLocal clauseTy init],
                 hStmts.map (substLocalById eid (localRef bindLocal)))
         else
           pure ([], hStmts)
