@@ -1979,6 +1979,30 @@ discharge calls: 2
 #guard_msgs in
 #eval countedDischarge twoGoals
 
+/-! A goal sent alone goes to the per-obligation discharge with the caller's worker count. Under
+`--parallel` several workers send goals at once, and a back end that shares one connection
+between the obligations of a sequential run learns that it must not from that count. -/
+
+/-- info: s1: proved; worker counts the discharge saw: [3] -/
+#guard_msgs in
+#eval show IO Unit from do
+  let seen ← IO.mkRef (#[] : Array Nat)
+  let mk : Core.MkDischargeFn := fun options _ _ _ _ _ _ _ _ =>
+    fun _ _ _ _ _ _ _ => do
+      seen.modify fun a => if a.contains options.parallelWorkers then a
+        else a.push options.parallelWorkers
+      pure (.ok (.unsat, .unsat, Strata.SMT.EncoderState.init))
+  let options := { VerifyOptions.quiet with parallelWorkers := 3 }
+  let solver : Core.CoreSMTSolver :=
+    Core.IncrementalSolve.coreSMTSolver 3 options (mkDischarge := mk)
+  match ← (solver Core.Factory (parse oneGoalBetweenTwo)).toBaseIO with
+  | .ok (results, _) =>
+    let lone := results.toList.filter (·.obligation.label == "s1")
+    let verdicts := lone.map fun r => s!"{r.obligation.label}: {verdictOf r}"
+    let counts := (← seen.get).toList
+    IO.println s!"{"; ".intercalate verdicts}; worker counts the discharge saw: {counts}"
+  | .error e => IO.println s!"error: {e.format none}"
+
 /-! ### A function's body reads its own parameters
 
 Two defined functions share a parameter name. Each body has to read its own parameter, not
@@ -2545,6 +2569,51 @@ spec {
 #guard_msgs in
 #eval bothWays "twoGoals subset" (parse twoGoals)
   { VerifyOptions.quiet with obligationsToVerify := some ["fair"] }
+
+/-! A counterexample that holds a datatype value, walked: its constructors come back as
+constructors, as on the per-obligation path, and not as free variables of the same name. -/
+
+private def datatypeCounterexample :=
+#strata
+program Core;
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+procedure P(xs : IntList)
+spec {
+  requires IntList..isCons(xs);
+}
+{
+  assert [short]: IntList..isNil(IntList..tl(xs));
+  assert [positive]: int.gt(IntList..hd(xs), 0);
+};
+#end
+
+/-- The constructors and variables a counterexample value is built from, each with what it was
+    read as, since a constructor and a variable of the same name print alike. -/
+private def headsOf : Lambda.LExpr Core.CoreLParams.mono → List String
+  | .op _ o _ => [s!"constructor {o.name}"]
+  | .fvar _ v _ => [s!"variable {v.name}"]
+  | .app _ f a => headsOf f ++ headsOf a
+  | _ => []
+
+/--
+info: per-obligation: [constructor Cons, constructor Nil]
+walked: [constructor Cons, constructor Nil]
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let p := parse datatypeCounterexample
+  let options := { VerifyOptions.quiet with checkMode := .bugFinding }
+  for (name, incremental) in [("per-obligation", false), ("walked", true)] do
+    let options := { options with incremental }
+    let solver := if incremental then
+        some (Core.IncrementalSolve.coreSMTSolver 1 options (axiomProgram := some p)
+          (sendAlone := false))
+      else none
+    match ← (Strata.Core.verifyProgram p options (solver := solver)).toBaseIO with
+    | .ok rs =>
+      let heads := rs.toList.flatMap fun r => r.lexprModel.flatMap (headsOf ·.2)
+      IO.println s!"{name}: {heads.eraseDups}"
+    | .error e => IO.println s!"{name}: error {e}"
 
 /-! Symbolic evaluation leaves two copies of `A`, one per path to it, with the same label and
 the same metadata. Each is a session of one goal and is sent alone, and each keeps its own
