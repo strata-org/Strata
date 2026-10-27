@@ -44,7 +44,7 @@ private def fooBadArity : LDatatype Unit :=
                   testerName := "isBar" }],
     constrs_ne := rfl }
 
-/-- info: Error in datatype Foo, constructor Bar: Type constructor 'Sequence' expects 1 argument(s) but is applied to 2 -/
+/-- info: Error in datatype Foo, constructor Bar: Type constructor 'Sequence' expects 1 type argument(s) but was given 2 -/
 #guard_msgs in
 #eval match coreContext.addMutualBlock [fooBadArity] with
   | .ok _ => f!"typechecks"
@@ -58,7 +58,7 @@ private def fooNestedBadArity : LDatatype Unit :=
                   testerName := "isBarNested" }],
     constrs_ne := rfl }
 
-/-- info: Error in datatype FooNested, constructor BarNested: Type constructor 'Map' expects 2 argument(s) but is applied to 1 -/
+/-- info: Error in datatype FooNested, constructor BarNested: Type constructor 'Map' expects 2 type argument(s) but was given 1 -/
 #guard_msgs in
 #eval match coreContext.addMutualBlock [fooNestedBadArity] with
   | .ok _ => f!"typechecks"

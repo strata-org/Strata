@@ -519,12 +519,12 @@ def ambientRep (S : Subst) (ks : List TyIdentifier) (g : TyIdentifier) : TyIdent
   (ks.find? fun k => ambientTarget S k == some g).getD g
 
 /-- The single-scope substitution sending `p.1` to the variable `p.2` for each pair `p` of `ρ`. -/
-def rhoSubst (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
+def Subst.ofRenaming (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
   [HMap.ofList (ρ.map fun p => (p.1, LMonoTy.ftvar p.2))]
 
 /-- The renaming sending each generated target to its representative. -/
 def ambientRenaming (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
-  rhoSubst ((ambientTargets gen S).map fun g => (g, ambientRep S (ambientKeys gen S) g))
+  Subst.ofRenaming ((ambientTargets gen S).map fun g => (g, ambientRep S (ambientKeys gen S) g))
 
 /-- The representatives of the ambient targets. -/
 def ambientReps (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=

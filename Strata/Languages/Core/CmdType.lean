@@ -59,7 +59,7 @@ bound variables.
 -/
 def inferType (C: LContext CoreLParams) (Env: TEnv Unit) (c : Cmd Expression) (e : LExpr CoreLParams.mono) :
     Except Message ((LExpr CoreLParams.mono) × LTy × TEnv Unit) := do
-  let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError Message.fromFormat
+  let _ ← Env.freeVarCheck e (fun _ => f!"[{c}]") |>.mapError Message.fromFormat
   let T := Env
   let (ea, T) ← LExpr.resolve C T e |>.mapError Message.fromFormat
   let ety := ea.toLMonoTy

@@ -50,8 +50,9 @@ Properties of the per-call-site type-variable freshening in
 - `freshenTypeArgsSubst_empty` — monomorphic callees (`typeArgs = []`) yield
   `Subst.empty` without touching the generator: an exact no-op.
 
-The theorems are generic in the prefix string; call elimination instantiates it
-with `freshTyVarPrefix` (`$__cety`, in `CallElim.lean`).
+The theorems are generic in the prefix string; call elimination and procedure
+inlining instantiate it with `Lambda.callElimTyPrefix` and
+`Lambda.inlineTyPrefix`.
 
 Key definitions the reader needs: `freshenTypeArgsSubst`, `genTyVarName(s)`
 (in `CoreTransform.lean`), and `CoreGenState.WF` (in `CoreGen.lean`).
@@ -62,10 +63,9 @@ independent of the `CallElimCorrect` correctness proof; the whole-program
 
 Scope note: `freshenTypeArgsSubst_fresh` proves each fresh name carries the
 reserved `<prefix>_<n>` shape, so the names are structurally in the prefix's
-namespace. What remains convention (not lemma) is that the counter does not
-ingest existing program identifiers, so a *user* who writes a literal
-`<prefix>_<n>` type variable could still collide; safety there rests on the
-`$__` reservation (see `freshTyVarPrefix` in `CallElim.lean`). Freshness and
+namespace. The counter does not ingest existing program identifiers, so a
+written `<prefix>_<n>` type variable is kept apart from the fresh names only by
+the prefix being reserved (`Lambda.isAllowedName`). Freshness and
 disjointness across call sites — the property that actually prevents
 cross-site unification — is fully proven here.
 -/

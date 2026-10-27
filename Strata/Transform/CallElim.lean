@@ -33,18 +33,6 @@ def callElimAssertPrefix : String := "callElimAssert_"
 /-- Label prefix for call-elimination assume statements. -/
 def callElimAssumePrefix : String := "callElimAssume_"
 
-/-- Prefix for fresh call-site type variables introduced during call elimination.
-    In the `$__`-reserved internal namespace (documented "cannot appear in user
-    identifiers", see `SMTEncoder.lean`), so a freshened call-site type variable
-    is far from any user-written type-variable name. Distinct from the type
-    checker's own fresh prefix `$__ty` (`LExprTypeEnv.lean` `TState.tyPrefix`) —
-    `$__cety` differs at the 5th char, so the two generators never alias — and
-    distinct from the term-temp prefixes (`tmp_`/`old_`).
-    NB: `$` is a legal identifier char (`Parser.strataIsIdFirst`) and the gen
-    counter does NOT ingest existing program names, so collision-resistance here
-    rests on the `$__` reservation convention, not a parser-enforced rejection. -/
-def freshTyVarPrefix : String := "$__cety"
-
 /--
 The main call elimination transformation algorithm on a single statement.
 Only `call` commands are rewritten; every other statement returns `.none` so
@@ -75,7 +63,7 @@ def callElimCmd (s : Statement)
         -- Instantiate the contract at each call site with globally-fresh type
         -- variables. For a monomorphic callee (`typeArgs = []`) the substitution is
         -- empty and the applications below are no-ops.
-        let tySubst ← freshenTypeArgsSubst freshTyVarPrefix proc.header.typeArgs
+        let tySubst ← freshenTypeArgsSubst Lambda.callElimTyPrefix proc.header.typeArgs
         let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
         let instantiatedExpr (e : Expression.Expr) : Expression.Expr := Lambda.LExpr.applyTypeSubst e tySubst
 

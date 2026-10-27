@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.DL.Lambda.LTy
+meta import Strata.DL.Lambda.LTyWFCheckSound
 
 /-! ## Tests for LTy -/
 
@@ -53,6 +53,30 @@ info: [Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "_dummy0", Lambda.LMon
 /-- info: [] -/
 #guard_msgs in
 #eval LMonoTy.inputTypes mty[pair int bool]
+
+private abbrev TypeJudgmentParams : LExprParams := ⟨Unit, Unit⟩
+
+private def resolvedTypeContext : LContext TypeJudgmentParams := LContext.default
+
+/-- The resolved judgment accepts a free variable the policy admits. -/
+example : ResolvedTyWF resolvedTypeContext (fun v => v == "a") mty[%a] :=
+  .ftvar (by decide)
+
+/-- The resolved judgment rejects a free variable the policy excludes. -/
+example : ¬ ResolvedTyWF resolvedTypeContext (fun v => v == "a") mty[%b] := by
+  intro h
+  cases h with
+  | ftvar hadmissible => simp at hadmissible
+
+/-- A type accepted by the resolved judgment uses only registered type constructors. -/
+example (h : ResolvedTyWF resolvedTypeContext policy ty) :
+    ty.knownInstance resolvedTypeContext.knownTypes = true :=
+  h.knownInstance
+
+/-- Resolved well-formedness entails constructor-arity well-kindedness. -/
+example (h : ResolvedTyWF resolvedTypeContext policy ty) :
+    resolvedTypeContext.WellKindedTy ty :=
+  h.wellKinded
 
 end Lambda
 end

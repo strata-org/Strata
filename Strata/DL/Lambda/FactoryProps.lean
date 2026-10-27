@@ -197,6 +197,16 @@ theorem callOfLFunc_fvar_none {Tbase : LExprParams} {GenericTy} (F : @Factory Tb
 
 namespace Factory
 
+/-- Mapping a factory by a function that fixes each of its functions gives the factory. -/
+theorem map_eq_self {T} (F : Factory T) (g : LFunc T → LFunc T)
+    (hg : ∀ f, (g f).name.name = f.name.name) (h : ∀ f ∈ F.toArray, g f = f) :
+    F.map g hg = F := by
+  have harr : F.toArray.map g = F.toArray :=
+    (Array.map_congr_left h).trans (Array.map_id F.toArray)
+  cases F
+  simp only [map, Factory.mk.injEq, and_true]
+  exact harr
+
 /-- The function names in a factory are unique. -/
 theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
   match f with

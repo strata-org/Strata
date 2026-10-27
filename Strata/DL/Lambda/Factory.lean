@@ -322,6 +322,25 @@ def ofArray {T} (a : Array (LFunc T)) : Factory T :=
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
 
+/-- `F` with every function `f` replaced by `g f`, for a `g` that keeps function names. -/
+def map {T} (F : Factory T) (g : LFunc T → LFunc T)
+    (hg : ∀ f, (g f).name.name = f.name.name) : Factory T where
+  toArray := F.toArray.map g
+  nameMap := F.nameMap
+  toArrayDefined := by
+    intro ⟨i, hi⟩
+    have hi' : i < F.toArray.size := by simpa only [Array.size_map] using hi
+    have h := F.toArrayDefined ⟨i, hi'⟩
+    simp only [Fin.getElem_fin, Array.getElem_map, hg] at h ⊢
+    simpa using h
+  nameMapValid := by
+    intro k hk
+    simpa only [Array.size_map] using F.nameMapValid hk
+  nameMapConsistent := by
+    intro k hk
+    simp only [Array.getElem_map, hg]
+    exact F.nameMapConsistent hk
+
 section
 variable  {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 

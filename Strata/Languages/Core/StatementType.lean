@@ -118,7 +118,7 @@ where
         | .ite cond tss ess md => do try
           match cond with
           | .det c =>
-            let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError Message.fromFormat
+            let _ ← Env.freeVarCheck c (fun _ => f!"[{s}]") |>.mapError Message.fromFormat
             let (conda, Env) ← LExpr.resolve C Env c |>.mapError Message.fromFormat
             let condty := conda.toLMonoTy
             match condty with
@@ -140,7 +140,7 @@ where
         | .loop guard measure invariant bss md => do try
           let guardResult ← match guard with
             | .det g => do
-              let _ ← Env.freeVarCheck g f!"[{s}]" |>.mapError Message.fromFormat
+              let _ ← Env.freeVarCheck g (fun _ => f!"[{s}]") |>.mapError Message.fromFormat
               let (conda, Env) ← LExpr.resolve C Env g |>.mapError Message.fromFormat
               let condty := conda.toLMonoTy
               if condty != .tcons "bool" [] then
@@ -150,12 +150,12 @@ where
           let (guarda, Env) := guardResult
           let (mt, Env) ← (match measure with
           | .some m => do
-            let _ ← Env.freeVarCheck m f!"[{s}]" |>.mapError Message.fromFormat
+            let _ ← Env.freeVarCheck m (fun _ => f!"[{s}]") |>.mapError Message.fromFormat
             let (ma, Env) ← LExpr.resolve C Env m |>.mapError Message.fromFormat
             .ok (some ma, Env)
           | _ => .ok (none, Env))
           let (it, Env) ← invariant.foldlM (fun (acc, E) (lbl, i) => do
-            let _ ← E.freeVarCheck i f!"[{s}]" |>.mapError Message.fromFormat
+            let _ ← E.freeVarCheck i (fun _ => f!"[{s}]") |>.mapError Message.fromFormat
             let (ia, E') ← LExpr.resolve C E i |>.mapError Message.fromFormat
             if ia.toLMonoTy == .tcons "bool" [] then
               .ok (acc ++ [(lbl, ia)], E')

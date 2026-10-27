@@ -142,7 +142,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     (h_precond : ∀ p, p ∈ preconditions →
       (LExpr.freeVars p.expr).map (·.1.name) ⊆ inputs.map (·.1.name)
       := by first | decide | grind)
-    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
+    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms, preconditions := preconditions }, {

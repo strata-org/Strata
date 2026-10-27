@@ -34,15 +34,6 @@ open LTy.Syntax
 
 variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
-/-
-Prefixes for newly generated type and term variables.
-See comment for `TEnv.genExprVar` for naming.
-Note that `exprPrefix` is designed to avoid clashes with `exprPrefix`
-in `LExprTypeEnv.lean`.
--/
-def tyPrefix : String := "$__ty"
-def exprPrefix : String := "$__tvar"
-
 /--
 A type constructor description. The free type variables in `args` must be a
 subset of the `typeArgs` of the corresponding datatype.
@@ -177,15 +168,77 @@ def checkConstructorArgsWF (block: MutualDatatype IDMeta) : Except Message Unit 
   ) ()
 
 /--
-Validate a mutual block: check non-empty and no duplicate names.
+Check that every free type variable of a constructor argument is in its datatype's `typeArgs`.
 -/
-def validateMutualBlock (block: MutualDatatype IDMeta) : Except Message Unit := do
+def checkConstructorArgVarsScoped (block: MutualDatatype IDMeta) : Except Message Unit :=
+  block.foldlM (fun _ d =>
+    d.constrs.foldlM (fun _ c =>
+      c.args.foldlM (fun _ ⟨_, ty⟩ =>
+        (LMonoTy.freeVars ty).foldlM (fun _ v =>
+          if v ∈ d.typeArgs then .ok ()
+          else .error <| Message.fromFormat
+            f!"Datatype '{d.name}': constructor '{c.name.name}' uses type variable \
+               '{v}' not in its type arguments") ()
+      ) ()
+    ) ()
+  ) ()
+
+/-- Whether two type parameter lists declare the same parameters, ignoring order. -/
+private def sameTypeParams (l1 l2 : List TyIdentifier) : Bool :=
+  l1.mergeSort (· ≤ ·) == l2.mergeSort (· ≤ ·)
+
+/-- Check that all datatypes in a mutual block declare the same type parameters, ignoring
+    order. -/
+def checkTypeParamsAgree (block : MutualDatatype IDMeta) : Except Message Unit :=
+  match block with
+  | [] => .ok ()
+  | d :: rest =>
+    match rest.find? (fun d' => !sameTypeParams d'.typeArgs d.typeArgs) with
+    | none => .ok ()
+    | some bad => .error <| Message.fromFormat
+        f!"Datatypes in a mutual block must declare the same type parameters, but \
+           {d.name} declares {d.typeArgs} and {bad.name} declares {bad.typeArgs}. \
+           If these datatypes are not mutually recursive, declare them in separate blocks."
+
+/-- Check that each datatype in a mutual block declares distinct type parameters. -/
+def checkTypeParamsNodup (block : MutualDatatype IDMeta) : Except Message Unit :=
+  block.foldlM (fun _ d =>
+    if d.typeArgs.Nodup then .ok ()
+    else .error <| Message.fromFormat
+      f!"Datatype '{d.name}': duplicates found in the type arguments!\n\
+         Type Arguments: {d.typeArgs}") ()
+
+/-- Check that no datatype in a mutual block declares a type parameter with a reserved
+    prefix. -/
+def checkTypeParamsNotReserved (block : MutualDatatype IDMeta) : Except Message Unit :=
+  block.foldlM (fun _ d =>
+    match d.typeArgs.find? (fun v => !isAllowedName v) with
+    | none => .ok ()
+    | some bad => .error <| Message.fromFormat
+        f!"Datatype '{d.name}': type parameter '{bad}' is a reserved name") ()
+
+/-- Check that a mutual datatype block contains at least one datatype. -/
+def checkMutualBlockNonempty (block : MutualDatatype IDMeta) : Except Message Unit :=
   if block.isEmpty then
     .error <| Message.fromFormat f!"Error: Empty mutual block is not allowed"
+  else
+    .ok ()
+
+/-- Check that the datatype names in a mutual block are pairwise distinct. -/
+def checkDatatypeNamesNodup (block : MutualDatatype IDMeta) : Except Message Unit :=
   match (block.foldl (fun (o, names) d =>
     if d.name ∈ names then (some d, names) else (o, Std.HashSet.insert names d.name)) (none, ∅)).1 with
   | some dup => .error <| Message.fromFormat f!"Duplicate datatype name in mutual block: {dup}"
   | none => .ok ()
+
+/-- Validate a mutual block: non-empty, distinct datatype names, and type parameters that are
+    duplicate-free, unreserved, and the same across the block. -/
+def validateMutualBlock (block: MutualDatatype IDMeta) : Except Message Unit := do
+  checkMutualBlockNonempty block
+  checkDatatypeNamesNodup block
+  checkTypeParamsNodup block
+  checkTypeParamsNotReserved block
+  checkTypeParamsAgree block
 
 ---------------------------------------------------------------------
 
@@ -211,12 +264,11 @@ private def genArgName : Identifier IDMeta :=
   List.head (genArgNames 1) H
 
 /--
-Find `n` type arguments (string) not present in list by enumeration.
-Inefficient on large inputs.
+Find `n` `elimTyPrefix` type arguments not in `l` by enumeration. Inefficient on large inputs.
 -/
 def freshTypeArgs (n: Nat) (l: List TyIdentifier) : List TyIdentifier :=
   -- Generate n + |l| names to ensure enough unique ones
-  let candidates := List.map (fun n => tyPrefix ++ toString n) (List.range (l.length + n));
+  let candidates := List.map (fun n => elimTyPrefix ++ toString n) (List.range (l.length + n));
   List.take n (List.filter (fun t => ¬ t ∈ l) candidates)
 
 /--
@@ -313,6 +365,10 @@ def elimTy (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier)
   | _ :: _ =>
     let recTypes := c.args.filterMap fun (_, ty) => genRecTy block retTyVars ty
     LMonoTy.mkArrow' outputType (c.args.map Prod.snd ++ recTypes)
+
+/-- The total number of constructors of the datatypes in a mutual block. -/
+def blockConstrCount (block : MutualDatatype IDMeta) : Nat :=
+  block.foldl (fun acc d => acc + d.constrs.length) 0
 
 /-- Compute global constructor index within a mutual block.
   E.g. if we have a mutual type with types A, B, C, with constructors
@@ -414,10 +470,14 @@ the generated functions are:
 `RoseTree$Elim (R x) r1 f1 f2 = r1 x (Forest$Elim x r1 f1 f2)`
 `Forest$Elim FNil r1 f1 f2 = f1`
 `Forest$Elim (Fcons r f) r1 f1 f2 = f2 r f (Rose$Elim r r1 f1 f2) (Forest$Elim f r1 f1 f2)`
+
+The evaluator returns `none` unless given a scrutinee and one case function per
+constructor of the block.
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
     (m : T.Metadata) : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
   fun _ args =>
+    if args.length != blockConstrCount block + 1 then none else
     match args with
     | x :: xs =>
       match matchConstr block x with
@@ -632,6 +692,11 @@ def getTypeConsArities (ty : LMonoTy) : List (String × Nat) :=
   | .tcons n args => (n, args.length) :: args.flatMap getTypeConsArities
   | .ftvar _ | .bitvec _ => []
 
+/-- Says that `what` `name` (e.g. type constructor `Map`) expects `expected` type arguments but
+    was given `given`. -/
+def arityMismatchMsg (what name : String) (expected given : Nat) : Format :=
+  f!"{what} '{name}' expects {expected} type argument(s) but was given {given}"
+
 /--
 Ensures every type referenced in a constructor is a known type, a previously
 defined type, or a type in the same mutual block, applied at its declared arity.
@@ -652,7 +717,8 @@ def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : Mutual
             throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
           | some declaredArity =>
             if appliedArity != declaredArity then
-              throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: Type constructor '{ref}' expects {declaredArity} argument(s) but is applied to {appliedArity}"
+              throw <| Message.fromFormat f!"Error in datatype {d.name}, constructor {c.name.name}: \
+                {arityMismatchMsg "Type constructor" ref declaredArity appliedArity}"
 
 ---------------------------------------------------------------------
 
@@ -808,6 +874,7 @@ def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype
   validateMutualBlock block
   -- Check for positivity, uniformity, nesting
   checkConstructorArgsWF block
+  checkConstructorArgVarsScoped block
   -- Check for duplicate names with existing types
   for d in block do
     match t.getType d.name with

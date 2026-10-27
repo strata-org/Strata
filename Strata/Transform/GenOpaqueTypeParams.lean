@@ -106,7 +106,7 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
 /-! ### The transformation -/
 
 /-- Reserved prefix for generated opaque type names.  Uses the `$__` internal
-    namespace (as `CallElim.freshTyVarPrefix := "$__cety"` does) so that a
+    namespace (as `Lambda.callElimTyPrefix := "$__cety"` does) so that a
     generated opaque type name can never collide with a user-declared type — the
     `CoreGenState` counter does not ingest existing source names, so without a
     reserved prefix a user `type P_a_opaque_type_0;` alongside `procedure P<a>`

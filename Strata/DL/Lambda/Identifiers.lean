@@ -5,6 +5,7 @@
 -/
 module
 public import Strata.Pipeline.Messages
+public import Strata.DL.Lambda.NamePrefixes
 
 public import Strata.Util.FileRange
 import Std.Data.HashMap.Lemmas
@@ -16,14 +17,6 @@ open Std (ToFormat Format format)
 open Strata
 
 public section
-
-/-- Prefix of the unification variables the type checker creates; declared type parameters
-    may not use it. -/
-@[expose, simp] def genTyPrefix : String := "$__ty"
-
-/-- Prefix of the return-type parameters the eliminator generator declares, disjoint from the
-    type checker's generated-name prefixes. -/
-@[expose] def elimTyPrefix : String := "$__elimty"
 
 /--
 Identifiers with a name and additional metadata

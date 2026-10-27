@@ -81,10 +81,6 @@ def inlinePrefix (n : Nat) : String := s!"$__inline{n}"
 
 def inlineCounterKey : String := "inlineProcedures"
 
-/-- Fresh-name prefix for the type variables introduced when freshening a
-    polymorphic callee's type parameters at an inlining site. -/
-def inlineTyVarPrefix : String := "$__inlinety"
-
 /-- Rename every variable and label occurrence in the callee's `inputs`,
     `outputs`, and `bodyStmts` according to the explicit `var_map` (variables) and
     `label_map` (block/assert/assume/cover labels). `var_map` also carries the
@@ -235,7 +231,7 @@ def inlineCallCmd
 
         -- Freshen the callee's type parameters per inlining site. Keep only the
         -- signature (inputs/outputs), not a full `Procedure.Header`.
-        let tySubst ← freshenTypeArgsSubst inlineTyVarPrefix proc.header.typeArgs
+        let tySubst ← freshenTypeArgsSubst Lambda.inlineTyPrefix proc.header.typeArgs
         let inputs : @Lambda.LMonoTySignature Unit :=
           proc.header.inputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
         let outputs : @Lambda.LMonoTySignature Unit :=

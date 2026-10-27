@@ -10,6 +10,7 @@ public import Strata.Languages.Core.FunctionType
 public import Strata.Languages.Core.ProcedureType
 public import Strata.DL.Lambda.LExprT
 public import Strata.Languages.Core.Factory
+public import Strata.DL.Lambda.LTyWF
 
 public section
 
@@ -116,7 +117,7 @@ C are already well-typed.
         -- type parameter: it is first checked with each one replaced by a
         -- fresh opaque type.
         unless l.typeArgs.isEmpty do
-          let rigid := l.typeArgs.map fun a => (a, s!"$__rigid_{l.name}_{a}")
+          let rigid := l.typeArgs.map fun a => (a, s!"{skolemPrefix}{l.name}_{a}")
           let C' ← rigid.foldlM (init := C) fun C (_, n) =>
             C.addKnownTypeWithError { name := n, metadata := 0 }
               (Message.withRange fileRange f!"Error in lemma {l.name}: type {n} already exists.")

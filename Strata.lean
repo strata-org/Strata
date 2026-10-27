@@ -170,6 +170,7 @@ import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
 import Strata.DL.Lambda.LExprTraversalProps
+import Strata.DL.Lambda.NamePrefixesProps
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.OperationalSemantics
 import Strata.DL.Lambda.OperationalSemanticsProps

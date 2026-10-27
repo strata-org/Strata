@@ -51,11 +51,19 @@ structure TypeAlias where
   type : LMonoTy
   deriving DecidableEq, Repr, Inhabited
 
-/-- A type alias is well-formed when every free variable in its body appears
-    in its list of type arguments, and the type arguments are distinct. -/
+/-- A type alias is well formed when its type arguments are distinct and are exactly the free
+    variables of its body. -/
 structure TypeAlias.WF (a : TypeAlias) : Prop where
-  fvs_closed : ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
+  fvs_eq : ∀ tv, tv ∈ LMonoTy.freeVars a.type ↔ tv ∈ a.typeArgs
   typeArgs_nodup : a.typeArgs.Nodup
+
+/-- In a well-formed type alias, every free variable of the body is a type argument. -/
+theorem TypeAlias.WF.fvs_closed {a : TypeAlias} (h : a.WF) :
+    ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := fun tv => (h.fvs_eq tv).mp
+
+/-- In a well-formed type alias, every type argument occurs free in the body. -/
+theorem TypeAlias.WF.typeArgs_used {a : TypeAlias} (h : a.WF) :
+    ∀ tv ∈ a.typeArgs, tv ∈ LMonoTy.freeVars a.type := fun tv => (h.fvs_eq tv).mpr
 
 mutual
 /-- Replace free type variables in `mty` according to a positional mapping
@@ -94,6 +102,10 @@ def TypeAlias.expandsTo (aliases : List TypeAlias) (name : String) (args : LMono
     alias.name = name ∧
     alias.typeArgs.length = args.length ∧
     mty = alias.expand args
+
+/-- `sup` is `sub` with entries of names new to `sub` prepended. -/
+def TypeAlias.FreshExtension (sub sup : List TypeAlias) : Prop :=
+  ∃ new, sup = new ++ sub ∧ ∀ a ∈ new, ∀ b ∈ sub, a.name ≠ b.name
 
 mutual
 /-- Two monotypes are alias-equivalent if one can be obtained from the other
@@ -179,10 +191,7 @@ def LMonoTys.aliasFree (aliases : List TypeAlias) (mtys : LMonoTys) : Prop :=
   | mty :: rest => LMonoTy.aliasFree aliases mty ∧ LMonoTys.aliasFree aliases rest
 end
 
-/-- All alias bodies in the context are fully resolved: they do not reference
-    other alias names. This is established by `TEnv.addTypeAlias` which calls
-    `instantiateWithCheck` (and therefore `resolveAliases`) on the alias body
-    before storing it. -/
+/-- All alias bodies in the context are fully resolved: they do not reference other alias names. -/
 def TContext.AliasesResolved (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → LMonoTy.aliasFree Γ.aliases a.type
 
@@ -256,12 +265,6 @@ theorem LTy_subst_boundVars (S : Subst) (ty : LTy) :
   cases ty with | forAll xs body => simp [LTy.subst, LTy.boundVars]
 
 ---------------------------------------------------------------------
-
-/-- Fixed prefix for generated type variable names. -/
-def TState.tyPrefix : String := "$__ty"
-
-/-- Fixed prefix for generated expression variable names. -/
-def TState.exprPrefix : String := "$__var"
 
 /--
 The state of a generator used by typing.
@@ -381,6 +384,10 @@ structure LContext (T: LExprParams) where
   /-- Type variables that are rigid (skolemized) in the current scope. -/
   rigidTypeVars : List TyIdentifier := []
 deriving Inhabited
+
+/-- Every name registered in the known-types table satisfies `p`. -/
+def LContext.KnownTypesAll {T : LExprParams} (p : String → Prop) (C : LContext T) : Prop :=
+  ∀ n : String, n ∈ C.knownTypes → p n
 
 def LContext.empty {T : LExprParams} : LContext T :=
   { functions := .default
@@ -539,21 +546,22 @@ def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMe
   let ctx' := { ctx with types := ctx.types.remove x }
   Env.updateContext ctx'
 
-def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :
-    Except Format Unit :=
+/-- Reject `e` if it has a free variable `Env` does not bind; `msg` is the error-message prefix,
+    built only on failure. -/
+def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono)
+    (msg : Unit → Format) : Except Format Unit :=
   let efv := (@LExpr.freeVars T LMonoTy e).map Prod.fst
-  let knownVars := Env.context.knownVars
-  let freeVars := List.filter (fun v => v ∉ knownVars) efv
+  let freeVars := efv.filter (fun v => (Env.context.types.find? v).isNone)
   match freeVars with
   | [] => .ok ()
   | _ =>
-    .error f!"{msg} No free variables are allowed here!\
+    .error f!"{msg ()} No free variables are allowed here!\
               {Format.line}\
               Free Variables: {freeVars}"
 
 def TEnv.freeVarChecks [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
     Except Format Unit :=
-  es.forM (fun e => Env.freeVarCheck e f!"[{e}]")
+  es.forM (fun e => Env.freeVarCheck e (fun _ => f!"[{e}]"))
 
 /-- Variable Generator -/
 class HasGen (IDMeta : Type) [DecidableEq IDMeta] [Hashable IDMeta] where
@@ -584,8 +592,7 @@ Together, these restrictions ensure that variables created using
 def TEnv.genExprVar (Env : TGenEnv Unit) : Except Format (Identifier Unit × TGenEnv Unit) :=
   let (new_var, state) := Env.genState.genExprSym
   let Env := { Env with genState := state }
-  let known_vars := Env.context.knownVars
-  if ⟨new_var, ()⟩ ∈ known_vars then
+  if (Env.context.types.find? ⟨new_var, ()⟩).isSome then
     .error f!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
               Context: {format Env.context}"
   else
@@ -613,7 +620,13 @@ instance : HasGen Unit where
     simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · rename_i h_not_in; simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]; exact h_not_in
+    · rename_i h_not_found
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_xv, _⟩ := h
+      rw [← h_xv]
+      have h_none : Env.context.types.find? ⟨Env.genState.genExprSym.1, ()⟩ = none :=
+        Option.not_isSome_iff_eq_none.mp h_not_found
+      exact Strata.Util.HMaps.find?_of_not_mem_values _ h_none
 
 /-- `liftGenEnv` preserves the context. -/
 theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
@@ -912,6 +925,52 @@ def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) :
   let Env := { Env with genEnv := genEnv' }
   LMonoTy.resolveAliases mty Env
 
+/-- The alias resolution of `mty` against the aliases of `Γ`. -/
+def TContext.resolveTy {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) (mty : LMonoTy) : LMonoTy :=
+  match LMonoTy.resolveAliases mty
+      ({ genEnv := { context := Γ, genState := TState.init } } : TEnv IDMeta) with
+  | .ok (r, _) => r
+  | .error _ => mty
+
+/-- A type scheme with its body alias-resolved against the aliases of `Γ`. -/
+def TContext.resolveScheme {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : LTy → LTy :=
+  mapLTyTys Γ.resolveTy
+
+/-- `Γ` with every type scheme alias-resolved. -/
+def TContext.resolveTypes {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : TContext IDMeta :=
+  { Γ with types := Γ.types.mapValues Γ.resolveScheme }
+
+/-- `Γ` with every type scheme alias-resolved and no aliases. -/
+@[expose] def TContext.dealias {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : TContext IDMeta :=
+  { Γ.resolveTypes with aliases := [] }
+
+/-- `sig` with every type alias-resolved against `Γ`. -/
+def TContext.resolveSig {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] {α : Type} (Γ : TContext IDMeta) (sig : ListMap α LMonoTy) :
+    ListMap α LMonoTy :=
+  sig.keys.zip (sig.values.map Γ.resolveTy)
+
+/-- `f` with its input and output types alias-resolved against `Γ`. -/
+def LFunc.resolveSig {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [ToFormat T.IDMeta] (Γ : TContext T.IDMeta) (f : LFunc T) : LFunc T :=
+  { f with inputs := Γ.resolveSig f.inputs, output := Γ.resolveTy f.output }
+
+/-- `C` with every function signature alias-resolved against `aliases`. -/
+def LContext.resolveTable {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [ToFormat T.IDMeta] (aliases : List TypeAlias) (C : LContext T) : LContext T :=
+  let Γ : TContext T.IDMeta := { aliases := aliases }
+  { C with functions := C.functions.map (LFunc.resolveSig Γ) (fun _ => rfl) }
+
+/-- A policy deciding which free type-variable names are permitted in a type position. -/
+public abbrev TyVarAdmissibility : Type := TyIdentifier → Bool
+
+/-- The policy that permits every free type variable. -/
+public def TyVarAdmissibility.all : TyVarAdmissibility := fun _ => true
+
 mutual
 /--
 Is `ty` an instance of a known type in `ks`? We expect `ty` to be
@@ -937,6 +996,43 @@ end
 
 def isInstanceOfKnownType {T : LExprParams} (ty : LMonoTy) (C : LContext T) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
+
+mutual
+/-- Describes an application in `ty` of an alias or registered type to the wrong number of
+    arguments, if there is one. -/
+def LMonoTy.arityMismatch? (ty : LMonoTy) (aliases : List TypeAlias) (ks : KnownTypes) :
+    Option Format :=
+  match ty with
+  | .ftvar _ | .bitvec _ => none
+  | .tcons name args =>
+    match aliases.find? (·.name == name), ks.get? name with
+    | some alias, _ =>
+      if alias.typeArgs.length != args.length then
+        some (arityMismatchMsg "Type alias" name alias.typeArgs.length args.length)
+      else LMonoTys.arityMismatch? args aliases ks
+    | none, some arity =>
+      if arity != args.length then
+        some (arityMismatchMsg "Type constructor" name arity args.length)
+      else LMonoTys.arityMismatch? args aliases ks
+    | none, none => LMonoTys.arityMismatch? args aliases ks
+
+/-- The first arity mismatch among `tys`. -/
+def LMonoTys.arityMismatch? (tys : LMonoTys) (aliases : List TypeAlias) (ks : KnownTypes) :
+    Option Format :=
+  match tys with
+  | [] => none
+  | ty :: rest =>
+    (LMonoTy.arityMismatch? ty aliases ks).or (LMonoTys.arityMismatch? rest aliases ks)
+end
+
+/-- The error for a written type `shown`, with monotype `ty`, that is not an instance of a
+    registered type; it reports any arity mismatch. -/
+def unregisteredTypeError (shown : Format) (ty : LMonoTy) (aliases : List TypeAlias)
+    (ks : KnownTypes) : Format :=
+  match LMonoTy.arityMismatch? ty aliases ks with
+  | some reason => f!"Type {shown} is not an instance of a previously registered type: {reason}"
+  | none => f!"Type {shown} is not an instance of a previously registered type!\n\
+                 Known Types: {ks}"
 
 /--
 Well-kindedness of `ty` under an arity assignment: every type-constructor
@@ -987,8 +1083,7 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
               generator namespace ({TState.tyPrefix}*). This is not allowed."
   else if isInstanceOfKnownType mtyi C
   then return (mtyi, Env)
-  else .error f!"Type {mty} is not an instance of a previously registered type!\n\
-                 Known Types: {C.knownTypes}"
+  else .error (unregisteredTypeError (format mty) mty Env.context.aliases C.knownTypes)
 
 omit [ToFormat T.Metadata] in
 /-- Decompose `LMonoTy.instantiateWithCheck` into its two main steps:
@@ -1039,8 +1134,8 @@ def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env
               generator namespace ({TState.tyPrefix}*). This is not allowed."
   else if isInstanceOfKnownType mty C
   then return (mty, Env)
-  else .error f!"Type {ty} is not an instance of a previously registered type!\n\
-                 Known Types: {C.knownTypes}"
+  else .error (unregisteredTypeError (format ty) ty.toMonoTypeUnsafe Env.context.aliases
+    C.knownTypes)
 
 /--
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
@@ -1106,42 +1201,6 @@ of universally quantified type variables.
 def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature IDMeta) : @LTySignature IDMeta :=
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
-
-/--
-Add a well-formed `alias` to the context, where the type definition is first
-de-aliased.
--/
-def TEnv.addTypeAlias [ToFormat T.IDMeta] (alias : TypeAlias) (C : LContext T) (Env : TEnv T.IDMeta) :
-    Except Format (TEnv T.IDMeta) := do
-  let alias_lty := alias.toAliasLTy
-  if !alias.typeArgs.Nodup then
-    .error f!"[TEnv.addTypeAlias] Duplicates found in the type arguments!\n\
-               Name: {alias.name}\n\
-               Type Arguments: {alias.typeArgs}\n\
-               Type Definition: {alias.type}"
-  else if !((alias.type.freeVars ⊆ alias.typeArgs) &&
-            (alias_lty.freeVars ⊆ alias.typeArgs)) then
-    .error f!"[TEnv.addTypeAlias] Type definition contains free type arguments!\n\
-              Name: {alias.name}\n\
-              Type Arguments: {alias.typeArgs}\n\
-              Type Definition: {alias.type}"
-  else if C.knownTypes.containsName alias.name then
-    .error f!"This type declaration's name is reserved!\n\
-              {alias}\n\
-              KnownTypes' names:\n\
-              {C.knownTypes.keywords}"
-  else
-    -- De-alias the RHS so that chained aliases are fully resolved.
-    -- This maintains the invariant that stored alias types are never
-    -- themselves aliases.
-    let (rhsResolved, Env) ← LMonoTy.resolveAliases alias.type Env
-    -- Validate that the de-aliased type is a known, legal type.
-    let (_, _) ← (LTy.forAll [] rhsResolved).instantiateWithCheck C Env
-    let new_aliases := { typeArgs := alias.typeArgs,
-                         name := alias.name,
-                         type := rhsResolved } :: Env.context.aliases
-    let context := { Env.context with aliases := new_aliases }
-    .ok (Env.updateContext context)
 
 ---------------------------------------------------------------------
 

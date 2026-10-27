@@ -15,7 +15,8 @@ open StrataDDM (Program)
 # Datatype Typing Tests
 
 Tests for the Core typechecker's handling of datatype declarations:
-strict positivity, uniformity, nesting, inhabitedness, and name clashes.
+strict positivity, uniformity, nesting, inhabitedness, name clashes, and
+agreement of type parameters across a mutual block.
 -/
 
 namespace Strata.DatatypeTypingTests
@@ -280,6 +281,25 @@ info: error: Error: datatype Cycle1 not inhabited
 -/
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst).stripMetaData
+
+---------------------------------------------------------------------
+-- Test 15: Mutual Block with Different Type Parameters
+---------------------------------------------------------------------
+
+def mutualParamMismatchPgm : Program :=
+#strata
+program Core;
+
+  datatype A () { ABase(), MkA(b: B int) }
+  datatype B (T : Type) { BBase(), MkB(a: A, t: T) };
+#end
+
+-- Rejected: `A` declares no type parameters and `B` declares `T`.
+/--
+info: error: Datatypes in a mutual block must declare the same type parameters, but A declares [] and B declares [T]. If these datatypes are not mutually recursive, declare them in separate blocks.
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram mutualParamMismatchPgm) |>.fst).stripMetaData
 
 end Strata.DatatypeTypingTests
 
