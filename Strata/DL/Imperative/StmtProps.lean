@@ -40,9 +40,11 @@ Equational theory for the boolean shape walkers defined in
   monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
   (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
 - The def-use bridge: `Stmt`/`Block.defined_of_mem_touchedVars` derive the flat
-  `readWritesDefined` condition from the flow-sensitive `defUseWellFormed`, and
-  `Stmt`/`Block.not_defined_of_mem_definedVars` give the dual for names a statement
-  list defines.  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
+  `readWritesDefined` condition from the flow-sensitive `defUseWellFormed`;
+  `init_defUseWellFormed` and `havoc_defUseWellFormed` provide the base-command
+  constructor equations; and `Stmt`/`Block.not_defined_of_mem_definedVars` give
+  the dual for names a statement list defines.
+  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
 - Per-constructor equations for `noLoops` (`Block.noLoops_cons`,
   `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): a non-empty list has
@@ -478,13 +480,24 @@ theorem Block.initVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih =>
     simp [ih, List.append_assoc]
 
-/-- `Block.noNondetGuards` distributes over `++`. -/
-theorem Block.noNondetGuards_append (xs ys : List (Stmt P (Cmd P))) :
+/-- `Block.noNondetGuards` distributes over `++`, at any command type `C`: a
+concatenation has no nondeterministic guard exactly when both parts do. -/
+theorem Block.noNondetGuards_append (xs ys : List (Stmt P C)) :
     Block.noNondetGuards (xs ++ ys) =
       (Block.noNondetGuards xs && Block.noNondetGuards ys) := by
   induction xs with
   | nil => simp [Block.noNondetGuards]
   | cons x rest ih => simp [Block.noNondetGuards, ih, Bool.and_assoc]
+
+/-- `Block.allSubstmts` distributes over `++`, at any command type `C`: a
+predicate holds of every substatement of a concatenation exactly when it holds
+of every substatement of each part. -/
+theorem Block.allSubstmts_append (f : Stmt P C → Bool) (xs ys : List (Stmt P C)) :
+    Block.allSubstmts f (xs ++ ys) =
+      (Block.allSubstmts f xs && Block.allSubstmts f ys) := by
+  induction xs with
+  | nil => simp [Block.allSubstmts]
+  | cons x rest ih => simp [Block.allSubstmts, ih, Bool.and_assoc]
 
 /-- `Block.loopHasNoInvariants` distributes over `++`. -/
 theorem Block.loopHasNoInvariants_append (xs ys : List (Stmt P (Cmd P))) :
@@ -638,6 +651,33 @@ theorem Block.definedVars_append [HasVarsImp P C] (xs ys : List (Stmt P C))
   | cons x rest ih =>
     simp only [List.cons_append, Block.definedVars, ih, List.append_assoc]
 
+/-- A `havoc` of a register is def-use well-formed exactly when that register is
+already defined. -/
+theorem havoc_defUseWellFormed {P : PureExpr} [HasFvars P] [HasOps P]
+    [DecidableEq P.Ident]
+    (defined declared : P.Ident → Bool) (x : P.Ident) (md : MetaData P) :
+    Stmt.defUseWellFormed defined declared
+      (.cmd (HasHavoc.havoc (P := P) (CmdT := Cmd P) x md)) = defined x := by
+  change Stmt.defUseWellFormed defined declared
+    (.cmd (Cmd.set x .nondet md)) = defined x
+  simp [Stmt.defUseWellFormed, HasVarsImp.readVars, HasVarsImp.modifiedVars,
+    HasVarsImp.definedVars, HasOpsImp.getOps, Cmd.getVars, Cmd.modifiedVars,
+    Cmd.definedVars, Cmd.getOps, ExprOrNondet.getVars]
+
+/-- A nondeterministic `init` of an as-yet-undefined register is def-use
+well-formed. -/
+theorem init_defUseWellFormed {P : PureExpr} [HasFvars P] [HasOps P]
+    [DecidableEq P.Ident]
+    (defined declared : P.Ident → Bool) (x : P.Ident) (ty : P.Ty)
+    (md : MetaData P) (hx : defined x = false) :
+    Stmt.defUseWellFormed defined declared
+      (.cmd (HasInit.init (P := P) (CmdT := Cmd P) x ty .nondet md)) = true := by
+  change Stmt.defUseWellFormed defined declared
+    (.cmd (Cmd.init x ty .nondet md)) = true
+  simp [Stmt.defUseWellFormed, HasVarsImp.readVars, HasVarsImp.modifiedVars,
+    HasVarsImp.definedVars, HasOpsImp.getOps, Cmd.getVars, Cmd.modifiedVars,
+    Cmd.definedVars, Cmd.getOps, ExprOrNondet.getVars, hx]
+
 /-- `Block.defUseWellFormed` holds of a prefix whenever it holds of the whole
     concatenation.  Only the prefix direction: the suffix was checked against the
     *extended* defined/declared predicates, not the ones given here, so it does not
@@ -652,6 +692,34 @@ theorem Block.defUseWellFormed_of_append_left [HasVarsImp P C] [HasFvars P] [Has
   | cons x rest ih =>
     simp only [List.cons_append, Block.defUseWellFormed, Bool.and_eq_true] at h ⊢
     exact ⟨h.1, ih h.2⟩
+
+/-- Def-use well-formedness of a concatenated block splits into well-formedness
+of the prefix and of the suffix, the latter checked with the prefix's defined
+variables added to the defined set. -/
+theorem Block.defUseWellFormed_append [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident]
+    (defined declared : P.Ident → Bool) (xs ys : List (Stmt P C)) :
+    Block.defUseWellFormed defined declared (xs ++ ys) =
+      (Block.defUseWellFormed defined declared xs &&
+       Block.defUseWellFormed
+        (fun x => defined x || decide (x ∈ Block.definedVars xs true))
+        declared ys) := by
+  induction xs generalizing defined with
+  | nil => simp [Block.defUseWellFormed, Block.definedVars]
+  | cons s rest ih =>
+    simp only [List.cons_append, Block.defUseWellFormed, ih, Block.definedVars]
+    rw [Bool.and_assoc]
+    have hp :
+        (fun x => defined x || decide (x ∈ Stmt.definedVars s true) ||
+          decide (x ∈ Block.definedVars rest true)) =
+        (fun x => defined x ||
+          decide (x ∈ Stmt.definedVars s true ++ Block.definedVars rest true)) := by
+      funext x
+      by_cases hs : x ∈ Stmt.definedVars s true <;>
+        by_cases hr : x ∈ Block.definedVars rest true <;>
+        simp [hs, hr]
+    rw [hp]
+    simp
 
 /-- A name a statement list does not define is defined by none of its members, for any
     command type and at either setting of `excludeScoped` — the two sides are read at the

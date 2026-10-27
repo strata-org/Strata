@@ -27,7 +27,7 @@ Over Core's event language for statement lists (`EventLang.coreBlock`), erasing 
 (`Statements.noCalls`) is a trace over-approximation in the general form
 `OverapproximatesTracesUptoWhen` (`deadDefElim_overapproximatesTraces`): the initial
 environments are equal; a source trace and its target trace correspond event by event
-(`List.Rel₂ DDEventRel`: same kind, factory, label, condition and metadata, the target store
+(`List.Rel₂ (DDEventRel)`: same kind, factory, label, condition and metadata, the target store
 being the source store with some bindings removed and agreeing with it on the condition's free
 variables); final environments correspond by `DDOut`; and the output satisfies the initial-
 environment gate `BlockInitEnvWF` wherever the input does.  Consequently assertion validity on
@@ -114,7 +114,7 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
     * `deadDefElim [] ss` satisfies `BlockInitEnvWF params` at `ρ₀`. -/
 theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElim [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   intro ss st' hT ⟨hss, hnc⟩ ρ₀ _ rfl hwf
@@ -147,14 +147,15 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
     obtain ⟨rfl, hO⟩ := hO
     exact ⟨_, evs', star_core π (brun_star hWB hb hf), ⟨hE.1.symm, hE.2.symm, hO⟩, hm⟩
 
-/-- **Assertion validity transported back through erasure.**  For a store-local
-    interpretation `I` (`StoreLocal`, such as evaluation to `true`: `evalInterp_storeLocal`)
+/-- **Assertion validity transported back through erasure.** For an
+    interpretation `I` stable under `DDArgRel` (such as evaluation to `true`, by
+    `evalInterp_stableUnder`)
     and a Core statement list `ss` without loops and procedure calls: if every occurrence of
     the assertion `aid` holds under its preceding assumptions on every trace of
     `deadDefElim [] ss` from every environment satisfying `BlockInitEnvWF params` of that list,
     the same holds for `ss` from every environment satisfying `BlockInitEnvWF params ss`. -/
 theorem deadDefElim_assertValid (π : String → Option Procedure) (params : InitEnvWFParams)
-    {I : ConditionInterp Expression} (hI : StoreLocal I) {ss : Statements}
+    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) {ss : Statements}
     (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true) {aid : AssertId Expression}
     (h : AssertValidOnTracesWhen (EventLang.coreBlock π) I
       (BlockInitEnvWF params (deadDefElim [] ss)) (deadDefElim [] ss) aid) :
@@ -168,13 +169,13 @@ theorem deadDefElim_assertValid (π : String → Option Procedure) (params : Ini
     `deadDefElimH`, the pass the phase runs. -/
 theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElimH [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   have key : (fun ss : Statements => some (deadDefElimH (P := Expression) [] ss))
       = fun ss => some (deadDefElim (P := Expression) [] ss) :=
     funext fun ss => congrArg some (deadDefElimH_eq [] ss)
-  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
+  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) F
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params) key).mpr
     (deadDefElim_overapproximatesTraces π params)
@@ -182,7 +183,7 @@ theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
 /-- **Assertion validity transported back through the executable pass**:
     `deadDefElim_assertValid` for `deadDefElimH`. -/
 theorem deadDefElimH_assertValid (π : String → Option Procedure) (params : InitEnvWFParams)
-    {I : ConditionInterp Expression} (hI : StoreLocal I) {ss : Statements}
+    {I : ConditionInterp Expression} (hI : I.StableUnder DDArgRel) {ss : Statements}
     (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true) {aid : AssertId Expression}
     (h : AssertValidOnTracesWhen (EventLang.coreBlock π) I
       (BlockInitEnvWF params (deadDefElimH [] ss)) (deadDefElimH [] ss) aid) :

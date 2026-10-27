@@ -143,36 +143,29 @@ end
 
 ---------------------------------------------------------------------
 
-@[expose] def Command.getVars (c : Command) : List Expression.Ident :=
-  match c with
-  | .cmd c => c.getVars
-  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasFvars.getFvars
+/-- Variables read by a Core command. -/
+abbrev Command.readVars : Command → List Expression.Ident :=
+  CmdExt.readVars
 
-@[expose] def Command.getOps (c : Command) : List Expression.Ident :=
-  match c with
-  | .cmd c => Cmd.getOps c
-  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasOps.getOps
+/-- Operator/function names referenced by a Core command. -/
+abbrev Command.getOps : Command → List Expression.Ident :=
+  CmdExt.getOps
 
-instance : HasOpsImp Expression Command where
-  getOps := Command.getOps
+instance : HasOpsImp Expression Command := inferInstance
 
-@[expose] def Command.definedVars (c : Command) : List Expression.Ident :=
-  match c with
-  | .cmd c => c.definedVars
-  | _ => []
+/-- Variables defined by a Core command. -/
+abbrev Command.definedVars : Command → List Expression.Ident :=
+  CmdExt.definedVars
 
-@[expose] def Command.modifiedVars (c : Command) : List Expression.Ident :=
-  match c with
-  | .cmd c => c.modifiedVars
-  | .call _ args _ => CallArg.getLhs args
+/-- Variables modified by a Core command. -/
+abbrev Command.modifiedVars : Command → List Expression.Ident :=
+  CmdExt.modifiedVars
 
+/-- Variables modified or defined by a Core command. -/
 def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
 
-instance : HasVarsImp Expression Command where
-  definedVars c _ := Command.definedVars c
-  modifiedVars := Command.modifiedVars
-  readVars := Command.getVars
+instance : HasVarsImp Expression Command := inferInstance
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars

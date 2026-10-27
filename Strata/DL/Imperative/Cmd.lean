@@ -314,13 +314,13 @@ instance (P : PureExpr) : HasInitTypesImp P (CmdExt P) where
 ---------------------------------------------------------------------
 
 /-- Get all variables accessed by an `ExprOrNondet`. -/
-def ExprOrNondet.getVars [HasFvars P] (e : ExprOrNondet P) : List P.Ident :=
+@[expose] def ExprOrNondet.getVars [HasFvars P] (e : ExprOrNondet P) : List P.Ident :=
   match e with
   | .det e => HasFvars.getFvars e
   | .nondet => []
 
 /-- Get all operator/function names referenced by an `ExprOrNondet`. -/
-def ExprOrNondet.getOps [HasOps P] (e : ExprOrNondet P) : List P.Ident :=
+@[expose] def ExprOrNondet.getOps [HasOps P] (e : ExprOrNondet P) : List P.Ident :=
   match e with
   | .det e => HasOps.getOps e
   | .nondet => []
@@ -332,7 +332,7 @@ def ExprOrNondet.map {P Q : PureExpr} (f : P.Expr â†’ Q.Expr) : ExprOrNondet P â
 
 mutual
 /-- Get all variables accessed by `c`. -/
-def Cmd.getVars [HasFvars P] (c : Cmd P) : List P.Ident :=
+@[expose] def Cmd.getVars [HasFvars P] (c : Cmd P) : List P.Ident :=
   match c with
   | .init _ _ e _ => e.getVars
   | .set _ e _ => e.getVars
@@ -355,14 +355,14 @@ end
   | _ => []
 
 /-- Get all variables defined by commands `cs`. -/
-def Cmds.definedVars (cs : Cmds P) : List P.Ident :=
+@[expose] def Cmds.definedVars (cs : Cmds P) : List P.Ident :=
   match cs with
   | [] => []
   | c :: crest => Cmd.definedVars c ++ Cmds.definedVars crest
   termination_by (sizeOf cs)
 
 /-- Get all variables modified by the command `c`. -/
-def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
+@[expose] def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
   match c with
   | .init _ _ _ _ => []
   | .set name _ _ => [name]
@@ -384,7 +384,7 @@ instance (P : PureExpr) [HasFvars P] : HasVarsImp P (Cmd P) where
 
 mutual
 /-- Get all operator/function names referenced by `c`. -/
-def Cmd.getOps [HasOps P] (c : Cmd P) : List P.Ident :=
+@[expose] def Cmd.getOps [HasOps P] (c : Cmd P) : List P.Ident :=
   match c with
   | .init _ _ (.det e) _ => HasOps.getOps e
   | .init _ _ .nondet _ => []

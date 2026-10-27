@@ -1634,7 +1634,7 @@ def typeCheckPipelinePhase
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
 
-    Requires `noNondetGuards`, which `nondetElimPipelinePhase` establishes:
+    Requires `noNondetGuards`, which `NondetElim.nondetElimPipelinePhase` establishes:
     `Core.Statement.eval` rejects a surviving nondeterministic guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
@@ -1676,7 +1676,7 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
    typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
    simplifyPhase,
-   nondetElimPipelinePhase]
+   NondetElim.nondetElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim.

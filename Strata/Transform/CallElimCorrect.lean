@@ -513,7 +513,7 @@ theorem EvalStatementContractInitVar :
     simp [updatedState]
     intros Heq
     simp_all
-  . simp [Imperative.isDefinedOver,
+  . simp [Imperative.SemanticStore.isDefinedOver,
           Imperative.isDefined,
           Imperative.HasVarsImp.modifiedVars,
           Command.modifiedVars,
@@ -582,7 +582,7 @@ theorem EvalStatementContractInit :
     simp [updatedState]
     intros Heq
     simp_all
-  . simp [Imperative.isDefinedOver,
+  . simp [Imperative.SemanticStore.isDefinedOver,
           Imperative.isDefined,
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars,
@@ -648,7 +648,7 @@ theorem EvalStatementContractHavocUpdated :
   . constructor
     . exact updatedStateUpdate Hsome
     . assumption
-  . simp [Imperative.isDefinedOver, Imperative.isDefined,
+  . simp [Imperative.SemanticStore.isDefinedOver, Imperative.isDefined,
           Imperative.HasVarsImp.modifiedVars,
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars, Option.isSome]
@@ -748,7 +748,8 @@ theorem EvalStatementsContractHavocVars :
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
     apply Imperative.EvalCmd.eval_set_nondet <;> try assumption
-    . simp [Imperative.isDefinedOver, Command.modifiedVars,Imperative.Cmd.modifiedVars,
+    . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
+            Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars]
       simp [Imperative.isDefined] at Hdef ⊢
       apply Hdef.1
@@ -1509,7 +1510,7 @@ theorem createAssertsCorrect :
        rw [← Heq]
        exact Hl.2.2
      . assumption
-     . simp [Imperative.isDefinedOver, Command.modifiedVars,
+     . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
              Imperative.Cmd.modifiedVars,
              Imperative.HasVarsImp.modifiedVars,
              Imperative.isDefined]
@@ -1561,7 +1562,7 @@ theorem createAssumesCorrect :
       rw [← Heq]
       exact Hl.2.2
     . assumption
-    . simp [Imperative.isDefinedOver, Command.modifiedVars,
+    . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
             Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars,
             Imperative.isDefined]
@@ -3239,7 +3240,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
               left; exact ⟨x, x', Hin⟩
           -- Reused assumption : lhs and modifies are defined
           have Hdeflm : Imperative.isDefined σ (lhs ++ proc.spec.modifies) := by
-                  simp [Imperative.isDefinedOver,
+                  simp [Imperative.SemanticStore.isDefinedOver,
                         Imperative.HasVarsTrans.allVarsTrans,
                         Statement.allVarsTrans,
                         Statement.modifiedOrDefinedVarsTrans,

@@ -7,8 +7,7 @@ module
 
 public import Strata.DL.Imperative.StoreRelations
 import all Strata.DL.Imperative.StoreRelations
-public import Strata.DL.Imperative.CmdSemantics
-import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StoreProps
 
 ---------------------------------------------------------------------
 
@@ -17,18 +16,18 @@ namespace Imperative
 /-! # Metatheory of the store relations
 
 Properties of `StoreAgreement`, `StoreProjected`, and `StoreExtendsWith`.
-Most results use only store lookups and `isDefined`; the update laws
-additionally depend on `SemanticStore.update` from `CmdSemantics`. The module
-remains independent of statement semantics:
+The underlying definedness, substitution, and generated-name reservation laws
+live in `StoreProps`. This module remains independent of command and statement
+semantics:
 
 - `StoreAgreement.refl` / `StoreAgreement.trans` / `storeAgreement_iff` /
   `storeAgreement_supplies_mono_premise`, the `storeAgreement_storeWith` update law
   (a `SemanticStore.update` at a source-undefined slot preserves `StoreAgreement`),
   the `StoreProjected` reflexivity / transitivity / lookup-supply laws, and the
   `StoreExtendsWith` equality-at-false / reflexivity / forgetful /
-  monotonicity / composition / update laws (`eq_of_false`, `refl`,
-  `toStoreAgreement`, `mono`, `trans_union`, `trans`, `update_target`,
-  `update_both`).
+  monotonicity / composition / lookup / update laws (`eq_of_false`, `refl`,
+  `toStoreAgreement`, `mono`, `trans_union`, `trans`,
+  `lookup_eq_of_not_extra`, `update_target`, `update_both`).
 
 The statement-level `StoreExtendsWith.projectStore` and
 `StoreAgreement.of_projectStore` / `of_projectStore_parents` scope-projection laws
@@ -36,6 +35,8 @@ live in `StmtSemanticsProps`.
 -/
 
 public section
+
+/-! ## Store comparison properties -/
 
 /-- Store agreement is reflexive: every store agrees with itself. -/
 theorem StoreAgreement.refl {P : PureExpr} (σ : SemanticStore P) :
@@ -129,6 +130,24 @@ theorem StoreExtendsWith.eq_of_false {P : PureExpr}
       | some _ => simpa [hsource] using h.2 ident (by simp [htarget])
 
 namespace StoreExtendsWith
+
+/-- A classified extension agrees at any register that is not eligible
+for a target-only binding. -/
+theorem lookup_eq_of_not_extra {P : PureExpr} {Extra : P.Ident → Prop}
+    {source target : SemanticStore P} (h : StoreExtendsWith Extra source target)
+    {ident : P.Ident} (hnot : ¬ Extra ident) :
+    source ident = target ident := by
+  cases hsource : source ident with
+  | some value =>
+      rw [← hsource]
+      exact h.1 ident (by simp [isDefined, hsource])
+  | none =>
+      cases htarget : target ident with
+      | none => rfl
+      | some _ =>
+          rcases h.2 ident (by simp [htarget]) with hsome | hextra
+          · simp [hsource] at hsome
+          · exact absurd hextra hnot
 
 /-- Every store extends itself without requiring an extra-register class. -/
 theorem refl {P : PureExpr} (Extra : P.Ident → Prop) (store : SemanticStore P) :

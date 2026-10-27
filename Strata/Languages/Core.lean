@@ -227,7 +227,7 @@ def Core.passRecursiveAxioms (options : Core.VerifyOptions := Core.VerifyOptions
 
 /-- Replace non-deterministic guards with havoc and assumption. -/
 def Core.passNondetElim : Core.PipelinePhase :=
-  _root_.Core.nondetElimPipelinePhase
+  _root_.Core.NondetElim.nondetElimPipelinePhase
 
 /-- Reduce beta redexes, leaving terms in normal form. -/
 def Core.passBetaReduce : Core.PipelinePhase :=
