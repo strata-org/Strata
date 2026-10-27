@@ -102,8 +102,11 @@ Control how aggressively irrelevant axioms are pruned from proof obligations.
 
 Axiom removal is **sound for assert obligations**: removing axioms can only
 weaken the proof context, so a valid goal remains valid and an invalid goal
-cannot become falsely provable. However, valid goals may become **unprovable**
-(the solver returns `unknown` instead of `pass`).
+cannot become falsely provable. However, valid goals may become **unprovable**:
+a counterexample may violate a dropped axiom. `Aggressive` and `Precise`
+modes report the solver's answer as is, so such a goal fails. In `Directed`
+mode, when axioms were dropped for a goal, the solver's `sat` reports as
+`unknown`, so a goal that really fails also reports as `unknown`.
 
 Axiom removal is **unsound for cover obligations**: removing axioms weakens
 path conditions, potentially making unreachable paths appear satisfiable
@@ -118,6 +121,8 @@ inductive IrrelevantAxiomsMode where
   | Off        -- No axiom pruning (default)
   | Aggressive -- Only consequent Q functions used for relevance
   | Precise    -- Both antecedent P and consequent Q functions used
+  | Directed   -- Axioms reached from P and Q through constants, and those
+               -- without constants
   deriving Repr, DecidableEq, Inhabited
 
 /-- Check level: how much information to gather and display -/

@@ -68,7 +68,8 @@ def verifyOptionsFlags : List Flag := [
   { name := "use-array-theory",
     help := "Use SMT-LIB Array theory instead of axiomatized maps." },
   { name := "remove-irrelevant-axioms",
-    help := "Prune irrelevant axioms: 'off', 'aggressive', or 'precise'.",
+    help := "Prune irrelevant axioms: 'off', 'aggressive', 'precise', \
+      or 'directed'.",
     takesArg := .arg "mode" },
   { name := "overflow-checks",
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
@@ -85,7 +86,7 @@ def verifyOptionsFlags : List Flag := [
     help := "With --incremental, cut the program into at least N sessions, each checked from a fresh solver (default: the --parallel count), or with 'nodes' make every node holding goals a session of its own. Runs with the same value give the same results whatever --parallel is, except that a goal retried after its solver failed starts again from an empty solver, so under lazy pruning it may then see fewer extra axioms.",
     takesArg := .arg "N|nodes" },
   { name := "incremental-pruning",
-    help := "With --incremental and --remove-irrelevant-axioms, 'lazy' (default) lets a solver keep the axioms earlier goals needed, so a goal may see more axioms than without --incremental and may then be reported proved, or a cover unreachable, where it is refuted without --incremental; 'exact' resets the solver when a goal drops an axiom it holds, so every goal sees exactly its own, at the cost of starting a solver again whenever that happens. Laurel programs always use 'exact'.",
+    help := "With --incremental and --remove-irrelevant-axioms, 'lazy' (default) lets a solver keep the axioms earlier goals needed, so a goal may see more axioms than without --incremental and may then be reported proved, or a cover unreachable, where it is refuted or unknown without --incremental; 'exact' resets the solver when a goal drops an axiom it holds, so every goal sees exactly its own, at the cost of starting a solver again whenever that happens. Laurel programs always use 'exact'.",
     takesArg := .arg "lazy|exact" },
   { name := "set-option",
     help := "Set an SMT solver option verbatim as NAME=VALUE (repeatable), applied after the built-in prelude so it overrides it. Option names are solver-specific (e.g. for z3, `--set-option smt.mbqi=true`). For local experimentation on the local solver invocation.",
@@ -153,7 +154,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     | .some "off" => pure .Off
     | .some "aggressive" => pure .Aggressive
     | .some "precise" => pure .Precise
-    | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. Must be 'off', 'aggressive', or 'precise'."
+    | .some "directed" => pure .Directed
+    | .some s => exitFailure s!"Invalid remove-irrelevant-axioms mode: '{s}'. \
+        Must be 'off', 'aggressive', 'precise', or 'directed'."
   let overflowChecks := match pflags.getString "overflow-checks" with
     | .none => base.overflowChecks
     | .some s => s.splitOn "," |>.foldl (fun acc c =>

@@ -980,6 +980,9 @@ structure VCOutcome where
       Used by the rendering phase to compute per-path classification summaries
       without storing rendering-mode-dependent strings. -/
   mergedFrom : Array VCOutcome := #[]
+  /-- Set when `directed` pruning dropped axioms from the query; a `sat` then
+      reports as `unknown`, see `VCOutcome.withAxiomsDropped`. -/
+  axiomsDropped : Bool := false
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -1547,6 +1550,14 @@ def evaluatorResults (obligation : ProofObligation Expression) (checkMode : Veri
     else none
   (sat, valid)
 
+/-- The axiom-relevance cache that `mode` needs for `prog`, or `none` when
+    pruning is off. -/
+def axiomCacheFor (mode : IrrelevantAxiomsMode) (prog : Program) :
+    Option IrrelevantAxioms.Cache :=
+  if mode == .Off then none
+  else some (IrrelevantAxioms.Cache.build prog
+    (directed := mode == .Directed))
+
 /--
 Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently
@@ -1560,11 +1571,10 @@ the pruning at emission time instead.
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
-    -- Names of axiom assumptions, used to exclude axioms from the
-    -- relevant-function seed set during irrelevant axiom removal.
+    -- Names of axiom assumptions, excluded from the relevance seeds.
     (axiomNames : List String := [])
-    -- A program whose declarations consist of axioms only, used by
-    -- irrelevant axiom removal to determine which axioms to prune.
+    -- The program the non-directed relevance query runs against; defaults
+    -- to `p`.
     (axiomProgram : Option Program := .none)
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
   let (peSatResult, peValResult) :=
@@ -1595,28 +1605,26 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         -- are unaffected.)
         let opName := fun (op : CoreIdent) => Core.NameMangling.demangledBaseName op.toPretty
         let consequentFns := obligation.obligation.getOps.map opName
-        let relevantFns :=
-          match mode with
-          | .Aggressive => consequentFns
-          | .Precise =>
-            -- Extract functions from non-axiom path conditions only. Axioms
-            -- are excluded because including them would seed the relevant-function
-            -- set with every function they mention, causing those axioms to be
-            -- found trivially relevant and never removed.
-            let antecedentFns :=
-              obligation.assumptions.flatten.flatMap
-                (fun entry =>
-                  match entry with
-                  | .assumption label e =>
-                    if axiomNames.contains label then []
-                    else (Lambda.LExpr.getOps e).map opName
-                  | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
-                  | .varDecl _ _ .nondet => []
-                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
-            (consequentFns ++ antecedentFns).uniq
-          | .Off => consequentFns  -- unreachable; handled above
+        -- Seeding from axioms would keep every axiom.
+        let axiomSet := Std.HashSet.ofList axiomNames
+        let antecedentFns := fun () =>
+          obligation.assumptions.flatten.flatMap
+            (fun entry =>
+              match entry with
+              | .assumption label e =>
+                if axiomSet.contains label then []
+                else (Lambda.LExpr.getOps e).map opName
+              | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
+              | .varDecl _ _ .nondet => []
+              | .distinct _ exprs =>
+                exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
+        let seeds := match cache with
+          | .directed _ => consequentFns ++ antecedentFns ()
+          | .callGraph .. =>
+            if mode == .Precise then (consequentFns ++ antecedentFns ()).uniq
+            else consequentFns
         let irrelevantAxioms :=
-          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache relevantFns
+          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache seeds
         let newAssumptions :=
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
@@ -1823,6 +1831,27 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- The outcome as reported. When `axiomsDropped` is set, a `sat` becomes
+    `unknown`, keeping its model, because the model may violate a dropped
+    axiom, so a real violation found this way also reports as `unknown`. An
+    `unsat` stands: adding the dropped axioms back keeps the query
+    unsatisfiable. -/
+def VCOutcome.withAxiomsDropped (o : VCOutcome) : VCOutcome :=
+  if !o.axiomsDropped then o else
+  let demote : SMT.Result → SMT.Result
+    | .sat m => .unknown (some m)
+    | r => r
+  { o with satisfiabilityProperty := demote o.satisfiabilityProperty,
+           validityProperty := demote o.validityProperty }
+
+/-- The outcome of a query from which pruning in `mode` dropped the axioms
+    `dropped`. In `directed` mode it is marked and reported as
+    `withAxiomsDropped` says; other modes keep the solver's answer. -/
+def VCOutcome.afterPruning (mode : IrrelevantAxiomsMode)
+    (dropped : List String) (o : VCOutcome) : VCOutcome :=
+  let dropsHere := mode == .Directed && !dropped.isEmpty
+  { o with axiomsDropped := o.axiomsDropped || dropsHere }.withAxiomsDropped
+
 /-- Pass a result's two verdicts through the phases' model validation, as the default back end
     does for each obligation it discharges, and record what each phase decided. -/
 def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCResult :=
@@ -1831,9 +1860,11 @@ def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCR
   | .ok o =>
     let (sat, satLog) := o.satisfiabilityProperty.adjustForPhases phases r.obligation
     let (valid, validLog) := o.validityProperty.adjustForPhases phases r.obligation
-    { r with outcome := .ok { o with
+    -- A model a phase accepts may still violate an axiom pruning dropped.
+    { r with outcome := .ok ({ o with
         satisfiabilityProperty := sat, validityProperty := valid,
-        solverLog := o.solverLog.push (satLog ++ validLog).toArray } }
+        solverLog := o.solverLog.push (satLog ++ validLog).toArray }
+        |>.withAxiomsDropped) }
 
 /-- A discharge function encapsulates the solver backend. It takes assumption
     terms, the obligation term, the SMT context, and the satisfiability/validity
@@ -1919,6 +1950,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (phases : List AbstractedPhase)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
+    -- Labels of the axioms pruning dropped from this query.
+    (prunedAxiomLabels : List String := [])
     : EIO Message VCResult := do
   -- Formatting the whole program is costly on a large one, so it is done only when the debug
   -- trace below shows it.
@@ -1957,6 +1990,7 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       validityProperty := adjVal,
       solverLog := #[smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+      |>.afterPruning options.removeIrrelevantAxioms prunedAxiomLabels
     -- Extract model from sat or unknown-with-candidate results.
     -- unknown (some m) arises when the solver returns a candidate model it cannot
     -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
@@ -1989,6 +2023,8 @@ private structure SolverJob where
   typedVarsInObligation : List Expression.TypedIdent
   varDefs : List VarDefinition := []
   varDecls : List VarDeclaration := []
+  /-- Labels of the axioms irrelevant-axiom removal dropped from this query. -/
+  prunedAxiomLabels : List String := []
 
 /-- Disposition of one obligation coming out of the `smtDischarge` phase: either
     solved inline with a ready `VCResult` (`resolved` -- also used for encoding
@@ -2011,7 +2047,8 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     job.typedVarsInObligation job.obligation.metadata job.obligation.label none none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
-    (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
+    (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)
+    (prunedAxiomLabels := job.prunedAxiomLabels)).toBaseIO
   match resultOrErr with
   | .error diag => return .error diag
   | .ok result =>
@@ -2234,11 +2271,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
-    -- Names of axiom assumptions, used to exclude axioms from the
-    -- relevant-function seed set during irrelevant axiom removal.
     (axiomNames : List String := [])
-    -- A program whose declarations consist of axioms only, used by
-    -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases)
@@ -2371,7 +2404,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           let job : SolverJob := {
             obligation, assumptionTerms, obligationTerm, ctx,
             needSatCheck, needValCheck, peSatResult?, peValResult?,
-            typedVarsInObligation, varDefs, varDecls }
+            typedVarsInObligation, varDefs, varDecls, prunedAxiomLabels }
           -- Capture is sequential-path only; `emState0` is left untouched.
           pure (ObligationDisposition.deferred job, encStats, encState', snapCache', emState0)
         else
@@ -2391,6 +2424,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                         discharge needSatCheck needValCheck (externalPhases ++ corePhases)
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
+                        (prunedAxiomLabels := prunedAxiomLabels)
           -- Merge evaluator results with solver results
           let result := match result.outcome with
             | .ok solverOutcome =>
@@ -2569,8 +2603,7 @@ def verifyPipeline (program : Program)
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
   let axiomCache? ← pctx.withPhasePure "buildAxiomCache" fun _ =>
-    if options.removeIrrelevantAxioms == .Off then .none
-    else .some (IrrelevantAxioms.Cache.build program)
+    axiomCacheFor options.removeIrrelevantAxioms program
   let counter ← IO.toEIO (fun e => Message.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← pctx.withPhase "vcDischarge" do
     if options.checkOnly then

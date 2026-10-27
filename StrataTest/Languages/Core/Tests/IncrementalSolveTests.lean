@@ -1582,6 +1582,91 @@ usesG: proved
 #guard_msgs in
 #eval withPruning twoAxioms .Aggressive (exact := true)
 
+/-! The axioms of `twoAxioms` mention no constant, so `Directed` pruning keeps both. Below, each
+goal keeps only the axiom about its own constant, and as above, exact pruning needs a second
+context. -/
+
+private def twoConstants :=
+#strata
+program Core;
+
+function a(): int;
+function b(): int;
+axiom [aPos]: int.gt(a, 0);
+axiom [bNeg]: int.lt(b, 0);
+
+procedure P()
+{
+  assert [usesA]: int.gt(a, 0);
+  assert [usesB]: int.lt(b, 0);
+};
+#end
+
+/--
+info: usesA: proved
+usesB: proved
+2 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning twoConstants .Directed (exact := true)
+
+/-! `c_one` reaches only `c`, which `c_def` does not define, so `Directed`
+pruning drops both axioms, and its counterexample, which may violate them,
+reports as unknown. `d_one` keeps both axioms and is refuted. -/
+
+private def droppedNeeded :=
+#strata
+program Core;
+
+function c(): int;
+function d(): int;
+axiom [c_def]: int.add(d, 1) == c;
+axiom [d_def]: d == 0;
+
+procedure P()
+{
+  assert [c_one]: c == 1;
+  assert [d_one]: d == 1;
+};
+#end
+
+/--
+info: c_one: unknown
+d_one: REFUTED
+1 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning droppedNeeded .Directed
+
+/-! `c_d` keeps both axioms and is proved, and lazy pruning leaves them on the
+solver for `c_two`, whose pruning drops them. The solver refutes `c_two` with
+both axioms present, and it still reports as unknown, as it does without
+`--incremental`. -/
+
+private def keptThenDropped :=
+#strata
+program Core;
+
+function c(): int;
+function d(): int;
+axiom [c_def]: int.add(d, 1) == c;
+axiom [d_def]: d == 0;
+
+procedure P()
+{
+  assert [c_d]: c == int.add(d, 1);
+  assert [c_two]: c == 2;
+};
+#end
+
+/--
+info: c_d: proved
+c_two: unknown
+1 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning keptThenDropped .Directed
+
 /-! ### z3 reports a per-check time limit as a timeout too
 
 Started with `-t:`, z3 answers a check it abandons with `unknown`, and gives the reason only

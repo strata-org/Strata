@@ -1008,7 +1008,13 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
             (IO.Error × Session τ σ × Option IO.Error)) := do
         s.encodingFailure.set none
         try
-          pure (.inl (← s.prove factory item satCheck validCheck))
+          let ((o, model), s') ← s.prove factory item satCheck validCheck
+          -- Whether a `sat` reports as unknown depends on what this goal's
+          -- pruning drops, as on the per-obligation path, even when lazy
+          -- pruning left those axioms in the solver.
+          let o := o.map (·.afterPruning options.removeIrrelevantAxioms
+            item.pruned)
+          pure (.inl ((o, model), s'))
         catch e =>
           -- A goal whose terms cannot be written gets that as its result, and the rest carry
           -- on. What the solver was sent before the failure is not recorded on the session,
@@ -1313,16 +1319,20 @@ lets this be tested without `symbolicEval`. -/
     the pipeline, as it does there. -/
 private def pruneFor (options : VerifyOptions) (program : Program) (axiomProgram : Option Program) :
     WorkItem → IO (List String) :=
-  if options.removeIrrelevantAxioms == .Off then fun _ => pure [] else
   let axProg := axiomProgram.getD program
-  let axiomNames := axiomNamesOf axProg
-  let cache := IrrelevantAxioms.Cache.build axProg
-  fun item => do
-    let (satCheck, validCheck) := checksFor item.goal.property item.goal.md options
-    let (_, _, _, labels) ← EIO.toIO (fun m => IO.userError (toString (m.format none)))
-      (preprocessObligation (obligationOf item) program options satCheck validCheck
-        (some cache) axiomNames (axiomProgram := some axProg))
-    pure labels
+  match axiomCacheFor options.removeIrrelevantAxioms axProg with
+  | none => fun _ => pure []
+  | some cache =>
+    let axiomNames := axiomNamesOf axProg
+    fun item => do
+      let (satCheck, validCheck) :=
+        checksFor item.goal.property item.goal.md options
+      let (_, _, _, labels) ←
+        EIO.toIO (fun m => IO.userError (toString (m.format none)))
+          (preprocessObligation (obligationOf item) program options
+            satCheck validCheck (some cache) axiomNames
+            (axiomProgram := some axProg))
+      pure labels
 
 /-- Where the solvers a run walks the tree with come from. Any `AbstractSolver` will do, so a
     remote service can stand in for the local processes: each call to `spawn` is one solver,
@@ -1485,8 +1495,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
   let ofMsg := fun (m : Strata.Pipeline.Message) => IO.userError (toString (m.format none))
   let axProg := axiomProgram.getD oblProgram
   let axiomNames := axiomNamesOf axProg
-  let axiomCache := if options.removeIrrelevantAxioms == .Off then none
-    else some (IrrelevantAxioms.Cache.build axProg)
+  let axiomCache := axiomCacheFor options.removeIrrelevantAxioms axProg
   let pctx ← (Strata.Pipeline.PipelineContext.create (outputMode := .quiet) : BaseIO _)
   let counter ← IO.toEIO toMsg (IO.mkRef 0)
   IO.toEIO toMsg <| IO.FS.withTempDir fun tempDir => do
