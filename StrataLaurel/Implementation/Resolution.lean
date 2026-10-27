@@ -7525,6 +7525,76 @@ def validateFullyAnnotated (program : LaurelProgram) : List Message :=
   (program.staticFunctions ++ program.staticProcedures ++ instanceProcs).flatMap procDiags
     ++ typeDiags ++ constantDiags ++ staticFieldDiags
 
+/-- The parts of `ty` that survive its unfolding. Of a generic alias's arguments, only those at
+    the positions `kept` marks for it do, and none if their number is wrong, which is reported
+    separately. -/
+private def keptParts (model : SemanticModel) (kept : Std.HashMap Nat (List Bool)) :
+    HighType → List HighTypeMd
+  | .Applied b args =>
+    match (highBaseName? b.val).bind model.get? with
+    | some (.typeAlias ta) => match ta.name.uniqueId.bind kept.get? with
+      | some ks =>
+        if args.length != ks.length then []
+        else (args.zip ks).filterMap fun (a, k) => if k then some a else none
+      | none => args
+    | _ => args
+  | .TMap k v => [k, v]
+  | .TSet e => [e]
+  | .Intersection ts => ts
+  | _ => []
+
+/-- Whether the type parameter `p` survives the unfolding of `ty`. -/
+private partial def survives (model : SemanticModel) (kept : Std.HashMap Nat (List Bool))
+    (p : Identifier) : HighType → Bool
+  | .TVar n => n.text == p.text
+  | ty => (keptParts model kept ty).any (survives model kept p ·.val)
+
+/-- For each generic alias, which of its parameters survive its unfolding. The greatest fixpoint,
+    so an alias whose unfolding reaches itself keeps them, as `TypeAliasElim` leaves such a use
+    as written. -/
+private def keptParams (model : SemanticModel) (aliases : List TypeAlias) :
+    Std.HashMap Nat (List Bool) :=
+  let step kept := aliases.foldl (init := kept) fun m ta => match ta.name.uniqueId with
+    | some id => m.insert id (ta.typeArgs.map (survives model kept · ta.target.val))
+    | none => m
+  -- Each round that changes anything drops a parameter.
+  (aliases.flatMap (·.typeArgs)).foldl (init := step {}) fun kept _ => step kept
+
+/-- Whether unfolding the types `todo` reaches the declaration with id `self`. `seen` holds the
+    aliases and constrained types already unfolded. -/
+private partial def reachesType (model : SemanticModel) (kept : Std.HashMap Nat (List Bool))
+    (self : Nat) (todo : List HighType) (seen : Std.HashSet Nat) : Bool :=
+  match todo with
+  | [] => false
+  | ty :: rest =>
+    let rest := (keptParts model kept ty).map (·.val) ++ rest
+    let unfolded := (highBaseName? ty).bind model.get? |>.bind fun
+      | .typeAlias ta => some (ta.name.uniqueId, ta.target)
+      | .constrainedType ct => some (ct.name.uniqueId, ct.base)
+      | _ => none
+    match unfolded with
+    | some (some id, target) =>
+      id == self || if seen.contains id then reachesType model kept self rest seen
+        else reachesType model kept self (target.val :: rest) (seen.insert id)
+    | _ => reachesType model kept self rest seen
+
+/-- An alias stands for its target and a constrained type for its base, which `TypeAliasElim`
+    and `ConstrainedTypeElim` substitute for every use. One whose unfolding reaches itself never
+    finishes unfolding. References are followed through the model, so a type parameter spelled
+    like a type is not taken for it. -/
+private def validateTypeCycles (model : SemanticModel) (types : List TypeDefinition) :
+    List Message :=
+  let kept := keptParams model (types.filterMap fun | .Alias ta => some ta | _ => none)
+  types.filterMap fun td => do
+    let (name, target) ← match td with
+      | .Alias ta => some (ta.name, ta.target)
+      | .Constrained ct => some (ct.name, ct.base)
+      | _ => none
+    let id ← name.uniqueId
+    guard (reachesType model kept id [target.val] {})
+    return diagnosticFromSource name.source
+      s!"type '{name.text}' is defined in terms of itself" MessageKind.userError
+
 /-- A global-writing `invokeOn` needs an unbound hidden output unless its trigger
     already invokes a writer, which source validation rejects separately. -/
 private def validateInvokeOnGlobalWrites (program : LaurelProgram)
@@ -7598,6 +7668,9 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
       | .error e => #[Message.fromString s!"Internal error: computeWritesHeap: {e}" .strataBug]
       | .ok _ => #[])
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  -- No pass introduces an alias or a constrained type; only authored ones can form a cycle.
+  let typeCycleErrors :=
+    if existingModel.isNone then validateTypeCycles semanticModel program'.types else []
   let initialAnalysis :=
     if existingModel.isNone then some (analyzeInitialEffects semanticModel program') else none
   -- No-op `old(...)` warnings only model heap and explicit inout state. Global
@@ -7692,6 +7765,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
+      typeCycleErrors ++
       preconditionOldErrors ++ globalNameErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++

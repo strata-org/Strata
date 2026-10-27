@@ -59,7 +59,9 @@ build rather than failing it. -/
 #strata
 program Laurel;
 type A<T> = B<T>
+//   ^ error: type 'A' is defined in terms of itself
 type B<U> = A<U>
+//   ^ error: type 'B' is defined in terms of itself
 
 procedure cyclicAlias()
   opaque

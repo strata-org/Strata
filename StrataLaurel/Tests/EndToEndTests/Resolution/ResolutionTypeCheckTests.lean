@@ -363,14 +363,15 @@ procedure bareNameLosesToInstantiation() opaque {
 };
 #end
 
-/-! A self-referential alias is accepted, so inference has to cope with one. That a diagnostic comes
-out at all is the assertion here; its wording is incidental. -/
+/-! A self-referential alias is rejected, but inference still has to cope with one. That the call
+gets a diagnostic at all is the assertion here; its wording is incidental. -/
 
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Box<T> { var v: T }
 type A = Box<A>
+//   ^ error: type 'A' is defined in terms of itself
 procedure pick<T>(a: T, b: T) returns (r: T) opaque;
 procedure selfReferentialAlias(a: A, b: A) opaque {
   var w: bool := pick(a, b)
