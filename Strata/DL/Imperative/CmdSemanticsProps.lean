@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.CmdProps
 import all Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StoreProps
 public import Strata.DL.Imperative.StoreRelationsProps
@@ -14,6 +15,17 @@ public import Strata.DL.Imperative.Stmt
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
 import Strata.DL.Util.Nodup
+
+/-! # Properties of the command semantics definitions
+
+Properties of the definitions in `Strata.DL.Imperative.CmdSemantics`.
+
+Key results:
+- `substStoreAgreement_iff` — pointwise unfolding of `SubstStoreAgreement`.
+- `substStoreExpr_substMapOf` — the `substMapOf` store pullback is the first-match
+  pullback through `renameLookup`.
+- `eval_rename_seam` — a successful source evaluation transports to the target of
+  the simultaneously-renamed expression. -/
 
 ---------------------------------------------------------------------
 
@@ -69,6 +81,65 @@ evaluation relation `EvalCmd`. Key results:
 -/
 
 public section
+
+/-- Unfolding of `SubstStoreAgreement` to its pointwise form: wherever `σ_src` is
+defined, its value equals `σ_tgt` at the renamed key. Lets callers reason about
+the relation directly without going through `StoreAgreement`/`isDefined`. -/
+@[simp] theorem substStoreAgreement_iff {P : PureExpr}
+    (subst : List (P.Ident × P.Ident)) (σ_src σ_tgt : SemanticStore P) :
+    SubstStoreAgreement subst σ_src σ_tgt ↔
+    ∀ x, (σ_src x).isSome → σ_src x = σ_tgt (renameLookup subst x) := by
+  unfold SubstStoreAgreement StoreAgreement isDefined
+  constructor
+  · intro h x hx
+    exact h x (fun v hv => by rw [List.mem_singleton.mp hv]; exact hx)
+  · intro h x hx
+    exact h x (hx x (List.mem_singleton.mpr rfl))
+
+/-- The substitution-map store pullback along `substMapOf subst` is the
+first-match pullback `fun x => σ (renameLookup subst x)`. -/
+theorem substStoreExpr_substMapOf {P : PureExpr} [HasFvar P] [LawfulHasFvar P]
+    (subst : List (P.Ident × P.Ident)) (σ : SemanticStore P)
+    (x : P.Ident) :
+    substStoreExpr σ (substMapOf subst) x = σ (renameLookup subst x) := by
+  simp only [substStoreExpr]
+  by_cases hx : x ∈ subst.map Prod.fst
+  · simp only [substMapOf_find_mem subst x hx, LawfulHasFvar.getFvar_mkFvar]
+  · rw [substMapOf_find_notin subst x hx, renameLookup_notin subst x hx]
+
+/-- Eval-under-rename seam: a successful source evaluation transports to the
+target of the simultaneously-renamed expression.
+
+Assumptions, in plain terms: the target store `σ_tgt` is well formed and has every
+rename target defined (`h_wf_store`, `h_svd`); the evaluator commutes with a
+by-name rename (`h_rename`) and is monotone under store extension (`h_mono`); and
+the source and target stores agree at every defined variable up to the rename
+(`h_agree` — `SubstStoreAgreement`). Under these, evaluating the renamed
+expression in `σ_tgt` reproduces the source value. -/
+theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [LawfulHasFvar P] [HasSubstFvar P]
+    (f : P.Factory)
+    (subst : List (P.Ident × P.Ident))
+    {σ_src σ_tgt : SemanticStore P} {e v : P.Expr}
+    (h_wf_store : WellFormedStore σ_tgt f)
+    (h_svd : SubstVarsDefined σ_tgt (substMapOf subst))
+    (h_rename : WellFormedSemanticEvalRenameFvars f)
+    (h_mono : WellFormedSemanticEvalMono f)
+    (h_agree : SubstStoreAgreement subst σ_src σ_tgt)
+    (h_eval : P.eval f σ_src e = some v) :
+    P.eval f σ_tgt (substFvarManyExpr subst e) = some v := by
+  rw [substStoreAgreement_iff] at h_agree
+  have h_eval_pb :
+      P.eval f (fun x => σ_tgt (renameLookup subst x)) e = some v := by
+    refine h_mono e v σ_src (fun x => σ_tgt (renameLookup subst x)) ?_ h_eval
+    intro x w hw
+    have hsome : (σ_src x).isSome = true := by rw [hw]; rfl
+    have hag := h_agree x hsome
+    rw [hw] at hag
+    exact hag.symm
+  calc P.eval f σ_tgt (substFvarManyExpr subst e)
+      = P.eval f (fun x => σ_tgt (renameLookup subst x)) e :=
+        h_rename e σ_tgt subst h_wf_store h_svd
+    _ = some v := h_eval_pb
 
 theorem InitStateDefCons
   {P : PureExpr} {σ σ' : SemanticStore P}

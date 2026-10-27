@@ -251,7 +251,10 @@ theorem Stmt.noMeasureLoops_loop_body_rec
 `.block`/`.ite`/`.loop` bodies and enumerate EVERY `.init` declaration at
 every nesting depth (see the mutual definitions in `Stmt.lean`). The lemmas
 below are all definitional unfoldings (`rfl`) but stated as named lemmas so
-proofs can `rw` against them without unfolding the whole mutual block. -/
+proofs can `rw` against them without unfolding the whole mutual block.
+`Stmt.initVars_cmd` is the `.cmd` base case (a leaf command's init vars are its
+`definedVars`); the `_loop`/`_block`/`_ite` lemmas recurse into the compound
+statements. -/
 
 /-- Nil-decomposition of `Block.initVars` (definitional; complements the
 `_cons`/`_block`/`_ite`/`_loop` structural equations). -/
@@ -265,6 +268,11 @@ proofs can `rw` against them without unfolding the whole mutual block. -/
     Block.initVars (s :: ss) =
       Stmt.initVars s ++ Block.initVars ss := by
   simp [Block.initVars]
+
+/-- `Stmt.initVars` on a command is the command's `definedVars`. -/
+theorem Stmt.initVars_cmd {P : PureExpr} [HasFvars P] (c : Cmd P) :
+    Stmt.initVars (P := P) (Stmt.cmd c) = Cmd.definedVars c := by
+  simp only [Stmt.initVars, Stmt.definedVars, HasVarsImp.definedVars]
 
 /-- `Stmt.initVars` on `.loop` is its body's deep init list. -/
 @[simp] theorem Stmt.initVars_loop {P : PureExpr} [HasFvars P]

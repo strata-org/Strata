@@ -147,6 +147,19 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
       SubstVarsDefined (P := P) σ' sm →
       P.eval f σ' (HasSubstFvar.substFvars e sm) = P.eval f (substStoreExpr σ' sm) e
 
+/-- The evaluator commutes with a by-name free-variable rename.  Evaluating
+    `renameFvars e subst` in a well-formed store `σ'` whose rename targets are all
+    defined equals evaluating `e` in the store pulled back along the first-match
+    rename `renameLookup subst`.  Stated directly for `renameFvars` (rather than
+    the `substFvars`/`substMapOf` substitution view) so a rename pass discharges
+    it once from the factory's well-formedness, not per expression. -/
+@[expose] def WellFormedSemanticEvalRenameFvars {P : PureExpr} [HasVal P] [HasFvar P] [HasSubstFvar P]
+    (f : P.Factory) : Prop :=
+    ∀ e σ' subst, WellFormedStore σ' f →
+      SubstVarsDefined (P := P) σ' (substMapOf subst) →
+      P.eval f σ' (HasSubstFvar.renameFvars e subst)
+        = P.eval f (fun x => σ' (renameLookup subst x)) e
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
 structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
@@ -167,6 +180,15 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
   /-- The evaluator commutes with variable renaming (targets defined). -/
   rename : WellFormedSemanticEvalRename f
 
+
+/-- Store agreement modulo a rename: wherever `σ_src` is defined, `σ_tgt` assigns
+the same value at the *renamed* variable `renameLookup subst x`. This is exactly
+`StoreAgreement` between `σ_src` and the target store read through the rename, so
+it inherits `StoreAgreement`'s theory (defined in
+`Strata.DL.Imperative.StoreRelations`). -/
+@[expose] def SubstStoreAgreement {P : PureExpr}
+    (subst : List (P.Ident × P.Ident)) (σ_src σ_tgt : SemanticStore P) : Prop :=
+  StoreAgreement σ_src (fun x => σ_tgt (renameLookup subst x))
 
 /-! ### Formal Semantics of Command. -/
 

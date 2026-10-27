@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.HasVars
+public import Strata.Util.ListMap
 
 ---------------------------------------------------------------------
 
@@ -152,6 +153,60 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
 
 instance (P : PureExpr) : HasInitTypesImp P (Cmd P) where
   initTypes := Cmd.initTypes
+
+---------------------------------------------------------------------
+
+/-! ## Identifier renaming
+
+Representation-agnostic machinery for renaming identifiers in expressions and
+commands. Everything is generic over the substitution/free-variable interfaces
+(`HasSubstFvar`, `HasFvar`), so a rename pass over any program representation can
+instantiate these definitions rather than re-deriving them. -/
+
+/-- Resolve an identifier through the rename list: `a ↦ b` for the FIRST
+`(a, b) ∈ subst`, else `x ↦ x`. -/
+@[expose] def renameLookup {P : PureExpr}
+    (subst : List (P.Ident × P.Ident)) (x : P.Ident) : P.Ident :=
+  (Map.find? subst x).getD x
+
+/-- The substitution map for a simultaneous rename: each source ident maps to its
+target as a free variable. -/
+@[expose] def substMapOf {P : PureExpr} [HasFvar P]
+    (subst : List (P.Ident × P.Ident)) : Map P.Ident P.Expr :=
+  Map.fmap HasFvar.mkFvar subst
+
+/-- Rename references in an expression through the rename list, **simultaneously**
+(first match per variable, no cascading): each free variable `a` is replaced by
+`b` for the FIRST `(a, b) ∈ subst`, in a single pass. Uses the name-level
+`renameFvars` rather than a left fold of single substitutions so the syntactic
+rename matches the first-match `renameLookup` used on the store side, and
+preserves each occurrence's type annotation. -/
+@[expose] def substFvarManyExpr {P : PureExpr} [HasSubstFvar P]
+    (subst : List (P.Ident × P.Ident)) (e : P.Expr) : P.Expr :=
+  HasSubstFvar.renameFvars e subst
+
+/-- Simultaneously rename references in an `ExprOrNondet` through the rename list. -/
+@[expose] def ExprOrNondet.substIdentMany {P : PureExpr} [HasSubstFvar P]
+    (subst : List (P.Ident × P.Ident)) (e : ExprOrNondet P) : ExprOrNondet P :=
+  match e with
+  | .det e => .det (substFvarManyExpr subst e)
+  | .nondet => .nondet
+
+/-- Simultaneously rename references in a command through the rename list. Value
+positions are rewritten through `substFvarManyExpr`; the `set` binder target
+follows the rename via `renameLookup` (so a `set x` after an `init x` generated as
+`x'` becomes `set x'`). The `init` binder name is left unchanged — renaming the
+declaring occurrence is the caller's responsibility, so the init binder must not
+appear as a rename *source* here (otherwise later references would be renamed
+while the declaration is not, leaving them dangling). -/
+@[expose] def Cmd.substIdentMany {P : PureExpr} [HasSubstFvar P]
+    (subst : List (P.Ident × P.Ident)) (c : Cmd P) : Cmd P :=
+  match c with
+  | .init name ty e md => .init name ty (ExprOrNondet.substIdentMany subst e) md
+  | .set name e md => .set (renameLookup subst name) (ExprOrNondet.substIdentMany subst e) md
+  | .assert label b md => .assert label (substFvarManyExpr subst b) md
+  | .assume label b md => .assume label (substFvarManyExpr subst b) md
+  | .cover label b md => .cover label (substFvarManyExpr subst b) md
 
 ---------------------------------------------------------------------
 
