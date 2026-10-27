@@ -17,6 +17,7 @@ import StrataLaurel.Implementation.EliminateDoWhileProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
 import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
+import StrataLaurel.Implementation.CopyMutatedInputs
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.HeapParameterization
@@ -142,6 +143,8 @@ def laurelPipeline : Array LaurelPass := #[
   monomorphizeCompositesPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
+  -- Placement rationale in the pass's module header.
+  copyMutatedInputsPass,
   constrainedTypeElimPass,
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry

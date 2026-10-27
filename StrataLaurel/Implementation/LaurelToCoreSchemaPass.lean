@@ -1573,6 +1573,7 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.Program.Unordered,
       NodeKind.TypeDefinition.Alias,
       NodeKind.Pseudo.needsLoopInvariantChecks,
+      NodeKind.Pseudo.mutatedInput,
       NodeKind.Procedure.contracts.Coroutine,
       NodeKind.StmtExpr.OldGuarantee,
       NodeKind.StmtExpr.OldRelies

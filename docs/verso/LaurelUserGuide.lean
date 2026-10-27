@@ -2074,6 +2074,11 @@ procedure bump(x: int) returns (x: int)
 };
 ```
 
+A body may also assign to an input that is not an output. The write is local to the body: a
+contract or an `old(...)` that mentions the input still reads its value on entry. A coroutine's
+`relies`/`guarantees`, and a body `oldRelies(...)`/`oldGuarantee(...)`, may not mention an input
+the body assigns; copy the input into a local and assign that instead.
+
 Top-level procedures may share a name when their parameter signatures do not overlap; resolution
 picks the unique overload the argument types accept, and both no match and several matches are
 errors. `external` procedures cannot be overloaded.

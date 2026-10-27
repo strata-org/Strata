@@ -283,6 +283,12 @@ inductive NodeKind where
       by emitting them; `LaurelToCoreSchemaPass` declares it `unsupported`, so the pass
       cannot be left out of a pipeline. An obligation, like `needsOverrideRules`. -/
   | Pseudo.needsLoopInvariantChecks
+  /-- The program may still assign to an input parameter in a procedure body, which Laurel
+      allows and Core does not (Core lets a body write only its outputs and locals).
+      `CopyMutatedInputs` discharges this by redirecting each such write to a fresh local;
+      `LaurelToCoreSchemaPass` declares it `unsupported`, so the pass cannot be left out of a
+      pipeline. An obligation, like `needsLoopInvariantChecks`. -/
+  | Pseudo.mutatedInput
   deriving BEq, Repr, DecidableEq, Hashable
 
 /-- Whether this shape can occur in a program *as authored* — i.e. whether it is present
@@ -338,7 +344,8 @@ def NodeKind.isPseudo : NodeKind → Bool
   | NodeKind.Pseudo.statementExpression
   | NodeKind.Pseudo.letExpr
   | NodeKind.Pseudo.imperativeFunction
-  | NodeKind.Pseudo.needsLoopInvariantChecks => true
+  | NodeKind.Pseudo.needsLoopInvariantChecks
+  | NodeKind.Pseudo.mutatedInput => true
   | _ => false
 
 /-- The dotted path, for diagnostics: `StmtExpr.While.postTest.true`. -/

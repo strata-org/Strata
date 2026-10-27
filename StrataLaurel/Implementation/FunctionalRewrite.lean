@@ -170,7 +170,7 @@ assignment in one is reported by the Core schema translation.
 ## Rejecting what has no functional form
 
 A body containing a construct with no functional form — a loop, an assignment to
-an input parameter, an assignment to several targets —
+an inout parameter, an assignment to several targets —
 cannot become an expression, and this pass reports it as a `userError`. Since the
 translation is a single recursive function, a construct cannot be admitted by a
 guard that the rewrite then silently mishandles: acceptance *is* transformability.
@@ -624,13 +624,11 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
         functionalizeStmts model inputUids retExpr labelConts
           (valueStmts.dropLast ++ ⟨.Assign [target] (valueStmts.getLast nonempty), src⟩ :: rest) k
     | ⟨.Assign [⟨.Local name, targetSource⟩] value, _⟩ =>
-      -- A plain input cannot be mutated anywhere: an `opaque` body writing to its own
-      -- input is rejected by Core's type checker, with a far worse message. An *inout*
-      -- can be, but only in an opaque body — a function has one result and no slot to
-      -- thread the new value out, so a transparent body cannot mutate either kind.
-      -- This check keeps both rejections alive through the functional rewrite, which
-      -- would otherwise turn the assignment into a shadowing declaration and silently
-      -- accept it.
+      -- Only an *inout* mutation can reach here: `CopyMutatedInputs` redirects a
+      -- plain-input write to a fresh body local well before this pass (and leaves
+      -- inouts uncopied), so a write that still targets an input targets an inout.
+      -- An opaque body may write an inout, but a function has one result and no
+      -- slot to thread the new value out, so a transparent body cannot.
       --
       -- The author may not have written an assignment at all: a `modifies` callee or a
       -- global write is threaded through the signature as an inout, so calling one from
@@ -809,7 +807,7 @@ public def functionalRewritePass : LaurelPass := .onUnordered {
   name := "FunctionalRewritePass"
   creates := [NodeKind.Pseudo.letExpr]
   removes := [NodeKind.Pseudo.imperativeFunction]
-  documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter, an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and the output parameter — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to an input parameter, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
+  documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter, an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and the output parameter — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to an inout parameter, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
   -- The rewrite introduces declarations and strips their ids, so resolution must
   -- run afterwards to mint fresh, unique ones.
   needsResolves := true }

@@ -6350,6 +6350,27 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     | .Var (.Local name) => inoutNames.contains name.text
     | _ => false) e
 
+/-- UniqueIds of the inputs the body assigns to (`assignedLocalIds`, shared with
+    `CopyMutatedInputs`). Inside the BODY, `x` then reads the live value (the
+    pass redirects it to a mutable copy) while `old(x)` keeps the entry value, so
+    a body `old` over such an input is meaningful even in a heap-free procedure. -/
+private def bodyAssignedInputIds (proc : Procedure) : Std.HashSet Nat :=
+  match proc.body.implementation with
+  | none => {}
+  | some body =>
+    let assigned := assignedLocalIds body
+    proc.inputs.foldl (fun acc p =>
+      match p.name.uniqueId with
+      | some uid => if assigned.contains uid then acc.insert uid else acc
+      | none => acc) {}
+
+/-- True when `e` references an input the body assigns (see
+    `bodyAssignedInputIds`). -/
+private def mentionsMutatedInput (mutatedIds : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
+  anyStmtExpr (fun n => match n.val with
+    | .Var (.Local name) => name.uniqueId.any mutatedIds.contains
+    | _ => false) e
+
 /-- Collect no-op `old(...)` warnings for one procedure. `writesHeap` says
     whether the enclosing procedure (transitively) writes the heap.
 
@@ -6364,6 +6385,11 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     output value is the post-state (see the language definition), so `old(x)`
     over an inout `x` is meaningful regardless of heap effects.
 
+    An input the body assigns matters for a BODY `old` only: there `x` reads the
+    live value while `old(x)` keeps the entry value. In a specification a bare
+    `x` already denotes the entry value, so `old(x)` is a no-op there and keeps
+    its warning.
+
     Additionally, any `old` nested inside another `old` is redundant. These are
     the warnings `PushOldInward` used to emit; they live here so resolution is
     the single source of user-program diagnostics. The two notions stay in sync
@@ -6374,12 +6400,14 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
   match procInoutNames proc with
   | .error e => [Message.fromString e .strataBug]
   | .ok inoutNames =>
-  let visit (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
+  let mutatedInputIds := bodyAssignedInputIds proc
+  let visit (inBody : Bool) (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     match n.val with
     | .Old inner _ =>
       -- Warn on any `old` nested within this one's operand.
       modify (· ++ nestedOldWarnings inner)
       let refsInout := mentionsInout inoutNames inner
+        || (inBody && mentionsMutatedInput mutatedInputIds inner)
       if !writesHeap && !refsInout then
         modify (· ++ [diagnosticFromSource n.source
           "`old(...)` has no effect: the enclosing procedure does not modify the heap" .warning])
@@ -6396,10 +6424,23 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
   -- changed between yields, so "the enclosing procedure does not modify the heap"
   -- is not a reason for it to have no effect.
   ((do
-    let proc ← mapProcedureBodiesM (m := StateM (List Message))
-      (fun e => mapStmtExprPrePostM visit pure e) proc
+    -- Only the implementation is an in-body position; an opaque body's
+    -- postconditions and modifies groups are specifications, even though
+    -- `mapProcedureBodiesM` walks them together with the body.
+    if let some impl := proc.body.implementation then
+      let _ ← mapStmtExprPrePostM (visit true) pure impl
+    for c in proc.body.postconditions do
+      let _ ← mapStmtExprPrePostM (visit false) pure c.condition
+    match proc.body with
+    | .Opaque _ _ mods =>
+      for g in mods do
+        for t in g.targets do
+          let _ ← mapStmtExprPrePostM (m := StateM (List Message)) (visit false) pure t
+        if let some gd := g.guard then
+          let _ ← mapStmtExprPrePostM (visit false) pure gd
+    | _ => pure ()
     mapProcedureSpecificationsM (m := StateM (List Message))
-      (fun e => mapStmtExprPrePostM visit pure e) proc) |>.run []).2
+      (fun e => mapStmtExprPrePostM (visit false) pure e) proc) |>.run []).2
 
 /-- Diagnose no-op `old(...)` usage across a program. This is a property of the
     user's *source* program (it does not depend on the heap-parameterized form),
