@@ -85,7 +85,7 @@ def verifyOptionsFlags : List Flag := [
     help := "With --incremental, cut the program into at least N sessions, each checked from a fresh solver (default: the --parallel count), or with 'nodes' make every node holding goals a session of its own. Runs with the same value give the same results whatever --parallel is, except that a goal retried after its solver failed starts again from an empty solver, so under lazy pruning it may then see fewer extra axioms.",
     takesArg := .arg "N|nodes" },
   { name := "incremental-pruning",
-    help := "With --incremental and --remove-irrelevant-axioms, 'lazy' (default) lets a solver keep the axioms earlier goals needed, so a goal may see more axioms than without --incremental and may then be reported proved, or a cover unreachable, where it is refuted without --incremental; 'exact' resets the solver when a goal drops an axiom it holds, so every goal sees exactly its own.",
+    help := "With --incremental and --remove-irrelevant-axioms, 'lazy' (default) lets a solver keep the axioms earlier goals needed, so a goal may see more axioms than without --incremental and may then be reported proved, or a cover unreachable, where it is refuted without --incremental; 'exact' resets the solver when a goal drops an axiom it holds, so every goal sees exactly its own, at the cost of starting a solver again whenever that happens. Laurel programs always use 'exact'.",
     takesArg := .arg "lazy|exact" },
   { name := "set-option",
     help := "Set an SMT solver option verbatim as NAME=VALUE (repeatable), applied after the built-in prelude so it overrides it. Option names are solver-specific (e.g. for z3, `--set-option smt.mbqi=true`). For local experimentation on the local solver invocation.",

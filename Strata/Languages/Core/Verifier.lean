@@ -303,19 +303,15 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncod
 
 end AbstractEncoder
 
-/-- Build constructor declarations for a datatype, converting field types
-    through the solver's `termTypeToSort`. -/
+/-- Build constructor declarations for a datatype, lowering field types as the batch path does
+    (`datatypeConstructorsToSMT`) and converting them through the solver's `termTypeToSort`. -/
 private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : AbstractSolver τ σ m)
-    (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
-    : m (List (String × List (String × σ))) := do
-  let mut result := []
-  for c in d.constrs.reverse do
-    let mut fields := []
-    for (name, fieldTy) in c.args.reverse do
-      let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType (ty := fieldTy))
-      fields := (Lambda.destructorFuncName d name, s) :: fields
-    result := (c.name.name, fields) :: result
-  return result
+    (useArrayTheory : Bool) (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
+    : m (List (String × List (String × σ))) :=
+  (Core.datatypeConstructorsToSMT d useArrayTheory).mapM fun c => do
+    let fields ← c.args.mapM fun (name, fieldTy) => do
+      pure (name, ← AbstractEncoder.termTypeToSort solver fieldTy)
+    pure (c.name, fields)
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
 def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
@@ -329,14 +325,46 @@ def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constrs ← datatypeConstrsM solver d
+      let constrs ← datatypeConstrsM solver ctx.useArrayTheory d
       let _ ← solver.declareDatatype d.name d.typeArgs
         fun _ _ => .ok constrs
     | _ =>
       let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
-      let allConstrs ← usedBlock.mapM (datatypeConstrsM solver)
+      let allConstrs ← usedBlock.mapM (datatypeConstrsM solver ctx.useArrayTheory)
       let _ ← solver.declareDatatypes dtHeaders
         fun _ _ => .ok allConstrs
+
+/-- Send part of an encoding context to a solver: the given sorts, datatypes, uninterpreted
+    and defined functions, and axioms, in that order: sorts come first since a datatype's
+    constructors may mention them (a heap holds a `Map`). A one-shot solve sends the whole context;
+    a long-lived session sends only what it has not sent before.
+
+    A sort that `ctx` declares as a datatype is left to the datatype declaration, since strict
+    solver APIs (e.g. cvc5 FFI) reject a redefinition. A function named in `managed` is a
+    program variable: it is only registered here, because the caller declares or defines it
+    with the rest of its path. -/
+def declareContextAbstract [Monad m] [MonadExceptOf IO.Error m]
+    (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context)
+    (sorts : List Strata.DL.SMT.Sort) (datatypes : Std.HashSet String)
+    (ufs : List UF) (ifs : List IF) (axms : List Term) (managed : Std.HashSet String) :
+    AbstractEncoderM τ m Unit := do
+  for s in sorts do
+    if !ctx.seenDatatypes.contains s.name then
+      let _ ← liftM (solver.declareSort s.name s.arity)
+  if !datatypes.isEmpty then
+    liftM (emitDatatypesAbstract solver { ctx with seenDatatypes := datatypes })
+  for uf in ufs do
+    if !managed.contains uf.id then
+      let _ ← AbstractEncoder.encodeUF solver uf
+  -- Registering a variable lets `encodeTerm` recognize it without declaring it.
+  for uf in ufs do
+    if managed.contains uf.id then
+      modify fun st => { st with base := seedManagedName st.base uf }
+  for fn in ifs do
+    let _ ← AbstractEncoder.encodeFunctionDef solver fn
+  let axmIds ← axms.mapM (AbstractEncoder.encodeTerm solver)
+  for id in axmIds do
+    liftM (solver.assert id)
 
 /-- Encode declarations and assertions through the `AbstractSolver` API.
     Replaces `encodeDeclarations` for the incremental path — all commands
@@ -359,31 +387,13 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     : m (τ × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
-  for s in ctx.sorts.toArray do
-    -- Skip sorts that will be defined as datatypes by emitDatatypesAbstract,
-    -- since strict solver APIs (e.g. cvc5 FFI) reject redefinition.
-    if !ctx.seenDatatypes.contains s.name then
-      let _ ← solver.declareSort s.name s.arity
-  emitDatatypesAbstract solver ctx
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
-  let preDeclaredNames := ctx.preDeclaredNames
-  let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
+  let initState : AbstractEncoderState τ :=
+    { base := EncoderState.initWithNames ctx.preDeclaredNames }
   let managedNames := managedNameSet varDefinitions varDeclarations
-  -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
-    else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
-  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
-  -- Pre-populate encoder state with managed variable names so encodeTerm
-  -- recognizes them without emitting declareFun
-  let estate := if managedNames.isEmpty then estate
-    else
-      let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
-      managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with base := seedManagedName estate.base uf }
-  let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
-  let (_axms, estate) ← ctx.axms.toArray.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
-  for id in _axms do
-    solver.assert id
+  let ((), estate) ← (declareContextAbstract solver ctx ctx.sorts.toArray.toList ctx.seenDatatypes
+    ctx.ufs.toArray.toList ctx.ifs.toArray.toList ctx.axms.toArray.toList managedNames).run
+      initState
   -- Emit variable declarations as declareFun
   for decl in varDeclarations do
     let sort ← AbstractEncoder.termTypeToSort solver decl.ty
@@ -522,9 +532,12 @@ def solverPreludeOptions (solver : String) (solverOptions : Array (String × Str
   -- built-in prelude (e.g. `--set-option smt.mbqi=true` for quantified lemmas).
   tuning ++ solverOptions
 
-def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) :
+def setSolverPrelude (solver : String) (solverOptions : Array (String × String)) :
     SolverM Unit := do
   (solverPreludeOptions solver solverOptions).forM fun (name, value) => Solver.setOption name value
+
+@[deprecated setSolverPrelude (since := "2026-10-27")]
+abbrev getSolverPrelude := @setSolverPrelude
 
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
@@ -627,7 +640,7 @@ def dischargeObligation
       Core.SMT.Emitter.emitPrerendered cf.pieces
       pure (cf.ids, cf.estate)
     | none =>
-      Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
+      Strata.SMT.Encoder.encodeCore ctx (setSolverPrelude options.solver options.solverOptions)
         assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
         (pctx := pctx)
@@ -2224,7 +2237,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if useCapture then
       IO.toEIO (fun e => Message.fromFormat f!"{e}")
         (some <$> Core.SMT.Emitter.EmitterState.init smtCtx
-          (SMT.getSolverPrelude options.solver options.solverOptions))
+          (SMT.setSolverPrelude options.solver options.solverOptions))
     else pure none
   let mut emState := emStateInit
   for obligation in obligations do
@@ -2416,8 +2429,8 @@ def verifySingleEnv (oblProgram : Program)
 
 /-- Construct the default `CoreSMTSolver` that discharges obligations
     sequentially using the batch or incremental SMT-LIB backend (selected
-    by `options.incremental`). This is the standard solver used by `verify`
-    when no custom solver is provided. -/
+    by `options.incremental`). This is the standard solver used by
+    `verifyPipeline` when no custom solver is provided. -/
 def mkDefaultCoreSMTSolver
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
@@ -2435,7 +2448,9 @@ def mkDefaultCoreSMTSolver
       (mkDischarge := mkDischarge) pctx
 
 /-- Run the Strata Core verification pipeline on a program: transform,
-type-check, partially evaluate, and discharge proof obligations via SMT.
+type-check, partially evaluate, and discharge proof obligations via SMT, on
+`solver` when given and otherwise one obligation at a time. `Core.verify` chooses
+`solver`, the obligation-tree walk under `--incremental`, and calls this.
 All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
@@ -2446,7 +2461,7 @@ When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
 drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
 `showsProfiling`; `options.profile` only decides the `outputMode` of the
 context created internally when `pipelineCtx` is `none`. -/
-def verify (program : Program)
+def verifyPipeline (program : Program)
     (tempDir : System.FilePath)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)

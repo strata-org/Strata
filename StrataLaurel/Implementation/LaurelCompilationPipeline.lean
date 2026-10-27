@@ -645,10 +645,15 @@ def translate (options : LaurelTranslateOptions) (program : LaurelProgram) : IO 
   return (core, diags)
 
 /-- The effective `Core.VerifyOptions` that `runVerify` actually runs with
-    (the caller's options plus Laurel's fixed adjustments). -/
-private def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+    (the caller's options plus Laurel's fixed adjustments).
+
+    Laurel asks that each goal see only the axioms its `Precise` pruning keeps, so under
+    `--incremental` it prunes exactly: a solver that holds an axiom a goal drops starts again,
+    and Laurel verdicts do not depend on `--incremental`. -/
+def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
   { options.verifyOptions with
     removeIrrelevantAxioms := .Precise
+    exactPruning := true
     keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
 
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase

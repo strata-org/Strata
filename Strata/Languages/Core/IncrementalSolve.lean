@@ -39,14 +39,15 @@ both arms without rebuilding; this module asserts them unguarded.
 
 ## Where this sits
 
-`Core.verify` runs the transform pipeline and then, inside its `vcDischarge`
-phase, calls a `CoreSMTSolver`:
+`Core.verifyPipeline` runs the transform pipeline and then, inside its `vcDischarge`
+phase, calls a `CoreSMTSolver`; `Core.verify` passes it `coreSMTSolver` below under
+`--incremental`:
 
 ```
-verify → runTransforms (… nondetElim, symbolicEval, betaReduce, commonSubexprElim)
-       → oblProgram
-       → coreSMTSolver factory oblProgram        -- solver.getD mkDefaultCoreSMTSolver
-       → VCResults
+verifyPipeline → runTransforms (… nondetElim, symbolicEval, betaReduce, commonSubexprElim)
+                 → oblProgram
+                 → coreSMTSolver factory oblProgram   -- solver.getD mkDefaultCoreSMTSolver
+                 → VCResults
 ```
 
 `mkDefaultCoreSMTSolver` is `verifySingleEnv`, which calls `buildEnv`, then
@@ -59,7 +60,7 @@ It returns `VCResults` and `Statistics`, which is what that seam expects. The sh
 Check-mode masking happens here, before the check, because what the mask decides is which
 questions a goal is asked. Model extraction happens here too, inside the
 session that produced the model, because an `EncoderState` does not outlive the session that
-built it. Phase model validation happens at the seam, in `verify`, which knows the phases.
+built it. Phase model validation happens at the seam, in `verifyPipeline`, which knows the phases.
 
 ## How assertions become work
 
@@ -716,26 +717,9 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
       | (_, none) => none
     let solveTime ← IO.mkRef (0 : Nat)
     let ((sat, valid), s) ← onSolver s fun solver => do
-      -- The context this assertion turned out to need, beyond what this solver has. Sorts
-      -- come first, since a datatype's constructors may mention them (a heap holds a `Map`).
-      for srt in newSorts do
-        if !ctx.seenDatatypes.contains srt.name then
-          let _ ← liftM (solver.declareSort srt.name srt.arity)
-      if !newDatatypes.isEmpty then
-        liftM (emitDatatypesAbstract solver
-          { ctx with seenDatatypes := Std.HashSet.ofList newDatatypes })
-      for uf in newUfs do
-        -- A program variable is declared below, when the walk reaches it; here it
-        -- is only registered, since declaring it twice is an error.
-        if managed.contains uf.id then
-          modify fun st => { st with base := seedManagedName st.base uf }
-        else
-          let _ ← AbstractEncoder.encodeUF solver uf
-      for fn in newIfs do
-        let _ ← AbstractEncoder.encodeFunctionDef solver fn
-      for ax in newAxms do
-        let t ← AbstractEncoder.encodeTerm solver ax
-        liftM (solver.assert t)
+      -- The context this assertion turned out to need, beyond what this solver has.
+      declareContextAbstract solver ctx newSorts (Std.HashSet.ofList newDatatypes)
+        newUfs newIfs newAxms managed
       -- The facts of this path, beyond what this solver has.
       for decl in r.varDecls.drop s.toldDecls do
         let sort ← liftM (AbstractEncoder.termTypeToSort solver decl.ty)
@@ -1548,3 +1532,69 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
 end
 
 end Core.IncrementalSolve
+
+/-! ## Choosing the verification back end
+
+`Core.verify` is the entry point every front end verifies a Core program through: Core
+programs read by `strata verify`, and the programs the Laurel and Python front ends
+translate to Core. It decides which back end discharges the obligations, the obligation-tree
+walk above or one solver per obligation, and runs the pipeline of
+`verifyPipeline` with it. Making that choice here, in the one function they all call, is
+what gives every front end the tree walk under `--incremental`.
+-/
+
+namespace Core
+
+public section
+
+/--
+Run the Strata Core verification pipeline on `program`, keeping SMT files in `tempDir`
+when the per-obligation path writes them. See `verifyPipeline` for the pipeline itself.
+
+The back end is chosen as follows.
+- A `solver` passed in is used as it is.
+- Otherwise, under `--incremental`, the obligation tree is walked, sharing one solver
+  session down a branch. The tree is walked on the sessions `mkSession` opens, or on local
+  solver processes, but never on local processes for a caller with its own `mkDischarge`
+  and no sessions: that caller decides where queries go. Goals alone in their procedure
+  go through `mkDischarge` either way.
+- Otherwise each obligation is sent on its own through `mkDischarge`.
+
+The per-obligation path is kept, under `--incremental` too, when SMT files are to be kept
+(`vcDirectory`, `alwaysGenerateSMT`) or a subset of the obligations is asked for by label
+(`obligationsToVerify`): that path is the only one that writes and filters them. A
+`vcDirectory` also turns `--incremental` off for that path, which writes SMT files only
+when it is not incremental.
+-/
+def verify (program : Program)
+    (tempDir : System.FilePath)
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (externalPhases : List AbstractedPhase := [])
+    (entryFacts : ProgramFactSet := ProgramFactSet.empty)
+    (pipeline : Option (ValidatedPipeline entryFacts) := none)
+    (entryFactsHold : entryFacts.holds program :=
+      by exact _root_.Core.ProgramFactSet.empty_holds _)
+    (solver : Option CoreSMTSolver := none)
+    (mkDischarge : Option MkDischargeFn := none)
+    (pipelineCtx : Option Strata.Pipeline.PipelineContext := none)
+    (mkSession : Option IncrementalSolve.SessionFactory := none)
+    : EIO Strata.Pipeline.Message VCResults := do
+  let options := if options.vcDirectory.isSome then { options with incremental := false }
+    else options
+  let walkable := (mkSession.isSome || mkDischarge.isNone) && options.obligationsToVerify.isNone
+  let mkDischarge := mkDischarge.getD mkDischargeFn
+  let solver := match solver with
+    | some s => some s
+    | none =>
+      if options.incremental && !options.alwaysGenerateSMT && walkable then
+        some (IncrementalSolve.coreSMTSolver options.parallelWorkers options
+          (axiomProgram := some program) (session := mkSession) (mkDischarge := mkDischarge))
+      else none
+  verifyPipeline program tempDir options moreFns externalPhases
+    (entryFacts := entryFacts) (pipeline := pipeline) (entryFactsHold := entryFactsHold)
+    (solver := solver) (mkDischarge := mkDischarge) (pipelineCtx := pipelineCtx)
+
+end -- public section
+
+end Core
