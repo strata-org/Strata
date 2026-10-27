@@ -108,13 +108,11 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
       (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
-/-- Extract proof obligations from a program. Axioms become global assumptions
-    and `distinct` declarations become distinctness facts. -/
-def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  -- Constants are 0-ary functions; `renameShadowingParams` keeps parameters apart
-  -- from them, and from the constructors, testers and destructors a datatype
-  -- declaration generates, a nullary constructor being a constant too.
-  let funcNames : List String := p.decls.flatMap fun
+/-- The names a procedure's parameters are kept apart from: the program's functions and
+    constants, which are 0-ary functions, and the constructors, testers and destructors a
+    datatype declaration generates, a nullary constructor being a constant too. -/
+def programFuncNames (p : Program) : List String :=
+  p.decls.flatMap fun
     | .func f _ => [f.name.name]
     | .recFuncBlock fs _ => fs.map (·.name.name)
     | .type (.data d) _ =>
@@ -125,6 +123,30 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
             c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
               [n, n ++ Lambda.unsafeDestructorSuffix]
     | _ => []
+
+/-- The statements a procedure's obligations are read from: its structured body, with the
+    parameters named like a function in `funcNames` renamed apart. A procedure that still
+    carries a contract is refused, since only the body is read: an `ensures` would be left
+    unchecked and a `requires` missing from the path condition. So is a CFG body, which
+    cannot be walked: returning no obligations would report success on a procedure whose
+    assertions were never checked. -/
+def procedureStatements (funcNames : List String) (proc : Procedure) :
+    Except String Statements := do
+  if !(proc.spec.preconditions.isEmpty && proc.spec.postconditions.isEmpty) then
+    throw ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
+      "' still carries a requires or ensures clause; obligations can only be " ++
+      "extracted from procedures without a contract")
+  match proc.body with
+  | .structured ss => .ok (renameShadowingParams funcNames proc ss)
+  | .cfg _ =>
+    .error ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
+      "' has a CFG body; obligations can only be extracted from " ++
+      "structured bodies")
+
+/-- Extract proof obligations from a program. Axioms become global assumptions
+    and `distinct` declarations become distinctness facts. -/
+def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
+  let funcNames := programFuncNames p
   -- Accumulate global path-condition facts (axioms and distinct groups) and
   -- obligations as we walk declarations in order.
   let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
@@ -150,25 +172,10 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
           "extracting obligations")
       | none => .ok (globalPc, allObs)
     | .proc proc _md => do
-      -- Only the body is walked, so a contract would be dropped: an `ensures`
-      -- left unchecked, a `requires` missing from the path condition.
-      if !(proc.spec.preconditions.isEmpty && proc.spec.postconditions.isEmpty) then
-        throw ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
-          "' still carries a requires or ensures clause; obligations can only be " ++
-          "extracted from procedures without a contract")
-      let obs ← match proc.body with
-        | .structured ss =>
-          let ss := renameShadowingParams funcNames proc ss
-          -- `globalPC` is accumulated newest-first (via ::) which
-          -- is what RevPathConditions expects.
-          extractFromStatements ⟨[globalPc]⟩ ss
-        -- A CFG body cannot be walked here. Returning no obligations would
-        -- report success on a procedure whose assertions were never checked,
-        -- so it is an error: the back end requires structured bodies.
-        | .cfg _ =>
-          .error ("ObligationExtraction: procedure '" ++ toString proc.header.name ++
-            "' has a CFG body; obligations can only be extracted from " ++
-            "structured bodies")
+      let ss ← procedureStatements funcNames proc
+      -- `globalPC` is accumulated newest-first (via ::) which
+      -- is what RevPathConditions expects.
+      let obs ← extractFromStatements ⟨[globalPc]⟩ ss
       .ok (globalPc, allObs ++ obs)
     | .lemma l md =>
       -- The verifier never reaches this case: symbolic evaluation turns each

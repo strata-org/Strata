@@ -201,6 +201,17 @@ structure VerifyOptions where
       to concurrent solver processes using `IO.asTask`. Each task spawns its
       own solver instance. Default 1 (sequential). -/
   parallelWorkers : Nat
+  /-- With `incremental`, the least number of sessions the program is cut into, each checked from
+      a fresh solver. It decides which goals each solver checks, so runs with the same value give
+      the same results whatever `parallelWorkers` is. `none` uses `parallelWorkers`. -/
+  minSessions : Option Nat := none
+  /-- With `incremental`, make every node holding goals a session of its own: its path, then its
+      goals, and nothing below it, whatever `minSessions` is. Set by `--min-sessions nodes`. -/
+  splitByNode : Bool := false
+  /-- With `incremental` and `removeIrrelevantAxioms`, reset a solver when a goal drops an axiom
+      it holds, so every goal is asked the per-obligation question. Off by default: a solver
+      then keeps the axioms earlier goals needed. Set by `--incremental-pruning exact`. -/
+  exactPruning : Bool := false
   /-- Extra SMT solver options applied verbatim (as `(set-option :NAME VALUE)`)
       after the built-in solver prelude, so they override it. Populated by
       `--set-option NAME=VALUE` (repeatable). Option names are solver-specific

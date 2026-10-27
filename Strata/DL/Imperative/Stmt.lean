@@ -779,7 +779,7 @@ body declares no local variables.
 
 mutual
 /-- Returns true if every reachable loop's body declares no local vars. -/
-@[expose] def Stmt.loopBodyNoInits [HasFvars P] (s : Stmt P (Cmd P)) : Bool :=
+@[expose] def Stmt.loopBodyNoInits [HasVarsImp P C] (s : Stmt P C) : Bool :=
   match s with
   | .cmd _ => true
   | .block _ bss _ => Block.loopBodyNoInits bss
@@ -791,7 +791,7 @@ mutual
   termination_by (Stmt.sizeOf s)
 
 /-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
-@[expose] def Block.loopBodyNoInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Bool :=
+@[expose] def Block.loopBodyNoInits [HasVarsImp P C] (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => true
   | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest
@@ -1127,6 +1127,33 @@ is the identifier of a `Q`-kind label string.  Expressed directly over
     (ss : List (Stmt P (Cmd P))) : Prop :=
   ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Block.getVars ss
 
+/-! ## Identifiers
+
+Every identifier a statement over `CmdExt P` commands mentions (`Stmt.idents`,
+`Block.idents`): binders and free variables. -/
+
+mutual
+/-- Every identifier occurring in a statement (binders and free variables). -/
+@[expose] def Stmt.idents {P : PureExpr} [HasFvars P] : Stmt P (CmdExt P) → List P.Ident
+  | .cmd (.cmd (.init x _ (.det e) _)) | .cmd (.cmd (.set x (.det e) _)) =>
+    x :: HasFvars.getFvars e
+  | .cmd (.cmd (.init x _ .nondet _)) | .cmd (.cmd (.set x .nondet _)) => [x]
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    HasFvars.getFvars e
+  | .cmd (.call _ args _) =>
+    (CallArg.getInArgs args).flatMap HasFvars.getFvars ++ CallArg.getLhs args
+  | .block _ ss _ => Block.idents ss
+  | .ite c tss ess _ => c.getVars ++ Block.idents tss ++ Block.idents ess
+  | .loop g m inv body _ =>
+    g.getVars ++ (m.map HasFvars.getFvars).getD [] ++ inv.flatMap (HasFvars.getFvars ·.2) ++
+      Block.idents body
+  | .exit _ _ | .typeDecl _ _ => []
+/-- Every identifier occurring in a statement list (binders and free variables). -/
+@[expose] def Block.idents {P : PureExpr} [HasFvars P] :
+    List (Stmt P (CmdExt P)) → List P.Ident
+  | [] => []
+  | s :: rest => Stmt.idents s ++ Block.idents rest
+end
 
 end -- public section
 end Imperative

@@ -71,23 +71,66 @@ procedure reassignInvalid()
 //^^^^^^^ error: assertion does not hold
 };
 
-// Holes in constrained declarations
+// A hole of a constrained type meets the type's constraint, as an uninitialized local does
 
 procedure nondetHoleAtConstrainedType()
   opaque
 {
   var x: nat := <??>;
-//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   assert x >= 0
-//^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure detHoleAtConstrainedType()
   opaque
 {
   var x: nat := <?>;
-//^^^^^^^^^^^^^^^^^ error: assertion does not hold
   assert x >= 0
+};
+
+procedure holeAtConstrainedParameter() returns (r: int)
+  opaque
+{
+  return takesNat(<?>)
+};
+
+// Nothing more is assumed: two holes of the type need not agree
+procedure holeIsAnyValueOfItsType()
+  opaque
+{
+  var x: nat := <?>;
+  var y: nat := <??>;
+  assert x == y
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
+// In a loop invariant, a quantifier body or a transparent body only the call's precondition
+// check sees the constraint, not the obligation
+procedure natToInt(n: nat) returns (r: int) { n };
+procedure holeInInvariant()
+  opaque
+{
+  var i: int := 0;
+  while (i < 1)
+    invariant natToInt(<?>) >= 0
+//            ^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+  {
+    i := i + 1
+  }
+};
+
+procedure holeInQuantifier()
+  opaque
+{
+  assert forall(k: int) => natToInt(<?>) >= 0
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure natOfHole() returns (r: int) { natToInt(<?>) };
+procedure holeInTransparentBody()
+  opaque
+{
+  var y: int := natOfHole();
+  assert y >= 0
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 

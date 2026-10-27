@@ -103,8 +103,7 @@ procedure diamondInheritance()
 -- type inherits them from two levels up, and a sibling tier is provably outside the
 -- catchable one. Only `extends` and `is` are exercised — no `throw`/`try` — so this
 -- belongs with inheritance rather than with the exception tests, which rely on it.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -188,8 +187,7 @@ values and not merely type-check; the false twins pin that those reads are real.
 
 Every block from here on marks an `entry`, so the substituted ancestor is also EXERCISED: the
 read back through the parent-typed variable really happens, and the false twins' assertion
-failures are reproduced at runtime as well as proved. The one exception declares an enumerated
-`modifies` frame, which the Core interpreter cannot discharge; it says so at the block. -/
+failures are reproduced at runtime as well as proved. -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -403,11 +401,7 @@ procedure upcastThroughConcretizationFalse()
 -- extends `Base<bool, int>`, so the inherited `h: U` is a `bool` — the child's SECOND
 -- argument, not its first. A write of `false` is therefore the correct one, and accepting it
 -- is what shows the remap is applied to field TYPES and not only to the ancestor list.
--- No Core interpreter: `remappedInheritedFieldWrite` declares an ENUMERATED frame
--- (`modifies g`), and the frame check that lowers to does not reduce concretely — the Core
--- interpreter stops with "assert ... condition did not reduce to bool". The standalone
--- Laurel interpreter runs it, so the write below is still executed.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite BaseH<U, V> { var h: U }

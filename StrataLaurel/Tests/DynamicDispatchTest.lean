@@ -918,9 +918,9 @@ procedure u() opaque { assert 1 == 1 };"},
   -- TYPE-ARGUMENT-AMBIGUOUS DIAMOND: `D<X>` inherits the generic `GBaseD`'s method through TWO
   -- parents that fix `GBaseD`'s type argument DIFFERENTLY (`MidBD → GBaseD<bool>`, `LGD<X> →
   -- GBaseD<X>`), so a `D<int>` reaches `GBaseD` at both `GBaseD<bool>` and `GBaseD<int>`. The
-  -- inherited call's type argument is genuinely undetermined; `inferProcInst` REJECTS it with a
-  -- clean `userError` (naming both instantiations + the disambiguating upcast), NOT the internal
-  -- "'GBaseD$get' is not defined" the un-guarded ancestor pick would otherwise produce downstream.
+  -- inherited call's type argument is genuinely undetermined; `checkDiamond` REJECTS it with a
+  -- clean `userError` (naming both instantiations + the disambiguating upcast), where the record
+  -- alone would clone it at the `int` the expected type supplies.
   -- The disambiguation is available today via an upcast (`var b: GBaseD<int> := d; b#get()`), which
   -- collapses the receiver to one view — see the positive twin below.
   { name := "inherited_generic_diamond_ambiguous_type_arg_rejected", outcome := .rejectedExactly .userError,
@@ -974,7 +974,19 @@ composite LGD3<X> extends GBaseD3<X> { }
 composite D3<X> extends P1D3, P2D3, LGD3<X> { }
 procedure innerD3<T>(p: GBaseD3<T>) returns (r: T) opaque ensures true { r := p#v };
 procedure outerD3<S>(d: D3<S>) returns (r: S) opaque ensures true { r := innerD3(d) };
-procedure u() opaque { var d: D3<string> := new D3<string>; var g: string := outerD3(d); assert 1 == 1 };"} ]
+procedure u() opaque { var d: D3<string> := new D3<string>; var g: string := outerD3(d); assert 1 == 1 };"},
+
+  -- The positive twin of `inherited_generic_diamond_through_poly_caller_rejected`.
+  { name := "inherited_generic_diamond_through_poly_caller_at_agreeing_args_ok", outcome := .verifies,
+    why := "`D2<X>` is a diamond only where `X` is not `bool`, so `outerD`'s call at `D2<S>` must wait for the clone at `bool`, which verifies, rather than be refused on the generic body"
+    src := r"
+composite GBaseD2<T> { var v: T }
+composite MidBD2 extends GBaseD2<bool> { }
+composite LGD2<X> extends GBaseD2<X> { }
+composite D2<X> extends MidBD2, LGD2<X> { }
+procedure innerD<T>(p: GBaseD2<T>) returns (r: T) opaque ensures true { r := p#v };
+procedure outerD<S>(d: D2<S>) returns (r: S) opaque ensures true { r := innerD(d) };
+procedure u() opaque { var d: D2<bool> := new D2<bool>; var g: bool := outerD(d); assert 1 == 1 };"} ]
 
 def runDynamicDispatchTest : IO Unit := checkCases dynamicDispatchCorpus
 

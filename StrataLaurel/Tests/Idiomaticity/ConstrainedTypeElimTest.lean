@@ -123,6 +123,40 @@ procedure f() opaque {
 };
 #end
 
+-- Hole of a constrained type: bound to a fresh local whose constraint is assumed, so the
+-- declaration's check holds.
+/--
+info: procedure posint$constraint(x: int): bool
+return x > 0;
+procedure f()
+  opaque
+{
+  var x: int := {
+    var $constrainedHole0: int := <?>;
+    assume posint$constraint($constrainedHole0);
+    $constrainedHole0
+  };
+  assert posint$constraint(x);
+  assert x == 1
+};
+procedure $witness_posint()
+  opaque
+{
+  var $witness: int := 1;
+  assert posint$constraint($witness)
+};
+-/
+#guard_msgs in
+#eval runPassForIdiomaticity constrainedTypeElimPass <|
+#strata
+program Laurel;
+constrained posint = x: int where x > 0 witness 1
+procedure f() opaque {
+  var x: posint := <?>;
+  assert x == 1
+};
+#end
+
 -- Composite field of constrained type: field constraint procedure plus the
 -- output constraint lemma for the procedure returning the constrained type.
 /--

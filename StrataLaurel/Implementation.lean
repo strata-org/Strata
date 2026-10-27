@@ -15,6 +15,7 @@ import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import StrataLaurel.Implementation.Grammar.LaurelGrammar
 import StrataDDM.Elab
 import Strata.Util.IonDeserializer
+import Strata.Util.Name
 
 /-! ## Strata Laurel API
 
@@ -124,6 +125,53 @@ def Laurel.analyzeToMessages
     (options : Core.VerifyOptions := .default)
     : IO (Array Message) :=
   Strata.Laurel.verifyToMessages program { verifyOptions := options }
+
+/-! ### Concrete interpretation -/
+
+/-- `program` with a new entry procedure that calls `name()`, replacing the producer's entries.
+    The call skips the callee's `requires`, since an entry point's is assumed rather than checked.
+
+    The callee cannot be the entry itself: unmarked, it takes the heap and the globals it uses as
+    parameters, and marked, it would be subject to the entry rules, which reject its
+    `requires`/`ensures` and break its callers. -/
+def Laurel.withEntryHarness (program : Laurel.LaurelProgram) (name : String)
+    : Except String Laurel.LaurelProgram := do
+  let overloads := program.staticProcedures.filter (·.name.text == name)
+  let some target := overloads.find? (·.inputs.isEmpty) <|> overloads.head?
+    | throw s!"entry procedure '{name}' not found"
+  if target.is_coroutine then
+    throw s!"entry procedure '{name}' cannot be a coroutine: calling one only constructs it"
+  unless target.inputs.isEmpty && target.typeArgs.isEmpty do
+    throw s!"entry procedure '{name}' cannot take inputs or type parameters: \
+             an entry point is invoked with no arguments"
+  let src := target.name.source
+  let taken : Std.HashSet String :=
+    (Laurel.declaredNames program).foldl (fun s (_, text, _) => s.insert text) {}
+  let fresh (base : String) : Laurel.Identifier :=
+    { text := Strata.Name.findUnique base 1 taken, source := src }
+  -- Lowering keeps a transparent procedure without an assert or assume of its own only as a
+  -- function, which runs none of its callees' asserts. A no-op `assume` keeps the callee's
+  -- procedure.
+  let keepProcedure (p : Laurel.Procedure) : Laurel.Procedure := match p.body with
+    | .Transparent b =>
+      { p with body :=
+          .Transparent ⟨.Block [⟨.Assume ⟨.LiteralBool true, src⟩, src⟩, b] none, src⟩ }
+    | _ => p
+  -- A copy, so that the target's other callers still check its `requires`.
+  let copy? := if !target.preconditions.any (·.mode.doesAssert) then none else
+    some (keepProcedure { target with name := fresh s!"{name}?entered", preconditions := [],
+                                      isInterpretEntry := false })
+  let entry : Laurel.Procedure :=
+    { name := fresh s!"{name}?entry"
+      inputs := [], outputs := [], preconditions := [], decreases := none
+      isInterpretEntry := true
+      body := .Opaque [] (some ⟨.StaticCall (copy?.getD target).name [] [], src⟩)
+        (Laurel.ModifiesGroup.wildcard src) }
+  let program := Laurel.mapLaurelProgramProcedures ({ · with isInterpretEntry := false }) program
+  let procs := if copy?.isSome then program.staticProcedures else
+    program.staticProcedures.map fun p =>
+      if p.name.text == name && p.inputs.isEmpty then keepProcedure p else p
+  return { program with staticProcedures := procs ++ copy?.toList ++ [entry] }
 
 end Strata
 

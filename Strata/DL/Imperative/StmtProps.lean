@@ -31,6 +31,11 @@ Equational theory for the boolean shape walkers defined in
 - Distribution of the block-level walkers over `++`
   (`initVars`/`initTypes`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
+- `initVars` / `noInitsAnywhere` correspondence: the `Stmt` and `Block`
+  `initVars_eq_nil_of_noInitsAnywhere` theorems and their converses establish
+  that the deep init-variable list is empty exactly when the syntax tree has no
+  initialization; `Block.isEmpty_initVars_eq_noInitsAnywhere` gives the Boolean
+  form.
 - `Stmt`/`Block.mapExpr_eq_mapExprM` — the monadic `mapExprM` at the identity
   monad `Id` computes the pure `mapExpr`, so reasoning transfers between the two
   (supported by the `optionMapM_Id`/`listMapM_Id` container lemmas).
@@ -39,6 +44,10 @@ Equational theory for the boolean shape walkers defined in
   `Stmt`/`Block.not_defined_of_mem_definedVars` give the dual for names a statement
   list defines.  `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
+- Per-constructor equations for `noLoops` (`Block.noLoops_cons`,
+  `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): a non-empty list has
+  no loops exactly when its head and its rest have none; a loop is not loop-free, and
+  any other statement has no loops exactly when its sub-lists have none.
 -/
 
 /-! ### Decomposition lemmas for the structural shape predicates
@@ -501,6 +510,106 @@ theorem Block.noInitsAnywhere_append (xs ys : List (Stmt P (Cmd P))) :
   | nil => simp [Block.noInitsAnywhere]
   | cons x rest ih =>
     simp [Block.noInitsAnywhere, ih, Bool.and_assoc]
+
+/-! ## `initVars` / `noInitsAnywhere` correspondence
+
+These mutually recursive lemmas connect the deep `initVars` traversal with
+`noInitsAnywhere`: a tree has no inits anywhere exactly when its deep `initVars`
+list is empty. -/
+
+mutual
+/-- No inits anywhere ⇒ the deep `initVars` list is empty (`= []`). -/
+theorem Stmt.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
+    (s : Stmt P (Cmd P)) (h : Stmt.noInitsAnywhere s = true) :
+    Stmt.initVars s = [] := by
+  match s with
+  | .cmd c =>
+      cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
+  | .block lbl bss md =>
+      rw [Stmt.noInitsAnywhere] at h
+      simp only [Stmt.initVars_block]
+      exact Block.initVars_eq_nil_of_noInitsAnywhere bss h
+  | .ite g tss ess md =>
+      rw [Stmt.noInitsAnywhere, Bool.and_eq_true] at h
+      simp only [Stmt.initVars_ite]
+      rw [Block.initVars_eq_nil_of_noInitsAnywhere tss h.1,
+          Block.initVars_eq_nil_of_noInitsAnywhere ess h.2, List.append_nil]
+  | .loop g m inv bss md =>
+      rw [Stmt.noInitsAnywhere] at h
+      simp only [Stmt.initVars_loop]
+      exact Block.initVars_eq_nil_of_noInitsAnywhere bss h
+  | .exit lbl md => simp [Stmt.initVars]
+  | .typeDecl t md => simp [Stmt.initVars]
+  termination_by sizeOf s
+
+/-- A statement list with no initialization anywhere in its syntax tree has an
+empty deep `initVars` list. -/
+theorem Block.initVars_eq_nil_of_noInitsAnywhere [HasFvars P]
+    (ss : List (Stmt P (Cmd P))) (h : Block.noInitsAnywhere ss = true) :
+    Block.initVars ss = [] := by
+  match ss with
+  | [] => simp [Block.initVars]
+  | s :: rest =>
+      rw [Block.noInitsAnywhere, Bool.and_eq_true] at h
+      simp only [Block.initVars_cons]
+      rw [Stmt.initVars_eq_nil_of_noInitsAnywhere s h.1,
+          Block.initVars_eq_nil_of_noInitsAnywhere rest h.2, List.append_nil]
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Empty deep `initVars` list ⇒ no inits anywhere (converse of
+`initVars_eq_nil_of_noInitsAnywhere`). -/
+theorem Stmt.noInitsAnywhere_of_initVars_nil [HasFvars P]
+    (s : Stmt P (Cmd P)) (h : Stmt.initVars s = []) :
+    Stmt.noInitsAnywhere s = true := by
+  match s with
+  | .cmd c => cases c <;> simp_all [Stmt.noInitsAnywhere, Stmt.initVars, Cmd.definedVars, HasVarsImp.definedVars]
+  | .block lbl bss md =>
+      rw [Stmt.initVars_block] at h; simp only [Stmt.noInitsAnywhere]
+      exact Block.noInitsAnywhere_of_initVars_nil bss h
+  | .ite g tss ess md =>
+      rw [Stmt.initVars_ite, List.append_eq_nil_iff] at h
+      simp only [Stmt.noInitsAnywhere,
+        Block.noInitsAnywhere_of_initVars_nil tss h.1,
+        Block.noInitsAnywhere_of_initVars_nil ess h.2, Bool.and_true]
+  | .loop g m inv bss md =>
+      rw [Stmt.initVars_loop] at h; simp only [Stmt.noInitsAnywhere]
+      exact Block.noInitsAnywhere_of_initVars_nil bss h
+  | .exit lbl md => simp [Stmt.noInitsAnywhere]
+  | .typeDecl t md => simp [Stmt.noInitsAnywhere]
+  termination_by sizeOf s
+
+/-- An empty deep `initVars` list implies that the statement list contains no
+initialization anywhere in its syntax tree. -/
+theorem Block.noInitsAnywhere_of_initVars_nil [HasFvars P]
+    (ss : List (Stmt P (Cmd P))) (h : Block.initVars ss = []) :
+    Block.noInitsAnywhere ss = true := by
+  match ss with
+  | [] => simp [Block.noInitsAnywhere]
+  | s :: rest =>
+      rw [Block.initVars_cons, List.append_eq_nil_iff] at h
+      simp only [Block.noInitsAnywhere,
+        Stmt.noInitsAnywhere_of_initVars_nil s h.1,
+        Block.noInitsAnywhere_of_initVars_nil rest h.2, Bool.and_true]
+  termination_by sizeOf ss
+end
+
+/-- On any block, `(Block.initVars ss).isEmpty = Block.noInitsAnywhere ss`:
+both walk the same tree and `.init` is the sole producer of an `initVars`
+entry. -/
+theorem Block.isEmpty_initVars_eq_noInitsAnywhere [HasFvars P]
+    (ss : List (Stmt P (Cmd P))) :
+    (Block.initVars ss).isEmpty = Block.noInitsAnywhere ss := by
+  rcases he : (Block.initVars ss).isEmpty with _ | _
+  · symm
+    rw [Bool.eq_false_iff, Ne]
+    intro hn
+    rw [Block.initVars_eq_nil_of_noInitsAnywhere ss hn] at he
+    simp at he
+  · symm
+    rw [List.isEmpty_iff] at he
+    exact Block.noInitsAnywhere_of_initVars_nil ss he
 
 /-- Concatenation distributes over `Block.loopBodyNoInits`. -/
 theorem Block.loopBodyNoInits_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
@@ -1865,6 +1974,43 @@ theorem Block.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
       rw [Stmt.mapExpr_eq_mapExprM fExpr mapCmd s, Block.mapExpr_eq_mapExprM fExpr mapCmd rest]; rfl
   termination_by sizeOf ss
 end
+
+/-! ## `noLoops` by constructor -/
+
+/-- A list has no loops exactly when its head and its rest have none. -/
+theorem Block.noLoops_cons (s : Stmt P C) (ss : List (Stmt P C)) :
+    Block.noLoops (s :: ss) = (Stmt.noLoops s && Block.noLoops ss) := by
+  simp [Block.noLoops, Stmt.noLoops, Block.allSubstmts]
+
+/-- A command has no loops. -/
+theorem Stmt.noLoops_cmd (c : C) : Stmt.noLoops (.cmd c : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- An `ite` has no loops exactly when its two branches have none. -/
+theorem Stmt.noLoops_ite (g : ExprOrNondet P) (tss ess : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.ite g tss ess md) = (Block.noLoops tss && Block.noLoops ess) := by
+  simp [Stmt.noLoops, Block.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A block has no loops exactly when its body has none. -/
+theorem Stmt.noLoops_block (l : String) (ss : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.block l ss md) = Block.noLoops ss := by
+  simp [Stmt.noLoops, Block.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A loop is not loop-free. -/
+theorem Stmt.noLoops_loop (g : ExprOrNondet P) (m : Option P.Expr) (inv : List (String × P.Expr))
+    (body : List (Stmt P C)) (md : MetaData P) :
+    Stmt.noLoops (.loop g m inv body md) = false := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- An `exit` has no loops. -/
+theorem Stmt.noLoops_exit (l : String) (md : MetaData P) :
+    Stmt.noLoops (.exit l md : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-- A type declaration has no loops. -/
+theorem Stmt.noLoops_typeDecl (tc : TypeConstructor) (md : MetaData P) :
+    Stmt.noLoops (.typeDecl tc md : Stmt P C) = true := by
+  simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
 
 end -- public section
 

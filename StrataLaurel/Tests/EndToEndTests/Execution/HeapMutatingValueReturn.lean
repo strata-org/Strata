@@ -10,8 +10,7 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
--- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container {
@@ -38,8 +37,7 @@ procedure runAll() entry
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
--- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container {
@@ -86,8 +84,7 @@ it did.
 Note the clause order: `ensures` must precede `modifies`, or it is a parse error
 rather than a test of any of this. -/
 
--- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -134,7 +131,8 @@ taking them as parameters, so they are provably distinct — two parameters of t
 type may alias, which would make the assertion unprovable for a reason unrelated to
 the frame. -/
 
--- No Core interpreter: calling a heap-modifying procedure fails with "condition did not reduce to bool".
+-- No Core interpreter: `other#value` is never written, so its read leaves a residual `select`
+-- that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;

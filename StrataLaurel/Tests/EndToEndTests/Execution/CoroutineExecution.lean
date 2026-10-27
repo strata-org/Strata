@@ -5,28 +5,23 @@
 -/
 
 /-
-Concrete execution of coroutines by the standalone Laurel interpreter: spawning
-an instance, `resume`, the value channels in both directions, `has_next`, and the
-completion value.
+Concrete execution of coroutines: spawning an instance, `resume`, the value
+channels in both directions, `has_next`, and the completion value.
 
-**Why the interpreter is the only path here.** `testLaurelExecution` holds every
+**Why the interpreters are the only paths here.** `testLaurelExecution` holds every
 path it runs to the *same* inline `// ^^^` annotations, and these blocks assert
-the actual schedule — `resume` number two yields 2, not 1 — which is exactly what
-the other two paths cannot produce:
-
-  * the verifier summarizes a `resume` by the coroutine's rely/guarantee contract,
-    so a per-step value is not provable (see
-    `Tests/EndToEndTests/Verification/Concurrency/ValueChannels.lean`); and
-  * the Laurel→Core interpret path cannot run a coroutine at all, since the
-    generated state machine needs `$heap` support the Core interpreter does not
-    have.
+the actual schedule — `resume` number two yields 2, not 1 — which the verifier
+cannot produce: it summarizes a `resume` by the coroutine's rely/guarantee
+contract, so a per-step value is not provable (see
+`Tests/EndToEndTests/Verification/Concurrency/ValueChannels.lean`).
 
 Annotating those as expected verifier diagnostics is not an option either: an
-annotation must fire on *every* enabled path, and the interpreter passes these
+annotation must fire on *every* enabled path, and the interpreters pass these
 asserts. So the blocks below are interpreter-only, and each one's asserts are
 chosen to fail if the schedule is wrong — a body that ran straight through on the
 first `resume`, or one that restarted from the top on the second, reports a
-different value rather than passing quietly.
+different value rather than passing quietly. A block the Core interpreter cannot
+run says why.
 
 The rely/guarantee *verification* of the same constructs lives under
 `Tests/EndToEndTests/Verification/Concurrency/`; this file is about what actually
@@ -38,11 +33,13 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-- The three paths `testLaurelExecution` can run, reduced to the standalone
-    Laurel interpreter. Every block in this file needs the same reduction (see
-    the file comment), so it is named once. -/
+/-- The paths `testLaurelExecution` can run here: the two interpreters (see the file
+    comment). -/
+private def interpreters : MultiplePathTestOptions := { skipVerification := true }
+
+/-- `interpreters` reduced to the standalone Laurel interpreter. -/
 private def laurelOnly : MultiplePathTestOptions :=
-  { skipVerification := true, skipCoreInterpreter := true }
+  { interpreters with skipCoreInterpreter := true }
 
 /-! ## A straight-line coroutine, resumed to completion
 
@@ -51,6 +48,8 @@ body wrote to the `yields` binding just before suspending, and the fourth runs t
 tail of the body and finishes it. A body that ignored its suspension point and
 restarted would answer `1` every time. -/
 
+-- No Core interpreter: the state machine a coroutine lowers to ends at its last `yield`, so it
+-- finishes one `resume` early.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -89,7 +88,7 @@ resetting to 0 would repeat `0`, and re-running the statements before the `yield
 would repeat the previous value. The spawn argument bounds the loop, so the last
 resume also drives the loop to its exit and completes the body. -/
 
-#eval testLaurelExecution laurelOnly <|
+#eval testLaurelExecution interpreters <|
 #strata
 program Laurel;
 coroutine ticker(n: int) yields (x: int)
@@ -129,6 +128,7 @@ body wakes up. The body keeps the first sent value in a local and adds the secon
 to it, so a run that dropped either one — or that re-read the first `yield`'s
 value at the second — answers something else. -/
 
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -163,6 +163,8 @@ procedure driveSend()
 `has_next(co)` stays true until the body has actually run off its end, which is one
 resume *after* the last yielded value -- the resume that runs the tail. -/
 
+-- No Core interpreter: the state machine a coroutine lowers to ends at its last `yield`, so it
+-- finishes one `resume` early.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -196,6 +198,8 @@ the wrong place fails where the bug is. It is the interpreter's half of the
 /-- error: 'resume' of coroutine 'tiny' after it ran to completion
 -/
 #guard_msgs in
+-- No Core interpreter: the state machine a coroutine lowers to ends at its last `yield`, so it
+-- finishes one `resume` early.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -224,7 +228,7 @@ Each spawn captures its own arguments and carries its own frame and suspension
 point, so interleaving two instances of the same `coroutine` must not let either
 observe the other's position. -/
 
-#eval testLaurelExecution laurelOnly <|
+#eval testLaurelExecution interpreters <|
 #strata
 program Laurel;
 coroutine steps(base: int) yields (x: int)
@@ -259,7 +263,7 @@ called from that body is not part of the coroutine: it gets a frame of its own a
 its position is its own business. Calls before and after the suspension both have
 to work, and the value the first one produced has to still be there afterwards. -/
 
-#eval testLaurelExecution laurelOnly <|
+#eval testLaurelExecution interpreters <|
 #strata
 program Laurel;
 procedure double(n: int) returns (r: int)
@@ -298,6 +302,8 @@ frame, position and pending seek, and the outer body's must be exactly where the
 were when the inner one returns. The outer coroutine also suspends from inside a
 `while` whose condition reads the inner coroutine's completion. -/
 
+-- No Core interpreter: the state machine a coroutine lowers to ends at its last `yield`, so it
+-- finishes one `resume` early.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -346,7 +352,7 @@ cell the caller writes between resumes: the first resume takes the `then` arm, t
 caller then flips the cell, and the statements after the `yield` in the `then` arm
 must still be the ones that run. -/
 
-#eval testLaurelExecution laurelOnly <|
+#eval testLaurelExecution interpreters <|
 #strata
 program Laurel;
 composite Cell { var flag: bool }
@@ -396,6 +402,7 @@ deliver their own resumed value, a `yield` in a `while` condition is tested on
 every iteration, and the right operand of `&&` still runs only when the left is
 true. -/
 
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -487,6 +494,7 @@ procedure driveNested()
 The handler suspends while its binding shadows a local of the same name; when the
 resumed handler finishes, the local is visible again. -/
 
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -526,6 +534,7 @@ without end, so it is refused. -/
 /-- error: 'resume' of coroutine 'gen' from inside its own body [in gen]
 -/
 #guard_msgs in
+-- No Core interpreter: it does not refuse the self-resume, and runs out of fuel instead.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;
@@ -561,7 +570,7 @@ procedure driveSelf()
 The coroutine suspends inside a block whose declaration shadows a local; resuming
 re-enters the block, and leaving it afterwards still restores the outer value. -/
 
-#eval testLaurelExecution laurelOnly <|
+#eval testLaurelExecution interpreters <|
 #strata
 program Laurel;
 coroutine g() yields (r: int)
@@ -595,6 +604,7 @@ procedure driveScope()
 The invariant is checked after each test of the condition, as for any `while`, so it
 fails on the third test, once the body has run twice. -/
 
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
 #eval testLaurelExecution laurelOnly <|
 #strata
 program Laurel;

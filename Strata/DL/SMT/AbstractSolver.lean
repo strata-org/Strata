@@ -135,6 +135,11 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   /-- Declare an uninterpreted function. -/
   declareFun : String → List σ → σ → m τ
 
+  /-- A parameter of a function about to be defined with `defineFun`, by the name it is given
+      there. It declares nothing, so a body built from it refers to that parameter, where a
+      variable from `declareNew` would be a global the body captures instead. -/
+  mkParam : String → σ → m τ
+
   /-- Define an interpreted function with a body term. -/
   defineFun : String → List (String × σ) → σ → τ → m Unit
 
@@ -186,6 +191,16 @@ structure AbstractSolver (τ : Type) (σ : Type) (m : Type → Type) [Monad m] [
   /-- Retrieve the model after a `sat` result.
       Keys are `(name, shadow_depth)` where 0 = most recently declared. -/
   getModel : m (List ((String × Nat) × τ))
+  /-- The values of the given terms as text, for reporting a counterexample. A consumer
+      working against an abstract term type cannot take a model apart, and each backend
+      already knows how to render its own: the SMT-LIB one returns the solver's reply to
+      `get-value` verbatim, which is what `parseModelDDM` reads.
+
+      Defaulted to a refusal, the way `getModel` is, so that a backend which cannot produce a
+      model says so: empty text would read as a counterexample with no values in it. A backend
+      that can render one overrides this. -/
+  getModelText : List τ → m String := fun _ =>
+    throw (IO.userError "getModelText: this solver does not render models")
 
   /-- Get values of specific terms in the current model. -/
   getValue : List τ → m (List (τ × τ))

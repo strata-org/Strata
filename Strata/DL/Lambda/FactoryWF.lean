@@ -71,8 +71,8 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
     intro _ h; simp [LFunc.concreteEval] at h
   /-- The concrete evaluator of a `shortCircuit` function, which `eval` applies to
-      arguments after the first one that are not evaluated yet, commutes with renaming
-      those arguments. -/
+      arguments after the first one that are not evaluated yet, commutes with
+      `substFvars` applied to those arguments, for any substitution `sm`. -/
   shortCircuit_substFvars :
     Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = true →
       ∀ ceval, f.concreteEval = some ceval →

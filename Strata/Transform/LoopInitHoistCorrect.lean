@@ -10,7 +10,6 @@ public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.Transform.LoopInitHoist
-public import Strata.Transform.DetToKleeneCorrect
 public import Strata.Transform.NondetElimCorrect
 public import Strata.Transform.StructuredToUnstructuredCorrect
 public import Strata.Transform.CoreTransformProps
@@ -20,7 +19,6 @@ import all Strata.DL.Imperative.Cmd
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
 import all Strata.Transform.LoopInitHoist
-import all Strata.Transform.DetToKleeneCorrect
 import all Strata.Transform.NondetElimCorrect
 import all Strata.Transform.StructuredToUnstructuredCorrect
 
@@ -245,9 +243,8 @@ private theorem buildLoopIterationDet {P : PureExpr} [HasFvar P] [HasBool P] [Ha
 These `*'`-suffixed `ReflTransT` exiting-trace decompositions invert a run that
 reaches a labeled `.exiting` through a `.seq` / `.none`-block / `.stmts`-cons
 context.  They live here (rather than being imported from the equivalence proof)
-so this driver library sits strictly upstream of that proof, and are self-contained
-against the iteration machinery in `DetToKleeneCorrect` and the store/relation
-helpers. -/
+so this driver library is self-contained and sits strictly upstream of the
+full equivalence proof. -/
 
 /-- Fuel-indexed none-preservation for a determinised, invariant-free loop: if `x`
 is undefined before the loop and the loop runs to `.terminal ρ_post`, then `x` is
