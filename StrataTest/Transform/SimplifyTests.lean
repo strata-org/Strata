@@ -5,9 +5,9 @@
 -/
 module
 
-meta import Strata.Languages.Core
+public meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Transform.Simplify
+public meta import Strata.Transform.Simplify
 meta import Strata.Transform.PrecondElim
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -1935,5 +1935,80 @@ procedure P (y : int)
 #guard_msgs in
 #eval precondElimThenSimplify precondFn
 
+
+/-! ### A deep branch chain comes back unchanged
+
+Two `if c₁ then … else if c₂ then … else …` chains: one whose every level writes `x`, and
+one whose every level declares a fresh variable `tₖ` and writes it to `x`, so that the
+set of variables written below a level grows with the depth. `simpStmts` and
+`dropDeadDefs` leave both unchanged at depth 1000. The recursion of the interpreted
+`#eval` deepens with the chain, and depth 1000 keeps it within a 2 MB thread stack.
+`StrataTestExtra/Transform/SimplifyScaling.lean` checks on the same chains that the cost
+is linear in the depth. -/
+
+/-- The chain of the given depth, branching on `c₁, c₂, …` and writing `x`. -/
+public def elseIfChain : Nat → List Statement
+  | 0 => []
+  | n + 1 =>
+    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
+      [Statement.set ⟨"x", ()⟩ (.intConst () (n + 1)) .empty] (elseIfChain n) .empty]
+
+/-- The chain of the given depth, branching on `c₁, c₂, …`, whose level `k` declares
+    `tₖ` without a value and writes it to `x`. -/
+public def freshVarChain : Nat → List Statement
+  | 0 => []
+  | n + 1 =>
+    let t : CoreIdent := ⟨s!"t{n + 1}", ()⟩
+    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
+      [Statement.init t (.forAll [] .int) .nondet .empty,
+       Statement.set ⟨"x", ()⟩ (.fvar () t none) .empty] (freshVarChain n) .empty]
+
+/-- Whether simplifying `ss` and sweeping its dead definitions leaves it unchanged. -/
+public def simplifiesUnchanged (ss : List Statement) : Bool :=
+  let (out, _, _) := simpStmts (Ctx.ofFactory Core.Factory) ss
+  decide (dropDeadDefs Core.Factory {} {} out = ss)
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (elseIfChain 1000)
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (freshVarChain 1000)
+
+/-! ### A long sequence of branches comes back unchanged
+
+`writeFreeIfs n` is `n` branches in sequence, each asserting in one arm and doing nothing
+in the other, so the names live before a branch grow along the sequence. `simpStmts` and
+`dropDeadDefs` leave it unchanged at length 4000.
+`StrataTestExtra/Transform/SimplifyScaling.lean` checks that the cost is linear in the
+length. -/
+
+/-- The branches `if cᵢ { assert pᵢ } else {}` for `i < n`, in sequence. -/
+public def writeFreeIfs (n : Nat) : List Statement :=
+  (List.range n).map fun i =>
+    .ite (.det (.fvar () ⟨s!"c{i}", ()⟩ none))
+      [Statement.assert s!"a{i}" (.fvar () ⟨s!"p{i}", ()⟩ none) .empty] [] .empty
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (writeFreeIfs 4000)
+
+/-! ### Each arm of a branch is swept with the names live after the branch
+
+A variable one arm reads does not keep the other arm's dead definition of the same
+name, whichever arm is swept first. -/
+
+private def tRead : Statement := Statement.assert "a" (.fvar () ⟨"t", ()⟩ none) .empty
+private def tDef : Statement :=
+  Statement.init ⟨"t", ()⟩ (.forAll [] .int) (.det (.intConst () 1)) .empty
+private def noRead : Statement := Statement.assert "b" (.boolConst () true) .empty
+private def cGuard : Imperative.ExprOrNondet Expression := .det (.fvar () ⟨"c", ()⟩ none)
+
+#guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tRead] [tDef] .empty] =
+  [.ite cGuard [tRead] [] .empty]
+
+#guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tDef, noRead] [tRead] .empty] =
+  [.ite cGuard [noRead] [tRead] .empty]
 
 end Core.Simplify.Tests

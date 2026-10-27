@@ -178,19 +178,35 @@ def Ctx.ofFactory (F : Expression.Factory) (carriers : List String := []) : Ctx 
 
 def Ctx.spend (ctx : Ctx) : Ctx := { ctx with expandFuel := ctx.expandFuel - 1 }
 
-/-- Drop every recorded value invalidated by mutating the variables `vs`: both a
-    binding *of* a mutated variable and a binding whose value *mentions* one.
+/-- Drop every recorded value invalidated by mutating the variables whose names satisfy
+    `written`: both a binding *of* a mutated variable and a binding whose value
+    *mentions* one.
 
     The second half is the subtle one. A definition `t := output` records `output`
     as `t`'s value; if `output` is then havoc'd or reassigned, `t`'s recorded value
     is stale, and substituting it into a later use would read `output`'s new value
     instead of the one `t` captured. Erasing only `output`'s own entry is not
     enough. -/
-def Ctx.invalidate (ctx : Ctx) (vs : List CoreIdent) : Ctx :=
-  let names := vs.map (·.name)
+@[inline] private def Ctx.invalidateBy (ctx : Ctx) (written : String → Bool) : Ctx :=
   let kept := ctx.values.toList.filter fun (k, e) =>
-    !names.contains k.name && !(HasFvars.getFvars e).any (fun f => names.contains f.name)
+    !written k.name && !(HasFvars.getFvars e).any (fun f => written f.name)
   { ctx with values := Map.ofList kept }
+
+/-- Drop every recorded value invalidated by mutating the variables named in `names`
+    (see `Ctx.invalidateBy`). An empty set invalidates nothing, so the walk is skipped,
+    and a single name is compared rather than hashed, as in `Ctx.invalidateVar`. -/
+def Ctx.invalidate (ctx : Ctx) (names : Std.HashSet String) : Ctx :=
+  if names.isEmpty then ctx
+  else if names.size == 1 then
+    match names.toList with
+    | [n] => ctx.invalidateBy (· == n)
+    | _ => ctx.invalidateBy names.contains
+  else ctx.invalidateBy names.contains
+
+/-- `Ctx.invalidate` for the single variable `x`, comparing names rather than hashing
+    them, since a write to one variable is the common case. -/
+def Ctx.invalidateVar (ctx : Ctx) (x : CoreIdent) : Ctx :=
+  ctx.invalidateBy (· == x.name)
 
 /-! ## The two copying rewrites
 
@@ -378,38 +394,50 @@ and one of control-flow graphs share it. -/
     value mentioning it are invalidated, and `v` becomes `x`'s value unless it reads
     `x` itself, which would make a later substitution loop. -/
 def Ctx.record (ctx : Ctx) (x : CoreIdent) (v : Expression.Expr) : Ctx :=
-  let ctx := ctx.invalidate [x]
+  let ctx := ctx.invalidateVar x
   if (HasFvars.getFvars (P := Core.Expression) v).any (fun f => f.name == x.name)
     then ctx
     else { ctx with values := ctx.values.insert x v }
 
-/-- The definitions a set of predecessor contexts agree on: for each variable in
-    `assigned` that is not in `scopedNames`, the value every context in `live` records for
-    it, provided they all record the same one and it mentions none of `scopedNames`. -/
-def agreedDefs (live : List Ctx) (assigned : List CoreIdent) (scopedNames : List String) :
+/-- The definitions a set of predecessor contexts agree on: for each variable named in
+    `assigned` and not in `scopedNames`, the value every context in `live` records for
+    it, provided they all record the same one and it mentions none of `scopedNames`.
+
+    Such a value is one the first context records, so the candidates are read off its
+    `values`, which bounds the work by what is known rather than by what is written. A
+    single written name is looked up in those values instead. -/
+def agreedDefs (live : List Ctx) (assigned scopedNames : Std.HashSet String) :
     List (CoreIdent × Expression.Expr) :=
-  assigned.filterMap fun x =>
-    if scopedNames.contains x.name then none else
-    match live.map (fun (c : Ctx) => Map.find? c.values x) with
-    | some (v : Expression.Expr) :: rest =>
-      if rest.all (· == some v) &&
-          !(HasFvars.getFvars (P := Core.Expression) v).any
-            (fun f => scopedNames.contains f.name)
-        then some (x, v) else none
-    | _ => none
+  match live with
+  | [] => []
+  | first :: rest =>
+    let agreed (x : CoreIdent) (v : Expression.Expr) : Bool :=
+      !scopedNames.contains x.name &&
+        rest.all (fun (c : Ctx) => Map.find? c.values x == some v) &&
+        !(HasFvars.getFvars (P := Core.Expression) v).any (fun f => scopedNames.contains f.name)
+    if assigned.size == 1 then
+      assigned.toList.filterMap fun n =>
+        let x : CoreIdent := ⟨n, ()⟩
+        match Map.find? first.values x with
+        | some v => if agreed x v then some (x, v) else none
+        | none => none
+    else
+      first.values.toList.filter fun (x, v) => assigned.contains x.name && agreed x v
 
 /-- Record a list of definitions in a context, in order. -/
 def recordAgreed (base : Ctx) (agreed : List (CoreIdent × Expression.Expr)) : Ctx :=
   agreed.foldl (fun c (x, v) => { c with values := c.values.insert x v }) base
 
-/-- **Join.** The context after control flow merges: `base` with the variables in
+/-- **Join.** The context after control flow merges: `base` with the variables named in
     `assigned` forgotten, then given back the values every live predecessor agrees on.
 
     Only agreement is recorded. A value the predecessors disagree on could be merged as
-    an `ite` over the path taken, but that would enlarge every later use of the name. -/
-def Ctx.join (base : Ctx) (live : List Ctx) (assigned : List CoreIdent)
-    (scopedNames : List String) : Ctx :=
-  recordAgreed (base.invalidate assigned) (agreedDefs live assigned scopedNames)
+    an `ite` over the path taken, but that would enlarge every later use of the name.
+    When nothing was written, nothing is forgotten and nothing can be agreed on. -/
+def Ctx.join (base : Ctx) (live : List Ctx) (assigned scopedNames : Std.HashSet String) :
+    Ctx :=
+  if assigned.isEmpty then base
+  else recordAgreed (base.invalidate assigned) (agreedDefs live assigned scopedNames)
 
 /-- **One base command.** Simplify its expressions in `ctx`, and return the context
     that follows it: a deterministic write records its simplified value, a
@@ -419,11 +447,11 @@ def simpCmd (ctx : Ctx) (c : Imperative.Cmd Expression) : Imperative.Cmd Express
   | .init x ty (.det e) md =>
     let e := simplifyExpr ctx e
     (.init x ty (.det e) md, ctx.record x e)
-  | .init x ty .nondet md => (.init x ty .nondet md, ctx.invalidate [x])
+  | .init x ty .nondet md => (.init x ty .nondet md, ctx.invalidateVar x)
   | .set x (.det e) md =>
     let e := simplifyExpr ctx e
     (.set x (.det e) md, ctx.record x e)
-  | .set x .nondet md => (.set x .nondet md, ctx.invalidate [x])
+  | .set x .nondet md => (.set x .nondet md, ctx.invalidateVar x)
   | .assert l b md => (.assert l (simplifyExpr ctx b) md, ctx)
   -- An assumption that simplifies to `true` stays: symbolic evaluation adds no path
   -- condition for it, and keeping it keeps the program's events one for one.
