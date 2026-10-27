@@ -86,7 +86,7 @@ private theorem getElem?_foldl_insertIfNew
         simp only [Option.isSome_some, not_true_eq_false, ↓reduceIte, Option.some_or,
           Option.getD_some]
     · have hne : (d.name == name) = false := beq_false_of_ne h
-      simp only [hne, Bool.false_eq_true, false_and, if_false]
+      simp only [hne, Bool.false_eq_true, false_and, ite_false]
 
 /-- `SMT.Datatypes.getType` agrees with `TypeFactory.getType`: the hash index
     computed by `ofFactory` returns exactly what a linear scan of the factory

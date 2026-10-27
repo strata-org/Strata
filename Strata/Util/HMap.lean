@@ -114,7 +114,7 @@ public theorem all_of_find? [LawfulBEq α] [LawfulHashable α]
 
 /-- Merge `m2` into `m1`; on key collisions `m2` wins. -/
 public def union (m1 m2 : HMap α β) : HMap α β :=
-  ⟨m1.rep.insertMany m2.toList⟩
+  if m2.rep.isEmpty then m1 else ⟨m1.rep.fold (fun acc k v => acc.insertIfNew k v) m2.rep⟩
 
 /-- Transform every value with `f`, leaving keys untouched. -/
 public def mapValues (f : β → γ) (m : HMap α β) : HMap α γ :=
@@ -270,8 +270,8 @@ public theorem find?_ofList_map_snd [LawfulBEq α] [LawfulHashable α]
     obtain ⟨a, b⟩ := p
     simp only [List.map_cons, List.findSome?_cons]
     by_cases hk : (a == k) = true
-    · simp only [hk, if_true, Option.map_some]
-    · simp only [hk, Bool.false_eq_true, if_false, ih]
+    · simp only [hk, ite_true, Option.map_some]
+    · simp only [hk, Bool.false_eq_true, ite_false, ih]
 
 /-- Every value of `HMap.ofList l` comes from a value in `l`. -/
 public theorem mem_values_ofList [LawfulBEq α] [LawfulHashable α]
@@ -322,8 +322,8 @@ public theorem find?_ofList_self_map [LawfulBEq α] [LawfulHashable α]
     | cons a rest ih =>
       simp only [List.map_cons, List.findSome?_cons]
       by_cases h : (a == k) = true
-      · simp only [h, if_true]; rw [beq_iff_eq] at h; rw [h]
-      · simp only [h, Bool.false_eq_true, if_false]
+      · simp only [h, ite_true]; rw [beq_iff_eq] at h; rw [h]
+      · simp only [h, Bool.false_eq_true, ite_false]
         apply ih; simp only [List.mem_cons] at hL
         rcases hL with h' | h'
         · rw [h'] at h; simp at h
@@ -360,7 +360,7 @@ public theorem find?_ofList_cons_eq_find?_insert [LawfulBEq α] [LawfulHashable 
     · right; simpa using hk
   rcases hnone with h | h
   · rw [h]; simp
-  · simp only [h, Bool.false_eq_true, if_false, Option.or_none]
+  · simp only [h, Bool.false_eq_true, ite_false, Option.or_none]
 
 /-- If `find?` returns `none`, the key is not in `keys`. -/
 public theorem find?_of_not_mem_keys [LawfulBEq α] [LawfulHashable α]
@@ -415,27 +415,59 @@ public theorem insert_values_subset [LawfulBEq α] [LawfulHashable α]
 
 /-! ### `union` lookup law -/
 
+/-- Inserting the entries of `l` into `a`, each only if its key is new, keeps `a`'s binding for
+    `k` if there is one and otherwise gives the first binding for `k` in `l`. -/
+private theorem getElem?_foldl_insertIfNew [LawfulBEq α] [LawfulHashable α]
+    (l : List (α × β)) (a : Std.HashMap α β) (k : α) :
+    (l.foldl (fun acc p => acc.insertIfNew p.1 p.2) a)[k]? =
+      a[k]?.or ((l.find? (fun p => p.1 == k)).map Prod.snd) := by
+  induction l generalizing a with
+  | nil => simp only [List.foldl_nil, List.find?_nil, Option.map_none, Option.or_none]
+  | cons p l ih =>
+    obtain ⟨k0, v0⟩ := p
+    rw [List.foldl_cons, ih, Std.HashMap.getElem?_insertIfNew, List.find?_cons]
+    by_cases hk : k0 = k
+    · subst hk
+      by_cases hmem : k0 ∈ a
+      · have h_some : a[k0]?.isSome = true := Std.HashMap.mem_iff_isSome_getElem?.mp hmem
+        obtain ⟨w, hw⟩ := Option.isSome_iff_exists.mp h_some
+        simp only [hmem, not_true_eq_false, and_false, ite_false, beq_self_eq_true, hw,
+          Option.some_or]
+      · have h_none : a[k0]? = none := Std.HashMap.getElem?_eq_none hmem
+        simp only [beq_self_eq_true, hmem, not_false_eq_true, and_self, ite_true, h_none,
+          Option.some_or, Option.map_some, Option.none_or]
+    · have h_ne : (k0 == k) = false := beq_eq_false_iff_ne.mpr hk
+      simp only [h_ne, Bool.false_eq_true, false_and, ite_false]
+
+/-- The first entry for `k` in a map's entry list carries the map's binding for `k`. -/
+private theorem find?_toList_snd [LawfulBEq α] [LawfulHashable α]
+    (m : Std.HashMap α β) (k : α) :
+    (m.toList.find? (fun p => p.1 == k)).map Prod.snd = m[k]? := by
+  cases hf : m.toList.find? (fun p => p.1 == k) with
+  | some q =>
+    have h_mem : q ∈ m.toList := List.mem_of_find?_eq_some hf
+    have h_key : (q.1 == k) = true := List.find?_some (p := fun r : α × β => r.1 == k) hf
+    have h_eq : q.1 = k := beq_iff_eq.mp h_key
+    have h_get : m[q.1]? = some q.2 := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp h_mem
+    rw [h_eq] at h_get
+    rw [h_get, Option.map_some]
+  | none =>
+    cases hk : m[k]? with
+    | none => rfl
+    | some v =>
+      have h_mem : (k, v) ∈ m.toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hk
+      have h_not := List.find?_eq_none.mp hf (k, v) h_mem
+      simp only [beq_self_eq_true, not_true_eq_false] at h_not
+
 /-- Looking up in `union m1 m2` returns `m2`'s binding if present, else `m1`'s. -/
 public theorem find?_union [LawfulBEq α] [LawfulHashable α]
     (m1 m2 : HMap α β) (k : α) :
     (m1.union m2).find? k = (m2.find? k).or (m1.find? k) := by
-  simp only [find?, union, toList, Std.HashMap.get?_eq_getElem?]
-  cases hk : m2.rep[k]? with
-  | some v =>
-    have h_mem : (⟨k, v⟩ : α × β) ∈ m2.rep.toList :=
-      Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hk
-    rw [Std.HashMap.getElem?_insertMany_list_of_mem (k_beq := BEq.refl k)
-      Std.HashMap.distinct_keys_toList h_mem]
-    simp
-  | none =>
-    have h_notmem : ¬ k ∈ m2.rep := by
-      rw [Std.HashMap.mem_iff_isSome_getElem?, hk]; simp
-    have h_nc : (m2.rep.toList.map Prod.fst).contains k = false := by
-      rw [Std.HashMap.map_fst_toList_eq_keys]
-      simp only [List.contains_eq_mem, decide_eq_false_iff_not, Std.HashMap.mem_keys]
-      exact h_notmem
-    rw [Std.HashMap.getElem?_insertMany_list_of_contains_eq_false h_nc]
-    simp
+  simp only [find?, union, Std.HashMap.get?_eq_getElem?]
+  split
+  · rename_i h_empty
+    rw [Std.HashMap.getElem?_of_isEmpty h_empty, Option.none_or]
+  · rw [Std.HashMap.fold_eq_foldl_toList, getElem?_foldl_insertIfNew, find?_toList_snd]
 
 /-- `union` unites the key sets. -/
 public theorem mem_keys_union [LawfulBEq α] [LawfulHashable α]

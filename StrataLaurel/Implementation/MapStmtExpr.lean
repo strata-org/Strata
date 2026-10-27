@@ -107,11 +107,10 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.HasNext (← mapStmtExprUsedM f true target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-      let ⟨vv, vs⟩ := v
-      match vv with
-      | .Field target fieldName =>
+      match (dependent := true) v with
+      | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprUsedM f true target) fieldName, vs⟩
-      | .Local _ | .Declare _ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprUsedM f true value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprUsedM f true target) fieldName), source⟩
@@ -393,11 +392,10 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.HasNext (collapse (← go true target) target.source), source⟩
     | .Assign targets value =>
       let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-        let ⟨vv, vs⟩ := v
-        match vv with
-        | .Field target fieldName =>
+        match (dependent := true) v with
+        | ⟨.Field target fieldName, vs⟩ =>
           pure ⟨Variable.Field (collapse (← go true target) target.source) fieldName, vs⟩
-        | .Local _ | .Declare _ => pure v
+        | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
       pure ⟨.Assign targets' (collapse (← go true value) value.source), source⟩
     | .Var (.Field target fieldName) =>
       pure ⟨.Var (.Field (collapse (← go true target) target.source) fieldName), source⟩
@@ -491,15 +489,14 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.HasNext (← mapStmtExprPrePostM pre post target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-      let ⟨vv, vs⟩ := v
-      match vv with
-      | .Field target fieldName =>
+      match (dependent := true) v with
+      | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprPrePostM pre post target) fieldName, vs⟩
-      | .Local _ | .Declare _ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
-  | .IncrDecr mode op target => match target with
+  | .IncrDecr mode op target => match (dependent := true) target with
     | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
     | ⟨.Local _, _⟩
     | ⟨.Declare _, _⟩ => pure expr
@@ -607,7 +604,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f value
   | .Var (.Field target _) =>
     foldStmtExprM f target
-  | .IncrDecr _ _ target => match target with
+  | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>

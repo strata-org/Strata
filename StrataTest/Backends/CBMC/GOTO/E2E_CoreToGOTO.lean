@@ -58,7 +58,7 @@ procedure test(x : int) {
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | Lean.IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -77,7 +77,7 @@ spec {
 #end
 
 #eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | IO.throwServerError "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | Lean.IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -99,7 +99,7 @@ spec {
 #end
 
 #eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | IO.throwServerError "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | Lean.IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -118,7 +118,7 @@ procedure test(x : int) {
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | Lean.IO.throwServerError "translation failed"
   assert! (goto.pretty.splitOn "ASSERT").length > 1
 
 -------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ procedure test(x : bv W32, y : bv W32) {
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | Lean.IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -158,7 +158,7 @@ spec {
 
 #eval do
   match coreToGotoJson E2E_FreeSpecs with
-  | .error e => IO.throwServerError s!"translation failed: {e}"
+  | .error e => Lean.IO.throwServerError s!"translation failed: {e}"
   | .ok (symtab, _) =>
     let testSym := symtab.getObjValD "test"
     let codeType := testSym.getObjValD "type"
@@ -232,7 +232,7 @@ procedure caller() {
 
 #eval do
   let (.ok (_, goto)) := coreToGotoJsonByName E2E_InoutCall "caller"
-    | IO.throwServerError "translation failed"
+    | Lean.IO.throwServerError "translation failed"
   assert! (goto.pretty.splitOn "FUNCTION_CALL").length > 1
 
 -- Translating `helper` (which owns the inout parameter) pins the rename-map
@@ -240,7 +240,7 @@ procedure caller() {
 -- `helper::1::y` is emitted. Reverting the outputs-filter regresses this.
 #eval do
   let (.ok (symtab, _)) := coreToGotoJsonByName E2E_InoutCall "helper"
-    | IO.throwServerError "translation failed"
+    | Lean.IO.throwServerError "translation failed"
   assert! symtab.getObjValD "helper::y" != Lean.Json.null
   assert! symtab.getObjValD "helper::1::y" == Lean.Json.null
 
@@ -257,7 +257,7 @@ procedure test(x : int) {
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | Lean.IO.throwServerError "translation failed"
   -- The GOTO output should contain an ASSUME for the axiom
   assert! (goto.pretty.splitOn "ASSUME").length > 1
 
@@ -277,7 +277,7 @@ procedure test() {
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | Lean.IO.throwServerError "translation failed"
   -- Should have 3 ASSUME instructions for pairwise != (a!=b, a!=c, b!=c)
   let assumes := (goto.pretty.splitOn "ASSUME").length - 1
   assert! assumes >= 3
@@ -297,7 +297,7 @@ procedure test(s : string) {
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain function_application nodes
   assert! (gotoStr.splitOn "function_application").length > 1
@@ -364,7 +364,7 @@ procedure test(x : int) {
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain non-zero line numbers from source locations
   assert! (gotoStr.splitOn "\"line\"").length > 1
@@ -411,7 +411,7 @@ procedure test(x : int) {
 
 #eval do
   let (.ok (_, goto)) := coreToGotoJsonWithSummary E2E_PropertySummary "x must be positive"
-    | IO.throwServerError "translation failed"
+    | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO JSON should contain the property summary as the comment
   assert! (gotoStr.splitOn "x must be positive").length > 1

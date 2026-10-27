@@ -88,7 +88,7 @@ public theorem matchTypeArg_monotone (declared actual : HighType)
   -- arg preserves it (`ihargs`, per-element via the `.attach` membership proof), so the
   -- fold threading `acc1` does too (`foldl_bind_preserves`).
   | case7 acc db dargs ab aargs hlen hname acc1 hrec ih1 ihargs =>
-    simp only [matchTypeArg, hlen, hname, hrec, if_false, Bool.false_eq_true] at hm
+    simp only [matchTypeArg, hlen, hname, hrec, ite_false, Bool.false_eq_true] at hm
     refine foldl_bind_preserves
       (fun (x : {p // p ∈ dargs.zip aargs}) mm => matchTypeArg x.1.fst.val x.1.snd.val mm)
       k v ?_ (dargs.zip aargs).attach acc1 m (ih1 acc1 hk hrec) hm

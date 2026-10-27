@@ -284,8 +284,7 @@ private theorem denote_applyTypeSubst_gen
         (LMonoTy.subst S (aty.arrow rty)) at h_subst
     rw [denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
         h_subst_arrow h_subst h_subst' bvarVal]
-    rw [denote_abs bvarVal h_body_s h_subst', denote_abs bvarVal' h_body' h_body]
-    simp only [cast_cast]
+    rw [cast_cast, denote_abs bvarVal h_body_s h_subst', denote_abs bvarVal' h_body' h_body]
     -- Decompose cast through arrow type and apply IH
     have h_td_aty : TyDenote tcInterp vt (LMonoTy.subst S aty) = TyDenote tcInterp vt' aty :=
       congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S aty)
@@ -321,7 +320,11 @@ private theorem denote_applyTypeSubst_gen
       h_subst_arrow ▸ congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S (aty.arrow τ))
     have h_td_arg : TyDenote tcInterp vt (LMonoTy.subst S aty) = TyDenote tcInterp vt' aty :=
       congrArg (SortDenote tcInterp) (hvt' ▸ substTyVars_subst vt S aty)
-    rw [← cast_app h_td_fn h_td_arg h_td]
+    rw [← cast_app h_td_fn h_td_arg h_td
+      (LExpr.denote tcInterp opInterp fvarVal vt bvarVal (fn.replaceUserProvidedType (LMonoTy.subst S))
+        ((LMonoTy.subst S aty).arrow (LMonoTy.subst S τ)) h_fn_s)
+      (LExpr.denote tcInterp opInterp fvarVal vt bvarVal (arg.replaceUserProvidedType (LMonoTy.subst S))
+        (LMonoTy.subst S aty) h_arg_s)]
     -- Use denote_cast_ty to normalize fn's type index
     have h_fn_s' : LExpr.HasTypeA (Δ.map (LMonoTy.subst S))
         (fn.replaceUserProvidedType (LMonoTy.subst S)) (LMonoTy.subst S (aty.arrow τ)) :=
@@ -356,7 +359,9 @@ private theorem denote_applyTypeSubst_gen
       denote_cast_ty (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt)
         h_subst_bool.symm h_c_s h_c_s' bvarVal
     rw [h_cond_eq]
-    grind
+    refine (Bool.apply_cond (cast h_td)).trans ?_
+    rw [ih_t h_t h_td h_bvar_compat h_t_s, ih_e h_e h_td h_bvar_compat h_e_s]
+    exact congrArg (fun b : Bool => bif b then _ else _) h_ih_c
   | eq m e1 e2 ih1 ih2 =>
     intro Δ τ h_body h_td bvarVal bvarVal' h_bvar_compat h_subst
     simp only [LExpr.replaceUserProvidedType] at h_subst ⊢
@@ -431,7 +436,7 @@ private theorem denote_applyTypeSubst_gen
               intro y
               have h_ih := ih_body h_body_q h_td_bool
                   (bvar_compat_cons (tcInterp := tcInterp) hvt' h_bvar_compat y h_td_qty) h_body_q_s'
-              simp at h_ih; grind)]
+              grind)]
         grind
       · have ⟨w, hw⟩ := Classical.not_forall.mp hall
         have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal)
@@ -463,7 +468,7 @@ private theorem denote_applyTypeSubst_gen
               intro y
               have h_ih := ih_body h_body_q h_td_bool
                   (bvar_compat_cons (tcInterp := tcInterp) hvt' h_bvar_compat y h_td_qty) h_body_q_s'
-              simp at h_ih; grind)]
+              grind)]
         grind
 
 /-- Applying a type substitution to annotations is equivalent to changing the

@@ -13,8 +13,6 @@ meta section
 
 namespace Strata
 
-open Core
-
 def translatePgm (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 

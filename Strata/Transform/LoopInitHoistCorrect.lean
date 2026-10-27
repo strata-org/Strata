@@ -103,7 +103,7 @@ theorem DTyped.projectStore {P : PureExpr} [HasVal P]
   have hsome : (ρ_parent.store y).isSome = true := by rw [hP]; rfl
   refine ⟨prevB, ?_, htyB⟩
   show (if (ρ_parent.store y).isSome then ρ_body.store y else none) = some prevB
-  rw [if_pos hsome]; exact hB
+  rw [ite_eq_left hsome]; exact hB
 
 /-! ## Typed-slot preservation through a single command.
 
@@ -415,7 +415,7 @@ public theorem initToSetStepSA {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasIde
         let σ_tgt' : SemanticStore P := fun z => if z = y then some v else ρ_tgt.store z
         have h_tgt_y : σ_tgt' y = some v := by show (if y = y then _ else _) = _; simp
         have h_tgt_oth : ∀ z, y ≠ z → σ_tgt' z = ρ_tgt.store z := by
-          intro z hyz; show (if z = y then _ else _) = _; rw [if_neg (fun h => hyz h.symm)]
+          intro z hyz; show (if z = y then _ else _) = _; rw [ite_eq_right (fun h => hyz h.symm)]
         refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || false },
           .step_cmd (EvalCmd.eval_set h_eval_tgt
             (UpdateState.update h_tgt_y_old h_tgt_y h_tgt_oth)
@@ -2243,7 +2243,7 @@ theorem initToSetStepSA_nondet {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
         let σ_tgt' : SemanticStore P := fun z => if z = y then some v else ρ_tgt.store z
         have h_tgt_y : σ_tgt' y = some v := by show (if y = y then _ else _) = _; simp
         have h_tgt_oth : ∀ z, y ≠ z → σ_tgt' z = ρ_tgt.store z := by
-          intro z hyz; show (if z = y then _ else _) = _; rw [if_neg (fun h => hyz h.symm)]
+          intro z hyz; show (if z = y then _ else _) = _; rw [ite_eq_right (fun h => hyz h.symm)]
         refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || false },
           .step_cmd (EvalCmd.eval_set_nondet
             (UpdateState.update h_tgt_y_old h_tgt_y h_tgt_oth)
@@ -3082,11 +3082,11 @@ theorem typedInitVarsLookup_agrees {P : PureExpr} [HasBool P] [DecidableEq P.Ide
     obtain ⟨ha_notin, h_rest_nodup⟩ := h_nodup
     rw [typedInitVarsLookup]
     by_cases hpa : a.1 = p.1
-    · rw [if_pos hpa]
+    · rw [ite_eq_left hpa]
       rcases List.mem_cons.mp hp with h_eq | h_rest
       · rw [h_eq]
       · exfalso; apply ha_notin; rw [hpa]; exact List.mem_map.mpr ⟨p, h_rest, rfl⟩
-    · rw [if_neg hpa]
+    · rw [ite_eq_right hpa]
       rcases List.mem_cons.mp hp with h_eq | h_rest
       · exact absurd (congrArg Prod.fst h_eq).symm hpa
       · exact ih h_rest_nodup h_rest
@@ -3433,7 +3433,7 @@ theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       intro z hz
       have h_zy : z ≠ y := fun h => h_y_notin (h ▸ hz)
       show SemanticStore.update ρ_h.store y v z = none
-      simp only [SemanticStore.update, if_neg h_zy]
+      simp only [SemanticStore.update, ite_eq_right h_zy]
       exact h_tgt_none z (by simp [preludeNames] at hz ⊢; exact Or.inr hz)
     -- the accumulator stays typed across the head havoc; add `y : ty`.
     have h_head_star : StepStmtStar P (EvalCmd P)

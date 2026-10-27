@@ -79,6 +79,34 @@ instance instAllInhab : TyConstrInterp.AllInhabited tcInterp := ⟨fun _ _ => �
   | .bitvec n => decodeAt (.bitvec n) (ceval default acc)
   | .tcons nm args => decodeAt (.tcons nm args) (ceval default acc)
 
+/-! Equations for `gatherEval` at the primitive output sorts. Lean cannot generate
+`gatherEval`'s equation lemmas automatically, so we state the cases used below
+directly. -/
+
+theorem gatherEval_bool
+    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (acc : List (LExpr T.mono)) :
+    gatherEval ceval acc (.tcons "bool" []) =
+      decodeAt (.tcons "bool" []) (ceval default acc) := rfl
+
+theorem gatherEval_int
+    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (acc : List (LExpr T.mono)) :
+    gatherEval ceval acc (.tcons "int" []) =
+      decodeAt (.tcons "int" []) (ceval default acc) := rfl
+
+theorem gatherEval_string
+    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (acc : List (LExpr T.mono)) :
+    gatherEval ceval acc (.tcons "string" []) =
+      decodeAt (.tcons "string" []) (ceval default acc) := rfl
+
+theorem gatherEval_bitvec
+    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (acc : List (LExpr T.mono)) (n : Nat) :
+    gatherEval ceval acc (.bitvec n) =
+      decodeAt (.bitvec n) (ceval default acc) := rfl
+
 /-- The dynamic operator interpretation: look up the factory function by name
 and, if it has a `concreteEval`, build its denotation by reifying arguments,
 calling `concreteEval`, and decoding the result. -/
@@ -216,8 +244,7 @@ private theorem unaryOp_consistent
       rw [hca] at heval
       simp only [Option.some.injEq] at heval
       subst heval
-      simp only [List.map_cons, List.map_nil, LSort.mkArrow, opInterp, hlook, hce,
-                 gatherEval, denoteArgs, List.nil_append]
+      simp only [opInterp, hlook, hce, denoteArgs]
       show LExpr.denote tcInterp opInterp fvarVal vt HList.nil (OutPrim.mkOut outTy md (f av)) outTy h_result
           = gatherEval ceval [reifyAt (LMonoTy.substTyVars vt inTy)
               (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy hx)] (LMonoTy.substTyVars vt outTy)
@@ -272,8 +299,7 @@ private theorem binaryOp_consistent
           · rename_i hg
             simp only [Option.some.injEq] at heval
             subst heval
-            simp only [List.map_cons, List.map_nil, LSort.mkArrow, opInterp, hlook, hce,
-                       gatherEval, denoteArgs, List.nil_append, List.cons_append]
+            simp only [opInterp, hlook, hce, denoteArgs]
             show LExpr.denote tcInterp opInterp fvarVal vt HList.nil
                   (OutPrim.mkOut outTy md (g av bv)) outTy h_result
                 = gatherEval ceval
@@ -286,7 +312,7 @@ private theorem binaryOp_consistent
                 InPrim.reify_ceval fvarVal vt a hx av hca,
                 InPrim.reify_ceval fvarVal vt a2 hy bv hcb,
                 OutPrim.denote_decode fvarVal vt md default (g av bv) h_result]
-            simp only [hg, if_true]
+            simp only [hg, ite_true]
           · simp at heval
 
 /-! ### Primitive bridge instances -/
@@ -318,7 +344,7 @@ instance : InPrim LMonoTy.bool Bool where
 instance : OutPrim LMonoTy.bool Bool where
   mkOut := fun md w => .const md (.boolConst w)
   closed := by decide
-  gather_eq := by intro vt ceval acc; rfl
+  gather_eq := by intro vt ceval acc; exact gatherEval_bool ceval acc
   denote_decode := by
     intro fvarVal vt md md' w h
     simp only [LMonoTy.bool] at h ⊢
@@ -366,8 +392,7 @@ private theorem shortCircuit_consistent
       | none => rw [hca] at heval; simp at heval
       | some av =>
         rw [hca] at heval
-        simp only [List.map_cons, List.map_nil, LSort.mkArrow, opInterp, hlook, hce,
-                   gatherEval, denoteArgs, List.nil_append, List.cons_append]
+        simp only [opInterp, hlook, hce, denoteArgs]
         show LExpr.denote tcInterp opInterp fvarVal vt HList.nil resultExpr LMonoTy.bool h_result
             = gatherEval ceval
                 [reifyAt (LMonoTy.substTyVars vt LMonoTy.bool)
@@ -379,10 +404,10 @@ private theorem shortCircuit_consistent
             InPrim.reify_ceval fvarVal vt a hx av hca]
         simp only at heval ⊢
         cases hg : (av == absorb)
-        · simp only [hg, Bool.false_eq_true, if_false, Option.some.injEq] at heval ⊢
+        · simp only [hg, Bool.false_eq_true, ite_false, Option.some.injEq] at heval ⊢
           subst heval
           rfl
-        · simp only [hg, if_true, Option.some.injEq] at heval ⊢
+        · simp only [hg, ite_true, Option.some.injEq] at heval ⊢
           subst heval
           exact OutPrim.denote_decode fvarVal vt md default decided h_result
 
@@ -413,7 +438,7 @@ instance : InPrim LMonoTy.int Int where
 instance : OutPrim LMonoTy.int Int where
   mkOut := fun md w => .const md (.intConst w)
   closed := by decide
-  gather_eq := by intro vt ceval acc; rfl
+  gather_eq := by intro vt ceval acc; exact gatherEval_int ceval acc
   denote_decode := by
     intro fvarVal vt md md' w h
     simp only [LMonoTy.int] at h ⊢
@@ -446,7 +471,7 @@ instance : InPrim LMonoTy.string String where
 instance : OutPrim LMonoTy.string String where
   mkOut := fun md w => .const md (.strConst w)
   closed := by decide
-  gather_eq := by intro vt ceval acc; rfl
+  gather_eq := by intro vt ceval acc; exact gatherEval_string ceval acc
   denote_decode := by
     intro fvarVal vt md md' w h
     rw [Lambda.denote_strConst (T := T) tcInterp opInterp fvarVal vt .nil h]
@@ -490,11 +515,13 @@ instance (n : Nat) : InPrim (.bitvec n) (BitVec n) where
 instance (n : Nat) : OutPrim (.bitvec n) (BitVec n) where
   mkOut := fun md w => .const md (.bitvecConst n w)
   closed := by rfl
-  gather_eq := by intro vt ceval acc; rfl
+  gather_eq := by intro vt ceval acc; exact gatherEval_bitvec ceval acc n
   denote_decode := by
     intro fvarVal vt md md' w h
     rw [Lambda.denote_bitvecConst (T := T) tcInterp opInterp fvarVal vt .nil h]
-    simp [decodeAt, LMonoTy.substTyVars]
+    show w = decodeAt (.bitvec n) (some (.const md' (.bitvecConst n w)))
+    unfold decodeAt
+    simp
 
 set_option maxRecDepth 750 in
 set_option maxHeartbeats 500000 in

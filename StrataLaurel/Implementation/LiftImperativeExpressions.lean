@@ -260,7 +260,7 @@ Assignments are lifted to prependedStmts and replaced with snapshot variable ref
 With `discard` set the caller drops the result, so none is computed.
 -/
 def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExprMd := do
-  match h_node : expr with
+  match _h_node : expr with
   | AstNode.mk val source =>
   match h_val : val with
   | .Var (.Local name) =>
@@ -275,10 +275,8 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       prepend ⟨ .Var (.Declare ⟨holeVar, some holeType⟩), source⟩
       return ⟨ .Var (.Local holeVar), source ⟩
 
-  | .Assign targets value =>
-      let firstTarget ← match targets with
-        | head :: _ => pure head
-        | _ => return expr
+  | .Assign targets _ =>
+      let some firstTarget := targets.head? | return expr
       let target ← match firstTarget.val with
         | .Local varName => pure varName
         | .Declare param => pure param.name
@@ -494,7 +492,7 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
     all_goals first
       | (apply Prod.Lex.left; (try have := Condition.sizeOf_condition_lt ‹_›); term_by_mem)
       | (apply Prod.Lex.left; simp <;> omega)
-      | (try subst h_node; try subst h_val; apply Prod.Lex.right; omega)
+      | (try subst _h_node; try subst h_val; apply Prod.Lex.right; omega)
 
 def transformStmtAssignImperativeCall
     (targets : List (AstNode Variable))

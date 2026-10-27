@@ -306,30 +306,25 @@ theorem varOpen_HasTypeA {T : LExprParams}
 /-! ### Inversion lemmas for `HasTypeA`
 
 These extract subexpression types and typing proofs from a `HasTypeA` proof,
-using the computable `typeCheck` function. They live in `Type` (not `Prop`)
-so their results can be used in the definition of `denote`. -/
+using the computable `typeCheck` function. -/
 
 /-- From `HasTypeA Δ (.const m c) τ`, conclude `τ = c.ty`. -/
-@[expose]
-def HasTypeA.const_inv {T : LExprParams} {Δ : List LMonoTy} {m c τ}
+theorem HasTypeA.const_inv {T : LExprParams} {Δ : List LMonoTy} {m c τ}
     (h : @LExpr.HasTypeA T Δ (.const m c) τ) : τ = c.ty := by
   cases h; rfl
 
 /-- From `HasTypeA Δ (.op m o (some ty)) τ`, conclude `τ = ty`. -/
-@[expose]
-def HasTypeA.op_inv {T : LExprParams} {Δ : List LMonoTy} {m o ty τ}
+theorem HasTypeA.op_inv {T : LExprParams} {Δ : List LMonoTy} {m o ty τ}
     (h : @LExpr.HasTypeA T Δ (.op m o (some ty)) τ) : τ = ty := by
   cases h; rfl
 
 /-- From `HasTypeA Δ (.fvar m x (some ty)) τ`, conclude `τ = ty`. -/
-@[expose]
-def HasTypeA.fvar_inv {T : LExprParams} {Δ : List LMonoTy} {m x ty τ}
+theorem HasTypeA.fvar_inv {T : LExprParams} {Δ : List LMonoTy} {m x ty τ}
     (h : @LExpr.HasTypeA T Δ (.fvar m x (some ty)) τ) : τ = ty := by
   cases h; rfl
 
 /-- From `HasTypeA Δ (.bvar m i) τ`, conclude `Δ[i]? = some τ`. -/
-@[expose]
-def HasTypeA.bvar_inv {T : LExprParams} {Δ : List LMonoTy} {m i τ}
+theorem HasTypeA.bvar_inv {T : LExprParams} {Δ : List LMonoTy} {m i τ}
     (h : @LExpr.HasTypeA T Δ (.bvar m i) τ) : Δ[i]? = some τ := by
   cases h; assumption
 
@@ -392,8 +387,7 @@ def HasTypeA.app_inv {T : LExprParams} {Δ : List LMonoTy} {m fn arg τ}
 
 /-- From `HasTypeA Δ (.ite m c t e) τ`, extract sub-proofs for condition,
 then-branch, and else-branch. -/
-@[expose]
-def HasTypeA.ite_inv {T : LExprParams} {Δ : List LMonoTy} {m c t e τ}
+theorem HasTypeA.ite_inv {T : LExprParams} {Δ : List LMonoTy} {m c t e τ}
     (h : @LExpr.HasTypeA T Δ (.ite m c t e) τ)
     : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ := by
   have r := LExpr.HasTypeA_to_typeCheck h

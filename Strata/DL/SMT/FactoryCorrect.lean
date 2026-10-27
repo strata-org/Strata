@@ -40,7 +40,7 @@ private theorem denoteBoolTermAux_extract {t : Term} {p : Prop}
   simp only [denoteBoolTermAux] at h
   split at h
   · rename_i _ _ fi _
-    exact ⟨fi, by grind, by grind⟩
+    exact ⟨fi, by grind, by cases h; exact Iff.rfl⟩
   · grind
 
 /-- Extract denoteTerm witness from denoteIntTermAux. -/
@@ -343,8 +343,7 @@ theorem Factory.intNeg_correct {t : Term} {n : Int}
   obtain ⟨f, hdt, rfl⟩ := denoteIntTermAux_extract h
   unfold Factory.intNeg
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt; subst hdt
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt; cases hdt
     simp only [denoteIntTermAux, denoteTerm, Int.neg, Nat.succ_eq_add_one, Int.natCast_add,
                Int.cast_ofNat_Int, Option.pure_def, Option.some.injEq]; rfl
   · simp [denoteIntTermAux, denoteTerm, hdt]
@@ -357,8 +356,7 @@ theorem Factory.intAdd_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intAdd Factory.intapp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp [denoteIntTermAux, denoteTerm]
   · simp [denoteIntTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -370,8 +368,7 @@ theorem Factory.intSub_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intSub Factory.intapp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq]; rfl
   · simp [denoteIntTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -383,8 +380,7 @@ theorem Factory.intMul_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intMul Factory.intapp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp [denoteIntTermAux, denoteTerm]
   · simp [denoteIntTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -396,14 +392,12 @@ theorem Factory.intAbs_correct {t : Term} {n : Int}
   unfold Factory.intAbs
   split
   · next i =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt
-    subst hdt
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt
+    cases hdt
     by_cases hlt : i < 0 <;>
       grind [denoteIntTermAux, denoteTerm, Option.pure_def, Int.natAbs_of_nonneg, Int.natAbs_neg]
   · simp only [denoteIntTermAux, denoteTerm, hdt, Option.pure_def, Option.bind_eq_bind,
-               Option.bind_some, Option.some.injEq]
-    split <;> rfl
+               Option.bind_some]
 
 /-- `Factory.intDiv` preserves `denoteIntTermAux` semantics. -/
 theorem Factory.intDiv_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
@@ -413,8 +407,7 @@ theorem Factory.intDiv_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intDiv Factory.intapp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq]; rfl
   · simp [denoteIntTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -426,8 +419,7 @@ theorem Factory.intMod_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteIntTermAux_extract h₂
   unfold Factory.intMod Factory.intapp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq]; rfl
   · simp [denoteIntTermAux, denoteTerm, hdt₁, hdt₂]
 
@@ -442,8 +434,7 @@ theorem Factory.intLe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   unfold Factory.intLe Factory.intcmp
   split
   · next i₁ i₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     rw [denoteBool_prim_bool]; simp
   · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
@@ -456,8 +447,7 @@ theorem Factory.intLt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   unfold Factory.intLt Factory.intcmp
   split
   · next i₁ i₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     rw [denoteBool_prim_bool]; simp
   · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
@@ -470,8 +460,7 @@ theorem Factory.intGe_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   unfold Factory.intGe Factory.intcmp
   split
   · next i₁ i₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     rw [denoteBool_prim_bool]; simp
   · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
@@ -484,8 +473,7 @@ theorem Factory.intGt_correct {t₁ t₂ : Term} {n₁ n₂ : Int}
   unfold Factory.intGt Factory.intcmp
   split
   · next i₁ i₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               heq_eq_eq, true_and] at hdt₁ hdt₂; subst hdt₁; subst hdt₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂; cases hdt₁; cases hdt₂
     rw [denoteBool_prim_bool]; simp
   · simp [denoteBoolTermAux, denoteTerm, denoteTerms, chainable, chainable.go, hdt₁, hdt₂]
 
@@ -499,10 +487,8 @@ theorem Factory.bvneg_correct {n : Nat} {t : Term} {x : BitVec n}
   unfold Factory.bvneg
   split
   · next m b =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt
-    obtain ⟨hmn, hf⟩ := hdt
-    subst hmn; subst hf
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt
+    cases hdt
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, hdt]
 
@@ -515,11 +501,8 @@ theorem Factory.bvadd_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   unfold Factory.bvadd Factory.bvapp
   split
   · next m b₁ b₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -532,11 +515,8 @@ theorem Factory.bvsub_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   unfold Factory.bvsub Factory.bvapp
   split
   · next m b₁ b₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -549,11 +529,8 @@ theorem Factory.bvmul_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   unfold Factory.bvmul Factory.bvapp
   split
   · next m b₁ b₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
 
@@ -566,11 +543,8 @@ theorem Factory.bvshl_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   unfold Factory.bvshl Factory.bvapp
   split
   · next m b₁ b₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, hdt₁, hdt₂]
 
@@ -583,12 +557,8 @@ theorem Factory.bvlshr_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   unfold Factory.bvlshr Factory.bvapp
   split
   · next m b₁ b₂ =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq,
-        TermDenoteResult.mk.injEq, TermType.prim.injEq,
-        TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp [denoteBVTermAux, denoteTerm]
   · simp [denoteBVTermAux, denoteTerm, hdt₁, hdt₂]
 
@@ -656,11 +626,8 @@ theorem Factory.bvslt_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvslt Factory.bvcmp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp only [BitVec.ofNat_toNat_self]
     exact denoteBool_prim_bool _
   · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
@@ -673,11 +640,8 @@ theorem Factory.bvsle_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsle Factory.bvcmp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp only [BitVec.ofNat_toNat_self]
     exact denoteBool_prim_bool _
   · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
@@ -690,11 +654,8 @@ theorem Factory.bvult_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvult Factory.bvcmp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     simp only [BitVec.ofNat_toNat_self]
     rw [denoteBool_prim_bool]; simp [BitVec.ult_iff_lt]
   · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
@@ -707,14 +668,11 @@ theorem Factory.bvule_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvule Factory.bvcmp
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     rename_i b₂ b₁
     simp only [BitVec.ofNat_toNat_self]
-    have hule_iff : BitVec.ule b₁ b₂ = true ↔ b₁ ≤ b₂ := by
+    have hule_iff : ∀ a b : BitVec n, BitVec.ule a b = true ↔ a ≤ b := fun a b => by
       rw [BitVec.ule_eq_decide]; exact ⟨of_decide_eq_true, decide_eq_true⟩
     rw [denoteBool_prim_bool]; simp [hule_iff]
   · simp [denoteBoolTermAux, denoteTerm, hdt₁, hdt₂]
@@ -729,10 +687,8 @@ theorem Factory.bvnego_correct {n : Nat} {t : Term} {x : BitVec n}
   unfold Factory.bvnego
   split
   · next m b =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt
-    obtain ⟨hmn, hf⟩ := hdt
-    subst hmn; subst hf
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt
+    cases hdt
     rw [BitVec.overflows_neg_eq_negOverflow]
     exact denoteBool_prim_bool _
   · simp [denoteBoolTermAux, denoteTerm, hdt]
@@ -745,11 +701,8 @@ theorem Factory.bvsaddo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsaddo Factory.bvso
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     rename_i b₂ b₁
     rw [overflows_eq_saddOverflow]
     exact denoteBool_prim_bool _
@@ -763,11 +716,8 @@ theorem Factory.bvssubo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvssubo Factory.bvso
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     rename_i b₂ b₁
     rw [overflows_eq_ssubOverflow]
     exact denoteBool_prim_bool _
@@ -781,11 +731,8 @@ theorem Factory.bvsmulo_correct {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   obtain ⟨f₂, hdt₂, rfl⟩ := denoteBVTermAux_extract h₂
   unfold Factory.bvsmulo Factory.bvso
   split
-  · simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt₁ hdt₂
-    obtain ⟨hmn₁, hf₁⟩ := hdt₁
-    obtain ⟨hmn₂, hf₂⟩ := hdt₂
-    subst hmn₁; subst hmn₂; subst hf₁; subst hf₂
+  · simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt₁ hdt₂
+    cases hdt₁; cases hdt₂
     rename_i b₂ b₁
     rw [overflows_eq_smulOverflow]
     exact denoteBool_prim_bool _
@@ -838,7 +785,7 @@ theorem Factory.eq_correct_bool {t₁ t₂ : Term} {p₁ p₂ : Prop}
         subst h1; subst h2
         simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, denoteTerms, chainable, chainable.go,
-                   dif_pos trivial]
+                   dite_eq_left trivial]
         exact congrArg some (propext ⟨fun h => h ▸ Iff.rfl, propext⟩)
 
 /-- `Factory.eq` preserves `denoteBoolTermAux` semantics on integer arguments. -/
@@ -973,7 +920,7 @@ theorem Factory.ite_correct_bool {t₁ t₂ t₃ : Term} {p₁ p₂ p₃ : Prop}
     rcases or_decide_true hcond with ht | heq
     · subst ht
       have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool true)
-      rw [h₂, hp₁, if_pos rfl]
+      rw [h₂, hp₁, ite_eq_left rfl]
     · subst heq
       cases denoteBoolTermAux_eq h₂ h₃
       rw [h₂]
@@ -981,7 +928,7 @@ theorem Factory.ite_correct_bool {t₁ t₂ t₃ : Term} {p₁ p₂ p₃ : Prop}
   · split
     · rename_i _ hf; subst hf
       have hp₁ := denoteBoolTermAux_eq h₁ (denoteBool_prim_bool false)
-      rw [h₃, hp₁, if_neg (by decide)]
+      rw [h₃, hp₁, ite_eq_right (by decide)]
     · split
       · exfalso
         simp only [denoteBoolTermAux, denoteTerm] at h₂
@@ -993,12 +940,12 @@ theorem Factory.ite_correct_bool {t₁ t₂ t₃ : Term} {p₁ p₂ p₃ : Prop}
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
         obtain ⟨f₃, hdt₃, hiff₃⟩ := denoteBoolTermAux_extract h₃
         simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
-                   Option.bind_some, hdt₁, hdt₂, hdt₃, dif_pos trivial]
+                   Option.bind_some, hdt₁, hdt₂, hdt₃, dite_eq_left trivial]
         by_cases hp₁ : p₁
-        · rw [if_pos hp₁, if_pos (hiff₁.mpr hp₁)]
-          exact congrArg some (propext hiff₂)
-        · rw [if_neg hp₁, if_neg (fun h => hp₁ (hiff₁.mp h))]
-          exact congrArg some (propext hiff₃)
+        · rw [ite_eq_left hp₁]
+          exact congrArg some ((ite_eq_left (hiff₁.mpr hp₁)).trans (propext hiff₂))
+        · rw [ite_eq_right hp₁]
+          exact congrArg some ((ite_eq_right (fun h => hp₁ (hiff₁.mp h))).trans (propext hiff₃))
 
 open Classical in
 /-- `Factory.ite` preserves `denoteIntTermAux` semantics for integer branches. -/
@@ -1032,8 +979,8 @@ theorem Factory.ite_correct_int {t₁ t₂ t₃ : Term} {p₁ : Prop} {n₂ n₃
         simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, hdt₃]
         by_cases hp₁ : p₁
-        · rw [if_pos hp₁]; simp [if_pos (hiff₁.mpr hp₁)]
-        · rw [if_neg hp₁]; simp [if_neg (fun h => hp₁ (hiff₁.mp h))]
+        · rw [ite_eq_left hp₁]; exact congrArg some (ite_eq_left (hiff₁.mpr hp₁))
+        · rw [ite_eq_right hp₁]; exact congrArg some (ite_eq_right (fun h => hp₁ (hiff₁.mp h)))
 
 open Classical in
 /-- `Factory.ite` preserves `denoteBVTermAux` semantics for bitvector branches. -/
@@ -1067,8 +1014,8 @@ theorem Factory.ite_correct_bv {n : Nat} {t₁ t₂ t₃ : Term} {p₁ : Prop} {
         simp only [denoteBVTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, hdt₃]
         by_cases hp₁ : p₁
-        · rw [if_pos hp₁]; simp [if_pos (hiff₁.mpr hp₁)]
-        · rw [if_neg hp₁]; simp [if_neg (fun h => hp₁ (hiff₁.mp h))]
+        · rw [ite_eq_left hp₁]; simp only [↓reduceDIte]; exact congrArg some (ite_eq_left (hiff₁.mpr hp₁))
+        · rw [ite_eq_right hp₁]; simp only [↓reduceDIte]; exact congrArg some (ite_eq_right (fun h => hp₁ (hiff₁.mp h)))
 
 open Classical in
 /-- `Factory.ite` preserves `denoteStringTermAux` semantics for string branches. -/
@@ -1102,8 +1049,8 @@ theorem Factory.ite_correct_string {t₁ t₂ t₃ : Term} {p₁ : Prop} {s₂ s
         simp only [denoteStringTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind,
                    Option.bind_some, hdt₁, hdt₂, hdt₃]
         by_cases hp₁ : p₁
-        · rw [if_pos hp₁]; simp [if_pos (hiff₁.mpr hp₁)]
-        · rw [if_neg hp₁]; simp [if_neg (fun h => hp₁ (hiff₁.mp h))]
+        · rw [ite_eq_left hp₁]; exact congrArg some (ite_eq_left (hiff₁.mpr hp₁))
+        · rw [ite_eq_right hp₁]; exact congrArg some (ite_eq_right (fun h => hp₁ (hiff₁.mp h)))
 
 /-! ## Bitvector extension correctness -/
 
@@ -1116,10 +1063,8 @@ theorem Factory.zero_extend_correct {m n : Nat} {t : Term} {x : BitVec m}
   unfold Factory.zero_extend
   split
   · next k b =>
-    simp only [denoteTerm, Option.pure_def, Option.some.injEq, TermDenoteResult.mk.injEq,
-               TermType.prim.injEq, TermPrimType.bitvec.injEq] at hdt
-    obtain ⟨hkm, hf⟩ := hdt
-    subst hkm; subst hf
+    simp only [denoteTerm, Option.pure_def, Option.some.injEq] at hdt
+    cases hdt
     grind [denoteBVTermAux, denoteTerm, Option.pure_def, Nat.add_comm]
   · grind [denoteBVTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind]
 
@@ -1298,7 +1243,7 @@ private theorem denoteTerm_quant_coalesce (qk : QuantifierKind) (ctx : Context) 
       · -- both hold ⇒ merged guard holds too; every `dite` takes its `then` branch
         have hmerged : (denoteFunSort ctx.sctx (ty :: args2.map (·.ty)) (.prim .bool)).isSome = true :=
           denoteFunSort_cons_isSome_iff.mpr ⟨hhd, htl⟩
-        rw [dif_pos hmerged, dif_pos hhd', dif_pos htl]
+        rw [dite_eq_left hmerged, dite_eq_left hhd', dite_eq_left htl]
         have hctx : ({ sctx := ctx.sctx, tctx := { vs := ({ id := x, ty := ty } :: args2).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context)
             = { sctx := ctx.sctx, tctx := { vs := args2.reverse ++ ([{ id := x, ty := ty }].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } } := by
           simp [List.reverse_cons]
@@ -1339,12 +1284,12 @@ private theorem denoteTerm_quant_coalesce (qk : QuantifierKind) (ctx : Context) 
             | _ => rw [eqrec_result hctx]; rfl
           | _ => rw [eqrec_result hctx]; rfl
       · -- tail guard fails ⇒ merged guard fails, and the nested inner produces `none`; both sides `none`
-        rw [dif_neg (fun h => htl (denoteFunSort_cons_isSome_iff.mp h).2),
-            dif_pos hhd', dif_neg htl]
+        rw [dite_eq_right (fun h => htl (denoteFunSort_cons_isSome_iff.mp h).2),
+            dite_eq_left hhd', dite_eq_right htl]
         rfl
     · -- head guard fails ⇒ both the merged guard and the nested-outer `[ty]` guard fail; both `none`
-      rw [dif_neg (fun h => hhd (denoteFunSort_cons_isSome_iff.mp h).1),
-          dif_neg (fun h => hhd (denoteFunSort_singleton_bool_isSome_iff.mp h))]
+      rw [dite_eq_right (fun h => hhd (denoteFunSort_cons_isSome_iff.mp h).1),
+          dite_eq_right (fun h => hhd (denoteFunSort_singleton_bool_isSome_iff.mp h))]
 
 /-- **Coalescing preserves denotation.** `Factory.quant qk x ty tr e` wraps `e` in a
     single-variable quantifier, but when `e` is itself a same-kind quantifier and the outer
@@ -1362,7 +1307,7 @@ theorem Factory.quant_correct (ctx : Context) (qk : QuantifierKind)
     -- The coalescing guard: same kind + simple outer trigger.
     simp only [Factory.quant]
     by_cases hg : (decide (qk = qk2) && Factory.isSimpleTrigger tr) = true
-    · rw [if_pos hg]
+    · rw [ite_eq_left hg]
       -- coalescing fires: merged multi-var binder vs nested single-var binders.
       -- From the guard, the two quantifier kinds coincide.
       obtain ⟨hqk, _⟩ := Bool.and_eq_true .. ▸ hg
@@ -1377,5 +1322,5 @@ theorem Factory.quant_correct (ctx : Context) (qk : QuantifierKind)
       -- Given that, the outer `buildForall`/`buildExists` collapses by its
       -- own `buildQuant` cons-step (nil tail on the naive side), modulo the `▸` transport.
       exact denoteTerm_quant_coalesce qk ctx x ty tr _ tr2 args2 e2
-    · rw [if_neg hg]
+    · rw [ite_eq_right hg]
   | _ => rfl

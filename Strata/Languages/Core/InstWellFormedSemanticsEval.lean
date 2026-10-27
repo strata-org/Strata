@@ -59,7 +59,7 @@ theorem Lambda.LExpr.evalFully_outputs_value (f : Expression.Factory)
 
 /-- The Core evaluator's value behavior is well-formed: `evalFully` returns only
     values on well-formed stores, and is the identity on values. -/
-@[expose] def coreEvaluator_WellFormedSemanticEvalVal (f : Expression.Factory) :
+theorem coreEvaluator_WellFormedSemanticEvalVal (f : Expression.Factory) :
     WellFormedSemanticEvalVal (P := Expression) f where
   outputsAreValues := fun v v' σ _hwfs heval =>
     Lambda.LExpr.evalFully_outputs_value f σ v v' heval
@@ -70,7 +70,7 @@ theorem Lambda.LExpr.evalFully_outputs_value (f : Expression.Factory)
 
 /-- The Core evaluator resolves free variables via the store: evaluating a free
     variable yields its store binding (on well-formed stores). -/
-@[expose] def coreEvaluator_WellFormedSemanticEvalVar (f : Expression.Factory) :
+theorem coreEvaluator_WellFormedSemanticEvalVar (f : Expression.Factory) :
     WellFormedSemanticEvalVar (P := Expression) f := by
   intro e v σ hwfs hget
   cases e with
@@ -101,7 +101,6 @@ theorem coreEvaluator_WellFormedSemanticEvalMono (f : Expression.Factory) :
     WellFormedSemanticEvalMono (P := Expression) f :=
   fun e v σ σ' hext heval => Lambda.evalFully_mono f σ σ' hext e v heval
 
-open Lambda in
 /-- Characterization of `eval (n+1) (not e)` as a `.value true` result:  it is
     `.value true` iff `eval n e` was itself `.value true` on a `boolConst β`.
     (This mirrors the old `.value`-flavored iff, but the new
@@ -131,13 +130,13 @@ theorem eval_boolNot_value_iff
     rw [hBN]
     simp [Lambda.boolNotFunc, Lambda.unaryOp]
   simp only [Lambda.LExpr.eval]
-  rw [if_neg (by simp [hcan]), hcall]
+  rw [ite_eq_right (by simp [hcan]), hcall]
   dsimp only
   rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
     (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, Lambda.boolNotFunc, Lambda.unaryOp])]
   dsimp only
-  simp only [Lambda.boolNotFunc, Lambda.unaryOp]
-  rw [dif_neg (by simp)]
+  simp only [Lambda.boolNotFunc, Lambda.unaryOp, Option.isSome_none, Bool.false_and,
+    Bool.false_eq_true, ↓reduceDIte]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
   have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.or_false, Bool.and_true]
@@ -164,7 +163,7 @@ theorem eval_boolNot_value_iff
       | _ => simp [Lambda.LExpr.denoteBool] at hx
     | _ => simp [Lambda.LExpr.denoteBool] at hx
   by_cases hcv : Lambda.LExpr.isValue f (Lambda.LExpr.eval n f σ e).fst = true
-  · rw [if_pos hcv]
+  · rw [ite_eq_left hcv]
     rcases hd : (Lambda.LExpr.eval n f σ e).fst.denoteBool with _ | β
     · simp only []
       constructor
@@ -218,7 +217,7 @@ theorem eval_boolNot_value_iff
         subst hd
         rw [hv]
         simp [hβ'snd, Lambda.LExpr.EvalResult.isValueTrue]
-  · rw [if_neg hcv]
+  · rw [ite_eq_right hcv]
     constructor
     · intro h; exact absurd h (by simp)
     · rintro ⟨β, hβ, _⟩
@@ -227,7 +226,6 @@ theorem eval_boolNot_value_iff
       rw [hβfst, hcanb () β] at hcv
       exact absurd hcv (by simp)
 
-open Lambda in
 /-- The Core evaluator (`evalFully`) is well-formed with respect to boolean
     negation: `e` evaluates to `true` iff `not e` evaluates to `false`, and
     dually.  This holds given only that `Bool.Not` resolves in the factory to
@@ -403,7 +401,6 @@ theorem coreFactory_WellFormedSemanticEvalBool :
 ## `WellFormedSemanticEvalInt` for Core
 -/
 
-open Lambda in
 /-- Generic reduction for a binary integer operation applied to two numerals. When
     `x` and `y` reduce to the integer numerals `a` and `b` at fuel `n` with
     `.value true`, the application of `binaryOp name op` to `x` and `y` reduces at
@@ -449,13 +446,13 @@ private theorem eval_intBinOp_value_of_numerals
       Lambda.LExpr.isValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
     intro a; simp [Lambda.LExpr.isValue, Lambda.LExpr.intConst]
   simp only [Lambda.LExpr.eval]
-  rw [if_neg (by simp [hcan]), hcall]
+  rw [ite_eq_right (by simp [hcan]), hcall]
   dsimp only
   rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
     (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, Lambda.binaryOp])]
   dsimp only
   simp only [Lambda.binaryOp]
-  rw [dif_neg (by simp)]
+  rw [dite_eq_right (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
   have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
@@ -466,9 +463,9 @@ private theorem eval_intBinOp_value_of_numerals
   simp only [hcev]
   have hdenote : Lambda.LExpr.denoteInt (Lambda.LExpr.intConst () a : Expression.Expr) = some a := rfl
   have hdenote' : Lambda.LExpr.denoteInt (Lambda.LExpr.intConst () b : Expression.Expr) = some b := rfl
-  rw [if_pos (by simp [hcani])]
+  rw [ite_eq_left (by simp [hcani])]
   simp only [hdenote, hdenote']
-  simp only [if_true]
+  simp only [ite_true]
   rw [Lambda.eval_value_identity n f σ _ hval]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
 
@@ -548,7 +545,6 @@ theorem eval_intMul_value_of_numerals
   eval_intBinOp_value_of_numerals (OutValTy := Int) f σ x y n a b "Int.Mul" Int.mul (by decide)
     hIMul (Lambda.isValue_const_true f () (.intConst (a * b))) hx hy
 
-open Lambda in
 /-- The Core evaluator satisfies `WellFormedSemanticEvalInt` when the factory
     resolves `Int.Lt` to `intLtFunc`. -/
 theorem coreEvaluator_WellFormedSemanticEvalInt (f : Expression.Factory)
@@ -694,7 +690,6 @@ def coreIntLeOpExpr : Expression.Expr := (Lambda.intLeFunc (T := CoreLParams)).o
 /-- The concrete `Int.Add` operator expression on `Core.Factory`; see `coreIntLeOpExpr`. -/
 def coreIntAddOpExpr : Expression.Expr := (Lambda.intAddFunc (T := CoreLParams)).opExpr
 
-open Lambda in
 /-- **`int.le(yv, 9)` on `Core.Factory`.**  If `yv` evaluates to the numeral `n`, the
     comparison evaluates to `boolConst (n ≤ 9)`.  Phrased over `coreIntLeOpExpr` and
     `Expression.eval = evalFully` so a test can apply it to a translated guard directly. -/
@@ -719,7 +714,6 @@ theorem coreEval_intLe_numeral (σ : CoreStore) (yv : Expression.Expr) (n : Int)
         (Lambda.LExpr.intConst () 9)) = _
   exact Lambda.evalFully_of_value_true Core.Factory σ _ _ _ hstep
 
-open Lambda in
 /-- **`int.add(yv, 1)` on `Core.Factory`.**  If `yv` evaluates to the numeral `n`, the
     sum evaluates to the numeral `n + 1`. -/
 theorem coreEval_intAdd_numeral (σ : CoreStore) (yv : Expression.Expr) (n : Int)
@@ -787,7 +781,7 @@ theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
 ## Instance of the full `WellFormedSemanticEval` bundle
 --/
 
-def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
+theorem coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
     (hWF : Lambda.FactoryWF f)
     (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func)
     (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func) :
