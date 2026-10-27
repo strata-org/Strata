@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StoreRelations
 public import Strata.DL.Imperative.Stmt
 public import Strata.Util.RelationsProps
 
@@ -42,6 +43,12 @@ structure Env (P : PureExpr) where
   /-- Cumulative failure flag — `true` once any command has signalled failure. -/
   hasFailure : Bool := false
 
+/-- Lift a predicate on generated strings to the identifiers representing those
+strings. -/
+@[expose] def IdentOfStringKind {P : PureExpr} [HasIdent P]
+    (Q : String → Prop) (ident : P.Ident) : Prop :=
+  ∃ name, Q name ∧ ident = HasIdent.ident (P := P) name
+
 /-- `Env.varsUndefined Q ρ` says the environment `ρ` leaves every `Q`-kind slot
 undefined: for each string `s` satisfying the label-kind predicate `Q` (the
 kind of label a pass generates), `ρ`'s store maps `HasIdent.ident s` to `none`.
@@ -51,7 +58,15 @@ pipeline passes, parameterised by the kind each pass generates so a single
 initial store can satisfy several passes' obligations at disjoint kinds. -/
 abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
     (Q : String → Prop) (ρ : Env P) : Prop :=
-  ρ.store.varsUndefined (fun y => ∃ s : String, Q s ∧ y = HasIdent.ident (P := P) s)
+  ρ.store.varsUndefined (IdentOfStringKind Q)
+
+/-- A target environment extends a source environment with classified register
+bindings while preserving the factory and failure flag. -/
+@[expose] def Env.ExtendsWith {P : PureExpr} (Extra : P.Ident → Prop)
+    (source target : Env P) : Prop :=
+  source.factory = target.factory ∧
+  source.hasFailure = target.hasFailure ∧
+  StoreExtendsWith Extra source.store target.store
 
 /-! ## Small-Step Operational Semantics for Statements
 
@@ -204,21 +219,6 @@ where
 @[expose] def dropVars [DecidableEq P.Ident] (D : List P.Ident) (σ : SemanticStore P) :
     SemanticStore P :=
   fun x => if x ∈ D then none else σ x
-
-/-- The projected inner store agrees with the unprojected inner store on
-`σ_parent`'s domain. Variables present in the parent are unchanged by
-projection; variables absent from the parent become `none` in the projection,
-but those don't satisfy `isDefined (projectStore _ _) [x]`, so
-`StoreAgreement` doesn't constrain them. -/
-theorem StoreAgreement.of_projectStore {P : PureExpr}
-    (σ_parent σ_inner : SemanticStore P) :
-    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
-  intro x h_def
-  have h := h_def x (List.mem_singleton.mpr rfl)
-  unfold projectStore at h ⊢
-  by_cases hp : (σ_parent x).isSome
-  · simp [hp]
-  · simp [hp] at h
 
 /-! ## Config-level definedness / undefinedness invariants
 

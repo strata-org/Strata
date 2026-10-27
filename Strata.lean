@@ -38,6 +38,9 @@ import Strata.Languages.Core.WFProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectness
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
@@ -74,6 +77,7 @@ import Strata.Languages.B3
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet

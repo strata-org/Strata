@@ -16,13 +16,14 @@ namespace Strata.Laurel
 
 public section
 
-/-- Selects how the transparency pass lowers procedures for a given analysis.
+/-- Selects how procedures are lowered for a given analysis.
 
     - `Execute`: skip the transparency pass entirely. No `$asFunction` twins,
       no free postconditions, and no call redirection are produced. Genuine
       functions/externals are still emitted, but procedure calls stay procedure
       calls, which concrete interpretation requires — redirecting a call to a
-      pure twin would drop its imperative meaning.
+      pure twin would drop its imperative meaning. Frame conditions are not
+      emitted either.
     - `Verify`: redirect calls to single-output procedures to their pure
       `$asFunction` twin so they remain constant-foldable during symbolic
       evaluation (avoiding the term blowup that occurs when each call produces a
@@ -87,7 +88,7 @@ structure LaurelTranslateOptions where
       `P` holds when the coroutine has finished. Proving completion-dependent
       properties across the opaque resume is future work. -/
   verifyCoroutine : Bool := false
-  /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
+  /-- How procedures are lowered. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify
   /-- Type names treated as the gradual/dynamic top type in `isConsistent`.

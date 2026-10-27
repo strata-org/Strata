@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.KleeneStmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 
 /-! # The abstract language bundle
@@ -34,6 +35,16 @@ constructors for the Imperative dialect live in `Imperative.Logic`:
 - `Lang.cfg` — the unstructured control-flow-graph language, over
   `CFG String (DetBlock …)`; the target of `Strata.Transform`'s
   structured-to-unstructured correctness proofs.
+
+The event-trace variants (bundled as `EventLang`) live alongside them in the
+same namespace:
+
+- `EventLang.imperativeE` — the structured Imperative event-trace language.
+- `EventLang.imperativeBlockE` — its block-body (statement-list) counterpart.
+- `EventLang.cfgE` — the deterministic-CFG event-trace language.
+- `EventLang.kleeneE` — the canonical event-producing Kleene language, over
+  `KleeneStmt`/`KleeneConfig`, stepping by `StepKleeneE P (EvalCmdE P)`; its
+  `InitEnvWFParamsTy`/`initEnvWF` are supplied explicitly by the caller.
 -/
 
 public section
@@ -196,6 +207,36 @@ abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
     cases hstep with
     | step_admin hadmin => cases hadmin
   getEnv := CFGConfig.getEnv
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
+
+/-- The canonical event-producing Kleene event-trace language, over
+`KleeneStmt P (Cmd P)` with the base command event evaluator `EvalCmdE P`.  Its
+one-step relation is the event-producing Kleene step `StepKleeneE P (EvalCmdE P)`.
+Exiting configurations are represented by terminal configurations, as
+`KleeneConfig` has no exiting form.
+
+`ParamsTy` is the `InitEnvWFParamsTy` of the resulting language and
+`initEnvWF` its initial-environment well-formedness predicate; both are supplied
+explicitly by the caller. -/
+abbrev EventLang.kleeneE (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    (ParamsTy : Type)
+    (initEnvWF : ParamsTy → KleeneStmt P (Cmd P) → Env P → Prop) :
+    EventLang P (Event P) where
+  StmtT := KleeneStmt P (Cmd P)
+  CfgT := KleeneConfig P (Cmd P)
+  step := StepKleeneE P (EvalCmdE P)
+  stmtCfg := .stmt
+  terminalCfg := .terminal
+  exitingCfg := fun _ ρ => .terminal ρ
+  terminal_no_step := by
+    intro ρ emitted cfg h
+    cases h
+  exiting_no_step := by
+    intro label ρ emitted cfg h
+    cases h
+  getEnv := KleeneConfig.getEnv
   InitEnvWFParamsTy := ParamsTy
   initEnvWF := initEnvWF
 

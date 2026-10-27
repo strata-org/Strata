@@ -89,21 +89,6 @@ public theorem LExpr.shortCircuitCall?_of_not_attr {lfunc : LFunc Tbase}
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
   [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `shortCircuitCall?` depends only on the shape of the argument list. -/
-private theorem LExpr.shortCircuitCall?_map_none {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
-    (f : LExpr Tbase.mono → LExpr Tbase.mono)
-    (h : LExpr.shortCircuitCall? lfunc args = none) :
-    LExpr.shortCircuitCall? lfunc (args.map f) = none := by
-  unfold LExpr.shortCircuitCall? at h ⊢
-  split at h
-  · rename_i hsc
-    rw [if_pos hsc]
-    cases args <;> cases hce : lfunc.concreteEval <;> simp_all
-  · rename_i hsc
-    rw [if_neg hsc]
-
-omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
-  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
 /-- `shortCircuitCall?` on a mapped argument list returns the mapped pieces. -/
 private theorem LExpr.shortCircuitCall?_map_some {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
     {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
@@ -3397,7 +3382,7 @@ theorem call_node_eval_eq
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair,
       hcanFL, hcallL, hcanF, hcall, hfst, hbit, hmeta, hsc,
-      LExpr.shortCircuitCall?_map_none (LExpr.substFvars · sm) hsc]
+      LExpr.shortCircuitCall?_none_of_length hsc (List.length_map _).symm]
     split
     · -- `isValue` guard: rewritten to `false`, so this branch is impossible.
       exact absurd ‹false = true› (by simp)
@@ -3467,7 +3452,8 @@ theorem call_node_eval_eq
 
 /-- The rename commutation at a call of a `shortCircuit` function. Its first
     argument is evaluated alone, and the concrete evaluator, which receives the other
-    arguments unevaluated, commutes with renaming them (`shortCircuit_substFvars`). -/
+    arguments unevaluated, commutes with `substFvars` applied to them
+    (`shortCircuit_substFvars`). -/
 private theorem shortCircuit_node_eval_eq
     (n' : Nat) (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
@@ -3586,7 +3572,7 @@ theorem eval_rename_commute
             exact absurd (congrArg Prod.snd hL)
               (eval_call_not_full_snd n' F σ' (LExpr.substFvars e sm)
                 (op_expr, args.map (LExpr.substFvars · sm), lfunc) hcallL hcanFL
-                (LExpr.shortCircuitCall?_map_none (LExpr.substFvars · sm) hsc) hfullFalseL)
+                (LExpr.shortCircuitCall?_none_of_length hsc (List.length_map _).symm) hfullFalseL)
           · intro hR
             exact absurd (congrArg Prod.snd hR)
               (eval_call_not_full_snd n' F (substStoreExpr σ' sm) e

@@ -33,11 +33,9 @@ procedure main()
 #end
 
 /-! `old(e)` reads `e` in the state the procedure was entered with, so `bump`'s
-postcondition holds only if `old` sees the heap from before the write. The Core
-interpreter does not reduce `old` of a field read, so this block runs the verifier
-and the Laurel interpreter. -/
+postcondition holds only if `old` sees the heap from before the write. -/
 
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Counter {

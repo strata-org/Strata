@@ -72,21 +72,6 @@ def laurelAnalyzeBinaryCommand : Command where
 private def normalizeEntryName (s : String) : String :=
   ((s.replace "?static?" "?").replace "#" "_").replace "?" "_"
 
-/-- Resolve a `--entry` procedure by name: try an exact match first, then fall
-    back to matching on the normalized name. Used only when `--entry` is given
-    as an explicit override of the producer's entry-point metadata. -/
-private def resolveEntryByName (prog : Core.Program) (entry : String) : Except String Core.Procedure :=
-  match Core.Program.Procedure.find? prog ⟨entry, ()⟩ with
-  | some p => .ok p
-  | none =>
-    let target := normalizeEntryName entry
-    let candidates := prog.decls.filterMap fun d =>
-      d.getProc?.filter (normalizeEntryName ·.header.name.name == target)
-    match candidates with
-    | [p] => .ok p
-    | [] => .error s!"entry procedure '{entry}' not found"
-    | ps => .error s!"entry procedure '{entry}' is ambiguous: {ps.map (·.header.name.name)}"
-
 /-- Flags for the Laurel interpret commands: `--fuel`, `--entry`, and
     `--keep-all-files`. Shared by `laurelInterpret` (file input) and
     `laurelInterpretBinary` (stdin input). Deliberately excludes the
@@ -95,7 +80,7 @@ private def resolveEntryByName (prog : Core.Program) (entry : String) : Except S
 private def laurelInterpretFlags : List Flag :=
   [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" },
    { name := "entry",
-     help := "Override the entry point to execute, by procedure name. \
+     help := "Override the entry point to execute, by the name of a static procedure. \
               Defaults to the procedure(s) the producer marked with `entry` \
               in the Laurel source.",
      takesArg := .arg "proc" },
@@ -206,6 +191,14 @@ private def runLaurelInterpret (ionBytes : ByteArray) (pflags : ParsedFlags)
   let entryOverride := pflags.getString "entry"
 
   let combinedProgram ← Strata.readLaurelIonProgram ionBytes
+  let (combinedProgram, targetName?) ← match entryOverride with
+    | none => pure (combinedProgram, none)
+    | some name =>
+      match resolveLaurelEntryByName combinedProgram name with
+      | .error msg => exitFailure msg
+      | .ok target => match Laurel.withEntryHarness combinedProgram target.name.text with
+        | .ok program => pure (program, some target.name.text)
+        | .error msg => exitFailure msg
 
   -- Laurel → Core, mirroring the verify path's translate step.
   let core ← match ← Strata.Laurel.translate { options.translateOptions with analysisMode := .Execute } combinedProgram with
@@ -230,17 +223,12 @@ private def runLaurelInterpret (ionBytes : ByteArray) (pflags : ParsedFlags)
   if let some pfx := options.translateOptions.keepAllFilesPrefix then
     IO.FS.writeFile s!"{pfx}.interpret.core.st" (toString (Std.format core))
 
-  -- Determine which procedures to execute. An explicit --entry overrides the
-  -- producer's markers; otherwise run every procedure marked `entry`.
-  let entries ← match entryOverride with
-    | some name => match resolveEntryByName core name with
-      | .ok p => pure [p]
-      | .error msg => exitFailure msg
-    | none =>
-      match Core.Program.entryProcedures core with
-      | [] => exitFailure "no entry point found: mark a procedure with `entry` in the \
-                           Laurel source, or pass --entry <proc>"
-      | ps => pure ps
+  -- Run every procedure marked `entry`: with --entry, only the one
+  -- `Laurel.withEntryHarness` added.
+  let entries ← match Core.Program.entryProcedures core with
+    | [] => exitFailure "no entry point found: mark a procedure with `entry` in the \
+                         Laurel source, or pass --entry <proc>"
+    | ps => pure ps
 
   -- Run the entries. `interpretEntries` is shared with the Laurel execute
   -- tests, so the evaluator configuration this command depends on — `assume`s
@@ -256,9 +244,11 @@ private def runLaurelInterpret (ionBytes : ByteArray) (pflags : ParsedFlags)
   for diag in outcome.diagnostics do
     IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
   for (procName, label) in outcome.unmapped do
+    let procName := targetName?.getD procName
     IO.println s!"<no source>: assertion '{label}' in '{procName}' does not hold"
   -- OutOfFuel, Misc, etc. — these have no source range; surface raw.
   for (procName, e) in outcome.errors do
+    let procName := targetName?.getD procName
     IO.eprintln s!"'{procName}': {Imperative.EvalError.toFormat (P := Core.Expression) e}"
   -- Assertion failures are reported as diagnostics above; the caller infers
   -- failure by parsing the `==== DIAGNOSTICS ====` output. Opaque failures

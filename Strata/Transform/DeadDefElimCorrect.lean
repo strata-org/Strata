@@ -43,7 +43,8 @@ Key theorems: `deadDefElim_fails`, `deadDefElim_failsE`, `deadDefElim_run_rel`,
 `deadDefElim_reach_rel`, `dd_assertValid_reflect`, `evalInterp_storeLocal`, and their
 `deadDefElimH` forms.
 
-Key definitions: `DDArgRel`, `DDEventRel`, `DDOutcomeRel`, `StoreLocal`. -/
+Key definitions: `StoreProjected`, `DDArgRel`, `DDEventRel`, `DDOutcomeRel`,
+`StoreLocal`. -/
 
 namespace Imperative
 namespace DeadDefElim
@@ -88,9 +89,9 @@ private theorem failsAt_obs {t : AssertId P} {e e' : Event P}
     (hm : Event.obs e' = Event.obs e) (h : FailsAt t e) : FailsAt t e' := by
   cases e <;> cases e' <;> simp only [Event.obs, FailsAt, Prod.mk.injEq] at hm h ⊢ <;> grind
 
-/-- `σ'` agrees with `σ` on `N`, and wherever `σ'` is defined (`StoreAgreement σ' σ`). -/
+/-- `σ'` agrees with `σ` on `N` and is a projection of `σ`. -/
 private def Agree (N : List P.Ident) (σ σ' : SemanticStore P) : Prop :=
-  (∀ y ∈ N, σ' y = σ y) ∧ StoreAgreement σ' σ
+  (∀ y ∈ N, σ' y = σ y) ∧ StoreProjected σ σ'
 
 /-- The outcomes have the same kind and label, their stores agree on `N`, and the first
     store is value-valued. -/
@@ -166,7 +167,7 @@ omit [HasFvars P] in
 /-- A store agreeing with a value-valued store, elsewhere undefined, is value-valued. -/
 private theorem Agree.canon {F : P.Factory} {N : List P.Ident} {σ σ' : SemanticStore P}
     (hA : Agree N σ σ') (hC : WellFormedStore σ F) : WellFormedStore σ' F := fun y v hv =>
-  hC y v (storeAgreement_supplies_mono_premise _ _ hA.2 y v hv)
+  hC y v (hA.2.supplies_mono_premise y v hv)
 
 end
 
@@ -577,7 +578,7 @@ theorem deadDefElim_fails (hcong : WellFormedSemanticEvalExprCongr F)
   obtain ⟨evs, e, hb, hfeas, hfe⟩ := h
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', hb', hm⟩ :=
-    dd_reach hE hb (by simp) hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+    dd_reach hE hb (by simp) hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   obtain ⟨a, e', rfl, ha, he⟩ := hm.append_singleton
   exact ⟨a, e', hb', feasible_obs (ha.map_obs hE) hfeas, failsAt_obs (he.obs hE) hfe⟩
 
@@ -613,7 +614,7 @@ structure DDArgRel (a a' : EventArg P) : Prop where
   label_eq : a'.label = a.label
   expr_eq : a'.expr = a.expr
   metadata_eq : a'.metadata = a.metadata
-  store_le : StoreAgreement a'.store a.store
+  store_projected : StoreProjected a.store a'.store
   store_fv : ∀ x ∈ HasFvars.getFvars a.expr, a'.store x = a.store x
   storeWF : WellFormedStore a.store a.factory
   exprCongr : WellFormedSemanticEvalExprCongr a.factory
@@ -632,8 +633,8 @@ end
     or both exit with the same label, and the store of `o'` is the store of `o` with some
     bindings removed. -/
 @[expose] def DDOutcomeRel : Outcome P → Outcome P → Prop
-  | .normal σ, .normal σ' => StoreAgreement σ' σ
-  | .exit l σ, .exit l' σ' => l' = l ∧ StoreAgreement σ' σ
+  | .normal σ, .normal σ' => StoreProjected σ σ'
+  | .exit l σ, .exit l' σ' => l' = l ∧ StoreProjected σ σ'
   | _, _ => False
 
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P]
@@ -668,7 +669,7 @@ theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live 
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
     ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   exact ⟨evs', h', hm.imp fun _ _ hr => hr.dd hcong⟩
 
 /-- **A run of a list, and of its output.**  A run of `ss` from the value-valued `σ` gives a
@@ -681,7 +682,7 @@ theorem deadDefElim_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : 
     ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   exact ⟨evs', o', h', hm.imp fun _ _ hr => hr.dd hcong, hO.dd⟩
 
 end
@@ -704,7 +705,7 @@ omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
 theorem evalInterp_storeLocal : StoreLocal (P := P) evalInterp := by
   intro _ a a' h
   have hwf' : WellFormedStore a'.store a.factory := fun x v hv =>
-    h.storeWF x v (storeAgreement_supplies_mono_premise _ _ h.store_le x v hv)
+    h.storeWF x v (h.store_projected.supplies_mono_premise x v hv)
   simp only [evalInterp, h.factory_eq, h.expr_eq,
     h.exprCongr a.expr _ _ hwf' h.storeWF h.store_fv]
 
