@@ -632,7 +632,7 @@ def translateExpr (expr : StmtExprMd)
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
-      let belse ← match elseBranch with
+      let belse ← match _ : elseBranch with
         | none =>
             emitExprDiagnostic $ diagnosticFromSource expr.source s!"if-then without else expression" MessageKind.notYetImplemented
         | some e =>
@@ -646,7 +646,7 @@ def translateExpr (expr : StmtExprMd)
         -- Match on the bare name: every prelude procedure carries the reserved `$`
         -- prefix, and `$eq`/`$neq` additionally reach here under their wrapper
         -- names, which strip to the same spelling.
-        match _h: (dropReservedPrefix callee.text).getD callee.text, args with
+        match _h: (dropReservedPrefix callee.text).getD callee.text, h_args : args with
         | "boolNot", [e] =>
           have h_e : sizeOf e < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
@@ -1207,7 +1207,7 @@ def translateStmt (stmt : StmtExprMd)
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt thenBranch
-      let belse ← match elseBranch with
+      let belse ← match _ : elseBranch with
                   | some e => translateStmt e
                   | none => pure []
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]

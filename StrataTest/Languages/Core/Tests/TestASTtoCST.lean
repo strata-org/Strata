@@ -20,7 +20,6 @@ namespace Strata.Test
 
 open Strata.CoreDDM
 open Strata
-open Core
 
 def ASTtoCST (program : StrataDDM.Program) := do
   -- Use old translator to get AST

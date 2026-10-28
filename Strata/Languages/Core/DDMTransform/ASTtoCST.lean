@@ -23,7 +23,6 @@ see `FormatCore.lean`.
 
 namespace Strata
 
-open Core
 open Strata.CoreDDM
 
 ---------------------------------------------------------------------

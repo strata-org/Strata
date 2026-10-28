@@ -155,6 +155,10 @@ inductive LTy : Type where
 
 abbrev LTys := List LTy
 
+/-- Apply a function to the body of a type scheme. -/
+@[expose] def mapLTyTys (f : LMonoTy → LMonoTy) : LTy → LTy
+  | .forAll vs mty => .forAll vs (f mty)
+
 ---------------------------------------------------------------------
 
 /--
@@ -229,7 +233,7 @@ instance : DecidableEq LMonoTy :=
       isTrue (by
                 induction x generalizing y
                 case ftvar =>
-                  unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
+                  unfold LMonoTy.BEq at h ; (split at h <;> try simp_all)
                 case bitvec =>
                   unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
                 case tcons =>
@@ -240,7 +244,7 @@ instance : DecidableEq LMonoTy :=
                   induction args generalizing args'
                   case nil => unfold List.length at h2; split at h2 <;> simp_all
                   case cons head' tail' ih' =>
-                    unfold LMonoTy.BEq.go at h3 <;> split at h3 <;> try simp_all
+                    unfold LMonoTy.BEq.go at h3 ; (split at h3 <;> try simp_all)
                     rename_i j1 j2 x xrest y yrest heq
                     obtain ⟨h3_1, h3_2⟩ := h3
                     obtain ⟨ih1, ih2⟩ := ih
@@ -373,11 +377,11 @@ instance : DecidableEq LTy :=
     if h: LTy.BEq x y then
       isTrue (by
                 unfold LTy.BEq at h
-                split at h <;> simp_all)
+                split at h ; simp_all)
     else
       isFalse (by
                 unfold LTy.BEq at h
-                split at h <;> simp_all)
+                split at h ; simp_all)
 
 /--
 Get the free type variables in type scheme `ty`, which are all the unbound

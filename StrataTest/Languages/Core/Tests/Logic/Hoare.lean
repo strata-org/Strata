@@ -78,7 +78,7 @@ private theorem true_holds (model : Lambda.Interp Core.Factory)
       = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := rfl
   rw [hcap]
   refine ⟨Lambda.LExpr.typeCheck_to_HasTypeA (by rfl), ?_⟩
-  simp [Lambda.LMonoTy.bool, Lambda.denote_boolConst]
+  exact Lambda.denote_boolConst _ _ _ _ _ _
 
 /-- The captured `false` condition holds in no world of any Core model. -/
 private theorem false_not_holds (model : Lambda.Interp Core.Factory)
@@ -89,7 +89,7 @@ private theorem false_not_holds (model : Lambda.Interp Core.Factory)
         = Lambda.LExpr.const () (Lambda.LConst.boolConst false) := rfl
     rw [hcap] at hex
     obtain ⟨_hty, hd⟩ := hex
-    simp [Lambda.LMonoTy.bool, Lambda.denote_boolConst] at hd
+    exact Bool.false_ne_true ((Lambda.denote_boolConst _ _ _ _ _ _hty).symm.trans hd)
   · exact hne rfl
 
 /-- An assumption can discharge a later assertion. -/
@@ -698,7 +698,7 @@ private theorem postWF_store_fact (ss : Core.Statements) (x : Core.Expression.Id
       (fun ρ => ρ.store x = some (Lambda.LExpr.const () κ)) := by
   intro ρ hpost
   show Imperative.dropVars _ ρ.store x = _
-  simp only [Imperative.dropVars, if_neg hnd]
+  simp only [Imperative.dropVars, ite_eq_right hnd]
   exact hpost
 
 /-- `PostWF` for a store fact paired with the factory being `Core.Factory`.  Leaving a
@@ -713,7 +713,7 @@ private theorem postWF_store_fact_factory (ss : Core.Statements) (x : Core.Expre
   intro ρ hpost
   refine ⟨?_, hpost.2⟩
   show Imperative.dropVars _ ρ.store x = _
-  simp only [Imperative.dropVars, if_neg hnd]
+  simp only [Imperative.dropVars, ite_eq_right hnd]
   exact hpost.1
 
 /-- `Core.Logic.Hoare.set` at a literal right-hand side. -/

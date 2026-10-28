@@ -122,6 +122,7 @@ class HasBool (P : PureExpr) extends HasVal P where
     (@HasVal.valueOfTy P) f tt boolTy ∧
     (@HasVal.valueOfTy P) f ff boolTy
 
+set_option linter.defProp false in
 /-- Boolean constants are values, induced by their typed-value proofs. -/
 @[expose] def HasBool.boolIsVal {P : PureExpr} [HasBool P] [LawfulHasVal P]
     (f : P.Factory) :
