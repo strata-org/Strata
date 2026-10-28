@@ -6,6 +6,7 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Backends.CBMC.GOTO.HoistFnApps
 import Strata.Transform.ProcedureInlining
 public import Strata.Languages.Core.Factory
 import Strata.Backends.CBMC.CollectSymbols
@@ -397,18 +398,163 @@ def functionToGotoCtx
   return { program := pgm, formals := formals_tys, ret := ret_ty, locals := [] }
 
 /--
-Emit a procedure context as combined symtab/goto JSON.
+Translate the transitive closure of eligible top-level Core functions
+reachable — via `function_application` nodes — from the seed names. A
+function is *eligible* when it is monomorphic and carries a body; its GOTO
+translation is a real function body (`functionToGotoCtx`) that CBMC's symex
+can execute once call sites are hoisted (`Context.hoistFnApps`). This
+closure includes recursive functions; `collectHoistableFuncCtxs` decides
+whether they keep their bodies. Bodiless functions are not emitted: their
+applications remain uninterpreted. A function whose body fails to translate is
+skipped (left uninterpreted) rather than failing the pipeline; the skipped
+names are returned so the caller can warn, since a silently uninterpreted
+call otherwise looks like a clean verification result.
+-/
+private partial def collectUsedFuncCtxs
+    (Env : Core.Expression.TyEnv)
+    (eligible : Std.HashMap String Core.Function)
+    (queue : List String) (defined : Std.HashSet String)
+    (acc : List (String × CoreToGOTO.CProverGOTO.Context))
+    (dropped : List (String × Std.Format)) :
+    List (String × CoreToGOTO.CProverGOTO.Context) × Std.HashSet String
+      × List (String × Std.Format) :=
+  match queue with
+  | [] => (acc, defined, dropped)
+  | n :: rest =>
+    if defined.contains n then
+      collectUsedFuncCtxs Env eligible rest defined acc dropped
+    else
+      match eligible.get? n with
+      | none => collectUsedFuncCtxs Env eligible rest defined acc dropped
+      | some f =>
+        match functionToGotoCtx Env f with
+        | .error e =>
+          collectUsedFuncCtxs Env eligible rest defined acc ((n, e) :: dropped)
+        | .ok fctx =>
+          let more := (CProverGOTO.collectFnApps fctx.program).map (·.name)
+          collectUsedFuncCtxs Env eligible (rest ++ more) (defined.insert n)
+            (acc ++ [(n, fctx)]) dropped
+
+/--
+Names of the emitted functions that lie on a call cycle among themselves:
+`n` is recursive when it reaches itself through the defined callees of the
+emitted bodies. Calls to functions outside `defined` stay uninterpreted, so
+they do not close a cycle.
+-/
+private def recursiveFuncs
+    (usedCtxs : List (String × CoreToGOTO.CProverGOTO.Context))
+    (defined : Std.HashSet String) : List String :=
+  let callees : Std.HashMap String (List String) :=
+    usedCtxs.foldl (init := {}) fun m (n, c) =>
+      m.insert n ((CProverGOTO.collectFnApps c.program).map (·.name) |>.filter defined.contains)
+  -- Depth-first reachability, bounded by the number of emitted functions.
+  let reaches (start : String) : Bool := Id.run do
+    let mut seen : Std.HashSet String := {}
+    let mut stack := callees.getD start []
+    for _ in [0:usedCtxs.length * usedCtxs.length + 1] do
+      match stack with
+      | [] => return false
+      | n :: rest =>
+        stack := rest
+        if n == start then return true
+        if !seen.contains n then
+          seen := seen.insert n
+          stack := callees.getD n [] ++ stack
+    return false
+  usedCtxs.filterMap fun (n, _) => if reaches n then some n else none
+
+/--
+Like `collectUsedFuncCtxs`, but additionally keeps out of `defined` every
+function that has an application hoisting must leave in place — under a
+quantifier, in a spec annotation (`CProverGOTO.residualFnApps`), or in the
+procedure's contracts. Such an application needs its callee to remain a
+`mathematical_function` symbol, which a function with an emitted GOTO body
+cannot also be, so such a function stays uninterpreted everywhere and none
+of its applications is hoisted.
+
+Unless `hoistRecursive` is set, functions on a call cycle
+(`recursiveFuncs`) are kept out of `defined` as well. Symex unwinds a
+recursive GOTO call just as it unwinds a loop, so a call whose recursion
+depth is symbolic (e.g. a list-processing prelude function on a list of
+symbolic length) diverges unless cbmc is given an `--unwind` bound; only
+callers that supply one should opt in.
+
+Excluding a function can only shrink the set of emitted bodies, so the loop
+terminates.
+-/
+private partial def collectHoistableFuncCtxs
+    (Env : Core.Expression.TyEnv)
+    (eligible : Std.HashMap String Core.Function)
+    (ctx : CoreToGOTO.CProverGOTO.Context)
+    (hoistRecursive : Bool) :
+    List (String × CoreToGOTO.CProverGOTO.Context) × Std.HashSet String
+      × List (String × Std.Format) :=
+  let seeds := (CProverGOTO.collectFnApps ctx.program).map (·.name)
+  let (usedCtxs, defined, dropped) := collectUsedFuncCtxs Env eligible seeds {} [] []
+  let residual := CProverGOTO.residualFnApps ctx.program
+    ++ ctx.contracts.flatMap (fun (_, j) => CProverGOTO.jsonFnAppNames j)
+    ++ usedCtxs.flatMap (fun (_, c) => CProverGOTO.residualFnApps c.program)
+  let recursive := if hoistRecursive then [] else recursiveFuncs usedCtxs defined
+  let excluded := (residual ++ recursive).filter defined.contains
+  if excluded.isEmpty then (usedCtxs, defined, dropped)
+  else
+    collectHoistableFuncCtxs Env (excluded.foldl (init := eligible) (·.erase ·)) ctx
+      hoistRecursive
+
+/--
+Emit a procedure context and its associated functions as combined
+symtab/goto JSON. Emits a real GOTO function body for every eligible
+top-level function in `topLevelFuncs` reachable from the procedure
+(`collectHoistableFuncCtxs`), then hoists their applications to statement-level
+`FUNCTION_CALL` instructions (`Context.hoistFnApps`) so CBMC executes the
+bodies instead of treating the calls as uninterpreted. With the default
+`topLevelFuncs := []` nothing is hoisted. `Env` is the type environment the
+function bodies are translated in. Recursive functions stay uninterpreted
+unless `hoistRecursive` is set; set it only when cbmc runs with an
+`--unwind` bound.
 -/
 def emitProc (procName : String)
     (ctx : CoreToGOTO.CProverGOTO.Context)
     (extraSyms : Lean.Json) (moduleName : String)
+    (topLevelFuncs : List Core.Function := [])
+    (Env : Core.Expression.TyEnv := Lambda.TEnv.default)
+    (hoistRecursive : Bool := false)
     : IO (Lean.Json × Lean.Json) := do
+  let eligible : Std.HashMap String Core.Function :=
+    topLevelFuncs.foldl (init := {}) fun m f =>
+      if f.body.isSome && f.typeArgs.isEmpty then
+        m.insert (Core.CoreIdent.toPretty f.name) f
+      else m
+  let (usedCtxs, defined, dropped) := collectHoistableFuncCtxs Env eligible ctx hoistRecursive
+  for (n, e) in dropped do
+    IO.eprintln s!"warning: top-level function {n} could not be translated to GOTO ({e}); its applications remain uninterpreted"
+  let ctx := ctx.hoistFnApps defined procName
+  let allFuncCtxs := usedCtxs.map fun (n, c) =>
+    (n, c.hoistFnApps defined n)
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
-  let gotoFns := match json.goto with
+  let mut gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
       | some (_, .arr fns) => fns | _ => #[]
     | _ => #[]
+  for (funcName, fctx) in allFuncCtxs do
+    let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
+    match fjson.symtab with
+    | .obj m => for (k, v) in m.toList do
+        -- A defined function's key is written only by its own context: any other
+        -- context's entry under that key is a nil-valued symbol synthesized for a
+        -- hoisted call's callee reference (`Context.toJson`'s `extraSymbols`), and
+        -- inserting it would clobber the real function symbol whenever the
+        -- reference is processed after the definition. Definitions win,
+        -- independent of emission order.
+        if k == funcName || !defined.contains k then
+          symtabObj := symtabObj.insert k v
+    | _ => pure ()
+    match fjson.goto with
+    | .obj m => match m.toList.find? (·.1 == "functions") with
+      | some (_, .arr fns) => gotoFns := gotoFns ++ fns
+      | _ => pure ()
+    | _ => pure ()
   match extraSyms with
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
@@ -436,11 +582,13 @@ public def typeCheckCore (program : Core.Program)
 /-- Translate a type-checked Core program to CProver GOTO JSON files.
     Finds an entry-point procedure from `entryPoints` (defaulting to
     `["main", "__main__"]`), translates it to GOTO, and writes
-    `<baseName>.symtab.json` and `<baseName>.goto.json`. -/
+    `<baseName>.symtab.json` and `<baseName>.goto.json`. Recursive top-level
+    functions get GOTO bodies only with `hoistRecursive` (see `emitProc`). -/
 public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     (baseName : String)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
+    (hoistRecursive : Bool := false)
     : EIO String Unit := do
   let findProc (name : String) := tcPgm.decls.find? fun d =>
       match d with
@@ -463,8 +611,14 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     let extraSyms ← match collectExtraSymbols tcPgm with
       | .ok s => pure (Lean.toJson s)
       | .error e => throw s!"{e}"
+    let topLevelFuncs := tcPgm.decls.flatMap fun d => match d with
+      | .func f _ => [f]
+      | .recFuncBlock fs _ => fs
+      | _ => []
     let (symtab, goto) ←
-      match ← emitProc procName ctx extraSyms (moduleName := baseName) |>.toBaseIO with
+      match ← emitProc procName ctx extraSyms (moduleName := baseName)
+              (topLevelFuncs := topLevelFuncs) (Env := Env)
+              (hoistRecursive := hoistRecursive) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"
@@ -514,6 +668,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
+    (hoistRecursive : Bool := false)
     : EIO String Unit := do
   -- If the chosen entry carries parameters, wrap it in a parameterless `main`
   -- verification harness (havoc params + assume preconditions + call); the
@@ -536,6 +691,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints
+    (hoistRecursive := hoistRecursive)
 
 end -- public section
 
