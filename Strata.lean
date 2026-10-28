@@ -134,6 +134,7 @@ import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprDenoteCompute
 import Strata.DL.Lambda.Denote.LExprDenoteConstrs
 import Strata.DL.Lambda.Denote.LExprDenoteEq
 import Strata.DL.Lambda.Denote.LExprDenoteProps

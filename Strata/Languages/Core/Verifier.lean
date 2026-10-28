@@ -1495,7 +1495,11 @@ inductive PathConditionShape where
       functions). Taking the path condition to be satisfiable therefore assumes that these
       axioms are satisfiable together. If they are not, an assertion the solver would pass
       vacuously is reported failing; no assertion is ever reported passing because of this.
-      `Core.factoryInterp` models the built-ins' bodies and evaluators but not their axioms.
+      `Core.factoryInterp_axiomsSatisfied` proves that the axioms of the polymorphic built-ins
+      (`Core.Factory`) hold together in one model. Two steps are assumed rather than proved:
+      that the specialized copies `MonomorphizeFunctions` makes of these built-ins, whose axioms
+      are what the solver receives, inherit that model; and that the axioms of the program's own
+      functions are satisfiable.
       The evaluator also decides before encoding, so a definition the encoder cannot encode is
       reported as this failure rather than as an analysis error. -/
   | onlyDefinitions

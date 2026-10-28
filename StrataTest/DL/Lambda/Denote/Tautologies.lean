@@ -684,6 +684,7 @@ private def trivialInterp : Interp emptyF where
   allInhabited := ⟨fun _ _ => by constructor; exact true⟩
   interpConsistent := ⟨fun _ hf => absurd hf (Factory.default_empty _),
                        fun _ hf => absurd hf (Factory.default_empty _)⟩
+  axiomsSatisfied := fun _ hf => absurd hf (Factory.default_empty _)
   constrConsistent := ⟨fun _ _ hf => absurd hf (by simp [emptyF]),
                        fun _ hf => absurd hf (by simp [emptyF])⟩
 

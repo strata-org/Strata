@@ -1129,6 +1129,16 @@ public def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Pr
   (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     LFunc.InterpConsistentEval tcInterp opInterp (F[f]) ceval)
 
+/-- An interpretation satisfies the axioms of a factory when every well-typed
+axiom of every function denotes `true` for every type-variable valuation and
+free-variable valuation. The SMT encoder sends these axioms to the solver along
+with the definitions that use their functions, so a model of the factory must
+satisfy them. -/
+public def Factory.AxiomsSatisfied [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ax ∈ (F[f]).axioms,
+    ∀ (vt : TyVarVal) (fvarVal : FreeVarVal T tcInterp) (h : LExpr.HasTypeA [] ax .bool),
+      (LExpr.denote tcInterp opInterp fvarVal vt .nil ax .bool h : Bool) = true
+
 end FactoryInterpConsistent
 
 section ConstrConsistent
@@ -1206,18 +1216,20 @@ end ConstrConsistent
 
 An `Interp` bundles a type-constructor interpretation and an operator
 interpretation together with proofs that the interpretation is consistent
-with a given factory: function bodies denote correctly and constructor
-axioms (disjointness, injectivity) hold. Satisfiability and validity
-are defined over consistent interpretations. -/
+with a given factory: function bodies denote correctly, the factory's axioms
+hold, and constructor axioms (disjointness, injectivity) hold. Satisfiability
+and validity are defined over consistent interpretations. -/
 
 /-- A consistent interpretation of a factory: bundles `tcInterp` and
 `opInterp` with proofs that the interpretation is inhabited, consistent
-with function definitions, and respects ADT axioms. -/
+with function definitions, satisfies the factory's axioms, and respects ADT
+axioms. -/
 public structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
   tcInterp : TyConstrInterp
   opInterp : OpInterp tcInterp
   allInhabited : TyConstrInterp.AllInhabited tcInterp
   interpConsistent : Factory.InterpConsistent tcInterp opInterp F
+  axiomsSatisfied : Factory.AxiomsSatisfied tcInterp opInterp F
   constrConsistent : ConstrInterpConsistent tcInterp opInterp F
 
 section Satisfaction
