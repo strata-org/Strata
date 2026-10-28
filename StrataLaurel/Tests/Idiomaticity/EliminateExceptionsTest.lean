@@ -78,8 +78,8 @@ composite NegativeInputException { }
 procedure parsePositive(input: int): (Result<int, NegativeInputException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NegativeInputException
-  free ensures input < 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
-  free ensures Result..isBad($result) ==> input < 0( summary "throwsOn cases cover every throwing path")
+  free ensures input < 0 ==> Result..isBad($result) summary "throwsOn case forces a throw"
+  free ensures Result..isBad($result) ==> input < 0 summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
@@ -111,9 +111,9 @@ composite ArithmeticException { }
 procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is ArithmeticException
-  free ensures b == 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
+  free ensures b == 0 ==> Result..isBad($result) summary "throwsOn case forces a throw"
   free ensures b == 0 & Result..isBad($result) ==> Result..err($result) is ArithmeticException
-  free ensures Result..isBad($result) ==> b == 0( summary "throwsOn cases cover every throwing path")
+  free ensures Result..isBad($result) ==> b == 0 summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
@@ -926,9 +926,9 @@ composite Err { var code: int }
 procedure binderShadowsInput(e: int): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
-  ensures true ==> Result..isBad($result)( summary "throwsOn case forces a throw")
+  ensures true ==> Result..isBad($result) summary "throwsOn case forces a throw"
   ensures true & Result..isBad($result) ==> Result..err($result)#code == 5
-  ensures Result..isBad($result) ==> true( summary "throwsOn cases cover every throwing path")
+  ensures Result..isBad($result) ==> true summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result)
 {
   var $thrown: bool := false;
@@ -986,9 +986,9 @@ procedure shortFormThrows()
   opaque
   ensures Result..isGood($result_1) ==> Result..value($result_1) > 0
   ensures Result..isBad($result_1) ==> Result..err($result_1) is Err
-  ensures true ==> Result..isBad($result_1)( summary "throwsOn case forces a throw")
+  ensures true ==> Result..isBad($result_1) summary "throwsOn case forces a throw"
   ensures true & Result..isBad($result_1) ==> Result..err($result_1)#code == 5
-  ensures Result..isBad($result_1) ==> true( summary "throwsOn cases cover every throwing path")
+  ensures Result..isBad($result_1) ==> true summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result_1)
 {
   var $thrown: bool := false;

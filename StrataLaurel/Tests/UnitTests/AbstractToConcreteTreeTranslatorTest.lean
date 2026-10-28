@@ -199,11 +199,13 @@ procedure divide(x: int, y: int): int
 { x / y };
 #end)
 
--- The `free`/`checked` condition-mode keywords survive a roundtrip through the
--- DDM concrete tree.
+-- The `free`/`checked` condition-mode keywords, a summary and an opaque type's
+-- parameters survive a roundtrip through the DDM concrete tree.
 /--
-info: procedure divide(x: int, y: int): int
-  requires y != 0
+info: opaque Box<T>
+
+procedure divide(x: int, y: int): int
+  requires y != 0 summary "divisor is non-zero"
   free requires y != 1
   checked requires y != 2
   opaque
@@ -218,8 +220,9 @@ info: procedure divide(x: int, y: int): int
 #eval do IO.println (← roundtrip <|
 #strata
 program Laurel;
+opaque Box<T>
 procedure divide(x: int, y: int): int
-  requires y != 0
+  requires y != 0 summary "divisor is non-zero"
   free requires y != 1
   checked requires y != 2
   opaque

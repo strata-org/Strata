@@ -159,8 +159,10 @@ op existsExpr (name: Ident, ty: LaurelType, trigger: Option Trigger, body: StmtE
   => "exists(" name ": " ty ")" trigger " => " body:0;
 
 // Error messages (used in assert, requires, ensures)
+// Precedence maxPrec + 1, like a literal, so no rule parenthesizes a summary, which would not parse
+// back. `msg:0`, else this precedence would parenthesize the message.
 category ErrorSummary;
-op errorSummary(msg: Str): ErrorSummary => " summary " msg;
+op errorSummary(msg: Str): ErrorSummary => @[prec(1025)] " summary " msg:0;
 
 // If-else
 category ElseBranch;
@@ -239,8 +241,9 @@ category Composite;
 
 // Type parameters (`<T, U>`) — declared here so both datatype (below) and
 // procedure/function/composite (further below) can reference it.
+// Precedence maxPrec + 1, like a summary.
 category TypeParams;
-op typeParams (params: CommaSepBy Ident): TypeParams => "<" params ">";
+op typeParams (params: CommaSepBy Ident): TypeParams => @[prec(1025)] "<" params ">";
 
 // Datatype definitions
 category DatatypeConstructorArg;
