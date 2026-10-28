@@ -78,7 +78,7 @@ public theorem LSort.ind (P : LSort → Prop)
   | .tcons name args => htcons name args (fun x _ => rec' P htcons hbitvec x)
   | .bitvec n => hbitvec n
 
-public theorem LSort_eqb_list_eq
+private theorem LSort_eqb_list_eq
     (ih : ∀ x ∈ a1, ∀ s2, LSort_eqb x s2 = true → x = s2)
     (heq : LSort_eqb.LSort_eqb_list a1 a2 = true) : a1 = a2 := by
   induction a1 generalizing a2 with
