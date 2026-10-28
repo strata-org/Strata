@@ -3805,9 +3805,8 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- already-errored target (type `.Unknown`, stay quiet — it reported its own error) or a
   -- resolved NON-composite (`z : int`), which has no methods. REJECT the latter: without this,
   -- the bare-`callee` fallback below would silently bind `z#sideEffect(…)` to an unrelated
-  -- top-level static procedure `sideEffect`, and since `LiftInstanceProcedures`/`ContractPass`
-  -- only handle `.InstanceCall` whose callee is an instance proc, the call's precondition is
-  -- dropped and it mis-verifies (a silent unsound accept).
+  -- top-level static procedure `sideEffect`, leaving an instance call that
+  -- `LiftInstanceProcedures` does not lift and Core translation reports as a strata-bug.
   let lookupKey ← match (← targetTypeName target') with
     | some tyName => do
       -- An instance procedure is registered ONLY under its DECLARING type's key, so an

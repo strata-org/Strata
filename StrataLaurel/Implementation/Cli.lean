@@ -38,6 +38,7 @@ public import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 public import StrataLaurel.Implementation.Grammar.LaurelGrammar
 public meta import StrataLaurel.Implementation.Grammar.LaurelGrammar
 public meta import Strata.Cli.CoreCommands
+public meta import StrataLaurel.Implementation.CliOptions
 
 public section
 
@@ -52,9 +53,10 @@ namespace Strata.Cli
 def laurelAnalyzeBinaryCommand : Command where
   name := "laurelAnalyzeBinary"
   args := []
-  flags := verifyOptionsFlags
+  flags := verifyOptionsFlags ++ laurelPassFlags
   help := "Verify Laurel Ion programs read from stdin and print diagnostics. Combines multiple input files."
   callback := fun _ pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
     let options ← parseLaurelVerifyOptions pflags
     let stdinBytes ← (← IO.getStdin).readBinToEnd
     let combinedProgram ← Strata.readLaurelIonProgram stdinBytes
@@ -72,8 +74,8 @@ def laurelAnalyzeBinaryCommand : Command where
 private def normalizeEntryName (s : String) : String :=
   ((s.replace "?static?" "?").replace "#" "_").replace "?" "_"
 
-/-- Flags for the Laurel interpret commands: `--fuel`, `--entry`, and
-    `--keep-all-files`. Shared by `laurelInterpret` (file input) and
+/-- Flags for the Laurel interpret commands: `--fuel`, `--entry`,
+    `--keep-all-files`, and the Laurel phase-selection flags. Shared by `laurelInterpret` (file input) and
     `laurelInterpretBinary` (stdin input). Deliberately excludes the
     solver-oriented flags in `verifyOptionsFlags` — the interpreter never
     invokes a solver, so those would be silently ignored. -/
@@ -92,7 +94,7 @@ private def laurelInterpretFlags : List Flag :=
               the Core interpreter; `laurel` runs the Laurel interpreter directly on the \
               resolved Laurel program, without translation to Core. `laurel` does \
               not support --keep-all-files.",
-     takesArg := .arg "core|laurel" }]
+     takesArg := .arg "core|laurel" }] ++ laurelPassFlags
 
 private def resolveLaurelEntryByName (prog : Laurel.LaurelProgram) (entry : String)
     : Except String Laurel.Procedure :=
@@ -109,6 +111,8 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
     : IO Unit := do
   if (pflags.getString "keep-all-files").isSome then
     exitFailure "--keep-all-files is not supported with --interpreter laurel"
+  if (pflags.getString "phases").isSome || (pflags.getString "skip-phases").isSome then
+    exitFailure "--phases and --skip-phases are not supported with --interpreter laurel"
   let fuel ← match pflags.getString "fuel" with
     | some s => match s.toNat? with
       | .some 0 => exitFailure s!"Invalid fuel: '0' (must be > 0)"
@@ -269,7 +273,9 @@ def laurelInterpretCommand : Command where
            stdout (the caller detects failures by parsing them); the process still exits 0. A \
            non-zero exit code is reserved for errors that carry no diagnostic (out of fuel, \
            internal errors, setup failures)."
+  reportFlags := laurelPassReportFlags
   callback := fun v pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
     let ionBytes ← IO.FS.readBinFile v[0]
     runLaurelInterpret ionBytes pflags (inputFile := some v[0])
 
@@ -281,6 +287,7 @@ def laurelInterpretBinaryCommand : Command where
            and print diagnostics. Combines multiple input files. See `laurelInterpret` for \
            the entry-point selection rules and the diagnostic/exit-code contract."
   callback := fun _ pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
     let ionBytes ← (← IO.getStdin).readBinToEnd
     runLaurelInterpret ionBytes pflags
 
@@ -295,9 +302,11 @@ def laurelParseCommand : Command where
 def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := [ "file" ]
-  flags := verifyOptionsFlags
+  flags := verifyOptionsFlags ++ laurelPassFlags
   help := "Analyze a Laurel source file. Write diagnostics to stdout."
+  reportFlags := laurelPassReportFlags
   callback := fun v pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
     let options ← parseLaurelVerifyOptions pflags (inputFile := some v[0])
     let laurelProgram ← Strata.readLaurelTextFile v[0]
     let (vcResultsOption, errors) ← Strata.Laurel.verifyToVcResults laurelProgram options
@@ -315,12 +324,16 @@ def laurelAnalyzeCommand : Command where
 def laurelAnalyzeToGotoCommand : Command where
   name := "laurelAnalyzeToGoto"
   args := [ "file" ]
+  flags := laurelPassFlags
   help := "Translate a Laurel source file to CProver GOTO JSON files."
-  callback := fun v _ => do
+  reportFlags := laurelPassReportFlags
+  callback := fun v pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
+    let passes ← parseLaurelPasses pflags
     let path : System.FilePath := v[0]
     let content ← IO.FS.readFile path
     let laurelProgram ← Strata.parseLaurelText path content
-    match ← Strata.Laurel.translate {} laurelProgram with
+    match ← Strata.Laurel.translate { passes } laurelProgram with
       | (none, diags) => exitFailure s!"Core translation errors: {diags.map (·.message)}"
       | (some coreProgram, errors) =>
         let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
@@ -437,10 +450,14 @@ def prettyPrintCore (p : Core.Program) : String :=
 def laurelToCoreCommand : Command where
   name := "laurelToCore"
   args := [ "file" ]
+  flags := laurelPassFlags
   help := "Translate a Laurel source file to Core and print to stdout."
-  callback := fun v _ => do
+  reportFlags := laurelPassReportFlags
+  callback := fun v pflags => do
+    if ← reportLaurelPasses pflags (withoutInput := false) then return
+    let passes ← parseLaurelPasses pflags
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (coreProgramOption, errors) ← Strata.Laurel.translate {} laurelProgram
+    let (coreProgramOption, errors) ← Strata.Laurel.translate { passes } laurelProgram
       if !errors.isEmpty then
         IO.println s!"Core translation errors: {errors.map (·.message)}"
       match coreProgramOption with
@@ -476,6 +493,21 @@ def commandMap : Std.HashMap String Command := Strata.Cli.buildCommandMap [] {} 
 #guard (commandList.map (·.name) |>.mergeSort (· < ·)) == expectedCommandNames
 #guard commandMap.size == commandList.length
 #guard commandGroups.map (·.name) == ["Core", "Laurel"]
+
+private def displayIgnoresInput (cmd : Command) (flag : String) : IO Bool := do
+  let pflags := ({} : ParsedFlags).insert flag none
+  let some (_, report) := cmd.reportFlags.find? (·.1 == flag) | return false
+  let (withoutInput, _) ← IO.FS.withIsolatedStreams (report pflags)
+  let (withInput, _) ← IO.FS.withIsolatedStreams
+    (cmd.callback (Vector.replicate _ "/nonexistent/input.lr.st") pflags)
+  return !withoutInput.isEmpty && withInput == withoutInput
+
+/-- info: [true, true, true, true, true, true, true, true] -/
+#guard_msgs in
+#eval do
+  let cmds := [laurelAnalyzeCommand, laurelToCoreCommand, laurelAnalyzeToGotoCommand, laurelInterpretCommand]
+  IO.println (← (cmds.flatMap fun c => ["display-phases", "display-phase-contracts"].map (c, ·)).mapM
+    fun (c, f) => displayIgnoresInput c f)
 
 end StrataLaurel.Cli
 

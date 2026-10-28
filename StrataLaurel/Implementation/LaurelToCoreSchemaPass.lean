@@ -362,6 +362,10 @@ def emitExprDiagnostic (d : Message): TranslateM Core.Expression.Expr := do
   emitCoreDiagnostic d
   return default
 
+private def unliftedInstanceCall (source : FileRange) : Message :=
+  diagnosticFromSource source "instance call bound to a non-instance procedure reached Core translation"
+    MessageKind.strataBug
+
 /-- Whether `name` is a type Core already provides natively (`Set`, `Map`, `Sequence`,
     `int`, …). Read from `Core.KnownTypes` rather than spelled out here, so a type added to
     Core's factory is recognized without a matching edit in this pass. -/
@@ -937,7 +941,7 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" MessageKind.notYetImplemented
   | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" MessageKind.notYetImplemented
   | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" MessageKind.notYetImplemented
-  | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" MessageKind.notYetImplemented
+  | .InstanceCall .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
   | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
   | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
   -- The exceptional channel is lowered to ordinary Laurel by the
@@ -1188,8 +1192,7 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" MessageKind.strataBug
-      | .InstanceCall _target callee args =>
-          translateCallTargets callee args
+      | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -1230,9 +1233,7 @@ def translateStmt (stmt : StmtExprMd)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
-  | .InstanceCall .. =>
-      -- Instance method call as statement: no return value, treated as no-op
-      return ([])
+  | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
       emitCoreDiagnostic d
@@ -1569,7 +1570,12 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.imperativeFunction,
-      NodeKind.Program.Unordered
+      NodeKind.Program.Unordered,
+      NodeKind.TypeDefinition.Alias,
+      NodeKind.Pseudo.needsLoopInvariantChecks,
+      NodeKind.Procedure.contracts.Coroutine,
+      NodeKind.StmtExpr.OldGuarantee,
+      NodeKind.StmtExpr.OldRelies
     ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.
