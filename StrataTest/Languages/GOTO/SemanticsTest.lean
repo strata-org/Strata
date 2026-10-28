@@ -83,9 +83,7 @@ example : ExecProg noCall testEval (fun _ => none) assertFailProg 0
 -- But the program is NOT safe
 example : ¬ ProgramSafe noCall testEval (fun _ => none) assertFailProg Store.empty := by
   intro hsafe
-  apply hsafe 0 Store.empty
-  · exact Reachable.refl
-  · exact ⟨rfl, rfl⟩
+  exact (hsafe 0 Store.empty Reachable.refl).1 ⟨rfl, rfl⟩
 
 /-! ## Reachability transitivity -/
 
@@ -140,13 +138,12 @@ example :
 example : ¬ ProgramSafe noCall testEval (fun _ => none) setReturnThenAssertProg
     Store.empty := by
   intro hsafe
-  apply hsafe 2 (Store.empty.kill "x")
-  · apply Reachable.step_set_return_value
-    · rfl
-    · apply Reachable.step (pc' := 2) (σ' := Store.empty.kill "x")
-      · exact StepInstr.dead rfl rfl
-      · exact Reachable.refl
-  · exact ⟨rfl, rfl⟩
+  refine (hsafe 2 (Store.empty.kill "x") ?_).1 ⟨rfl, rfl⟩
+  apply Reachable.step_set_return_value
+  · rfl
+  · apply Reachable.step (pc' := 2) (σ' := Store.empty.kill "x")
+    · exact StepInstr.dead rfl rfl
+    · exact Reachable.refl
 
 /-! ## Regression: nested `old()` in two-state evaluation
 
@@ -522,12 +519,12 @@ example : ExecProg noCall testEval (fun _ => none) gotoTakenProg 0
 -- `assertFailProg` can fail: pc 0 is reachable (reflexively) and its ASSERT
 -- guard evaluates to `false`.
 example : CanFail noCall testEval (fun _ => none) assertFailProg Store.empty :=
-  ⟨0, Store.empty, Reachable.refl, rfl, rfl⟩
+  ⟨0, Store.empty, Reachable.refl, .inl ⟨rfl, rfl⟩⟩
 
 -- ...and lack of safety follows from that witness through the alignment lemma.
 example : ¬ ProgramSafe noCall testEval (fun _ => none) assertFailProg Store.empty :=
   fun hsafe =>
-    (programSafe_iff_not_canFail.mp hsafe) ⟨0, Store.empty, Reachable.refl, rfl, rfl⟩
+    (programSafe_iff_not_canFail.mp hsafe) ⟨0, Store.empty, Reachable.refl, .inl ⟨rfl, rfl⟩⟩
 
 
 /-! ## Regression: ASSUME pass advances; false guard blocks (AutoSDE)
@@ -776,3 +773,97 @@ example : ExecProg noCall testEval (fun _ => none) setReturnProg 0
   exact ExecProg.set_return_value (retVal := none) (v := .bool true) rfl rfl
     (by simp [testEval, Expr.constant]) (ExecProg.end_function rfl)
 
+
+/-! ## A stuck instruction makes a program unsafe
+
+`derefAssignProg` is `f` from `void f(int *p) { *p = 1; __CPROVER_assert(0, "must
+fail"); }`, as `goto-cc` compiles it and the GOTO JSON ingestion reads it back.
+CBMC reports the assertion as FAILURE. The assignment through `*p` has no
+`StepInstr` derivation (`getAssignLhs` accepts only a symbol), so pc 0 is
+`Stuck`. -/
+
+def derefAssignProg : Program :=
+  let intTy : Ty := .SignedBV 32
+  { name := "f", parameterIdentifiers := #["f::p"], isBodyAvailable := true, isInternal := false,
+    instructions := #[
+      { type := .ASSIGN, locationNum := 12,
+        code := { id := .assignment .assign,
+                  operands := [{ id := .unary .Dereference, type := intTy,
+                                 operands := [{ id := .nullary (.symbol "f::p"),
+                                                type := .Pointer intTy }] },
+                               { id := .nullary (.constant "1"), type := intTy }] } },
+      { type := .ASSERT, locationNum := 13,
+        guard := { id := .binary .NotEqual, type := .Boolean,
+                   operands := [{ id := .nullary (.constant "0"), type := intTy },
+                                { id := .nullary (.constant "0"), type := intTy }] } },
+      { type := .END_FUNCTION, locationNum := 14 } ] }
+
+/-- `derefAssignProg` is unsafe for every call relation, evaluator and initial
+    store. -/
+theorem derefAssignProg_unsafe (cr : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (σ₀ : Store) : ¬ ProgramSafe cr eval fenv derefAssignProg σ₀ := by
+  intro hsafe
+  apply (hsafe 0 σ₀ Reachable.refl).2
+  refine ⟨by decide, ?_, ?_, ?_, ?_⟩
+  · simp [instrType, derefAssignProg]
+  · simp [AssumeBlocks, instrType, derefAssignProg]
+  · rintro ⟨pc', σ', h⟩
+    cases h <;> simp_all [instrType, instrCode, getAssignLhs, derefAssignProg]
+  · simp [ReturnsValue, instrType, derefAssignProg]
+
+/-- `SET_RETURN_VALUE x + 1; END_FUNCTION`, where `testEval` has no rule for
+    `+`, so the return expression does not evaluate. -/
+def badReturnProg : Program :=
+  { name := "test"
+    instructions := #[
+      { type := .SET_RETURN_VALUE, locationNum := 0,
+        code := Code.set_return_value
+          { id := .multiary .Plus, type := .Integer,
+            operands := [Expr.symbol "x" .Integer, Expr.constant "1" .Integer] } },
+      { type := .END_FUNCTION, locationNum := 1 } ] }
+
+/-- A SET_RETURN_VALUE whose return expression does not evaluate is `Stuck`, so
+    `badReturnProg` is unsafe under `testEval` from every initial store. -/
+theorem badReturnProg_unsafe (σ₀ : Store) :
+    ¬ ProgramSafe noCall testEval (fun _ => none) badReturnProg σ₀ := by
+  intro hsafe
+  apply (hsafe 0 σ₀ Reachable.refl).2
+  refine ⟨by decide, ?_, ?_, ?_, ?_⟩
+  · simp [instrType, badReturnProg]
+  · simp [AssumeBlocks, instrType, badReturnProg]
+  · rintro ⟨pc', σ', h⟩
+    cases h <;> simp_all [instrType, badReturnProg]
+  · rintro ⟨_, e, v, he, hv⟩
+    simp only [instrCode, badReturnProg, Code.set_return_value, List.size_toArray, List.length_cons,
+      List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.zero_lt_succ, getElem?_pos, List.getElem_toArray,
+      List.getElem_cons_zero, Option.map_some, Option.bind_some, getReturnValue, Option.some.injEq] at he
+    subst he
+    simp [testEval] at hv
+
+/-- `END_FUNCTION` alone. -/
+def endOnlyProg : Program :=
+  { name := "test", instructions := #[{ type := .END_FUNCTION, locationNum := 0 }] }
+
+/-- A program consisting of a single END_FUNCTION is safe for every call
+    relation, evaluator and initial store: its only reachable state is the
+    initial one, which is END_FUNCTION and so neither fails an assertion nor is
+    `Stuck`. This shows that `ProgramSafe` can be established. -/
+theorem endOnlyProg_safe (cr : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (σ₀ : Store) : ProgramSafe cr eval fenv endOnlyProg σ₀ := by
+  intro pc σ hreach
+  have noStep : ∀ c, ¬ ReachStep cr eval fenv endOnlyProg (0, σ₀) c := by
+    rintro ⟨pc', σ'⟩ (h | ⟨h, _⟩)
+    · simp only at h
+      cases h <;> simp_all [instrType, endOnlyProg]
+    · simp [instrType, endOnlyProg] at h
+  unfold Reachable at hreach
+  generalize hs : ((0 : Nat), σ₀) = s at hreach noStep
+  cases hreach with
+  | refl =>
+    simp only [Prod.mk.injEq] at hs
+    obtain ⟨rfl, rfl⟩ := hs
+    refine ⟨?_, ?_⟩
+    · simp [AssertFails, instrType, endOnlyProg]
+    · rintro ⟨_, hend, _⟩
+      exact hend rfl
+  | step _ y _ hstep _ => exact absurd hstep (noStep y)

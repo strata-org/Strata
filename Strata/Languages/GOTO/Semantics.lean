@@ -46,7 +46,8 @@ relation (plus the `ExecProg` terminators `END_FUNCTION`/`SET_RETURN_VALUE`)
 below, which are the source of truth. Concurrency (`START_THREAD`/`END_THREAD`,
 `ATOMIC_*`), exceptions (`THROW`/`CATCH`), `OTHER`, and the `INCOMPLETE_GOTO`/
 `NO_INSTRUCTION_TYPE` placeholders are not produced by Strata and are not
-modeled.
+modeled. Reaching an unmodeled instruction is `Stuck`, which `ProgramSafe`
+counts as unsafe.
 
 ### Expression evaluation
 Expression evaluation is abstracted via a parameter `eval : Store → Expr → Option Value`.
@@ -496,12 +497,42 @@ theorem Reachable.step_set_return_value {callResult : CallResultRel} {eval : Exp
     Reachable callResult eval fenv prog pc σ pc'' σ'' :=
   ReflTrans.step _ _ _ (Or.inr ⟨htype, rfl⟩) r
 
-/-- A program is safe if no reachable state has a failing assertion. -/
+/-- An ASSUME instruction at `pc` blocks (guard is false). -/
+def AssumeBlocks (eval : ExprEval) (prog : Program) (pc : Nat) (σ : Store) : Prop :=
+  instrType prog pc = some .ASSUME ∧
+  (instrGuard prog pc).bind (eval σ ·) = some (.bool false)
+
+/-- The instruction at `pc` is a SET_RETURN_VALUE whose return expression
+    evaluates in `σ`, so `ExecProg.set_return_value` can execute it. -/
+def ReturnsValue (eval : ExprEval) (prog : Program) (pc : Nat) (σ : Store) : Prop :=
+  instrType prog pc = some .SET_RETURN_VALUE ∧
+  ∃ e v, (instrCode prog pc).bind getReturnValue = some e ∧ eval σ e = some v
+
+/-- Execution is stuck at `(pc, σ)`: `pc` is in bounds, the instruction is not
+    END_FUNCTION, it is not an ASSUME whose guard is false, no `StepInstr`
+    rule applies, and it is not a SET_RETURN_VALUE whose return expression
+    evaluates. This covers every instruction the semantics cannot execute in
+    `σ`: an unmodelled instruction type, an expression `eval` maps to `none`
+    (including a return expression), a guard that is not a boolean, an lhs
+    that is not a symbol, or a call that `callResult` does not relate. An
+    ASSUME with a false guard is excluded because it blocks the path by
+    design. -/
+def Stuck (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
+    (prog : Program) (pc : Nat) (σ : Store) : Prop :=
+  pc < prog.instructions.size ∧ instrType prog pc ≠ some .END_FUNCTION ∧
+  ¬ AssumeBlocks eval prog pc σ ∧
+  ¬ (∃ pc' σ', StepInstr callResult eval fenv prog pc σ pc' σ') ∧
+  ¬ ReturnsValue eval prog pc σ
+
+/-- A program is safe if no reachable state has a failing assertion or is
+    `Stuck`. Counting a stuck state as unsafe means that a construct the
+    semantics cannot execute is reported, rather than making everything after
+    it unreachable and so trivially safe. -/
 def ProgramSafe (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
     (prog : Program) (σ₀ : Store) : Prop :=
   ∀ pc σ,
     Reachable callResult eval fenv prog 0 σ₀ pc σ →
-    ¬ AssertFails eval prog pc σ
+    ¬ AssertFails eval prog pc σ ∧ ¬ Stuck callResult eval fenv prog pc σ
 
 end -- public section
 

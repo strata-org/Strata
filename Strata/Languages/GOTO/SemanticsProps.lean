@@ -29,7 +29,9 @@ review feedback — none is accidental dead code):
   per-instruction `progress_*` lemmas compose into `progress_wellformed`.
 - **Exported meta-theory.** The remaining results — the `*_other` store lemmas,
   `assume_preserves_store`/`assert_preserves_store`, `reachable_trans`/
-  `reachable_single`/`safe_no_assert_fail`, `exec_empty_prog`, and the top-level
+  `reachable_single`/`safe_no_assert_fail`/`safe_not_stuck`, `CanFail` and
+  `programSafe_iff_not_canFail` (a reachable failing assertion or `Stuck`
+  state is a failure), `exec_empty_prog`, and the top-level
   `ExecProg_deterministic`/`progress_wellformed` — are the phase-1 guarantees and
   the building blocks reserved for the Phase-2 Core⟹GOTO simulation, which is
   where the store-operation and reachability facts get consumed.
@@ -164,21 +166,33 @@ theorem safe_no_assert_fail
     ProgramSafe callResult eval fenv prog σ₀ →
     Reachable callResult eval fenv prog 0 σ₀ pc σ →
     ¬ AssertFails eval prog pc σ :=
-  fun hsafe hreach => hsafe pc σ hreach
+  fun hsafe hreach => (hsafe pc σ hreach).1
+
+/-- If a program is safe and we can reach `pc, σ`, then execution is not
+    stuck there. -/
+theorem safe_not_stuck
+    {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
+    {prog : Program} {σ₀ σ : Store} {pc : Nat} :
+    ProgramSafe callResult eval fenv prog σ₀ →
+    Reachable callResult eval fenv prog 0 σ₀ pc σ →
+    ¬ Stuck callResult eval fenv prog pc σ :=
+  fun hsafe hreach => (hsafe pc σ hreach).2
 
 /-! ## Failure reachability
 
 `CanFail` says some configuration reachable from the entry has a failing
-assertion; `Reachable` provides the multi-step closure and `AssertFails` the
-failure check. `ProgramSafe` is exactly its negation. Both are stated directly
-over GOTO-IL, with no dependency on `Strata.Transform.Specification`; relating
-them to Core's event-trace specifications needs the Phase-2 Core⟹GOTO
+assertion or is stuck (a stuck configuration is a failure, not a silent end of
+the run); `Reachable` provides the multi-step closure and `AssertFails`/`Stuck`
+the failure check. `ProgramSafe` is exactly its negation. Both are stated
+directly over GOTO-IL, with no dependency on `Strata.Transform.Specification`;
+relating them to Core's event-trace specifications needs the Phase-2 Core⟹GOTO
 simulation. -/
 
-/-- Some reachable configuration has a failing assertion. -/
+/-- Some reachable configuration has a failing assertion or is stuck. -/
 def CanFail (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
     (prog : Program) (σ₀ : Store) : Prop :=
-  ∃ pc σ, Reachable callResult eval fenv prog 0 σ₀ pc σ ∧ AssertFails eval prog pc σ
+  ∃ pc σ, Reachable callResult eval fenv prog 0 σ₀ pc σ ∧
+    (AssertFails eval prog pc σ ∨ Stuck callResult eval fenv prog pc σ)
 
 /-- `ProgramSafe` is exactly the negation of `CanFail`. -/
 theorem programSafe_iff_not_canFail
@@ -187,10 +201,12 @@ theorem programSafe_iff_not_canFail
     ProgramSafe callResult eval fenv prog σ₀ ↔
     ¬ CanFail callResult eval fenv prog σ₀ := by
   constructor
-  · rintro hsafe ⟨pc, σ, hreach, hfail⟩
-    exact hsafe pc σ hreach hfail
-  · intro hnf pc σ hreach hfail
-    exact hnf ⟨pc, σ, hreach, hfail⟩
+  · rintro hsafe ⟨pc, σ, hreach, hfail | hstuck⟩
+    · exact (hsafe pc σ hreach).1 hfail
+    · exact (hsafe pc σ hreach).2 hstuck
+  · intro hnf pc σ hreach
+    exact ⟨fun hfail => hnf ⟨pc, σ, hreach, .inl hfail⟩,
+           fun hstuck => hnf ⟨pc, σ, hreach, .inr hstuck⟩⟩
 
 /-! ## ExecProg Properties -/
 
@@ -265,11 +281,6 @@ theorem ExecProg_deterministic
 def IsTerminator (prog : Program) (pc : Nat) : Prop :=
   instrType prog pc = some .END_FUNCTION ∨
   instrType prog pc = some .SET_RETURN_VALUE
-
-/-- An ASSUME instruction at `pc` blocks (guard is false). -/
-def AssumeBlocks (eval : ExprEval) (prog : Program) (pc : Nat) (σ : Store) : Prop :=
-  instrType prog pc = some .ASSUME ∧
-  (instrGuard prog pc).bind (eval σ ·) = some (.bool false)
 
 /-- The instruction types that Strata's translation produces. -/
 def IsSupportedInstrType (ty : InstructionType) : Prop :=
