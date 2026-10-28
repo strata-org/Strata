@@ -41,11 +41,6 @@ Not covered here, by design: `free`/`checked` variants of a case's `ensures` and
 wildcard case frame do not exist. See the exceptions section of the Laurel Designer
 Guide for why (in short: an empty case frame already means "unframed", so a wildcard
 would be a second spelling of it).
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
-throw composite values, which live on the heap, and the interpret path does not
-support the heap yet. Where a construct can be exercised without the heap it is run
-both ways instead; see `Throw.lean`.
 -/
 
 /-! ## The clause: a guard forces its throw
@@ -68,18 +63,11 @@ The thrown value is named by the `throws (e: T)` clause, which scopes `e` over e
 case's `ensures` — but not over the guards, which are evaluated on entry, before any
 throw. There is no unbound form: `throws` always names its value, whether or not any
 case mentions it.
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
-allocate on the heap — a thrown exception is a composite value, and some cases also
-`new` inside the region — and the interpret path does not support the heap yet. Where
-a construct can be exercised without the heap it is run both ways instead; see
-`TryCatchThrow.lean`.
 -/
 
 -- Positive: the body throws exactly when `b == 0`, and the thrown value is an
 -- `ArithmeticException`, so the case holds.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -141,7 +129,7 @@ procedure divBad(a: int, b: int)
 -- the `catch` branch (so `out` ends at 99, never 1). A case with nothing to say
 -- about the thrown value needs no `ensures` at all; the guard alone forces the
 -- throw.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and the Core interpreter ignores the guard.
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and the Core interpreter ignores the guard.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -195,14 +183,10 @@ a guard like `c#value < 0` is evaluated against the post-state heap and does not
 against a body that branched on the pre-state value. The guards below are therefore over
 parameters, which are immutable and so read the same in both states. Heap-reading guards
 are therefore unsupported rather than merely untested.
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: a thrown
-exception is a composite, and the interpret path does not support the heap yet.
 -/
 
 -- Positive: one case, and it covers the only throwing path.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -284,8 +268,7 @@ procedure missedCase(c: Cell, logCell: Cell, fail: bool)
 #end
 
 -- The fix is to state the missing case.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -394,8 +377,7 @@ procedure claimsNeverThrows(x: int)
 
 -- Stating no case at all leaves the throwing paths unconstrained rather than ruled
 -- out: the same body as above verifies, because no exhaustiveness claim is emitted.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -820,19 +802,12 @@ a claim to have enumerated them, and `ModifiesClauses` emits a checked
 `isBad ==> (C₁ ∨ … ∨ Cₙ)` alongside the frames. Two consequences visible below: a
 throwing path matching no guard is rejected rather than silently unframed, and a
 caller that refutes every guard learns the call cannot have thrown.
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
-allocate on the heap — a thrown exception is a composite value, and some cases also
-`new` inside the region — and the interpret path does not support the heap yet. Where
-a construct can be exercised without the heap it is run both ways instead; see
-`TryCatchThrow.lean`.
 -/
 
 -- Positive: the body honours both frames — on the normal path only `c` changes,
 -- on the `fail` throwing path only `logCell` changes (the freshly-allocated `Err`
 -- is excluded from the frame, since it did not exist in the pre-state heap).
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -909,8 +884,7 @@ procedure doWorkBad(c: Cell, logCell: Cell)
 -- does on the normal path. This needs the clause's refs to parse at precedence 0
 -- (see `throwsOnModifies` in the grammar); otherwise `logCell#value` does not
 -- parse as a field target here.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -999,8 +973,7 @@ extra, it is what the case is keyed on. -/
 -- `isBad ==> fail`, hence `!isBad`. The handler is unreachable (`assert false`
 -- holds) and the caller frames only `c`, even though the callee's exceptional
 -- frame mentions `logCell`.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -1115,15 +1088,12 @@ it is where the two contract directions pay off separately:
   the stated property held;
 - from a case's guard, the caller reasons *forwards* — it passed an input that
   forces a throw, so the handler definitely runs.
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
-allocate a composite exception value, which the interpret path does not support yet.
 -/
 
 -- Backwards direction: the handler learns `id < 0` without seeing the body. The case
 -- guards on `id < 0`, and because stating cases enumerates them, the exhaustiveness
 -- claim `isBad ==> id < 0` is available to callers.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and Core says "condition did not reduce to bool".
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -1151,7 +1121,7 @@ procedure caller(id: int) returns (out: int)
 
 -- Forwards direction: the case's guard *forces* the throw for that input, so the
 -- normal path is unreachable and the handler's assignment is the only outcome.
--- No interpreters: the callee is bodiless; the Laurel interpreter returns its defaults normally instead of honouring the throwsOn guard, and Core says "condition did not reduce to bool".
+-- No interpreters: the callee is bodiless, so the Laurel interpreter refuses the call, and Core says "condition did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -1196,14 +1166,12 @@ property of the modifies encoding rather than of exceptions.
 
 Note the callers declare no case of their own: they catch, so they have no exceptional
 exit, and a case without a `throws` type is rejected.
-
-Using `testLaurelExecution` but skiping the Core interpreter test path: these cases
-allocate composite values, which the interpret path does not support yet.
 -/
 
 -- Caught the exception: the callee's exceptional frame covers only `logCell`, so the
 -- caller's snapshot of `c` still holds.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
+-- No Core interpreter: `c#value` is never written, so its read leaves a residual `select`
+-- that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;
@@ -1254,7 +1222,8 @@ procedure runAll() entry
 
 -- Fell through normally: the normal frame covers only `c`, so `logCell` is unchanged
 -- and the callee's `ensures` is available.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" (Core interpreter bug).
+-- No Core interpreter: `l#value` is never written, so its read leaves a residual `select`
+-- that "did not reduce to bool".
 #eval testLaurelExecution { skipCoreInterpreter := true } <|
 #strata
 program Laurel;

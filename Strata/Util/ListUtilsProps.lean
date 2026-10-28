@@ -7,6 +7,7 @@ module
 
 public import Strata.Util.ListUtils
 import all Strata.Util.ListUtils
+import Std.Data.HashMap.Lemmas
 
 /-!
 # Properties of list utilities
@@ -1183,7 +1184,13 @@ theorem foldl_zip_congr
           exact this
 
 
-theorem nodup_map_injOn {α β : Type} [DecidableEq β] {f : α → β} {l : List α}
+/-- A list whose image under `f` is duplicate-free is duplicate-free. -/
+public theorem nodup_of_nodup_map {α β} (f : α → β) {l : List α}
+    (h : (l.map f).Nodup) : l.Nodup := by
+  rw [List.Nodup, List.pairwise_map] at h
+  exact h.imp (fun hne heq => hne (congrArg f heq))
+
+theorem nodup_map_injOn {α β : Type} {f : α → β} {l : List α}
     (hnd : (l.map f).Nodup) {a b : α} (ha : a ∈ l) (hb : b ∈ l) (hab : f a = f b) : a = b := by
   induction l with
   | nil => exact nomatch ha
@@ -1279,6 +1286,71 @@ theorem List.Rel₂.getElem?_some {R : α → β → Prop}
     | zero => simp at ha; subst ha; exact ⟨_, rfl, hr⟩
     | succ n => simp only [List.getElem?_cons_succ] at ha ⊢; exact ih ha
 
+/-- Lists related position by position, concatenated, are related position by position. -/
+theorem List.Rel₂.append {R : α → β → Prop} {l₁ l₂ : List α} {l₁' l₂' : List β} :
+    Rel₂ R l₁ l₁' → Rel₂ R l₂ l₂' → Rel₂ R (l₁ ++ l₂) (l₁' ++ l₂')
+  | .nil, h => h
+  | .cons hab h1, h2 => .cons hab (h1.append h2)
+
+/-- A list related position by position to a nonempty list is nonempty. -/
+theorem List.Rel₂.ne_nil {R : α → β → Prop} {l : List α} {l' : List β} (h : Rel₂ R l l')
+    (hl : l ≠ []) : l' ≠ [] := by
+  cases h with
+  | nil => exact absurd rfl hl
+  | cons => exact List.cons_ne_nil _ _
+
+/-- A list related position by position to `l ++ [a]` is some `m ++ [b]`, with `m` related
+to `l` and `b` to `a`. -/
+theorem List.Rel₂.append_singleton {R : α → β → Prop} : ∀ {l : List α} {a : α} {l' : List β},
+    Rel₂ R (l ++ [a]) l' → ∃ m b, l' = m ++ [b] ∧ Rel₂ R l m ∧ R a b
+  | [], _, _, .cons hab .nil => ⟨[], _, rfl, .nil, hab⟩
+  | _ :: _, _, _, .cons hab h => by
+    obtain ⟨m, b, rfl, hm, hb⟩ := List.Rel₂.append_singleton h
+    exact ⟨_ :: m, b, rfl, .cons hab hm, hb⟩
+
+/-- Lists related position by position by `R` are related by any relation that `R` implies. -/
+theorem List.Rel₂.imp {R S : α → β → Prop} (H : ∀ a b, R a b → S a b) {l : List α}
+    {l' : List β} : Rel₂ R l l' → Rel₂ S l l'
+  | .nil => .nil
+  | .cons hab h => .cons (H _ _ hab) (h.imp H)
+
+
+/-- A pointwise relation that relates each element to at most one element relates a list to at
+    most one list. -/
+theorem List.Rel₂.unique {α β : Type _} {R : α → β → Prop} {l : List α} {l1 l2 : List β}
+    (hR : ∀ a b c, R a b → R a c → b = c) (h1 : List.Rel₂ R l l1) (h2 : List.Rel₂ R l l2) :
+    l1 = l2 := by
+  induction h1 generalizing l2 with
+  | nil => cases h2; rfl
+  | cons hhd _ ih =>
+    cases h2 with
+    | cons hhd' htl' => rw [hR _ _ _ hhd hhd', ih htl']
+
+/-- A pointwise relation that implies equality relates only equal lists. -/
+theorem List.Rel₂.eq {α : Type _} {R : α → α → Prop} {l1 l2 : List α}
+    (hR : ∀ a b, R a b → a = b) (h : List.Rel₂ R l1 l2) : l1 = l2 := by
+  induction h with
+  | nil => rfl
+  | cons hhd _ ih => rw [hR _ _ hhd, ih]
+
+/-- A reflexive relation relates every list to itself pointwise. -/
+theorem List.Rel₂.refl {α : Type _} {R : α → α → Prop} (hR : ∀ a, R a a) :
+    ∀ l : List α, List.Rel₂ R l l
+  | [] => .nil
+  | a :: l => .cons (hR a) (List.Rel₂.refl hR l)
+
+/-- `flatMap` preserves the sublist relation. -/
+theorem List.Sublist.flatMap {α β : Type _} (f : α → List β) {l1 l2 : List α}
+    (h : List.Sublist l1 l2) : List.Sublist (l1.flatMap f) (l2.flatMap f) := by
+  induction h with
+  | slnil => exact List.Sublist.slnil
+  | cons _ _ ih =>
+    rw [List.flatMap_cons]
+    exact ih.trans (List.sublist_append_right _ _)
+  | cons_cons _ _ ih =>
+    rw [List.flatMap_cons, List.flatMap_cons]
+    exact ih.append_left _
+
 
 /-! ### Zip / map lemmas -/
 
@@ -1317,5 +1389,361 @@ theorem perm_append_swap_middle {α : Type _} (a b c d : List α) :
     exact (e1.trans e2).trans e3
   have h3 : List.Perm (a ++ (c ++ (b ++ d))) ((a ++ c) ++ (b ++ d)) := by simp [List.append_assoc]
   exact (h1.trans h2).trans h3
+
+/-- After inserting `key d ↦ val d` into `m` for each `d ∈ l`, a lookup finds a value some `d`
+    contributed or one `m` held. -/
+theorem foldl_insert_lookup {γ β : Type} (l : List γ) (key : γ → String) (val : γ → β)
+    (m : Std.HashMap String β) :
+    ∀ (k : String) (v : β),
+      (l.foldl (fun acc d => acc.insert (key d) (val d)) m)[k]? = some v →
+      (∃ d ∈ l, key d = k ∧ val d = v) ∨ m[k]? = some v := by
+  induction l generalizing m with
+  | nil => intro k v h; exact Or.inr (by simpa only [List.foldl_nil] using h)
+  | cons d rest ih =>
+    intro k v h
+    simp only [List.foldl_cons] at h
+    rcases ih (m.insert (key d) (val d)) k v h with ⟨e, he, hek, hev⟩ | hins
+    · exact Or.inl ⟨e, List.mem_cons_of_mem d he, hek, hev⟩
+    · rw [Std.HashMap.getElem?_insert] at hins
+      split at hins
+      · rename_i heq
+        rw [beq_iff_eq] at heq
+        simp only [Option.some.injEq] at hins
+        exact Or.inl ⟨d, List.mem_cons_self, heq, hins⟩
+      · exact Or.inr hins
+
+/-- If `l.map F = l`, then `F` fixes every element of `l`. -/
+theorem List.forall_eq_self_of_map_eq_self {α : Type} {F : α → α} {l : List α}
+    (h : l.map F = l) : ∀ t ∈ l, F t = t := by
+  induction l with
+  | nil => intro t ht; simp only [List.not_mem_nil] at ht
+  | cons hd tl ih =>
+    rw [List.map_cons] at h
+    obtain ⟨hhd, htl⟩ := List.cons.injEq .. ▸ h
+    intro t ht
+    rcases List.mem_cons.mp ht with heq | htail
+    · exact heq ▸ hhd
+    · exact ih htl t htail
+
+/-- Looking a key up in `zip keys (vals.map f)` applies `f` to the lookup in `zip keys vals`. -/
+theorem List.find?_zip_map_right {α β : Type} [BEq α] [LawfulBEq α] (f : β → β)
+    (keys : List α) (vals : List β) (x : α) :
+    (List.zip keys (vals.map f)).find? (fun p => p.1 == x)
+      = ((List.zip keys vals).find? (fun p => p.1 == x)).map (fun p => (p.1, f p.2)) := by
+  induction keys generalizing vals with
+  | nil => simp
+  | cons v vs ih =>
+    cases vals with
+    | nil => simp
+    | cons w ws =>
+      rw [List.map_cons, List.zip_cons_cons, List.zip_cons_cons]
+      by_cases hv : v = x
+      · subst hv
+        rw [List.find?_cons_of_pos (by simp), List.find?_cons_of_pos (by simp)]
+        simp
+      · rw [List.find?_cons_of_neg (by simp [hv]), List.find?_cons_of_neg (by simp [hv])]
+        exact ih ws
+
+/-- Every element of the left list of a pointwise relation is related to an element of the
+    right list. -/
+theorem List.Rel₂.exists_of_mem_left {α β : Type _} {R : α → β → Prop} {l1 : List α}
+    {l2 : List β} (h : Rel₂ R l1 l2) {a : α} (ha : a ∈ l1) : ∃ b ∈ l2, R a b := by
+  induction h with
+  | nil => cases ha
+  | cons hab _ ih =>
+    rcases List.mem_cons.mp ha with rfl | hmem
+    · exact ⟨_, List.mem_cons_self, hab⟩
+    · obtain ⟨b, hb, hr⟩ := ih hmem
+      exact ⟨b, List.mem_cons_of_mem _ hb, hr⟩
+
+/-- Pointwise related lists have equal images under two maps that agree on related elements. -/
+theorem List.Rel₂.map_eq {α β γ : Type _} {R : α → β → Prop} {l1 : List α} {l2 : List β}
+    {f : α → γ} {g : β → γ} (hfg : ∀ a b, R a b → f a = g b) (h : Rel₂ R l1 l2) :
+    l1.map f = l2.map g := by
+  induction h with
+  | nil => rfl
+  | cons hab _ ih => rw [List.map_cons, List.map_cons, hfg _ _ hab, ih]
+
+/-- Reversing both lists preserves a pointwise relation. -/
+theorem List.Rel₂.reverse {α β : Type _} {R : α → β → Prop} {a : List α} {b : List β}
+    (h : List.Rel₂ R a b) : List.Rel₂ R a.reverse b.reverse := by
+  induction h with
+  | nil => exact .nil
+  | cons hhd _ ih =>
+    rw [List.reverse_cons, List.reverse_cons]
+    exact List.Rel₂.append ih (.cons hhd .nil)
+
+/-- Searching key-aligned, pointwise-related association lists for a key fails on both or
+    finds related values. -/
+theorem List.findSome?_pair_rel {α β : Type _} [BEq α] {R : β → β → Prop} (k : α)
+    {l1 l2 : List (α × β)}
+    (h : List.Rel₂ (fun p q => p.1 = q.1 ∧ R p.2 q.2) l1 l2) :
+    (List.findSome? (fun p => if p.1 == k then some p.2 else none) l1 = none ∧
+       List.findSome? (fun p => if p.1 == k then some p.2 else none) l2 = none) ∨
+    ∃ d r, List.findSome? (fun p => if p.1 == k then some p.2 else none) l1 = some d ∧
+      List.findSome? (fun p => if p.1 == k then some p.2 else none) l2 = some r ∧ R d r := by
+  induction h with
+  | nil => exact Or.inl ⟨by simp, by simp⟩
+  | @cons p q ps qs hhd _ ih =>
+    rw [List.findSome?_cons, List.findSome?_cons]
+    by_cases hpk : (p.1 == k) = true
+    · have hqk : (q.1 == k) = true := by rw [← hhd.1]; exact hpk
+      simp only [hpk, hqk, ite_true]
+      exact Or.inr ⟨p.2, q.2, rfl, rfl, hhd.2⟩
+    · have hqk : (q.1 == k) = false := by
+        rw [← hhd.1]; simpa using hpk
+      simp only [hpk, hqk, Bool.false_eq_true, ite_false]
+      exact ih
+
+/-- If `f` and `g` fail together or give `R`-related results on each element, so do their
+    `findSome?` searches. -/
+theorem List.findSome?_congr {α β γ : Type} (R : β → γ → Prop) (f : α → Option β) (g : α → Option γ)
+    (l : List α)
+    (hstep : ∀ a ∈ l, (f a = none ∧ g a = none) ∨
+      (∃ b c, f a = some b ∧ g a = some c ∧ R b c)) :
+    (l.findSome? f = none ∧ l.findSome? g = none) ∨
+    (∃ b c, l.findSome? f = some b ∧ l.findSome? g = some c ∧ R b c) := by
+  induction l with
+  | nil => exact Or.inl ⟨rfl, rfl⟩
+  | cons a rest ih =>
+    rcases hstep a (by simp) with ⟨hf, hg⟩ | ⟨b, c, hf, hg, hR⟩
+    · simp only [List.findSome?_cons, hf, hg]
+      exact ih (fun e he => hstep e (by simp [he]))
+    · simp only [List.findSome?_cons, hf, hg]
+      exact Or.inr ⟨b, c, rfl, rfl, hR⟩
+
+/-- If every result of `f` satisfies `P`, so does the result of `l.findSome? f`. -/
+theorem List.findSome?_prop {α β : Type} (f : α → Option β) (P : β → Prop) (l : List α)
+    (hstep : ∀ a ∈ l, ∀ b, f a = some b → P b) :
+    ∀ b, l.findSome? f = some b → P b := by
+  induction l with
+  | nil => intro b hb; exact absurd hb (by simp)
+  | cons a rest ih =>
+    intro b hb
+    simp only [List.findSome?_cons] at hb
+    cases hfa : f a with
+    | none => rw [hfa] at hb; exact ih (fun e he => hstep e (by simp [he])) b hb
+    | some v =>
+      rw [hfa, Option.some.injEq] at hb
+      exact hb ▸ hstep a (by simp) v hfa
+
+/-- Mapping `F` over the right list of a zip maps the right component of each pair. -/
+theorem List.mem_zip_map_snd {α β γ : Type _} {l₁ : List α} {l₂ : List β} (F : β → γ) {a : α}
+    {b : β} (h : (a, b) ∈ List.zip l₁ l₂) : (a, F b) ∈ List.zip l₁ (l₂.map F) := by
+  rw [List.zip_map_right]
+  exact List.mem_map_of_mem h
+
+/-- Each element of a list is paired with its image in the zip of the list with its images. -/
+theorem List.mem_zip_map_self {α β : Type _} (l : List α) (g : α → β) {a : α} (h : a ∈ l) :
+    (a, g a) ∈ List.zip l (l.map g) := by
+  induction l with
+  | nil => simp only [List.not_mem_nil] at h
+  | cons b rest ih =>
+    rw [List.map_cons, List.zip_cons_cons]
+    rcases List.mem_cons.mp h with rfl | htl
+    · exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (ih htl)
+
+/-- With distinct keys, searching a zip returns the pair stored under a member key. -/
+theorem find?_zip_of_mem {α β : Type} [BEq α] [LawfulBEq α]
+    (as : List α) (bs : List β) (a : α) (b : β)
+    (hmem : (a, b) ∈ List.zip as bs) (hnd : as.Nodup) :
+    (List.zip as bs).find? (fun q => q.1 == a) = some (a, b) := by
+  induction as generalizing bs with
+  | nil => simp at hmem
+  | cons a' as ih =>
+    cases bs with
+    | nil => simp at hmem
+    | cons b' bs =>
+      rw [List.zip_cons_cons] at hmem
+      rw [List.zip_cons_cons, List.find?_cons]
+      rcases List.mem_cons.mp hmem with heq | hrest
+      · injection heq with h1 h2
+        subst h1; subst h2
+        simp
+      · have haas : a ∈ as := (List.of_mem_zip hrest).1
+        have hne : ((a', b').1 == a) = false := by
+          have hne : a' ≠ a := fun hh => (List.nodup_cons.mp hnd).1 (hh ▸ haas)
+          simpa using hne
+        rw [hne]
+        exact ih bs hrest (List.nodup_cons.mp hnd).2
+
+/-- The key projection of a zip is a sublist of its left input. -/
+theorem List.map_fst_zip_sublist {α β} (l : List α) (r : List β) :
+    List.Sublist (List.map Prod.fst (l.zip r)) l := by
+  induction l generalizing r with
+  | nil => simp
+  | cons a as ih =>
+    cases r with
+    | nil => simp
+    | cons _ bs =>
+      simp only [List.zip_cons_cons, List.map_cons]
+      exact List.cons_sublist_cons.mpr (ih bs)
+
+/-- For `a ∈ l`, `f a` is a sublist of `l.flatMap f`. -/
+theorem List.sublist_flatMap_of_mem {α β : Type} (f : α → List β) (l : List α)
+    (a : α) (ha : a ∈ l) : List.Sublist (f a) (l.flatMap f) := by
+  induction l with
+  | nil => exact absurd ha (by simp)
+  | cons b rest ih =>
+    rw [List.flatMap_cons]
+    rcases List.mem_cons.mp ha with rfl | ha'
+    · exact List.sublist_append_left _ _
+    · exact List.sublist_append_of_sublist_right (ih ha')
+
+/-- `map g` after `mapIdx f` is an ordinary map when `g (f i a)` does not depend on `i`. -/
+theorem List.map_mapIdx_ignore_index {α β γ : Type} (l : List α) (g : β → γ) :
+    ∀ (f : Nat → α → β), (∀ i j a, g (f i a) = g (f j a)) →
+      (l.mapIdx f).map g = l.map (fun a => g (f 0 a)) := by
+  induction l with
+  | nil => intro _ _; simp
+  | cons a rest ih =>
+    intro f hf
+    rw [List.mapIdx_cons, List.map_cons, List.map_cons,
+      ih (fun i => f (i + 1)) (by intro i j b; exact hf (i + 1) (j + 1) b)]
+    refine congrArg (g (f 0 a) :: ·) (List.map_congr_left ?_)
+    intro b _
+    exact hf 1 0 b
+
+/-- A fold that adds element weights splits off its initial accumulator. -/
+theorem List.foldl_add_start {α : Type} (g : α → Nat) (l : List α) : ∀ n : Nat,
+    List.foldl (fun acc a => acc + g a) n l =
+      n + List.foldl (fun acc a => acc + g a) 0 l := by
+  induction l with
+  | nil => intro n; simp
+  | cons a rest ih =>
+    intro n
+    rw [List.foldl_cons, List.foldl_cons, ih (n + g a), ih (0 + g a)]
+    omega
+
+/-- Removing members of `l` from a duplicate-free list discards at most `l.length` elements. -/
+theorem List.length_filter_ge_of_nodup {α : Type} (xs l : List α) (hxs : xs.Nodup)
+    (p : α → Bool) (hp : ∀ a, p a = true ↔ a ∉ l) :
+    xs.length ≤ (xs.filter p).length + l.length := by
+  have hbadsub : (xs.filter (fun a => !p a)) ⊆ l := by
+    intro a ha
+    rw [List.mem_filter] at ha
+    have hpa : ¬ (p a = true) := by simpa using ha.2
+    exact Classical.byContradiction (fun hno => hpa ((hp a).mpr hno))
+  have hbadnodup : (xs.filter (fun a => !p a)).Nodup :=
+    List.Nodup.sublist List.filter_sublist hxs
+  have hbadlen := List.subset_nodup_length hbadnodup hbadsub
+  have hsplit := List.length_eq_countP_add_countP p (l := xs)
+  rw [List.countP_eq_length_filter, List.countP_eq_length_filter] at hsplit
+  have hneg : (xs.filter (fun a => decide ¬p a = true)) = xs.filter (fun a => !p a) :=
+    List.filter_congr (fun a _ => by cases p a <;> rfl)
+  rw [hneg] at hsplit
+  omega
+
+/-- An injective map preserves duplicate-freedom. -/
+theorem List.nodup_map_of_injective {α β : Type} (fn : α → β) (l : List α)
+    (hinj : Function.Injective fn) (h : l.Nodup) : (l.map fn).Nodup :=
+  List.Pairwise.map fn (fun _ _ hne heq => hne (hinj heq)) h
+
+/-- Every right-hand member of pointwise-related lists has a related left-hand member. -/
+theorem forall2_exists_left {α β} {R : α → β → Prop} {as : List α} {bs : List β}
+    (h : List.Rel₂ R as bs) : ∀ b ∈ bs, ∃ a ∈ as, R a b := by
+  induction h with
+  | nil => intro b hb; simp at hb
+  | @cons a b as bs hab _ ih =>
+    intro b' hb'
+    rcases List.mem_cons.mp hb' with rfl | hb'
+    · exact ⟨a, List.mem_cons_self, hab⟩
+    · obtain ⟨a', ha', hR⟩ := ih b' hb'
+      exact ⟨a', List.mem_cons_of_mem a ha', hR⟩
+
+/-- Looking a key up in zips of one key list with position-wise `R`-related value lists misses
+    in both or finds `R`-related values. -/
+theorem zip_find?_of_forall₂ {α β γ : Type} [BEq α]
+    {R : β → γ → Prop} (vars : List α) (valsA : List β) (valsB : List γ) (x : α)
+    (hrel : List.Rel₂ R valsA valsB) :
+    ((List.zip vars valsA).find? (fun p => p.1 == x) = none ∧
+     (List.zip vars valsB).find? (fun p => p.1 == x) = none) ∨
+    ∃ y a b, (List.zip vars valsA).find? (fun p => p.1 == x) = some (y, a) ∧
+             (List.zip vars valsB).find? (fun p => p.1 == x) = some (y, b) ∧ R a b := by
+  induction vars generalizing valsA valsB with
+  | nil => left; simp
+  | cons v vs ih =>
+    cases hrel with
+    | nil => left; simp
+    | cons hhd htl =>
+      rename_i a b valsA' valsB'
+      by_cases hv : (v == x) = true
+      · rw [List.zip_cons_cons, List.zip_cons_cons, List.find?_cons, List.find?_cons]
+        simp only [hv]
+        exact Or.inr ⟨v, a, b, rfl, rfl, hhd⟩
+      · rw [List.zip_cons_cons, List.zip_cons_cons, List.find?_cons, List.find?_cons]
+        simp only [hv]
+        exact ih valsA' valsB' htl
+
+/-- Moving one element into a reversed accumulator exposes it at the front of the suffix. -/
+theorem acc_cons_shift {a : α} {out acc tail : List α}
+    (h : out = (a :: acc).reverse ++ tail) : out = acc.reverse ++ (a :: tail) := by
+  rw [h, List.reverse_cons, List.append_assoc]
+  rfl
+
+/-- If a `for` loop whose body never returns `done` succeeds, the body yields on every
+    element. -/
+theorem List.forIn_yield_ok_mem {α ε} (l : List α)
+    (b : α → Except ε (ForInStep PUnit)) (u : PUnit)
+    (hne : ∀ x ∈ l, b x ≠ Except.ok (ForInStep.done PUnit.unit))
+    (h : forIn l PUnit.unit (fun x _ => b x) = Except.ok u) :
+    ∀ x ∈ l, b x = Except.ok (ForInStep.yield PUnit.unit) := by
+  induction l with
+  | nil => intro x hx; cases hx
+  | cons a as ih =>
+    simp only [List.forIn_cons] at h
+    intro x hx
+    cases hb : b a with
+    | error _ => rw [hb] at h; simp only [bind, Except.bind] at h; contradiction
+    | ok step =>
+      cases step with
+      | done _ => exact absurd (by rw [hb]) (hne a (List.mem_cons_self ..))
+      | yield r =>
+        cases r
+        rw [hb] at h
+        simp only [bind, Except.bind] at h
+        rcases List.mem_cons.mp hx with rfl | hx'
+        · rw [hb]
+        · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
+
+/-- Zipping position-wise `R`-related lists with one list `tys` and filtering by a test on the
+    `tys` component keeps them related, with equal `tys` components. -/
+theorem List.forall₂_filter_zip {α β γ : Type} (R : α → β → Prop) (p : γ → Bool)
+    (a₁ : List α) (a₂ : List β) (hR : List.Rel₂ R a₁ a₂) : ∀ tys : List γ,
+      List.Rel₂ (fun q r => R q.1 r.1 ∧ q.2 = r.2)
+        ((a₁.zip tys).filter (fun q => p q.2)) ((a₂.zip tys).filter (fun q => p q.2)) := by
+  induction hR with
+  | nil => intro tys; rw [List.zip_nil_left, List.filter_nil]; exact List.Rel₂.nil
+  | cons hxy htail ih =>
+    intro tys
+    cases tys with
+    | nil =>
+      rw [List.zip_nil_right, List.zip_nil_right, List.filter_nil]
+      exact List.Rel₂.nil
+    | cons ty rest =>
+      rw [List.zip_cons_cons, List.zip_cons_cons]
+      cases hpty : p ty
+      · rw [List.filter_cons_of_neg (by simp [hpty]), List.filter_cons_of_neg (by simp [hpty])]
+        exact ih rest
+      · rw [List.filter_cons_of_pos (by simp [hpty]), List.filter_cons_of_pos (by simp [hpty])]
+        exact List.Rel₂.cons ⟨hxy, rfl⟩ (ih rest)
+
+/-- If on `R`-related entries `f` and `g` both decline or give `S`-related results, then
+    `filterMap` takes `R`-related lists to `S`-related lists. -/
+theorem List.forall₂_filterMap {α β α' β' : Type} (R : α → β → Prop) (S : α' → β' → Prop)
+    (f : α → Option α') (g : β → Option β')
+    (hstep : ∀ a b, R a b → ((f a = none ∧ g b = none) ∨
+      (∃ x y, f a = some x ∧ g b = some y ∧ S x y)))
+    (l₁ : List α) (l₂ : List β) (hR : List.Rel₂ R l₁ l₂) :
+    List.Rel₂ S (l₁.filterMap f) (l₂.filterMap g) := by
+  induction hR with
+  | nil => exact List.Rel₂.nil
+  | cons hab htail ih =>
+    rename_i a b _ _
+    rcases hstep a b hab with ⟨hf, hg⟩ | ⟨x, y, hf, hg, hS⟩
+    · rw [List.filterMap_cons_none hf, List.filterMap_cons_none hg]; exact ih
+    · rw [List.filterMap_cons_some hf, List.filterMap_cons_some hg]
+      exact List.Rel₂.cons hS ih
 
 end

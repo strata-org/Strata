@@ -8,7 +8,7 @@ module
 /-!
 # `frac{num, den}` literal encoding for non-terminating reals
 
-A `realConst` whose value has no terminating decimal representation (e.g.
+A `rationalConst` whose value has no terminating decimal representation (e.g.
 `1/3`) cannot be printed as a `realLit`. It is instead emitted as the exact
 rational literal `frac{num, den}`, whose operands are non-negative `Num`
 tokens, with the sign carried by a wrapping `neg_expr`.
@@ -51,7 +51,8 @@ by `FormatCore` and `Translate`. -/
 theorem fracDecode_fracEncode (r : Rat) :
     (let (neg, num, den) := fracEncode r
      if neg then -(fracDecode num den) else fracDecode num den) = r := by
-  simp only [fracEncode, fracDecode, Int.ofNat_eq_natCast]
+  rw [fracEncode.eq_def]
+  simp only [fracDecode, Int.ofNat_eq_natCast]
   split
   · next h =>
     rw [decide_eq_true_eq] at h

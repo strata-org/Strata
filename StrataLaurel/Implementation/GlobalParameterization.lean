@@ -23,7 +23,7 @@ import StrataLaurel.Implementation.ContractPass
 /-!
 # Global Parameterization
 
-Lowers `Program.staticFields` to implicit procedure parameters. Readers receive
+Lowers `LaurelProgram.staticFields` to implicit procedure parameters. Readers receive
 an input; writers receive an inout parameter so conditional writes preserve the
 incoming value. Effects propagate through calls, and globals follow declaration
 order in signatures and call sites.
@@ -215,7 +215,8 @@ private def emitStaticCall (model : SemanticModel) (original : StmtExprMd)
     else
       -- Preserve output arity when the source discards the callee's value.
       let discards ← (calleeOutputs model callee).mapM fun output => do
-        return mkVarMd (.Declare ⟨← freshVarName, some output.type⟩) original.source
+        let type := typeAtCall model callee typeArgs output.type
+        return mkVarMd (.Declare ⟨← freshVarName, some type⟩) original.source
       return bindings ++ [⟨.Assign (targets ++ discards) call, original.source⟩]
 
 private def globalOfRef (model : SemanticModel) (name : Identifier)
@@ -405,8 +406,8 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
     axioms
     body }
 
-private def globalParameterization (model : SemanticModel) (program : Program)
-    : Program × List Message :=
+private def globalParameterization (model : SemanticModel) (program : LaurelProgram)
+    : LaurelProgram × List Message :=
   if program.staticFields.isEmpty then
     (program, [])
   else
@@ -431,7 +432,7 @@ private def globalParameterization (model : SemanticModel) (program : Program)
     ({ program with staticProcedures := procedures, staticFields := [] },
      finalState.diagnostics)
 
-public def globalParameterizationPass : LoweringPass where
+public def globalParameterizationPass : LaurelPass := .onUnordered {
   name := "GlobalParameterization"
   creates := [
       NodeKind.StmtExpr.Var,
@@ -440,17 +441,18 @@ public def globalParameterizationPass : LoweringPass where
       NodeKind.Pseudo.statementExpression
     ]
   removes := [
-      NodeKind.Program.staticFields.cons,
+      NodeKind.LaurelProgram.staticFields.cons,
       NodeKind.Pseudo.heapVar
     ]
   unsupported := [
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.Return.value.some,
-      NodeKind.Procedure.throwsType.some
+      NodeKind.Procedure.throwsType.some,
+      NodeKind.LaurelProgram.staticFunctions.cons
     ]
   documentation := "Threads file-scope globals through procedure inputs and writer outputs (entry procedures instead declare them as body-prologue locals initialized from the declaration initializers), then clears staticFields."
-  needsResolves := true
-  run := fun _ program model =>
+  needsResolves := true }
+  fun _ program model =>
     let (program', diagnostics) := globalParameterization model program
     (program', diagnostics, {})
 

@@ -23,6 +23,8 @@ inductive Stats where
   | typeDecls
   /-- Number of axiom declarations in the input program. -/
   | axioms
+  /-- Number of lemma declarations in the input program. -/
+  | lemmas
   /-- Number of distinct declarations in the input program. -/
   | distincts
   /-- Number of procedure declarations in the input program. -/

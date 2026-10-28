@@ -35,7 +35,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       (fun e => e.freeVars) -- getTyFreeVars
       f.toFunc where
   /-- Constructors must not have a body or concreteEval. This ensures that
-      canonical values (which include fully-applied constructors) are normal
+      values (which include fully-applied constructors) are normal
       forms — they cannot be further reduced by `expand_fn` or `eval_fn`. -/
   constr_no_eval :
     f.isConstr → f.body = none ∧ f.concreteEval = none := by decide
@@ -70,8 +70,23 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ceval md args = some res →
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
     intro _ h; simp [LFunc.concreteEval] at h
+  /-- The concrete evaluator of a `shortCircuit` function, which `eval` applies to
+      arguments after the first one that are not evaluated yet, commutes with
+      `substFvars` applied to those arguments, for any substitution `sm`. -/
+  shortCircuit_substFvars :
+    Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = true →
+      ∀ ceval, f.concreteEval = some ceval →
+      ∀ [DecidableEq T.IDMeta] md (a : LExpr T.mono) (rest : List (LExpr T.mono))
+        (sm : Map T.Identifier (LExpr T.mono)),
+        ceval md (a :: rest.map (LExpr.substFvars · sm)) =
+          (ceval md (a :: rest)).map (LExpr.substFvars · sm) := by
+    intro h c hc
+    first
+      | (simp [Strata.DL.Util.FuncAttr.hasShortCircuit] at h; done)
+      | (simp [LFunc.concreteEval] at hc; done)
+      | (exfalso; revert h; decide)
 
-/-- An LFunc bundled with its well-formedness proof, including closedness. -/
+/-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
   func : LFunc T
   wf : LFuncWF func
@@ -84,7 +99,7 @@ def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
   f.func.opExpr
 
 /-- An array-backed factory whose functions each carry an `LFuncWF` proof.
-    Function names are unique, and `LFuncWF` includes closedness. -/
+    Function names are unique. -/
 structure WFLFactory (T : LExprParams) where
   toFactory : Factory T
   wf : ∀(func : LFunc T), func ∈ toFactory.toArray → LFuncWF func
@@ -110,8 +125,7 @@ structure WFLFactory (T : LExprParams) where
   }
 
 /--
-Well-formedness properties of a factory. Each function's `LFuncWF` proof
-includes its ordinary invariants and closedness.
+Well-formedness properties of a factory.
 -/
 structure FactoryWF {T} (fac : Factory T) where
   lfuncs_wf : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncWF lf

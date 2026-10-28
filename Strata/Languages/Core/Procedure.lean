@@ -182,9 +182,15 @@ structure Procedure.Header where
   inputs   : @LMonoTySignature Unit
   /-- Output parameters: passed by value from callee to caller (mutable in body). -/
   outputs  : @LMonoTySignature Unit
-  /-- If true, FilterProcedures will never remove this procedure. -/
-  noFilter : Bool := false
+  /-- Names of the top-level lemmas this procedure depends on, such as the
+      well-formedness lemmas of its contract. -/
+  lemmas : List String := []
   deriving Repr, DecidableEq, Inhabited
+
+/-- The free type variables of a procedure signature are among its type parameters. -/
+@[expose] def Procedure.Header.SigDeclared (hdr : Procedure.Header) : Prop :=
+  ∀ v, v ∈ LMonoTys.freeVars hdr.inputs.values ++ LMonoTys.freeVars hdr.outputs.values →
+    v ∈ hdr.typeArgs
 
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters).
     These are the parameters for which `old x` snapshots are meaningful. -/
@@ -194,6 +200,11 @@ structure Procedure.Header where
 /-- Parameters that appear in both `inputs` and `outputs` (in-out parameters). -/
 @[expose] def Procedure.Header.getInoutParams (h : Procedure.Header) : @LMonoTySignature Unit :=
   Core.getInoutParams h.inputs h.outputs
+
+/-- No input or output parameter is named `CoreIdent.mkOld g.name` for an in-out parameter `g`,
+    the name under which a call saves `g`'s starting value. -/
+@[expose] def Procedure.Header.oldNamesFresh (h : Procedure.Header) : Prop :=
+  ∀ g ∈ h.getInoutParams.keys, CoreIdent.mkOld g.name ∉ h.inputs.keys ++ h.outputs.keys
 
 /-- Output parameters that do NOT appear in `inputs` (output-only parameters). -/
 @[expose] def Procedure.Header.getOutputOnlyParams (h : Procedure.Header) : @LMonoTySignature Unit :=
@@ -265,11 +276,20 @@ abbrev Procedure.Body := Imperative.Body Expression Command
 @[match_pattern] abbrev Procedure.Body.structured := @Imperative.Body.structured Expression Command
 @[match_pattern] abbrev Procedure.Body.cfg := @Imperative.Body.cfg Expression Command
 
+/-- The procedure names a structured body calls; empty for a CFG body. -/
+@[simp] def Procedure.Body.calledProcedureNames : Procedure.Body → List String
+  | .structured ss => Statements.calledProcedureNames ss
+  | .cfg _ => []
+
 /-- A Strata Core procedure: the main verification unit. A procedure is a header
     (name, type parameters, input/output signatures), a specification (contract),
     and an optional body. An empty body makes the procedure abstract, reasoned
     about only via its contract. -/
 abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
+
+/-- The procedure names a procedure's body calls. -/
+@[simp] def Procedure.calledProcedureNames (p : Procedure) : List String :=
+  Procedure.Body.calledProcedureNames p.body
 
 /-- Apply `f` to every expression of a procedure: the specification's
     pre/postcondition checks and the structured body. CFG bodies are left
@@ -321,6 +341,13 @@ def Procedure.stripMetaData (p : Procedure) : Procedure :=
     | .structured ss => .structured (Imperative.Block.stripMetaData ss)
     | .cfg c => .cfg (DetCFG.stripMetaData c)
   { p with body := body' }
+
+/-- The calls in `p`'s body: structured bodies in statement order, CFG bodies in
+    block order. -/
+def Procedure.callSites (p : Procedure) : List CallSite :=
+  match p.body with
+  | .structured ss => Statements.callSites ss
+  | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Command.callSites
 
 end
 end Core

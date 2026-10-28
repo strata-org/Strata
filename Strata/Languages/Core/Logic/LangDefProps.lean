@@ -184,7 +184,7 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
@@ -199,7 +199,7 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inl hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
@@ -217,7 +217,7 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inr hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inr hn)))
@@ -235,7 +235,7 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
@@ -245,8 +245,8 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
 Every field of the conditions transfers structurally except `storeWellDefined`, which
 is a statement about *values* rather than about the store's domain, and so is the one
 field a run has to be shown to preserve.  Both lemmas below get it from
-`Imperative.Config.storeWellDefined_star_of`.  The factory `fac` is immutable
-across a run, so value-hood is preserved given the command evaluator preserves it.
+`Imperative.Config.storeWellDefined_star_of`. Factory preservation keeps
+value-hood measured against the same evaluator throughout the run.
 
 The call needs no recursion into the callee: every rule that writes to the store,
 `call` included, supplies a value of the factory in force. -/
@@ -283,7 +283,7 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
       EvalCommand π f σ c σ' fl →
       Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
     fun hc hs => Core.evalCommand_storeWellDefined π hc hs
-  -- The run preserves the immutable factory, so the enclosing condition's
+  -- The run preserves the factory, so the enclosing condition's
   -- evaluator- and init-type witnesses transfer to `ρ'`'s factory unchanged.
   have hfac : ρ.factory = ρ'.factory :=
     Imperative.star_preserves_factory Expression (EvalCommand π)
@@ -392,7 +392,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
       EvalCommandE π f σ c σ' emitted →
       Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
     fun hc hs => Core.evalCommandE_storeWellDefined π hc hs
-  -- The run preserves the immutable factory.
+  -- The run preserves the factory.
   have hfac : ρ.factory = ρ'.factory := Imperative.starE_preserves_factory hrun
   refine BlockInitEnvWF.of_defUseOk
     (hfac ▸ h.toWellFormedSemanticEval)
@@ -473,7 +473,7 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
-    · simp only [projectStore, hn, if_true]
+    · simp only [projectStore, hn, ite_true]
       exact core_stmts_preserves_isSome π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with
@@ -482,7 +482,7 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
       simp [projectStore, hnone]
   have hfun : (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome)
       = (fun n => (ρ.store n).isSome) := funext hstore
-  -- The body run preserves the immutable factory.
+  -- The body run preserves the factory.
   have hfac : ρ.factory = ρ_inner.factory :=
     Imperative.star_preserves_factory Expression (EvalCommand π)
       (Core.CoreStepStar_to_StepStmtStar hrun)
@@ -536,7 +536,7 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
-    · simp only [projectStore, hn, if_true]
+    · simp only [projectStore, hn, ite_true]
       exact core_stmts_preserves_isSomeE π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with

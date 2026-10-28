@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWF
 import Strata.DL.Imperative.CmdType
 import Strata.DL.Lambda.LExprT
 import Strata.DL.Lambda.LExprType
@@ -15,19 +16,23 @@ import Strata.Languages.Core.CmdType
 public section
 
 namespace Core
+
+/-- Instantiate `h`'s type parameters with fresh type variables, shared by its
+    inputs and outputs. -/
+def Procedure.Header.instantiate (C : Lambda.LContext CoreLParams)
+    (Env : Lambda.TEnv CoreLParams.IDMeta) (h : Procedure.Header) :
+    Except Std.Format (@Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit ×
+                       Lambda.TEnv CoreLParams.IDMeta) := do
+  let (sig, Env) ← Lambda.LMonoTySignature.instantiate C Env h.typeArgs (h.inputs ++ h.outputs)
+  let (inp, out) := sig.splitAt h.inputs.length
+  return (inp, out, Env)
+
 namespace Statement
 
 open Lambda Imperative
 open Std (ToFormat Format format)
 open Strata (Message FileRange)
 ---------------------------------------------------------------------
-
--- In a call statement, every inout parameter (which appear in both inputs and outputs of the call) must be
--- matched with a simple variable of the same name
-private def areInoutArgsValid (proc : Procedure) (args : List Expression.Expr) : Bool :=
-  (proc.header.inputs.toList.zip args).all fun ((paramId, _), arg) =>
-    !(ListMap.keys proc.header.outputs).contains paramId ||  -- not inout, or …
-    match arg with | .fvar _ id _ => id == paramId | _ => false  -- … is fvar with same name
 
 /--
 Type checker for Strata Core commands.
@@ -48,19 +53,12 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
-     | none => .error <| md.toDiagnosticF f!"[{c}]: Procedure {pname} not found!"
+     | none => .error <| md.toDiagnosticF f!"[{c}]: {illFormedCallText (undeclaredProcedureMessage pname)}"
      | some proc =>
-       if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
+       if let some msg := callArgsError? pname proc callArgs then
+         .error <| md.toDiagnosticF f!"[{c}]: {illFormedCallText msg}"
+       else if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
          .error <| md.toDiagnosticF f!"[{c}]: All the return variables {lhs} must exist in the context!"
-       else if lhs.length != proc.header.outputs.length then
-         .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's return values!\
-                   Here is the expected signature: {proc.header.inputs}"
-       else if args.length != proc.header.inputs.length then
-         .error <| md.toDiagnosticF f!"[{c}]: Arity mismatch in this call's arguments!\
-                   Here is the expected signature: {proc.header.inputs}"
-       else if !areInoutArgsValid proc args then
-         .error <| md.toDiagnosticF f!"[{c}]: In-out arguments (parameters appearing in \
-                   both inputs and outputs) must be simple variable references"
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
@@ -70,7 +68,7 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                              Types of {lhs} should have been known."
          | some (lhs_tys, Env) =>
            let _ ← Env.freeVarChecks args |>.mapError Message.fromFormat
-           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError Message.fromFormat
+           let (inp_sig, ret_sig, Env) ← proc.header.instantiate C Env |>.mapError Message.fromFormat
            let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst ret_sig.values
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
@@ -78,7 +76,6 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError Message.fromFormat
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
-           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError Message.fromFormat
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => Message.fromFormat (format e))

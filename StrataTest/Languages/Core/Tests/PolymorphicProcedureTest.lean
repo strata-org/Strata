@@ -132,7 +132,7 @@ namespace Strata.PolymorphicInoutPrecondTest
 
 -- An in-out parameter's precondition constrains its type variable to a concrete
 -- type, which is incompatible with the procedure being polymorphic.  Because
--- `MonomorphizeProcedures` runs before type checking, `a` is first replaced by a
+-- `GenOpaqueTypeParams` runs before type checking, `a` is first replaced by a
 -- fresh opaque type; the precondition `x == 5` then fails to unify that opaque
 -- type with `int`, so the procedure is rejected.
 def polyInoutPgm : Program :=

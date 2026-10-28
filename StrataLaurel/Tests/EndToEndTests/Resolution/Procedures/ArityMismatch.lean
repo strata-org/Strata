@@ -51,3 +51,23 @@ procedure mismatch()
 //            ^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 #end
+
+/-! ## Multi-return procedure assigned to the same variable twice -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure threeReturns() returns (x: int, y: int, z: int)
+  opaque
+  ensures x == 1 && y == 2 && z == 3;
+
+procedure repeatedAssignTarget()
+  opaque
+{
+  var x: int;
+  assign x, x, x := threeReturns()
+//          ^ error: 'x' is assigned more than once by this assignment
+//             ^ error: 'x' is assigned more than once by this assignment
+};
+#end

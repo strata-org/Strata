@@ -19,7 +19,7 @@ namespace Core
 
 section Tests
 open Std (ToFormat Format format)
-open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Procedure Statement Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /-- info: Error:
 none
@@ -61,8 +61,11 @@ func Real.Lt :  ((x : real) (y : real)) → bool;
 func Real.Le :  ((x : real) (y : real)) → bool;
 func Real.Gt :  ((x : real) (y : real)) → bool;
 func Real.Ge :  ((x : real) (y : real)) → bool;
+@[shortCircuit]
 func Bool.And :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Or :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Implies :  ((x : bool) (y : bool)) → bool;
 func Bool.Equiv :  ((x : bool) (y : bool)) → bool;
 func Bool.Not :  ((x : bool)) → bool;
@@ -518,7 +521,7 @@ section ConcreteInterpretation
 /-! ## Concrete Interpretation Tests
 -/
 
-open Lambda Strata Lambda.LTy.Syntax
+open Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
 private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except Message Core.Program := do

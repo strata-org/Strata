@@ -174,7 +174,8 @@ procedure caught() returns (r: int)
 };
 #end
 
--- Not matched by the `catch`: the exception escapes the `try`, reported there.
+-- Not matched by the `catch`: the exception escapes the `try`. It is reported at
+-- the `throw` it came from, although the check is on the `try`'s exit edge.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -186,10 +187,10 @@ procedure notMatched(x: int) returns (r: int)
 {
   r := 0;
   try {
-//^ error: no exception escapes this `try` uncaught could not be proved
     if x < 0 then {
       var b: Exception := new Boom;
       throw b
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
     }
   } catch c when c is Other {
     r := -1
@@ -220,7 +221,7 @@ procedure notMatchedUnreachable(x: int) returns (r: int)
 };
 #end
 
--- A re-throw from a handler escapes the outermost `try` and is reported there.
+-- A re-throw from a handler escapes the outermost `try`; the re-throw is reported.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -231,10 +232,10 @@ procedure rethrows() returns (r: int)
   r := 0;
   var b: Boom := new Boom;
   try {
-//^ error: no exception escapes this `try` uncaught could not be proved
     throw b
   } catch c when c is Boom {
     throw c
+//  ^^^^^^^ error: uncaught exception 'Boom' is not thrown could not be proved
   }
 };
 #end
@@ -276,6 +277,248 @@ procedure callsInTry() returns (r: int)
   } catch c {
     r := -1
   }
+};
+#end
+
+-- Several throw sites in one `try` with a `finally`: each reachable one is reported
+-- at its own `throw`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+procedure twoSites(x: int) returns (r: int)
+  requires x != 2
+  opaque
+{
+  r := 0;
+  try {
+    if x == 0 then { var a: A := new A; throw a };
+//                                      ^^^^^^^ error: uncaught exception 'A' is not thrown does not hold
+    if x == 1 then { var a2: A := new A; throw a2 };
+//                                       ^^^^^^^^ error: uncaught exception 'A' is not thrown does not hold
+    if x == 2 then { var a3: A := new A; throw a3 };
+    r := 1
+  } finally { r := 2 }
+};
+#end
+
+-- An inner `try` that does not match passes the exception on unchanged: the
+-- original `throw` is reported, not the inner `try`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Exception {}
+composite A extends Exception {}
+composite B extends Exception {}
+procedure throughInner() returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    try {
+      var a: Exception := new A;
+      throw a
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
+    } catch c when c is B {
+      r := 1
+    }
+  } finally { r := 2 }
+};
+#end
+
+-- An outermost `try` in another one's `finally`, with a throw site of its own: the
+-- outer `throw` is still reported.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite B {}
+procedure innerTryInFinally() returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    var a: A := new A;
+    throw a
+//  ^^^^^^^ error: uncaught exception 'A' is not thrown does not hold
+  } finally {
+    try { var b: B := new B; throw b } catch c { r := 3 }
+  }
+};
+#end
+
+/-! ## `catch` guards naming an unrelated type
+
+A guard may test the caught exception against a type unrelated to its binding type
+(the join of what the `try` body throws), e.g. the arms of a Java multi-catch. Such a
+test can never be true: it is accepted without a diagnostic and lowered to `false`,
+and the other arms still catch.
+-/
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite StateEx {}
+composite ArithEx {}
+procedure multiCatch(x: int) returns (r: int)
+  opaque
+  ensures r >= 0
+{
+  r := 0;
+  try {
+    if x == 0 then { var e: ArithEx := new ArithEx; throw e };
+    r := 1
+  } catch c when c is StateEx || c is ArithEx {
+    r := 0
+  }
+};
+#end
+
+-- Only an unrelated arm: the exception is not caught.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite StateEx {}
+composite ArithEx {}
+procedure onlyUnrelated(x: int) returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    if x == 0 then { var e: ArithEx := new ArithEx; throw e };
+//                                                  ^^^^^^^ error: uncaught exception 'ArithEx' is not thrown does not hold
+    r := 1
+  } catch c when c is StateEx {
+    r := 0
+  }
+};
+#end
+
+-- A type sharing a descendant with the binding type is not unrelated: under
+-- multiple inheritance an `A` may be a `D`, which is a `B`, so the test may be true.
+-- It is rejected rather than lowered to `false`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite B {}
+composite D extends A, B {}
+procedure commonDescendant() returns (r: int)
+  opaque
+  ensures r == 0
+{
+  r := 0;
+  { try {
+      var a: A := new D;
+      throw a
+    } catch c when c is B {
+//                 ^ error: cannot test unrelated type 'A' against 'B'
+      r := 1
+    } finally { exit L }
+  } L
+};
+#end
+
+-- A guard that can never hold makes its clause dead, and its body is discarded
+-- unresolved, so a front end's read of the binding at the arm type
+-- (`c as StateEx`, an unrelated cast here) is not rejected.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite StateEx { var code: int }
+composite ArithEx {}
+procedure deadArmRebind(x: int) returns (r: int)
+  requires x != 0
+  opaque
+{
+  r := 0;
+  try {
+    if x == 0 then { var e: ArithEx := new ArithEx; throw e };
+    r := 1
+  } catch c when c is StateEx {
+    r := (c as StateEx)#code
+  }
+};
+#end
+
+-- Only a test of the binding against an unrelated type, or a disjunction of such
+-- tests, makes a clause dead. A `false` guard, or a conjunction with such a test, is
+-- not recognized: its clause's body is still resolved, and its errors reported.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite StateEx {}
+composite ArithEx {}
+procedure falseGuard(x: int) returns (r: int)
+  requires x != 0
+  opaque
+{
+  r := 0;
+  try {
+    if x == 0 then { var e: ArithEx := new ArithEx; throw e };
+    r := 1
+  } catch c when false {
+    r := undefinedName
+//       ^^^^^^^^^^^^^ error: 'undefinedName' is not defined
+  }
+};
+procedure conjunctionGuard(x: int) returns (r: int)
+  requires x != 0
+  opaque
+{
+  r := 0;
+  try {
+    if x == 0 then { var e: ArithEx := new ArithEx; throw e };
+    r := 1
+  } catch c when c is StateEx && x > 0 {
+    r := undefinedName
+//       ^^^^^^^^^^^^^ error: 'undefinedName' is not defined
+  }
+};
+#end
+
+-- Outside a guard, testing the binding against an unrelated type is still an error.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite StateEx {}
+composite ArithEx {}
+procedure unrelatedTestInBody(x: int) returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    var e: ArithEx := new ArithEx;
+    throw e
+  } catch c when x > 0 {
+    if c is StateEx then { r := 1 }
+//     ^ error: cannot test unrelated type 'ArithEx' against 'StateEx'
+  } catch c {
+    r := 1
+  }
+};
+#end
+
+-- A binding typed at a wider join than its arm (`RtEx`, because the body also
+-- throws an `ArEx`) read at the arm type reads the arm's fields.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipVerification := true } <|
+#strata
+program Laurel;
+composite RtEx {}
+composite MyEx extends RtEx { var code: int }
+composite ArEx extends RtEx {}
+procedure readAtArmType() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    if b == 0 then { var a: ArEx := new ArEx; throw a };
+    var m: MyEx := new MyEx;
+    m#code := 5;
+    throw m
+  } catch c when c is MyEx {
+    r := (c as MyEx)#code
+  };
+  assert r == 5
 };
 #end
 
@@ -323,8 +566,8 @@ program Laurel;
 procedure stopsAfterTry() entry opaque {
   var z: int := 0;
   try {
-//^ error: no exception escapes this `try` uncaught does not hold
     throw 7
+//  ^^^^^^^ error: uncaught exception 'int' is not thrown does not hold
   } catch c when c == 8 {
     z := 1
   };

@@ -140,7 +140,7 @@ def eliminateIncrDecrAndCompoundAssign (program : Program) : Program :=
   mapProgramStmtExpr EliminateIncrDecr.rewriteNode program
 
 /-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
-public def eliminateIncrDecrAndCompoundAssignPass : LoweringPass where
+public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
   name := "EliminateIncrDecrAndCompoundAssign"
   creates := [
       NodeKind.StmtExpr.Assign,

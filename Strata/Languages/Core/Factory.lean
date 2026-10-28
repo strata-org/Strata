@@ -392,6 +392,11 @@ def reLoopFunc : WFLFunc CoreLParams :=
   polyUneval "Re.Loop" []
     [("x", mty[regex]), ("n1", mty[int]), ("n2", mty[int])] mty[regex]
 
+/-- The operators whose arguments the SMT encoder accepts only as literals: `re.loop`
+    takes its bounds as SMT indices. A call applying one to a variable cannot be
+    encoded. -/
+def literalIndexOps : List String := ["Re.Loop"]
+
 def reUnionFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Re.Union" mty[regex] mty[regex] mty[regex]
 

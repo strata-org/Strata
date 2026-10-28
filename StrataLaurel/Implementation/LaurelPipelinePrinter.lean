@@ -21,9 +21,11 @@ namespace Strata.Laurel
 
 /-- Shapes with a column: those some pass declares `unsupported`, in the order the first
     pass to reject one appears. -/
-def tableShapes : List NodeKind :=
-  allPasses.foldl (init := []) fun acc p =>
+def tableShapesOf (passes : List PassMeta) : List NodeKind :=
+  passes.foldl (init := []) fun acc p =>
     p.unsupported.foldl (init := acc) fun acc k => if acc.contains k then acc else acc ++ [k]
+
+def tableShapes : List NodeKind := tableShapesOf (laurelPipeline.toList.map (·.toPassMeta))
 
 /-- The owner segment and the segments after it, e.g.
     `StmtExpr.While.postTest.true` → `("StmtExpr", ["While", "postTest", "true"])`. -/
@@ -36,8 +38,8 @@ private def splitOwner (path : String) : String × List String :=
     prefix of its leading segment, then the owner's initial, then a letter, taking the first
     candidate no earlier label used. Mirrors `Core`'s label function, which does the same for
     fact names. -/
-def shapeLabels : List (NodeKind × Strata.Pipeline.ColumnLabel) :=
-  (tableShapes.foldl (init := ([] : List (NodeKind × Strata.Pipeline.ColumnLabel))) fun taken k =>
+def shapeLabelsOf (shapes : List NodeKind) : List (NodeKind × Strata.Pipeline.ColumnLabel) :=
+  (shapes.foldl (init := ([] : List (NodeKind × Strata.Pipeline.ColumnLabel))) fun taken k =>
     let (owner, segs) := splitOwner (NodeKind.name k)
     let leaf := ((segs.head?).getD "?").toList
     let ini := segs.filterMap (fun s => s.toList.head?)
@@ -57,14 +59,16 @@ def shapeLabels : List (NodeKind × Strata.Pipeline.ColumnLabel) :=
             { first := first,
               second := some (Char.ofNat ('a'.toNat + taken.length % 26)) }) :: taken)).reverse
 
+def shapeLabels : List (NodeKind × Strata.Pipeline.ColumnLabel) := shapeLabelsOf tableShapes
+
 /-- Render the Laurel passes as the shape lifeline table. See the module comment. -/
-def shapeLifelineTable : String :=
-  let shapes := tableShapes
+def shapeLifelineTableOf (passes : List PassMeta) : String :=
+  let shapes := tableShapesOf passes
   Strata.Pipeline.lifelineTable
     (facts := shapes)
-    (labels := shapeLabels.map (·.2))
+    (labels := (shapeLabelsOf shapes).map (·.2))
     (factNames := shapes.map NodeKind.name)
-    (rows := allPasses.toList.map fun p =>
+    (rows := passes.map fun p =>
       ({ name := p.name
          requires := fun k => p.unsupported.contains k
          establishes := fun k => p.removes.contains k
@@ -72,12 +76,19 @@ def shapeLifelineTable : String :=
     -- A shape that can be written in source is present to begin with, so its absence
     -- does not hold on entry.
     (entryHolds := fun k => !NodeKind.inSource k)
-    (rowHeading := "pass")
+    (rowHeading := "phase")
     -- Shape paths are long, so the glossary wraps every three entries rather than
     -- using Core's first-four-then-the-rest split.
     (glossaryLayout := fun named =>
       (List.range ((named.length + 2) / 3)).map fun i =>
         "   ".intercalate ((named.drop (i * 3)).take 3))
+
+def shapeLifelineTable : String :=
+  shapeLifelineTableOf (laurelPipeline.toList.map (·.toPassMeta))
+
+def passContractsText (names : Option (List String)) (hint : String := "") :
+    Except String String :=
+  (passSelectionContracts names hint).map shapeLifelineTableOf
 
 /-- `shapeLifelineTable` in a fenced code block, for rendering in Markdown. -/
 def shapeLifelineTableMarkdown : String :=

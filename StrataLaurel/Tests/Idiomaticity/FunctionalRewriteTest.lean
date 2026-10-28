@@ -12,49 +12,48 @@ that have no functional form.
 The pass runs on the `$asFunction` copies made by the transparency pass, after
 `EliminateReturnStatements` has lowered every `return e` into
 `output := e; exit $return`. So the input programs below are written with
-`return`, and the printer resolves them and runs `eliminateReturnStatements`
-before the pass — the `-- before --` output is therefore in `exit $return` form,
-which is what the pass actually receives.
+`return`, and the driver runs `eliminateReturnStatements` as the input-shaping
+predecessor, so what the pass receives is in `exit $return` form.
 
-Each case prints the body immediately before and immediately after the pass.
-Reading the two together shows the three rules that matter: an `exit $return`
+Each golden is the body after the pass. Three rules show in them: an `exit $return`
 becomes a reference to the output parameter, an assignment becomes a
 *declaration* scoping over the statements that follow it, and the statements
 after an if become the continuation of *both* branches.
+
+The snippets use no operators: a branch condition is a `bool` parameter, and
+where a value has to be a function of the previous one the snippet declares its
+own opaque `step` rather than writing `+ 1`. That is because every operator is a
+call to a prelude wrapper, and the pass cannot be run with the prelude attached —
+see `printRewritten`.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
-import StrataLaurel.Implementation.FunctionalRewrite
 import StrataLaurel.Implementation.EliminateReturnStatements
-import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Parse + resolve a program, lower its returns, then print every function body
-    immediately before and immediately after `functionalRewritePass`, followed by
-    any diagnostics the pass reported.
+/-- Parse, resolve, run `functionalRewritePass`, print the rewritten function
+    bodies. `functionalRewritePass` takes functions whose `return`s have already
+    been eliminated, so `eliminateReturnStatements` runs as the input-shaping
+    predecessor and the procedures are placed in `staticFunctions` (the pass
+    rewrites function copies; `staticProcedures` are left alone).
 
-    The procedures go in `functions` rather than `coreProcedures` because the
-    pass rewrites function copies; `coreProcedures` are left alone. -/
-private def printRewritten (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
-  let lowered := eliminateReturnStatements result.program
-  let uc : UnorderedCoreWithLaurelTypes :=
-    { functions := lowered.staticProcedures, coreProcedures := [],
-      datatypes := [], constants := [] }
-  let (uc', diags, _) := functionalRewritePass.run {} uc result.model
-  IO.println "-- before --"
-  for proc in uc.functions do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-  IO.println "-- after --"
-  for proc in uc'.functions do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-  for d in diags do
-    IO.println s!"diagnostic[{d.kind}]: {d.message}"
+    `prelude := false`: a prelude operator wrapper such as `$add` is itself a
+    bodied function, so with the prelude attached the pass binds each one's output
+    to a generated hole — forty-odd of them. Filtering those out by name would be
+    easy enough (they are `$declHole_$add_…` and friends); what makes the prelude
+    unusable here is that the trailing id is a GLOBAL resolver counter, so those
+    holes claim the low numbers and every golden below renumbers — `$declHole_guard_3`
+    becomes `$declHole_guard_562`, and shifts again whenever the prelude changes.
+    The snippets therefore avoid operators entirely so they resolve without it. -/
+private def printRewritten (program : StrataDDM.Program) : IO Unit :=
+  runCorePassForIdiomaticity functionalRewritePass
+    (fun p _ => { staticFunctions := (eliminateReturnStatements (.Unordered p)).laurelProgram!.staticProcedures,
+                  staticProcedures := [], staticFields := [], types := [], constants := [] })
+    program (prelude := false)
 
 /-! ## A guard early exit becomes an if-expression
 
@@ -64,30 +63,13 @@ the fall-through branch carries the rest of the body. The `if` does not need to
 be the last statement of its block. -/
 
 /--
-info: -- before --
-procedure guard(x: int)
-  returns (r: int)
-{
-  if x > 0
-    then {
-      {
-        r := 1;
-        exit $return
-      }
-    };
-  {
-    r := 3;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_guard_3(x: int): int
+info: procedure $declHole_guard_3(b: bool): int
   opaque;
-procedure guard(x: int)
+procedure guard(b: bool)
   returns (r: int)
 {
-  var r: int := $declHole_guard_3(x);
-  if x > 0
+  var r: int := $declHole_guard_3(b);
+  if b
     then {
       var r: int := 1;
       r
@@ -102,8 +84,8 @@ procedure guard(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure guard(x: int) returns (r: int) {
-  if x > 0 then {
+procedure guard(b: bool) returns (r: int) {
+  if b then {
     return 1
   };
   return 3
@@ -118,42 +100,18 @@ fall-through ifs this is 2^n copies of the trailing code — the known cost of
 having no `let` in Core to bind the continuation once. -/
 
 /--
-info: -- before --
-procedure chainedGuards(x: int)
-  returns (r: int)
-{
-  if x > 10
-    then {
-      {
-        r := 1;
-        exit $return
-      }
-    };
-  if x > 5
-    then {
-      {
-        r := 2;
-        exit $return
-      }
-    };
-  {
-    r := 3;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_chainedGuards_3(x: int): int
+info: procedure $declHole_chainedGuards_4(b: bool, c: bool): int
   opaque;
-procedure chainedGuards(x: int)
+procedure chainedGuards(b: bool, c: bool)
   returns (r: int)
 {
-  var r: int := $declHole_chainedGuards_3(x);
-  if x > 10
+  var r: int := $declHole_chainedGuards_4(b, c);
+  if b
     then {
       var r: int := 1;
       r
     }
-    else if x > 5
+    else if c
       then {
         var r: int := 2;
         r
@@ -168,11 +126,11 @@ procedure chainedGuards(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure chainedGuards(x: int) returns (r: int) {
-  if x > 10 then {
+procedure chainedGuards(b: bool, c: bool) returns (r: int) {
+  if b then {
     return 1
   };
-  if x > 5 then {
+  if c then {
     return 2
   };
   return 3
@@ -186,30 +144,7 @@ trailing `return 3` disappears rather than being duplicated. It is unreachable,
 so dropping it is what the imperative body means. -/
 
 /--
-info: -- before --
-procedure deadCodeAfterIfElse(b: bool)
-  returns (r: int)
-{
-  if b
-    then {
-      {
-        r := 1;
-        exit $return
-      }
-    }
-    else {
-      {
-        r := 2;
-        exit $return
-      }
-    };
-  {
-    r := 3;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_deadCodeAfterIfElse_3(b: bool): int
+info: procedure $declHole_deadCodeAfterIfElse_3(b: bool): int
   opaque;
 procedure deadCodeAfterIfElse(b: bool)
   returns (r: int)
@@ -247,42 +182,14 @@ its continuation is unused. Every path exits, so the result is a plain nest of
 if-expressions with no duplication. -/
 
 /--
-info: -- before --
-procedure nestedIf(x: int)
-  returns (r: int)
-{
-  if x > 0
-    then {
-      if x > 10
-        then {
-          {
-            r := 1;
-            exit $return
-          }
-        }
-        else {
-          {
-            r := 2;
-            exit $return
-          }
-        }
-    }
-    else {
-      {
-        r := 3;
-        exit $return
-      }
-    }
-}$return;
--- after --
-procedure $declHole_nestedIf_3(x: int): int
+info: procedure $declHole_nestedIf_4(b: bool, c: bool): int
   opaque;
-procedure nestedIf(x: int)
+procedure nestedIf(b: bool, c: bool)
   returns (r: int)
 {
-  var r: int := $declHole_nestedIf_3(x);
-  if x > 0
-    then if x > 10
+  var r: int := $declHole_nestedIf_4(b, c);
+  if b
+    then if c
       then {
         var r: int := 1;
         r
@@ -301,9 +208,9 @@ procedure nestedIf(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure nestedIf(x: int) returns (r: int) {
-  if x > 0 then {
-    if x > 10 then {
+procedure nestedIf(b: bool, c: bool) returns (r: int) {
+  if b then {
+    if c then {
       return 1
     } else {
       return 2
@@ -323,34 +230,14 @@ through nesting, and the clearest illustration of why binding the continuation
 once matters. -/
 
 /--
-info: -- before --
-procedure nestedGuard(x: int, y: int)
-  returns (r: int)
-{
-  if x > 0
-    then {
-      if y > 0
-        then {
-          {
-            r := 1;
-            exit $return
-          }
-        }
-    };
-  {
-    r := 2;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_nestedGuard_4(x: int, y: int): int
+info: procedure $declHole_nestedGuard_4(b: bool, c: bool): int
   opaque;
-procedure nestedGuard(x: int, y: int)
+procedure nestedGuard(b: bool, c: bool)
   returns (r: int)
 {
-  var r: int := $declHole_nestedGuard_4(x, y);
-  if x > 0
-    then if y > 0
+  var r: int := $declHole_nestedGuard_4(b, c);
+  if b
+    then if c
       then {
         var r: int := 1;
         r
@@ -369,9 +256,9 @@ procedure nestedGuard(x: int, y: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure nestedGuard(x: int, y: int) returns (r: int) {
-  if x > 0 then {
-    if y > 0 then {
+procedure nestedGuard(b: bool, c: bool) returns (r: int) {
+  if b then {
+    if c then {
       return 1
     }
   };
@@ -381,37 +268,29 @@ procedure nestedGuard(x: int, y: int) returns (r: int) {
 
 /-! ## A destructive update becomes a shadowing declaration
 
-`x := x + 1` turns into a second `var x` nested inside the scope of the first.
+`x := step(x)` turns into a second `var x` nested inside the scope of the first.
 Shadowing is legal because `Resolution.defineNameCheckDup` is per-scope and the
 declaration goes in a fresh block, and the update still reads the previous
-binding because the initializer resolves in the *enclosing* scope.
+binding because the initializer resolves in the *enclosing* scope — which is what
+the nested `var $v_4: int := step($v_4)` below shows.
 `InlineLocalVariables` then inlines both declarations away. -/
 
 /--
-info: -- before --
-procedure updateLocal(a: int)
-  returns (r: int)
-{
-  var x: int := a;
-  x := x + 1;
-  {
-    r := x;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_updateLocal_3(a: int): int
+info: procedure $declHole_updateLocal_6(a: int): int
+  opaque;
+procedure step(n: int)
+  returns (m: int)
   opaque;
 procedure updateLocal(a: int)
   returns (r: int)
 {
-  var r: int := $declHole_updateLocal_3(a);
+  var r: int := $declHole_updateLocal_6(a);
   {
-    var $v_4: int := a;
+    var $v_7: int := a;
     {
-      var $v_4: int := $v_4 + 1;
+      var $v_7: int := step($v_7);
       {
-        var r: int := $v_4;
+        var r: int := $v_7;
         r
       }
     }
@@ -422,9 +301,10 @@ procedure updateLocal(a: int)
 #eval printRewritten <|
 #strata
 program Laurel;
+procedure step(n: int) returns (m: int) opaque;
 procedure updateLocal(a: int) returns (r: int) {
   var x: int := a;
-  x := x + 1;
+  x := step(x);
   return x
 };
 #end
@@ -436,25 +316,7 @@ the code that reads it end up in the same branch. Inlining collapses them
 afterwards. There is no restriction on how many variables a branch assigns. -/
 
 /--
-info: -- before --
-procedure ifAssignsLocal(b: bool, a: int)
-  returns (r: int)
-{
-  var x: int := 0;
-  if b
-    then {
-      x := a + 1
-    }
-    else {
-      x := a
-    };
-  {
-    r := x;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_ifAssignsLocal_4(b: bool, a: int): int
+info: procedure $declHole_ifAssignsLocal_4(b: bool, a: int): int
   opaque;
 procedure ifAssignsLocal(b: bool, a: int)
   returns (r: int)
@@ -464,14 +326,14 @@ procedure ifAssignsLocal(b: bool, a: int)
     var $v_5: int := 0;
     if b
       then {
-        var $v_5: int := a + 1;
+        var $v_5: int := a;
         {
           var r: int := $v_5;
           r
         }
       }
       else {
-        var $v_5: int := a;
+        var $v_5: int := 1;
         {
           var r: int := $v_5;
           r
@@ -487,9 +349,9 @@ program Laurel;
 procedure ifAssignsLocal(b: bool, a: int) returns (r: int) {
   var x: int := 0;
   if b then {
-    x := a + 1
-  } else {
     x := a
+  } else {
+    x := 1
   };
   return x
 };
@@ -503,34 +365,15 @@ the output. Here the exiting path skips `y := 2` and the fall-through path runs
 it, and both then continue into `return y`. -/
 
 /--
-info: -- before --
-procedure exitSkipsRest(x: int)
-  returns (r: int)
-{
-  var y: int := 0;
-  {
-    if x > 0
-      then {
-        y := 1;
-        exit done
-      };
-    y := 2
-  }done;
-  {
-    r := y;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_exitSkipsRest_3(x: int): int
+info: procedure $declHole_exitSkipsRest_3(b: bool): int
   opaque;
-procedure exitSkipsRest(x: int)
+procedure exitSkipsRest(b: bool)
   returns (r: int)
 {
-  var r: int := $declHole_exitSkipsRest_3(x);
+  var r: int := $declHole_exitSkipsRest_3(b);
   {
     var $v_4: int := 0;
-    if x > 0
+    if b
       then {
         var $v_4: int := 1;
         {
@@ -552,10 +395,10 @@ procedure exitSkipsRest(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure exitSkipsRest(x: int) returns (r: int) {
+procedure exitSkipsRest(b: bool) returns (r: int) {
   var y: int := 0;
   {
-    if x > 0 then {
+    if b then {
       y := 1;
       exit done
     };
@@ -574,29 +417,13 @@ other uninitialized variable, that read is the hole rather than a free reference
 is the imperative reading of running off the end without assigning the output. -/
 
 /--
-info: -- before --
-procedure exitToLabel(x: int)
-  returns (r: int)
-{
-  {
-    if x > 0
-      then {
-        exit done
-      };
-    {
-      r := 1;
-      exit $return
-    }
-  }done
-}$return;
--- after --
-procedure $declHole_exitToLabel_3(x: int): int
+info: procedure $declHole_exitToLabel_3(b: bool): int
   opaque;
-procedure exitToLabel(x: int)
+procedure exitToLabel(b: bool)
   returns (r: int)
 {
-  var r: int := $declHole_exitToLabel_3(x);
-  if x > 0
+  var r: int := $declHole_exitToLabel_3(b);
+  if b
     then r
     else {
       var r: int := 1;
@@ -608,9 +435,9 @@ procedure exitToLabel(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure exitToLabel(x: int) returns (r: int) {
+procedure exitToLabel(b: bool) returns (r: int) {
   {
-    if x > 0 then {
+    if b then {
       exit done
     };
     return 1
@@ -625,20 +452,7 @@ the *block*, so the trailing statements are reached both by exiting and by falli
 off the end. -/
 
 /--
-info: -- before --
-procedure labelledBlockNotLast(x: int)
-  returns (r: int)
-{
-  {
-    r := 1
-  }done;
-  {
-    r := 2;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_labelledBlockNotLast_3(x: int): int
+info: procedure $declHole_labelledBlockNotLast_3(x: int): int
   opaque;
 procedure labelledBlockNotLast(x: int)
   returns (r: int)
@@ -675,33 +489,21 @@ block below becomes a nested shadowing declaration, exactly as it would at
 statement level. This is the only shape where a *value* is descended into. -/
 
 /--
-info: -- before --
-procedure blockValued(a: int)
-  returns (r: int)
-{
-  r := {
-    var y: int := a;
-    y := y + 1;
-    y
-  };
-  {
-    r := r;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_blockValued_3(a: int): int
+info: procedure $declHole_blockValued_6(a: int): int
+  opaque;
+procedure step(n: int)
+  returns (m: int)
   opaque;
 procedure blockValued(a: int)
   returns (r: int)
 {
-  var r: int := $declHole_blockValued_3(a);
+  var r: int := $declHole_blockValued_6(a);
   {
     var r: int := {
-      var $v_4: int := a;
+      var $v_7: int := a;
       {
-        var $v_4: int := $v_4 + 1;
-        $v_4
+        var $v_7: int := step($v_7);
+        $v_7
       }
     };
     {
@@ -715,8 +517,9 @@ procedure blockValued(a: int)
 #eval printRewritten <|
 #strata
 program Laurel;
+procedure step(n: int) returns (m: int) opaque;
 procedure blockValued(a: int) returns (r: int) {
-  r := { var y: int := a; y := y + 1; y };
+  r := { var y: int := a; y := step(y); y };
   return r
 };
 #end
@@ -734,7 +537,7 @@ the inputs: left where the declaration sits, a body that shadows an input with a
 local of the same name would capture the argument, the hole would stop varying with
 that input, and a caller could prove `f(1) == f(2)`.
 
-The later `x := a + 1` becomes a *shadowing* declaration nested inside, exactly as
+The later `x := a` becomes a *shadowing* declaration nested inside, exactly as
 any other assignment does, so the hole is only what `x` holds before that
 assignment — here, nothing reads it. Binding unconditionally rather than dropping
 the declaration is what makes the rewrite sound: a dropped declaration leaves a
@@ -742,19 +545,7 @@ free reference on any path that never assigns, and if the name shadows an input
 parameter that reference silently resolves to the input. -/
 
 /--
-info: -- before --
-procedure uninitThenAssign(a: int)
-  returns (r: int)
-{
-  var x: int;
-  x := a + 1;
-  {
-    r := x;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_uninitThenAssign_3(a: int): int
+info: procedure $declHole_uninitThenAssign_3(a: int): int
   opaque;
 procedure $declHole_uninitThenAssign_4(a: int): int
   opaque;
@@ -767,7 +558,7 @@ procedure uninitThenAssign(a: int)
     {
       var $v_4: int := $declHoleVal_4;
       {
-        var $v_4: int := a + 1;
+        var $v_4: int := a;
         {
           var r: int := $v_4;
           r
@@ -783,7 +574,7 @@ procedure uninitThenAssign(a: int)
 program Laurel;
 procedure uninitThenAssign(a: int) returns (r: int) {
   var x: int;
-  x := a + 1;
+  x := a;
   return x
 };
 #end
@@ -796,18 +587,7 @@ because the hole is an uninterpreted function, which is what lets a transparent 
 stay a function; with no inputs to depend on, this one is nullary. -/
 
 /--
-info: -- before --
-procedure uninitRead()
-  returns (r: int)
-{
-  var x: int;
-  {
-    r := x;
-    exit $return
-  }
-}$return;
--- after --
-procedure $declHole_uninitRead_2(): int
+info: procedure $declHole_uninitRead_2(): int
   opaque;
 procedure $declHole_uninitRead_3(): int
   opaque;
@@ -845,19 +625,9 @@ the meaning. This has to stay legal — `valuelessEarlyReturn` is a transparent
 body with no outputs that must verify. -/
 
 /--
-info: -- before --
-procedure valueless(x: int)
+info: procedure valueless(b: bool)
 {
-  if x > 0
-    then {
-      exit $return
-    };
-  exit $return
-}$return;
--- after --
-procedure valueless(x: int)
-{
-  if x > 0
+  if b
     then {
       exit $return
     };
@@ -868,8 +638,8 @@ procedure valueless(x: int)
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure valueless(x: int) {
-  if x > 0 then {
+procedure valueless(b: bool) {
+  if b then {
     return
   };
   return
@@ -878,7 +648,7 @@ procedure valueless(x: int) {
 
 /-! ## Bodies with no functional form are reported, and left untouched
 
-In each case below the `-- after --` output equals the `-- before --` output:
+In each case below the body comes back in its pre-pass `exit $return` form:
 the rewrite is all-or-nothing, so a rejected body is returned unchanged
 alongside its diagnostic. Because acceptance and transformation are the same
 recursive function, a construct cannot be admitted by a guard that the rewrite
@@ -896,42 +666,32 @@ and rewrites calls into functional form, so those bodies arrive here clean. -/
 /-! ### A loop -/
 
 /--
-info: -- before --
-procedure hasLoop(n: int)
+info: FunctionalRewritePass diagnostic[userError]: loops are not YET supported in transparent bodies or contracts
+procedure step(n: int)
+  returns (m: int)
+  opaque;
+procedure hasLoop(b: bool)
   returns (r: int)
 {
   var i: int := 0;
-  while(i < n) {
-    i := i + 1
+  while(b) {
+    i := step(i)
   };
   {
     r := i;
     exit $return
   }
 }$return;
--- after --
-procedure hasLoop(n: int)
-  returns (r: int)
-{
-  var i: int := 0;
-  while(i < n) {
-    i := i + 1
-  };
-  {
-    r := i;
-    exit $return
-  }
-}$return;
-diagnostic[userError]: loops are not YET supported in transparent bodies or contracts
 -/
 #guard_msgs in
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure hasLoop(n: int) returns (r: int) {
+procedure step(n: int) returns (m: int) opaque;
+procedure hasLoop(b: bool) returns (r: int) {
   var i: int := 0;
-  while (i < n) {
-    i := i + 1
+  while (b) {
+    i := step(i)
   };
   return i
 };
@@ -940,70 +700,48 @@ procedure hasLoop(n: int) returns (r: int) {
 /-! ### An assert -/
 
 /--
-info: -- before --
-procedure hasAssert(x: int)
+info: FunctionalRewritePass diagnostic[error]: assert should have been stripped from the function copy by the transparency pass
+procedure hasAssert(b: bool)
   returns (r: int)
 {
-  assert x > 0;
+  assert b;
   {
-    r := x;
+    r := 1;
     exit $return
   }
 }$return;
--- after --
-procedure hasAssert(x: int)
-  returns (r: int)
-{
-  assert x > 0;
-  {
-    r := x;
-    exit $return
-  }
-}$return;
-diagnostic[error]: assert should have been stripped from the function copy by the transparency pass
 -/
 #guard_msgs in
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure hasAssert(x: int) returns (r: int) {
-  assert x > 0;
-  return x
+procedure hasAssert(b: bool) returns (r: int) {
+  assert b;
+  return 1
 };
 #end
 
 /-! ### An assume -/
 
 /--
-info: -- before --
-procedure hasAssume(x: int)
+info: FunctionalRewritePass diagnostic[error]: assume should have been stripped from the function copy by the transparency pass
+procedure hasAssume(b: bool)
   returns (r: int)
 {
-  assume x > 0;
+  assume b;
   {
-    r := x;
+    r := 1;
     exit $return
   }
 }$return;
--- after --
-procedure hasAssume(x: int)
-  returns (r: int)
-{
-  assume x > 0;
-  {
-    r := x;
-    exit $return
-  }
-}$return;
-diagnostic[error]: assume should have been stripped from the function copy by the transparency pass
 -/
 #guard_msgs in
 #eval printRewritten <|
 #strata
 program Laurel;
-procedure hasAssume(x: int) returns (r: int) {
-  assume x > 0;
-  return x
+procedure hasAssume(b: bool) returns (r: int) {
+  assume b;
+  return 1
 };
 #end
 
@@ -1014,34 +752,27 @@ Turning it into a shadowing declaration would silently accept the program, so
 input names are checked before the binding rule applies. -/
 
 /--
-info: -- before --
+info: FunctionalRewritePass diagnostic[userError]: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
+procedure step(n: int)
+  returns (m: int)
+  opaque;
 procedure assignsInput(a: int)
   returns (r: int)
 {
-  a := a + 1;
+  a := step(a);
   {
     r := a;
     exit $return
   }
 }$return;
--- after --
-procedure assignsInput(a: int)
-  returns (r: int)
-{
-  a := a + 1;
-  {
-    r := a;
-    exit $return
-  }
-}$return;
-diagnostic[userError]: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
 -/
 #guard_msgs in
 #eval printRewritten <|
 #strata
 program Laurel;
+procedure step(n: int) returns (m: int) opaque;
 procedure assignsInput(a: int) returns (r: int) {
-  a := a + 1;
+  a := step(a);
   return a
 };
 #end
@@ -1053,21 +784,13 @@ several outputs at once. This needs a tuple construct in Laurel, or a real
 `let` in Core. -/
 
 /--
-info: -- before --
+info: FunctionalRewritePass diagnostic[userError]: a transparent body with 2 output parameters is not supported; it must have at most one
 procedure twoOuts()
   returns (q: int, r: int)
 {
   q := 1;
   r := 2
 }$return;
--- after --
-procedure twoOuts()
-  returns (q: int, r: int)
-{
-  q := 1;
-  r := 2
-}$return;
-diagnostic[userError]: a transparent body with 2 output parameters is not supported; it must have at most one
 -/
 #guard_msgs in
 #eval printRewritten <|
@@ -1085,26 +808,7 @@ Only the calling body is reported; `callee` is rewritten as usual, showing that
 one rejected body does not stop the others. -/
 
 /--
-info: -- before --
-procedure callee()
-  returns (r: int)
-{
-  {
-    r := 1;
-    exit $return
-  }
-}$return;
-procedure hasCall()
-  returns (r: int)
-{
-  var y: int := 0;
-  callee();
-  {
-    r := y;
-    exit $return
-  }
-}$return;
--- after --
+info: FunctionalRewritePass diagnostic[error]: call should have been rewritten to functional form by the transparency pass
 procedure $declHole_callee_3(): int
   opaque;
 procedure callee()
@@ -1126,7 +830,6 @@ procedure hasCall()
     exit $return
   }
 }$return;
-diagnostic[error]: call should have been rewritten to functional form by the transparency pass
 -/
 #guard_msgs in
 #eval printRewritten <|

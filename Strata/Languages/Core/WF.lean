@@ -9,6 +9,7 @@ public import Strata.Util.ListUtilsProps
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWF
 
 public section
 
@@ -50,12 +51,13 @@ structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
 
+/-- A call to `procName` with arguments `callArgs` is well-formed in `p`: the callee
+    is a declared procedure, the arguments match its signature, and the result
+    variables are distinct. -/
 structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg Expression)) : Prop where
   defined : (Program.Procedure.find? p procName).isSome
-  arglen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.inputs.length = (CallArg.getInputExprs callArgs).length
-  outlen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.outputs.length = (CallArg.getLhs callArgs).length
+  argsMatch : (Program.Procedure.find? p procName = some proc) →
+          ArgsMatchSignature proc callArgs
   lhsWF : (CallArg.getLhs callArgs).Nodup
   wfargs : Forall (WFargProp p) (CallArg.getInputExprs callArgs)
 
@@ -128,6 +130,8 @@ structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
 structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
+structure WFLemmaDeclarationProp (p : Program) (l : Lemma) : Prop where
+
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
 -- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
@@ -158,6 +162,7 @@ structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .type t _ => WFTypeDeclarationProp p t
   | .ax a _ => WFAxiomDeclarationProp p a
+  | .lemma l _ => WFLemmaDeclarationProp p l
   | .distinct l es _ => WFDistinctDeclarationProp p l es
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f

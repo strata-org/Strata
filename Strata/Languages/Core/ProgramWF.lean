@@ -263,13 +263,6 @@ private theorem WFFunctionProp_trivial (p : Program) (f : Function) :
   WFFunctionProp p f := by
   constructor
 
-private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l: List α):
-  List.foldlM (fun _ x =>
-    if f x then Except.error (g x)
-    else Except.ok ()) () l = Except.ok x →
-  ∀ y, y ∈ l → ¬ (f y) := by
-  induction l generalizing x <;> grind
-
 /-
 attribute [local grind .] Procedure.typeCheckWF
 
@@ -315,7 +308,7 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       rename_i htypecheck
       cases q; simp at hty
       -- Get info about inline, no poly, no dups
-      have hin:= List.foldlM_error_conditional _ _ _ hinline_poly
+      have hin := fun y hy => (Except.ite_error_then_eq_ok.mp (foldlM_check_ok _ _ () hinline_poly y hy)).1
       have hnodup := Identifiers.addListWithErrorNoDup ident_eq
       simp only[Decl.names] at hnodup
       unfold WFDeclsProp
@@ -401,7 +394,7 @@ private theorem Program.typeCheckFunctionDisjoint :
       intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
       rw[List.mem_flatMap]; exists a
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty <;> intros x hx)
-    | ax a =>
+    | ax _ | lemma _ =>
       specialize (IH tcok)
       match hx with
       | Or.inl hx =>
@@ -434,7 +427,6 @@ private theorem Program.typeCheckFunctionDisjoint :
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
-      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -516,7 +508,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     split <;> try (intros;contradiction)
     rename_i x v Hid
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty)
-    | ax a =>
+    | ax _ | lemma _ =>
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
       intros a a_in; simp[Decl.names] at a_in; subst_vars
@@ -543,7 +535,6 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
-      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH

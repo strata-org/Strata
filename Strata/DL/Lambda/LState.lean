@@ -153,7 +153,7 @@ instance : ToFormat (T.Identifier × LState T) where
 A free variable -> expression mapping.
 Compatible with `Imperative.SemanticStore` from `Strata.DL.Imperative.CmdSemantics`.
 -/
-@[expose] def Env (T : LExprParams) := T.Identifier → Option (LExpr T.mono)
+abbrev Env (T : LExprParams) := T.Identifier → Option (LExpr T.mono)
 
 instance : CoeFun (Env T) (fun _ => T.Identifier → Option (LExpr T.mono)) where
   coe f := f

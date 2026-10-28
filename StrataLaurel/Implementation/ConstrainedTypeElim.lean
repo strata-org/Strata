@@ -21,7 +21,7 @@ A Laurel-to-Laurel pass that eliminates constrained types by:
 2. Adding `requires constraintProc(param)` for constrained-typed inputs
 3. Adding `ensures constraintProc(result)` for constrained-typed outputs
 4. Inserting `assert constraintProc(var)` for local variable init and reassignment
-5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume)
+5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume) and holes
 6. Adding a synthetic witness-validation procedure per constrained type
 7. Injecting constraint procedure calls into quantifier bodies (`forall` → `implies`, `exists` → `and`)
 8. Resolving all constrained type references to their base types
@@ -142,15 +142,18 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
       appended as the final statement, so the resulting value-block evaluates to
       the assigned value (this covers expression-position assignments such as
       `y := (x := -1) + 1`); in statement position it is omitted.
+    - A hole of a constrained type in a value position → a fresh local bound to the hole,
+      with the constraint assumed on it as for an uninitialized declaration. A copy of the
+      hole would not do: each occurrence of a hole is its own value.
     - All other nodes are returned unchanged; the traversal handles recursion. -/
 def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (resultUsed : Bool) (node : StmtExprMd) : List StmtExprMd :=
+    (resultUsed : Bool) (node : StmtExprMd) : StateM Nat (List StmtExprMd) := do
   let source := node.source
   match node.val with
   | .Var (.Declare ⟨name, some ty⟩) =>
     let check := (constraintCallFor ptMap ty.val name (src := source)).toList.map
       fun c => ⟨.Assume c, source⟩
-    [node] ++ check
+    return [node] ++ check
   | .Assign targets _value =>
     let asserts: List StmtExprMd := targets.filterMap (fun target =>
       let ref : StmtExprMd := VariableMd.toReadbackExpr target
@@ -159,7 +162,7 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     let suffix := match targets with
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
       | _ => []
-    [node] ++ asserts ++ suffix
+    return [node] ++ asserts ++ suffix
   | .Var (.Field ..) =>
     -- Constrained field read → `{ assume T$constraint(read); read }`.
     -- `elimCompositeType` lowers the declared type to its base without restating the
@@ -184,15 +187,23 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
     -- write, so the `Datatype` branch over-approximates.
     match constraintCallForExpr ptMap (computeExprType model node).val node (src := source) with
-    | some c => [⟨.Assume c, source⟩, node]
-    | none => [node]
-  | _ => [node]
+    | some c => return [⟨.Assume c, source⟩, node]
+    | none => return [node]
+  | .Hole _ (some ty) =>
+    if !resultUsed || !isConstrainedType ptMap ty.val then return [node]
+    let n ← modifyGet fun n => (n, n + 1)
+    let h := mkId s!"$constrainedHole{n}"
+    let decl : StmtExprMd := ⟨.Assign [⟨.Declare ⟨h, some ty⟩, source⟩] node, source⟩
+    let assume := (constraintCallFor ptMap ty.val h (src := source)).toList.map
+      fun c => ⟨.Assume c, source⟩
+    return [decl] ++ assume ++ [⟨.Var (.Local h), source⟩]
+  | _ => return [node]
 
 /-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
     traversal. A procedure body is a statement, so the top-level `resultUsed`
     is `false`. -/
 def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (body : StmtExprMd) : StmtExprMd :=
-  mapStmtExprFlattenM (m := Id) (fun _ _ => none) (elimNode ptMap model) false body
+  (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model) false body).run' 0
 
 def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
@@ -299,9 +310,8 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
     is constrained so ordinary procedures gain nothing. Assertions are anchored at the
     output's type, so a bad return is reported on the return type the reader wrote.
 
-    `typeArgs` carries the source procedure's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: the mirrored inputs of a polymorphic
-    procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
+    `typeArgs` carries the source procedure's type parameters: the mirrored inputs of a
+    polymorphic procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
     "type variables [T] appear in the signature but are not declared in typeArgs". -/
 private def mkOutputConstraintLemma (ptMap : ConstrainedTypeMap)
     (proc : Procedure) : Option Procedure :=
@@ -390,8 +400,8 @@ private def addConstrainedGlobalConditions (ptMap : ConstrainedTypeMap)
     | .External => .External
   { proc with preconditions := requires ++ proc.preconditions, body }
 
-public def constrainedTypeElim (model : SemanticModel) (program : Program)
-    : Program × List Message :=
+public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
+    : LaurelProgram × List Message :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let constraintProcs := program.types.filterMap fun
@@ -439,13 +449,16 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
    [])
 
 /-- Pipeline pass: constrained type elimination. -/
-public def constrainedTypeElimPass : LoweringPass where
+public def constrainedTypeElimPass : LaurelPass := .onUnordered {
   name := "ConstrainedTypeElim"
-  creates := [NodeKind.Program.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  unsupported := [
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
   removes := [NodeKind.TypeDefinition.Constrained]
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. Type tests against constrained types are rewritten to call the generated constraint procedure."
-  needsResolves := true
-  run := fun _ p m =>
+  needsResolves := true }
+  fun _ p m =>
     let (p', diags) := constrainedTypeElim m p
     (p', diags, {})
 

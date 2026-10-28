@@ -1319,7 +1319,7 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
 -/
-def parseProgram (prog : StrataDDM.Program) : TransM Laurel.Program := do
+def parseProgram (prog : StrataDDM.Program) : TransM Laurel.LaurelProgram := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
   let mut fields : List Field := []

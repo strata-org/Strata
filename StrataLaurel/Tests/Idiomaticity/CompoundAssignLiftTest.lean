@@ -3,57 +3,27 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 /-
-Tests that the EliminateIncrDecrAndCompoundAssign + LiftImperativeExpressions pipeline correctly
-lowers C-style compound assignment (`+=`, `-=`, …) by comparing the lowered
-Laurel against expected output. `x op= e` lowers to `x := x op e`; in expression
-position the assignment is lifted out and yields the new value.
+Idiomaticity test for `EliminateIncrDecrAndCompoundAssign`, the pass that lowers
+C-style compound assignment (`+=`, `-=`, `^=`, …). `x op= e` lowers to
+`x := x op e`; in expression position it lowers to a block expression yielding the
+new value (that block is later hoisted by `LiftImperativeExpressions`, whose own
+idiomaticity is in `LiftExpressionAssignmentsTest`; this test pins only THIS
+pass's output).
+
+Uses the shared idiomaticity driver `runPassForIdiomaticity`: parse, resolve,
+run the one pass, print the result.
 -/
 
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
-meta import StrataLaurel.Implementation.Grammar
-meta import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
-meta import StrataLaurel.Implementation.LiftImperativeExpressions
-
-meta section
+import StrataLaurel.Tests.Util.TestLaurel
 
 open Strata
-open StrataDDM (initDialect)
-open StrataDDM.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Parse, run EliminateIncrDecrAndCompoundAssign, then
-    LiftImperativeExpressions, so test output reflects the Laurel fed to Core. -/
-def parseLowerCompoundAssign (input : String) : IO Program := do
-  let inputCtx := StrataDDM.Parser.stringInputContext "test" input
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let program := eliminateIncrDecrAndCompoundAssign program
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    match liftExpressionAssignments program model [] with
-    | .ok p => pure p
-    | .error e => throw (IO.userError s!"Lift error: {e}")
-
-/-- Statement form: `x += 3` lowers to a clean `x := x + 3`. -/
-def stmtFormProgram : String := r"
-procedure stmtForm()
-  opaque
-{
-  var x: int := 0;
-  x += 3;
-  x -= 1
-};
-"
-
+/- Statement form: `x += 3` lowers to a clean `x := x + 3`. -/
 /--
 info: procedure stmtForm()
   opaque
@@ -64,14 +34,35 @@ info: procedure stmtForm()
 };
 -/
 #guard_msgs in
-#eval do
-  let program ← parseLowerCompoundAssign stmtFormProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
+procedure stmtForm()
+  opaque
+{
+  var x: int := 0;
+  x += 3;
+  x -= 1
+};
+#end
 
-/-- Expression position: `(x += 2)` yields the new value; the assignment is
-    lifted out ahead of the use. -/
-def exprFormProgram : String := r"
+/- Expression position: `(x += 2)` lowers to a block expression that performs the
+    assignment and yields the new value. (`LiftImperativeExpressions` later hoists
+    the block ahead of the use; that is not this pass.) -/
+/--
+info: procedure exprForm()
+  opaque
+{
+  var x: int := 5;
+  var y: int := x := x + 2;
+  assert x == 7;
+  assert y == 7
+};
+-/
+#guard_msgs in
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
 procedure exprForm()
   opaque
 {
@@ -80,32 +71,25 @@ procedure exprForm()
   assert x == 7;
   assert y == 7
 };
-"
+#end
 
+/- Nested side-effecting RHS: `x += (y += 1)` lowers bottom-up, each compound
+    assignment becoming its own block expression. -/
 /--
-info: procedure exprForm()
+info: procedure nestedRhs()
   opaque
 {
-  var x: int := 5;
-  x := x + 2;
-  var y: int := x;
-  assert x == 7;
-  assert y == 7
+  var x: int := 1;
+  var y: int := 10;
+  x := x + (y := y + 1);
+  assert y == 11;
+  assert x == 12
 };
 -/
 #guard_msgs in
-#eval do
-  let program ← parseLowerCompoundAssign exprFormProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-
-/-- Nested side-effecting RHS: `x += (y += 1)` lowers bottom-up. One level of
-    nesting is supported. Deeper nesting (`x += (y += (z += 1))`) hits a
-    pre-existing limitation of `LiftImperativeExpressions` — it errors with
-    "destructive assignments … should have been lifted" — that also affects plain
-    nested assignment (`x := (y := (z := 5))`) on the base, independent of compound
-    assignment. Not exercised here so the test doesn't pin that broken output. -/
-def nestedRhsProgram : String := r"
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
 procedure nestedRhs()
   opaque
 {
@@ -115,38 +99,10 @@ procedure nestedRhs()
   assert y == 11;
   assert x == 12
 };
-"
+#end
 
-/--
-info: procedure nestedRhs()
-  opaque
-{
-  var x: int := 1;
-  var y: int := 10;
-  y := y + 1;
-  x := x + y;
-  assert y == 11;
-  assert x == 12
-};
--/
-#guard_msgs in
-#eval do
-  let program ← parseLowerCompoundAssign nestedRhsProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-
-/-- String concatenation `^=` maps to the distinct `.StrConcat` operation (on
-    `string`, not arithmetic on `int`), exercising a different lowering path than the
-    `+=`/`-=` cases above: `s ^= "b"` lowers to `s := s ^ "b"`. -/
-def strConcatFormProgram : String := "
-procedure strConcatForm()
-  opaque
-{
-  var s: string := \"a\";
-  s ^= \"b\"
-};
-"
-
+/- String concatenation `^=` maps to the distinct `.StrConcat` operation (on
+    `string`, not arithmetic on `int`): `s ^= "b"` lowers to `s := s ^ "b"`. -/
 /--
 info: procedure strConcatForm()
   opaque
@@ -156,11 +112,15 @@ info: procedure strConcatForm()
 };
 -/
 #guard_msgs in
-#eval do
-  let program ← parseLowerCompoundAssign strConcatFormProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#eval runPassForIdiomaticity eliminateIncrDecrAndCompoundAssignPass <|
+#strata
+program Laurel;
+procedure strConcatForm()
+  opaque
+{
+  var s: string := "a";
+  s ^= "b"
+};
+#end
 
 end Laurel
-end Strata
-end

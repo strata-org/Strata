@@ -66,9 +66,9 @@ where
 
 /-- Transform a program by eliminating return statements in all procedure bodies. -/
 def eliminateReturnStatements (program : Program) : Program :=
-  { program with staticProcedures := program.staticProcedures.map eliminateReturnStmts }
+  mapProgramProcedures eliminateReturnStmts program
 
-public def eliminateReturnStatementsPass : LoweringPass where
+public def eliminateReturnStatementsPass : LaurelPass where
   name := "EliminateReturnStatements"
   creates := [NodeKind.StmtExpr.Exit, NodeKind.StmtExpr.Block]
   unsupported := [NodeKind.StmtExpr.Try.finally?.some]

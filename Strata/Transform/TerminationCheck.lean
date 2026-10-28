@@ -15,7 +15,7 @@ import Strata.Util.Tactics
 
 /-! # Termination Checking for Recursive Functions
 
-This transformation generates termination-checking procedures for recursive
+This transformation generates termination-checking lemmas for recursive
 function blocks. For each `recFuncBlock`, it:
 
 1. Determines the termination measure for each function: either structural
@@ -23,9 +23,9 @@ function blocks. For each `recFuncBlock`, it:
    user-supplied integer expression that decreases).
 2. For structural recursion, generates `D..adtRank` function declarations and
    per-constructor axioms for the relevant datatypes.
-3. Generates a `$$term` procedure per function that asserts the measure
-   decreases at each recursive call site (and is non-negative for int-valued
-   measures).
+3. Generates one lemma `f_terminates_i` per recursive call site of each
+   function `f`, stating that the measure decreases there (and is non-negative
+   for int-valued measures), and adds it to `f`'s `lemmas`.
 -/
 
 public section
@@ -40,18 +40,10 @@ open Core.Transform
 
 /-- Statistics keys tracked by the termination checking transformation. -/
 inductive Stats where
-  | termCheckProcsGenerated
-  | termCheckAssertsEmitted
+  | termCheckLemmasGenerated
   | adtRankAxiomsGenerated
 
 #derive_prefixed_toString Stats "TermCheck"
-
-/-- Suffix for generated termination-checking procedures. -/
-def termSuffix : String := "$$term"
-
-def termProcName (name : String) : String := s!"{name}{termSuffix}"
-
-def isTermProc (name : String) : Bool := name.endsWith termSuffix
 
 /-- Classifies the termination measure for a recursive function. -/
 inductive DecreasesKind where
@@ -219,15 +211,16 @@ private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
     | _, _ => .error s!"termination checking '{func.name.name}': decreasing parameter index {idx} is out of range"
   | .intValued m => .ok m
 
-/-- Generate a termination-checking procedure for a single function.
-    Returns `none` if the function has no recursive calls or no valid
-    decreasing parameter. The polymorphic `adtRankAxioms` are specialized
-    to the function's concrete decreasing-parameter type before being
-    embedded as preconditions.
-    The resulting procedure should NOT have preconditions checked, since
-    they will already be checked by the original program, and the generated
-    axioms do not use partial functions. -/
-private def mkTermCheckProc
+/-- Generate the termination-checking lemmas for a single function: one per
+    obligation, quantified over the function's inputs and generic in its type
+    parameters. Returns `[]` if the function has no recursive calls or no
+    valid decreasing parameter. The polymorphic `adtRankAxioms` are
+    specialized to the type of the function's decreasing parameter and, with
+    the function's preconditions, become hypotheses of each lemma, so they
+    are not assumed by any other obligation. The preconditions'
+    well-formedness is checked by the function's own well-formedness lemmas,
+    and the generated axioms do not use partial functions. -/
+private def mkTermCheckLemmas
     (func : Function)
     (recFuncNames : List String)
     (callerKind : DecreasesKind)
@@ -235,8 +228,8 @@ private def mkTermCheckProc
     (adtRankAxioms : List (String × Expression.Expr))
     (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
-    : Except String (Option (Decl × Nat)) := do
-  let some body := func.body | return none
+    : Except String (List Decl) := do
+  let some body := func.body | return []
   let callerMeasure ← computeCallerMeasure func callerKind
   -- Safe to use caller's kind: mixed mutual blocks are rejected in `termCheck`
   let needsNonNeg := match callerKind with
@@ -264,10 +257,8 @@ private def mkTermCheckProc
       | .error msg => .error msg
     | none => .ok []
   let obligations ← extractTermObligations body recFuncNames mkObligations
-  if obligations.isEmpty then return none
-  let stmts := obligations.mapIdx fun i ob =>
-    Statement.assert s!"{func.name.name}_terminates_{i}" ob md
-  let specializedAxioms : List (String × Expression.Expr) := match callerKind with
+  let rankHyps : List Expression.Expr :=
+    match callerKind with
     | .structural idx callerDtName =>
       match func.inputs.values[idx]? with
       | some callerAdtTy =>
@@ -278,32 +269,14 @@ private def mkTermCheckProc
         let relevantAxioms := adtRankAxioms.filter fun (name, _) =>
           relevantDtNames.any (fun dtName => name.startsWith (adtRankFuncName dtName))
         let tySubst := mkTySubst tf callerAdtTy
-        relevantAxioms.map fun (name, e) => (name, e.applyTypeSubst tySubst)
+        relevantAxioms.map fun (_, e) => e.applyTypeSubst tySubst
       | none => []
     | .intValued _ => []
-  return some (.proc {
-    header := {
-      name := ⟨termProcName func.name.name, ()⟩
-      typeArgs := func.typeArgs
-      inputs := func.inputs
-      outputs := []
-      noFilter := true
-    }
-    spec := { preconditions :=
-                 (specializedAxioms.map fun (name, e) =>
-                   (name, { expr := e, attr := .Free })) ++
-                 (func.preconditions.mapIdx fun i p =>
-                   (s!"{func.name.name}_requires_{i}", { expr := p.expr, attr := .Free })),
-               postconditions := [] }
-    body := .structured stmts
-  } md, obligations.length)
-
-/-- Add a termination-check procedure as a leaf node in the cached call graph. -/
-private def addTermProcToCallGraph (name : String) : CoreTransformM Unit :=
-  modify fun σ => match σ.cachedAnalyses.callGraph with
-  | .some cg => { σ with cachedAnalyses := { σ.cachedAnalyses with
-      callGraph := .some (cg.addLeafNode name) } }
-  | .none => σ
+  let hyps := rankHyps ++ func.preconditions.map (·.expr)
+  return obligations.mapIdx fun i ob =>
+    let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp () boolImpliesOp [p, body]
+    .lemma { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
+             e := Lemma.forallOver func.inputs.toList e } md
 
 /-- Result of generating adtRank declarations for a mutual datatype block. -/
 private structure AdtRankDecls where
@@ -327,12 +300,14 @@ private def mkAdtRankDecls
           (s!"{adtRankFuncName dt.name}_{i}", ax) }
 
 /-- Main transformation: iterate over declarations, generating adtRank axioms
-    and termination-checking procedures for each `recFuncBlock`. -/
+    and termination-checking lemmas for each `recFuncBlock`. -/
 def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
-  let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+  -- Generated lemmas are named away from every declaration of the program.
+  let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
+  let (changed, newDecls) ← transformDecls taken p.decls TypeFactory.default {}
   return (changed, { decls := newDecls })
 where
-  transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
+  transformDecls (taken : Std.HashSet String) (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)
       : CoreTransformM (Bool × List Decl) := do
     let mut acc : Array Decl := #[]
@@ -340,6 +315,7 @@ where
     let mut remaining := decls
     let mut tf := tf
     let mut emittedAdtRank := emittedAdtRank
+    let mut taken := taken
     while h : remaining ≠ [] do
       let d := remaining.head h
       let rest := remaining.tail
@@ -385,33 +361,46 @@ where
           let results := revResults.reverse
           { namedDecls := results.flatMap (·.namedDecls)
             axioms := results.flatMap (·.axioms) }
-        let newFuncDecls := allAdtRank.namedDecls.filterMap
+        let newRankDecls := allAdtRank.namedDecls.filterMap
           fun (n, d') => if emittedAdtRank.contains n then none else some d'
         emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
         incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
-        -- Step 3: Generate a $$term procedure per function with adtRank
-        -- decrease assertions at each recursive call site.
+        -- Step 3: Generate one lemma per recursive call site, stating that the
+        -- measure decreases there. Each function lists its lemmas.
         let recNames := funcs.map (·.name.name)
-        let termDecls ← funcs.filterMapM fun func => do
+        -- A lemma whose name is already declared, or chosen for an earlier
+        -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
+        let mut revTermDeclss : List (List Decl) := []
+        for func in funcs do
           let callerKind := funcKindMap.find? (fun (n, _, _, _) => n == func.name.name)
-          match callerKind with
-          | none => return none
-          | some (_, kind, _, _) =>
-            match mkTermCheckProc func recNames kind funcKindMap allAdtRank.axioms tf md with
-            | .error msg => do throwErr msg; return none
-            | .ok (some (decl, numAsserts)) => do
-              incrementStat s!"{Stats.termCheckProcsGenerated}"
-              incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts
-              addTermProcToCallGraph (termProcName func.name.name)
-              return some decl
-            | .ok none => return none
-        -- Step 4: Splice adtRank decls before the rec block, term procs after.
-        if newFuncDecls.isEmpty && termDecls.isEmpty then
+          let decls ← match callerKind with
+            | none => pure []
+            | some (_, kind, _, _) =>
+              match mkTermCheckLemmas func recNames kind funcKindMap allAdtRank.axioms tf md with
+              | .error msg => do throwErr msg; pure []
+              | .ok r => pure r
+          let mut revNamed : List Decl := []
+          for d in decls do
+            match d with
+            | .lemma l md' =>
+              let name := Lemma.freshName taken l.name
+              taken := taken.insert name
+              revNamed := .lemma { l with name } md' :: revNamed
+            | _ => revNamed := d :: revNamed
+          revTermDeclss := revNamed.reverse :: revTermDeclss
+        let termDeclss := revTermDeclss.reverse
+        let termDecls := termDeclss.flatten
+        incrementStat s!"{Stats.termCheckLemmasGenerated}" termDecls.length
+        let funcs' := (funcs.zip termDeclss).map fun (func, decls) =>
+          { func with lemmas := func.lemmas ++ decls.map (·.name.name) }
+        -- Step 4: Splice adtRank decls before the rec block, its lemmas after,
+        -- since their formulas call the block's functions.
+        if newRankDecls.isEmpty && termDecls.isEmpty then
           acc := acc.push d
         else
           changed := true
-          acc := acc ++ newFuncDecls.toArray
-          acc := acc.push d
+          acc := acc ++ newRankDecls.toArray
+          acc := acc.push (.recFuncBlock funcs' md)
           acc := acc ++ termDecls.toArray
       | .type (.data block) _md => do
         tf := tf.push block
@@ -426,7 +415,7 @@ where
             f!"❌ TerminationCheck: procedure {proc.header.name.name} has a CFG body; \
                termination is only checked on structured bodies.")
         | .structured _ => acc := acc.push d
-      | .func _ _ | .ax _ _ | .distinct _ _ _
+      | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
         acc := acc.push d
       remaining := rest
@@ -434,20 +423,18 @@ where
 
 end TermCheck
 
-/-- TermCheck pipeline phase: generates termination-checking procedures for
-    recursive functions. Model-preserving because it only adds new
-    assertions and procedures. -/
+/-- TermCheck pipeline phase: generates termination-checking lemmas for
+    recursive functions. Model-preserving because it only adds new lemmas,
+    adtRank functions and their axioms. -/
 def termCheckPipelinePhase : PipelinePhase :=
   -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
   -- substituting the call's arguments, and a function-typed parameter applied to
-  -- an abstraction argument leaves a redex behind. `noPolymorphicProcedures` is
-  -- not claimed either: the procedures this adds inherit the checked function's
-  -- type arguments.
+  -- an abstraction argument leaves a redex behind.
   modelPreservingPipelinePhase "termCheck"
     (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicFunctions, .typeAnnotated])
     fun prog => do
       TermCheck.termCheck prog

@@ -21,7 +21,7 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseAndResolve (program : StrataDDM.Program) : IO (Program × SemanticModel) := do
+private def parseAndResolve (program : StrataDDM.Program) : IO (LaurelProgram × SemanticModel) := do
   let laurelProgram ← translateLaurel program
   let result := resolve (withBuiltins laurelProgram)
   for diagnostic in result.errors do

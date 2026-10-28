@@ -138,6 +138,7 @@ def nondetElimPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noNondetGuards])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
+                         .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated])
 

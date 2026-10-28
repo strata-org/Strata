@@ -684,9 +684,9 @@ procedure $havocHeap()
 #end
 
 /--
-The core map operation definitions as a `Laurel.Program`, parsed at compile time.
+The core map operation definitions as a `Laurel.LaurelProgram`, parsed at compile time.
 -/
-public def coreDefinitionsForLaurel : Program :=
+public def coreDefinitionsForLaurel : LaurelProgram :=
   match TransM.run
       (.file "StrataLaurel/Implementation/CoreDefinitionsForLaurel.lean")
       (parseProgram coreDefinitionsForLaurelDDM) (synthesized := true) with
@@ -711,8 +711,8 @@ datatype Result<Val, Err> {
 
 #end
 
-/-- The `Result` datatype definition as a `Laurel.Program`, parsed at compile time. -/
-def resultDefinitions : Program :=
+/-- The `Result` datatype definition as a `Laurel.LaurelProgram`, parsed at compile time. -/
+def resultDefinitions : LaurelProgram :=
   match TransM.run
       (.file "StrataLaurel/Implementation/CoreDefinitionsForLaurel.lean")
       (parseProgram resultDefinitionsDDM) (synthesized := true) with

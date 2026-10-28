@@ -310,6 +310,9 @@ def processTopDecls (index : PolymorphicFuncDecls) (factory : Lambda.Factory Cor
     | .ax a md =>
       refs := refs ++ collectFuncSpecializations index factory a.e
       decls := decls.push (.ax { a with e := ← mangleOpsInLExpr index factory a.e } md)
+    | .lemma l md =>
+      refs := refs ++ collectFuncSpecializations index factory l.e
+      decls := decls.push (.lemma { l with e := ← mangleOpsInLExpr index factory l.e } md)
     | .distinct n es md =>
       refs := refs ++ es.flatMap (collectFuncSpecializations index factory)
       decls := decls.push (.distinct n (← es.mapM (mangleOpsInLExpr index factory)) md)
@@ -554,7 +557,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
     (establishes := factSet![.noPolymorphicFunctions])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .typeAnnotated])
     fun prog => monomorphizeFunctions prog

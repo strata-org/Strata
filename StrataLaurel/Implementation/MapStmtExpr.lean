@@ -6,6 +6,7 @@
 module
 
 public import StrataLaurel.Implementation.LaurelAST
+public import StrataLaurel.Implementation.Program
 import Strata.Util.Tactics
 
 /-!
@@ -16,8 +17,8 @@ Children are recursively traversed first, then the user-supplied function `f` is
 applied to the result. Passes that only need custom logic for a few constructors
 can pattern-match in `f` and fall through for the rest.
 
-Also provides `mapProcedureBodiesM` and `mapProgramM` to eliminate the
-`Body`/`Procedure`/`Program` boilerplate shared by nearly every pass.
+Also provides `mapProcedureBodiesM` and `mapLaurelProgramM` to eliminate the
+`Body`/`Procedure`/`LaurelProgram` boilerplate shared by nearly every pass.
 -/
 
 namespace Strata.Laurel
@@ -106,11 +107,10 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.HasNext (← mapStmtExprUsedM f true target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-      let ⟨vv, vs⟩ := v
-      match vv with
-      | .Field target fieldName =>
+      match (dependent := true) v with
+      | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprUsedM f true target) fieldName, vs⟩
-      | .Local _ | .Declare _ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprUsedM f true value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprUsedM f true target) fieldName), source⟩
@@ -392,11 +392,10 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.HasNext (collapse (← go true target) target.source), source⟩
     | .Assign targets value =>
       let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-        let ⟨vv, vs⟩ := v
-        match vv with
-        | .Field target fieldName =>
+        match (dependent := true) v with
+        | ⟨.Field target fieldName, vs⟩ =>
           pure ⟨Variable.Field (collapse (← go true target) target.source) fieldName, vs⟩
-        | .Local _ | .Declare _ => pure v
+        | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
       pure ⟨.Assign targets' (collapse (← go true value) value.source), source⟩
     | .Var (.Field target fieldName) =>
       pure ⟨.Var (.Field (collapse (← go true target) target.source) fieldName), source⟩
@@ -490,15 +489,14 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.HasNext (← mapStmtExprPrePostM pre post target), source⟩
   | .Assign targets value =>
     let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-      let ⟨vv, vs⟩ := v
-      match vv with
-      | .Field target fieldName =>
+      match (dependent := true) v with
+      | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprPrePostM pre post target) fieldName, vs⟩
-      | .Local _ | .Declare _ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
-  | .IncrDecr mode op target => match target with
+  | .IncrDecr mode op target => match (dependent := true) target with
     | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
     | ⟨.Local _, _⟩
     | ⟨.Declare _, _⟩ => pure expr
@@ -606,7 +604,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f value
   | .Var (.Field target _) =>
     foldStmtExprM f target
-  | .IncrDecr _ _ target => match target with
+  | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
@@ -830,57 +828,62 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
   let proc ← mapProcedureBodiesM f proc
   mapProcedureSpecificationsWithCoroutineM' f proc
 
-/-- Apply a monadic transformation to every procedure in a program — both
-    top-level static procedures and the instance procedures of composite types.
-    The single place that knows where procedures live in a `Program`, so passes
-    don't each re-enumerate `staticProcedures` and composite `instanceProcedures`. -/
-def mapProgramProceduresM [Monad m] (f : Procedure → m Procedure) (program : Program) : m Program := do
+/-- Apply a monadic transformation to every procedure in a program — the
+    top-level static procedures and static functions, and the instance procedures
+    of composite types. The single place that knows where procedures live in a
+    `LaurelProgram`, so passes don't each re-enumerate `staticProcedures`,
+    `staticFunctions` and composite `instanceProcedures`. -/
+def mapLaurelProgramProceduresM [Monad m] (f : Procedure → m Procedure) (program : LaurelProgram) : m LaurelProgram := do
   let staticProcedures ← program.staticProcedures.mapM f
+  let staticFunctions ← program.staticFunctions.mapM f
   let types ← program.types.mapM fun td =>
     match td with
     | .Composite ct => return .Composite { ct with instanceProcedures := ← ct.instanceProcedures.mapM f }
     | other => pure other
-  return { program with staticProcedures := staticProcedures, types := types }
+  return { program with staticProcedures, staticFunctions, types }
 
-/-- Pure variant of `mapProgramProceduresM`. -/
-def mapProgramProcedures (f : Procedure → Procedure) (program : Program) : Program :=
-  mapProgramProceduresM (m := Id) f program
+/-- Pure variant of `mapLaurelProgramProceduresM`. -/
+def mapLaurelProgramProcedures (f : Procedure → Procedure) (program : LaurelProgram) : LaurelProgram :=
+  mapLaurelProgramProceduresM (m := Id) f program
 
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use
     `mapProcedureM` directly if those are needed. -/
-def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
-  return { program with staticProcedures := ← program.staticProcedures.mapM (mapProcedureBodiesM f) }
+def mapLaurelProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : LaurelProgram) : m LaurelProgram := do
+  return { program with
+    staticProcedures := ← program.staticProcedures.mapM (mapProcedureBodiesM f)
+    staticFunctions := ← program.staticFunctions.mapM (mapProcedureBodiesM f) }
 
 /-- Apply a pure transformation to all `StmtExprMd` nodes in a program. -/
-def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
-  mapProgramM (m := Id) f program
+def mapLaurelProgram (f : StmtExprMd → StmtExprMd) (program : LaurelProgram) : LaurelProgram :=
+  mapLaurelProgramM (m := Id) f program
 
 /-- Apply `f` to every `StmtExprMd` node appearing *anywhere* in a program: every
-    procedure (top-level static procedures and composite instance procedures, via
-    `mapProcedureM` — body, specification fields and coroutine clauses), the
+    procedure (top-level static procedures and static functions, and composite
+    instance procedures, via `mapProcedureM` — body, specification fields and
+    coroutine clauses), the
     constraint and witness of constrained types, a composite's field
     initializers, constant initializers, and file-scope globals' initializers.
     `f` is applied per node in a bottom-up traversal (see `mapStmtExprM`).
 
-    This is the expression analogue of `mapProgramHighTypesM`: the single place
-    that knows where expressions live in a `Program`, so passes that rewrite call
+    This is the expression analogue of `mapLaurelProgramHighTypesM`: the single place
+    that knows where expressions live in a `LaurelProgram`, so passes that rewrite call
     sites (or any other node) don't each re-enumerate procedures, constrained
     types, and constants — and silently miss one. The list is exhaustive, which is
     what makes a `removes` declaration provable: a pass can only be shown to
     remove a node kind from the positions its walk reaches. -/
-def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
+def mapLaurelProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : LaurelProgram) : m LaurelProgram := do
   let mapExpr := mapStmtExprM f
-  let program ← mapProgramProceduresM (mapProcedureM mapExpr) program
+  let program ← mapLaurelProgramProceduresM (mapProcedureM mapExpr) program
   let types ← program.types.mapM fun td => do
     match td with
     | .Constrained ct =>
       pure (.Constrained { ct with constraint := ← mapExpr ct.constraint, witness := ← mapExpr ct.witness })
     -- A composite's field initializers are ordinary expressions too; the
-    -- instance procedures were already rewritten by `mapProgramProceduresM`.
+    -- instance procedures were already rewritten by `mapLaurelProgramProceduresM`.
     -- No source program reaches this arm today: a field declaration is a name
     -- and a type, with no initializer syntax. It is here so this walk really is
-    -- every expression a `Program` holds, which the `NodeKind` specifications
+    -- every expression a `LaurelProgram` holds, which the `NodeKind` specifications
     -- depend on.
     | .Composite ct =>
       let fields ← ct.fields.mapM fun fld => do
@@ -896,9 +899,9 @@ def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : P
     pure { field with initializer }
   return { program with types, constants, staticFields }
 
-/-- Pure version of `mapProgramStmtExprM`. -/
-def mapProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
-  mapProgramStmtExprM (m := Id) f program
+/-- Pure version of `mapLaurelProgramStmtExprM`. -/
+def mapLaurelProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : LaurelProgram) : LaurelProgram :=
+  mapLaurelProgramStmtExprM (m := Id) f program
 
 /-! ## Type-annotation traversals
 
@@ -966,6 +969,12 @@ def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : P
     outputs := ← proc.outputs.mapM mapParam }
   mapProcedureSpecificationsM mapExpr proc
 
+def mapDatatypeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (dt : DatatypeDefinition) :
+    m DatatypeDefinition := do
+  pure { dt with
+    constructors := ← dt.constructors.mapM (fun ctor => do
+      pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) }
+
 /-- Apply `f` to every `HighType` annotation in a type definition: composite
     fields and instance procedures, constrained base/constraint/witness,
     datatype constructor argument types, and alias targets. -/
@@ -980,10 +989,7 @@ def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td 
       base := ← f ct.base
       constraint := ← mapStmtExprHighTypesM f ct.constraint
       witness := ← mapStmtExprHighTypesM f ct.witness })
-  | .Datatype dt =>
-    pure (.Datatype { dt with
-      constructors := ← dt.constructors.mapM (fun ctor => do
-        pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) })
+  | .Datatype dt => pure (.Datatype (← mapDatatypeHighTypesM f dt))
   | .Alias ta => pure (.Alias { ta with target := ← f ta.target })
   | .Opaque ot => pure (.Opaque ot)
 
@@ -995,16 +1001,69 @@ def mapFieldHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (fld : Field)
   pure { fld with type := ← f fld.type,
                   initializer := ← fld.initializer.mapM (mapStmtExprHighTypesM f) }
 
-/-- Apply `f` to every `HighType` annotation anywhere in a program: procedures,
-    static fields, type definitions, and constants. -/
-def mapProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : Program) : m Program := do
+/-- Apply `f` to every `HighType` annotation anywhere in a program: static
+    procedures and functions, static fields, type definitions, and constants. -/
+def mapLaurelProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : LaurelProgram) : m LaurelProgram := do
   return { program with
     staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
+    staticFunctions := ← program.staticFunctions.mapM (mapProcedureHighTypesM f)
     staticFields := ← program.staticFields.mapM (mapFieldHighTypesM f)
     types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
     constants := ← program.constants.mapM (mapConstantHighTypesM f) }
 
-/-- Pure version of `mapProgramHighTypesM`. -/
+/-- Pure version of `mapLaurelProgramHighTypesM`. -/
+def mapLaurelProgramHighTypes (f : HighTypeMd → HighTypeMd) (program : LaurelProgram) : LaurelProgram :=
+  mapLaurelProgramHighTypesM (m := Id) f program
+
+def mapOrderedDeclProceduresM [Monad m] (f : Procedure → m Procedure) : OrderedDecl → m OrderedDecl
+  | .funcs funcs isRecursive => return .funcs (← funcs.mapM f) isRecursive
+  | .procedure proc => return .procedure (← f proc)
+  | other => pure other
+
+/-- Lift a `LaurelProgram` walk and an `OrderedDecl` walk to every IR. A `Core` program holds no
+    Laurel syntax, so it is returned unchanged. -/
+def Program.mapM [Monad m] (laurel : LaurelProgram → m LaurelProgram)
+    (decl : OrderedDecl → m OrderedDecl) : Program → m Program
+  | .Unordered p => return .Unordered (← laurel p)
+  | .Ordered (.WithLaurelTypes p) => return .Ordered (.WithLaurelTypes { p with decls := ← p.decls.mapM decl })
+  | .Ordered (.Core p) => pure (.Ordered (.Core p))
+
+def mapProgramProceduresM [Monad m] (f : Procedure → m Procedure) : Program → m Program :=
+  Program.mapM (mapLaurelProgramProceduresM f) (mapOrderedDeclProceduresM f)
+
+def mapProgramProcedures (f : Procedure → Procedure) (program : Program) : Program :=
+  mapProgramProceduresM (m := Id) f program
+
+def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) : Program → m Program
+  | .Unordered p => return .Unordered (← mapLaurelProgramM f p)
+  | program => mapProgramProceduresM (mapProcedureBodiesM f) program
+
+def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
+  mapProgramM (m := Id) f program
+
+def mapConstantStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (c : Constant) : m Constant := do
+  pure { c with initializer := ← c.initializer.mapM (mapStmtExprM f) }
+
+def mapOrderedDeclStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) : OrderedDecl → m OrderedDecl
+  | .constant c => return .constant (← mapConstantStmtExprM f c)
+  | decl => mapOrderedDeclProceduresM (mapProcedureM (mapStmtExprM f)) decl
+
+def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) : Program → m Program :=
+  Program.mapM (mapLaurelProgramStmtExprM f) (mapOrderedDeclStmtExprM f)
+
+def mapProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
+  mapProgramStmtExprM (m := Id) f program
+
+def mapOrderedDeclHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) : OrderedDecl → m OrderedDecl
+  | .funcs funcs isRecursive => return .funcs (← funcs.mapM (mapProcedureHighTypesM f)) isRecursive
+  | .procedure proc => return .procedure (← mapProcedureHighTypesM f proc)
+  | .datatypes dts => return .datatypes (← dts.mapM (mapDatatypeHighTypesM f))
+  | .opaqueType ot => pure (.opaqueType ot)
+  | .constant c => return .constant (← mapConstantHighTypesM f c)
+
+def mapProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) : Program → m Program :=
+  Program.mapM (mapLaurelProgramHighTypesM f) (mapOrderedDeclHighTypesM f)
+
 def mapProgramHighTypes (f : HighTypeMd → HighTypeMd) (program : Program) : Program :=
   mapProgramHighTypesM (m := Id) f program
 

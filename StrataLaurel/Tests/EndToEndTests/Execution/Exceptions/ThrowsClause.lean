@@ -40,9 +40,8 @@ The subtype upper bound of the declaration is a rejection, so it lives in
 `Resolution/Exceptions/ThrowsEscape.lean`; an escape from a procedure without one
 is in `UncaughtExceptions.lean`.
 
-Each case that can be run has an `entry` and runs under the verifier and the Laurel
-interpreter. A case that throws a composite skips the Core interpreter, which does
-not reduce an assertion over the heap the exception value lives on.
+Each case that can be run has an `entry` and runs under the verifier and both
+interpreters.
 -/
 
 /-! ## A normal `ensures` under `throws` -/
@@ -136,8 +135,7 @@ statements following the call. -/
 
 -- A callee's exception propagates through a procedure that only declares `throws`,
 -- and is caught by its caller.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -180,8 +178,7 @@ procedure runAll() entry
 -- After a throwing call, the statements that follow run only on the `Good` path, so
 -- the callee's normal postcondition is available to them unconditionally. If a `Bad`
 -- result could fall through, `r >= 0` would not hold here.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -273,8 +270,11 @@ procedure catchesTransparent(x: int) returns (out: int)
 -- rather than letting the lowering proceed — which would synthesize a `Result`
 -- carrier and surface as a misleading "2 output parameters" error plus leaked
 -- `$thrown`/`$returning` assignments that do not point at the `throw`.
+-- No interpreters: the annotated error is a rejection of the declaration, so there is no
+-- program to run — and the only procedure takes a parameter, so there is no parameterless
+-- `entry` to mark either.
 #guard_msgs (drop info) in
-#eval testLaurelVerification <|
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite Err {}
@@ -361,8 +361,7 @@ By the time the exceptional channel is lowered there is no value riding on the
 `return` for the `Result` assembly to lose — which is why that ordering is a declared
 dependency of the pass rather than a comment. -/
 
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -429,8 +428,7 @@ which builds the AST directly and so does not go through that check. -/
 
 -- Short form, with a `throwsOn` case and an `ensures` so the contract rewriting has
 -- to reach the postconditions and not just the body.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -466,8 +464,7 @@ procedure runAll() entry
 
 -- The explicit form with the output named `$result` by hand: the same program as far
 -- as this pass is concerned, since `: T` desugars to exactly this.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
@@ -547,8 +544,7 @@ lowered and its frame gets guarded by a `Result..isGood` that resolution then
 rejects, surfacing as an internal error from a pass that did nothing wrong. It
 must verify cleanly. -/
 
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {
@@ -579,8 +575,7 @@ procedure runAll() entry
 -- Control: the identical procedure with an ordinary output name and type. Pinning
 -- both means a regression to name- or type-inference fails the bait case while this
 -- one still passes, pointing straight at the cause.
--- No Core interpreter: it fails with "assert condition did not reduce to bool" on this program.
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Cell {

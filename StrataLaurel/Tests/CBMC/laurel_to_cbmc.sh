@@ -20,7 +20,7 @@ if [ ! -f "$1" ]; then
 fi
 
 LAUREL="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-# deriveBaseName in StrataMain.lean strips .st from the filename
+# deriveBaseName in Strata.Cli.Framework strips .st from the filename
 BN=$(basename "$LAUREL" .st)
 
 # Locate project root (three levels up from this script's directory)
@@ -46,7 +46,7 @@ run() {
 if [ -n "$STRATA" ]; then
   run "strata laurelAnalyzeToGoto" "$STRATA" laurelAnalyzeToGoto "$LAUREL"
 else
-  (cd "$PROJECT_ROOT" && run "lake exe strata laurelAnalyzeToGoto" .lake/build/bin/strata laurelAnalyzeToGoto "$LAUREL") || exit $?
+  (cd "$PROJECT_ROOT" && run "lake exe strataLaurel laurelAnalyzeToGoto" .lake/build/bin/strataLaurel laurelAnalyzeToGoto "$LAUREL") || exit $?
 fi
 
 # Intermediate files are created in cwd with basename

@@ -99,12 +99,18 @@ structure PhaseState where
 
     **Thread safety:** PipelineContext is NOT thread-safe.  The phase-tracking
     refs assume single-threaded sequential access.  Concurrent `withPhase` or
-    `withRepeatedPhase` calls on the same context will corrupt state. -/
+    `withRepeatedPhase` calls on the same context will corrupt state.  Give each
+    concurrent task its own context with `fork` instead. -/
 public structure PipelineContext where
   private mk ::
   outputMode : OutputMode
   private pipelineStartTime : Nat
   private profilePipeline : Bool := true
+  /-- Whether this context prints `[start]`/`[end]`/`[profile]`/`[warnings]`
+      lines to stdout when `outputMode.showsProfiling`. False on a `fork`, so
+      concurrent workers do not interleave phase lines; `outputMode` itself is
+      inherited, so a `.verbose` fork still echoes its diagnostics to stderr. -/
+  private printsPhases : Bool := true
   private messagesRef : IO.Ref (Array PipelineMessage)
   private toolErrorsRef : IO.Ref (Array PipelineMessage)
   private userCodeErrorsRef : IO.Ref (Array PipelineMessage)
@@ -140,6 +146,73 @@ public def create
   return { outputMode, pipelineStartTime := startTime, profilePipeline,
            messagesRef, toolErrorsRef, userCodeErrorsRef,
            currentPhaseRef, repeatedDepthRef, phaseStateRef, metricsHandle }
+
+/-- Derive a context for a concurrent worker task from `parent`.
+
+    The fork shares `parent`'s message refs, `metricsHandle`, and clock, so
+    diagnostics and JSONL metrics emitted by the worker reach the caller. Those
+    are safe to share: each message ref is updated by a single atomic `modify`,
+    and `emitMetric` writes one line per record.
+
+    The phase-tracking refs, which are not thread-safe, are fresh and private to
+    the fork, seeded with `parent`'s current phase and repeated-phase depth, so
+    the worker's messages and metrics carry the same phase path they would get
+    on `parent`. All other fields are inherited from `parent`, except that
+    `printsPhases` is off.
+
+    Call this on the thread that owns `parent`, before starting the worker; call
+    `joinForks` after every worker has finished. -/
+public def fork (parent : PipelineContext) : BaseIO PipelineContext := do
+  let currentPhaseRef ← IO.mkRef (← parent.currentPhaseRef.get)
+  let repeatedDepthRef ← IO.mkRef (← parent.repeatedDepthRef.get)
+  let phaseStateRef ← IO.mkRef (α := PhaseState) {}
+  return { parent with printsPhases := false, currentPhaseRef, repeatedDepthRef, phaseStateRef }
+
+/-- Fold the root-phase state of finished forks into `parent`'s current phase,
+    so `parent` reports what a sequential run on `parent` itself would report.
+    `poolElapsedNs` is the wall-clock time the forks ran for, measured by the
+    caller from before the first worker started until after the last one
+    finished. Call on the thread that owns `parent`, after every worker has
+    finished.
+
+    * Message counts are summed into `parent`'s, so its `[warnings]` summary
+      includes the workers' messages. Only the forks' root counts are folded
+      in, which is what a sequential run counts: `exitPhaseNormal` prints a
+      phase's own `[warnings]` line and discards its counts, so a message
+      emitted inside a nested phase such as `vcDischarge.runSolver` is not in
+      `vcDischarge`'s total on either path. The messages themselves always
+      reach `parent` through the shared message refs.
+    * Repeated phases aggregated at a fork's root are merged into `parent`'s,
+      so `parent`'s `exitPhaseNormal` flushes them under the same phase path a
+      sequential run would.
+    * `parent`'s children are credited with `poolElapsedNs`, not with the sum
+      of the forks' child times: those overlap, so their sum can exceed the
+      parent's elapsed time and its `unattributed` residual would always be 0.
+      With the wall-clock span the residual is the parent's time spent outside
+      the worker pool, and is emitted whenever a sequential run emits it. The
+      merged repeated phases already count as children, so their total is
+      taken off the span; if they sum to more than the span (only possible
+      when they ran concurrently) the residual is understated. -/
+public def joinForks (parent : PipelineContext) (forks : List PipelineContext)
+    (poolElapsedNs : Nat) : BaseIO Unit := do
+  let merge (acc : Std.HashMap String Nat) (cat : String) (n : Nat) :=
+    acc.alter cat fun mv => some (mv.getD 0 + n)
+  for child in forks do
+    let childPs ← child.phaseStateRef.get
+    parent.phaseStateRef.modify fun ps =>
+      { ps with
+        messageCounts := childPs.messageCounts.fold merge ps.messageCounts,
+        repeatedPhases := RepeatedPhaseData.mergeChildren ps.repeatedPhases childPs.repeatedPhases }
+  let repeatedNs ← forks.foldlM (init := 0) fun acc child => do
+    let childPs ← child.phaseStateRef.get
+    return acc + childPs.repeatedPhases.foldl (init := 0) fun acc (_, d) => acc + d.totalNs
+  parent.phaseStateRef.modify fun ps =>
+    { ps with elapsedModeNChildrenNs := ps.elapsedModeNChildrenNs + (poolElapsedNs - repeatedNs) }
+
+/-- Whether `ctx` prints phase lines (`[start]`, `[end]`, `[profile]`,
+    `[warnings]`) to stdout. -/
+private def printsProfiling (ctx : PipelineContext) : Bool :=
+  ctx.printsPhases && ctx.outputMode.showsProfiling
 
 /-- All accumulated pipeline messages. -/
 public def getMessages (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
@@ -177,7 +250,7 @@ def enterPhase (ctx : PipelineContext) (name : String)
 private def emitUnattributed (ctx : PipelineContext) (phase : Phase)
     (elapsedNs childrenNs : Nat) : BaseIO Unit := do
   let residualNs := elapsedNs - childrenNs
-  if ctx.outputMode.showsProfiling then
+  if ctx.printsProfiling then
     -- Printed as a bare `unattributed` leaf, indented one level under `phase`.
     let indent := String.replicate (phase.depth * 2) ' '
     let timeSuffix :=
@@ -204,7 +277,7 @@ partial def flushRepeatedEntries (ctx : PipelineContext)
   let childIndent := String.replicate (parentPhase.depth * 2) ' '
   for (name, data) in entries do
     let subphase := parentPhase.subphase name
-    if ctx.outputMode.showsProfiling then
+    if ctx.printsProfiling then
       let avg := if data.count > 0 then nsToMs (data.totalNs / data.count) else 0
       let timeSuffix :=
         if ctx.profilePipeline then
@@ -224,7 +297,7 @@ partial def flushRepeatedEntries (ctx : PipelineContext)
 def enterPhaseNormal (ctx : PipelineContext) : BaseIO Nat := do
   let phase ← ctx.currentPhaseRef.get
   let startNs ← ctx.elapsedNs
-  if ctx.outputMode.showsProfiling then
+  if ctx.printsProfiling then
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs startNs}ms)" else ""
     printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
@@ -254,7 +327,7 @@ def exitPhaseNormal (ctx : PipelineContext)
     ("phase", .str currentPhase.display),
     ("start_ms", .num (nsToMs startNs)),
     ("end_ms", .num (nsToMs now))])
-  if ctx.outputMode.showsProfiling then
+  if ctx.printsProfiling then
     let indent := String.replicate ((currentPhase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs now}ms)" else ""
     printlnFlush s!"{indent}[end] {currentPhase.leaf}{timeSuffix}"

@@ -32,41 +32,20 @@ resolves first and then drives `coroutineElaborationPass.run`.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
-import StrataLaurel.Implementation.CoroutineElaboration
-import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Resolve `program`, run `CoroutineElaboration` under `options`, and print the
-    elaborated program as Laurel source in two labeled sections — the generated
-    types (the `<c>State` composites) then the procedures (spawn constructors,
-    rewritten callers, and `$body` copies under `verifyCoroutine`) — plus any
-    diagnostics the pass emitted. `verifyCoroutine` selects the mode. -/
-private def printElaborated (verifyCoroutine : Bool) (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
-  let options : LaurelTranslateOptions := { verifyCoroutine }
-  let (elaborated, diags, _) := coroutineElaborationPass.run options result.program result.model
-  IO.println "-- types --"
-  for ty in elaborated.types do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format ty)))
-  IO.println "-- procedures --"
-  for proc in elaborated.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
-  for d in diags do
-    IO.println s!"diagnostic: {d.message}"
+/-- Parse, resolve, run `coroutineElaborationPass` under **full elaboration**
+    (`verifyCoroutine := false`, the default), and print the elaborated program. -/
+private def printFull := runPassForIdiomaticity coroutineElaborationPass
 
-/-- Print the elaborated program under **full elaboration** (`verifyCoroutine := false`). -/
-private def printFull (program : StrataDDM.Program) : IO Unit :=
-  printElaborated (verifyCoroutine := false) program
-
-/-- Print the elaborated program under **caller-verification elaboration**
+/-- As `printFull` but under **caller-verification elaboration**
     (`verifyCoroutine := true`). -/
 private def printVerify (program : StrataDDM.Program) : IO Unit :=
-  printElaborated (verifyCoroutine := true) program
+  runPassForIdiomaticity coroutineElaborationPass program (options := { verifyCoroutine := true })
 
 /-! ## Full elaboration: a value-yielding counter driven by a caller
 
@@ -78,8 +57,7 @@ call but the annotation is retargeted to `counterState`, and `resume(co)`
 becomes `co#resume()`. -/
 
 /--
-info: -- types --
-composite counterState { var $pc: int var i: int var x: intprocedure resume(self: counterState)
+info: composite counterState { var $pc: int var i: int var x: intprocedure resume(self: counterState)
   returns (x: int)
   requires self#$pc != 0
   opaque
@@ -103,7 +81,7 @@ while(true) if self#$pc == 1
         self#$pc := 3;
         {
           x := self#x;
-          return 
+          return
         }
       }
       else if self#$pc == 6
@@ -113,11 +91,10 @@ while(true) if self#$pc == 1
         }
         else {
           x := self#x;
-          return 
+          return
         };procedure has_next(self: counterState)
   returns (result: bool)
 return self#$pc != 0; }
--- procedures --
 procedure driver()
   opaque
 {
@@ -166,15 +143,13 @@ coroutine body survives as `echo$body` for YieldElim to check against the
 declared rely/guarantee. -/
 
 /--
-info: -- types --
-composite echoState { var $pc: int var x: intprocedure resume(self: echoState, y: int)
+info: composite echoState { var $pc: int var x: intprocedure resume(self: echoState, y: int)
   returns (x: int)
   requires y >= 0
   opaque
   ensures x >= 0;procedure has_next(self: echoState)
   returns (result: bool)
 return true; }
--- procedures --
 procedure driver()
   opaque
 {
@@ -225,8 +200,7 @@ so it is read as a plain local. On the caller side `z := resume(co, 7)` becomes
 `z := co#resume(7)`. -/
 
 /--
-info: -- types --
-composite accumulateState { var $pc: int var w: int var sum: intprocedure resume(self: accumulateState, n: int)
+info: composite accumulateState { var $pc: int var w: int var sum: intprocedure resume(self: accumulateState, n: int)
   returns (sum: int)
   requires self#$pc != 0
   opaque
@@ -243,16 +217,15 @@ while(true) if self#$pc == 2
       self#$pc := 2;
       {
         sum := self#sum;
-        return 
+        return
       }
     }
     else {
       sum := self#sum;
-      return 
+      return
     };procedure has_next(self: accumulateState)
   returns (result: bool)
 return self#$pc != 0; }
--- procedures --
 procedure driver()
   opaque
 {

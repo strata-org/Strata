@@ -21,8 +21,8 @@ Example:
 
 open Strata.Java
 
-/-- Pre-computed Java files for the Laurel `Program` type. -/
-private def laurelFiles : GeneratedFiles := getIonSerializer% Strata.Laurel.Program "___placeholder___"
+/-- Pre-computed Java files for the Laurel `LaurelProgram` type. -/
+private def laurelFiles : GeneratedFiles := getIonSerializer% Strata.Laurel.LaurelProgram "___placeholder___"
 
 def main (args : List String) : IO Unit := do
   match args with

@@ -51,9 +51,18 @@ procedure impureContractIsLegal1(x: int)
 A destructive assignment in a *contract* is reported by the Core schema
 translation, which runs after `FunctionalRewrite`. Since a transparent-body
 error there stops the pipeline before the schema pass, this case lives in its own
-`#eval` block so it is not masked by the transparent-body diagnostics above. -/
+`#eval` block so it is not masked by the transparent-body diagnostics above.
 
-#eval testLaurelVerification <|
+This check belongs in Laurel resolution. "A contract may not assign" is a property of the
+contract's syntax, decidable where the contract is resolved — the sibling cases above, which
+reject the same construct in a transparent body, are already reported there. Because this one
+is left to the schema pass it reports nothing under `testLaurelResolution` and has to run the
+full pipeline. Moving the check into resolution would let it join them.
+
+No interpreters: the schema pass rejects the program, so there is nothing to run — and the
+procedure takes a parameter, so there is no parameterless `entry` to mark either. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure impureContractIsNotLegal2(x: int)

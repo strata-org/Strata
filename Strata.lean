@@ -25,6 +25,7 @@ import Strata.Util.Worklist
 
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
+import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
@@ -37,6 +38,9 @@ import Strata.Languages.Core.WFProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectness
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
@@ -49,6 +53,9 @@ import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.Simplify
+import Strata.Transform.Simplify.Expr
+import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredCorrect
@@ -58,6 +65,7 @@ import Strata.Transform.StructuredToUnstructuredPipelineCorrect
 /- Program Logics -/
 import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.Languages.Core.Logic.LangDefProps
+import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall
@@ -69,6 +77,7 @@ import Strata.Languages.B3
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
+import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet
@@ -109,8 +118,13 @@ import Strata.Pipeline.PhaseContractProps
 import Strata.SimpleAPI
 
 /- CLI -/
+import Strata.Cli.CoreCommands
+import Strata.Cli.DialectCommands
 import Strata.Cli.Framework
 import Strata.Cli.VerifyOptions
+
+-- Dead-definition elimination: its over-approximation proofs.
+import Strata.Transform.DeadDefElimCoreCorrect
 
  -- deletion candidates: nothing imports these modules:
 
@@ -131,9 +145,12 @@ import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
 import Strata.DL.Lambda.LExprTraversalProps
 import Strata.DL.Lambda.Reflect
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
+import Strata.DL.Lambda.OperationalSemanticsProps
+import Strata.DL.Lambda.LExprEvalSound
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.Util.HListProps
+import Strata.Util.HMapsProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF

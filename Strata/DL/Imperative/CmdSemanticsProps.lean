@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.CmdSemantics
 import all Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StoreRelationsProps
 import all Strata.DL.Imperative.Cmd
 public import Strata.DL.Imperative.Stmt
 import all Strata.Util.ListUtils
@@ -25,8 +26,6 @@ evaluation relation `EvalCmd`. Key results:
 - Store-substitution and definedness plumbing (`isDefined`/`isNotDefined` cons/app,
   `substStores`/`substDefined`/`invStores` symmetry, `InitState`/`UpdateState`
   definedness and uniqueness).
-- `storeAgreement_storeWith`: a `SemanticStore.update` at a source-undefined slot
-  preserves `StoreAgreement`.
 - `EvalCmd_preserves_isSome`: a command never undefines an already-defined slot.
 - Exact-value framing: `evalCmd_preserves_eq_of_not_written` preserves the value
   of a slot the command neither defines nor modifies.
@@ -422,21 +421,6 @@ theorem eval_cmd_set_comm
   have Heval2 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs1 Hnin1 Hs1
   have Heval1 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs2 Hnin2 Hs3
   exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
-
-/-- A `SemanticStore.update` at a slot the source store leaves undefined preserves
-`StoreAgreement` with the source: the only changed slot is `ident`, which the
-source store does not define (one-directionality of `StoreAgreement`). -/
-theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
-    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Expr)
-    (h_agree : StoreAgreement σ_src σ_tgt)
-    (h_src_none : σ_src ident = none) :
-    StoreAgreement σ_src (SemanticStore.update σ_tgt ident b) := by
-  intro x h_def
-  have h_x_def : (σ_src x).isSome = true := h_def x (List.mem_singleton.mpr rfl)
-  have h_ne : x ≠ ident := by
-    rintro rfl; rw [h_src_none] at h_x_def; exact absurd h_x_def (by simp)
-  rw [h_agree x h_def]
-  simp [SemanticStore.update, h_ne]
 
 /-- `InitState` never undefines a slot: its target becomes `some`, others are
 unchanged. -/
@@ -1244,7 +1228,7 @@ theorem UpdateStatesReadValuesMonotone
     apply UpdateStateReadValuesMonotone _ Hdef Hinit <;> try assumption
     simp_all
 
-/-- Initializing one slot with a canonical expression makes that expression readable
+/-- Initializing one slot with a value makes that value readable
     from the slot in the resulting store. -/
 theorem InitStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
@@ -1255,7 +1239,7 @@ theorem InitStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   cases Hinit with
   | init _ Hsome _ => exact .read_some Hsome hval .read_none
 
-/-- Updating one slot with a canonical expression makes that expression readable
+/-- Updating one slot with a value makes that value readable
     from the slot in the resulting store. -/
 theorem UpdateStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
@@ -1266,7 +1250,7 @@ theorem UpdateStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   cases Hupdate with
   | update _ Hsome _ => exact .read_some Hsome hval .read_none
 
-/-- Initializing slots from canonical expressions makes the expressions readable
+/-- Initializing slots from values makes those values readable
     at the corresponding slots in the resulting store. -/
 theorem InitStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
@@ -1287,7 +1271,7 @@ theorem InitStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
       exact .read_some hx hv
         (ih (fun w hw => hvals w (List.mem_cons_of_mem _ hw)))
 
-/-- Updating distinct slots from canonical expressions makes the expressions
+/-- Updating distinct slots from values makes those values
     readable at the corresponding slots in the resulting store. -/
 theorem UpdateStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
@@ -1395,8 +1379,7 @@ theorem InitStatesSomeMonotone'
   · simp_all
   · apply ih <;> simp_all
 
-/-- If a store defines every requested key and all of its bindings are canonical
-    values, those keys admit a corresponding `ReadValues` derivation. -/
+/-- If a store defines every requested key and all of its bindings are values, those keys admit a corresponding `ReadValues` derivation. -/
 theorem isDefinedReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ : SemanticStore P} {ks : List P.Ident} :
   WellFormedStore σ f →

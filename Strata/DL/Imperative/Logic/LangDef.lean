@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.KleeneStmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 
 /-! # The abstract language bundle
@@ -19,7 +20,7 @@ well-formedness predicate.  All of it is parametric over the shared
 pure-expression system `P`.
 
 Bundling these lets a statement be made once and reused across languages —
-`Strata.Logic.Hoare.Triple` (in `Strata.DL.Imperative.Logic.HoareTemplate`) and the
+`Strata.Logic.Hoare.TripleWith` (in `Strata.DL.Imperative.Logic.HoareTemplate`) and the
 `Overapproximates` family (in `Strata.Transform.Specification`) both quantify
 over an arbitrary `Strata.Logic.Lang P`, which is what allows a result to relate
 a structured source language to an unstructured CFG target.
@@ -34,6 +35,16 @@ constructors for the Imperative dialect live in `Imperative.Logic`:
 - `Lang.cfg` — the unstructured control-flow-graph language, over
   `CFG String (DetBlock …)`; the target of `Strata.Transform`'s
   structured-to-unstructured correctness proofs.
+
+The event-trace variants (bundled as `EventLang`) live alongside them in the
+same namespace:
+
+- `EventLang.imperativeE` — the structured Imperative event-trace language.
+- `EventLang.imperativeBlockE` — its block-body (statement-list) counterpart.
+- `EventLang.cfgE` — the deterministic-CFG event-trace language.
+- `EventLang.kleeneE` — the canonical event-producing Kleene language, over
+  `KleeneStmt`/`KleeneConfig`, stepping by `StepKleeneE P (EvalCmdE P)`; its
+  `InitEnvWFParamsTy`/`initEnvWF` are supplied explicitly by the caller.
 -/
 
 public section
@@ -173,6 +184,62 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2
 
+/-- Event-trace language for deterministic CFGs. Active configurations carry the
+CFG and every configuration carries its environment, so the one-step relation is
+`StepCFGE P evalCmd` without additional captured parameters. -/
+abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
+    [HasFvars P] (CmdT : Type) {EventT : Type}
+    (evalCmd : EvalCmdParamE P CmdT EventT) (ParamsTy : Type)
+    (initEnvWF : ParamsTy → CFG String (DetBlock String CmdT P) → Env P → Prop) :
+    EventLang P EventT where
+  StmtT := CFG String (DetBlock String CmdT P)
+  CfgT := CFGConfig String CmdT P
+  step := StepCFGE P evalCmd
+  stmtCfg := fun cfg ρ => .atBlock cfg cfg.entry ρ
+  terminalCfg := .terminal
+  exitingCfg := fun _ => .terminal
+  terminal_no_step := by
+    intro ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  exiting_no_step := by
+    intro _ ρ emitted cfg hstep
+    cases hstep with
+    | step_admin hadmin => cases hadmin
+  getEnv := CFGConfig.getEnv
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
+
+/-- The canonical event-producing Kleene event-trace language, over
+`KleeneStmt P (Cmd P)` with the base command event evaluator `EvalCmdE P`.  Its
+one-step relation is the event-producing Kleene step `StepKleeneE P (EvalCmdE P)`.
+Exiting configurations are represented by terminal configurations, as
+`KleeneConfig` has no exiting form.
+
+`ParamsTy` is the `InitEnvWFParamsTy` of the resulting language and
+`initEnvWF` its initial-environment well-formedness predicate; both are supplied
+explicitly by the caller. -/
+abbrev EventLang.kleeneE (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    (ParamsTy : Type)
+    (initEnvWF : ParamsTy → KleeneStmt P (Cmd P) → Env P → Prop) :
+    EventLang P (Event P) where
+  StmtT := KleeneStmt P (Cmd P)
+  CfgT := KleeneConfig P (Cmd P)
+  step := StepKleeneE P (EvalCmdE P)
+  stmtCfg := .stmt
+  terminalCfg := .terminal
+  exitingCfg := fun _ ρ => .terminal ρ
+  terminal_no_step := by
+    intro ρ emitted cfg h
+    cases h
+  exiting_no_step := by
+    intro label ρ emitted cfg h
+    cases h
+  getEnv := KleeneConfig.getEnv
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
+
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator.
 
@@ -235,25 +302,21 @@ abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2
 
-/-- The unstructured CFG language: steps are `StepDetCFGStar` over the factory
-carried in the configuration.
-
-`isAtAssert` is `fun _ _ => False`: a CFG block can carry `assert` commands,
-so a real `isAtAssert` would detect a config sitting at one. It is left trivial
-because the current overapproximation results never consume the target's `isAtAssert`. -/
-abbrev Lang.cfg {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+/-- The unstructured CFG language. Active configurations carry the CFG program;
+all configurations carry their execution environment. -/
+abbrev Lang.cfg {P : PureExpr} [HasBool P] [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasInt P] [HasIntOps P] [HasSubstFvar P]
     : Lang P where
   StmtT := CFG String (DetBlock String (Cmd P) P)
-  CfgT := P.Factory × (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
-  star := fun c d => StepDetCFGStar c.1 c.2.1 c.2.2 d.2.2
-  stmtCfg := fun cfg ρ => (ρ.factory, cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
-  terminalCfg := fun ρ => (ρ.factory, ⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
-  exitingCfg := fun lbl ρ =>
-    (ρ.factory, ⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
+  CfgT := CFGConfig String (Cmd P) P
+  star := StepDetCFGStar
+  stmtCfg := fun cfg ρ => .atBlock cfg cfg.entry ρ
+  terminalCfg := .terminal
+  exitingCfg := fun _ => .terminal
   isAtAssert := fun _ _ => False
-  getEnv := fun c => { store := c.2.2.getStore, factory := c.1, hasFailure := c.2.2.getFailure }
+  getEnv := CFGConfig.getEnv
   InitEnvWFParamsTy := Unit
-  initEnvWF := fun _ _ _ => True -- TODO: add wellformedness conditions for unstructured Core
+  initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
 
 end Logic
 end Imperative

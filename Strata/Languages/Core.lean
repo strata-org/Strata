@@ -11,19 +11,23 @@ public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.PipelinePhasePrinter
 public import Strata.Transform.ProcedureInlining
+public import Strata.Languages.Core.IncrementalSolve
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
 import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 import Strata.Transform.TerminationCheck
 import Strata.Transform.UnrollBoundedQuantifiers
+import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.FunctionInlining
 import Strata.Transform.PrecondElim
-import Strata.Transform.MonomorphizeProcedures
+import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
+import Strata.Transform.DeadDefElim
+import Strata.Transform.Simplify
 
 /-! ## Strata Core Transform & Verification API
 
@@ -200,13 +204,26 @@ def Core.passTermCheck : Core.PipelinePhase :=
 def Core.passPrecondElim : Core.PipelinePhase :=
   _root_.Core.precondElimPipelinePhase
 
-/-- Replace polymorphic procedures with instances at the types used. -/
-def Core.passMonomorphizeProcedures : Core.PipelinePhase :=
-  _root_.Core.monomorphizeProceduresPipelinePhase
+/-- Replace the type parameters of procedures and lemmas by fresh opaque types. -/
+def Core.passGenOpaqueTypeParams : Core.PipelinePhase :=
+  _root_.Core.genOpaqueTypeParamsPipelinePhase
 
 /-- Replace polymorphic functions with instances at the types used. -/
 def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
   _root_.Core.monomorphizeFunctionsPipelinePhase
+
+/-- Partially evaluate the program: fold constants, substitute known values, expand calls
+    whose expansion cannot compound, and drop definitions nothing reads. -/
+def Core.passSimplify : Core.PipelinePhase :=
+  _root_.Core.simplifyPhase
+
+/-- Attach per-constructor axioms to recursive `@[cases]` functions, which symbolic
+    evaluation otherwise generates. For a pipeline that runs `simplify` in its place.
+    `Core.verify` rebuilds this phase from its own options, so whether it generates the
+    axioms always matches whether the back end emits `define-fun-rec`. -/
+def Core.passRecursiveAxioms (options : Core.VerifyOptions := Core.VerifyOptions.default) :
+    Core.PipelinePhase :=
+  _root_.Core.recursiveAxiomsPhase options
 
 /-- Replace non-deterministic guards with havoc and assumption. -/
 def Core.passNondetElim : Core.PipelinePhase :=
@@ -226,6 +243,11 @@ def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.de
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
     Core.PipelinePhase :=
   _root_.Core.symbolicEvalPipelinePhase options moreFns
+
+/-- Erase the unread `init`s of an obligation program. In no default order: a pipeline that
+    wants it names it. -/
+def Core.passDeadDefElim : Core.PipelinePhase :=
+  _root_.Core.deadDefElimPipelinePhase
 
 /-- Extract common subexpressions introduced by partial evaluation. -/
 def Core.passCommonSubexprElim : Core.PipelinePhase :=
@@ -254,7 +276,8 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   Core.corePipelinePhases options
-    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining]
+    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
+        Core.passDeadDefElim]
 
 /-! ### Standard Core verification pipeline phases
 
@@ -337,44 +360,23 @@ belongs to `verify` alone or to a shared set of commands is not settled, so
 nothing advertises the flags yet; the rendered text names `--phases` and
 `--display-phases` as the intended spelling for whoever wires them up. -/
 
-/-- The name of the `assert` phase for a fact: `assert` followed by the fact's
-    name with its first letter capitalized, so `noCFGBodies` gives
-    `assertNoCFGBodies`, which is what the default pipeline's first phase is
-    already called. -/
-def Core.assertPhaseName (f : Core.ProgramFact) : String :=
-  "assert" ++ (match f.name.toList with
-               | [] => ""
-               | c :: rest => String.ofList (c.toUpper :: rest))
+/-- The name of the `assert` phase for a fact (`Core.ProgramFact.assertPhaseName`). -/
+def Core.assertPhaseName (f : Core.ProgramFact) : String := f.assertPhaseName
 
 /-- The `assert<Fact>` phase a name denotes, if any: for a fact `F` with an
-    executable check, `assertPhaseName F` is a phase that checks `F` and passes
-    the program through. A fact without a check (`typeAnnotated`) has no assert
-    form, so `none`. -/
+    executable check, `assertPhaseName F` is `assertPhase F`. A fact without a
+    check (`typeAnnotated`) has no assert form, so `none`. -/
 def Core.assertPhaseFor (phaseName : String) : Option Core.PipelinePhase :=
-  (Core.ProgramFact.all.find? fun f => phaseName == Core.assertPhaseName f).bind
-    fun f =>
-      if h : f.check?.isSome = true then
-        some (Core.assertFactPhase phaseName f
-                s!"❌ Expected {f.name}, but the program does not satisfy it." h)
-      else none
+  (Core.ProgramFact.all.find? fun f => phaseName == f.assertPhaseName).bind
+    fun f => if h : f.check?.isSome = true then some (f.assertPhase h) else none
 
-/-- The phase that checks `f` on the program and passes it through. A fact with no
-    executable check has no such phase, and `by decide` refuses it where it is written:
-    `assertPhase .typeAnnotated` does not compile, since confirming annotations are
-    present would not establish that they are right. -/
+/-- The phase that checks `f` on the program and passes it through
+    (`Core.ProgramFact.assertPhase`). -/
 def Core.assertPhase (f : Core.ProgramFact) (hc : f.check?.isSome = true := by decide) :
     Core.PipelinePhase :=
-  Core.assertFactPhase (Core.assertPhaseName f) f
-    s!"❌ Expected {f.name}, but the program does not satisfy it." hc
+  f.assertPhase hc
 
-/-- The flag names a command offers for working with phases. The command supplies them
-    because this package's help text refers to them and only the command knows how it
-    spells them. -/
-structure Core.PhaseFlagNames where
-  /-- The flag taking a phase list, `--phases` for the tools in this repository. -/
-  select : String
-  /-- The flag printing each phase's contract, `--display-phase-contracts` for those tools. -/
-  displayContracts : String
+abbrev Core.PhaseFlagNames := Strata.Pipeline.PhaseFlagNames
 
 /-- The phase list as its dependency table: a numbered row per phase in run order, a column
     per fact, and the back end as the final requirements-only row, so a caller assembling a
@@ -395,26 +397,15 @@ def Core.resolvePhases (available : List Core.PipelinePhase) (requested : List S
     | none =>
       match Core.assertPhaseFor nm with
       | some p => .ok p
-      | none =>
-        .error <| s!"Unknown phase name '{nm}'."
-          ++ (if hint.isEmpty then "" else " " ++ hint)
+      | none => .error (Strata.Pipeline.unknownPhaseName nm hint)
 
 /-- The text describing the available phases: the default order as a pasteable
     `--phases` argument, and the phases available but not in that order. -/
 def Core.displayPhasesText (flags : Core.PhaseFlagNames)
     (defaultPhases : List Core.PipelinePhase)
     (extras : List Core.PipelinePhase := []) : String :=
-  let names := ",".intercalate (defaultPhases.map Core.phaseName)
-  let base :=
-    s!"To run the phases in the default order:\n\n  {flags.select} {names}\n\n"
-      ++ s!"You can change this order. Give it back to {flags.select} with no input file "
-      ++ "and\nStrata reports whether it composes without verifying anything."
-      ++ s!"\nTo see what each phase requires and delivers, use {flags.displayContracts}."
-  match extras.map Core.phaseName with
-  | [] => base
-  | extraNames =>
-    base ++ "\n\nAvailable, not in the default order:\n\n"
-      ++ "\n".intercalate (extraNames.map (fun n => s!"  {n}"))
+  Strata.Pipeline.displayPhasesText flags "phases" "requires and delivers"
+    (defaultPhases.map Core.phaseName) (extras.map Core.phaseName)
 
 /-- Front-end phase: any translation from a source language to Core may
     introduce over-approximations. Until front-ends can validate models or
@@ -448,15 +439,37 @@ def Core.verifyProgram
     (pipeline : Option (Core.ValidatedPipeline entryFacts) := none)
     (entryFactsHold : entryFacts.holds program :=
       by exact _root_.Core.ProgramFactSet.empty_holds _)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (mkDischarge : Option Core.MkDischargeFn := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     (fileMap : Option Lean.FileMap := none)
+    (solver : Option Core.CoreSMTSolver := none)
+    (mkSession : Option _root_.Core.IncrementalSolve.SessionFactory := none)
     : EIO String Core.VCResults := do
+  -- Only the per-obligation path writes SMT files, and only when it is not incremental: a
+  -- directory to keep them in turns `--incremental` off, and asking for them keeps that path.
+  let options := if options.vcDirectory.isSome then { options with incremental := false }
+    else options
+  -- `--incremental` walks the obligation tree, sharing one solver session down a branch,
+  -- unless an explicit `solver` is given. The tree is walked on the sessions `mkSession`
+  -- opens, or on local solver processes, but never on local processes for a caller with its
+  -- own `mkDischarge` and no sessions: that caller decides where queries go. Single goals go
+  -- through `mkDischarge` either way. Asking for a subset of the obligations keeps the
+  -- per-obligation path, the only one that filters by label.
+  let walkable := (mkSession.isSome || mkDischarge.isNone) && options.obligationsToVerify.isNone
+  let mkDischarge := mkDischarge.getD Core.mkDischargeFn
+  let solver := match solver with
+    | some s => some s
+    | none =>
+      if options.incremental && !options.alwaysGenerateSMT && walkable then
+        some (Core.IncrementalSolve.coreSMTSolver options.parallelWorkers options
+          (axiomProgram := some program) (session := mkSession) (mkDischarge := mkDischarge))
+      else none
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (Core.verify program tempDir options moreFns externalPhases
         (entryFacts := entryFacts) (pipeline := pipeline) (entryFactsHold := entryFactsHold)
         (mkDischarge := mkDischarge)
+        (solver := solver)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
     | .some vcDir => IO.FS.createDirAll vcDir *> runVerification vcDir
@@ -476,8 +489,10 @@ def Core.verify
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
     (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (mkDischarge : Option Core.MkDischargeFn := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
+    (solver : Option Core.CoreSMTSolver := none)
+    (mkSession : Option _root_.Core.IncrementalSolve.SessionFactory := none)
     : IO Core.VCResults := do
   -- Run the translation within a pure phase so that we can capture the timing
   -- properly, and unwrap the error outside of it.
@@ -494,6 +509,8 @@ def Core.verify
     (pipeline := pipeline)
     (mkDischarge := mkDischarge)
     (pipelineCtx := pipelineCtx)
+    (solver := solver)
+    (mkSession := mkSession)
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 

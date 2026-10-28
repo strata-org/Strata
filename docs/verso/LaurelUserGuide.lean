@@ -124,7 +124,7 @@ def laurel : Verso.Doc.Elab.CodeBlockExpanderOf LaurelCodeConfig
       else content
     unless config.unchecked do
       try
-        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.Program)
+        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.LaurelProgram)
       catch e =>
         throwErrorAt str m!"Laurel example failed to parse:\n{e.toMessageData}"
     ``(Verso.Doc.Block.code $(Lean.quote source))
@@ -2367,8 +2367,9 @@ procedure checked(x: int) returns (r: int)
 
 Without the precondition the `throw` is reported as
 `uncaught exception 'Boom' is not thrown does not hold`. An exception that reaches
-the end of an outermost `try` uncaught — no `catch` matched — is reported at that
-`try` instead, since the `try` could still have intercepted it.
+the end of an outermost `try` uncaught — no `catch` matched — is checked when it
+leaves the `try`, since the `try` could still have intercepted it, and is reported
+at the `throw` (or throwing call) it came from.
 
 Whether the *source* language requires declaring exceptions is a separate question:
 procedures coming from Python or JavaScript can carry a `throws` clause too, even
@@ -2456,6 +2457,15 @@ procedure logFailure(which: int) returns (out: string)
 If the types reaching a `catch` share no common ancestor, Laurel reports an error
 rather than leaving the binding untyped. If the body throws nothing determinable,
 no exception can reach the clauses, and they are dropped as unreachable.
+
+A guard may test the binding against a type unrelated to the binding's type, as a
+Java multi-catch arm for an unchecked exception the body never throws does:
+`catch e when e is StateError || e is NotFound`. Such a test can never be true, so
+it is accepted and treated as `false`, and the other tests in the guard still
+catch. A type that shares a descendant with the binding's type (with
+`composite D extends A, B`, an `A` may be a `D`, which is a `B`) is not unrelated,
+and testing against it is still an error. A clause whose guard is only such tests,
+or a disjunction of them, can never catch: its body is not checked.
 
 A frontend that needs to catch values with no useful common ancestor — unrelated
 types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a
@@ -2615,7 +2625,7 @@ Procedures are the main unit of specification and verification in Laurel.
 
 A Laurel program consists of procedures, global variables, type definitions, and constants.
 
-{docstring Strata.Laurel.Program}
+{docstring Strata.Laurel.LaurelProgram}
 
 ### File-scope globals
 
@@ -2643,8 +2653,9 @@ tag := "verification-fundamentals"
 %%%
 
 A verification feature may be erased or approximated when a program is run concretely: `assume`
-is a no-op in the interpreter, and a contract on a bodiless procedure has no runtime meaning at
-all. Its behaviour under verification is therefore the behaviour that matters.
+is a no-op in the interpreter, `modifies` is not checked, and a contract on a bodiless procedure
+has no runtime meaning at all. Its behaviour under verification is therefore the behaviour that
+matters.
 
 This section covers the features that do not involve the heap, which are enough to specify code
 over plain values.
@@ -3819,13 +3830,13 @@ This section is about telling those apart.
 
 ## Running a program
 
-The Laurel commands live in the `strata` CLI, from the `StrataCLI` package. The three that matter
+The Laurel commands are in Strata's `strataLaurel` binary; StrataCLI's `strata` has them too. The three that matter
 for everyday work take a textual Laurel file and go progressively further:
 
 ```
-lake exe strata -- laurelParse file.lr.st
-lake exe strata -- laurelToCore file.lr.st
-lake exe strata -- laurelAnalyze file.lr.st
+lake exe strataLaurel laurelParse file.lr.st
+lake exe strataLaurel laurelToCore file.lr.st
+lake exe strataLaurel laurelAnalyze file.lr.st
 ```
 
 `laurelParse` only parses and builds the AST, so it separates a syntax problem from everything
@@ -3973,7 +3984,7 @@ in its diagnostics block while still exiting `0`.
 ## The Lean API
 
 A tool that embeds Laurel rather than shelling out to the CLI uses the `Strata.Languages.Laurel`
-facade. `parseLaurelText` and `readLaurelTextFile` produce a `Laurel.Program`; `readLaurelIonFiles`
+facade. `parseLaurelText` and `readLaurelTextFile` produce a `Laurel.LaurelProgram`; `readLaurelIonFiles`
 and `readLaurelIonProgram` do the same from Ion; `laurelToCore` lowers one; and
 `Laurel.verifyProgram` translates and verifies in one step.
 

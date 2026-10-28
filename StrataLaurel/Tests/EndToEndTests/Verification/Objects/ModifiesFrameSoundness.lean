@@ -6,8 +6,9 @@
 module
 /-
 Soundness of the quantifier-free modifies frame under `--use-array-theory`: illegal
-writes are rejected, legal shapes verify, callers may assume the free frame, and a
-fresh object exposed to a caller is not pinned by it.
+writes are rejected, legal shapes verify, callers may assume the free frame, a
+fresh object exposed to a caller is not pinned by it, and a procedure that may
+allocate does not expose it.
 -/
 
 meta import StrataLaurel.Tests.Util.TestLaurel
@@ -295,6 +296,216 @@ procedure callerCannotPinFreshField()
   var c: Container := new Container;
   stashFresh(c);
   assert c#child#value == 42
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! ## 6. A procedure that may allocate keeps the quantified frame
+
+The enumerated frame says that every row the clause does not name is unchanged, also the
+rows of the objects the call creates. A caller observes such a row through `old` or a
+quantified precondition. Without the quantified frame, each `assert false` below verifies,
+and so does the `assert t#value == 0` after the overridden call, which fails at run time
+when `p` is a `FreshPicker`. -/
+
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
+#strata
+program Laurel;
+composite Container {
+  var value: int
+}
+
+procedure bumpFresh(c: Container) returns (t: Container)
+  opaque
+  ensures t#value == old(t#value) + 1
+  ensures t != c
+  modifies c
+{
+  var u: Container := new Container;
+  u#value := u#value + 1;
+  return u
+};
+
+procedure callerOfBumpFresh(c: Container)
+  opaque
+  modifies c
+{
+  var t: Container := bumpFresh(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure makeFresh(c: Container) returns (t: Container)
+  opaque
+  ensures t#value == 1
+  ensures t != c
+  modifies c
+{
+  var u: Container := new Container;
+  u#value := 1;
+  return u
+};
+
+procedure callerOfMakeFresh(c: Container)
+  requires forall(o: Container) => o#value == 0
+  opaque
+  modifies c
+{
+  var t: Container := makeFresh(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure makeFreshIndirectly(c: Container) returns (t: Container)
+  opaque
+  ensures t#value == 1
+  ensures t != c
+  modifies c
+{
+  var u: Container := makeFresh(c);
+  return u
+};
+
+procedure callerOfMakeFreshIndirectly(c: Container)
+  requires forall(o: Container) => o#value == 0
+  opaque
+  modifies c
+{
+  var t: Container := makeFreshIndirectly(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure makeFreshBodiless(c: Container) returns (t: Container)
+  opaque
+  ensures t#value == 1
+  ensures t != c
+  modifies c;
+
+procedure callerOfMakeFreshBodiless(c: Container)
+  requires forall(o: Container) => o#value == 0
+  opaque
+  modifies c
+{
+  var t: Container := makeFreshBodiless(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure bump(c: Container)
+  opaque
+  modifies c
+{
+  c#value := c#value + 1
+};
+
+// A procedure that cannot allocate keeps the enumerated frame, which also covers the
+// rows of objects allocated after the call.
+procedure callerOfBump(c: Container)
+  requires forall(o: Container) => o#value == 0
+  opaque
+  modifies c
+{
+  bump(c);
+  var t: Container := new Container;
+  assert t#value == 0
+};
+#end
+
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
+#strata
+program Laurel;
+composite Container {
+  var value: int
+}
+composite Picker {
+  var kept: Container
+  procedure pick(self: Picker, c: Container) returns (t: Container)
+    requires self#kept != c
+    opaque
+    ensures t != c
+    modifies c
+  {
+    return self#kept
+  };
+}
+composite FreshPicker extends Picker {
+  procedure pick(self: FreshPicker, c: Container) returns (t: Container)
+    requires self#kept != c
+    opaque
+    ensures t != c
+    modifies c
+  {
+    var u: Container := new Container;
+    u#value := 1;
+    return u
+  };
+}
+
+procedure callerOfPick(p: Picker, c: Container)
+  requires forall(o: Container) => o#value == 0
+  requires p#kept != c
+  opaque
+  modifies c
+{
+  var t: Container := p#pick(c);
+  assert t#value == 0
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! A function called under `old`, and a datatype argument, reach the fresh object's
+pre-state row without a field read written under `old`. -/
+
+#eval testLaurelVerification (options := arrayTheoryOpts) <|
+#strata
+program Laurel;
+composite Container {
+  var value: int
+}
+datatype Pair { MkPair(c: Container, i: int) }
+
+procedure getValue(c: Container): int { return c#value };
+
+procedure getPairValue(p: Pair): int { return Pair..c!(p)#value };
+
+procedure bumpViaGetter(c: Container) returns (t: Container)
+  opaque
+  ensures getValue(t) == old(getValue(t)) + 1
+  ensures t != c
+  modifies c
+{
+  var u: Container := new Container;
+  u#value := u#value + 1;
+  return u
+};
+
+procedure callerOfBumpViaGetter(c: Container)
+  opaque
+  modifies c
+{
+  var t: Container := bumpViaGetter(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure bumpViaDatatype(c: Container) returns (t: Container)
+  opaque
+  ensures getPairValue(MkPair(t, 1)) == old(getPairValue(MkPair(t, 1))) + 1
+  ensures t != c
+  modifies c
+{
+  var u: Container := new Container;
+  u#value := u#value + 1;
+  return u
+};
+
+procedure callerOfBumpViaDatatype(c: Container)
+  opaque
+  modifies c
+{
+  var t: Container := bumpViaDatatype(c);
+  assert false
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end

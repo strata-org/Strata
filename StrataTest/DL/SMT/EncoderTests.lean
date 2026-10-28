@@ -354,6 +354,7 @@ private def mockSolver : AbstractSolver String String MockM where
   mkForall _ cb := do let (body, _) ← cb []; pure body
   mkExists _ cb := do let (body, _) ← cb []; pure body
   declareNew name _ := pure name
+  mkParam name _ := pure name
   declareFun name _ _ := do modify (· ++ [name]); pure name
   defineFun name _ _ _ := modify (· ++ [name])
   declareSort name _ := pure name
@@ -364,6 +365,7 @@ private def mockSolver : AbstractSolver String String MockM where
   checkSatAssuming _ := pure .unsat
   getUnsatAssumptions := pure []
   getModel := pure []
+  getModelText _ := pure ""
   getValue _ := pure []
   termToSMTLibString t := pure t
   reset := pure ()
@@ -409,5 +411,19 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
     let _ ← AbstractEncoder.encodeUF mockSolver collidingUF
     let _ ← AbstractEncoder.encodeFunctionDef mockSolver fn
   return (estate.functions[collidingUF]!, estate.functions[fn.toUF]!)
+
+-- AbstractEncoder: a recursive function on a backend that keeps the default
+-- `defineFunRec` (the mock does) fails with the default's message
+/-- info: "define-fun-rec (f.0) is not supported by this solver backend" -/
+#guard_msgs in
+#eval do
+  let fn : IF := { id := "userFn", args := [⟨"x", .int⟩], out := .int,
+                   body := .var ⟨"x", .int⟩, isRec := true }
+  let act : AbstractEncoderM String MockM Unit := do
+    let _ ← AbstractEncoder.encodeFunctionDef mockSolver fn
+  let initState : AbstractEncoderState String := { base := EncoderState.init }
+  return match ((act.run initState).run).run [] with
+    | (.ok _, _) => "ok"
+    | (.error e, _) => toString e
 
 end Strata.SMT.Encoder.AbstractEncoderTests

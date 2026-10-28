@@ -13,7 +13,7 @@ meta section
 namespace Core
 
 section Tests
-open Statement Lambda Lambda.LTy.Syntax
+open Statement Lambda.LTy.Syntax
 
 /-! Regression: `mkReturnSubst` must type the fresh post-call variable of an
 inout target even when the caller state has no binding for it.

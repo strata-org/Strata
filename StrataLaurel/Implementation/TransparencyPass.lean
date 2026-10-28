@@ -23,8 +23,9 @@ assertions are erased and all calls are to functional versions. If the function
 has a body, add a free postcondition to the related procedure that equates the
 two.
 
-This IR sits between Laurel and CoreWithLaurelTypes in the pipeline:
-  Laurel → UnorderedCoreWithLaurelTypes → CoreWithLaurelTypes → Core
+The functions go into `staticFunctions` and the remaining procedures stay in
+`staticProcedures`, so the program is still a `LaurelProgram`:
+  Laurel → Laurel with static functions → CoreWithLaurelTypes → Core
 -/
 
 namespace Strata.Laurel
@@ -405,14 +406,14 @@ private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Pr
     | _ => proc
 
 /--
-Transparency pass: translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
+Transparency pass: split a Laurel program's procedures into static functions and procedures.
 
 For each procedure:
 - Generate a function with the same signature, named `foo$asFunction`
 - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
-def createFunctionsForTransparentBodies (program : Program) (options : LaurelTranslateOptions := {}) : UnorderedCoreWithLaurelTypes :=
+def createFunctionsForTransparentBodies (program : LaurelProgram) (options : LaurelTranslateOptions := {}) : LaurelProgram :=
   let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
   -- A transparent procedure whose body is purely functional (no Assume/Assert
   -- from contract instrumentation) needs only a function copy, not a procedural
@@ -426,15 +427,6 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     | .Transparent b => containsAssertOrAssume b
     | _ => true
   let (imperativeProcs, _) := toUpdate.partition needsProcTwin
-  let datatypes := program.types.filterMap fun td => match td with
-    | .Datatype dt => some dt
-    | _ => none
-  let opaqueTypes := program.types.filterMap fun td => match td with
-    | .Opaque ot => some ot
-    | _ => none
-  let aliases := program.types.filterMap fun td => match td with
-    | .Alias ta => some ta
-    | _ => none
   match options.analysisMode with
   | .Execute =>
     -- Concrete execution: keep every procedure as a real procedure (no call
@@ -462,7 +454,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     let coreProcedures := imperativeProcs.map fun proc =>
       let proc := { proc with axioms := proc.axioms.map (functionalize toUpdateNames) }
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
-    { functions, coreProcedures, datatypes, opaqueTypes, aliases, constants := program.constants }
+    { program with staticFunctions := program.staticFunctions ++ functions, staticProcedures := coreProcedures }
   | .Verify | .BothSuboptimally =>
     let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     -- Names of single-output procedures whose calls can be redirected to their
@@ -532,23 +524,27 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
         -- `BothSuboptimally`: keep calls as-is and tie each procedure to its
         -- twin via a free postcondition, at the cost of fresh symbolic outputs.
         addFreePostcondition proc (mkFreePostcondition proc)
-    { functions, coreProcedures, datatypes, opaqueTypes, aliases, constants := program.constants }
+    { program with staticFunctions := program.staticFunctions ++ functions, staticProcedures := coreProcedures }
 
-public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
+public def transparencyPass : LaurelPass := .onUnordered {
   name := "Transparency"
   creates := [
       NodeKind.Pseudo.asFunctionTwin,
       NodeKind.Condition.mode.Assume,
       NodeKind.StmtExpr.StaticCall,
-      NodeKind.Pseudo.unorderedDeclarations
+      NodeKind.LaurelProgram.staticFunctions.cons,
+      NodeKind.Pseudo.statementExpression,
+      NodeKind.Pseudo.letExpr,
+      NodeKind.Pseudo.imperativeFunction
     ]
-  removes := [NodeKind.Pseudo.laurelProgram]
-  unsupported := [NodeKind.Pseudo.overload]
+  unsupported := [
+      NodeKind.Pseudo.overload
+    ]
   -- The quantifier proof-block rewrite introduces fresh declarations (the havoc
   -- variable and the `$proof_N` guard) with no `uniqueId`, so the pipeline must
   -- re-resolve after this pass to bind them.
   needsResolves := true
-  documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
+  documentation := "Split a Laurel program's procedures into `staticFunctions` (Core functions) and `staticProcedures` (Core procedures).
 
 This pass has three modes:
 - Execute
@@ -569,10 +565,8 @@ For each procedure, BothSuboptimally mode will:
   - There is a bug in Core's partial evaluator that causes its runtime to become exponential when calling bodiless functions.
 
 Since execute mode tries not to generate any functions, it could work well even if the heap is still implicit. Maybe instead of the transparency pass we should define a separate 'Execute' and 'Verify' pass, where only the latter needs to come after the heap encoding.
-"
-
-  run := fun opts p _ =>
-    (createFunctionsForTransparentBodies p opts, [], {})
+" }
+  fun opts p _ => (createFunctionsForTransparentBodies p opts, [], {})
 
 end -- public section
 end Strata.Laurel

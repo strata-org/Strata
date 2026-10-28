@@ -10,7 +10,7 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType
 meta import Strata.Transform.MonomorphizeFunctions
-meta import Strata.Transform.MonomorphizeProcedures
+meta import Strata.Transform.GenOpaqueTypeParams
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.TerminationCheck
 meta import StrataDDM.Elab
@@ -56,13 +56,13 @@ private def monoFns (t : StrataDDM.Program) :
   | .error msg => throw msg
 
 /-- Fuller-pipeline runner: `precondElim` + `termCheck` +
-    `monomorphizeProcedures` + `typeCheck` + `MonomorphizeFunctions`,
+    `genOpaqueTypeParams` + `typeCheck` + `MonomorphizeFunctions`,
     matching the order in `corePipelinePhases`.  Each upstream pass can
     change the set of reachable polymorphic-function callsites:
     `precondElim` inlines `requires` clauses as fresh `assert`s (and
-    emits a `$$wf` procedure), `termCheck` emits `$$term` procedures +
+    emits well-formedness lemmas), `termCheck` emits termination lemmas +
     `D..adtRank` axioms for every recursive-function block, and
-    `monomorphizeProcedures` substitutes a polymorphic procedure's type
+    `genOpaqueTypeParams` substitutes a polymorphic procedure's type
     variables with fresh opaque types before type-checking. -/
 private def monoFnsFullPipeline (t : StrataDDM.Program) :
     Except Message (Core.Program × Lambda.Factory Core.CoreLParams) := do
@@ -73,7 +73,7 @@ private def monoFnsFullPipeline (t : StrataDDM.Program) :
   let (_, p1) ← r1
   let (r2, s2) := Core.Transform.runWith p1 Core.TermCheck.termCheck s1
   let (_, p2) ← r2
-  let (r3, s3) := Core.Transform.runWith p2 Core.monomorphizeProcedures s2
+  let (r3, s3) := Core.Transform.runWith p2 Core.genOpaqueTypeParams s2
   let (_, p3) ← r3
   let tc ← Core.typeCheck quietOpts p3
   let (r4, sFinal) := Core.Transform.runWith tc Core.MonomorphizeFunctions.run s3
@@ -87,7 +87,7 @@ private def fmtMonoFns (t : StrataDDM.Program) : IO Std.Format :=
   | .ok (p, _fac) => return (Std.format p.stripMetaData)
 
 /-- Format the monomorphized program produced by the full pipeline
-    (`precondElim` + `termCheck` + `monomorphizeProcedures` + `typeCheck` +
+    (`precondElim` + `termCheck` + `genOpaqueTypeParams` + `typeCheck` +
     `MonomorphizeFunctions`) as surface syntax. -/
 private def fmtMonoFnsFullPipeline (t : StrataDDM.Program) : IO Std.Format :=
   match monoFnsFullPipeline t with
@@ -814,7 +814,7 @@ info: "OK"
 /-! ### Example 13: `MonomorphizeFunctions` after `PrecondElim` / `TermCheck`
 
 `PrecondElim` inlines each call's `requires` clause as a fresh `assert`
-(and emits a WF procedure), and `TermCheck` emits `$$term` procedures +
+(and emits a WF lemma), and `TermCheck` emits termination lemmas +
 `D..adtRank` axioms for every recursive-function block.  Both can
 introduce new call-sites that reference polymorphic functions or add
 polymorphic axioms.  This example exercises `MonomorphizeFunctions` on
@@ -822,8 +822,8 @@ the output of that full transform chain to catch surprises those passes
 might introduce.
 
 The program has a poly recursive function `len<a>` used at `int` — which
-`TermCheck` will decorate with `MyList..adtRank<a>` axioms and a `len$$term`
-termination procedure — so `len`, the derived `MyList..adtRank`, and the
+`TermCheck` will decorate with `MyList..adtRank<a>` axioms and `len_terminates_i`
+termination lemmas — so `len`, the derived `MyList..adtRank`, and the
 termination check are all specialized at `int` and discharged end-to-end.
 -/
 
@@ -919,12 +919,8 @@ datatype MyList (a : Type) {
   Nil(),
   Cons(hd : a, tl : MyList a)
 };
-type $__opaque_head$$wf_a_0;
-procedure head$$wf (xs : MyList $__opaque_head$$wf_a_0)
-{
-  assume [precond_head_0]: MyList..isCons(xs);
-  assert [head_body_calls_MyList..hd_0]: MyList..isCons(xs);
-};
+type $__opaque_head_body_calls_MyList..hd_0_a_0;
+lemma [head_body_calls_MyList..hd_0] (xs : (MyList $__opaque_head_body_calls_MyList..hd_0_a_0)): MyList..isCons(xs) ==> MyList..isCons(xs);
 function |$__mono#head#int| (xs : MyList int) : int {
   MyList..hd(xs)
 }
@@ -1041,10 +1037,10 @@ spec {
 #guard typeChecks mapConstPgm
 
 ---------------------------------------------------------------------
-/-! ### Full Verification Example 1: Procedure + Function monomorphization, poly pre/post
+/-! ### Full Verification Example 1: Procedure opaque types + Function monomorphization, poly pre/post
 
-Combines both monomorphization passes end-to-end: a polymorphic procedure
-`keep<T>` (specialised by `MonomorphizeProcedures`) whose `requires`/`ensures`
+Combines both passes end-to-end: a polymorphic procedure
+`keep<T>` (given an opaque type by `GenOpaqueTypeParams`) whose `requires`/`ensures`
 mention a polymorphic function `idf<a>` (specialised by
 `MonomorphizeFunctions`). -/
 

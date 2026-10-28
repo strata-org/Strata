@@ -66,19 +66,6 @@ procedure transparentBodyMultipleOuts() returns (q: int, r: int)
 };
 #end
 
-/-! ## A transparent body with no outputs and a discarded tail expression -/
-
-#eval testLaurelVerification <|
-#strata
-program Laurel;
-
-procedure transparentBodyNoOuts()
-{
-  assert true;
-  3
-};
-
-procedure transparentProcedureCaller() opaque {
-  transparentBodyNoOuts()
-};
-#end
+/-! The no-outputs-with-discarded-tail shape is exercised on the full pipeline instead, in
+    `Execution/Procedures/TransparentBodyNoOutputs.lean`: resolution accepts it and reports
+    nothing, so only the later passes can say anything about it. -/

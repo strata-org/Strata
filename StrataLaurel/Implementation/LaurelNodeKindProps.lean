@@ -7,6 +7,7 @@ module
 
 public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.LaurelNodeKind
+public import StrataLaurel.Implementation.Program
 
 /-!
 # Node Kinds of a Program
@@ -57,7 +58,7 @@ the inversions that read a kind back off a node (`ofStmtExpr_postTest_true`,
 * `Contains.mono` / `ContainsType.mono` — monotonicity in the set;
 * `ofStmtExpr_postTest_true` / `ofHighType_mem` — reading a kind back off a node;
 * `containerKinds` — the kinds a container carries rather than an expression;
-* `Program.Contains` — the whole-program predicate a pass's specification uses,
+* `LaurelProgram.Contains` — the whole-program predicate a pass's specification uses,
   built up through `Condition.Contains`, `Body.Contains`, `Procedure.Contains` and
   `TypeDefinition.Contains`.
 
@@ -264,6 +265,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 
 /-- The type annotations a node carries directly. -/
 @[expose] def stmtExprTypes : StmtExpr → List HighTypeMd
+  | .StaticCall _ _ typeArgs => typeArgs
   | .New _ typeArgs => typeArgs
   | .AsType _ targetType => [targetType]
   | .IsType _ type => [type]
@@ -277,16 +279,20 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | _ => []
 
 /-- The kinds a *container* carries — every kind not contributed by a `StmtExpr`
-    node: the `Owner.field.cons` / `.some` refinements on `Program`, `Procedure`,
-    `Body` and `CompositeType`, the `TypeDefinition.*` kinds,
-    `Condition.mode.Assume`, and the two `HighType` kinds.
+    node: the `Program.*` representation kinds, the `Owner.field.cons` / `.some`
+    refinements on `LaurelProgram`, `Procedure`, `Body` and `CompositeType`, the
+    `TypeDefinition.*` kinds, `Condition.mode.Assume`, and the two `HighType` kinds.
 
     A pass that rewrites only inside expressions removes none of these, and so
     gets the generic program-level lift (`ProgramLift.lift_program`) for free. One
     that does remove a container kind — `GlobalParameterization` removes
-    `Program.staticFields.cons` — has to lift its own. -/
+    `LaurelProgram.staticFields.cons` — has to lift its own. -/
 @[expose] def containerKinds : List NodeKind :=
-  [ NodeKind.HighType.Applied,
+  [ NodeKind.Program.Unordered,
+    NodeKind.Program.Ordered,
+    NodeKind.OrderedProgram.WithLaurelTypes,
+    NodeKind.OrderedProgram.Core,
+    NodeKind.HighType.Applied,
     NodeKind.HighType.TVar,
     NodeKind.TypeDefinition.Composite,
     NodeKind.TypeDefinition.Constrained,
@@ -294,8 +300,9 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
     NodeKind.TypeDefinition.Alias,
     NodeKind.CompositeType.typeArgs.cons,
     NodeKind.CompositeType.instanceProcedures.cons,
-    NodeKind.Program.staticProcedures.cons,
-    NodeKind.Program.staticFields.cons,
+    NodeKind.LaurelProgram.staticProcedures.cons,
+    NodeKind.LaurelProgram.staticFunctions.cons,
+    NodeKind.LaurelProgram.staticFields.cons,
     NodeKind.Procedure.inputs.cons,
     NodeKind.Procedure.contracts.Coroutine,
     NodeKind.Procedure.preconditions.cons,
@@ -441,9 +448,9 @@ theorem Contains.mono {s t : KindSet} {e : StmtExprMd}
 
 These are plain definitions rather than inductives: every one of them bottoms
 out in `Contains` / `ContainsType` on the expressions and types it holds. They
-mirror the field-by-field walk of `mapProgramStmtExprM`, which reaches every
+mirror the field-by-field walk of `mapLaurelProgramStmtExprM`, which reaches every
 expression in a program, plus
-the structural kinds (`Program.staticProcedures.cons`, `Procedure.inputs.cons`,
+the structural kinds (`LaurelProgram.staticProcedures.cons`, `Procedure.inputs.cons`,
 `Body.modifies.cons`, …) that no expression walk sees. -/
 
 /-- `k ∈ s` whenever `l` is non-empty: the meaning of an `Owner.field.cons` kind. -/
@@ -558,10 +565,11 @@ the structural kinds (`Program.staticProcedures.cons`, `Procedure.inputs.cons`,
 @[expose] def Constant.Contains (s : KindSet) (c : Constant) : Prop :=
   ContainsType s c.type ∧ (∀ e ∈ c.initializer, ContainsExpr s e)
 
-/-- The procedures of a program: the static ones and the composites' methods.
-    This is exactly what `mapProgramProceduresM` walks. -/
-@[expose] def Program.ContainsProcedures (s : KindSet) (p : Program) : Prop :=
+/-- The procedures of a program: the static procedures and functions and the composites' methods.
+    This is exactly what `mapLaurelProgramProceduresM` walks. -/
+@[expose] def LaurelProgram.ContainsProcedures (s : KindSet) (p : LaurelProgram) : Prop :=
   (∀ proc ∈ p.staticProcedures, Procedure.Contains s proc)
+    ∧ (∀ proc ∈ p.staticFunctions, Procedure.Contains s proc)
     ∧ (∀ td ∈ p.types, ∀ c : CompositeType, td = .Composite c →
         (∀ proc ∈ c.instanceProcedures, Procedure.Contains s proc))
 
@@ -579,23 +587,44 @@ the structural kinds (`Program.staticProcedures.cons`, `Procedure.inputs.cons`,
 /-- Everything in a program that is *not* inside a procedure: the type
     definitions' own shape, a composite's fields, a constrained type's
     constraint and witness, the constants and the file-scope globals — plus the
-    two `Program.*.cons` kinds.
+    three `LaurelProgram.*.cons` kinds.
 
     Kept separate from `ContainsProcedures` because a pass built only on
-    `mapProgramProceduresM` never rewrites any of it, so such a pass's
+    `mapLaurelProgramProceduresM` never rewrites any of it, so such a pass's
     specification has to assume this part of the input already lies in the output
-    set. A pass using the whole-program walk `mapProgramStmtExprM` needs no such
+    set. A pass using the whole-program walk `mapLaurelProgramStmtExprM` needs no such
     assumption. -/
-@[expose] def Program.ContainsOutsideProcedures (s : KindSet) (p : Program) : Prop :=
-  ConsKind s p.staticProcedures NodeKind.Program.staticProcedures.cons
+@[expose] def LaurelProgram.ContainsOutsideProcedures (s : KindSet) (p : LaurelProgram) : Prop :=
+  ConsKind s p.staticProcedures NodeKind.LaurelProgram.staticProcedures.cons
+    ∧ ConsKind s p.staticFunctions NodeKind.LaurelProgram.staticFunctions.cons
     ∧ (∀ f ∈ p.staticFields, Field.Contains s f)
-    ∧ ConsKind s p.staticFields NodeKind.Program.staticFields.cons
+    ∧ ConsKind s p.staticFields NodeKind.LaurelProgram.staticFields.cons
     ∧ (∀ td ∈ p.types, TypeDefinition.ContainsOutsideProcedures s td)
     ∧ (∀ c ∈ p.constants, Constant.Contains s c)
 
 /-- Every kind occurring anywhere in the program is in `s`. -/
-@[expose] def Program.Contains (s : KindSet) (p : Program) : Prop :=
-  Program.ContainsProcedures s p ∧ Program.ContainsOutsideProcedures s p
+@[expose] def LaurelProgram.Contains (s : KindSet) (p : LaurelProgram) : Prop :=
+  LaurelProgram.ContainsProcedures s p ∧ LaurelProgram.ContainsOutsideProcedures s p
+
+@[expose] def OrderedDecl.Contains (s : KindSet) : OrderedDecl → Prop
+  | .funcs fs _ => ∀ proc ∈ fs, Procedure.Contains s proc
+  | .procedure proc => Procedure.Contains s proc
+  | .datatypes dts =>
+    ∀ d ∈ dts, NodeKind.TypeDefinition.Datatype ∈ s ∧ DatatypeDefinition.Contains s d
+  | .opaqueType _ => True
+  | .constant c => Constant.Contains s c
+
+@[expose] def CoreWithLaurelTypes.Contains (s : KindSet) (p : CoreWithLaurelTypes) : Prop :=
+  ∀ d ∈ p.decls, OrderedDecl.Contains s d
+
+@[expose] def OrderedProgram.Contains (s : KindSet) : OrderedProgram → Prop
+  | .WithLaurelTypes p =>
+    NodeKind.OrderedProgram.WithLaurelTypes ∈ s ∧ CoreWithLaurelTypes.Contains s p
+  | .Core _ => NodeKind.OrderedProgram.Core ∈ s
+
+@[expose] def Program.Contains (s : KindSet) : Program → Prop
+  | .Unordered p => NodeKind.Program.Unordered ∈ s ∧ LaurelProgram.Contains s p
+  | .Ordered p => NodeKind.Program.Ordered ∈ s ∧ OrderedProgram.Contains s p
 
 end -- public section
 

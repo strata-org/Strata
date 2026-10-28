@@ -74,13 +74,19 @@ def verifyOptionsFlags : List Flag := [
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
   { name := "incremental",
-    help := "Use incremental solver backend (stdin/stdout) instead of batch file I/O." },
+    help := "Check the assertions of a Core program that share assumptions in long-lived solvers that keep the shared context. Other front ends (Laurel, C_Simp) keep one live solver per obligation. Ignored when SMT files are kept, which the per-obligation path writes." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
     takesArg := .arg "N" },
+  { name := "min-sessions",
+    help := "With --incremental, cut the program into at least N sessions, each checked from a fresh solver (default: the --parallel count), or with 'nodes' make every node holding goals a session of its own. Runs with the same value give the same results whatever --parallel is, except that a goal retried after its solver failed starts again from an empty solver, so under lazy pruning it may then see fewer extra axioms.",
+    takesArg := .arg "N|nodes" },
+  { name := "incremental-pruning",
+    help := "With --incremental and --remove-irrelevant-axioms, 'lazy' (default) lets a solver keep the axioms earlier goals needed, so a goal may see more axioms than without --incremental and may then be reported proved, or a cover unreachable, where it is refuted without --incremental; 'exact' resets the solver when a goal drops an axiom it holds, so every goal sees exactly its own.",
+    takesArg := .arg "lazy|exact" },
   { name := "set-option",
     help := "Set an SMT solver option verbatim as NAME=VALUE (repeatable), applied after the built-in prelude so it overrides it. Option names are solver-specific (e.g. for z3, `--set-option smt.mbqi=true`). For local experimentation on the local solver invocation.",
     takesArg := .repeat "NAME=VALUE" },
@@ -171,6 +177,18 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
                    else pure n
       | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
+  let (minSessions, splitByNode) ← match pflags.getString "min-sessions" with
+    | .none => pure (base.minSessions, base.splitByNode)
+    | .some "nodes" => pure (base.minSessions, true)
+    | .some s => match s.toNat? with
+      | .some n => if n == 0 then exitFailure "--min-sessions must be at least 1."
+                   else pure (some n, false)
+      | .none => exitFailure s!"Invalid min-sessions: '{s}'. Must be a positive number or 'nodes'."
+  let exactPruning ← match pflags.getString "incremental-pruning" with
+    | .none => pure base.exactPruning
+    | .some "lazy" => pure false
+    | .some "exact" => pure true
+    | .some s => exitFailure s!"Invalid incremental-pruning: '{s}'. Must be 'lazy' or 'exact'."
   let mut solverOptions := base.solverOptions
   for s in pflags.getRepeated "set-option" do
     match s.splitOn "=" with
@@ -217,6 +235,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     vcDirectory,
     pathCap,
     parallelWorkers,
+    minSessions,
+    splitByNode,
+    exactPruning,
     keepAllFilesPrefix
   }
   pure options

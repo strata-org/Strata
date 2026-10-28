@@ -8,7 +8,7 @@ public import Strata.Pipeline.Messages
 
 public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.MapStmtExpr
-public import StrataLaurel.Implementation.UnorderedCore
+public import StrataLaurel.Implementation.CoreWithLaurelTypes
 public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import StrataLaurel.Implementation.SemanticModel
@@ -22,7 +22,7 @@ import StrataLaurel.Implementation.PushOldInward
 /-!
 # Name Resolution Pass
 
-Turns a freshly parsed Laurel `Program` (where every `Identifier` has
+Turns a freshly parsed Laurel `LaurelProgram` (where every `Identifier` has
 `uniqueId := none`) into a program where every definition has a fresh numeric
 ID and every reference points to the ID of the definition it names. The pass
 also synthesizes a `HighType` for every `StmtExpr` and emits diagnostics for
@@ -125,7 +125,7 @@ public section
 /-- The output of the resolution pass. -/
 public structure ResolutionResult where
   /-- The program with unique IDs on all definition and reference nodes. -/
-  program : Program
+  program : LaurelProgram
   /-- Map from reference node ID to the definition it resolves to. -/
   model : SemanticModel
   /-- Diagnostics collected during resolution (e.g. unresolved references). -/
@@ -196,6 +196,10 @@ structure ResolveState where
   overloads : Std.HashMap String (List (Nat × Procedure)) := {}
   /-- UniqueIds of static procedures rejected as conflicting duplicates. -/
   conflictingOverloads : Std.HashSet Nat := {}
+  /-- While resolving a `catch` clause's guard: the uniqueId of that clause's
+      binding. `Synth.isType` reads it to accept a guard testing the caught
+      exception against an unrelated type (always false); `none` everywhere else. -/
+  catchGuardBinding : Option Nat := none
 
 abbrev ResolveM := StateM ResolveState
 
@@ -518,7 +522,12 @@ private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
 
     Each name is tested raw *and* unfolded: `unfold` is keyed on type-name text
     through the global constrained/alias map, so a global `constrained T` would
-    rewrite a same-named parameter to its base and hide the slot. -/
+    rewrite a same-named parameter to its base and hide the slot.
+
+    A parameter is spelled `.UserDefined` on a freshly parsed tree and `.TVar` on a
+    re-resolved one, so both count: missing the second types a constructor argument
+    or a destructor's result at the declared `T` on re-resolution (`MkBx(42)` as `T`,
+    not `int`). -/
 private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
     (ty : HighTypeMd) : Bool :=
   match _h : ty.val with
@@ -527,6 +536,7 @@ private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
       (match (ctx.unfold ty).val with
        | .UserDefined u => typeParams.contains u.text
        | _ => false)
+  | .TVar name => typeParams.contains name.text
   | .TSet et => mentionsTypeParam ctx typeParams et
   | .TMap kt vt =>
     mentionsTypeParam ctx typeParams kt || mentionsTypeParam ctx typeParams vt
@@ -944,12 +954,10 @@ private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd
   | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := callee.source }
 
 /-- Concretize a field's declared type at an access site: substitute the field's DECLARING
-    composite's params with the holder's args. Else raw `.TVar T` hits the wildcard and a
-    cross-type write is wrongly accepted (imprecise, not unsound — Core havocs the read back).
-    - OWN: `{D.params := holderArgs}`.
-    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware:
-      `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
-    Only ever more concrete; identity on polymorphic accesses; raw-type fallback otherwise. -/
+    composite's params with the holder's args (`TypeLattice.fieldTypeAt`). Else raw `.TVar T`
+    hits the wildcard and a cross-type write is wrongly accepted (imprecise, not unsound — Core
+    havocs the read back). Only ever more concrete; identity on polymorphic accesses; raw-type
+    fallback otherwise. -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -957,37 +965,7 @@ private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier
   -- Need the field's declaring composite + raw type.
   match fieldName'.uniqueId.bind s.idToNode.get? with
   | some (.field declType fld) =>
-    let ctx := s.typeLattice
-    -- Peel the holder to (base name, concrete args).
-    let holderTy' := ctx.unfold holderTy
-    let holder? : Option (String × List HighTypeMd) := match holderTy'.val with
-      | .UserDefined n => some (n.text, [])
-      | .Applied base args => (highBaseName? base.val).map (fun n => (n.text, args))
-      | _ => none
-    match holder? with
-    | none => pure raw
-    | some (holderName, holderArgs) =>
-      -- The concrete args the holder supplies *for the declaring composite* D.
-      let declArgs? : Option (List HighTypeMd) :=
-        if holderName == declType.text then some holderArgs
-        else (ctx.substitutedAncestors holderName holderArgs).findSome? fun anc =>
-          match anc.val with
-          | .UserDefined n => if n.text == declType.text then some [] else none
-          | .Applied base args =>
-            match highBaseName? base.val with
-            | some n => if n.text == declType.text then some args else none
-            | none => none
-          | _ => none
-      match declArgs?, ctx.parentExprMap.get? declType.text with
-      | some declArgs, some (declParams, _) =>
-        -- Arity must match for the substitution to be meaningful; the legacy bare
-        -- `new C` form (no args) lands here as a mismatch → safe raw fallback.
-        if declParams.length == declArgs.length && !declParams.isEmpty then
-          let subst : Std.HashMap String HighTypeMd :=
-            (declParams.zip declArgs).foldl (fun m (p, a) => m.insert p.text a) {}
-          pure (substTypeVars subst fld.type)
-        else pure raw
-      | _, _ => pure raw
+    pure ((s.typeLattice.fieldTypeAt declType fld.type holderTy).getD raw)
   | _ => pure raw
 
 /-- Get the call return type and parameter types for a callee from scope. -/
@@ -1413,6 +1391,18 @@ private def declInferValueType (name : Identifier) (initSource : FileRange)
     pure { val := .Unknown, source := valueTy.source }
   | _ => pure valueTy
 
+private def reportDuplicateTargets (targets : List VariableMd) : ResolveM Unit := do
+  let mut seen : List Nat := []
+  for target in targets do
+    if let .Local ref := target.val then
+      if let some id := ref.uniqueId then
+        if seen.contains id then
+          let diag := diagnosticFromSource target.source
+            s!"'{ref.text}' is assigned more than once by this assignment"
+          modify fun s => { s with errors := s.errors.push diag }
+        else
+          seen := id :: seen
+
 /-- (Decl-Synth over multi-assign) Component types each target adopts from a
     synthesized multi-valued RHS; all `none` on a non-multi-valued RHS.
     Shared by `Synth.assign`/`Check.assign`. `inferInfo` is `some` only when
@@ -1477,6 +1467,101 @@ private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
     all_goals (try term_by_mem)
     all_goals (try (simp_all; omega))
 
+/-- Whether a resolved `catch` guard `pred` can never hold for the clause's binding
+    (`bindingId`, typed `bindTy`): it tests the binding against a type unrelated to
+    `bindTy` (`TypeLattice.unrelatedToCatchBinding`), or it is a disjunction of such
+    tests. That is the shape a Java multi-catch takes when none of its alternatives
+    can be thrown by the `try` body. Any other guard (`false`, a conjunction, a test
+    of something else) is not recognized, so its clause's body is still resolved.
+
+    The mirror image of `catchGuardCatches`.
+
+    Keyed on the binding's `uniqueId`, so it only applies once the guard has been
+    resolved — `Check.tryCatch`. The pre-resolution walk in `collectThrownTypes`
+    sees a binding that has no `uniqueId` yet and must use the name-keyed
+    `catchGuardNeverHoldsNamed` below instead. Both exist on purpose: this one is
+    the stricter of the two (an `uniqueId` match is immune to shadowing), so the
+    resolved site keeps using it. -/
+private def catchGuardNeverHolds (lattice : TypeLattice) (bindingId : Nat)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Bool :=
+  match _h : pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local id) => id.uniqueId == some bindingId && lattice.unrelatedToCatchBinding bindTy ty
+    | _ => false
+  | .StaticCall callee [p1, p2] _ =>
+    match Operation.ofProcName? callee.text with
+    | some .Or | some .OrElse =>
+      catchGuardNeverHolds lattice bindingId bindTy p1
+        && catchGuardNeverHolds lattice bindingId bindTy p2
+    | _ => false
+  | _ => false
+  termination_by sizeOf pred
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- `catchGuardNeverHolds` keyed on the binding's *name* rather than its
+    `uniqueId`, for `collectThrownTypes`: that traversal runs before the clause
+    bindings are defined, so `binding` carries no `uniqueId` to match on and the
+    id-keyed variant above would never fire. The recognized guard shapes and the
+    `TypeLattice.unrelatedToCatchBinding` test are identical.
+
+    Matching a name is the weaker test — an inner declaration could shadow the
+    binding and make a guard look like a test of it — so this is used only where
+    an `uniqueId` is not yet available. -/
+private def catchGuardNeverHoldsNamed (lattice : TypeLattice) (binding : Identifier)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Bool :=
+  match _h : pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local id) => id.text == binding.text && lattice.unrelatedToCatchBinding bindTy ty
+    | _ => false
+  | .StaticCall callee [p1, p2] _ =>
+    match Operation.ofProcName? callee.text with
+    | some .Or | some .OrElse =>
+      catchGuardNeverHoldsNamed lattice binding bindTy p1
+        && catchGuardNeverHoldsNamed lattice binding bindTy p2
+    | _ => false
+  | _ => false
+  termination_by sizeOf pred
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt pred; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- The type a `catch` guard narrows its binding to, when that is at least as
+    specific as the binding's own type. `c is T` gives `T`; anything else gives
+    `none`, so the caller falls back to the join.
+
+    Used by `collectThrownTypes` to type a guarded clause's view of its binding:
+    the clause only ever runs when the guard holds, so a rethrow inside it can
+    only rethrow the narrowed type, not the whole join of what the `try` body
+    throws.
+
+    Keyed on the binding's *name* for the same reason
+    `catchGuardNeverHoldsNamed` is: that traversal runs before the clause
+    bindings are defined, so there is no `uniqueId` to match on.
+
+    The `isSubtype` test is what keeps this monotone. A guard may be *wider*
+    than the binding (`bindTy = A`, guard `c is Base`), and taking the guard
+    type there would widen the contribution rather than narrow it; the test
+    rejects that case, so the type returned is never wider than the join. Only a
+    single `.IsType` is recognized — a disjunction such as `c is A || c is B`
+    narrows to no single type, so it falls back to the join. -/
+private def catchGuardNarrowedType? (lattice : TypeLattice) (binding : Identifier)
+    (bindTy : HighTypeMd) (pred : StmtExprMd) : Option HighTypeMd :=
+  match pred.val with
+  | .IsType target ty =>
+    match target.val with
+    | .Var (.Local n) =>
+      if n.text == binding.text && isSubtype lattice ty bindTy then some ty else none
+    | _ => none
+  | _ => none
+
 /-- Whether a `catch` clause definitely catches every value of type `ty`.
     An absent guard is a catch-all. -/
 private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTypeMd) : Bool :=
@@ -1513,10 +1598,24 @@ private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTy
     rather than letting the clause be dropped quietly. -/
 private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : StmtExprMd)
     : ResolveM (List HighTypeMd) := do
-  -- "Cannot be determined" includes a type that already resolved to `Unknown` (a
-  -- dangling reference, diagnosed elsewhere): it denotes no type, so it must stay
-  -- out of the join — mixed in, it would turn a perfectly good set of thrown
-  -- composites into a spurious "no common ancestor".
+  -- Only `Unknown` stays out of the join: a dangling reference, diagnosed elsewhere,
+  -- denoting no type. Mixed into the join it would make a perfectly good set of thrown
+  -- types look irreconcilable.
+  --
+  -- A type variable is NOT set aside, even though `exceptionEscapes` sets one aside.
+  -- `T` is a real type here — the procedure's own bound parameter — and it is the
+  -- binding's type for a `try` whose body throws only `T`. Deferring it to the
+  -- post-`MonomorphizeComposites` re-resolution would make monomorphization decide the
+  -- semantics, which it must not: it specializes a program, it does not change what the
+  -- program means. It also would not work. Cloning is driven by generic COMPOSITES, so
+  -- a `g<T>(x: T) throws (e: T)` is never cloned, nothing ever makes its binding
+  -- concrete, and the handler would be dropped outright.
+  --
+  -- The consequence is that a `T` alongside a concrete thrown type has no join, and that
+  -- is the honest answer rather than a defect: pre-monomorphization `T` could be
+  -- instantiated at anything, so no single binding type can be known to receive both.
+  -- Picking the concrete one would accept a program in which the handler binds `Err`
+  -- while holding a `T` value.
   let determinate (ty? : Option HighTypeMd) : Option HighTypeMd :=
     ty?.filter (fun t => !(t.val matches .Unknown))
   let operandType (op : StmtExprMd) : ResolveM (Option HighTypeMd) := do
@@ -1594,14 +1693,44 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
   | .ProveBy v pf => pure ((← collectThrownTypes env v) ++ (← collectThrownTypes env pf))
   | .Try body catches finally? =>
     let ff ← match _hf : finally? with | some f => collectThrownTypes env f | none => pure []
-    let cc ← catches.attach.mapM (fun ⟨c, _⟩ => collectThrownTypes env c.body)
     let bodyThrows ← collectThrownTypes env body
+    let lattice := (← get).typeLattice
+    -- A handler sees its own binding, so a rethrow (`catch c { throw c }`) has a type:
+    -- the binding's, which is the join of what this `try`'s body throws — the same type
+    -- `Check.tryCatch` will give it. Without this the rethrow contributes nothing and an
+    -- enclosing `catch` ends up untyped.
+    --
+    -- A clause whose guard can never hold for that binding type is skipped
+    -- entirely: it never runs, so nothing in it (a rethrow included) can reach an
+    -- enclosing `catch`. This mirrors `Check.tryCatch`, which discards such a
+    -- body unresolved (see its `guardNeverHolds`). Keyed on the binding's name,
+    -- not its `uniqueId`, because the clause bindings are not defined yet here.
+    --
+    -- A clause that is NOT skipped but whose guard narrows the binding
+    -- contributes only the NARROWED type: it runs only when the guard holds, so
+    -- that is all a rethrow in it can rethrow. Contributing the whole join
+    -- instead would widen an enclosing `catch`'s binding past what can actually
+    -- reach it — enough to stop a field read on the enclosing binding from
+    -- resolving. `catchGuardNarrowedType?` only ever returns a subtype of the
+    -- join, so this can add precision but never take any away.
+    let cc ← catches.attach.mapM (fun ⟨c, _⟩ =>
+      match lattice.commonAncestorType bodyThrows with
+      | some bindTy =>
+        let neverHolds := match c.predicate with
+          | some p => catchGuardNeverHoldsNamed lattice c.binding bindTy p
+          | none => false
+        if neverHolds then pure []
+        else
+          let clauseTy := match c.predicate with
+            | some p => (catchGuardNarrowedType? lattice c.binding bindTy p).getD bindTy
+            | none => bindTy
+          collectThrownTypes (env.insert c.binding.text clauseTy) c.body
+      | none => collectThrownTypes env c.body)
     -- Only what escapes this nested `try` can reach an outer `catch` binding, so
     -- drop the body throws its own catches provably absorb (mirroring
     -- `exceptionEscapes`); otherwise an inner-handled type would pollute the
     -- outer binding's least-common-ancestor and could spuriously report "no
     -- common ancestor". Handler and `finally` throws still escape outward.
-    let lattice := (← get).typeLattice
     let residual := bodyThrows.filter fun t => !catches.any (fun c => clauseCatches lattice c t)
     pure (residual ++ cc.flatten ++ ff)
   | .Block stmts _ =>
@@ -1649,16 +1778,22 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
       omega))
     all_goals (try (simp_all; omega))
 
+/-- Whether `n` is one of the enclosing entity's type parameters, by binder: matching on text would
+    accept a callee's own parameter that happens to be spelled like one of ours. -/
+private def tvarInScope (scope : Scope) (n : Identifier) : Bool :=
+  match scope.get? n.text with
+  | some (defId, .typeParameter _) => n.uniqueId == some defId
+  | _ => false
+
 /-- STAGE 1 of a generic call — bind from the RETURN position, before the arguments are touched.
     `setEmpty<T>() : Set<T>` and `mapConst<K,V>(value: V) : TotalMap K V` mention `T`/`K` only in
     the result, so matching the declared return type against the expected type is the only thing
     that can determine them. Doing it first is what lets stage 2 hand each argument a concrete slot.
-    Bindings that still MENTION a type variable are KEPT here, unlike in `callSiteTypeSubst`. That
-    filter exists to avoid recording an uninformative `T ↦ T`; a structured binding is a different
-    thing entirely, and dropping it breaks the prelude. `mapRemove<K,V>`'s
-    `update(m, k, $MapAbsent())` binds `update`'s `V2 ↦ $MapEntry V` from the expected `Map<K,V>`,
-    and that is precisely what tells the `$MapAbsent()` slot which datatype it is building.
-    Substituting a `T ↦ T` is a no-op, so keeping those costs nothing.
+    Bindings that still MENTION a type variable are KEPT here: a structured binding is what the
+    prelude needs. `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` binds `update`'s
+    `V2 ↦ $MapEntry V` from the expected `Map<K,V>`, and that is precisely what tells the
+    `$MapAbsent()` slot which datatype it is building. Substituting a `T ↦ T` is a no-op, so keeping
+    those costs nothing.
 
     Pure in the procedure and the expected type, so an overloaded name can run it on the procedure
     `selectOverloads` picked. -/
@@ -1696,8 +1831,9 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
     (expected? : Option HighTypeMd) (retSubst : Std.HashMap String HighTypeMd)
     (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
   let ctx := (← get).typeLattice
+  let inScope := tvarInScope (← get).scope
   let paramTys := proc.inputs.map (·.type)
-  let (argSubst, conflicts) := callSiteTypeSubst ctx paramTys argTys
+  let (argSubst, conflicts) := callSiteTypeSubst ctx inScope paramTys argTys
   -- STAGE 3 — merge. Argument bindings WIN over the stage-1 return bindings: an argument is
   -- direct evidence, whereas the expected type has already passed through subsumption and may
   -- be a supertype (`var a: Animal := identity(aDog)` must keep `T ↦ Dog`, not widen it to
@@ -1752,21 +1888,11 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
   -- to resolve and so synthesized `Unknown`): inference genuinely had nothing to work with
   -- there, and a second error about a type argument would only bury the first.
   --
-  -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: a binding that
-  -- mentions a type variable is absent from `subst` (it teaches nothing) yet the parameter IS
-  -- determined. Reading `subst` here would report every internal call in a generic body,
-  -- starting with the prelude's own `mapGet`/`seqLength`.
-  -- A type variable is in scope when the enclosing entity declares it (`scopeTypeParams`
-  -- registers each as a `.typeParameter`), matched on the binder's `uniqueId`. Matching on text
-  -- would accept a callee's own parameter that happens to be spelled like one of ours.
-  let scopeNow := (← get).scope
-  let tvarInScope := fun (n : Identifier) =>
-    match scopeNow.get? n.text with
-    | some (defId, .typeParameter _) => n.uniqueId == some defId
-    | _ => false
+  -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: an ambiguous diamond
+  -- binds nothing in `subst` yet the parameter IS determined.
   let determined :=
-    callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := true) (paramTys.zip argTys) ++
-    callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := false)
+    callSiteDeterminedTypeParams ctx inScope (requireInScope := true) (paramTys.zip argTys) ++
+    callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
       (match expected? with
        | some exp => [(procReturnType callee proc, exp)]
        | none => [])
@@ -1785,26 +1911,15 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
       s!"cannot infer {what} {names} of '{callee.text}': {hint}"
     modify fun s => { s with errors := s.errors.push diag }
   -- RECORD the instantiation, in the callee's declaration order, so a downstream pass reads it
-  -- off the node instead of recovering it from context: `LaurelToCoreSchemaPass` needs it for
-  -- the external generic primitives, which never monomorphize.
+  -- off the node instead of recovering it from context: `MonomorphizeComposites` clones the callee
+  -- at it, `LaurelToCoreSchemaPass` needs it for the external generic primitives, which never
+  -- monomorphize, and a pass that introduces a local for a call declares the local at it
+  -- (`typeAtCall`).
   --
   -- Stamped only when every parameter is bound: a partial list would be worse than none, since
   -- position carries meaning. `unbound` above has already reported anything missing.
   let inferredTypeArgs : List HighTypeMd :=
-    -- EXTERNAL callees only. An instantiation needs recording precisely when the callee will
-    -- never be monomorphized — an `external` Core primitive (`mapConst`, `setEmpty`, `seqEmpty`)
-    -- has no body to clone, so nothing downstream can recover its type arguments. A callee WITH
-    -- a body is monomorphized, and recording an instantiation for it actively conflicts with
-    -- that: for an inherited generic method the expected type yields a witness
-    -- (`GBaseD$get` at `int`) where `MonomorphizeComposites` must instead report the diamond as
-    -- ambiguous, and the call is then left dangling.
-    if !(proc.body matches .External) then []
-    -- Not while any argument is still `Unknown`. Holes are typed LATER (`InferHoleTypes`), so a
-    -- tree that still contains one has not finished inferring: freezing an instantiation now
-    -- records a premature answer and the hole is then never resolved ("holes should have been
-    -- eliminated before translation"). The re-resolution after hole inference records it.
-    else if argTys.any (fun t => mentionsUnknown t.val) then []
-    else if proc.typeArgs.isEmpty then []
+    if proc.typeArgs.isEmpty then []
     else
       let bound := proc.typeArgs.map (fun tv => subst[tv.text]?)
       -- A `.TVar` from the enclosing generic body is fine: `MonomorphizeComposites` substitutes
@@ -1880,61 +1995,61 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .LiteralBv v width => pure (Synth.litBv v width source)
   | .Var (.Local ref) => Synth.varLocal ref source
   | .IncrDecr mode op target =>
-    Synth.incrDecr exprMd mode op target source (by rw [h_node])
+    Synth.incrDecr exprMd mode op target source (by rw [h_node, h_expr])
   | .CompoundAssign op target rhs =>
-    Synth.compoundAssign exprMd op target rhs source (by rw [h_node])
+    Synth.compoundAssign exprMd op target rhs source (by rw [h_node, h_expr])
   | .Var (.Field target fieldName) =>
-    Synth.varField exprMd target fieldName source (by rw [h_node])
+    Synth.varField exprMd target fieldName source (by rw [h_node, h_expr])
   -- (Decl-Synth) `var x := e`: a sole unannotated declaration target with an
   -- initializer is handled specially so the binding's type is recovered from
   -- the synthesized RHS. All other assignment shapes go to `Synth.assign`.
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
-    Synth.declInfer exprMd name vs value source (by rw [h_node])
+    Synth.declInfer exprMd name vs value source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Synth.assign exprMd targets value source (by rw [h_node])
+    Synth.assign exprMd targets value source (by rw [h_node, h_expr])
   | .PureFieldUpdate target fieldName newVal =>
-    Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
+    Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node, h_expr])
   | .StaticCall callee args tyArgs =>
-    Synth.staticCall exprMd callee args tyArgs source (by rw [h_node]) expected?
+    Synth.staticCall exprMd callee args tyArgs source (by rw [h_node, h_expr]) expected?
   | .New ref typeArgs => Synth.new ref typeArgs source expected?
   | .This => Synth.this source
   | .ReferenceEquals lhs rhs =>
-    Synth.refEq exprMd expr lhs rhs source h_expr (by rw [h_node])
+    Synth.refEq exprMd expr lhs rhs source h_expr (by rw [h_node, h_expr])
   | .AsType target ty =>
-    Synth.asType exprMd target ty (by rw [h_node])
+    Synth.asType exprMd target ty (by rw [h_node, h_expr])
   | .IsType target ty =>
-    Synth.isType exprMd target ty source (by rw [h_node])
+    Synth.isType exprMd target ty source (by rw [h_node, h_expr])
   | .InstanceCall target callee args =>
-    Synth.instanceCall exprMd target callee args source (by rw [h_node])
+    Synth.instanceCall exprMd target callee args source (by rw [h_node, h_expr])
   | .Quantifier mode param trigger body =>
-    Synth.quantifier exprMd mode param trigger body source (by rw [h_node])
+    Synth.quantifier exprMd mode param trigger body source (by rw [h_node, h_expr])
   | .Assigned name =>
-    Synth.assigned exprMd name source (by rw [h_node])
+    Synth.assigned exprMd name source (by rw [h_node, h_expr])
   | .Fresh val =>
-    Synth.fresh exprMd expr val source h_expr (by rw [h_node])
+    Synth.fresh exprMd expr val source h_expr (by rw [h_node, h_expr])
   | .Old val label? =>
-    Synth.old exprMd val label? source (by rw [h_node]) expected?
+    Synth.old exprMd val label? source (by rw [h_node, h_expr]) expected?
   | .OldGuarantee val =>
-    Synth.oldGuarantee exprMd val source (by rw [h_node]) expected?
+    Synth.oldGuarantee exprMd val source (by rw [h_node, h_expr]) expected?
   | .OldRelies val =>
-    Synth.oldRelies exprMd val source (by rw [h_node]) expected?
+    Synth.oldRelies exprMd val source (by rw [h_node, h_expr]) expected?
   | .Yield => Synth.yield source
   | .Resume target value =>
-    Synth.resume exprMd target value source (by rw [h_node])
+    Synth.resume exprMd target value source (by rw [h_node, h_expr])
   | .HasNext target =>
-    Synth.hasNext exprMd target source (by rw [h_node])
+    Synth.hasNext exprMd target source (by rw [h_node, h_expr])
   | .Snapshot label => pure (Synth.snapshot label source)
   | .ProveBy val proof =>
-    Synth.proveBy exprMd val proof source (by rw [h_node]) expected?
+    Synth.proveBy exprMd val proof source (by rw [h_node, h_expr]) expected?
   | .ContractOf ty fn =>
-    Synth.contractOf exprMd ty fn source (by rw [h_node])
+    Synth.contractOf exprMd ty fn source (by rw [h_node, h_expr])
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
   | .IfThenElse cond thenBr elseBr =>
-    Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node]) expected?
+    Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node, h_expr]) expected?
   | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
   | .Block (head :: tail) label =>
-    Synth.block exprMd (head :: tail) label source (by rw [h_node]) expected?
+    Synth.block exprMd (head :: tail) label source (by rw [h_node, h_expr]) expected?
   -- Holes in synth position are gradual: an annotated hole synthesizes its
   -- declared type; an unannotated one is `Unknown`. Without this carve-out,
   -- a hole appearing as the target of e.g. a field access (`<?>.f`) would
@@ -1949,31 +2064,31 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     let r ← Check.varDeclare param source
     return (r, ⟨ .TVoid, source ⟩)
   | .While cond invs dec body postTest => do
-    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node])
+    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Exit target => do
     let r ← Check.exit target source
     return (r, ⟨ .TVoid, source ⟩)
   | .Return val => do
-    let r ← Check.return exprMd val source (by rw [h_node])
+    let r ← Check.return exprMd val source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assert condExpr summary => do
-    let r ← Check.assert exprMd condExpr summary source (by rw [h_node])
+    let r ← Check.assert exprMd condExpr summary source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assume cond => do
-    let r ← Check.assume exprMd cond source (by rw [h_node])
+    let r ← Check.assume exprMd cond source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Throw value => do
-    let r ← Check.throw exprMd value source (by rw [h_node])
+    let r ← Check.throw exprMd value source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Try body catches finally? => do
-    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node])
+    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
-    | (try subst h_node; apply Prod.Lex.right; decide)
+    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
     | (apply Prod.Lex.right; decide)
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
@@ -2007,25 +2122,25 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   -- arm below routes it through synth-then-Sub. Non-empty blocks have no
   -- synth rule and are typed structurally by Check.block.
   | .Block (head :: tail) label =>
-    Check.block exprMd (head :: tail) label expected source (by rw [h_node])
+    Check.block exprMd (head :: tail) label expected source (by rw [h_node, h_expr])
   | .IfThenElse cond thenBr elseBr =>
-    Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node])
+    Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node, h_expr])
   -- (Decl-Synth, check mode) sole unannotated initialized declaration —
   -- see `Synth.resolveStmtExpr`.
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
-    Check.declInfer exprMd name vs value expected source (by rw [h_node])
+    Check.declInfer exprMd name vs value expected source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Check.assign exprMd targets value expected source (by rw [h_node])
+    Check.assign exprMd targets value expected source (by rw [h_node, h_expr])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
   | .Old val label? =>
-    Check.old exprMd val label? expected source (by rw [h_node])
+    Check.old exprMd val label? expected source (by rw [h_node, h_expr])
   | .OldGuarantee val =>
-    Check.oldGuarantee exprMd val expected source (by rw [h_node])
+    Check.oldGuarantee exprMd val expected source (by rw [h_node, h_expr])
   | .OldRelies val =>
-    Check.oldRelies exprMd val expected source (by rw [h_node])
+    Check.oldRelies exprMd val expected source (by rw [h_node, h_expr])
   | .ProveBy val proof =>
-    Check.proveBy exprMd val proof expected source (by rw [h_node])
+    Check.proveBy exprMd val proof expected source (by rw [h_node, h_expr])
   | _ =>
     -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
     -- realize the coercion witness onto the term. This chokepoint covers call
@@ -2071,7 +2186,7 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
     | (try subst_eqs; apply Prod.Lex.right; decide)
-    | (try subst h_node; apply Prod.Lex.right; decide)
+    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
     | (apply Prod.Lex.right; decide)
 
 -- ### Literals
@@ -2578,7 +2693,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr expected?
-  match elseBr with
+  match (dependent := true) elseBr with
   | none =>
     pure (.IfThenElse cond' thenBr' none, { val := .TVoid, source := source })
   | some e =>
@@ -2803,9 +2918,23 @@ def Check.tryCatch (exprMd : StmtExprMd)
         pure { val := .Unknown, source := body.source }
   let catches' ← catches.attach.mapM fun ⟨c, _⟩ => withScope do
     let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+    let savedGuard := (← get).catchGuardBinding
+    modify fun s => { s with catchGuardBinding := binding'.uniqueId }
     let predicate' ← c.predicate.attach.mapM fun ⟨p, _⟩ =>
       Check.resolveStmtExpr p { val := .TBool, source := p.source }
-    let cbody' ← Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
+    modify fun s => { s with catchGuardBinding := savedGuard }
+    -- A clause whose guard can never hold (see `catchGuardNeverHolds`: e.g. a Java
+    -- multi-catch for unchecked types the body never throws) is dead: its body is
+    -- discarded unresolved. A front end may read the binding at the arm's type
+    -- there (`c as T`), which would otherwise be rejected as a cast between
+    -- unrelated types.
+    let lattice := (← get).typeLattice
+    let guardNeverHolds := match predicate', binding'.uniqueId with
+      | some p, some bid => catchGuardNeverHolds lattice bid bindTy p
+      | _, _ => false
+    let cbody' ← if guardNeverHolds then
+        pure { val := .Block [] none, source := c.body.source }
+      else Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
     pure ({ binding := binding', predicate := predicate', body := cbody', bindingType := bindTy } : CatchClause)
   let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
     Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
@@ -2869,17 +2998,16 @@ def Synth.assign (exprMd : StmtExprMd)
   -- that re-resolve (`needsResolves`) then silently change the program's meaning.
   let pending ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
     have := hv
-    let ⟨vv, vs⟩ := v
-    match vv with
-    | .Local ref =>
+    match (dependent := true) v with
+    | ⟨.Local ref, vs⟩ =>
       let ref' ← resolveRef ref source
       pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
-    | .Field target fieldName =>
+    | ⟨.Field target fieldName, vs⟩ =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
       let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
-    | .Declare param =>
+    | ⟨.Declare param, vs⟩ =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
         | none =>
@@ -2916,6 +3044,7 @@ def Synth.assign (exprMd : StmtExprMd)
     | .inr (param, ty', vs) =>
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
+  reportDuplicateTargets targets'
   pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
@@ -3314,6 +3443,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     -- extend the lattice and every subtype/coercion decision downstream must see the final one.
     -- Reusing the pre-argument lattice there would silently change which coercions get realized.
     let ctx0 := (← get).typeLattice
+    let inScope := tvarInScope (← get).scope
     let paramTys := gproc.inputs.map (·.type)
     let retSubst := returnPositionSubst ctx0 callee gproc expected?
     -- STAGE 2 — resolve each argument, handing it its parameter type instantiated by stage 1.
@@ -3355,7 +3485,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let mut working : Std.HashMap String HighTypeMd := retSubst
     let immediatePairs : List (HighTypeMd × HighTypeMd) :=
       resolvedImmediate.filterMap fun (i, _, aTy) => (paramTys[i]?).map (fun pTy => (pTy, aTy))
-    working := (callSiteTypeSubst ctx0 (immediatePairs.map (·.1)) (immediatePairs.map (·.2))).1.fold
+    working := (callSiteTypeSubst ctx0 inScope (immediatePairs.map (·.1))
+        (immediatePairs.map (·.2))).1.fold
       (fun acc name ty => acc.insert name ty) working
     let mut resolvedDeferred : List (Nat × StmtExprMd × HighTypeMd) := []
     for (⟨a, hMem⟩, i) in deferred do
@@ -3363,7 +3494,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       let (a', aTy) ← Synth.resolveStmtExpr a (slotAt working i)
       resolvedDeferred := resolvedDeferred ++ [(i, a', aTy)]
       if let some pTy := paramTys[i]? then
-        working := (callSiteTypeSubst ctx0 [pTy] [aTy]).1.fold
+        working := (callSiteTypeSubst ctx0 inScope [pTy] [aTy]).1.fold
           (fun acc name ty => acc.insert name ty) working
     -- Back to SOURCE ORDER: the guards below and `genericCallResult` both index-zip against
     -- `paramTys`.
@@ -3448,7 +3579,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
           let subst := (dtParams.zip recvArgs).foldl (fun m (n, t) => m.insert n t) (∅ : Std.HashMap String HighTypeMd)
           substTypeVars subst fld.type
         else { val := .Unknown, source := callee.source }
-      return (.StaticCall callee' args' [], retTy)
+      -- Recorded like a procedure call's instantiation, and on the same condition.
+      let recorded := if recvArgs.length == dtParams.length
+          && !recvArgs.any (fun t => mentionsUnknown t.val) then recvArgs else []
+      return (.StaticCall callee' args' recorded, retTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
@@ -3525,15 +3659,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- application) is checked here as usual. See `mentionsTypeParam` for why the
       -- datatype's own `typeParams` list is the reliable source rather than a
       -- scope lookup at this call site.
-      -- Recognise BOTH spellings of a type parameter: a datatype's stored constructor argument is
-      -- `.UserDefined "T"` on a freshly parsed tree and `.TVar "T"` on the post-pass
-      -- re-resolution, and `mentionsTypeParam` is name-based so it sees only the first. A slot
-      -- missed here counts as concrete, which sends the argument down the check branch where it
-      -- reports the DECLARED `T` as its type rather than its own (`MkBx(42)` as `T`, not `int`).
-      let isTypeParamSlot : Bool :=
-        mentionsTypeParam ctx typeParams fieldTy
-          || (tvarNames matchFieldTy.val).any typeParams.contains
-      if isTypeParamSlot then
+      if mentionsTypeParam ctx typeParams fieldTy then
         -- Still SYNTHESIZED, not checked: the slot's parameter may be undetermined at this
         -- point, and an erased parameter accepts any argument. What is new is that the
         -- stage-1 instantiation is handed down as the expected type, so a nested generic call in
@@ -3547,7 +3673,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let ctorArgTys := resolvedArgs.map (·.2)
     -- Bind the remaining parameters from the ARGUMENTS, which win over the expected type for the
     -- same reason as in the generic-procedure path (direct evidence, no subsumption widening).
-    let (ctorArgSubst, ctorConflicts) := callSiteTypeSubst ctx matchFieldTys ctorArgTys
+    let inScope := tvarInScope (← get).scope
+    let (ctorArgSubst, ctorConflicts) := callSiteTypeSubst ctx inScope matchFieldTys ctorArgTys
     let ctorSubst := ctorRetSubst.fold
       (fun acc name ty => if acc.contains name then acc else acc.insert name ty) ctorArgSubst
     for (name, t1, t2) in ctorConflicts.reverse do
@@ -3558,15 +3685,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
     -- Report the INSTANTIATED datatype, so a use of the result is checked against the real type
     -- instead of the bare head's wildcard. This is also what lets a destructor applied directly
     -- to a constructor call (`Opt..value!(Som(5))`) recover the instantiation.
-    let scopeNow := (← get).scope
-    let tvarInScope := fun (n : Identifier) =>
-      match scopeNow.get? n.text with
-      | some (defId, .typeParameter _) => n.uniqueId == some defId
-      | _ => false
     let determined :=
-      callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := true)
+      callSiteDeterminedTypeParams ctx inScope (requireInScope := true)
         (matchFieldTys.zip ctorArgTys) ++
-      callSiteDeterminedTypeParams ctx tvarInScope (requireInScope := false)
+      callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
         (match expected? with | some exp => [(ctorRetShape, exp)] | none => [])
     let ctorUnbound := typeParams.filter (fun p => !determined.contains p)
     -- Suppressed when the expected type already NAMES this datatype. The user did annotate; if
@@ -3683,9 +3805,8 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- already-errored target (type `.Unknown`, stay quiet — it reported its own error) or a
   -- resolved NON-composite (`z : int`), which has no methods. REJECT the latter: without this,
   -- the bare-`callee` fallback below would silently bind `z#sideEffect(…)` to an unrelated
-  -- top-level static procedure `sideEffect`, and since `LiftInstanceProcedures`/`ContractPass`
-  -- only handle `.InstanceCall` whose callee is an instance proc, the call's precondition is
-  -- dropped and it mis-verifies (a silent unsound accept).
+  -- top-level static procedure `sideEffect`, leaving an instance call that
+  -- `LiftInstanceProcedures` does not lift and Core translation reports as a strata-bug.
   let lookupKey ← match (← targetTypeName target') with
     | some tyName => do
       -- An instance procedure is registered ONLY under its DECLARING type's key, so an
@@ -3976,9 +4097,21 @@ def Synth.isType (exprMd : StmtExprMd)
     let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
   else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
-    let diag := diagnosticFromSource target.source
-      s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
-    modify fun s => { s with errors := s.errors.push diag }
+    -- In a `catch` guard, testing the caught exception against an unrelated type
+    -- is legitimate (a Java multi-catch names an unchecked type the `try` body
+    -- never throws): the test is simply never true, and `EliminateExceptions`
+    -- lowers it to `false`. It is accepted silently: front ends emit such guards
+    -- for valid source programs, so any diagnostic would surface to their users as
+    -- a spurious report. A type sharing a descendant with the binding's type
+    -- (multiple inheritance) is still rejected: the test may be true there, so it
+    -- cannot be lowered to `false`.
+    let isCaughtBinding := match target'.val, (← get).catchGuardBinding with
+      | .Var (.Local ref), some bid => ref.uniqueId == some bid
+      | _, _ => false
+    unless isCaughtBinding && ctx.unrelatedToCatchBinding targetTy ty' do
+      let diag := diagnosticFromSource target.source
+        s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
+      modify fun s => { s with errors := s.errors.push diag }
   pure (.IsType target' ty', { val := .TBool, source := source })
   termination_by (exprMd, 1)
   decreasing_by
@@ -5255,7 +5388,7 @@ private def collectConstant (map : Std.HashMap Nat ResolvedNode) (c : Constant)
   | none => map
 
 /-- Build the refToDef map by walking the fully-resolved program (Phase 2). -/
-def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
+def buildRefToDef (program : LaurelProgram) : Std.HashMap Nat ResolvedNode :=
   let map : Std.HashMap Nat ResolvedNode := {}
   let map := program.types.foldl collectTypeDefinition map
   let map := program.constants.foldl collectConstant map
@@ -5263,6 +5396,7 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
   -- A coroutine's name resolves to a `coroutineType` (it names a type in
   -- `co: c` and a constructor in `c(args)`); regular procedures resolve to
   -- `staticProcedure`.
+  let map := program.staticFunctions.foldl (collectProcedure · · .staticProcedure) map
   program.staticProcedures.foldl
     (collectProcedure · · (fun p => if p.is_coroutine then .coroutineType p else .staticProcedure p)) map
 
@@ -5348,15 +5482,15 @@ private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
 
 /-- One `Message` per diamond-inherited field access — a field reached via >1
     direct-parent path (see `isDiamondInheritedField`).
-    The total `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
+    The total `mapLaurelProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
     collector, so coverage can't silently regress: every procedure position (body,
     preconditions, decreases, invokeOn, axioms) across static AND instance procedures, and
     every sub-expression (quantifiers, `old`, `as`/`is`, ref-equality).
     Not covered: `constrained`-type constraint/witness and constant initializers —
     non-procedure positions that fail loud as `.strataBug` (no silent accept). Promoting to
     `.userError` needs bound-variable scoping verified first. -/
-private def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List Message :=
-  ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
+private def validateDiamondFieldAccesses (model : SemanticModel) (program : LaurelProgram) : List Message :=
+  ((mapLaurelProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
@@ -5476,7 +5610,7 @@ private def preRegisterDefinitions (types : List TypeDefinition)
 
     Idempotent: a re-resolution (`existingModel`) sees binders that already carry ids and leaves
     them alone, which is also what lets a lifted instance procedure keep its composite's ids. -/
-private def stampTypeParamIds (program : Program) : ResolveM Program := do
+private def stampTypeParamIds (program : LaurelProgram) : ResolveM LaurelProgram := do
   let stamp (tvs : List Identifier) : ResolveM (List Identifier) :=
     tvs.mapM fun tv =>
       match tv.uniqueId with
@@ -5494,12 +5628,13 @@ private def stampTypeParamIds (program : Program) : ResolveM Program := do
       let instProcs ← ct.instanceProcedures.mapM stampProc
       return .Composite { ct with typeArgs := typeArgs, instanceProcedures := instProcs }
     | other => pure other
+  let staticFunctions ← program.staticFunctions.mapM stampProc
   let staticProcs ← program.staticProcedures.mapM stampProc
-  return { program with types := types, staticProcedures := staticProcs }
+  return { program with types := types, staticFunctions, staticProcedures := staticProcs }
 
-private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
+private def preRegisterTopLevel (program : LaurelProgram) : ResolveM Unit :=
   preRegisterDefinitions program.types program.constants program.staticFields
-    program.staticProcedures
+    (program.staticFunctions ++ program.staticProcedures)
 
 /-! ## Exception-escape enforcement
 
@@ -6152,7 +6287,7 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
     computed over all procedures (static plus composite instance procedures) so
     the call-graph analysis matches `HeapParameterization`, which runs after
     instance procedures have been lifted into the static list. -/
-def validateOldUsage (model : SemanticModel) (program : Program) : List Message :=
+def validateOldUsage (model : SemanticModel) (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -6168,7 +6303,7 @@ private structure InitialEffectAnalysis where
   globals : GlobalEffectsByProcId
 
 private def analyzeInitialEffects (model : SemanticModel)
-    (program : Program) : InitialEffectAnalysis :=
+    (program : LaurelProgram) : InitialEffectAnalysis :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -6196,7 +6331,7 @@ private def resolvedNodeName? : ResolvedNode → Option Identifier
 /-- A file-scope global may not take a name in the compiler's namespace — one starting
     with `$` — because generated qualified global references (`$static.g`) are
     re-resolved after constrained-type lowering. -/
-private def validateGlobalNames (program : Program) : List Message :=
+private def validateGlobalNames (program : LaurelProgram) : List Message :=
   let globalErrors := program.staticFields.filterMap fun field =>
     if field.name.text.startsWith "$" then
       some (diagnosticFromSource field.name.source
@@ -6231,7 +6366,7 @@ private def validateGlobalNames (program : Program) : List Message :=
   -- the literal `$heap` that `ModifiesClauses` writes into its frames would bind to the
   -- user's variable instead. Runs only on the initial resolve of user source, so the
   -- synthesized `$heap` parameters added later are unaffected. Pinned by
-  -- GenericCompositeTest's `user_heap_output_rejected`.
+  -- the `$heap` output case in EndToEndTests/Resolution/DollarNamesRejected.
   -- Instance procedures are inspected alongside the static list, as the sibling
   -- validators in this file do: an instance procedure's parameters are just as capable
   -- of colliding with `$heap`.
@@ -6256,7 +6391,7 @@ private def validateGlobalNames (program : Program) : List Message :=
     so it is empty before resolution has stamped any, and it structurally misses
     type parameters, a constrained type's `valueName`, block labels, and binders
     inside a field initializer. -/
-private def declaredNames (program : Program) : List (String × String × FileRange) :=
+def declaredNames (program : LaurelProgram) : List (String × String × FileRange) :=
   let ofId (kind : String) (name : Identifier) := (kind, name.text, name.source)
   -- Binders introduced *inside* an expression. Labels are the one name here that
   -- is a bare `String` rather than an `Identifier` (see `StmtExpr.Block`), so they
@@ -6350,7 +6485,7 @@ private def declaredNames (program : Program) : List (String × String × FileRa
 
     The one exception is `$result` as a procedure's *sole* output; see
     `resultOutputName`. -/
-def validateNoDollarNames (program : Program) : List Message :=
+def validateNoDollarNames (program : LaurelProgram) : List Message :=
   (declaredNames program).filterMap fun (kind, name, source) =>
     if !name.startsWith "$" then none
     else some (diagnosticFromSource source
@@ -6363,12 +6498,12 @@ private def globalEffectIdsFor (effects : Std.HashMap Nat (Std.HashSet Nat))
   | some id => effects.getD id {}
   | none => {}
 
-private def globalReaderIds (program : Program) (analysis : InitialEffectAnalysis)
+private def globalReaderIds (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     : Std.HashSet Nat :=
   program.staticFields.foldl (init := {}) fun ids field =>
     ids.union (globalEffectIdsFor analysis.globals.readers field)
 
-private def globalWriterIds (program : Program) (analysis : InitialEffectAnalysis)
+private def globalWriterIds (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     : Std.HashSet Nat :=
   program.staticFields.foldl (init := {}) fun ids field =>
     ids.union (globalEffectIdsFor analysis.globals.writers field)
@@ -6409,7 +6544,7 @@ private def isGlobalTarget (model : SemanticModel) (target : VariableMd) : Bool 
   | .Field _ _ | .Declare _ => false
 
 
-private def globalDependentIds (program : Program) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
+private def globalDependentIds (program : LaurelProgram) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
   (globalReaderIds program analysis).union (globalWriterIds program analysis)
 
 private def isGlobalUse (model : SemanticModel) (dependentIds : Std.HashSet Nat)
@@ -6429,7 +6564,7 @@ private def firstGlobalUseSource (model : SemanticModel) (dependentIds : Std.Has
 /-- Constrained predicates and witnesses are compiled into helper procedures
     before global lowering; those helpers cannot acquire hidden global state. -/
 private def validateConstrainedTypeGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let errorsIn (expr : StmtExprMd) : List Message :=
     match firstGlobalUseSource model dependentIds expr with
@@ -6444,7 +6579,7 @@ private def validateConstrainedTypeGlobalUse (model : SemanticModel)
 /-- Constants have no procedure context through which global lowering can thread
     hidden state, so any direct or transitive global dependency is unsupported. -/
 private def validateConstantInitializerGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   program.constants.filterMap fun constant => do
     let initializer ← constant.initializer
@@ -6480,11 +6615,11 @@ private def foldRestrictedStmtExprM [Monad m]
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted value
   | .Var (.Field target _) => foldRestrictedStmtExprM f restricted target
-  | .IncrDecr _ _ target => match target with
+  | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
-    match target with
+    match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted rhs
@@ -6770,7 +6905,7 @@ private def oldGlobalErrorsInExpr (model : SemanticModel)
 /-- Reject call shapes that cannot preserve global state and source evaluation
     order during parameterization. -/
 private def validateUnsupportedGlobalCalls (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let writerIds := globalWriterIds program analysis
   let dependentIds := writerIds.union (globalReaderIds program analysis)
   let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
@@ -6796,7 +6931,7 @@ private def validateUnsupportedGlobalCalls (model : SemanticModel)
     whether a postcondition's global denotes a write. Reject that ambiguous
     post-state contract instead of silently lowering it as an input-only read. -/
 private def validateBodilessGlobalPostconditions (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let usesGlobal (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
@@ -6844,7 +6979,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
     file-scope global, or a declaration on a procedure that *has* an
     implementation (where the effects are inferred from its statements, so a
     declaration is either redundant or a lie). -/
-private def validateDeclaredGlobalEffects (program : Program)
+private def validateDeclaredGlobalEffects (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let globalIds : Std.HashSet Nat :=
     program.staticFields.foldl (init := {}) fun ids f =>
@@ -6891,7 +7026,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
       set (some node.source)) expr |>.run none).2
 
 private def validateGlobalInitializers (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   program.staticFields.flatMap fun field =>
     match field.initializer with
@@ -6910,7 +7045,7 @@ private def validateGlobalInitializers (model : SemanticModel)
             MessageKind.userError]
         | none => [])
 
-private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalysis)
+private def entryUsedGlobals (program : LaurelProgram) (analysis : InitialEffectAnalysis)
     (proc : Procedure) : List Field :=
   program.staticFields.filter fun field =>
     containsProcId (globalEffectIdsFor analysis.globals.readers field) proc.name ||
@@ -6934,7 +7069,7 @@ private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
     Covers the complement of `validateEntryContractGlobalUse` below, which reports a
     contract that *names* a global, so each clause yields one diagnostic. -/
 private def validateEntryProcedureContracts (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
@@ -6992,7 +7127,7 @@ private def validateEntryProcedureContracts (model : SemanticModel)
     contractErrors ++ nonWildcardErrors ++ missingWildcardErrors
 
 private def validateEntryContractGlobalUse (model : SemanticModel)
-    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+    (program : LaurelProgram) (analysis : InitialEffectAnalysis) : List Message :=
   let dependentIds := globalDependentIds program analysis
   analysis.allProcs.flatMap fun proc =>
     if !proc.isInterpretEntry then [] else
@@ -7002,7 +7137,7 @@ private def validateEntryContractGlobalUse (model : SemanticModel)
         s!"the contract of entry procedure '{proc.name.text}' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see"
         MessageKind.userError)
 
-private def validateCallsToGlobalEntryProcedures (program : Program)
+private def validateCallsToGlobalEntryProcedures (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let globalEntryIds : Std.HashSet Nat :=
     analysis.allProcs.foldl (init := {}) fun ids proc =>
@@ -7024,7 +7159,7 @@ private def validateCallsToGlobalEntryProcedures (program : Program)
   analysis.allProcs.flatMap fun proc =>
     (entryContractExpressions proc ++ bodyExpressions proc).flatMap errorsIn
 
-private def validateEntryConstrainedGlobalUse (program : Program)
+private def validateEntryConstrainedGlobalUse (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let constrainedNames : Std.HashSet String :=
     program.types.foldl (init := {}) fun names td =>
@@ -7052,7 +7187,7 @@ private def validateEntryConstrainedGlobalUse (program : Program)
     moves them into the static list — the old post-lift `ContractPass` check saw
     them, so scanning static procedures only would miss an instance `invokeOn`
     procedure with an output. -/
-def validateInvokeOnOutputRefs (program : Program) : List Message :=
+def validateInvokeOnOutputRefs (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7080,7 +7215,7 @@ def validateInvokeOnOutputRefs (program : Program) : List Message :=
       at Core translation, so reject it here with a clean user error. Reported
       only for `.Regular` procedures, so legitimate uses inside a coroutine's
       clauses / body (kind `.Coroutine` at initial resolution) are exempt. -/
-def validateCoroutineClauses (program : Program) : List Message :=
+def validateCoroutineClauses (program : LaurelProgram) : List Message :=
   -- `oldGuarantee`/`oldRelies` markers anywhere in a regular procedure's
   -- expressions (body + specs), each pinned to its own source range.
   let oldMarkerErrors (proc : Procedure) : List Message :=
@@ -7191,7 +7326,7 @@ private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
     composite's multi-output `foo`, and no false negative from another
     composite's single-output `foo`. -/
 private def validateMultiOutputCallContexts (model : SemanticModel)
-    (program : Program) : List Message :=
+    (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7245,7 +7380,7 @@ def unannotatedDeclares (n : StmtExprMd) : List Message :=
     silently skip an unannotated declaration. Runs on every resolution, so
     the pipeline's re-resolves after each lowering pass also catch a pass
     that constructs an unannotated declaration. -/
-def validateFullyAnnotated (program : Program) : List Message :=
+def validateFullyAnnotated (program : LaurelProgram) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -7264,12 +7399,12 @@ def validateFullyAnnotated (program : Program) : List Message :=
     c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
   let staticFieldDiags := program.staticFields.flatMap fun f =>
     f.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
-  (program.staticProcedures ++ instanceProcs).flatMap procDiags
+  (program.staticFunctions ++ program.staticProcedures ++ instanceProcs).flatMap procDiags
     ++ typeDiags ++ constantDiags ++ staticFieldDiags
 
 /-- A global-writing `invokeOn` needs an unbound hidden output unless its trigger
     already invokes a writer, which source validation rejects separately. -/
-private def validateInvokeOnGlobalWrites (program : Program)
+private def validateInvokeOnGlobalWrites (program : LaurelProgram)
     (analysis : InitialEffectAnalysis) : List Message :=
   let writerIds := globalWriterIds program analysis
   let invokeOnCallsWriter (proc : Procedure) : Bool := proc.invokeOn.any fun trigger =>
@@ -7285,13 +7420,13 @@ private def validateInvokeOnGlobalWrites (program : Program)
     else none
 
 /-- Run the full resolution pass on a Laurel program. -/
-public def resolve (program : Program) (existingModel: Option SemanticModel := none)
+public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
-  let phase1 : ResolveM Program := do
+  let phase1 : ResolveM LaurelProgram := do
     -- Type-param binders get their ids first, so pre-registration and `scopeTypeParams`
     -- name the same parameter with the same id (see `stampTypeParamIds`).
     let program ← stampTypeParamIds program
@@ -7299,8 +7434,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
     let staticFields' ← program.staticFields.mapM (resolveField "$static")
+    let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
     let staticProcs' ← program.staticProcedures.mapM resolveProcedure
-    return { program with staticProcedures := staticProcs', staticFields := staticFields',
+    return { program with staticFunctions := staticFunctions', staticProcedures := staticProcs',
+                          staticFields := staticFields',
                           types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
@@ -7319,12 +7456,15 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   let heapWritersResult := computeWritesHeap allProcs
   let heapReaders := heapReadersResult.toOption.getD {}
   let heapWriters := heapWritersResult.toOption.getD {}
+  -- Fails exactly when the two above do, and an empty `heapWriters` already builds no frames.
+  let heapAllocators := (computeMayAllocate allProcs).toOption.getD {}
   let semanticModel := {
     compositeCount := program.types.length,
     refToDef := refToDef,
     nextId := finalState.nextId,
     heapReaders := heapReaders
     heapWriters := heapWriters
+    heapAllocators := heapAllocators
     conflictingOverloads := finalState.conflictingOverloads
   }
   let heapAnalysisErrors : Array Message :=
@@ -7436,114 +7576,6 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
 
 -- `resolve` establishes the invariant that every `Declare` in its output is
 -- annotated: see `resolve_fullyAnnotated` in `ResolutionProps.lean`.
-
-/-! ## Resolution for UnorderedCoreWithLaurelTypes -/
-
-/--
-Resolve an `UnorderedCoreWithLaurelTypes` by converting to a flat `Program`,
-running the resolution pass, and reconstructing the result. Returns the
-resolved `UnorderedCoreWithLaurelTypes` and the `SemanticModel`.
-
-`additionalTypes` can supply extra type definitions (e.g. composite types) that
-are not part of the `UnorderedCoreWithLaurelTypes` but are needed for resolving
-`UserDefined` type references. These additional types should not be necessary
-but they are because certain type references have incorrectly not been updated.
--/
-public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
-    (existingModel : Option SemanticModel := none)
-    (additionalTypes : List TypeDefinition := [])
-    (gradualTypes : Std.HashSet String := {})
-    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
-    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
-    (reservedNames : Std.HashSet String := {})
-    : UnorderedCoreWithLaurelTypes × SemanticModel × Array Message :=
-  -- Phase 1: register all top-level names, then resolve references
-  let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
-    preRegisterDefinitions
-      (additionalTypes ++ uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque
-        ++ uc.aliases.map .Alias)
-      uc.constants
-      []
-      (uc.functions ++ uc.coreProcedures)
-
-    -- Build type scopes for additional composite types (for field resolution)
-    for td in additionalTypes do
-      if let .Composite ct := td then
-        let s ← get
-        let mut typeScope : Scope := {}
-        for parent in ct.extending do
-          -- `extending` is `List HighTypeMd`; inherit the parent's field scope by base
-          -- name (`Base<T>` shares `Base`'s fields).
-          match highBaseName? parent.val with
-          | some pname =>
-            match s.typeScopes.get? pname.text with
-            | some parentScope =>
-              for (k, v) in parentScope do
-                typeScope := typeScope.insert k v
-            | none => pure ()
-          | none => pure ()
-        for field in ct.fields do
-          let qualifiedKey := ct.name.text ++ "." ++ field.name.text
-          match s.scope.get? qualifiedKey with
-          | some entry => typeScope := typeScope.insert field.name.text entry
-          | none => pure ()
-        modify fun s => { s with typeScopes := s.typeScopes.insert ct.name.text typeScope }
-
-    -- Resolve datatypes
-    let datatypes' ← uc.datatypes.mapM fun dt => do
-      match ← resolveTypeDefinition (.Datatype dt) with
-      | .Datatype dt' => pure dt'
-      | _ => pure dt -- unreachable
-
-    -- Opaque types carry nothing resolvable but their own name, which
-    -- `preRegisterDefinitions` above has already bound; re-resolve for the uniqueId.
-    let opaqueTypes' ← uc.opaqueTypes.mapM fun ot => do
-      match ← resolveTypeDefinition (.Opaque ot) with
-      | .Opaque ot' => pure ot'
-      | _ => pure ot -- unreachable
-
-    -- Resolve constants
-    let constants' ← uc.constants.mapM resolveConstant
-
-    -- Resolve functions and core procedures
-    let functions' ← uc.functions.mapM resolveProcedure
-    let coreProcedures' ← uc.coreProcedures.mapM resolveProcedure
-
-    return { uc with functions := functions', coreProcedures := coreProcedures',
-                     datatypes := datatypes', opaqueTypes := opaqueTypes',
-                     constants := constants' }
-
-  let nextId := existingModel.elim 1 (fun m => m.nextId)
-  -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
-  -- lattice so consistency/coercion treats them as the dynamic top (e.g. Python `Any`) and
-  -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
-  -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
-  -- differ between passes, producing spurious "resolution introduced this diagnostic".
-  -- Aliases go in too, or `unfoldMap` is empty for them: the name would resolve (registered
-  -- above) but never unfold, so a parameter declared with an alias fails to match the
-  -- primitive it expands to.
-  let typeLattice := { TypeLattice.ofTypes
-      (uc.datatypes.map .Datatype ++ uc.opaqueTypes.map .Opaque ++ uc.aliases.map .Alias
-        ++ additionalTypes) with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
-    reservedNames := reservedNames }
-  let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
-
-  -- Phase 2: build refToDef from the resolved unordered core
-  let program' : Program := {
-    staticProcedures := uc'.functions ++ uc'.coreProcedures,
-    staticFields := [],
-    types := uc'.datatypes.map .Datatype ++ uc'.opaqueTypes.map .Opaque ++ additionalTypes,
-    constants := uc'.constants
-  }
-  let refToDef := buildRefToDef program'
-
-  let model : SemanticModel := {
-    compositeCount := additionalTypes.length,
-    refToDef := refToDef,
-    nextId := finalState.nextId
-  }
-  (uc', model, finalState.errors)
 
 end -- public section
 end Strata.Laurel

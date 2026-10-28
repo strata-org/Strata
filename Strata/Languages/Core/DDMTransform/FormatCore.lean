@@ -367,7 +367,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     else
       pure (.unaryArithInt default (CoreDDM.UnaryArithInt.int_neg default)
         (.natToInt default ⟨default, n.natAbs⟩))
-  | .realConst r =>
+  | .rationalConst r =>
     match StrataDDM.Decimal.fromRat r with
     | some d =>
       if d.mantissa < 0 then
@@ -1152,13 +1152,16 @@ def precondsToSpecElts {M} [Inhabited M]
     pure (SpecElt.requires_spec default labelAnn freeAnn exprCST)
   pure ⟨default, specElts⟩
 
+/-- The type-argument list `<a, b, …>` for `typeArgs`. -/
+def mkTypeArgs {M} [Inhabited M] (typeArgs : List String) : TypeArgs M :=
+  let tvars := typeArgs.map fun tv =>
+    TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
+  TypeArgs.type_args default ⟨default, tvars.toArray⟩
+
 /-- Build a `TypeArgs` annotation from a list of type parameter names. -/
 def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (TypeArgs M)) M :=
   if typeArgs.isEmpty then ⟨default, none⟩
-  else
-    let tvars := typeArgs.map fun tv =>
-      TypeVar.type_var default (⟨default, tv⟩ : Ann String M)
-    ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
+  else ⟨default, some (mkTypeArgs typeArgs)⟩
 
 /-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
     with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices

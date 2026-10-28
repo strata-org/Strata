@@ -117,12 +117,6 @@ theorem Expr.normBool_not_ff_iff_tt (e : Expr) :
 def miniEval : SemanticEval MiniPureExpr :=
   fun _f _σ e => some e.normBool
 
-theorem miniEval_wfBool : WellFormedSemanticEvalBool (P := MiniPureExpr) () := by
-  unfold WellFormedSemanticEvalBool; intro σ e
-  show (_ = some Expr.tt ↔ _ = some Expr.ff) ∧ (_ = some Expr.ff ↔ _ = some Expr.tt)
-  simp only [MiniPureExpr, Option.some.injEq]
-  exact ⟨(Expr.normBool_not_tt_iff_ff e).symm, (Expr.normBool_not_ff_iff_tt e).symm⟩
-
 /-- Empty store: no identifier is defined. -/
 def emptyStore : SemanticStore MiniPureExpr := fun _ => none
 
@@ -164,7 +158,7 @@ theorem progReachesTerminal :
   refine .step _ _ _
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner
-        (StepStmt.step_loop_enter htt miniEval_wfBool))) ?_
+        (StepStmt.step_loop_enter htt))) ?_
   -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
   -- Step 4: descend into the inner seq, then into the body's block,
   --         then through stmts_cons.
@@ -227,7 +221,7 @@ theorem progIteThenReachesTerminal :
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   refine .step _ _ _
     (StepStmt.step_block_body
-      (StepStmt.step_seq_inner (StepStmt.step_ite_true htt miniEval_wfBool))) ?_
+      (StepStmt.step_seq_inner (StepStmt.step_ite_true htt))) ?_
   refine .step _ _ _
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner (StepStmt.step_block_body StepStmt.step_stmts_cons))) ?_
@@ -271,7 +265,7 @@ theorem progIteElseReachesTerminal :
   -- step_ite_false — take the else branch.
   refine .step _ _ _
     (StepStmt.step_block_body
-      (StepStmt.step_seq_inner (StepStmt.step_ite_false hff miniEval_wfBool))) ?rest3
+      (StepStmt.step_seq_inner (StepStmt.step_ite_false hff))) ?rest3
   refine .step _ _ _
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner (StepStmt.step_block_body StepStmt.step_stmts_cons))) ?rest4

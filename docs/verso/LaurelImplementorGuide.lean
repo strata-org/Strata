@@ -34,7 +34,7 @@ def laurelPipelineDocsMarkdown : String :=
   let renderKinds (label : String) (ks : List NodeKind) : List String :=
     if ks.isEmpty then []
     else [s!"  - {label}: " ++ ", ".intercalate (ks.map fun k => s!"`{k}`")]
-  let entries := allPasses.map fun pass =>
+  let entries := laurelPipeline.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
     let decls :=
       renderKinds "Creates" pass.creates
@@ -85,7 +85,7 @@ Every edge is derived from the passes' declared node kinds:\n\n"
   md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
   md := md ++ "```\n"
   let mut idx := 1
-  for pass in allPasses do
+  for pass in laurelPipeline do
     let beforeDeps := (edges.filter (·.1 == pass.name)).map fun e => s!" → {e.2.1}"
     let afterDeps := (edges.filter (·.2.1 == pass.name)).map fun e => s!" ← {e.1}"
     let deps := beforeDeps ++ afterDeps
@@ -232,16 +232,25 @@ leaked it. The same distance applies to the other eliminated constructs.
 
 ## Translation Pipeline
 
-The Laurel to Core translation pipeline uses these IRs:
-- Laurel
-- UnorderedCoreWithLaurelTypes
-- CoreWithLaurelTypes
-- Core
+The Laurel to Core translation pipeline uses three IRs, held by `Program`:
+- `Program.Unordered`, holding a `LaurelProgram`
+- `Program.Ordered (.WithLaurelTypes _)`, holding a `CoreWithLaurelTypes`
+- `Program.Ordered (.Core _)`, holding a `Core.Program`
 
-Most of the passes are in the Laurel IR.
-The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
-The ordering pass goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`.
-And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
+Every pass is a `LaurelPass`, which runs on a `Program`, so the pipeline is a single list of
+passes. Passes built only on the generic traversals (`mapProgramStmtExprM`,
+`mapProgramProceduresM`, `mapProgramHighTypesM`) run on any IR. A pass that needs one IR
+matches on its constructor, declares the other constructors `unsupported`, and reports a
+Strata bug if it is given any other IR.
+
+Most passes run on `Program.Unordered`. The transparency pass splits a `LaurelProgram`'s
+procedures into `staticFunctions` and `staticProcedures`; it `creates`
+`LaurelProgram.staticFunctions.cons`, which the earlier lowering passes declare `unsupported`,
+and the `Pseudo` shapes that the passes after it `remove` before the LaurelToCoreSchemaPass,
+which declares them `unsupported`. The ordering pass goes from `Program.Unordered` to
+`Program.Ordered (.WithLaurelTypes _)`, and the LaurelToCoreSchemaPass from there to
+`Program.Ordered (.Core _)`; each `removes` its input constructor and `creates` its output
+one, so a pass placed where its IR is not live fails the build.
 
 ## Passes
 
@@ -497,11 +506,29 @@ stays an under-approximation: only completions it can prove abrupt count.
 *Escapes from a procedure with no `throws` are assertions, not errors.* The pass emits them where the
 exception would leave the procedure, so they are reported only when reachable: `assert false` for a
 `throw` outside every `try`, `assert Result..isGood(tmp)` for a throwing call outside every `try`, and
-`assert !$thrown` on the re-dispatch edge of an outermost `try`. The last is placed on the edge rather
-than at the original `throw` because the `try` may still intercept the exception — a `catch` guard
-that matches at run time, or a `finally` that completes abruptly. Each assertion is followed by an
-`assume` of the same condition, because a Core assertion is not assumed by later checks and the path
-past a failed one would otherwise report follow-on failures.
+a check on the re-dispatch edge of an outermost `try`. The last is placed on the edge rather than at
+the original `throw` because the `try` may still intercept the exception — a `catch` guard that
+matches at run time, or a `finally` that completes abruptly. It is still reported at the throw site:
+an outermost `try` declares a ghost `$throwSite_<i>`, each `throw` and throwing call inside it sets
+it next to `$thrown := true`, and the edge carries one `assert !($thrown && $throwSite_<i> == k)` per
+site, each with that site's range. Every raising edge records its site through one helper
+(`raiseAt`), so no exception is raised without one. An inner `try` that passes an exception on
+leaves the variable alone, and a nested `try`'s `finally`, which runs inside the outermost one,
+snapshots it with the pending exception. The `assert false` and the call-site assertion are each
+followed by an `assume` of their condition, and the edge's per-site assertions by a single
+`assume !$thrown`, because a Core assertion is not assumed by later checks and the path past a
+failed one would otherwise report follow-on failures. Each is then followed by an exit from the
+procedure, because the Core interpreter ignores `assume`. A `try` with no recorded site keeps a
+single `assert !$thrown` on the edge.
+
+A `catch` guard may test its binding against a type unrelated to the binding's type (the join of
+what the `try` body throws), as a Java multi-catch arm for an unchecked exception does. Resolution
+accepts it there, and the pass lowers the test to `false`. A type that shares a descendant with the
+binding's type (multiple inheritance, `composite D extends A, B`) is not unrelated, so that test is
+still rejected. A clause whose guard is such a test, or a disjunction of them, is dead, and
+resolution discards its body unresolved, so a front end that reads the binding at the arm's type
+(`c as T`) is not rejected for casting between unrelated types there. Any other guard shape — `false`,
+a conjunction — keeps its body resolved.
 
 *Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
 resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or

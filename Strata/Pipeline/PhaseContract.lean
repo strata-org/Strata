@@ -125,28 +125,28 @@ variable {P : Type} [PhaseContract P F]
     known on entry, which is why the head is the phase that receives the input
     program and `nil` is the end of the run. -/
 inductive ValidatedPipeline (P F : Type) [FactVocabulary F] [FactAlgebra F]
-    [PhaseContract P F] : (requires : FactSet F) → Type where
-  | nil {requires : FactSet F} : ValidatedPipeline P F requires
-  | cons {requires : FactSet F} (p : P) (h : PhaseContract.requires p ⊑ requires)
+    [PhaseContract P F] : (pre : FactSet F) → Type where
+  | nil {pre : FactSet F} : ValidatedPipeline P F pre
+  | cons {pre : FactSet F} (p : P) (h : PhaseContract.requires p ⊑ pre)
          (rest : ValidatedPipeline P F
-                   (applyPhase (PhaseContract.establishes p) (PhaseContract.preserves p) requires)) :
-         ValidatedPipeline P F requires
+                   (applyPhase (PhaseContract.establishes p) (PhaseContract.preserves p) pre)) :
+         ValidatedPipeline P F pre
 
 /-- What the pipeline establishes of the program it produces, given that its own
-    `requires` held of the program it was given: the `requires` carried through
+    `pre` held of the program it was given: the `pre` carried through
     `applyPhase` by every phase in turn.
 
-    The same relation to `requires` that a phase's `establishes` has to its own,
+    The same relation to `pre` that a phase's `establishes` has to its `requires`,
     which is why it takes that name. It is derived rather than declared, so there
     is nowhere to state it wrongly. -/
 def ValidatedPipeline.establishes :
-    {requires : FactSet F} → ValidatedPipeline P F requires → FactSet F
-  | requires, .nil => requires
+    {pre : FactSet F} → ValidatedPipeline P F pre → FactSet F
+  | pre, .nil => pre
   | _, .cons _ _ rest => rest.establishes
 
 /-- The phases of this pipeline, in the order they run. -/
 def ValidatedPipeline.phases :
-    {requires : FactSet F} → ValidatedPipeline P F requires → List P
+    {pre : FactSet F} → ValidatedPipeline P F pre → List P
   | _, .nil => []
   | _, .cons p _ rest => p :: rest.phases
 
@@ -318,6 +318,35 @@ def ValidatedPipeline.ofListFromDelivering (σ₀ : FactSet F) (consumer : Strin
 def ValidatedPipeline.ofListDelivering (consumer : String) (needed : FactSet F)
     (phases : List P) : Except String (ValidatedPipeline P F emptyFactSet) :=
   ofListFromDelivering emptyFactSet consumer needed phases
+
+/-- The flag names a command offers for working with phases. The command supplies them
+    because this package's help text refers to them and only the command knows how it
+    spells them. -/
+structure PhaseFlagNames where
+  /-- The flag taking a phase list, `--phases` for the tools in this repository. -/
+  select : String
+  /-- The flag printing each phase's contract, `--display-phase-contracts` for those tools. -/
+  displayContracts : String
+
+def unknownPhaseName (name hint : String) : String :=
+  s!"Unknown phase name '{name}'." ++ (if hint.isEmpty then "" else " " ++ hint)
+
+/-- The help text for choosing phases. `subject` names what runs ("To run the {subject} in the
+    default order"), `contracts` says what the contracts table shows ("what each phase
+    {contracts}"); `extraNames` are listed as available but not in the default order. -/
+def displayPhasesText (flags : PhaseFlagNames) (subject contracts : String)
+    (defaultNames : List String) (extraNames : List String := []) : String :=
+  let names := ",".intercalate defaultNames
+  let base :=
+    s!"To run the {subject} in the default order:\n\n  {flags.select} {names}\n\n"
+      ++ s!"You can change this order. Give it back to {flags.select} with no input file "
+      ++ "and\nStrata reports whether it composes without verifying anything."
+      ++ s!"\nTo see what each phase {contracts}, use {flags.displayContracts}."
+  match extraNames with
+  | [] => base
+  | _ =>
+    base ++ "\n\nAvailable, not in the default order:\n\n"
+      ++ "\n".intercalate (extraNames.map (fun n => s!"  {n}"))
 
 end -- public section
 

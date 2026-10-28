@@ -55,22 +55,22 @@ variable {σ : SortInterp}
 /-- `denoteSort` at the `bool` primitive sort evaluates to `Prop`. -/
 private theorem dsget_bool (sctx) (h) (sdi) :
     (denoteSort sctx (.prim .bool)).get h sdi = Prop := by
-  simp [denoteSort, denotePrimSort]
+  rfl
 
 /-- `denoteSort` at the `int` primitive sort evaluates to `Int`. -/
 private theorem dsget_int (sctx) (h) (sdi) :
     (denoteSort sctx (.prim .int)).get h sdi = Int := by
-  simp [denoteSort, denotePrimSort]
+  rfl
 
 /-- `denoteSort` at the `string` primitive sort evaluates to `String`. -/
 private theorem dsget_str (sctx) (h) (sdi) :
     (denoteSort sctx (.prim .string)).get h sdi = String := by
-  simp [denoteSort, denotePrimSort]
+  rfl
 
 /-- `denoteSort` at the `bitvec n` primitive sort evaluates to `BitVec n`. -/
 private theorem dsget_bv (sctx) {n : Nat} (h) (sdi) :
     (denoteSort sctx (.prim (.bitvec n))).get h sdi = BitVec n := by
-  simp [denoteSort, denotePrimSort]
+  rfl
 
 /- ═══════════════════════════════════════════════════════════════════════════
    The per-`TermType` logical relation
@@ -386,6 +386,8 @@ private theorem ValEquiv_eq_iff {sctx : SortContext} {τ : TermType}
       exact ⟨fun hab => by rw [← hax, ← hby]; exact hab, fun hxy => by rw [hax, hby]; exact hxy⟩
     | real => simp [denoteSort, denotePrimSort] at h
     | regex => simp [denoteSort, denotePrimSort] at h
+termination_by sizeOf τ
+decreasing_by all_goals (try subst_vars) <;> simp_wf <;> omega
 
 /-- **`ValEquiv` is total from both sides** at every denotable sort: every SMT value has a `ValEquiv`-related
     realization and vice versa. -/
@@ -487,9 +489,10 @@ private theorem ValEquiv_cover {sctx : SortContext} (ty : TermType)
         exact Classical.choose_spec (covv1 (a.select (Classical.choose (covk2 kb))))
       · -- Every denote array `x` has a `ValEquiv`-related SMT array, built pointwise over SMT keys.
         intro x
-        refine ⟨⟨fun ka => Classical.choose
-            (covv2 ((cast denoteSortArray_Some x).select (Classical.choose (covk1 ka))))⟩, ?_⟩
-        simp only [ValEquiv]
+        refine ⟨show SmtArray (TermType.denoteTyped σ SmtArrayTheory k)
+              (TermType.denoteTyped σ SmtArrayTheory v) from
+            ⟨fun ka => Classical.choose
+              (covv2 ((cast denoteSortArray_Some x).select (Classical.choose (covk1 ka))))⟩, ?_⟩
         intro ka kb hkab
         have hkb' : ValEquiv sctx k ka (denoteSortArray_isSome_key h) sdi (Classical.choose (covk1 ka)) :=
           Classical.choose_spec (covk1 ka)
@@ -509,6 +512,8 @@ private theorem ValEquiv_cover {sctx : SortContext} (ty : TermType)
       · intro x
         refine ⟨cast (hsort id args h).symm x, ?_⟩
         rw [ValEquiv_constr_heq hne]; exact cast_heq _ _
+termination_by sizeOf ty
+decreasing_by all_goals (try subst_vars) <;> simp_wf <;> omega
 end
 
 /-- Extract the underlying equality from `ValEquiv` at `int`. -/
@@ -539,7 +544,7 @@ private theorem applyUFAux_eq_applyUFValAux {ctx : Context} (tdi : TermDenoteInp
       = applyUFValAux args out h uf (as.map (fun a => ⟨a.ty, a.h, a.res tdi⟩))
           (by rw [List.length_map]; exact hl)
           (fun i hi => by rw [List.getElem_map]; exact has i (by rw [List.length_map] at hi; exact hi))
-  | [], _, _, uf, [], _, _ => by simp only [applyUFAux, applyUFValAux, List.map_nil]
+  | [], _, _, uf, [], _, _ => by simp only [applyUFAux, applyUFValAux, List.map_nil]; rfl
   | arg :: args, out, h, uf, a :: as, hl, has => by
       simp only [applyUFAux, applyUFValAux, List.map_cons]
       exact applyUFAux_eq_applyUFValAux tdi args out (denoteFunSortCons_isSome h).right _ as
@@ -640,7 +645,7 @@ private theorem leftAssoc_two {ctx : Context} {ty : TermType} {h : (denoteSort c
   obtain ⟨ty2, hh2, ft2⟩ := r2
   unfold leftAssoc
   dsimp only
-  rw [dif_pos h1, dif_pos h2]
+  rw [dite_eq_left h1, dite_eq_left h2]
   rfl
 
 /-- Unfolding lemma for `denoteTerm` on `and`, exposing the bind + `leftAssoc`. -/
@@ -661,7 +666,7 @@ private theorem chainable_two {ctx : Context} {ty : TermType} {h : (denoteSort c
   obtain ⟨ty2, hh2, ft2⟩ := r2
   unfold chainable chainable.go
   dsimp only
-  rw [dif_pos h1, dif_pos h2]
+  rw [dite_eq_left h1, dite_eq_left h2]
   rfl
 
 /-- Unfolding lemma for `denoteTerm` on `eq` (given the two args denote to `r1`, `r2`), exposing
@@ -689,7 +694,7 @@ private theorem rightAssoc_two {ctx : Context} {ty : TermType} {h : (denoteSort 
   obtain ⟨ty2, hh2, ft2⟩ := r2
   unfold rightAssoc rightAssoc.go
   dsimp only
-  rw [dif_pos h2, dif_pos h1]
+  rw [dite_eq_left h2, dite_eq_left h1]
   rfl
 
 /-- Unfolding lemma for `denoteTerm` on `implies`, exposing the bind + `rightAssoc`. -/
@@ -936,7 +941,7 @@ private theorem buildForall_agree {tyctx : TypedContext}
         · intro i hi hfind
           match i, hi, hfind with
           | 0, _, _ =>
-            simpa only [List.getElem_cons_zero, dif_pos] using hax
+            simpa only [List.getElem_cons_zero, dite_eq_left] using hax
           | j + 1, hi, hfind =>
             have hjlt : j < tdi.tΓ.vs.length := by
               simp only [List.length_cons] at hi; omega
@@ -953,7 +958,7 @@ private theorem buildForall_agree {tyctx : TypedContext}
                 have hkj : k = j := by omega
                 have hne : tdi.tΓ.vs[j].var ≠ v0 := by
                   intro h; apply hb; rw [h]; simp
-                rw [dif_neg hne]
+                rw [dite_eq_right hne]
                 exact hEnv.hvar j hjlt (hkj ▸ hk)
         · -- huf: `EnvCorr.huf` is value-level (depends on `tdi` only via `⟨tdi.sΓ,tdi.hsΓ⟩` and
           --   `tdi.tΓ.ufs`, both definitionally equal for the `bindForallVar`-extended input),
@@ -1010,7 +1015,7 @@ private theorem buildExists_agree {tyctx : TypedContext}
         · intro i hi hfind
           match i, hi, hfind with
           | 0, _, _ =>
-            simpa only [List.getElem_cons_zero, dif_pos] using hax
+            simpa only [List.getElem_cons_zero, dite_eq_left] using hax
           | j + 1, hi, hfind =>
             have hjlt : j < tdi.tΓ.vs.length := by
               simp only [List.length_cons] at hi; omega
@@ -1027,7 +1032,7 @@ private theorem buildExists_agree {tyctx : TypedContext}
                 have hkj : k = j := by omega
                 have hne : tdi.tΓ.vs[j].var ≠ v0 := by
                   intro h; apply hb; rw [h]; simp
-                rw [dif_neg hne]
+                rw [dite_eq_right hne]
                 exact hEnv.hvar j hjlt (hkj ▸ hk)
         · exact hEnv.huf
       case hbiff' =>
@@ -1263,7 +1268,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .bool, ah1, af1⟩, ⟨.prim .bool, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_and, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .bool) _ (fun _ => And)
+                @leftAssoc_two ctx (.prim .bool) rfl (fun _ => And)
                   ⟨.prim .bool, ah1, af1⟩ ⟨.prim .bool, ah2, af2⟩ rfl rfl,
                 Option.some.injEq] at hden
               subst hden
@@ -1305,7 +1310,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .bool, ah1, af1⟩, ⟨.prim .bool, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_or, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .bool) _ (fun _ => Or)
+                @leftAssoc_two ctx (.prim .bool) rfl (fun _ => Or)
                   ⟨.prim .bool, ah1, af1⟩ ⟨.prim .bool, ah2, af2⟩ rfl rfl,
                 Option.some.injEq] at hden
               subst hden
@@ -1387,7 +1392,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                 obtain ⟨ety, ehp, efp⟩ := re
                 cases htyt; cases htye
                 dsimp only at hrelt hrele
-                simp only [denoteTerm, hdc, hdt, hde, bind, Option.bind, dif_pos, Option.pure_def,
+                simp only [denoteTerm, hdc, hdt, hde, bind, Option.bind, dite_eq_left, Option.pure_def,
                   Option.some.injEq] at hden
                 subst hden
                 refine ⟨rfl, ?_⟩
@@ -1396,12 +1401,12 @@ theorem Term.denoteTyped_denoteTerm_agree
                     = true) ↔ cfp tdi := ValEquiv_bool_elim (HEq.refl _) hrelc
                 cases hsc : Term.denoteTyped ufInterp env (fun _ => 0) id c .bool (Term.typeCheck_ite_inv htc).1 with
                 | true =>
-                  simp only [cond_true]
-                  rw [if_pos (hrelc'.mp hsc)]
+                  simp only [Bool.cond_true]
+                  rw [ite_eq_left (hrelc'.mp hsc)]
                   exact hrelt
                 | false =>
-                  simp only [cond_false]
-                  rw [if_neg (fun hcfp => by simp [hrelc'.mpr hcfp] at hsc)]
+                  simp only [Bool.cond_false]
+                  rw [ite_eq_right (c := cfp tdi) (fun hcfp => by simp [hrelc'.mpr hcfp] at hsc)]
                   exact hrele
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1429,7 +1434,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .bool, ah1, af1⟩, ⟨.prim .bool, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_implies, hdts, Option.bind_some,
-                @rightAssoc_two ctx (.prim .bool) _ (fun _ p q => p → q)
+                @rightAssoc_two ctx (.prim .bool) rfl (fun _ p q => p → q)
                   ⟨.prim .bool, ah1, af1⟩ ⟨.prim .bool, ah2, af2⟩ rfl rfl,
                 Option.some.injEq] at hden
               subst hden
@@ -1504,7 +1509,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_add, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .int) _ (fun _ => @HAdd.hAdd Int Int Int _)
+                @leftAssoc_two ctx (.prim .int) rfl (fun _ => @HAdd.hAdd Int Int Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1538,7 +1543,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_sub, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .int) _ (fun _ => @HSub.hSub Int Int Int _)
+                @leftAssoc_two ctx (.prim .int) rfl (fun _ => @HSub.hSub Int Int Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1572,7 +1577,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_mul, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .int) _ (fun _ => @HMul.hMul Int Int Int _)
+                @leftAssoc_two ctx (.prim .int) rfl (fun _ => @HMul.hMul Int Int Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1606,14 +1611,18 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_div, hdts, Option.bind_some,
-                @leftAssoc_two ctx (.prim .int) _ (fun _ => @HDiv.hDiv Int Int Int _)
+                @leftAssoc_two ctx (.prim .int) rfl (fun _ => @HDiv.hDiv Int Int Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
               apply ValEquiv_int_mk
               rw [Term.denoteTyped_div ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq]
               simp only [ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
-              split <;> simp_all
+              split
+              · rename_i hz
+                have h2 : @Eq Int (af2 tdi) 0 := (ValEquiv_int_get hrel2).symm.trans hz
+                simp only [h2]; exact (Int.ediv_zero _).symm
+              · simp_all
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1646,7 +1655,11 @@ theorem Term.denoteTyped_denoteTerm_agree
               apply ValEquiv_int_mk
               rw [Term.denoteTyped_mod ufInterp env (fun _ => 0) id t1 t2 rty .int htc, cast_eq]
               simp only [ValEquiv_int_get hrel1, ValEquiv_int_get hrel2]
-              split <;> simp_all
+              split
+              · rename_i hz
+                have h2 : @Eq Int (af2 tdi) 0 := (ValEquiv_int_get hrel2).symm.trans hz
+                simp only [h2]; exact (Int.emod_zero _).symm
+              · simp_all
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | _ :: _ :: _ :: _, htc => simp only [Term.typeCheck, reduceCtorEq] at htc
@@ -1675,7 +1688,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_le, hdts, Option.bind_some,
-                @chainable_two ctx (.prim .int) _ (fun _ => @LE.le Int _)
+                @chainable_two ctx (.prim .int) rfl (fun _ => @LE.le Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1714,7 +1727,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_lt, hdts, Option.bind_some,
-                @chainable_two ctx (.prim .int) _ (fun _ => @LT.lt Int _)
+                @chainable_two ctx (.prim .int) rfl (fun _ => @LT.lt Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1753,7 +1766,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_ge, hdts, Option.bind_some,
-                @chainable_two ctx (.prim .int) _ (fun _ => @GE.ge Int _)
+                @chainable_two ctx (.prim .int) rfl (fun _ => @GE.ge Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1792,7 +1805,7 @@ theorem Term.denoteTyped_denoteTerm_agree
                   = some [⟨.prim .int, ah1, af1⟩, ⟨.prim .int, ah2, af2⟩] := by
                 rw [denoteTerms_cons, hd1, denoteTerms_cons, hd2]; rfl
               rw [denoteTerm_gt, hdts, Option.bind_some,
-                @chainable_two ctx (.prim .int) _ (fun _ => @GT.gt Int _)
+                @chainable_two ctx (.prim .int) rfl (fun _ => @GT.gt Int _)
                   ⟨.prim .int, ah1, af1⟩ ⟨.prim .int, ah2, af2⟩ rfl rfl, Option.some.injEq] at hden
               subst hden
               refine ⟨rfl, ?_⟩
@@ -1876,25 +1889,21 @@ theorem Term.denoteTyped_denoteTerm_agree
                   and_self, ↓reduceDIte, Option.some.injEq] at hden
                 subst hden
                 refine ⟨(Term.typeCheck_store_inv htc).2.2.2.2.2.2, ?_⟩
-                rw [Term.denoteTyped_store ufInterp env (fun _ => 0) id xt it et rty τ htc,
-                  denoteTyped_eqRec_eq_cast]
-                simp only [cast_cast, cast_eq]
                 -- Array extensional relation: relate `store.select` on both sides, casing on the key.
                 simp only [ValEquiv, cast_eqRec_self]
                 intro ka kb hkab
+                rw [Term.denoteTyped_store_select]
                 have hcond : (ka = Term.denoteTyped ufInterp env (fun _ => 0) id it
                     (Term.typeCheck_store_inv htc).1 (Term.typeCheck_store_inv htc).2.2.2.1)
                     ↔ (kb = iff' tdi) := ValEquiv_eq_iff hEnv.hsort hkab hrel_i
                 by_cases hc : ka = Term.denoteTyped ufInterp env (fun _ => 0) id it
                     (Term.typeCheck_store_inv htc).1 (Term.typeCheck_store_inv htc).2.2.2.1
                 · -- queried key IS the stored key on both sides
-                  rw [hc, @SmtArray.select_store_self _ _ (Classical.typeDecidableEq _),
-                      hcond.mp hc, @SmtArray.select_store_self _ _ (Classical.typeDecidableEq _)]
+                  rw [ite_eq_left hc, hcond.mp hc, @SmtArray.select_store_self _ _ (Classical.typeDecidableEq _)]
                   exact hrel_e
                 · -- queried key differs: both reduce to the underlying array
-                  rw [@SmtArray.select_store_of_ne _ _ (Classical.typeDecidableEq _) _ _ _ _ hc,
-                      @SmtArray.select_store_of_ne _ _ (Classical.typeDecidableEq _) _ _ _ _
-                        (fun heq => hc (hcond.mpr heq))]
+                  rw [ite_eq_right hc, @SmtArray.select_store_of_ne _ _ (Classical.typeDecidableEq _) _ _ _ _
+                      (fun heq => hc (hcond.mpr heq))]
                   exact hrel_x ka kb hkab
         | [], htc => simp only [Term.typeCheck, reduceCtorEq] at htc
         | [_], htc => simp only [Term.typeCheck, reduceCtorEq] at htc

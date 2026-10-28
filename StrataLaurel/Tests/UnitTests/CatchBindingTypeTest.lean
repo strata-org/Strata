@@ -56,7 +56,7 @@ private def catchBindingTypes (proc : Procedure) : List String :=
     `$`-prefixed prelude wrapper; resolving a bare snippet would report each as
     undefined and bury the type being pinned. -/
 private def report (src : String) : IO Unit := do
-  let parsed ← (Strata.parseLaurelText "<catch-binding-type-test>" src : IO Program)
+  let parsed ← (Strata.parseLaurelText "<catch-binding-type-test>" src : IO LaurelProgram)
   let resolved := resolve (withBuiltins parsed)
   for p in resolved.program.staticProcedures do
     let tys := catchBindingTypes p
@@ -115,10 +115,11 @@ procedure demo() returns (r: bool) opaque {
 #guard_msgs in
 #eval report primitiveFromLocal
 
-/-! ## The composite path is unchanged
+/-! ## The composite path
 
-The hierarchy walk is the case that always worked; it is pinned here so a change to
-the join cannot fix the primitive case by breaking this one. -/
+A set of composites joins at its least common ancestor through the `extending` graph.
+Pinned here so a change to the join cannot fix one kind of thrown type by breaking
+this one. -/
 
 /-- Two thrown composites join at their least common ancestor, not at either leaf. -/
 private def compositeLub := r"
@@ -238,5 +239,113 @@ procedure demo() returns (r: int) opaque {
 warning: the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present -/
 #guard_msgs in
 #eval report nothingThrown
+
+/-! ## A type variable is a type, not a deferral
+
+`T` is the procedure's own bound parameter, so a `try` whose body throws only `T` binds
+at `T`. It is deliberately NOT set aside for `MonomorphizeComposites` to resolve later:
+monomorphization specializes a program, it does not decide what the program means, and
+cloning is driven by generic composites, so a `g<T>(x: T) throws (e: T)` is never cloned
+at all. -/
+
+/-- A poly callee throwing its own `T`, and nothing else: the binding is that `T`. -/
+private def polyOnly := r"
+procedure g<T>(x: T) returns (r: int) throws (e: T) opaque { throw x };
+procedure u() returns (r: int) opaque {
+  try { r := g(5) } catch c { r := 1 }
+};
+"
+
+/-- info: u: T -/
+#guard_msgs in
+#eval report polyOnly
+
+/-- A `T` alongside a concrete thrown type has no join: pre-monomorphization `T` could be
+    instantiated at anything, so no single binding type is known to receive both. Binding
+    at the concrete one would accept a handler declared `Err` that holds a `T` value.
+
+    Two errors, for one problem. The backstop re-derives its join from
+    `exceptionEscapes`, which DOES set a type-variable type aside, so it sees only `Err`,
+    concludes a type was available and reports as well. Reconciling the two means making
+    `exceptionEscapes` keep type variables too, which changes what the escape check sees;
+    the no-common-ancestor error is the actionable one of the pair. -/
+private def polyAndConcrete := r"
+composite Err {}
+procedure g<T>(x: T) returns (r: int) throws (e: T) opaque { throw x };
+procedure risky() returns (r: int) throws (e: Err) opaque { r := 0 };
+procedure u() returns (r: int) opaque {
+  var er: Err := new Err;
+  try { r := g(er); r := risky() } catch c { r := 1 }
+};
+"
+
+/-- info: u: Unknown
+userError: the exception types thrown in this `try` block (T, Err) have no common ancestor; a `catch` binding needs a single least-common-ancestor type
+userError: the `catch` binding of this `try` was left untyped, but the body throws an exception of type 'Err': the clause(s) would be discarded and that exception would go uncaught. This is a gap in Strata's exception-type inference, not an error in this program — binding the thrown value to a local with an explicit type annotation and throwing that (e.g. `var t: Err := …; throw t`) works around it. -/
+#guard_msgs in
+#eval report polyAndConcrete
+
+/-! ## A rethrow of the catch binding
+
+A handler sees its own binding, so `catch c { throw c }` contributes the binding's type to
+an enclosing `try`. -/
+
+/-- The outer binding is typed from the inner handler's rethrow. -/
+private def rethrowBinding := r"
+procedure u() returns (r: int) opaque {
+  try { try { throw 7 } catch c { throw c } } catch d { r := d };
+  r := 0
+};
+"
+
+/-- info: u: int, int -/
+#guard_msgs in
+#eval report rethrowBinding
+
+/-! ## A rethrow inside a clause whose guard can never hold
+
+A guarded clause that provably never runs contributes nothing outward, mirroring
+`Check.tryCatch`, which discards such a body unresolved. Both directions are pinned,
+because the skip is only sound when it is exactly as narrow as that pass's: skipping
+too much loses a live rethrow and leaves the enclosing binding untyped, skipping too
+little carries a type outward that no execution can produce. -/
+
+/-- The inner clause guards on `Unrelated`, which an `A` can never be, so its
+    `throw c` is dead and `A` must not reach the outer `try` — where it would meet
+    the `bool` thrown after the inner `try` and report a spurious "no common
+    ancestor". The outer binding is the `bool` that is genuinely thrown. -/
+private def deadGuardRethrow := r"
+composite A {}
+composite Unrelated {}
+procedure u() returns (r: int) opaque {
+  try {
+    try { throw new A } catch c when c is Unrelated { throw c } catch c3 { r := 1 };
+    throw true
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: bool, A, A -/
+#guard_msgs in
+#eval report deadGuardRethrow
+
+/-- The contrast: a guard that CAN hold leaves the rethrow live, so the binding type
+    still travels outward and types the enclosing `catch`. Only a guard proved
+    impossible by `TypeLattice.unrelatedToCatchBinding` is skipped. -/
+private def liveGuardRethrow := r"
+composite Err {}
+composite Sub extends Err {}
+procedure u() returns (r: int) opaque {
+  try {
+    try { throw new Sub } catch c when c is Sub { throw c } catch c2 { r := 1 }
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: Sub, Sub, Sub -/
+#guard_msgs in
+#eval report liveGuardRethrow
 
 end Strata.Laurel

@@ -830,7 +830,7 @@ def B3CST.ChoiceBranches.mem [Inhabited M] (stmt: B3CST.Statement M) (bs: B3CST.
   | .choiceAtom _ (.choice_branch _ s) => stmt = s
   | .choicePush _ branches (.choice_branch _ s) => stmt = s ∨ B3CST.ChoiceBranches.mem stmt branches
 
-def choiceBranchesToList_mem [Inhabited M] {stmt: B3CST.Statement M} {bs: B3CST.ChoiceBranches M} :
+theorem choiceBranchesToList_mem [Inhabited M] {stmt: B3CST.Statement M} {bs: B3CST.ChoiceBranches M} :
     B3CST.ChoiceBranches.mem stmt bs ↔ stmt ∈ choiceBranchesToList bs :=
   match bs with
   | .choiceAtom _ (.choice_branch _ s) => by simp
@@ -838,7 +838,7 @@ def choiceBranchesToList_mem [Inhabited M] {stmt: B3CST.Statement M} {bs: B3CST.
     have H := @choiceBranchesToList_mem _ _ stmt branches
     simp; grind
 
-def B3CST.ChoiceBranches.mem_sizeOf [Inhabited M] {stmt: B3CST.Statement M}
+theorem B3CST.ChoiceBranches.mem_sizeOf [Inhabited M] {stmt: B3CST.Statement M}
 {bs: B3CST.ChoiceBranches M} (h: B3CST.ChoiceBranches.mem stmt bs) :
 SizeOf.sizeOf stmt < SizeOf.sizeOf bs :=
   match hbs: bs with

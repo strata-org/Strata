@@ -8,7 +8,7 @@ module
 import Strata.DL.Imperative.CallAwareSemantics
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.Languages.Core.StatementSemanticsProps
-import all Strata.DL.Imperative.StmtCallSemantics
+import all Strata.DL.Imperative.StmtCFGCallSemantics
 import all Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.Procedure
 import all Strata.Util.ListMap
@@ -83,8 +83,9 @@ private theorem callCmd_sem (fac : Expression.Factory)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
-    hbody ⟨[], .read_none, .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd, callTrace, trueEvent, MetaData.empty]
+    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
+  simpa [Calls.defaultAssertEvents, ListMap.toList, callee, callCmd, callTrace, trueEvent,
+    MetaData.empty]
     using h
 
 /-- The same call step, derived through Core's abbreviations: `CoreBodyExecE.structured`
@@ -99,8 +100,9 @@ private theorem callCmd_semCore
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
-    hbody ⟨[], .read_none, .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd, callTrace, trueEvent, MetaData.empty]
+    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
+  simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, callee, callCmd,
+    callTrace, trueEvent, MetaData.empty]
     using h
 
 /-- A one-block CFG whose block `"entry"` runs `callCmd` and then finishes. -/
@@ -112,8 +114,9 @@ private def callCFG : CFG String (DetBlock String Command Expression) :=
     failure flag are unchanged and the trace is the call's pre / body / post events. -/
 example (fac : Expression.Factory) (σ : CoreStore)
     (f : Bool) :
-    StepCFGExtStarE calleeEnv fac callCFG
-      (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock callCFG "entry" ⟨σ, fac, f⟩) (callTrace fac)
+      (.terminal ⟨σ, fac, f⟩) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
   .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_sem fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)
@@ -121,8 +124,9 @@ example (fac : Expression.Factory) (σ : CoreStore)
 /-- The same CFG run derived through Core's abbreviations, with the call step from
     `callCmd_semCore`. -/
 example (fac : Expression.Factory) (σ : CoreStore) (f : Bool) :
-    StepCFGExtStarE calleeEnv fac callCFG
-      (.atBlock "entry" σ f) (callTrace fac) (.terminal σ f) :=
+    StepCFGExtStarE calleeEnv
+      (.atBlock callCFG "entry" ⟨σ, fac, f⟩) (callTrace fac)
+      (.terminal ⟨σ, fac, f⟩) :=
   .step _ [] _ (callTrace fac) _ (.fetch rfl) <|
   .step _ (callTrace fac) _ [] _ (.step_cmd (callCmd_semCore fac σ)) <|
   .step _ [] _ [] _ .finish (.refl _)

@@ -32,7 +32,7 @@ test:
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-
 Positive test: the rely's `old` is per-yield, so it correctly
@@ -40,7 +40,7 @@ preserves the *current* heap value across each env step — even when
 the body changes that value between yields.
 -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -70,7 +70,7 @@ procedure entry and yield 1. Under per-yield semantics:
 If `old` were procedure-entry, yield 2 would also fail.
 -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -101,7 +101,7 @@ Confirms `$h_yield_prev` tracks the *most recent* yield, not any
 earlier one.
 -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

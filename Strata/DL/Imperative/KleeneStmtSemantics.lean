@@ -52,12 +52,7 @@ section
 
 variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
-/-- A single execution step for non-deterministic (Kleene) statements. The
-expression evaluator reads the immutable factory from the active
-configuration's environment (`ρ.factory`), mirroring `StepStmt`.  Every step
-preserves the environment factory (control-flow steps copy it through
-`{ ρ with store := … }`, and leaving a block projects only the store), so no
-explicit factory relation parameter is needed. -/
+/-- A single execution step for non-deterministic (Kleene) statements. -/
 inductive StepKleene
   (EvalCmd : EvalCmdParam P CmdT) :
   KleeneConfig P CmdT → KleeneConfig P CmdT → Prop where

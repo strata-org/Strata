@@ -7,6 +7,8 @@ module
 
 public import Strata.Transform.Specification
 public import Strata.DL.Imperative.Logic.HoareTemplate
+public import Strata.DL.Imperative.Logic.TraceRelations
+import Strata.DL.Imperative.Logic.TraceRelationsProps
 import Strata.DL.Imperative.Logic.TerminationProps
 
 /-! # Bridges between the Hoare logic and the soundness specification
@@ -26,25 +28,37 @@ must-termination, the converse also fails: a partial-correctness triple does not
 constrain intermediate prefixes of executions that never reach a terminal or
 exiting configuration.
 
-## Connection between `Hoare.Triple` and `OverapproximatesTraces`
+## Connection between `Hoare.TripleWith` and `OverapproximatesTracesUptoWhen`
 
-`Strata.Logic.Hoare.Triple` is `EventLang`-generic, so a triple proved about the
-*target* of a translation transports back to the source along a trace
-overapproximation:
+`Strata.Logic.Hoare.TripleWith` is `EventLang`-generic, so a triple proved about
+the target of a translation transports back to the source along a trace
+overapproximation. The general transport supports an arbitrary trace relation
+`Rtrace` and output-state relation `Rout`:
 
-- `overapproximatesTraces_triple` — a trace overapproximation
-  (`OverapproximatesTraces` at trace-relation equality) preserves
-  `Hoare.Triple`.
-- `overapproximatesTracesWhen_triple` — the same for
-  `OverapproximatesTracesWhen`, under a precondition on the source statement.
+- `overapproximatesTracesUptoWhen_triple_general` transports a `TripleWith` across
+  `OverapproximatesTracesUptoWhen Rtrace (· = ·) Rout`. It requires target-trace
+  validity to reflect to the source trace, source-trace reachability to transfer
+  to the target trace, and the target postcondition to transport backward across
+  `Rout`.
 
-Both are instantiated with the trace relation fixed to `(· = ·)`. Because both
-the output-environment relation and the trace relation are equality, the
-terminal/exiting simulation hands back the *same* environment and the *same*
-trace it was given; substituting those equal witnesses turns the source run into
-a target run over identical data, which the target triple discharges directly.
-Assertion validity and the reachability-guarded postcondition then hold for the
-source verbatim — there is nothing to re-derive about the trace.
+The all-equality special cases are preserved as corollaries, where the three
+compatibility assumptions hold trivially (equal witnesses substitute):
+
+- `overapproximatesTraces_triple` — `OverapproximatesTraces` at trace-relation
+  equality preserves `Hoare.TripleWith`.
+- `overapproximatesTracesWhen_triple` — the same for `OverapproximatesTracesWhen`,
+  under a precondition on the source statement.
+
+## Specialization to `TraceStuttersEnv`
+
+`overapproximatesTracesUptoWhen_triple_stuttersEnv` instantiates the general
+theorem at `Rtrace := TraceStuttersEnv allowedVarName allowedFactory`. Because
+target-only bindings may change a captured condition's meaning, the
+specialization requires both `ConditionInterp.StableUnderExtendsEnv` for paired
+events and `ConditionInterp.TrueStutterHolds allowedFactory` for events
+inserted or removed by stuttering. The trace relation carries the factory restriction only
+for conditions that actually stutter, so an interpretation tied to one factory
+need not interpret operational truth under unrelated factories.
 -/
 
 public section
@@ -100,60 +114,111 @@ theorem triple_implies_assertValidOnTracesWhen
 
 namespace Transform
 
-variable {P : PureExpr} [HasBool P]
+variable {P : PureExpr}
 
-/-- If `T` overapproximates traces (up to trace equality) and an event-trace
-    Hoare triple holds on `T(st)` in `L₂`, then the triple holds on `st` in `L₁`.
+/-- **General trace-overapproximation transport for `TripleWith`.**  Transports
+    an event-trace Hoare triple from the target `L₂` back to the source `L₁`
+    across an `OverapproximatesTracesUptoWhen` with an *arbitrary* trace relation
+    `Rtrace` and output-state relation `Rout`.  The input relation is fixed to
+    equality, so source and target share the initial environment and precondition.
 
-    The terminal/exiting trace simulations return the same environment and trace
-    witnesses (both relations are `(· = ·)`), so substituting them recovers a
-    target run over identical data for the target triple to discharge. -/
-theorem overapproximatesTraces_triple (L₁ L₂ : EventLang P (Event P))
-    (T : L₁.StmtT → Option L₂.StmtT)
+    The terminal and exiting simulations may return a related target trace and
+    final environment. The compatibility premises connect those witnesses to
+    assertion validity, reachability, and the postcondition. -/
+theorem overapproximatesTracesUptoWhen_triple_general
+    (L₁ L₂ : EventLang P (Event P)) (I : ConditionInterp P)
+    (Rtrace : Relation (Trace P)) (Rout : Relation (Env P))
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
-    (hsem : OverapproximatesTraces (· = ·) L₁ L₂ T params₁ params₂)
+    (hsem : OverapproximatesTracesUptoWhen Rtrace (· = ·) Rout
+      L₁ L₂ T pre params₁ params₂)
     {Pre Post : Env P → Prop}
-    (htriple : Strata.Logic.Hoare.Triple L₂ params₂ Pre s' Post) :
-    Strata.Logic.Hoare.Triple L₁ params₁ Pre st Post := by
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post)
+    (hsource_pre : pre st)
+    (hvalid_reflect : ∀ sourceTr targetTr, Rtrace sourceTr targetTr →
+      Trace.AssertionsValid P I targetTr → Trace.AssertionsValid P I sourceTr)
+    (hreach_transfer : ∀ sourceTr targetTr, Rtrace sourceTr targetTr →
+      Trace.Reachable P I sourceTr → Trace.Reachable P I targetTr)
+    (hpost_transport : ∀ ρ' ρ'', Rout ρ' ρ'' → Post ρ'' → Post ρ') :
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
-  have hr := hsem st s' ht trivial ρ₀ ρ₀ rfl hinit
-  refine htriple ρ₀ ρ' trace hpre hr.2.2.2 ?_
+  have hr := hsem st s' ht hsource_pre ρ₀ ρ₀ rfl hinit
   rcases hrun with hterm | ⟨label, hexit⟩
-  · obtain ⟨ρ'', trace', hrun', hρeq, htreq⟩ := hr.2.1 ρ' trace hterm
-    subst hρeq; subst htreq
-    exact .inl hrun'
-  · obtain ⟨ρ'', trace', hrun', hρeq, htreq⟩ := hr.2.2.1 label ρ' trace hexit
-    subst hρeq; subst htreq
-    exact .inr ⟨label, hrun'⟩
+  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.1 ρ' trace hterm
+    have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inl hrun')
+    exact ⟨hvalid_reflect trace trace' htr hres.1,
+      fun hreach => hpost_transport ρ' ρ'' hout
+        (hres.2 (hreach_transfer trace trace' htr hreach))⟩
+  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.2.1 label ρ' trace hexit
+    have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inr ⟨label, hrun'⟩)
+    exact ⟨hvalid_reflect trace trace' htr hres.1,
+      fun hreach => hpost_transport ρ' ρ'' hout
+        (hres.2 (hreach_transfer trace trace' htr hreach))⟩
 
-/-- Precondition-bearing corollary: if `T` overapproximates traces when `pre`
-    holds and `pre st` is satisfied, then an event-trace Hoare triple on `T(st)`
-    in `L₂` lifts to one on `st` in `L₁`.
-
-    Generalizes `overapproximatesTraces_triple` to a nontrivial precondition (recover
-    the latter with `pre := fun _ => True` and `hsource_pre := trivial`).  The
-    transport is identical: equal environment and trace witnesses from the
-    terminal/exiting simulations feed the target triple unchanged. -/
+/-- Precondition-bearing equality corollary: if `T` overapproximates traces when
+    `pre` holds (trace relation equality) and `pre st` holds, then an event-trace
+    Hoare triple on `T(st)` in `L₂` lifts to one on `st` in `L₁`. -/
 theorem overapproximatesTracesWhen_triple (L₁ L₂ : EventLang P (Event P))
+    (I : ConditionInterp P)
     (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
     (hsem : OverapproximatesTracesWhen (· = ·) L₁ L₂ T pre params₁ params₂)
     {Pre Post : Env P → Prop}
-    (htriple : Strata.Logic.Hoare.Triple L₂ params₂ Pre s' Post)
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post)
     (hsource_pre : pre st) :
-    Strata.Logic.Hoare.Triple L₁ params₁ Pre st Post := by
-  intro ρ₀ ρ' trace hpre hinit hrun
-  have hr := hsem st s' ht hsource_pre ρ₀ ρ₀ rfl hinit
-  refine htriple ρ₀ ρ' trace hpre hr.2.2.2 ?_
-  rcases hrun with hterm | ⟨label, hexit⟩
-  · obtain ⟨ρ'', trace', hrun', hρeq, htreq⟩ := hr.2.1 ρ' trace hterm
-    subst hρeq; subst htreq
-    exact .inl hrun'
-  · obtain ⟨ρ'', trace', hrun', hρeq, htreq⟩ := hr.2.2.1 label ρ' trace hexit
-    subst hρeq; subst htreq
-    exact .inr ⟨label, hrun'⟩
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
+  refine overapproximatesTracesUptoWhen_triple_general L₁ L₂ I
+    (· = ·) (· = ·) T pre params₁ params₂ st s' ht hsem htriple hsource_pre
+    ?_ ?_ ?_
+  · intro _ _ h hv; subst h; exact hv
+  · intro _ _ h hr; subst h; exact hr
+  · intro _ _ h hp; subst h; exact hp
+
+/-- If `T` overapproximates traces up to trace equality, a `TripleWith` on the
+    translated statement transports back to the source statement. -/
+theorem overapproximatesTraces_triple (L₁ L₂ : EventLang P (Event P))
+    (I : ConditionInterp P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
+    (hsem : OverapproximatesTraces (· = ·) L₁ L₂ T params₁ params₂)
+    {Pre Post : Env P → Prop}
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post) :
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post :=
+  overapproximatesTracesWhen_triple L₁ L₂ I T (fun _ => True) params₁ params₂
+    st s' ht hsem htriple trivial
+
+/-- Specialization of trace-overapproximation transport to `TraceStuttersEnv`.
+    `allowedFactory` records which captured factories may stutter. Stability
+    handles paired events, while `htrue` handles true events under those
+    factories that are inserted or removed by stuttering. -/
+theorem overapproximatesTracesUptoWhen_triple_stuttersEnv [HasBool P]
+    (L₁ L₂ : EventLang P (Event P)) (I : ConditionInterp P)
+    (allowedVarName : P.Ident → Prop) (allowedFactory : P.Factory → Prop)
+    (Rout : Relation (Env P))
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
+    (hsem : OverapproximatesTracesUptoWhen
+      (TraceStuttersEnv allowedVarName allowedFactory) (· = ·) Rout
+      L₁ L₂ T pre params₁ params₂)
+    {Pre Post : Env P → Prop}
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre s' Post)
+    (hsource_pre : pre st)
+    (hstable : I.StableUnderExtendsEnv allowedVarName)
+    (htrue : I.TrueStutterHolds allowedFactory)
+    (hpost_transport : ∀ ρ' ρ'', Rout ρ' ρ'' → Post ρ'' → Post ρ') :
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post :=
+  overapproximatesTracesUptoWhen_triple_general L₁ L₂ I
+    (TraceStuttersEnv allowedVarName allowedFactory) Rout T pre params₁ params₂ st s' ht hsem
+    htriple hsource_pre
+    (fun _ _ hrel hv =>
+      TraceStuttersEnv.assertionsValid_reflect hstable htrue hrel hv)
+    (fun _ _ hrel hr =>
+      TraceStuttersEnv.reachable_transfer hstable htrue hrel hr)
+    hpost_transport
 
 end Transform
 

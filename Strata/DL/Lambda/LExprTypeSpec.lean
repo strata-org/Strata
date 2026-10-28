@@ -15,6 +15,7 @@ public import Strata.DL.Lambda.LTyUnifyProps
 import all Strata.DL.Lambda.LTyUnifyProps
 import all Strata.Util.HMap
 import all Strata.Util.HMaps
+import Strata.Util.HMapsProps
 import all Strata.DL.Lambda.Identifiers
 import all Strata.DL.Util.Func
 import all Strata.Util.ListMap
@@ -120,7 +121,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
   context. -/
   | treal_const : ∀ Γ m r,
             C.knownTypes.containsName "real" →
-            HasType C Γ (.realConst m r) (.forAll [] .real)
+            HasType C Γ (.rationalConst m r) (.forAll [] .real)
 
   /-- A string constant has type `.string` if `string` is a known type in this
   context. -/
@@ -1542,7 +1543,7 @@ private theorem generated_name_fresh (k : Nat) (state : TState)
 private theorem isFutureGenVar_of_tyPrefix (n : Nat) (state : TState)
     (hn : n ≥ state.tyGen) :
     TState.isFutureGenVar state (TState.tyPrefix ++ toString n) = true := by
-  simp only [TState.isFutureGenVar, TState.tyPrefix]
+  simp only [TState.isFutureGenVar]
   rw [String.toList_append, isPrefixOf_append_self]
   simp only [ite_true]
   rw [List.drop_left, listCharToNat?_roundtrip]
@@ -1975,37 +1976,6 @@ theorem liftGenEnv_tyGen_mono
 case analysis goes through a value-membership lemma. -/
 
 omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-/-- A value found in `addInNewest ms (single x t)` is either a value of `ms`
-    or the newly added `t`. -/
-private theorem mem_values_addInNewest_single
-    (ms : HMaps (Identifier T.IDMeta) LTy) (x : Identifier T.IDMeta) (t : LTy) (w : LTy)
-    (h : w ∈ (ms.addInNewest (HMap.single x t)).values) :
-    w ∈ ms.values ∨ w = t := by
-  cases ms with
-  | nil =>
-    simp only [HMaps.addInNewest, HMaps.values, List.append_nil] at h
-    exact Or.inr ((HMap.mem_values_single_iff x t w).mp h)
-  | cons scope rest =>
-    rw [HMaps.addInNewest_cons] at h
-    simp only [HMaps.values, List.mem_append] at h
-    rcases h with h_union | h_rest
-    · rw [HMap.mem_values_iff_find?] at h_union
-      obtain ⟨k, hk⟩ := h_union
-      rw [HMap.find?_union] at hk
-      cases hs : scope.find? k with
-      | some v =>
-        rw [hs] at hk; simp only [Option.some_or, Option.some.injEq] at hk
-        rw [← hk]
-        exact Or.inl (by
-          simp only [HMaps.values, List.mem_append]
-          exact Or.inl (HMap.find?_mem_values scope hs))
-      | none =>
-        rw [hs] at hk; simp only [Option.none_or] at hk
-        exact Or.inr ((HMap.mem_values_single_iff x t w).mp (HMap.find?_mem_values _ hk))
-    · exact Or.inl (by
-        simp only [HMaps.values, List.mem_append]; exact Or.inr h_rest)
-
-omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Backward direction: vars in knownTypeVars after addInNewest come from
     the old context or from the new type's freeVars. -/
 private theorem knownTypeVars_addInNewestContext_cases
@@ -2015,7 +1985,7 @@ private theorem knownTypeVars_addInNewestContext_cases
   simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
     TContext.knownTypeVars, List.mem_flatMap] at h ⊢
   obtain ⟨w, h_w_mem, h_v_fv⟩ := h
-  rcases mem_values_addInNewest_single _ xv ty w h_w_mem with h_old | h_eq
+  rcases HMaps.mem_values_addInNewest_single _ xv ty w h_w_mem with h_old | h_eq
   · exact Or.inl ⟨w, h_old, h_v_fv⟩
   · subst h_eq; exact Or.inr h_v_fv
 
@@ -5485,7 +5455,7 @@ theorem resolveAux_HasType :
       cases c with
       | boolConst b => exact HasType.tbool_const _ _ _ h_known
       | intConst i => exact HasType.tint_const _ _ _ h_known
-      | realConst r => exact HasType.treal_const _ _ _ h_known
+      | rationalConst r => exact HasType.treal_const _ _ _ h_known
       | strConst s => exact HasType.tstr_const _ _ _ h_known
       | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
   case h_op =>
@@ -6221,7 +6191,7 @@ theorem resolve_HasType_core :
   simp only [Bind.bind, Except.bind] at h
   cases h_empty : Env.context.types.isEmpty with
   | true =>
-    simp only [h_empty, if_true] at h
+    simp only [h_empty, ite_true] at h
     elim_err h
     rename_i v h_aux
     obtain ⟨et, Env_r⟩ := v
@@ -6300,7 +6270,7 @@ theorem resolve_HasType_core :
     have h_result := HasType_transfer_empty_scope C Env.context.aliases e _ h_ht'
     rw [h_ctx_empty]; exact h_result
   | false =>
-    rw [if_neg (by simp [h_empty])] at h
+    rw [ite_eq_right (by simp [h_empty])] at h
     elim_err h
     rename_i v h_aux
     obtain ⟨et, Env_r⟩ := v
@@ -6337,7 +6307,7 @@ theorem resolve_preserves_context
     cases ht : Env.context.types with
     | nil => exact absurd ht h_ne
     | cons _ _ => simp [HMaps.isEmpty]
-  rw [if_neg (by simp [h_ne'])] at h
+  rw [ite_eq_right (by simp [h_ne'])] at h
   elim_err h
   rename_i v h_aux
   obtain ⟨et, Env_r⟩ := v
@@ -6375,7 +6345,7 @@ theorem resolve_HasType :
     simp only [Bind.bind, Except.bind] at h
     cases h_empty : Env.context.types.isEmpty with
     | true =>
-      simp only [h_empty, if_true] at h
+      simp only [h_empty, ite_true] at h
       elim_err h
       rename_i v h_aux
       obtain ⟨et, Env_r⟩ := v
@@ -6425,7 +6395,7 @@ theorem resolve_HasType :
         exact ctx_closed_of_check Env_r h_check'
       exact ⟨h_check', h_all_fresh'⟩
     | false =>
-      rw [if_neg (by simp [h_empty])] at h
+      rw [ite_eq_right (by simp [h_empty])] at h
       elim_err h
       rename_i v h_aux
       obtain ⟨et, Env_r⟩ := v

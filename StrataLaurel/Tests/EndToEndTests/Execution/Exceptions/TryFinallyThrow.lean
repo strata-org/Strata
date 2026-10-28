@@ -32,17 +32,13 @@ Exceptions are constructed *before* the `try` (a `new` inside a `try` body hits 
 known lifting-pass gap), and all throws are direct so the verifier knows each
 value's runtime type and can discharge the `is`-guards precisely.
 
-Every case has an `entry` and runs under the verifier and the Laurel interpreter. A
-case whose callee allocates skips the Core interpreter, which does not reduce an
-assertion over the heap such a callee leaves behind.
-Where a construct can be exercised without the heap it is run both ways instead; see
-`TryCatchThrow.lean`.
+Every case has an `entry`, and runs under the verifier and both interpreters unless its
+block says why not.
 -/
 
 -- `finally` runs on both the normal (no-throw) and the caught-exception paths.
 -- `doThrow` is a symbolic input, so the verifier checks both.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -152,8 +148,7 @@ procedure runAll() entry opaque {
 -- `finally` also runs on a `return` from inside a `catch` handler (the
 -- two-label case): the caught `throw` runs the handler, whose `return` unwinds
 -- through `finally` (`r := 5`) before leaving the procedure.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -180,8 +175,7 @@ procedure runAll() entry opaque modifies * {
 
 -- A `return` from a `catch` handler runs both the inner and outer `finally`
 -- arms (nested), so `log` ends at 3.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -216,8 +210,7 @@ procedure runAll() entry opaque modifies * {
 -- `throws MyError` — it provably never lets an exception escape (`throwsOn false`)
 -- and returns the value set before the `try`. Without the supersede the stale
 -- `$thrown` would build a `Bad` result and violate `throwsOn false`.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -254,8 +247,7 @@ procedure runAll() entry opaque modifies * {
 -- completion when the `finally` arm definitely completes abruptly; without that it
 -- reports "may throw 'MyError', which is not a subtype of its declared `throws` type
 -- 'Other'" here and rejects this legal program.)
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -293,8 +285,7 @@ procedure runAll() entry opaque modifies * {
 -- outer `catch` (y := 1); execution then continues past the outer `try` (y := 3).
 -- Without the supersede the stale `$returning` would exit the procedure early
 -- (returning y == 1), violating `ensures y == 3`.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -412,8 +403,7 @@ procedure runAll() entry opaque {
 -- An `exit` out of a `catch` handler also runs the `finally` (the two-label case,
 -- mirroring `returnInCatchRunsFinally`): the caught `throw` runs the handler,
 -- whose `exit` unwinds through `finally` (r := 5) before leaving the block.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -446,8 +436,7 @@ procedure runAll() entry opaque modifies * {
 -- `throw`, so the procedure completes normally past the labeled block and needs
 -- no `throws` clause — the escape check agrees, because an `exit` that *leaves*
 -- the `finally` arm counts as definite abrupt completion there.
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}
@@ -476,8 +465,7 @@ procedure runAll() entry opaque modifies * {
 -- An `exit` in a `finally` arm whose target is *inside* that arm is an ordinary
 -- jump: it does not complete the arm abruptly, so a pending `throw` survives it
 -- and still propagates to the enclosing handler (y == 1).
--- No Core interpreter: a callee that allocates without `modifies *` leaves the heap symbolic, so an assert "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite MyError {}

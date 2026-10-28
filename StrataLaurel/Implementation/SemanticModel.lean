@@ -156,6 +156,8 @@ structure SemanticModel where
   heapReaders: Std.HashSet Nat := {}
   /-- Procedures that (transitively) write the heap, keyed by `uniqueId`. See `heapReaders`. -/
   heapWriters: Std.HashSet Nat := {}
+  /-- Procedures that may (transitively) allocate, keyed by `uniqueId`. See `heapReaders`. -/
+  heapAllocators: Std.HashSet Nat := {}
   /-- UniqueIds of static procedures whose registration was rejected as a
       duplicate (conflicting signature with an existing overload). These must
       not be renamed by `UniqueOverloadNames`. -/

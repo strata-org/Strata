@@ -39,7 +39,7 @@ private def rewriteCallNode (renames : Std.HashMap Nat Identifier)
       else expr
   | _ => expr
 
-private def uniqueOverloadNames (program : Program) (model : SemanticModel) : Program :=
+private def uniqueOverloadNames (program : LaurelProgram) (model : SemanticModel) : LaurelProgram :=
   -- A name is overloaded when more than one static procedure declares it.
   let nameCounts : Std.HashMap String Nat :=
     program.staticProcedures.foldl (init := {}) fun acc p =>
@@ -68,14 +68,17 @@ private def uniqueOverloadNames (program : Program) (model : SemanticModel) : Pr
 
   -- Rewrite call sites everywhere expressions can appear (procedure bodies and
   -- contracts, constrained-type constraint/witness, constant initializers).
-  mapProgramStmtExpr (rewriteCallNode renames overloadedNames)
+  mapLaurelProgramStmtExpr (rewriteCallNode renames overloadedNames)
     { program with staticProcedures := renamedProcs }
 
-public def uniqueOverloadNamesPass : LoweringPass where
+public def uniqueOverloadNamesPass : LaurelPass := .onUnordered {
   name := "UniqueOverloadNames"
   removes := [NodeKind.Pseudo.overload]
+  -- An operator applied only to holes selects its overload once `InferHoleTypes` has typed
+  -- them and `EliminateDeterministicHoles` re-resolved; renamed earlier, it stays `$ovFail$$neg`.
+  unsupported := [NodeKind.LaurelProgram.staticFunctions.cons, NodeKind.StmtExpr.Hole.type.none]
   documentation := "Renames overloaded static procedures to unique names so downstream name-keyed passes don't see collisions."
-  needsResolves := true
-  run := fun _ p model => (uniqueOverloadNames p model, [], {})
+  needsResolves := true }
+  fun _ p model => (uniqueOverloadNames p model, [], {})
 
 end Strata.Laurel

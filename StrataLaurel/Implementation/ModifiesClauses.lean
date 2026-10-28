@@ -42,8 +42,10 @@ where notModified($obj, $fld) conjoins, per entry:
 - `!(select(s, $obj))`        Set `s`
 - `!($obj == o && $fld == f)` field `(o, f)`
 
-Under array theory with only individual refs, callers assume a quantifier-free
-(enumerated) frame and the body re-checks the pointwise frame at every exit.
+Under array theory, for a procedure that names only individual refs and cannot
+allocate, callers assume a quantifier-free (enumerated) frame and the body
+re-checks the pointwise frame at every exit. Excluding procedures that may
+allocate is temporary; see `LaurelTranslateOptions.enumeratedModifiesClauses`.
 -/
 
 namespace Strata.Laurel
@@ -180,6 +182,13 @@ never built.
 def hasHeapOut (model : SemanticModel) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any model.heapWriters.contains
 
+/-- Whether `proc` may create objects. The enumerated frame says that every row the
+clause does not name is unchanged, including the rows of objects created during the
+call, which the quantified frame leaves free. So the quantified frame implies the
+enumerated one only for a procedure that cannot allocate. -/
+def mayAllocate (model : SemanticModel) (proc : Procedure) : Bool :=
+  proc.name.uniqueId.all model.heapAllocators.contains
+
 /-- Build and attach `proc`'s frame conditions, then clear the clauses.
 
 This pass knows nothing about exceptions. Each `ModifiesGroup` lowers on its own:
@@ -197,12 +206,14 @@ The enumerated-frame optimization (quantifier-free caller view) applies to
 guarded and unguarded groups alike, with both halves of the split under the
 group's guard: the body still checks `guard ==> quantified frame` and callers
 assume `guard ==> enumerated frame`, which is sound because the quantified
-frame implies the enumerated one pointwise and the shared guard preserves the
-implication (a vacuous guard makes both halves trivial, not unsound). This
-keeps a lowered throwing procedure's normal frame — guarded on its result —
-as cheap for callers as a non-throwing procedure's. -/
+frame implies the enumerated one for a procedure that cannot allocate (see
+`mayAllocate`) and the shared guard preserves the implication (a vacuous guard
+makes both halves trivial, not unsound). This keeps a lowered throwing
+procedure's normal frame — guarded on its result — as cheap for callers as a
+non-throwing procedure's. -/
 def transformModifiesClauses (model: SemanticModel)
-    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
+    (proc : Procedure) (useEnumeratedFrame : Bool) (executing : Bool := false) :
+    Except (Array Message) Procedure :=
   match proc.body with
   | .Opaque postconds impl modifiesGroups =>
       let src := proc.name.source
@@ -212,8 +223,10 @@ def transformModifiesClauses (model: SemanticModel)
         match guard? with
         | some g => mkMd (.StaticCall (mkId Operation.Implies.procName) [g, c] []) src
         | none => c
-      if !(hasHeapOut model proc) then
-        -- No heap to frame over; the groups are moot.
+      -- The groups are moot with no heap to frame over, and under concrete execution: the
+      -- run executes callee bodies rather than assuming their frames, and checking a frame
+      -- at the exit would halt it, since the frame's quantifier does not reduce.
+      if executing || !(hasHeapOut model proc) then
         .ok { proc with body := .Opaque postconds impl [] }
       else
         let framePosts : List Condition := modifiesGroups.flatMap fun g =>
@@ -221,7 +234,7 @@ def transformModifiesClauses (model: SemanticModel)
           else
             let entries := extractModifiesEntries model g.targets
             let summary := g.summary.getD "modifies clause"
-            if useEnumeratedFrame && onlyIndividualRefs entries then
+            if useEnumeratedFrame && onlyIndividualRefs entries && !mayAllocate model proc then
               -- Callers assume the quantifier-free frame (assume-only); the body
               -- checks the pointwise frame (assert-only) at every exit, so the
               -- quantified frame is verified but never exposed to callers. A
@@ -253,9 +266,10 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List Message :=
+def modifiesClausesTransform (model: SemanticModel) (program : LaurelProgram)
+    (useEnumeratedFrame : Bool) (executing : Bool := false) : LaurelProgram × List Message :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
-    match transformModifiesClauses model proc useEnumeratedFrame with
+    match transformModifiesClauses model proc useEnumeratedFrame executing with
     | .ok proc' => (acc ++ [proc'], errs)
     | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
   ) ([], [])
@@ -264,7 +278,7 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnum
 end -- public section
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
-public def modifiesClausesTransformPass : LoweringPass where
+public def modifiesClausesTransformPass : LaurelPass := .onUnordered {
   name := "ModifiesClausesTransform"
   creates := [
       NodeKind.Body.postconditions.cons,
@@ -276,12 +290,16 @@ public def modifiesClausesTransformPass : LoweringPass where
       -- Emitting one after the rename would name a wrapper that no longer exists.
       NodeKind.Pseudo.overload
     ]
-  unsupported := [NodeKind.Pseudo.implicitHeap]
+  unsupported := [
+      NodeKind.Pseudo.implicitHeap,
+      NodeKind.LaurelProgram.staticFunctions.cons
+    ]
   removes := [NodeKind.Body.modifies.cons, NodeKind.Procedure.throwsOn.cons]
   documentation := "Translate modifies clauses into frame conditions on the contract."
-  needsResolves := true
-  run := fun options p m =>
+  needsResolves := true }
+  fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
+      (executing := options.analysisMode matches .Execute)
     (p', diags, {})
 
 end Strata.Laurel

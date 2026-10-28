@@ -633,7 +633,7 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 
 // Lambda abstraction
 fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
-  "fun " d " => " body:3;
+  @[prec(4)] "fun " d " => " body:3;
 
 // "have" binding: `have x : T = v in body`. Syntactic sugar for a lambda
 // application `(fun x : T => body) v`; `x` is in scope only in `body`. The
@@ -647,16 +647,20 @@ fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =
   "(" f ")" "(" x ")";
 
 // Quantifiers without triggers
+// A quantifier's body extends as far as possible, so a quantifier has the
+// precedence of `<==>`, the loosest operator its body admits: it is printed in
+// parentheses as an operand, as in `(forall x :: p) ==> q`, while a nested
+// quantifier `forall x :: forall y :: p` needs none. `fun` is the same.
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "forall " d " :: " b:3;
+  @[prec(4)] "forall " d " :: " b:3;
 fn exists (d : DeclList, @[scope(d)] b : bool) : bool =>
-  "exists " d " :: " b:3;
+  @[prec(4)] "exists " d " :: " b:3;
 
 // Quantifiers with triggers
 fn forallT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "forall " d " :: " triggers indent(2, b:3);
+  @[prec(4)] "forall " d " :: " triggers indent(2, b:3);
 fn existsT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
-  "exists " d " :: " triggers indent(2, b:3);
+  @[prec(4)] "exists " d " :: " triggers indent(2, b:3);
 
 // ═══════════════════════════════════════════════════════════════════
 // STATEMENTS
@@ -874,6 +878,37 @@ op typeDecl_statement (annots : Option MetadataAnn, name : Ident, args : Option 
 
 op command_axiom (annots : Option MetadataAnn, label : Option Label, e : bool) : Command =>
   annots:0 "axiom " label e ";\n";
+
+// The name of a declaration followed by a parameter list, which unlike `Label`
+// is not followed by a colon.
+category DeclLabel;
+op declLabel (l : Ident) : DeclLabel => "[" l "] ";
+
+// `axiom [name] (x : T, ...) { triggers }: e;` stands for
+// `axiom [name]: forall x : T, ... :: { triggers } e;`.
+op command_axiom_params (annots : Option MetadataAnn, label : Option DeclLabel,
+                         params : DeclList,
+                         @[scope(params)] triggers : Option Triggers,
+                         @[scope(params)] e : bool) : Command =>
+  annots:0 "axiom " label "(" params ")" triggers ": " e ";\n";
+
+// A lemma is a proposition that must be proved, written like an axiom.
+op command_lemma (annots : Option MetadataAnn, label : Option Label, e : bool) : Command =>
+  annots:0 "lemma " label e ";\n";
+
+// Unlike an axiom, a lemma may take type parameters, written as for a procedure.
+op command_lemma_params (annots : Option MetadataAnn, label : Option DeclLabel,
+                         typeArgs : Option TypeArgs,
+                         @[scope(typeArgs)] params : DeclList,
+                         @[scope(params)] triggers : Option Triggers,
+                         @[scope(params)] e : bool) : Command =>
+  annots:0 "lemma " label typeArgs "(" params ")" triggers ": " e ";\n";
+
+// A lemma with type parameters and no parameter list, `lemma [name] <a>: e;`.
+op command_lemma_targs (annots : Option MetadataAnn, label : Option DeclLabel,
+                        typeArgs : TypeArgs,
+                        @[scope(typeArgs)] e : bool) : Command =>
+  annots:0 "lemma " label typeArgs ": " e ";\n";
 
 op command_distinct (annots : Option MetadataAnn, label : Option Label, exprs : CommaSepBy Expr) : Command =>
   annots:0 "distinct " label "[" exprs "]" ";\n";

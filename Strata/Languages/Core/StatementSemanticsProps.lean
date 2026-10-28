@@ -74,6 +74,8 @@ frames, beyond the remaining `updatedStates`/`InitVars`/`HavocVars` plumbing:
   failure-flag closure is a separate mutual inductive, so results over the
   generic closure transfer only through these theorems. `CoreStepStarE` directly
   reuses the generic `ReflTransTrace` closure.
+- `stmt_run_to_singleton_runE` / `singleton_run_to_stmt_runE`: a run of a
+  statement and a run of the one-element list holding it emit the same traces.
 -/
 
 namespace Core
@@ -148,7 +150,7 @@ theorem CoreBodyExecE.structured
     {emitted : Trace Expression}
     (h : CoreStepStarE π
       (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
-    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := ⟨h⟩
+    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
 
 /-- Base-command step of Core's event contract relation. -/
 theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
@@ -502,7 +504,7 @@ caller result store. -/
 theorem CallExitUniqueResult {fac : Expression.Factory} {σ : CoreStore}
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ₁ σ₂ : CoreStore} :
     CallExit fac σ p callArgs σEnd σ₁ → CallExit fac σ p callArgs σEnd σ₂ → σ₁ = σ₂ := by
-  rintro ⟨outputs₁, hRead₁, hUpdate₁⟩ ⟨outputs₂, hRead₂, hUpdate₂⟩
+  rintro ⟨_, outputs₁, hRead₁, hUpdate₁⟩ ⟨_, outputs₂, hRead₂, hUpdate₂⟩
   have hOutputs : outputs₁ = outputs₂ := ReadValuesInjective hRead₁ hRead₂
   subst outputs₂
   exact (UpdateStatesUpdated hUpdate₁).trans (UpdateStatesUpdated hUpdate₂).symm
@@ -512,7 +514,7 @@ theorem CallExit.store_eq_of_getLhs_nil {fac : Expression.Factory} {σ : CoreSto
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ' : CoreStore}
     (hLhs : CallArg.getLhs callArgs = [])
     (h : CallExit fac σ p callArgs σEnd σ') : σ' = σ := by
-  obtain ⟨outputs, _, hUpdate⟩ := h
+  obtain ⟨_, outputs, _, hUpdate⟩ := h
   rw [hLhs] at hUpdate
   cases hUpdate
   rfl
@@ -1723,7 +1725,7 @@ theorem InitVarsDefined :
     apply ih <;> assumption
 
 /-- Variables introduced by `InitVars` can be read back as values when the
-    resulting store contains only canonical bindings. -/
+    resulting store contains only value bindings. -/
 theorem InitVarsReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P} {ks : List P.Ident} :
   WellFormedStore σ' f →
@@ -2088,8 +2090,8 @@ private theorem invStoresExcept_projectStore_of_update
     refine invStoresExcept_singleton_of_agree_off (fun y hy => ?_)
     unfold Imperative.projectStore
     by_cases hs : (σ y).isSome
-    · rw [if_pos hs]; exact (hother y hy).symm
-    · rw [if_neg hs]; exact Option.not_isSome_iff_eq_none.mp hs
+    · rw [ite_eq_left hs]; exact (hother y hy).symm
+    · rw [ite_eq_right hs]; exact Option.not_isSome_iff_eq_none.mp hs
 
 /-- **A one-`set` structured body respects the write set `[x]`.** Every completed
 event run of `{ x := e }` from `σ_entry` leaves a procedure-exit store that agrees
@@ -2435,7 +2437,7 @@ theorem evalCommand_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
 /-- Event-trace analogue of `evalCommand_preserves_none_of_not_def`: an
@@ -2453,7 +2455,7 @@ theorem evalCommandE_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
 /-- An `EvalCommand` step never undefines a store slot. -/
@@ -2467,7 +2469,7 @@ theorem evalCommand_preserves_isSome
   | cmd_sem h => exact EvalCmd_preserves_isSome h h_some
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
 /-- An `EvalCommand` step leaves a store that holds only values. -/
@@ -2484,7 +2486,7 @@ theorem evalCommand_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
-    obtain ⟨_, hread, hupd⟩ := hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv
 
@@ -2622,7 +2624,7 @@ theorem evalCommandE_preserves_isSome
   | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
 /-- An `EvalCommandE` step preserves the property that every store binding is
@@ -2639,7 +2641,7 @@ theorem evalCommandE_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, hread, hupd⟩ := hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv
 
@@ -2942,6 +2944,41 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := b
 
 theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
   exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
+
+
+/-! ## A statement and the one-element list holding it -/
+
+section SingletonRuns
+
+variable {π : String → Option Procedure}
+
+/-- A run of a statement is a run of the one-element list holding it, with the
+    same trace. -/
+theorem stmt_run_to_singleton_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmt s ρ) tr cfg) :
+    CoreStepStarE π (.stmts [s] ρ) tr (.seq cfg []) := by
+  have hcons : CoreStepE π (.stmts [s] ρ) [] (.seq (.stmt s ρ) []) :=
+    .step_admin .step_stmts_cons
+  simpa using ReflTransTrace.step _ _ _ _ _ hcons
+    (Imperative.seq_inner_starE _ (ss := []) h)
+
+/-- Every trace of the one-element list holding a statement is a trace of the
+    statement itself. -/
+theorem singleton_run_to_stmt_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmts [s] ρ) tr cfg) :
+    ∃ cfg', CoreStepStarE π (.stmt s ρ) tr cfg' := by
+  rcases Imperative.stmts_cons_headE _ h with ⟨_, rfl⟩ | h
+  · exact ⟨_, .refl _⟩
+  · rcases Imperative.seq_run_decomposeE _ h with
+      ⟨inner', _, hi⟩ | ⟨ρ₁, tr₁, tr₂, rfl, h1, h2⟩ | ⟨_, _, _, hi⟩
+    · exact ⟨_, hi⟩
+    · obtain ⟨rfl, _⟩ := Imperative.stmts_nil_runE _ h2
+      exact ⟨_, by simpa using h1⟩
+    · exact ⟨_, hi⟩
+
+end SingletonRuns
 
 end Core
 

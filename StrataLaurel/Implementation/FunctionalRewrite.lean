@@ -6,7 +6,7 @@
 module
 
 public import StrataLaurel.Implementation.LaurelPass
-public import StrataLaurel.Implementation.UnorderedCore
+public import StrataLaurel.Implementation.CoreWithLaurelTypes
 import StrataLaurel.Implementation.TransparencyPass
 import StrataLaurel.Implementation.LaurelTypes
 import StrataLaurel.Implementation.EliminateReturnStatements
@@ -409,11 +409,10 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     the *same* value for every input, which lets a caller prove more than "arbitrary" —
     see the module docstring.
 
-    `typeArgs` carries the enclosing function's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: in a polymorphic function (`f<T>(x : T)`) the
-    mirrored inputs and the declared type mention `T`, so the generated hole must bind
-    `T` too, or `T` is a free type variable at Core and the program fails to type-check.
-    Empty for a monomorphic function.
+    `typeArgs` carries the enclosing function's type parameters: in a polymorphic
+    function (`f<T>(x : T)`) the mirrored inputs and the declared type mention `T`, so
+    the generated hole must bind `T` too, or `T` is a free type variable at Core and the
+    program fails to type-check. Empty for a monomorphic function.
 
     The body is `.Opaque [] none []`, which the Core schema translation turns into a
     function with no body, i.e. an uninterpreted one. That is the already-eliminated
@@ -791,26 +790,25 @@ private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure)
         s!"a transparent body with {outputs.length} output parameters is not supported; it must have at most one"])
   | _ => (proc, [], [])
 
-private def functionalRewrite (uc : UnorderedCoreWithLaurelTypes) (model : SemanticModel)
-    : UnorderedCoreWithLaurelTypes × List Message :=
-  -- Every entry of `functions` is produced by the transparency pass's
+private def functionalRewrite (uc : LaurelProgram) (model : SemanticModel)
+    : LaurelProgram × List Message :=
+  -- Every entry of `staticFunctions` is produced by the transparency pass's
   -- `mkFunctionCopy`, so all of them are functions and need rewriting.
-  let results := uc.functions.map (rewriteFunctionBody model)
+  let results := uc.staticFunctions.map (rewriteFunctionBody model)
   -- The generated hole functions are uninterpreted, so they need no rewriting of
   -- their own and simply join the program alongside the rewritten bodies.
   let holes := results.flatMap (·.2.1)
-  ({ uc with functions := holes ++ results.map (·.1) }, results.flatMap (·.2.2))
+  ({ uc with staticFunctions := holes ++ results.map (·.1) }, results.flatMap (·.2.2))
 
-public def functionalRewritePass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+public def functionalRewritePass : LaurelPass := .onUnordered {
   name := "FunctionalRewritePass"
+  creates := [NodeKind.Pseudo.letExpr]
+  removes := [NodeKind.Pseudo.imperativeFunction]
   documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter, an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and the output parameter — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to an input parameter, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
-  -- Operates on the unordered-core functions, so it cannot run on a Laurel program;
-  -- TransparencyPass is what leaves that representation behind.
-  unsupported := [NodeKind.Pseudo.laurelProgram]
   -- The rewrite introduces declarations and strips their ids, so resolution must
   -- run afterwards to mint fresh, unique ones.
-  needsResolves := true
-  run := fun _ uc model =>
+  needsResolves := true }
+  fun _ uc model =>
     let (uc', diags) := functionalRewrite uc model
     (uc', diags, {})
 

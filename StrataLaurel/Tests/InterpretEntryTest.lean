@@ -40,11 +40,11 @@ private def markedEntryNames (core : Core.Program) : List String :=
         the marker (not a by-name `__main__`/`main` lookup) drove selection.
       * one line per entry: `ok` or the runtime error (e.g. a failed `assert`).
     Contracts run as runtime assertions, matching the interpret command. -/
-private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
+private def runMarkedEntries (laurel : Laurel.LaurelProgram) (fuel : Nat := 10000) :
     IO Unit := do
-  let core ← match ← Strata.laurelToCore laurel with
-    | .ok core => pure core
-    | .error e => IO.println s!"translation failed: {e}"; return
+  let core ← match ← Laurel.translate { analysisMode := .Execute } laurel with
+    | (some core, _) => pure core
+    | (none, diags) => IO.println s!"translation failed: {diags.map (·.message)}"; return
   let core ← match Core.typeCheck Core.VerifyOptions.quiet core with
     | .ok prog => pure prog
     | .error e => IO.println s!"type error: {e.message}"; return
@@ -72,7 +72,7 @@ private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
         | some e => IO.println s!"{name}: {format (Imperative.EvalError.toFormat e)}"
 
 /-- Parse a Laurel `#strata` program for use with `runMarkedEntries`. -/
-private def parse (pgm : StrataDDM.Program) : IO Laurel.Program :=
+private def parse (pgm : StrataDDM.Program) : IO Laurel.LaurelProgram :=
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram pgm) with
   | .ok p => pure p
   | .error e => throw (IO.userError s!"parse error: {e}")
@@ -255,6 +255,179 @@ procedure takesInput(x: int)
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram entryWithInputsPgm) with
   | .ok _ => IO.println "parse ok (unexpected)"
   | .error e => IO.println s!"parse error: {e}"
+
+/-! ### `Laurel.withEntryHarness` runs an unmarked procedure, as `--entry` does -/
+
+private def harnessPgm : StrataDDM.Program :=
+#strata
+program Laurel;
+var g: int := 0
+constrained pos = x: int where x > 0 witness 1
+composite Box {
+  procedure m(self: Box)
+    opaque
+  { };
+}
+procedure marked()
+  entry
+  opaque
+{ };
+procedure target()
+  opaque
+{
+  var b: Box := new Box;
+  g := 1
+};
+procedure caller()
+  opaque
+{
+  target()
+};
+procedure withContract() returns (r: int)
+  opaque
+  ensures r == 2
+{
+  r := 1
+};
+procedure withRequires()
+  requires false
+  opaque
+{ };
+procedure reentrant()
+  requires g == 0
+  opaque
+{
+  g := g + 1;
+  if g < 2 then { reentrant() }
+};
+datatype Tag {
+  collides?entry()
+}
+procedure collides()
+  opaque
+{ };
+procedure withInput(x: int)
+  opaque
+{ };
+procedure overloaded(x: int)
+  opaque
+{ };
+procedure overloaded()
+  opaque
+{ };
+procedure transparent(): int
+{
+  return failing()
+};
+procedure failing(): int
+{
+  assert false;
+  return 0
+};
+procedure positive(): pos
+{
+  5
+};
+procedure throwing()
+  throws (e: int)
+  opaque
+{
+  throw 42
+};
+coroutine spawned()
+{ };
+#end
+
+private def runHarnessed (pgm : StrataDDM.Program) (name : String)
+    (prepare : Laurel.LaurelProgram → Laurel.LaurelProgram := id) : IO Unit := do
+  match Laurel.withEntryHarness (prepare (← parse pgm)) name with
+  | .ok harnessed => runMarkedEntries harnessed
+  | .error e => IO.println e
+
+-- `target` allocates and writes `g`, so it takes `$heap` and `g`, and has a caller, which
+-- marking it would break. Only the new entry runs, not `marked`, and `target`'s frame does not
+-- halt the run.
+/-- info: entries: [target?entry]
+target?entry: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "target"
+
+-- Every producer entry is replaced, including a method's, which only an Ion producer can mark:
+-- the parser rejects an entry with inputs.
+/-- info: entries: [target?entry]
+target?entry: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "target"
+  (prepare := Laurel.mapLaurelProgramProcedures ({ · with isInterpretEntry := true }))
+
+-- The target's postcondition is checked when the harness's call returns.
+/-- info: entries: [withContract?entry]
+withContract?entry: assert failed
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "withContract"
+
+-- An entry point's `requires` is assumed rather than checked.
+/-- info: entries: [withRequires?entry]
+withRequires?entry: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "withRequires"
+
+-- A recursive call still checks the `requires` that the entry's call skips.
+/-- info: entries: [reentrant?entry]
+reentrant?entry: assert failed
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "reentrant"
+
+-- The entry is named apart from every name the program declares.
+/-- info: entries: [collides?entry@1]
+collides?entry@1: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "collides"
+
+/--
+info: entry procedure 'withInput' cannot take inputs or type parameters: an entry point is invoked
+with no arguments
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "withInput"
+
+-- The overload without parameters runs, though another is declared first.
+/-- info: entries: [overloaded?entry]
+overloaded?entry: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "overloaded"
+
+-- A transparent target runs as a procedure, as it would if marked, so its callee's assert runs.
+/-- info: entries: [transparent?entry]
+transparent?entry: assert failed
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "transparent"
+
+-- A transparent target with a constrained result runs.
+/-- info: entries: [positive?entry]
+positive?entry: ok
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "positive"
+
+-- An exception escaping the target fails the run, as it would escape a program's entry point.
+/-- info: entries: [throwing?entry]
+throwing?entry: assert failed
+-/
+#guard_msgs in
+#eval runHarnessed harnessPgm "throwing"
+
+/-- info: entry procedure 'spawned' cannot be a coroutine: calling one only constructs it -/
+#guard_msgs in
+#eval runHarnessed harnessPgm "spawned"
 
 /-! ### Transitional shim: the pre-`entry` 8-argument procedure shape still parses
 

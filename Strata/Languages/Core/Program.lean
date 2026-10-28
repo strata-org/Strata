@@ -27,13 +27,14 @@ instance : Inhabited TypeDecl where
 -- Note: ToFormat CoreLParams.Identifier is now defined in Identifiers.lean
 
 inductive DeclKind : Type where
-  | type | ax | distinct | proc | func | recFuncBlock
+  | type | ax | lemma | distinct | proc | func | recFuncBlock
   deriving DecidableEq, Repr
 
 instance : ToFormat DeclKind where
   format k := match k with
     | .type => "type"
     | .ax => "axiom"
+    | .lemma => "lemma"
     | .distinct => "distinct"
     | .proc => "procedure"
     | .func => "function"
@@ -48,6 +49,8 @@ inductive Decl where
   | type (t : TypeDecl) (md : MetaData Core.Expression)
   /-- An axiom declaration. -/
   | ax   (a : Axiom) (md : MetaData Core.Expression)
+  /-- A lemma declaration: a proposition that must be proved. -/
+  | lemma (l : Lemma) (md : MetaData Core.Expression)
   /-- A `distinct` assertion: the given expressions are pairwise distinct. -/
   | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression)
   /-- A procedure declaration. -/
@@ -62,6 +65,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   match d with
   | .type _ md       => md
   | .ax _ md         => md
+  | .lemma _ md      => md
   | .distinct _ _ md => md
   | .proc _ md       => md
   | .func _ md       => md
@@ -71,6 +75,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   match d with
   | .type _ _   => .type
   | .ax _ _     => .ax
+  | .lemma _ _  => .lemma
   | .distinct _ _ _ => .distinct
   | .proc _ _   => .proc
   | .func _ _   => .func
@@ -80,6 +85,7 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   match d with
   | .type t _       => t.name
   | .ax a _         => a.name
+  | .lemma l _      => l.name
   | .distinct n _ _ => n
   | .proc p _       => p.header.name
   | .func f _       => f.name
@@ -144,6 +150,7 @@ def Decl.const (name : Expression.Ident) (ty : Lambda.LMonoTy)
 def Decl.eraseTypes (d : Decl) : Decl :=
   match d with
   | .ax a md     => .ax a.eraseTypes md
+  | .lemma l md  => .lemma l.eraseTypes md
   | .proc p md   => .proc p.eraseTypes md
   | .func f md   => .func f.eraseTypes md
   | .recFuncBlock fs md => .recFuncBlock (fs.map (·.eraseTypes)) md
@@ -154,6 +161,7 @@ def Decl.stripMetaData (d : Decl) : Decl :=
   match d with
   | .type t _ => .type t .empty
   | .ax a _ => .ax a .empty
+  | .lemma l _ => .lemma l .empty
   | .distinct n es _ => .distinct n es .empty
   | .proc p _ => .proc p.stripMetaData .empty
   | .func f _ => .func f .empty
@@ -164,6 +172,7 @@ instance : ToFormat Decl where
   format d := match d with
     | .type t _md => f!"{t}"
     | .ax a _md  => f!"{a}"
+    | .lemma l _md => f!"{l}"
     | .distinct l es _md  => f!"distinct [{l}] {es}"
     | .proc p _md => f!"{p}"
     | .func f _md => f!"{f}"
@@ -373,6 +382,7 @@ statement. -/
   | Core.Decl.func f _md => f.exprs
   | Core.Decl.recFuncBlock fs _md => fs.flatMap (·.exprs)
   | Core.Decl.ax a _md => [a.e]
+  | Core.Decl.lemma l _md => [l.e]
   | Core.Decl.distinct _ es _md => es
   | Core.Decl.type _ _md => []
 
@@ -390,8 +400,26 @@ statement. -/
      | Core.Decl.recFuncBlock fs _md => fs.all (·.preconditions.isEmpty)
      | _ => true)
 
+/-- The attributes of every function `p` declares, by name, including the functions of
+    a recursive block. -/
+def Program.funcAttrs (p : Program) : Std.HashMap String (Array Strata.DL.Util.FuncAttr) :=
+  p.decls.foldl (init := {}) fun acc d =>
+    match d with
+    | .func fn _ => acc.insert fn.name.name fn.attr
+    | .recFuncBlock fns _ => fns.foldl (fun a fn => a.insert fn.name.name fn.attr) acc
+    | _ => acc
+
+/-- Does no procedure in `p` carry a `requires` or `ensures` clause, free or
+    checked? -/
+@[expose] def Program.noProcedureContracts (p : Program) : Bool :=
+  p.decls.all fun d =>
+    match d with
+    | Core.Decl.proc q _md =>
+      q.spec.preconditions.isEmpty && q.spec.postconditions.isEmpty
+    | _ => true
+
 /-- Is every procedure in `p` monomorphic? Polymorphism is exactly a non-empty
-    `header.typeArgs`, which is what `MonomorphizeProcedures` clears; the opaque
+    `header.typeArgs`, which is what `GenOpaqueTypeParams` clears; the opaque
     type declarations it adds in their place are ordinary declared sorts. -/
 @[expose] def Program.noPolymorphicProcedures (p : Program) : Bool :=
   p.decls.all fun d =>
@@ -418,6 +446,16 @@ statement. -/
 /-- Does every procedure in `p` have a structured body? -/
 @[expose] def Program.allStructured (p : Program) : Bool :=
   p.decls.all Decl.isStructuredOrNonProc
+
+/-- The calls in a declaration: a procedure's calls, and nothing for any other
+    declaration. -/
+def Decl.callSites : Decl → List CallSite
+  | .proc q _ => Procedure.callSites q
+  | _ => []
+
+/-- Every call in `p`, in declaration order and then in order within each body. -/
+def Program.callSites (p : Program) : List CallSite :=
+  p.decls.flatMap Decl.callSites
 
 end Core
 

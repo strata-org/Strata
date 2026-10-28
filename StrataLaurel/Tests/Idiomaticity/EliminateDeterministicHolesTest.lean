@@ -18,24 +18,16 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Resolve, eliminate holes, and print all procedures.
+/-- Parse, resolve, run `eliminateDeterministicHolesPass`, and print the result.
 
-    The built-in definitions are prepended before resolution (`withBuiltins`)
-    because operators are calls to their wrapper procedures: `InferHoleTypes`
-    types a hole operand of `1 + <?>` from `$add`'s declared parameter types, so
-    without the wrappers in scope the hole would be left `Unknown`. They are
-    filtered back out before printing, so the expected output below shows only
-    the procedures the snippet itself declares. -/
-private def parseElimAndPrint (program : StrataDDM.Program) : IO Unit := do
-  let laurelProgram ← translateLaurel program
-  let builtinNames := (Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text))
-  let result := resolve (withBuiltins laurelProgram)
-  let (laurelProgram, model) := (result.program, result.model)
-  let (laurelProgram, _, _) := inferHoleTypes model laurelProgram
-  let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
-  for proc in laurelProgram.staticProcedures do
-    unless builtinNames.contains proc.name.text do
-      IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+    `EliminateDeterministicHoles` assumes `InferHoleTypes` has already typed the
+    holes (a hole operand of `1 + <?>` is typed from `$add`'s declared parameter
+    types), so `InferHoleTypes` runs as the input-shaping predecessor. The prelude
+    is prepended for resolution and dropped from the printout, so the golden shows
+    only the procedures the snippet declares plus the generated `$hole_*`. -/
+private def parseElimAndPrint : StrataDDM.Program → IO Unit :=
+  runPassAfterForIdiomaticity eliminateDeterministicHolesPass
+    (fun p m => (inferHoleTypes m (.Unordered p)).1.laurelProgram!)
 
 /-! ## Basic: single hole in various positions -/
 
@@ -185,7 +177,7 @@ procedure test()
   opaque
 {
   while($hole_0()) {
-    ⏎
+
   }
 };
 -/
@@ -207,7 +199,7 @@ procedure test()
 {
   while(true)
     invariant $hole_0() {
-    ⏎
+
   }
 };
 -/
@@ -356,7 +348,7 @@ procedure test()
   var p: bool;
   while(true)
     invariant p ==> $hole_0() {
-    ⏎
+
   }
 };
 -/
@@ -478,7 +470,8 @@ procedure test()
 -- parent datatype's resolved Identifier (with `uniqueId`), so this works
 -- without textual decoding of the override name.
 /--
-info: procedure $hole_0(): IntList
+info: datatype IntList { Nil, Cons(head: int, tail: IntList) }
+procedure $hole_0(): IntList
   opaque;
 procedure test()
 {
@@ -495,7 +488,8 @@ procedure test() { var x: int := IntList..head(<?>) };
 
 -- Hole as argument to an unsafe `!` destructor → same datatype recovery.
 /--
-info: procedure $hole_0(): IntList
+info: datatype IntList { Nil, Cons(head: int, tail: IntList) }
+procedure $hole_0(): IntList
   opaque;
 procedure test()
 {
@@ -512,11 +506,12 @@ procedure test() { var x: int := IntList..head!(<?>) };
 
 -- Hole as argument to a tester → typed as the parent datatype.
 /--
-info: procedure $hole_0(): IntList
+info: datatype IntList { Nil, Cons(head: int, tail: IntList) }
+procedure $hole_0(): IntList
   opaque;
 procedure test()
 {
-  assert IntList..head($hole_0())
+  assert IntList..isCons($hole_0())
 };
 -/
 #guard_msgs in
@@ -524,7 +519,7 @@ procedure test()
 #strata
 program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
-procedure test() { assert IntList..head(<?>) };
+procedure test() { assert IntList..isCons(<?>) };
 #end
 
 end Laurel

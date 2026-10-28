@@ -39,7 +39,8 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: bad_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -50,7 +51,8 @@ Result: ❌ fail
 
 Obligation: bad_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify decreasesIntNoPrecondPgm (options := .quiet)
 
@@ -81,17 +83,17 @@ Obligation:
 Label: fib_terminates_1
 Property: assert
 Obligation:
-!(int.le(n@1, 1)) ==> int.lt(int.sub(n@1, 1), n@1)
+!(int.le(n@2, 1)) ==> int.lt(int.sub(n@2, 1), n@2)
 
 Label: fib_terminates_2
 Property: assert
 Obligation:
-!(int.le(n@1, 1)) ==> int.le(0, int.sub(n@1, 2))
+!(int.le(n@3, 1)) ==> int.le(0, int.sub(n@3, 2))
 
 Label: fib_terminates_3
 Property: assert
 Obligation:
-!(int.le(n@1, 1)) ==> int.lt(int.sub(n@1, 2), n@1)
+!(int.le(n@4, 1)) ==> int.lt(int.sub(n@4, 2), n@4)
 
 ---
 info:
@@ -129,7 +131,8 @@ rec function factorial (n : int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
@@ -140,7 +143,8 @@ Result: ✅ pass
 
 Obligation: factorial_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify factorialPgm (options := .quiet)
 
@@ -160,7 +164,8 @@ rec function bad (n : int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: bad_body_calls_bad_0
 Property: assert
 Result: ✅ pass
@@ -171,7 +176,8 @@ Result: ✅ pass
 
 Obligation: bad_terminates_1
 Property: assert
-Result: ❌ fail-/
+Result: ❌ fail
+-/
 #guard_msgs in
 #eval Core.verify nonTermIntPgm (options := .quiet)
 
@@ -231,7 +237,8 @@ rec function merge (l1 : IntList, l2 : IntList) : IntList
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -294,7 +301,8 @@ Result: ❓ unknown
 
 Obligation: merge_terminates_3
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify compoundMeasurePgm (options := .quiet)
 
@@ -317,7 +325,8 @@ rec function diagonal (m : int, n : int) : int
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: diagonal_body_calls_diagonal_0
 Property: assert
 Result: ✅ pass
@@ -348,7 +357,8 @@ Result: ✅ pass
 
 Obligation: diagonal_terminates_3
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify compoundArithPgm (options := .quiet)
 
@@ -374,7 +384,8 @@ function isOdd (n : int) : bool
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: isEven_body_calls_isOdd_0
 Property: assert
 Result: ✅ pass
@@ -397,7 +408,8 @@ Result: ✅ pass
 
 Obligation: isOdd_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualIntRecPgm (options := .quiet)
 
@@ -433,7 +445,8 @@ procedure TestMutualConcrete() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: isEven_body_calls_isOdd_0
 Property: assert
 Result: ✅ pass
@@ -492,7 +505,8 @@ Result: ✅ pass
 
 Obligation: TestMutualConcrete_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualIntRecConcretePgm (options := .quiet)
 
@@ -521,7 +535,8 @@ procedure TestFibUF(n : int) spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: fib_body_calls_fib_0
 Property: assert
 Result: ✅ pass
@@ -564,7 +579,8 @@ Result: ❌ fail
 
 Obligation: TestFibUF_ensures_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify intRecUFPgm (options := .quiet)
 
@@ -593,7 +609,8 @@ procedure TestFactConcrete() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
@@ -632,7 +649,8 @@ Result: ✅ pass
 
 Obligation: TestFactConcrete_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify factorialConcretePgm (options := .quiet)
 
@@ -665,7 +683,8 @@ procedure TestSumFirstCons(h : int, t : IntList, n : int) spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: sumFirst_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -700,7 +719,8 @@ Result: ✅ pass
 
 Obligation: TestSumFirstCons_ensures_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify casesWithIntMeasurePgm (options := .quiet)
 

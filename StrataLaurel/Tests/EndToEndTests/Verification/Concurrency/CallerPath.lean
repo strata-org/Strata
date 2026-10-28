@@ -22,11 +22,11 @@ observes these directly — no composite-field indirection.
 
 import StrataLaurel.Tests.EndToEndTests.Verification.Concurrency.CoroutineTest
 
-open StrataTest.Util.Concurrency
+open StrataTest.Util StrataTest.Util.Concurrency
 
 /-! ## Positive: one-state guarantee observed by caller. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -54,7 +54,7 @@ procedure caller(s: Cell)
 
 /-! ## Positive: two-state guarantee gives monotonicity. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -82,7 +82,7 @@ procedure callerMonotonic(s: Cell)
 
 /-! ## Positive: rely preserves value across resume. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ procedure callerPreserved(s: Cell)
 
 /-! ## Negative: without a rely, the guarantee is insufficient. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -142,7 +142,7 @@ variable that is spawned twice (here, reassigned to a fresh instance) cannot be
 threaded soundly. The pass rejects the second spawn rather than silently
 instantiating the resume's rely/guarantee with stale arguments. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -177,7 +177,7 @@ control-flow paths (here, both arms of a conditional) is threaded soundly. Each
 arm's resume observes the guarantee `old(s#x) <= s#x` against the rely
 `old(s#x) == s#x`, giving `s#x >= 0` on both paths. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -210,7 +210,7 @@ variable, which requires the resumed instance to be a plain local. A field
 receiver (`resume(h#co)`) has no such local, so threading cannot proceed and the
 pass reports it rather than emitting an ill-formed resume call. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -247,7 +247,7 @@ the spawn and 3 at the resume, and the provable fact is `g#x == 99`. Before the
 spawn arguments were snapshotted, the caller proved `g#x == 3` — a value the
 coroutine never saw — and could not prove `g#x == 99`. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -278,7 +278,7 @@ procedure callerSpawnCapture(g: G)
 `resume` runs, but the coroutine captured 99, so `g#x == 3` is not provable — and
 must not be. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 
@@ -309,7 +309,7 @@ procedure callerSpawnCaptureNeg(g: G)
 /-! ## A heap read as a spawn argument is captured by value too: `s#k` is 99 at
 the spawn and 3 at the resume. -/
 
-#eval testCoroutine <|
+#eval testLaurelVerification (options := coroutineOptions) <|
 #strata
 program Laurel;
 

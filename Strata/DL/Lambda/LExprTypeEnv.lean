@@ -294,7 +294,7 @@ def TState.genExprSym (state : TState) : String × TState :=
 ---------------------------------------------------------------------
 
 /-- Name and arity of a registered type. -/
-@[expose] def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
+abbrev KnownType := Identifier Nat
 
 def KnownType.arity (k: KnownType) := k.metadata
 

@@ -286,32 +286,32 @@ noncomputable def UF.applyDenoteTyped (σ : SortInterp) (𝒜 : ArrayTheory) (uf
 
 /-- UF interpretation: maps each UF signature to a curried
     function from argument types to output type. -/
-def UFInterp (σ : SortInterp) (𝒜 : ArrayTheory) := (uf : UF) → UF.denoteTyped σ 𝒜 uf
+abbrev UFInterp (σ : SortInterp) (𝒜 : ArrayTheory) := (uf : UF) → UF.denoteTyped σ 𝒜 uf
 
 /-- SMT variable environment: maps variables to values of their types. -/
-def VarEnv (σ : SortInterp) (𝒜 : ArrayTheory) := (x : TermVar) → (TermType.denoteTyped σ 𝒜 x.ty)
+abbrev VarEnv (σ : SortInterp) (𝒜 : ArrayTheory) := (x : TermVar) → (TermType.denoteTyped σ 𝒜 x.ty)
 
 
 /-! ## Type-checking inversion lemmas (consumed by `Term.denoteTyped`) -/
 
-private def Term.typeCheck_prim_inv {ctx : TypedContext} {p : TermPrim} {τ : TermType}
+private theorem Term.typeCheck_prim_inv {ctx : TypedContext} {p : TermPrim} {τ : TermType}
     (h : Term.typeCheck ctx (.prim p) = .ok τ) : τ = p.typeOf := by
   simp only [Term.typeCheck] at h
   split at h <;> simp_all
 
-private def Term.typeCheck_var_inv {ctx : TypedContext} {v : TermVar} {τ : TermType}
+private theorem Term.typeCheck_var_inv {ctx : TypedContext} {v : TermVar} {τ : TermType}
     (h : Term.typeCheck ctx (.var v) = .ok τ) :
     ctx.Γ.find? (fun w => w.id == v.id) = some v ∧ v.ty = τ := by
   simp only [Term.typeCheck] at h
   split at h <;> simp_all
 
-private def Term.typeCheck_not_inv {ctx : TypedContext} {t : Term} {rty τ : TermType}
+private theorem Term.typeCheck_not_inv {ctx : TypedContext} {t : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.core .not) [t] rty) = .ok τ) :
     Term.typeCheck ctx t = .ok .bool ∧ τ = .bool := by
   simp only [Term.typeCheck, bind, Except.bind] at h
   split at h <;> (try split at h) <;> simp_all
 
-private def Term.typeCheck_boolBin_inv {ctx : TypedContext} {op : Op.Core}
+private theorem Term.typeCheck_boolBin_inv {ctx : TypedContext} {op : Op.Core}
     {t1 t2 : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.core op) [t1, t2] rty) = .ok τ)
     (hop : op = .and ∨ op = .or ∨ op = .implies) :
@@ -334,20 +334,20 @@ private def Term.typeCheck_eq_inv {ctx : TypedContext} {t1 t2 : Term} {rty τ : 
       · exact ⟨ty1, heq1, by simp_all, by simp_all⟩
       · simp at h
 
-private def Term.typeCheck_ite_inv {ctx : TypedContext} {c t e : Term} {rty τ : TermType}
+private theorem Term.typeCheck_ite_inv {ctx : TypedContext} {c t e : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.core .ite) [c, t, e] rty) = .ok τ) :
     Term.typeCheck ctx c = .ok .bool ∧ Term.typeCheck ctx t = .ok τ ∧
     Term.typeCheck ctx e = .ok τ := by
   simp only [Term.typeCheck, bind, Except.bind] at h
   split at h <;> (try split at h) <;> (try split at h) <;> (try split at h) <;> simp_all
 
-private def Term.typeCheck_intUn_inv {ctx : TypedContext} {t : Term} {rty τ : TermType}
+private theorem Term.typeCheck_intUn_inv {ctx : TypedContext} {t : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.num .neg) [t] rty) = .ok τ) :
     Term.typeCheck ctx t = .ok .int ∧ τ = .int := by
   simp only [Term.typeCheck, bind, Except.bind] at h
   split at h <;> (try split at h) <;> simp_all
 
-private def Term.typeCheck_intBin_inv {ctx : TypedContext} {op : Op.Num}
+private theorem Term.typeCheck_intBin_inv {ctx : TypedContext} {op : Op.Num}
     {t1 t2 : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.num op) [t1, t2] rty) = .ok τ)
     (hop : op = .add ∨ op = .sub ∨ op = .mul ∨ op = .div ∨ op = .mod) :
@@ -356,7 +356,7 @@ private def Term.typeCheck_intBin_inv {ctx : TypedContext} {op : Op.Num}
     (simp only [Term.typeCheck, bind, Except.bind] at h
      split at h <;> (try split at h) <;> (try split at h) <;> simp_all)
 
-private def Term.typeCheck_intCmp_inv {ctx : TypedContext} {op : Op.Num}
+private theorem Term.typeCheck_intCmp_inv {ctx : TypedContext} {op : Op.Num}
     {t1 t2 : Term} {rty τ : TermType}
     (h : Term.typeCheck ctx (.app (.num op) [t1, t2] rty) = .ok τ)
     (hop : op = .le ∨ op = .lt ∨ op = .ge ∨ op = .gt) :
@@ -369,7 +369,7 @@ private def Term.typeCheck_intCmp_inv {ctx : TypedContext} {op : Op.Num}
     type-checks to `.bool` in the binder-extended context (`vs.reverse ++ ctx.Γ`), and the overall
     result type is `.bool`. The bound-sort well-formedness and trigger-well-formedness guards inside
     `Term.typeCheck`'s `.quant` case are elided; only the body/return facts survive. -/
-private def Term.typeCheck_quant_inv {ctx : TypedContext} {tr : List (List Term)}
+private theorem Term.typeCheck_quant_inv {ctx : TypedContext} {tr : List (List Term)}
     {k : Strata.SMT.QuantifierKind} {vs : List TermVar} {body : Term} {τ : TermType}
     (h : Term.typeCheck ctx (.quant k vs tr body) = .ok τ) :
     Term.typeCheck { ctx with Γ := vs.reverse ++ ctx.Γ } body = .ok .bool ∧ τ = .bool := by
@@ -393,7 +393,7 @@ private def Term.typeCheck_distinct_inv {ctx : TypedContext} {t1 t2 : Term} {ts 
     · exact ⟨ty, heq, by simp_all, by simp_all⟩
     · simp at h
 
-private def Term.typeCheck_none_inv {ctx : TypedContext} {ty τ : TermType}
+private theorem Term.typeCheck_none_inv {ctx : TypedContext} {ty τ : TermType}
     (h : Term.typeCheck ctx (.none ty) = .ok τ) : τ = .option ty := by
   simp only [Term.typeCheck] at h
   split at h <;> simp_all
@@ -613,5 +613,13 @@ noncomputable def Term.denoteTypedArgs {σ : SortInterp} {𝒜 : ArrayTheory}
     .cons (Term.denoteTyped ufInterp env divByZero modByZero t ty htc_hd)
           (Term.denoteTypedArgs ufInterp env divByZero modByZero ts tys htc_rest)
 end
+
+/- Realize `Term.denoteTyped`'s unfolding lemmas here, inside a proof so that they are exported:
+downstream proofs that unfold `Term.denoteTyped` then reuse them instead of each regenerating them
+(several seconds). -/
+private theorem Term.denoteTyped_realize_eqns : True := by
+  have := @Term.denoteTyped.eq_def
+  have := @Term.denoteTyped.eq_1
+  trivial
 
 end Strata.SMT.DenoteTyped

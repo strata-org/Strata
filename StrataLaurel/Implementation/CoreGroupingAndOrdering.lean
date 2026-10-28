@@ -6,7 +6,7 @@
 
 module
 public import StrataLaurel.Implementation.LaurelAST
-public import StrataLaurel.Implementation.UnorderedCore
+public import StrataLaurel.Implementation.CoreWithLaurelTypes
 public import StrataLaurel.Implementation.LaurelPass
 import Strata.DL.Lambda.LExpr
 import StrataDDM.Util.Graph.Tarjan
@@ -65,10 +65,10 @@ unrelated procedures without them — by stably partitioning them first before b
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
 -/
-public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List Procedure × Bool) :=
+public def computeSccDecls (program : LaurelProgram) : List (List Procedure × Bool) :=
   -- Stable partition: procedures with axioms come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
-  let allProcs := program.functions ++ program.coreProcedures
+  let allProcs := program.staticFunctions ++ program.staticProcedures
   let (withAxioms, withoutAxioms) :=
     allProcs.partition (fun p => !p.axioms.isEmpty)
   let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
@@ -125,62 +125,7 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
     some (procs, isRecursive)
 
 /--
-A single declaration in a CoreWithLaurelTypes program. Declarations are in
-dependency order (dependencies before dependents).
--/
-public inductive OrderedDecl where
-  /-- A group of functions (single non-recursive, or mutually recursive).
-      Invariant: `funcs.length > 1 → isRecursive = true`. -/
-  | funcs (funcs : List Procedure) (isRecursive : Bool)
-  /-- A single (non-functional) procedure. -/
-  | procedure (procedure : Procedure)
-  /-- A group of (possibly mutually recursive) datatypes. -/
-  | datatypes (dts : List DatatypeDefinition)
-  /-- An opaque (natively implemented) type. Always emitted before everything else: it has
-      no constructor arguments, so it can neither depend on another declaration nor take
-      part in a cycle, while a datatype's field types may well refer to it. -/
-  | opaqueType (ot : OpaqueTypeDefinition)
-  /-- A named constant. -/
-  | constant (c : Constant)
-
-/--
-A program whose declarations have been grouped and topologically ordered,
-using Laurel types. Produced by `orderFunctionsAndProcedures` from a
-`UnorderedCoreWithLaurelTypes`.
--/
-public structure CoreWithLaurelTypes where
-  decls : List OrderedDecl
-
-open Std (Format ToFormat)
-
-public section
-
-/-- Format a procedure as a function, replacing the leading "procedure" keyword with "function". -/
-private def formatAsFunction (proc : Procedure) : Format :=
-  let s := (ToFormat.format proc).pretty 100
-  let s := if s.startsWith "procedure" then "function" ++ s.drop "procedure".length else s
-  Format.text s
-
-def formatOrderedDecl : OrderedDecl → Format
-  | .funcs funcs _ => Format.joinSep (funcs.map formatAsFunction) "\n\n"
-  | .procedure proc => ToFormat.format proc
-  | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
-  | .opaqueType ot => ToFormat.format ot
-  | .constant c => ToFormat.format c
-
-instance : ToFormat OrderedDecl where
-  format := formatOrderedDecl
-
-def formatCoreWithLaurelTypes (p : CoreWithLaurelTypes) : Format :=
-  Format.joinSep (p.decls.map formatOrderedDecl) "\n\n"
-
-instance : ToFormat CoreWithLaurelTypes where
-  format := formatCoreWithLaurelTypes
-
-end -- public section
-
-/--
-Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
+Produce a `CoreWithLaurelTypes` from a `LaurelProgram` by
 computing a combined ordering of functions and proofs using the call graph,
 then collecting datatypes and constants.
 
@@ -188,12 +133,14 @@ Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
-def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
-  let opaqueDecls := program.opaqueTypes.map OrderedDecl.opaqueType
+def orderFunctionsAndProcedures (program : LaurelProgram) : CoreWithLaurelTypes :=
+  let opaqueDecls := program.types.filterMap fun
+    | .Opaque ot => some (OrderedDecl.opaqueType ot)
+    | _ => none
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
-    program.functions.foldl (fun s p => s.insert p.name.text) {}
+    program.staticFunctions.foldl (fun s p => s.insert p.name.text) {}
   let orderedDecls := (computeSccDecls program).flatMap fun (procs, isRecursive) =>
     -- Split the SCC into functions and proofs
     let (funcs, proofs) := procs.partition (fun p => funcNames.contains p.name.text)
@@ -202,9 +149,11 @@ def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreW
     funcDecl ++ proofDecls
   { decls := opaqueDecls ++ datatypeDecls ++ constantDecls ++ orderedDecls }
 where
-  /-- Group datatypes from a UnorderedCoreWithLaurelTypes by SCC. -/
-  groupDatatypesByScc' (program : UnorderedCoreWithLaurelTypes) : List (List DatatypeDefinition) :=
-    let laurelDatatypes := program.datatypes
+  /-- Group the datatypes of a `LaurelProgram` by SCC. -/
+  groupDatatypesByScc' (program : LaurelProgram) : List (List DatatypeDefinition) :=
+    let laurelDatatypes := program.types.filterMap fun
+      | .Datatype dt => some dt
+      | _ => none
     let n := laurelDatatypes.length
     if n == 0 then [] else
     let nameToIdx : Std.HashMap String Nat :=
@@ -218,17 +167,31 @@ where
       let members := comp.toList.filterMap fun idx => dtsArr[idx]?
       if members.isEmpty then none else some members
 
-public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
+public def orderingPass : LaurelPass where
   name := "Ordering"
-  creates := [NodeKind.Pseudo.orderedDeclarations]
-  removes := [NodeKind.Pseudo.unorderedDeclarations]
-  documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
+  removes := [
+      NodeKind.Program.Unordered
+    ]
+  creates := [
+      NodeKind.Program.Ordered,
+      NodeKind.OrderedProgram.WithLaurelTypes
+    ]
+  documentation := "Produce a `CoreWithLaurelTypes` from a `LaurelProgram` by
 computing a combined ordering of functions and proofs using the call graph,
 then collecting datatypes and constants.
 Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them."
-  run := fun _ p _ =>
-    (orderFunctionsAndProcedures p, [], {})
+  run := fun _ input _ =>
+    match input with
+    | .Unordered p =>
+      let unlifted := p.types.flatMap fun
+        | .Composite ct => ct.instanceProcedures.map fun proc =>
+          diagnosticFromSource proc.name.source
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
+            MessageKind.strataBug
+        | _ => []
+      (.Ordered (.WithLaurelTypes (orderFunctionsAndProcedures p)), unlifted, {})
+    | other => wrongProgram "Ordering" other
 
 end Strata.Laurel

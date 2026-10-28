@@ -173,7 +173,7 @@ structure PipelinePhase where
     cannot introduce spurious models (e.g. it only removes information). -/
 def modelPreservingPipelinePhase (name : String)
     (t : Program → Transform.CoreTransformM (Bool × Program))
-    (requires establishes preserves : ProgramFactSet := factSet![]) : PipelinePhase where
+    («requires» establishes preserves : ProgramFactSet := factSet![]) : PipelinePhase where
   transform := t
   phase.name := name
   phase.getValidation _ := .modelPreserving
@@ -181,17 +181,48 @@ def modelPreservingPipelinePhase (name : String)
   establishes := establishes
   preserves := preserves
 
-/-- Returns the program unchanged when `c` accepts it. -/
-def assertFact (c : Program → Bool) (msg : String) (p : Program) :
+/-- The name of the `assert` phase for a fact: `assert` followed by the fact's
+    name with its first letter capitalized, so `noCFGBodies` gives
+    `assertNoCFGBodies`. -/
+def ProgramFact.assertPhaseName (f : ProgramFact) : String :=
+  "assert" ++ (match f.name.toList with
+               | [] => ""
+               | c :: rest => String.ofList (c.toUpper :: rest))
+
+/-- What the `assert` phase for `f` reports about a program `f`'s check rejects. For
+    `wellFormedCalls`, the first ill-formed call, located at the call; there is one,
+    since that check is `(illFormedCalls p).isEmpty`. For `noCFGBodies`, the first
+    procedure with a CFG body, located at its declaration. For the other facts, a
+    message naming what is expected. -/
+private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
+  let generic :=
+    Strata.Message.fromFormat f!"❌ Expected {f.name}, but the program does not satisfy it."
+  match f with
+  | .wellFormedCalls => (illFormedCalls p).head?.getD generic
+  | .noCFGBodies =>
+    let cfgProc := p.decls.findSome? fun
+      | .proc q md => if q.body.isCfg then some (q.header.name.name, md) else none
+      | _ => none
+    match cfgProc with
+    | some (name, md) => md.toDiagnostic s!"❌ Expected every procedure body to be \
+        structured, but found procedure {name} with a CFG body."
+    | none => generic
+  | _ => generic
+
+/-- Returns the program unchanged when `f`'s check accepts it, and otherwise reports
+    `assertFailure f`. -/
+def assertFact (f : ProgramFact) (hc : f.check?.isSome = true) (p : Program) :
     Transform.CoreTransformM (Bool × Program) :=
-  if c p then pure (false, p) else throw (Strata.Message.fromFormat f!"{msg}")
+  if f.check?.get hc p then pure (false, p) else throw (assertFailure f p)
 
 /-- A successful `assertFact` returns the program it was given, and the check
     it ran accepted that program. -/
-private theorem assertFact_run {c : Program → Bool} {msg : String} {p : Program}
+private theorem assertFact_run {f : ProgramFact} {hc : f.check?.isSome = true}
+    {p : Program}
     {s : Transform.CoreTransformState} {b : Bool} {p' : Program}
     {s' : Transform.CoreTransformState}
-    (h : (assertFact c msg p).run s = (.ok (b, p'), s')) : p' = p ∧ c p = true := by
+    (h : (assertFact f hc p).run s = (.ok (b, p'), s')) :
+    p' = p ∧ f.check?.get hc p = true := by
   unfold assertFact at h
   split at h
   · rename_i hf
@@ -214,11 +245,13 @@ private theorem assertFact_run {c : Program → Bool} {msg : String} {p : Progra
     `hc` witnesses that `f` has a check, so a fact whose meaning nothing
     decides cannot be asserted — though it can still be required, established
     or preserved. Returning the program unchanged is what discharges both
-    obligations and what makes `preserves` `ProgramFactSet.all`. -/
-def assertFactPhase (name : String) (f : ProgramFact) (msg : String)
-    (hc : f.check?.isSome = true := by decide) : PipelinePhase where
-  transform := assertFact (f.check?.get hc) msg
-  phase.name := name
+    obligations and what makes `preserves` `ProgramFactSet.all`. A program the
+    check rejects is reported as in `assertFact`. The phase is named
+    `f.assertPhaseName`. -/
+def assertFactPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide) :
+    PipelinePhase where
+  transform := assertFact f hc
+  phase.name := f.assertPhaseName
   establishes := ProgramFactSet.ofList [f]
   preserves := ProgramFactSet.all
   provesContract := true
@@ -234,11 +267,13 @@ def assertFactPhase (name : String) (f : ProgramFact) (msg : String)
     obtain ⟨rfl, _⟩ := assertFact_run hrun
     exact hp)
 
-/-- Rejects a program with a CFG procedure body, which every statement-level
-    transform and symbolic evaluation need ruled out. -/
-def assertNoCFGBodiesPhase : PipelinePhase :=
-  assertFactPhase "assertNoCFGBodies" .noCFGBodies
-    "❌ Expected every procedure body to be structured, but at least one is a CFG."
+/-- The phase that checks `f` on the program and passes it through. A fact with no
+    executable check has no such phase, and `by decide` refuses it where it is written:
+    `ProgramFact.assertPhase .typeAnnotated` does not compile, since confirming
+    annotations are present would not establish that they are right. -/
+def ProgramFact.assertPhase (f : ProgramFact) (hc : f.check?.isSome = true := by decide) :
+    PipelinePhase :=
+  assertFactPhase f hc
 
 /-! ## Validated pipelines
 
@@ -260,8 +295,8 @@ instance : Strata.Pipeline.PhaseContract PipelinePhase ProgramFact where
 
 /-- A pipeline validated to compose correctly, indexed by the facts it expects at
     entry. -/
-abbrev ValidatedPipeline (requires : ProgramFactSet) :=
-  Strata.Pipeline.ValidatedPipeline PipelinePhase ProgramFact requires
+abbrev ValidatedPipeline (pre : ProgramFactSet) :=
+  Strata.Pipeline.ValidatedPipeline PipelinePhase ProgramFact pre
 
 /-- Validate a dynamically assembled phase list against the facts known to hold
     on entry. -/

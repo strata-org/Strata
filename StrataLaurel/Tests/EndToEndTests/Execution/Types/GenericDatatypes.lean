@@ -10,21 +10,21 @@ open Strata
 
 /-! # Generic datatypes under concrete interpretation
 
-`UnitTests/GenericDatatypeTest.lean` covers generic datatypes on the verification
-path. Generic datatypes lower to native parametric Core sorts rather than being
+Generic datatypes lower to native parametric Core sorts rather than being
 monomorphized, so they are the part of user-level polymorphism that the concrete
 interpreter can actually run — these tests drive them through `testLaurelExecution {}`
 (translate + all lowering passes + verify + interpret).
 
 Values are observed with a SELECTOR and then compared at a primitive type, rather
-than by comparing two datatype values with `==`. The verification path pins
-structural equality already; here the point is that the interpreter reconstructs the
-right payload, and a selector read states that directly.
+than by comparing two datatype values with `==`. Equality between whole datatype values is
+pinned on the verification path instead (`Verification/Objects/GenericDatatype.lean`), since
+it is an SMT datatype-theory obligation; here the point is that the interpreter reconstructs
+the right payload, and a selector read states that directly.
 
 NB: `Bx`/`Lst` merely keep these programs short — `Box` would be legal. The generated boxing
 datatype is `$Box`, in the reserved `$`-namespace, so user `datatype Box`, `datatype Box<T>` and
 `composite Box` are all accepted; that is pinned by the source-compatibility cases in
-`UnitTests/GenericCompositeTest.lean`. -/
+`Types/Composites/GenericComposite.lean`. -/
 
 #eval testLaurelExecution {} <|
 #strata

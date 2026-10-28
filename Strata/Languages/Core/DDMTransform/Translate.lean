@@ -15,7 +15,6 @@ namespace Strata
 
 /- Translating concrete syntax into abstract syntax -/
 
-open Core
 open Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
@@ -498,13 +497,12 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
             | none => pure ([], bindings)
             | some arg =>
               let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let args ←
-                  match bargs[0]! with
-                  | .seq _ .comma args =>
-                    let (arr, bindings) ← translateTypeBindings bindings args
-                    return (arr.toList, bindings)
-                  | _ => TransM.error
-                          s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
+              match bargs[0]! with
+              | .seq _ .comma args =>
+                let (arr, bindings) ← translateTypeBindings bindings args
+                return (arr.toList, bindings)
+              | _ => TransM.error
+                      s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
                     op.args[2]!
   let typedef ← translateLMonoTy bindings op.args[4]!
   let md ← getMetaDataWithAnn op annotsArg
@@ -1149,16 +1147,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     return .strConst () x
   | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst () (StrataDDM.Decimal.toRat x)
+    return .rationalConst () (StrataDDM.Decimal.toRat x)
   | .fn _ q`Core.fracLit, [na, da] =>
     let num ← translateNat na
     let den ← translateNat da
     if den == 0 then
       -- A zero denominator is invalid user input, so record the error
-      -- and fall back to `realConst 0`.
-      TransM.recordError "fracLit: denominator must be non-zero" (.realConst () 0)
+      -- and fall back to `rationalConst 0`.
+      TransM.recordError "fracLit: denominator must be non-zero" (.rationalConst () 0)
     else
-      return .realConst () (Core.FracLit.fracDecode num den)
+      return .rationalConst () (Core.FracLit.fracDecode num den)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
@@ -2195,6 +2193,66 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   let md ← getMetaDataWithAnn op annotsArg
   return (.ax (Core.Axiom.mk l e) md, bindings)
 
+/-- Translate an optional `DeclLabel`, the name in front of a parameter list. -/
+def translateOptionDeclLabel? (arg : Arg) : TransM (Option String) := do
+  translateOption (fun maybe_arg => do
+                    match maybe_arg with
+                    | none => return none
+                    | some lop => let args ← checkOpArg lop q`Core.declLabel 1
+                                  return some (← translateIdent String args[0]!))
+                  arg
+
+/--
+Translate the name and proposition of `axiom` or `lemma` written with a
+parameter list, `[name] (x : T, ...) { triggers }: e`, into the name and
+`forall x : T, ... :: { triggers } e`. `args` holds the label, the parameter
+list, the triggers and the proposition, in that order.
+-/
+def translateParamsProposition (p : Program) (bindings : TransBindings)
+    (namePrefix : String) (args : Array Arg) :
+    TransM (String × Core.Expression.Expr × TransBindings) := do
+  let defaultName := s!"{namePrefix}_{getGenCount .axiom_def bindings.gen}"
+  let bindings := incrNum .axiom_def bindings
+  let l := (← translateOptionDeclLabel? args[0]!).getD defaultName
+  let triggers ← translateOption (fun t => pure t) args[2]!
+  let e ← translateQuantifier .all p bindings args[1]! triggers args[3]!
+  return (l, e, bindings)
+
+def translateAxiomParams (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom_params 5
+  let (l, e, bindings) ← translateParamsProposition p bindings "axiom" (op.args.extract 1 5)
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.ax (Core.Axiom.mk l e) md, bindings)
+
+def translateLemma (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma 3
+  let (l, bindings) ← nextLabel "lemma" .axiom_def op.args[1]! bindings
+  let e ← translateExpr p bindings op.args[2]!
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, e } md, bindings)
+
+def translateLemmaTypeArgs (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma_targs 4
+  let defaultName := s!"lemma_{getGenCount .axiom_def bindings.gen}"
+  let bindings := incrNum .axiom_def bindings
+  let l := (← translateOptionDeclLabel? op.args[1]!).getD defaultName
+  let typeArgs ← translateTypeArgs (.option default (some op.args[2]!))
+  let e ← translateExpr p bindings op.args[3]!
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, typeArgs := typeArgs.toList, e } md, bindings)
+
+def translateLemmaParams (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_lemma_params 6
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let (l, e, bindings) ← translateParamsProposition p bindings "lemma"
+    #[op.args[1]!, op.args[3]!, op.args[4]!, op.args[5]!]
+  let md ← getMetaDataWithAnn op op.args[0]!
+  return (.lemma { name := l, typeArgs := typeArgs.toList, e } md, bindings)
+
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 3
@@ -2281,7 +2339,7 @@ partial def translateRecFnDecl (p : Program) (preBindings : TransBindings)
   let bodyBindings := { preBindings with boundVars := bbindings }
   let casesAttr := match casesIdx with
     | some i => #[Strata.DL.Util.FuncAttr.inlineIfConstr i]
-    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllCanonical]
+    | none => #[Strata.DL.Util.FuncAttr.inlineIfAllValues]
   let preconds ← translateFnPreconds p fname bodyBindings fnOp.args[4]!
   let measure ← translateMeasure p bodyBindings fnOp.args[5]!
   let body ← translateExpr p bodyBindings fnOp.args[6]!
@@ -2567,6 +2625,14 @@ partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
         translateTypeSynonym bindings op
       | q`Core.command_axiom =>
         translateAxiom p bindings op
+      | q`Core.command_axiom_params =>
+        translateAxiomParams p bindings op
+      | q`Core.command_lemma =>
+        translateLemma p bindings op
+      | q`Core.command_lemma_params =>
+        translateLemmaParams p bindings op
+      | q`Core.command_lemma_targs =>
+        translateLemmaTypeArgs p bindings op
       | q`Core.command_distinct =>
         translateDistinct p bindings op
       | q`Core.command_procedure =>

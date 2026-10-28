@@ -23,7 +23,6 @@ see `FormatCore.lean`.
 
 namespace Strata
 
-open Core
 open Strata.CoreDDM
 
 ---------------------------------------------------------------------
@@ -208,14 +207,81 @@ def funcToCST {M} [Inhabited M]
   modify (·.addGlobalFreeVars #[name.val])
   pure result
 
+/-- The annotations, label and proposition of an axiom or a lemma, in CST form. -/
+def propositionToCST {M} [Inhabited M] (name : String) (e : Lambda.LExpr Core.CoreLParams.mono)
+    (md : Imperative.MetaData Core.Expression) :
+    ToCSTM M (Ann (Option (MetadataAnn M)) M × Ann (Option (Label M)) M × CoreDDM.Expr M) := do
+  let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name⟩)⟩
+  let exprCST ← lexprToExpr e 0
+  let annotsAnn ← metadataToAnn md (← get).annFilter
+  pure (annotsAnn, labelAnn, exprCST)
+
 /-- Convert an axiom to CST -/
 def axiomToCST {M} [Inhabited M] (ax : Core.Axiom)
     (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
-  let labelAnn : Ann (Option (Label M)) M := ⟨
-      default, some (.label default ⟨default, ax.name⟩)⟩
-  let exprCST ← lexprToExpr ax.e 0
-  let annotsAnn ← metadataToAnn md (← get).annFilter
+  let (annotsAnn, labelAnn, exprCST) ← propositionToCST ax.name ax.e md
   pure (.command_axiom default annotsAnn labelAnn exprCST)
+
+/-- Split off the outermost universal binders of a lemma's formula, in order,
+together with the trigger of the innermost one and the body under them. The
+binders before a trigger carry none, since a parameter list attaches its
+triggers to the innermost binder only. -/
+private def lemmaBinders (e : Lambda.LExpr Core.CoreLParams.mono) :
+    List (String × Option Lambda.LMonoTy) × Lambda.LExpr Core.CoreLParams.mono ×
+      Lambda.LExpr Core.CoreLParams.mono :=
+  match e with
+  | .quant _ .all name ty trigger body =>
+    if trigger matches .bvar _ 0 then
+      let (bs, tr, b) := lemmaBinders body
+      ((name, ty) :: bs, tr, b)
+    else ([(name, ty)], trigger, body)
+  | _ => ([], .bvar () 0, e)
+
+/-- Convert a lemma to CST.
+
+A lemma is printed with its type parameters, if any, and its outermost
+universal binders as a parameter list, or with its type parameters alone when
+its formula does not start with a `forall`. -/
+def lemmaToCST {M} [Inhabited M] (l : Core.Lemma)
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
+  let (binders, trigger, body) := lemmaBinders l.e
+  match l.typeArgs, binders with
+  | [], [] =>
+    let (annotsAnn, labelAnn, exprCST) ← propositionToCST l.name l.e md
+    pure (.command_lemma default annotsAnn labelAnn exprCST)
+  | typeArgs, [] => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    let labelAnn : Ann (Option (DeclLabel M)) M :=
+      ⟨default, some (.declLabel default ⟨default, l.name⟩)⟩
+    pure (.command_lemma_targs default annotsAnn labelAnn (mkTypeArgs typeArgs)
+      (← lexprToExpr l.e 0))
+  | typeArgs, b :: bs => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    let labelAnn : Ann (Option (DeclLabel M)) M :=
+      ⟨default, some (.declLabel default ⟨default, l.name⟩)⟩
+    -- Each binder opens a scope, as the nested quantifiers it stands for do.
+    let mkBind (level : Nat) (b : String × Option Lambda.LMonoTy) : ToCSTM M (Bind M) := do
+      let varName := if b.1.isEmpty then mkQuantVarName level else b.1
+      modify ToCSTContext.pushScope
+      modify (·.addScopedBoundVars #[varName])
+      let tyExpr ← match b.2 with
+        | some t => lmonoTyToCoreType t
+        | none => pure (CoreType.tvar default unknownTypeVar)
+      pure (Bind.bind_mk default ⟨default, varName⟩ ⟨default, none⟩ tyExpr)
+    let first ← mkBind 0 b
+    let (dl, level) ← bs.foldlM (init := (DeclList.declAtom default first, 1))
+      fun (dl, level) b => do
+        pure (DeclList.declPush default dl (← mkBind level b), level + 1)
+    let triggersAnn : Ann (Option (Triggers M)) M ←
+      if trigger matches .bvar _ 0 then pure ⟨default, none⟩
+      else do
+        let triggerExprs ← extractTriggerPatterns trigger level
+        pure ⟨default, some (Triggers.triggersAtom default
+          (TriggerGroup.trigger default ⟨default, triggerExprs.reverse⟩))⟩
+    let bodyExpr ← lexprToExpr body level
+    for _ in [0:level] do modify ToCSTContext.popScope
+    pure (.command_lemma_params default annotsAnn labelAnn (mkTypeArgsAnn typeArgs)
+      dl triggersAnn bodyExpr)
 
 /-- Convert a distinct declaration to CST -/
 def distinctToCST {M} [Inhabited M] (name : Core.CoreIdent) (es : List (Lambda.LExpr Core.CoreLParams.mono))
@@ -245,6 +311,9 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     pure [cmd]
   | .ax ax md => do
     let cmd ← axiomToCST ax md
+    pure [cmd]
+  | .lemma l md => do
+    let cmd ← lemmaToCST l md
     pure [cmd]
   | .distinct name es md => do
     let cmd ← distinctToCST name es md

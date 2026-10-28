@@ -54,7 +54,8 @@ info: true
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mutualRecPgm) |>.snd |>.isEmpty
 
-/-- info: [Strata.Core] Type checking succeeded.
+/--
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -70,23 +71,17 @@ Obligation:
 
 Label: isEven_terminates_0
 Property: assert
-Assumptions:
-MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  int.ge(MyNat..adtRank(x), 0)
-MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@3)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@3)), MyNat..adtRank(n@3))
+(forall x : MyNat ::  { MyNat..adtRank(x) }
+  int.ge(MyNat..adtRank(x), 0)) ==> (forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> !(MyNat..isZero(n@3)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@3)), MyNat..adtRank(n@3))
 
 Label: isOdd_terminates_0
 Property: assert
-Assumptions:
-MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  int.ge(MyNat..adtRank(x), 0)
-MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@4)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@4)), MyNat..adtRank(n@4))
+(forall x : MyNat ::  { MyNat..adtRank(x) }
+  int.ge(MyNat..adtRank(x), 0)) ==> (forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> !(MyNat..isZero(n@4)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@4)), MyNat..adtRank(n@4))
 
 Label: zeroEven
 Property: assert
@@ -149,7 +144,8 @@ Result: ✅ pass
 
 Obligation: TestMutual_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualRecPgm (options := .default)
 

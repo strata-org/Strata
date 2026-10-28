@@ -12,7 +12,7 @@ import Strata.Languages.Core.StatementSemantics
 import Strata.Transform.CoreTransform
 
 namespace Core
-open Imperative Lambda
+open Imperative
 
 public section
 
@@ -159,6 +159,7 @@ def loopElimPipelinePhase : PipelinePhase where
   establishes := factSet![.noLoops]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
                       .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                      .noProcedureContracts,
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated]
 

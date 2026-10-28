@@ -24,6 +24,8 @@ Also defines interpretation structures (`OpInterp`, `IdentInterp`,
 - `LExpr.denote` — denotation function for well-typed expressions
 - `Denotes` — relational specification of `denote`
 - `denote_Denotes` / `Denotes_denote` — soundness and completeness of `Denotes` w.r.t. `denote`
+- `denote_boolConst` / `denote_intConst` / `denote_strConst` / `denote_bitvecConst` —
+  denotations of primitive literals
 - `Interp` / `Satisfiable` / `Valid` / `LogConseq` — semantic notions over consistent interpretations
 -/
 
@@ -39,6 +41,19 @@ public inductive LSort where
   | tcons (name : String) (args : List LSort)
   /-- A bit vector sort of the given size. -/
   | bitvec (size : Nat)
+
+public section
+
+/-- The Boolean sort. -/
+protected abbrev LSort.bool : LSort := .tcons "bool" []
+/-- The integer sort. -/
+protected abbrev LSort.int : LSort := .tcons "int" []
+/-- The real sort. -/
+protected abbrev LSort.real : LSort := .tcons "real" []
+/-- The string sort. -/
+protected abbrev LSort.string : LSort := .tcons "string" []
+
+end
 
 def LSort_eqb (s1 s2: LSort) : Bool :=
   match s1, s2 with
@@ -151,7 +166,12 @@ public class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type wher
 
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
-are delegated to `tcInterp`. -/
+are delegated to `tcInterp`.
+
+The `real` sort intentionally denotes `Rat` in this semantics. Consequently,
+`Valid`, `LogConseq`, and clients such as the current Core Hoare logic quantify
+over rational values, not mathematical or SMT reals; no adequacy result relating
+this domain to SMT `Real` is claimed. -/
 @[expose] public def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
@@ -189,7 +209,7 @@ public instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
 /-- Type-variable valuation: maps each type variable to a sort. This is a total
 function; type variables that do not appear in the term's type may be assigned
 any sort (e.g. `int`) since their value will never be used. -/
-@[expose] public def TyVarVal := TyIdentifier → LSort
+public abbrev TyVarVal := TyIdentifier → LSort
 
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
 public abbrev TyDenote (tcInterp : TyConstrInterp)
@@ -245,10 +265,10 @@ def IdentInterp.withArgs [DecidableEq T.IDMeta]
 /-! ### Denotational Semantics -/
 
 /-- Denote a constant literal. -/
-def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
+public def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
-    | .realConst r     => r
+    | .rationalConst r => r
     | .strConst s      => s
     | .bitvecConst _ b => b
 
@@ -526,7 +546,7 @@ theorem denote_Denotes
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∀ x : TyDenote tcInterp vt qty,
         (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
-      · simp [hv]
+      · rw [@decide_eq_true _ (Classical.propDecidable _) hv]
         exact .quant_all_true bvarVal fun x =>
           hv x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
       · simp [hv]
@@ -644,7 +664,7 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[ih2]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) ih2)
   | eq_false _ h1 h2 hne ih1 ih2 =>
     rename_i bvarVal  _ _ _ _ htye1 htye2 _ _ _
     unfold LExpr.denote
@@ -654,12 +674,12 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[hne]
+      exact Eq.symm (@decide_eq_false _ (Classical.propDecidable _) hne)
   | quant_all_true _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      simp [fun x => (ih x).symm]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) fun x => (ih x).symm)
   | quant_all_false _ w hbody ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -673,7 +693,7 @@ theorem Denotes_denote
     typecheck_split h_body h_body h_body h_tr heq =>
       have hexists : ∃ x, LExpr.denote tcInterp opInterp fvarVal vt (.cons x _) _ .bool h_body = true :=
         ⟨w, ih.symm⟩
-      simp [hexists]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) hexists)
   | quant_exist_false _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -688,7 +708,7 @@ These lemmas expose the structure of `denote` for each expression form,
 proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
 
 /-- Unfolding lemma for `denote` of a constant. -/
-theorem denote_const
+public theorem denote_const
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -700,7 +720,7 @@ theorem denote_const
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m c) τ h =
       HasTypeA.const_inv h ▸ denoteConst tcInterp vt c := by rfl
 
-theorem denote_intConst
+public theorem denote_intConst
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -710,7 +730,7 @@ theorem denote_intConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.intConst i)) (.tcons "int" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
 
 public theorem denote_boolConst
     {T : LExprParams}
@@ -722,10 +742,38 @@ public theorem denote_boolConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.boolConst b)) (.tcons "bool" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.boolConst b)) (.tcons "bool" []) h = b := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
+
+/-- A string literal denotes to its string value. -/
+public theorem denote_strConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.Metadata} {s : String} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.strConst s)) .string) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.const m (.strConst s)) .string h = s := by
+  rw [denote_const]; rfl
+
+/-- A bitvector literal denotes to its bitvector value. -/
+public theorem denote_bitvecConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.Metadata} {n : Nat} {b : BitVec n} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.bitvecConst n b)) (.bitvec n)) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.const m (.bitvecConst n b)) (.bitvec n) h = b := by
+  rw [denote_const]; rfl
 
 /-- Unfolding lemma for `denote` of an operator. -/
-theorem denote_op
+public theorem denote_op
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -764,7 +812,7 @@ theorem denote_bvar
       bvarVal.get i (HasTypeA.bvar_inv h) := by rfl
 
 /-- Unfolding lemma for `denote` of an application. -/
-theorem denote_app
+public theorem denote_app
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -842,8 +890,41 @@ theorem denote_eq_false
   have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
   exact (Denotes_denote (Denotes.eq_false bvarVal (h := h_eq) hd1 hd2 hne)).symm
 
+/-- If an equality denotes `true`, its operands have equal denotations. -/
+public theorem denote_eq_true_implies_eq
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_1 : LExpr.HasTypeA Δ e1 ty')
+    (h_2 : LExpr.HasTypeA Δ e2 ty')
+    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
+    (htrue : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.eq m e1 e2) .bool h_eq = true) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2 := by
+  let ⟨ty'', h_bool, h1', h2'⟩ := HasTypeA.eq_inv h_eq
+  cases h_bool
+  unfold LExpr.denote at htrue
+  simp only [HasTypeA.eq_inv] at htrue
+  split at htrue
+  rename_i x ty''' h_bool' h1'' h2'' heq
+  have hden : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty''' h1'' =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty''' h2'' :=
+    @of_decide_eq_true _ (Classical.propDecidable _) htrue
+  have hty : ty''' = ty' := HasTypeA_unique h1'' h_1
+  subst ty'''
+  have hp1 : h1'' = h_1 := Subsingleton.elim _ _
+  have hp2 : h2'' = h_2 := Subsingleton.elim _ _
+  subst hp1
+  subst hp2
+  exact hden
+
 /-- Unfolding lemma for `denote` of an `ite`. -/
-theorem denote_ite
+public theorem denote_ite
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
