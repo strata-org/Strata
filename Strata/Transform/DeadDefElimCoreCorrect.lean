@@ -171,8 +171,13 @@ theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
     OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElimH [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
-  simp only [deadDefElimH_eq]
-  exact deadDefElim_overapproximatesTraces π params
+  have key : (fun ss : Statements => some (deadDefElimH (P := Expression) [] ss))
+      = fun ss => some (deadDefElim (P := Expression) [] ss) :=
+    funext fun ss => congrArg some (deadDefElimH_eq [] ss)
+  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
+      (EventLang.coreBlock π) (EventLang.coreBlock π) F
+      (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params) key).mpr
+    (deadDefElim_overapproximatesTraces π params)
 
 /-- **Assertion validity transported back through the executable pass**:
     `deadDefElim_assertValid` for `deadDefElimH`. -/

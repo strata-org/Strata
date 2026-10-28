@@ -25,7 +25,7 @@ public section
 
 namespace Core
 
-open Lambda
+open _root_.Lambda
 
 /-- `Int.Ge`'s interpretation at `int, int → bool` is `≥` in every consistent model. -/
 theorem intGe_opInterp (model : Lambda.Interp Core.Factory) (a b : Int) :
@@ -52,7 +52,7 @@ theorem intGe_opInterp (model : Lambda.Interp Core.Factory) (a b : Int) :
     have key : (Lambda.intGeFunc (T := Core.CoreLParams)).func.concreteEval.bind
         (fun ce => ce () [.intConst () a, .intConst () b])
         = some (.boolConst () (decide (a ≥ b))) := by
-      simp only [Lambda.intGeFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, if_true]
+      simp only [Lambda.intGeFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, ite_true]
     rw [h_ceval_eq, Option.bind_some] at key
     exact key
   have h_vt : Lambda.TyVarVal := fun _ => .bool
@@ -93,7 +93,7 @@ theorem intAdd_opInterp (model : Lambda.Interp Core.Factory) (a b : Int) :
         = @Lambda.LExpr.intConst Core.CoreLParams.mono := rfl
     have key : (Lambda.intAddFunc (T := Core.CoreLParams)).func.concreteEval.bind
         (fun ce => ce () [.intConst () a, .intConst () b]) = some (.intConst () (a + b)) := by
-      simp only [Lambda.intAddFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, if_true]
+      simp only [Lambda.intAddFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, ite_true]
       rfl
     rw [h_ceval_eq, Option.bind_some] at key
     exact key
@@ -135,7 +135,7 @@ theorem intMul_opInterp (model : Lambda.Interp Core.Factory) (a b : Int) :
         = @Lambda.LExpr.intConst Core.CoreLParams.mono := rfl
     have key : (Lambda.intMulFunc (T := Core.CoreLParams)).func.concreteEval.bind
         (fun ce => ce () [.intConst () a, .intConst () b]) = some (.intConst () (a * b)) := by
-      simp only [Lambda.intMulFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, if_true]
+      simp only [Lambda.intMulFunc, Lambda.binaryOp, Option.bind_some, hcev, hmk, hda, hdb, ite_true]
       rfl
     rw [h_ceval_eq, Option.bind_some] at key
     exact key

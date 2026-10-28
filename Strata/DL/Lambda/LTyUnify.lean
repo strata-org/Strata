@@ -44,6 +44,24 @@ account (newest-first).
 abbrev Subst := HMaps TyIdentifier LMonoTy
 abbrev Subst.empty : Subst := []
 
+/-- Remove every listed type-variable key from all substitution scopes. -/
+def Subst.removeKeys (S : Subst) : List TyIdentifier → Subst
+  | [] => S
+  | key :: keys => Subst.removeKeys (S.remove key) keys
+
+/-- The simultaneous substitution sending each name in `vars` to the value at the same
+    position in `vals`. -/
+def Subst.ofZip (vars : List TyIdentifier) (vals : List LMonoTy) : Subst :=
+  HMaps.ofScopes [List.zip vars vals]
+
+namespace LExpr
+
+/-- Build a single-scope substitution by assigning `g v` to every name in `l`. -/
+public def buildSubstFromFunction (l : List TyIdentifier) (g : TyIdentifier → LMonoTy) : SubstOne :=
+  l.foldr (fun v acc => acc.insert v (g v)) HMap.empty
+
+end LExpr
+
 instance : ToFormat Subst where
   format s := format (s.map (fun m => m.toList.mergeSort (fun a b => a.1 ≤ b.1)))
 
@@ -101,8 +119,8 @@ theorem SubstWF_of_popScope (S : Subst) (h : SubstWF S) :
   | cons m rest =>
     simp only [SubstWF, Subst.freeVars, HMaps.pop, HMaps.keys, HMaps.values,
       List.all_eq_true, List.mem_append, List.flatMap_append, decide_eq_true_eq] at h ⊢
-    intro k hk hmem
-    exact h k (Or.inr hk) (Or.inr hmem)
+    intro k hk
+    grind
 
 /-- The single-scope substitution `[single id ty]` and its key/value/freeVars. -/
 @[expose] def Subst.singleton (tv : TyIdentifier) (ty : LMonoTy) : Subst :=
@@ -234,13 +252,13 @@ theorem LMonoTys.substCore_eq_map (S : Subst) (mtys : LMonoTys) :
 theorem LMonoTy.subst_of_hasEmptyScopes
     (h : Subst.hasEmptyScopes S) (ty : LMonoTy) :
     LMonoTy.subst S ty = ty := by
-  simp only [LMonoTy.subst, h, if_true]
+  simp only [LMonoTy.subst, h, ite_true]
 
 /-- `subst` reduces to `substCore` when `S` has a non-empty scope. -/
 theorem LMonoTy.subst_eq_substCore (S : Subst) (ty : LMonoTy)
     (h : Subst.hasEmptyScopes S = false) :
     LMonoTy.subst S ty = LMonoTy.substCore S ty := by
-  simp only [LMonoTy.subst, h, Bool.false_eq_true, if_false]
+  simp only [LMonoTy.subst, h, Bool.false_eq_true, ite_false]
 
 /-- `subst` distributes into `tcons` (short-circuit handled). -/
 theorem LMonoTy.subst_tcons (S : Subst) (name : String) (args : LMonoTys) :
@@ -467,6 +485,56 @@ Apply the `new` substitution to the `old` one.
 -/
 def Subst.apply (new : SubstOne) (old : Subst) : Subst :=
   old.mapValues (LMonoTy.subst [new])
+
+/-- `S` followed by the renaming `ρ`: every value of `S` is renamed by `ρ`, and `ρ`'s own
+    entries form the oldest scope, so a key of `S` takes precedence over the same key in `ρ`. -/
+def Subst.renameAfter (S ρ : Subst) : Subst :=
+  S.mapValues (LMonoTy.subst ρ) ++ ρ
+
+/-! ### Ambient renaming
+
+Renaming each variable generated during a check (`gen`) to a pre-existing key bound to it. -/
+
+/-- Every key `r` in `R` is bound by `S` to a variable that `ρ` sends back to `r`. -/
+def AmbientRenaming (S ρ : Subst) (R : List TyIdentifier) : Prop :=
+  ∀ r ∈ R, ∃ g, HMaps.find? S r = some (.ftvar g) ∧ HMaps.find? ρ g = some (.ftvar r)
+
+/-- The variable a key is bound to, when it is bound to a variable. -/
+def ambientTarget (S : Subst) (k : TyIdentifier) : Option TyIdentifier :=
+  match HMaps.find? S k with
+  | some (.ftvar g) => some g
+  | _ => none
+
+/-- Keys of `S` not generated during the check that `S` binds to a variable generated during
+    it. -/
+def ambientKeys (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  (HMaps.keys S).filter fun k => !gen k && (ambientTarget S k).any gen
+
+/-- The generated variables some ambient key is bound to, each once. -/
+def ambientTargets (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  ((ambientKeys gen S).filterMap (ambientTarget S)).eraseDups
+
+/-- The representative of a generated variable: the first key in `ks` bound to it. -/
+def ambientRep (S : Subst) (ks : List TyIdentifier) (g : TyIdentifier) : TyIdentifier :=
+  (ks.find? fun k => ambientTarget S k == some g).getD g
+
+/-- The single-scope substitution sending `p.1` to the variable `p.2` for each pair `p` of `ρ`. -/
+def rhoSubst (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
+  [HMap.ofList (ρ.map fun p => (p.1, LMonoTy.ftvar p.2))]
+
+/-- The renaming sending each generated target to its representative. -/
+def ambientRenaming (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
+  rhoSubst ((ambientTargets gen S).map fun g => (g, ambientRep S (ambientKeys gen S) g))
+
+/-- The representatives of the ambient targets. -/
+def ambientReps (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
+  (ambientTargets gen S).map (ambientRep S (ambientKeys gen S))
+
+/-- `S` with each representative's binding to a generated variable flipped, renaming that
+    variable to the representative throughout. -/
+def ambientSubst (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
+  if (ambientKeys gen S).isEmpty then S else
+    Subst.removeKeys (Subst.renameAfter S (ambientRenaming gen S)) (ambientReps gen S)
 
 /-- `apply` preserves the key set (as membership). -/
 theorem Subst.mem_keys_apply_iff
@@ -1355,11 +1423,11 @@ substitution `S`. See `Constraints.unify` for the top-level function.
 def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
     Except UnifyError (ValidSubstRelation cs S) := do
   match _h0 : cs with
-  | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
+  | [] => .ok { newS := S, goodSubset := by grind [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
     let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
-    .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }
+    .ok { newS := new_relS.newS, goodSubset := by grind [Subst.freeVars_subset_prop_mk_cons] }
   termination_by ((((Constraints.freeVars cs) ++ S.subst.freeVars).uniq.length),
                   Constraints.size cs,
                   1)

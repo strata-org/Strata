@@ -329,7 +329,7 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
     simp only [deadDefElim, deadDefElimS] at h2 ⊢
     split
     · next he =>
-      rw [if_pos he] at h2
+      rw [ite_eq_left he] at h2
       refine dd_defUse fs live rest _ D' hss hnc hr (fun n hn => by simp [h1 n hn])
         fun n hn hk => ?_
       rcases Bool.or_eq_true_iff.1 hn with hd | hd
@@ -337,7 +337,7 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
       · rcases c with ⟨x, _, _, _⟩ | _ | _ | _ | _ <;>
           simp_all [erasable, Cmd.definedVars]
     · next he =>
-      rw [if_neg he] at h2
+      rw [ite_eq_right he] at h2
       simp only [Block.defUseWellFormed, Bool.and_eq_true, Stmt.definedVars,
         HasVarsImp.definedVars, Command.definedVars]
       refine ⟨?_, dd_defUse fs live rest _ _ hss hnc hr (fun n hn => by

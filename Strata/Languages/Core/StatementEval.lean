@@ -27,7 +27,6 @@ namespace Core
 namespace Statement
 
 open Std (ToFormat Format format)
-open Lambda
 open Imperative
 
 ---------------------------------------------------------------------

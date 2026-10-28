@@ -263,13 +263,6 @@ private theorem WFFunctionProp_trivial (p : Program) (f : Function) :
   WFFunctionProp p f := by
   constructor
 
-private theorem List.foldlM_error_conditional (f: α → Bool) (g: α → β) (l: List α):
-  List.foldlM (fun _ x =>
-    if f x then Except.error (g x)
-    else Except.ok ()) () l = Except.ok x →
-  ∀ y, y ∈ l → ¬ (f y) := by
-  induction l generalizing x <;> grind
-
 /-
 attribute [local grind .] Procedure.typeCheckWF
 
@@ -315,7 +308,7 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       rename_i htypecheck
       cases q; simp at hty
       -- Get info about inline, no poly, no dups
-      have hin:= List.foldlM_error_conditional _ _ _ hinline_poly
+      have hin := fun y hy => (Except.ite_error_then_eq_ok.mp (foldlM_check_ok _ _ () hinline_poly y hy)).1
       have hnodup := Identifiers.addListWithErrorNoDup ident_eq
       simp only[Decl.names] at hnodup
       unfold WFDeclsProp
@@ -434,7 +427,6 @@ private theorem Program.typeCheckFunctionDisjoint :
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
-      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -543,7 +535,6 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
-      simp only[pure, Except.pure] at Hty
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH

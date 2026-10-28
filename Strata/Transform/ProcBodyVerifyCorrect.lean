@@ -481,7 +481,7 @@ theorem procToVerifyStmt_is_structured
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
-      simp [hb] at h
+      simp [hb, List.mapM_pure (l := proc.header.getInoutParams)] at h
       cases h
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -510,7 +510,7 @@ theorem procToVerifyStmt_structure
   rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
     pure, ExceptT.pure, StateT.bind] at h
-  rw [mapM_stateT_pure_eq] at h
+  rw [mapM_stateT_pure_eq _ proc.header.getInoutParams] at h
   have h_eq := (Prod.mk.inj h).1 |> Except.ok.inj
   -- Define the prefix components
   let inputInits := proc.header.inputs.toList.map fun (id, ty) =>
@@ -593,19 +593,19 @@ theorem procToVerifyStmt_structure
         exact h_oldinout_typed
       · -- inout params match their old snapshots
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)] at hid
         exact h_wf.oldInoutMatchesInout id hid
       · -- keys of getInoutParams are nodup
-        rw [← ListMap.keys_eq_map_fst]
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
         exact getInoutParams_nodup proc.header h_wf_proc.inputsNodup
       · -- inout params are not old-prefixed (they are inputs)
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)] at hid
         have h_in_io := getInoutParams_keys_in_io proc.header id hid
         exact h_wf_proc.ioNotOld id h_in_io
       · -- mkOld images of inout params are nodup
         exact nodup_mkOld_map _ (by
-          rw [← ListMap.keys_eq_map_fst]
+          rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
           exact getInoutParams_nodup proc.header h_wf_proc.inputsNodup)
     · -- PrefixStepsOK for inputInits ++ outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
       have h_wfVar_old : WellFormedSemanticEvalVar (P := Expression) ρ₀.factory := h_wf.var
@@ -625,7 +625,7 @@ theorem procToVerifyStmt_structure
             · exact hv
             · exact h_io_not_in_old id (List.mem_append_right _ h_in_outputs)
           · simp only [prefixInitEnv_factory]; exact hvty
-        · rw [← ListMap.keys_eq_map_fst]
+        · rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
           exact getOutputOnlyParams_nodup proc.header h_wf_proc.outputsNodup
       · -- inputInits at prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)
         have h_wfVar_out' : WellFormedSemanticEvalVar (P := Expression) ρ₀.factory := h_wf.var
@@ -654,7 +654,7 @@ theorem procToVerifyStmt_structure
               have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
               exact h_oid_not_in_inputs (heq_s ▸ hid_keys)
           · simp only [prefixInitEnv_factory]; exact hvty
-        · rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.inputsNodup
+        · rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]; exact h_wf_proc.inputsNodup
 
 /-! ## Correctness on event traces -/
 

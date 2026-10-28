@@ -229,12 +229,6 @@ private def mkBitVecGE (w : Nat) : Expr :=
   mkApp2 (.const ``GE.ge [0]) (mkBitVec w)
          (.app (.const ``instLEBitVec []) (toExpr w))
 
-private def mkBitVecDiv (w : Nat) : Expr :=
-  mkApp4 (.const ``HDiv.hDiv [0, 0, 0])
-         (mkBitVec w) (mkBitVec w) (mkBitVec w)
-         (mkApp2 (.const ``instHDiv [0]) (mkBitVec w)
-                 (.app (.const ``BitVec.instDiv []) (toExpr w)))
-
 private def mkBitVecMod (w : Nat) : Expr :=
   mkApp4 (.const ``HMod.hMod [0, 0, 0])
          (mkBitVec w) (mkBitVec w) (mkBitVec w)
@@ -484,7 +478,8 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let (_, y) ← translateTerm y
     let w ← getBitVecWidth α
-    return (mkBitVec w, mkApp2 (mkBitVecDiv w) x y)
+    -- SMT-LIB `bvudiv` by zero is all ones, as `denoteTerm` says; Lean's `/` gives zero.
+    return (mkBitVec w, mkApp3 (.const ``BitVec.smtUDiv []) (toExpr w) x y)
   | .app .bvurem [x, y] _ =>
     let (α, x) ← translateTerm x
     let (_, y) ← translateTerm y

@@ -73,10 +73,10 @@ theorem assertionsValid_defaultAssertEvents
       intro acc hl
       simp only [List.filterMap_cons]
       by_cases hattr : lc.2.attr = Procedure.CheckAttr.Default
-      · rw [if_pos hattr]
+      · rw [ite_eq_left hattr]
         exact ⟨fun _ world _ => hl lc.1 lc.2 List.mem_cons_self hattr world,
           ih acc (fun label check hmem => hl label check (List.mem_cons_of_mem _ hmem))⟩
-      · rw [if_neg hattr]
+      · rw [ite_eq_right hattr]
         exact ih acc (fun label check hmem => hl label check (List.mem_cons_of_mem _ hmem))
   exact key checks.toList [] h
 

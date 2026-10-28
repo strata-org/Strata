@@ -45,13 +45,19 @@ private noncomputable def idOpInterp (tcInterp : TyConstrInterp) [TyConstrInterp
     | _ => default
   | _ => default
 
+/-- `idOpInterp` applied at an arrow sort `s → s` is the identity. -/
+private theorem idOpInterp_apply (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited tcInterp]
+    (s : LSort) (x : SortDenote tcInterp s) :
+    SortDenote.applyArgs tcInterp (idOpInterp tcInterp "id" (LSort.mkArrow s [s]))
+      (.cons x .nil) = x := by
+  simp [idOpInterp, LSort.mkArrow]
+  rfl
+
 -- The key test: InterpConsistentEval holds for the polymorphic id function
 noncomputable example (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited tcInterp] :
     LFunc.InterpConsistentEval tcInterp (idOpInterp tcInterp) idFunc idCeval := by
   intro vt fvarVal md tySubst argExprs resultExpr heval
   -- Normalize the types manually
-  have : idFunc.inputs = [(⟨"x", ()⟩, .ftvar "a")] := rfl
-  have : idFunc.output = .ftvar "a" := rfl
   change ∀ (h_args : List.Rel₂ (LExpr.HasTypeA []) argExprs [LMonoTy.subst tySubst (.ftvar "a")])
     (h_result : LExpr.HasTypeA [] resultExpr (LMonoTy.subst tySubst (.ftvar "a"))), _
   intro h_args h_result
@@ -59,7 +65,6 @@ noncomputable example (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited t
   | cons hx htail =>
     cases htail
     simp [idCeval] at heval; subst heval
-    simp [idOpInterp, idFunc, LFunc.mk, LSort.mkArrow] at *
-    rfl
+    exact (idOpInterp_apply tcInterp _ _).symm
 
 end Lambda

@@ -116,7 +116,7 @@ theorem assertionsValid_postconditionEvents_iff (I : ConditionInterp Expression)
       List.mem_filterMap] at he
     obtain ⟨⟨label, check⟩, _, hc⟩ := he
     by_cases hattr : check.attr = .Default
-    · simp only [hattr, if_true, Option.some.injEq] at hc
+    · simp only [hattr, ite_true, Option.some.injEq] at hc
       exact ⟨_, hc.symm⟩
     · simp [hattr] at hc
   unfold Trace.AssertionsValid Trace.AssertionsValidFrom

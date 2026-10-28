@@ -51,7 +51,8 @@ by `FormatCore` and `Translate`. -/
 theorem fracDecode_fracEncode (r : Rat) :
     (let (neg, num, den) := fracEncode r
      if neg then -(fracDecode num den) else fracDecode num den) = r := by
-  simp only [fracEncode, fracDecode, Int.ofNat_eq_natCast]
+  rw [fracEncode.eq_def]
+  simp only [fracDecode, Int.ofNat_eq_natCast]
   split
   · next h =>
     rw [decide_eq_true_eq] at h

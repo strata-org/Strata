@@ -673,7 +673,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
         congr 1
         have h_not_mem : name ∉ (bindings.map Prod.fst) := by
           have hkey := Map.find?_of_not_mem_values _ hfind
-          rw[Map.keys_eq_map_fst] at hkey
+          rw [Map.keys_eq_map_fst bindings] at hkey
           exact hkey
         rw [h_keys] at h_not_mem
         exact (IdentInterp.withArgs_not_mem _ fvarVal h_args h_not_mem).symm

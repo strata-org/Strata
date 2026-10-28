@@ -424,6 +424,18 @@ def Statements.callSites : Statements → List CallSite
   | s :: rest => Statement.callSites s ++ Statements.callSites rest
 end
 
+/-- The procedure names a single extended command can call. -/
+def CmdExt.calledProcedureNames (c : Command) : List String :=
+  (Command.callSites c).map (·.procName)
+
+/-- The procedure names a statement can call. -/
+def Statement.calledProcedureNames (s : Statement) : List String :=
+  (Statement.callSites s).map (·.procName)
+
+/-- The procedure names a statement list can call. -/
+def Statements.calledProcedureNames (ss : List Statement) : List String :=
+  (Statements.callSites ss).map (·.procName)
+
 ---------------------------------------------------------------------
 
 end

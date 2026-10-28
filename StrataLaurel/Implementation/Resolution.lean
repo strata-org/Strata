@@ -1995,61 +1995,61 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .LiteralBv v width => pure (Synth.litBv v width source)
   | .Var (.Local ref) => Synth.varLocal ref source
   | .IncrDecr mode op target =>
-    Synth.incrDecr exprMd mode op target source (by rw [h_node])
+    Synth.incrDecr exprMd mode op target source (by rw [h_node, h_expr])
   | .CompoundAssign op target rhs =>
-    Synth.compoundAssign exprMd op target rhs source (by rw [h_node])
+    Synth.compoundAssign exprMd op target rhs source (by rw [h_node, h_expr])
   | .Var (.Field target fieldName) =>
-    Synth.varField exprMd target fieldName source (by rw [h_node])
+    Synth.varField exprMd target fieldName source (by rw [h_node, h_expr])
   -- (Decl-Synth) `var x := e`: a sole unannotated declaration target with an
   -- initializer is handled specially so the binding's type is recovered from
   -- the synthesized RHS. All other assignment shapes go to `Synth.assign`.
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
-    Synth.declInfer exprMd name vs value source (by rw [h_node])
+    Synth.declInfer exprMd name vs value source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Synth.assign exprMd targets value source (by rw [h_node])
+    Synth.assign exprMd targets value source (by rw [h_node, h_expr])
   | .PureFieldUpdate target fieldName newVal =>
-    Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
+    Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node, h_expr])
   | .StaticCall callee args tyArgs =>
-    Synth.staticCall exprMd callee args tyArgs source (by rw [h_node]) expected?
+    Synth.staticCall exprMd callee args tyArgs source (by rw [h_node, h_expr]) expected?
   | .New ref typeArgs => Synth.new ref typeArgs source expected?
   | .This => Synth.this source
   | .ReferenceEquals lhs rhs =>
-    Synth.refEq exprMd expr lhs rhs source h_expr (by rw [h_node])
+    Synth.refEq exprMd expr lhs rhs source h_expr (by rw [h_node, h_expr])
   | .AsType target ty =>
-    Synth.asType exprMd target ty (by rw [h_node])
+    Synth.asType exprMd target ty (by rw [h_node, h_expr])
   | .IsType target ty =>
-    Synth.isType exprMd target ty source (by rw [h_node])
+    Synth.isType exprMd target ty source (by rw [h_node, h_expr])
   | .InstanceCall target callee args =>
-    Synth.instanceCall exprMd target callee args source (by rw [h_node])
+    Synth.instanceCall exprMd target callee args source (by rw [h_node, h_expr])
   | .Quantifier mode param trigger body =>
-    Synth.quantifier exprMd mode param trigger body source (by rw [h_node])
+    Synth.quantifier exprMd mode param trigger body source (by rw [h_node, h_expr])
   | .Assigned name =>
-    Synth.assigned exprMd name source (by rw [h_node])
+    Synth.assigned exprMd name source (by rw [h_node, h_expr])
   | .Fresh val =>
-    Synth.fresh exprMd expr val source h_expr (by rw [h_node])
+    Synth.fresh exprMd expr val source h_expr (by rw [h_node, h_expr])
   | .Old val label? =>
-    Synth.old exprMd val label? source (by rw [h_node]) expected?
+    Synth.old exprMd val label? source (by rw [h_node, h_expr]) expected?
   | .OldGuarantee val =>
-    Synth.oldGuarantee exprMd val source (by rw [h_node]) expected?
+    Synth.oldGuarantee exprMd val source (by rw [h_node, h_expr]) expected?
   | .OldRelies val =>
-    Synth.oldRelies exprMd val source (by rw [h_node]) expected?
+    Synth.oldRelies exprMd val source (by rw [h_node, h_expr]) expected?
   | .Yield => Synth.yield source
   | .Resume target value =>
-    Synth.resume exprMd target value source (by rw [h_node])
+    Synth.resume exprMd target value source (by rw [h_node, h_expr])
   | .HasNext target =>
-    Synth.hasNext exprMd target source (by rw [h_node])
+    Synth.hasNext exprMd target source (by rw [h_node, h_expr])
   | .Snapshot label => pure (Synth.snapshot label source)
   | .ProveBy val proof =>
-    Synth.proveBy exprMd val proof source (by rw [h_node]) expected?
+    Synth.proveBy exprMd val proof source (by rw [h_node, h_expr]) expected?
   | .ContractOf ty fn =>
-    Synth.contractOf exprMd ty fn source (by rw [h_node])
+    Synth.contractOf exprMd ty fn source (by rw [h_node, h_expr])
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
   | .IfThenElse cond thenBr elseBr =>
-    Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node]) expected?
+    Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node, h_expr]) expected?
   | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
   | .Block (head :: tail) label =>
-    Synth.block exprMd (head :: tail) label source (by rw [h_node]) expected?
+    Synth.block exprMd (head :: tail) label source (by rw [h_node, h_expr]) expected?
   -- Holes in synth position are gradual: an annotated hole synthesizes its
   -- declared type; an unannotated one is `Unknown`. Without this carve-out,
   -- a hole appearing as the target of e.g. a field access (`<?>.f`) would
@@ -2064,31 +2064,31 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     let r ← Check.varDeclare param source
     return (r, ⟨ .TVoid, source ⟩)
   | .While cond invs dec body postTest => do
-    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node])
+    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Exit target => do
     let r ← Check.exit target source
     return (r, ⟨ .TVoid, source ⟩)
   | .Return val => do
-    let r ← Check.return exprMd val source (by rw [h_node])
+    let r ← Check.return exprMd val source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assert condExpr summary => do
-    let r ← Check.assert exprMd condExpr summary source (by rw [h_node])
+    let r ← Check.assert exprMd condExpr summary source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assume cond => do
-    let r ← Check.assume exprMd cond source (by rw [h_node])
+    let r ← Check.assume exprMd cond source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Throw value => do
-    let r ← Check.throw exprMd value source (by rw [h_node])
+    let r ← Check.throw exprMd value source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   | .Try body catches finally? => do
-    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node])
+    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
-    | (try subst h_node; apply Prod.Lex.right; decide)
+    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
     | (apply Prod.Lex.right; decide)
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
@@ -2122,25 +2122,25 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   -- arm below routes it through synth-then-Sub. Non-empty blocks have no
   -- synth rule and are typed structurally by Check.block.
   | .Block (head :: tail) label =>
-    Check.block exprMd (head :: tail) label expected source (by rw [h_node])
+    Check.block exprMd (head :: tail) label expected source (by rw [h_node, h_expr])
   | .IfThenElse cond thenBr elseBr =>
-    Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node])
+    Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node, h_expr])
   -- (Decl-Synth, check mode) sole unannotated initialized declaration —
   -- see `Synth.resolveStmtExpr`.
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
-    Check.declInfer exprMd name vs value expected source (by rw [h_node])
+    Check.declInfer exprMd name vs value expected source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Check.assign exprMd targets value expected source (by rw [h_node])
+    Check.assign exprMd targets value expected source (by rw [h_node, h_expr])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
   | .Old val label? =>
-    Check.old exprMd val label? expected source (by rw [h_node])
+    Check.old exprMd val label? expected source (by rw [h_node, h_expr])
   | .OldGuarantee val =>
-    Check.oldGuarantee exprMd val expected source (by rw [h_node])
+    Check.oldGuarantee exprMd val expected source (by rw [h_node, h_expr])
   | .OldRelies val =>
-    Check.oldRelies exprMd val expected source (by rw [h_node])
+    Check.oldRelies exprMd val expected source (by rw [h_node, h_expr])
   | .ProveBy val proof =>
-    Check.proveBy exprMd val proof expected source (by rw [h_node])
+    Check.proveBy exprMd val proof expected source (by rw [h_node, h_expr])
   | _ =>
     -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
     -- realize the coercion witness onto the term. This chokepoint covers call
@@ -2186,7 +2186,7 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
     | (try subst_eqs; apply Prod.Lex.right; decide)
-    | (try subst h_node; apply Prod.Lex.right; decide)
+    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
     | (apply Prod.Lex.right; decide)
 
 -- ### Literals
@@ -2693,7 +2693,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr expected?
-  match elseBr with
+  match (dependent := true) elseBr with
   | none =>
     pure (.IfThenElse cond' thenBr' none, { val := .TVoid, source := source })
   | some e =>
@@ -2998,17 +2998,16 @@ def Synth.assign (exprMd : StmtExprMd)
   -- that re-resolve (`needsResolves`) then silently change the program's meaning.
   let pending ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
     have := hv
-    let ⟨vv, vs⟩ := v
-    match vv with
-    | .Local ref =>
+    match (dependent := true) v with
+    | ⟨.Local ref, vs⟩ =>
       let ref' ← resolveRef ref source
       pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
-    | .Field target fieldName =>
+    | ⟨.Field target fieldName, vs⟩ =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
       let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
-    | .Declare param =>
+    | ⟨.Declare param, vs⟩ =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
         | none =>
@@ -6617,11 +6616,11 @@ private def foldRestrictedStmtExprM [Monad m]
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted value
   | .Var (.Field target _) => foldRestrictedStmtExprM f restricted target
-  | .IncrDecr _ _ target => match target with
+  | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
-    match target with
+    match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted rhs

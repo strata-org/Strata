@@ -239,7 +239,7 @@ theorem ExecProg_deterministic
     | out_of_bounds => exact ⟨rfl, rfl⟩
     | end_function hty => have := instrType_some_lt hty; omega
     | set_return_value hty => have := instrType_some_lt hty; omega
-    | step hstep => cases hstep <;> (simp_all [instrType]; try (split at * <;> simp_all <;> omega))
+    | step hstep => cases hstep <;> simp_all [instrType]
   | end_function hty =>
     cases h2 with
     | out_of_bounds hge => have := instrType_some_lt hty; omega
@@ -258,7 +258,7 @@ theorem ExecProg_deterministic
     | step hstep => cases hstep <;> simp_all
   | step hstep1 _hcont1 ih =>
     cases h2 with
-    | out_of_bounds hge => cases hstep1 <;> (simp_all [instrType]; try (split at * <;> simp_all <;> omega))
+    | out_of_bounds hge => cases hstep1 <;> simp_all [instrType]
     | end_function hty2 => cases hstep1 <;> simp_all
     | set_return_value hty2 => cases hstep1 <;> simp_all
     | step hstep2 hcont2 =>

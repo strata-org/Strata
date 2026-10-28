@@ -342,7 +342,7 @@ private theorem false_not_holds (model : Lambda.Interp Core.Factory)
         (⟨f, σ, "f", ff0, md⟩ : Imperative.EventArg Core.Expression) = ff0 := rfl
     rw [hcap] at hex
     obtain ⟨_hty, hd⟩ := hex
-    simp [ff0, Lambda.LMonoTy.bool, Lambda.denote_boolConst] at hd
+    exact Bool.false_ne_true ((Lambda.denote_boolConst _ _ _ _ _ _hty).symm.trans hd)
   · exact hne hf
 
 /-- A `bool` variable `x` bound to `false` refutes the captured condition `x`: its closed
@@ -365,7 +365,7 @@ private theorem xFalse_notHolds (model : Lambda.Interp Core.Factory)
         Lambda.Env.mk, hstore]
     rw [hcap] at hex
     obtain ⟨_hty, hd⟩ := hex
-    simp [ff0, Lambda.LMonoTy.bool, Lambda.denote_boolConst] at hd
+    exact Bool.false_ne_true ((Lambda.denote_boolConst _ _ _ _ _ _hty).symm.trans hd)
   · exact hne hfac
 
 /-! ## Example 1 — `pAssume` meets its (trivial) contract -/
