@@ -84,7 +84,8 @@ private theorem callCmd_sem (fac : Expression.Factory)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd, callTrace, trueEvent, MetaData.empty]
+  simpa [Calls.defaultAssertEvents, ListMap.toList, callee, callCmd, callTrace, trueEvent,
+    MetaData.empty]
     using h
 
 /-- The same call step, derived through Core's abbreviations: `CoreBodyExecE.structured`
@@ -100,7 +101,8 @@ private theorem callCmd_semCore
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd, callTrace, trueEvent, MetaData.empty]
+  simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, callee, callCmd,
+    callTrace, trueEvent, MetaData.empty]
     using h
 
 /-- A one-block CFG whose block `"entry"` runs `callCmd` and then finishes. -/

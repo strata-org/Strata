@@ -26,7 +26,6 @@ namespace Strata.Test.Roundtrip
 
 open Strata
 open Strata.CoreDDM
-open Core
 open Lean.Parser (InputContext)
 
 /-- Parse a string as a Core program and translate to AST. -/

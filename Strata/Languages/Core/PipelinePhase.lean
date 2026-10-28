@@ -173,7 +173,7 @@ structure PipelinePhase where
     cannot introduce spurious models (e.g. it only removes information). -/
 def modelPreservingPipelinePhase (name : String)
     (t : Program → Transform.CoreTransformM (Bool × Program))
-    (requires establishes preserves : ProgramFactSet := factSet![]) : PipelinePhase where
+    («requires» establishes preserves : ProgramFactSet := factSet![]) : PipelinePhase where
   transform := t
   phase.name := name
   phase.getValidation _ := .modelPreserving
@@ -295,8 +295,8 @@ instance : Strata.Pipeline.PhaseContract PipelinePhase ProgramFact where
 
 /-- A pipeline validated to compose correctly, indexed by the facts it expects at
     entry. -/
-abbrev ValidatedPipeline (requires : ProgramFactSet) :=
-  Strata.Pipeline.ValidatedPipeline PipelinePhase ProgramFact requires
+abbrev ValidatedPipeline (pre : ProgramFactSet) :=
+  Strata.Pipeline.ValidatedPipeline PipelinePhase ProgramFact pre
 
 /-- Validate a dynamically assembled phase list against the facts known to hold
     on entry. -/

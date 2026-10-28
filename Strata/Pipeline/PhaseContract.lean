@@ -125,28 +125,28 @@ variable {P : Type} [PhaseContract P F]
     known on entry, which is why the head is the phase that receives the input
     program and `nil` is the end of the run. -/
 inductive ValidatedPipeline (P F : Type) [FactVocabulary F] [FactAlgebra F]
-    [PhaseContract P F] : (requires : FactSet F) → Type where
-  | nil {requires : FactSet F} : ValidatedPipeline P F requires
-  | cons {requires : FactSet F} (p : P) (h : PhaseContract.requires p ⊑ requires)
+    [PhaseContract P F] : (pre : FactSet F) → Type where
+  | nil {pre : FactSet F} : ValidatedPipeline P F pre
+  | cons {pre : FactSet F} (p : P) (h : PhaseContract.requires p ⊑ pre)
          (rest : ValidatedPipeline P F
-                   (applyPhase (PhaseContract.establishes p) (PhaseContract.preserves p) requires)) :
-         ValidatedPipeline P F requires
+                   (applyPhase (PhaseContract.establishes p) (PhaseContract.preserves p) pre)) :
+         ValidatedPipeline P F pre
 
 /-- What the pipeline establishes of the program it produces, given that its own
-    `requires` held of the program it was given: the `requires` carried through
+    `pre` held of the program it was given: the `pre` carried through
     `applyPhase` by every phase in turn.
 
-    The same relation to `requires` that a phase's `establishes` has to its own,
+    The same relation to `pre` that a phase's `establishes` has to its `requires`,
     which is why it takes that name. It is derived rather than declared, so there
     is nowhere to state it wrongly. -/
 def ValidatedPipeline.establishes :
-    {requires : FactSet F} → ValidatedPipeline P F requires → FactSet F
-  | requires, .nil => requires
+    {pre : FactSet F} → ValidatedPipeline P F pre → FactSet F
+  | pre, .nil => pre
   | _, .cons _ _ rest => rest.establishes
 
 /-- The phases of this pipeline, in the order they run. -/
 def ValidatedPipeline.phases :
-    {requires : FactSet F} → ValidatedPipeline P F requires → List P
+    {pre : FactSet F} → ValidatedPipeline P F pre → List P
   | _, .nil => []
   | _, .cons p _ rest => p :: rest.phases
 

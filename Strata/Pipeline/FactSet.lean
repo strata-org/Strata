@@ -123,10 +123,10 @@ private theorem filter_sublist_filter {l : List F} {p q : F → Bool}
     have ih' := ih (fun f hf => h f (List.mem_cons_of_mem a hf))
     by_cases hp : p a = true
     · have hq : q a = true := h a List.mem_cons_self hp
-      simp only [List.filter_cons, hp, hq, if_pos]
+      simp only [List.filter_cons, hp, hq, ite_eq_left]
       exact List.cons_sublist_cons.mpr ih'
     · by_cases hq : q a = true
-      · simp only [List.filter_cons, hp, hq, if_pos]
+      · simp only [List.filter_cons, hp, hq, ite_eq_left]
         exact ih'.cons a
       · simp only [List.filter_cons, hp, hq]
         exact ih'
@@ -185,7 +185,7 @@ private theorem stepCursor_sublist {a : F} {as l : List F}
       have hne : ¬ a = b := by
         intro heq
         exact (List.nodup_cons.mp hnd).1 (heq ▸ h'.mem List.mem_cons_self)
-      simp only [stepCursor, if_neg hne]
+      simp only [stepCursor, ite_eq_right hne]
       exact h'
   | cons_cons _ h' => simpa [stepCursor] using h'
 
@@ -260,15 +260,15 @@ theorem mergeWalk_eq_filter {as l₁ l₂ : List F} (hnd : as.Nodup)
         rcases hhead with h | h
         · exact Or.inl ((head_eq_iff_mem hnd h₁).mp h)
         · exact Or.inr ((head_eq_iff_mem hnd h₂).mp h)
-      simp only [mergeWalk, if_pos hhead, List.filter_cons, decide_eq_true hmem, if_pos]
+      simp only [mergeWalk, ite_eq_left hhead, List.filter_cons, decide_eq_true hmem, ite_eq_left]
       rw [rest, congrFilter]
     · have hmem : ¬ (a ∈ l₁ ∨ a ∈ l₂) := by
         intro hm
         rcases hm with h | h
         · exact hhead (Or.inl ((head_eq_iff_mem hnd h₁).mpr h))
         · exact hhead (Or.inr ((head_eq_iff_mem hnd h₂).mpr h))
-      simp only [mergeWalk, if_neg hhead, List.filter_cons, decide_eq_false hmem,
-        if_false, Bool.false_eq_true]
+      simp only [mergeWalk, ite_eq_right hhead, List.filter_cons, decide_eq_false hmem,
+        ite_false, Bool.false_eq_true]
       rw [rest, congrFilter]
 
 /-- Intersection's walk computes the facts of both sets. -/
@@ -292,13 +292,13 @@ theorem interWalk_eq_filter {as l₁ l₂ : List F} (hnd : as.Nodup)
     by_cases hhead : l₁.head? = some a ∧ l₂.head? = some a
     · have hmem : a ∈ l₁ ∧ a ∈ l₂ :=
         ⟨(head_eq_iff_mem hnd h₁).mp hhead.1, (head_eq_iff_mem hnd h₂).mp hhead.2⟩
-      simp only [interWalk, if_pos hhead, List.filter_cons, decide_eq_true hmem, if_pos]
+      simp only [interWalk, ite_eq_left hhead, List.filter_cons, decide_eq_true hmem, ite_eq_left]
       rw [rest, congrFilter]
     · have hmem : ¬ (a ∈ l₁ ∧ a ∈ l₂) := by
         intro hm
         exact hhead ⟨(head_eq_iff_mem hnd h₁).mpr hm.1, (head_eq_iff_mem hnd h₂).mpr hm.2⟩
-      simp only [interWalk, if_neg hhead, List.filter_cons, decide_eq_false hmem,
-        if_false, Bool.false_eq_true]
+      simp only [interWalk, ite_eq_right hhead, List.filter_cons, decide_eq_false hmem,
+        ite_false, Bool.false_eq_true]
       rw [rest, congrFilter]
 
 /-! ## Discharging canonicity

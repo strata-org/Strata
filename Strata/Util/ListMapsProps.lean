@@ -25,6 +25,30 @@ public section
 
 ---------------------------------------------------------------------
 
+/-! Equations for `Map`/`Maps` operations at the shapes the `Maps` proofs
+produce. A literal `[]` or `[(x, v)]`, and `List.flatten` of a `Maps`, are typed
+as `List`s, so the general `Map` lemmas cannot be instantiated at them by
+`simp`/`rw`; these lemmas state those shapes directly. -/
+
+/-- Inserting into the empty map yields the singleton map `[(x, v)]`. -/
+theorem Map.insert_nil [DecidableEq α] (x : α) (v : β) :
+    Map.insert ([] : List (α × β)) x v = [(x, v)] := by
+  grind [Map.insert]
+
+/-- Appending a singleton `[(x, v)]` to a map in which `x` is absent makes `x`
+look up to `v`. -/
+theorem Map.find?_append_singleton_self [DecidableEq α] (m : Map α β) (x : α) (v : β)
+    (h : Map.find? m x = none) :
+    Map.find? (HAppend.hAppend (α := Map α β) (β := Map α β) m [(x, v)]) x = some v := by
+  rw [Map.find?_map_append m [(x, v)] x, h]
+  simp [Map.find?]
+
+/-- Flattening a cons stack of maps concatenates the head scope with the
+flattening of the rest. -/
+theorem Maps.toSingleMap_cons (m : Map α β) (rest : Maps α β) :
+    Maps.toSingleMap (m :: rest) = m ++ Maps.toSingleMap rest := rfl
+
+
 theorem Maps.find?_mem_keys [DecidableEq α] (m : Maps α β)
   (h : Maps.find? m k = some v) :
   k ∈ Maps.keys m := by
@@ -39,7 +63,6 @@ theorem Maps.find?_mem_keys [DecidableEq α] (m : Maps α β)
       simp [Maps.keys]
       have := @Map.find?_mem_keys α β k v _ head heq
       simp_all
-  done
 
 
 theorem Maps.find?_mem_values [DecidableEq α] (m : Maps α β)
@@ -201,7 +224,7 @@ theorem Maps.find?_insert_self [DecidableEq α]
     Maps.find? (Maps.insert ms x v) x = some v := by
   simp only [Maps.insert]; split
   · match ms with
-    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
+    | [] => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.insert_nil, Map.find?]
     | _ :: _ => simp [Maps.pop, Maps.push, Maps.newest, Maps.find?, Map.find?_insert_self]
   · exact Maps.find?_update_self ms x v (by simp_all)
 
@@ -323,8 +346,7 @@ theorem Maps.find?_addInNewest_self [DecidableEq α]
   | cons m rest =>
     simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
     unfold Maps.find?
-    rw [Map.find?_map_append, h_fresh m (.head _)]
-    simp [Map.find?]
+    rw [Map.find?_append_singleton_self m x v (h_fresh m (.head _))]
 
 
 /-- When `Maps.find? ms x = none`, the newest scope also has `find? = none`. -/
@@ -475,7 +497,7 @@ theorem Maps.find?_none_toSingleMap [DecidableEq α]
     unfold Maps.find? at h
     have m_find_is_none : m.find? x = none := by grind
     have rest_find_is_none : Maps.find? rest x = none := by grind
-    simp only [toSingleMap, Map, List.flatten_cons, Map.find?_append, m_find_is_none]
+    rw [Maps.toSingleMap_cons, Map.find?_map_append, m_find_is_none]
     exact ih rest_find_is_none
 
 

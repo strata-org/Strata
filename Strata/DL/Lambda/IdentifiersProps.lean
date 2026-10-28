@@ -46,7 +46,7 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   rw[beq_iff_eq] at name_eq
   rename_i m_contains
   have name_notin : ¬ x.name ∈ m := by grind
-  simp; rw[if_neg name_notin]
+  simp; rw[ite_eq_right name_notin]
   cases meta_eq: (x.metadata == y.metadata); grind
   rw[beq_iff_eq] at meta_eq
   constructor
@@ -98,5 +98,119 @@ theorem Identifiers.addListWithErrorNoDup {IDMeta} [DecidableEq IDMeta]
     have := Identifiers.addWithErrorContains Hadd h
     have := Identifiers.addListWithErrorNotin Hid h
     grind
+
+/-! ### Identifier conditions as name membership -/
+
+/-- A name registered in the map has a lookup, and conversely. -/
+theorem Identifiers.containsName_eq_true_iff_mem {IDMeta} [DecidableEq IDMeta]
+    (m : Identifiers IDMeta) (n : String) :
+    Identifiers.containsName m n = true ↔ n ∈ m := by
+  unfold Identifiers.containsName
+  rw [← Std.HashMap.contains_eq_isSome_getElem?]
+  exact Std.HashMap.contains_iff_mem
+
+/-- With `Unit` metadata, membership of an identifier and of its name agree. -/
+theorem Identifiers.contains_eq_containsName_unit (m : Identifiers Unit)
+    (x : Identifier Unit) :
+    Identifiers.contains m x = Identifiers.containsName m x.name := by
+  unfold Identifiers.contains Identifiers.containsName
+  split
+  · rename_i v hv; simp [hv]
+  · rename_i hv; simp [hv]
+
+/-- A successful registration inserts the new name into the map. -/
+theorem Identifiers.addWithError_ok_eq {IDMeta}
+    {m m' : Identifiers IDMeta} {x : Identifier IDMeta} {f : Message}
+    (h : m.addWithError x f = .ok m') : m' = m.insertIfNew x.name x.metadata := by
+  simp only [Identifiers.addWithError] at h
+  generalize hgen : m.containsThenInsertIfNew x.name x.metadata = p at h
+  cases hb : p.fst with
+  | true => simp only [hb, reduceIte, reduceCtorEq] at h
+  | false =>
+    simp only [hb, Bool.false_eq_true, ite_false, Except.ok.injEq] at h
+    rw [← h, ← hgen]
+    exact Std.HashMap.containsThenInsertIfNew_snd
+
+/-- A successful registration keeps every name the map held. -/
+theorem Identifiers.addWithError_mem_mono {IDMeta}
+    {m m' : Identifiers IDMeta} {x : Identifier IDMeta} {f : Message}
+    (h : m.addWithError x f = .ok m') : ∀ n : String, n ∈ m → n ∈ m' := by
+  intro n hn
+  rw [Identifiers.addWithError_ok_eq h]
+  exact Std.HashMap.mem_insertIfNew.mpr (Or.inr hn)
+
+/-- A successful registration holds only the new name and the names the map held. -/
+theorem Identifiers.addWithError_mem_inv {IDMeta}
+    {m m' : Identifiers IDMeta} {x : Identifier IDMeta} {f : Message}
+    (h : m.addWithError x f = .ok m') : ∀ n : String, n ∈ m' → n = x.name ∨ n ∈ m := by
+  intro n hn
+  rw [Identifiers.addWithError_ok_eq h] at hn
+  rcases Std.HashMap.mem_insertIfNew.mp hn with hEq | hMem
+  · exact Or.inl (beq_iff_eq.mp hEq).symm
+  · exact Or.inr hMem
+
+/-- A successful list registration keeps every name the map held. -/
+theorem Identifiers.addListWithError_mem_mono {IDMeta}
+    {m m' : Identifiers IDMeta} {l : List (Identifier IDMeta)}
+    {f : Identifier IDMeta → Message}
+    (h : m.addListWithError l f = .ok m') : ∀ n : String, n ∈ m → n ∈ m' := by
+  unfold Identifiers.addListWithError at h
+  induction l generalizing m with
+  | nil =>
+    simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h; exact fun n hn => hn
+  | cons a rest ih =>
+    simp only [List.foldlM_cons, bind, Except.bind] at h
+    split at h
+    · exact absurd h (by simp)
+    · rename_i m1 hm1
+      exact fun n hn => ih h n (Identifiers.addWithError_mem_mono hm1 n hn)
+
+/-- A successful list registration records the name of every identifier it was given. -/
+theorem Identifiers.addListWithError_mem_new {IDMeta} [DecidableEq IDMeta]
+    {m m' : Identifiers IDMeta} {l : List (Identifier IDMeta)}
+    {f : Identifier IDMeta → Message}
+    (h : m.addListWithError l f = .ok m') : ∀ x ∈ l, x.name ∈ m' := by
+  intro x hx
+  have hc := (Identifiers.addListWithErrorContains h x).mpr (Or.inl hx)
+  unfold Identifiers.contains at hc
+  cases hlk : m'[x.name]? with
+  | none => rw [hlk] at hc; exact absurd hc (by simp)
+  | some v =>
+    rw [← Std.HashMap.contains_iff_mem, Std.HashMap.contains_eq_isSome_getElem?, hlk]
+    rfl
+
+/-- A name a successful registration accepted was absent from the map beforehand. -/
+theorem Identifiers.addListWithError_not_mem {m m' : Identifiers Unit}
+    {l : List (Identifier Unit)} {f : Identifier Unit → Message}
+    (h : m.addListWithError l f = .ok m') : ∀ x ∈ l, x.name ∉ m := by
+  intro x hx hmem
+  have hc := Identifiers.addListWithErrorNotin h x hx
+  rw [Identifiers.contains_eq_containsName_unit] at hc
+  have hyes := (Identifiers.containsName_eq_true_iff_mem m x.name).mpr hmem
+  rw [hc] at hyes
+  exact absurd hyes (by simp)
+
+/-- A successful registration keeps every lookup the map answered before. -/
+theorem Identifiers.addWithError_getElem?_mono {IDMeta} (m m' : Identifiers IDMeta)
+    (x : Identifier IDMeta) (f : Message)
+    (h : m.addWithError x f = .ok m') :
+    ∀ (ref : String) (n : IDMeta), m[ref]? = some n → m'[ref]? = some n := by
+  intro ref n hn
+  simp only [Identifiers.addWithError, Std.HashMap.containsThenInsertIfNew_fst,
+    Std.HashMap.containsThenInsertIfNew_snd] at h
+  split at h
+  · simp at h
+  · rename_i hc
+    simp only [Except.ok.injEq] at h
+    subst h
+    rw [Std.HashMap.getElem?_insertIfNew]
+    split
+    · rename_i hcond
+      obtain ⟨heq, hnm⟩ := hcond
+      rw [beq_iff_eq] at heq
+      subst heq
+      exact absurd (Std.HashMap.mem_iff_isSome_getElem?.mpr (by rw [hn]; rfl)) hnm
+    · exact hn
 
 end Lambda

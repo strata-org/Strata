@@ -40,8 +40,8 @@ theorem getOutputOnlyParams_subset_outputs (h : Procedure.Header) :
 theorem getOutputOnlyParams_keys_disjoint_inputs (h : Procedure.Header) :
     ∀ id ∈ ListMap.keys h.getOutputOnlyParams, id ∉ ListMap.keys h.inputs := by
   intro id hid
-  unfold Procedure.Header.getOutputOnlyParams at hid
   rw [ListMap.keys_eq_map_fst] at hid
+  unfold Procedure.Header.getOutputOnlyParams at hid
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   have hfilt := (List.mem_filter.mp hmem).2
   simp only [Bool.not_eq_true'] at hfilt
@@ -54,8 +54,8 @@ theorem getOutputOnlyParams_keys_disjoint_inputs (h : Procedure.Header) :
 theorem getOutputOnlyParams_keys_subset_outputs (h : Procedure.Header) :
     ∀ id ∈ ListMap.keys h.getOutputOnlyParams, id ∈ ListMap.keys h.outputs := by
   intro id hid
-  unfold Procedure.Header.getOutputOnlyParams at hid
   rw [ListMap.keys_eq_map_fst] at hid ⊢
+  unfold Procedure.Header.getOutputOnlyParams at hid
   obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
   exact List.mem_map_of_mem (f := Prod.fst) (List.mem_filter.mp hmem).1
 
@@ -71,8 +71,8 @@ theorem getInoutParams_nodup (h : Procedure.Header)
 theorem getOutputOnlyParams_nodup (h : Procedure.Header)
     (hnd : (ListMap.keys h.outputs).Nodup) :
     (ListMap.keys h.getOutputOnlyParams).Nodup := by
-  unfold Procedure.Header.getOutputOnlyParams
   rw [ListMap.keys_eq_map_fst] at hnd ⊢
+  unfold Procedure.Header.getOutputOnlyParams
   exact (List.filter_sublist.map Prod.fst).nodup hnd
 
 /-- Keys of `getInoutParams` are in both inputs and outputs,

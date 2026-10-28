@@ -102,7 +102,7 @@ private theorem LExpr.shortCircuitCall?_map_some {lfunc : LFunc Tbase} {args : L
     · simp at h
   obtain ⟨rfl, hce⟩ := LExpr.shortCircuitCall?_some h
   unfold LExpr.shortCircuitCall?
-  rw [if_pos hsc, List.map_cons, hce]
+  rw [ite_eq_left hsc, List.map_cons, hce]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
   [Traceable LExpr.EvalProvenance Tbase.Metadata] in
@@ -114,10 +114,10 @@ private theorem LExpr.shortCircuitCall?_none_of_length {lfunc : LFunc Tbase}
   unfold LExpr.shortCircuitCall? at h ⊢
   split at h
   · rename_i hsc
-    rw [if_pos hsc]
+    rw [ite_eq_left hsc]
     cases args₁ <;> cases args₂ <;> cases hce : lfunc.concreteEval <;> simp_all
   · rename_i hsc
-    rw [if_neg hsc]
+    rw [ite_eq_right hsc]
 
 omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
   [Traceable LExpr.EvalProvenance Tbase.Metadata] in
@@ -134,7 +134,7 @@ private theorem LExpr.shortCircuitCall?_cons {lfunc : LFunc Tbase}
     · simp at h
   obtain ⟨_, hce⟩ := LExpr.shortCircuitCall?_some h
   unfold LExpr.shortCircuitCall?
-  rw [if_pos hsc, hce]
+  rw [ite_eq_left hsc, hce]
 
 /-! ### `eval_value_isValue`
 
@@ -287,8 +287,8 @@ private theorem evalCore_value_isValue
         rename_i v hx
         simp only at hv
         by_cases hcan : LExpr.isValue F v = true
-        · rw [if_pos hcan]; exact hcan
-        · rw [if_neg hcan] at hv; simp at hv
+        · rw [ite_eq_left hcan]; exact hcan
+        · rw [ite_eq_right hcan] at hv; simp at hv
       · -- env x = none
         subst hp; simp at hv
     | abs m n ty body =>
@@ -296,15 +296,15 @@ private theorem evalCore_value_isValue
       subst hp
       simp only at hv
       by_cases hcan : LExpr.isValue F (LExpr.substFvarsFromEnv env (.abs m n ty body)) = true
-      · rw [if_pos hcan]; exact hcan
-      · rw [if_neg hcan] at hv; simp at hv
+      · rw [ite_eq_left hcan]; exact hcan
+      · rw [ite_eq_right hcan] at hv; simp at hv
     | quant m q n ty tr body =>
       simp only [LExpr.evalCore] at hp
       subst hp
       simp only at hv
       by_cases hcan : LExpr.isValue F (LExpr.substFvarsFromEnv env (.quant m q n ty tr body)) = true
-      · rw [if_pos hcan]; exact hcan
-      · rw [if_neg hcan] at hv; simp at hv
+      · rw [ite_eq_left hcan]; exact hcan
+      · rw [ite_eq_right hcan] at hv; simp at hv
     | app m e1 e2 =>
       simp only [LExpr.evalCore] at hp
       subst hp
@@ -356,8 +356,8 @@ theorem eval_value_isValue
       simp only [LExpr.eval] at hp
       subst hp
       by_cases hcan : LExpr.isValue F e = true
-      · rw [if_pos hcan]; exact hcan
-      · rw [if_neg hcan] at hv; simp at hv
+      · rw [ite_eq_left hcan]; exact hcan
+      · rw [ite_eq_right hcan] at hv; simp at hv
     exact key _ rfl h
   | succ n' ih =>
     have key : ∀ (p : LExpr Tbase.mono × LExpr.EvalResult),
@@ -405,14 +405,14 @@ theorem eval_value_isValue
               exact absurd hv LExpr.EvalResult.noConfusion
           · -- dite false branch: if eval_cond then ... else ...
             rename_i h_not_cond
-            rw [dif_neg h_not_cond] at hv
+            rw [dite_eq_right h_not_cond] at hv
             cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
             cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
               simp only [h_fEC, h_fEV] at hv ⊢
               split at hv
               · -- inner if true: match concreteEval ...
                 rename_i h_eval_cond
-                rw [if_pos h_eval_cond]
+                rw [ite_eq_left h_eval_cond]
                 split at hv
                 · -- concreteEval = none: the rebuilt call is certified exactly
                   -- when it is a value
@@ -459,7 +459,7 @@ theorem eval_value_identity
     (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     (hcan : LExpr.isValue F e = true) :
     LExpr.eval n F env e = (e, .value true) := by
-  cases n <;> (simp only [LExpr.eval]; rw [if_pos hcan])
+  cases n <;> (simp only [LExpr.eval]; rw [ite_eq_left hcan])
 
 end eval_value_identity
 
@@ -643,10 +643,10 @@ theorem eval_getVars_subset
               have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq y hin
               have h_len : lfunc.inputs.keys.length =
                   (args.map (fun a => (LExpr.eval n' F env a).fst)).length := by
-                rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+                rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans (h_arity.symm.trans (List.length_map _).symm)
               have h_mem_keys : y ∈ Map.keys (lfunc.inputs.keys.zip
                   (args.map (fun a => (LExpr.eval n' F env a).fst))) := by
-                rw [Map.keys_eq_map_fst, List.map_fst_zip (by omega)]
+                rw [Map.keys_eq_map_fst (lfunc.inputs.keys.zip _), List.map_fst_zip (by omega)]
                 exact hy_key
               exact Map_find?_ne_none_of_mem_keys _ y h_mem_keys hnone
             · have hv_mem : v ∈ (lfunc.inputs.keys.zip
@@ -969,10 +969,10 @@ theorem eval_env_congr
                 have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq x hin
                 have h_len : lfunc.inputs.keys.length =
                     (args.map (fun a => (LExpr.eval n' F env₂ a).fst)).length := by
-                  rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+                  rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans (h_arity.symm.trans (List.length_map _).symm)
                 have h_mem_keys : x ∈ Map.keys (lfunc.inputs.keys.zip
                     (args.map (fun a => (LExpr.eval n' F env₂ a).fst))) := by
-                  rw [Map.keys_eq_map_fst, List.map_fst_zip (by omega)]
+                  rw [Map.keys_eq_map_fst (lfunc.inputs.keys.zip _), List.map_fst_zip (by omega)]
                   exact hy_key
                 exact Map_find?_ne_none_of_mem_keys _ x h_mem_keys hnone
               · have hv_mem := Map_find?_some_mem_values _ k v hk
@@ -1208,12 +1208,12 @@ theorem evalFully_fvar_store
     simp [LExpr.LExpr.getVars] at h_no_vars
   have eval0 : LExpr.eval 0 F env (.fvar m v ty : LExpr Tbase.mono) =
       (.fvar m v ty, .outOfFuel) := by
-    simp only [LExpr.eval]; rw [if_neg (Bool.eq_false_iff.mp hnotcan)]
+    simp only [LExpr.eval]; rw [ite_eq_right (Bool.eq_false_iff.mp hnotcan)]
   have heval_succ : ∀ n', LExpr.eval (n' + 1) F env (.fvar m v ty : LExpr Tbase.mono) =
       LExpr.evalCore n' F env (.fvar m v ty : LExpr Tbase.mono) := by
     intro n'
     unfold LExpr.eval
-    rw [if_neg (Bool.eq_false_iff.mp hnotcan)]
+    rw [ite_eq_right (Bool.eq_false_iff.mp hnotcan)]
     split
     · rename_i heq; rw [callOfLFunc_fvar_none F m v ty] at heq; exact absurd heq (by simp)
     · rfl
@@ -1434,7 +1434,7 @@ private theorem evalApp_value_true_mono
       rw [h_e1_lift, h_e2_lift]
       rw [h_e1_eq]
       simp only
-      rw [if_neg h_neq, h_inner_lift]
+      rw [ite_eq_right h_neq, h_inner_lift]
       simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
   · -- (eval n' e1).fst is not .abs
     rename_i h_e1_not_abs
@@ -1447,7 +1447,7 @@ private theorem evalApp_value_true_mono
       · rename_i mAbs' nm' ty' body' h_abs_eq
         exact absurd h_abs_eq (h_e1_not_abs mAbs' nm' ty' body')
       · rename_i h_other
-        rw [if_neg h_neq, h_inner_lift]
+        rw [ite_eq_right h_neq, h_inner_lift]
         simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
 
 /-- Helper: if `evalCore` returns `(v, .value true)`, adding fuel preserves the
@@ -1545,7 +1545,7 @@ private theorem evalShortCircuit_eq_value_true_iff
   · rintro ⟨a', e', ha, hval, hce, he'⟩
     rw [ha]
     dsimp only
-    rw [if_pos hval, hce]
+    rw [ite_eq_left hval, hce]
     dsimp only
     rw [he']
     simp [LExpr.EvalResult.combineValueFlag, LExpr.EvalResult.isValueTrue]
@@ -1560,12 +1560,12 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
   | zero =>
     simp only [LExpr.eval] at h
     by_cases hcan : LExpr.isValue F e = true
-    · rw [if_pos hcan] at h
+    · rw [ite_eq_left hcan] at h
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
       exact eval_value_identity (0 + 1) F env v hcan
-    · rw [if_neg hcan] at h
+    · rw [ite_eq_right hcan] at h
       have := congrArg Prod.snd h; simp at this
   | succ n' ih =>
     -- The inductive step factors two common lemmas: `arg_lift` (each fully-reduced
@@ -1626,7 +1626,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
           have h_lift := evalShortCircuit_value_true_transfer n' (n'+1) F env env e op_expr
             a rest ceval v (fun e' v' hev => ih e' v' hev) h
           simp only [LExpr.eval]
-          rw [if_neg h_not_can, h_call]
+          rw [ite_eq_right h_not_can, h_call]
           dsimp only
           rw [h_sc]
           exact h_lift
@@ -1659,7 +1659,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
               rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]; exact h_map_eq'
             show LExpr.eval (n'+1+1) F env e = (v, .value true)
             conv => lhs; rw [LExpr.eval]
-            rw [if_neg h_not_can, h_call]
+            rw [ite_eq_right h_not_can, h_call]
             dsimp only
             rw [h_sc]
             dsimp only
@@ -1704,14 +1704,14 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                 exact h_map_eq
               show LExpr.eval (n'+1+1) F env e = (v, .value true)
               conv => lhs; rw [LExpr.eval]
-              rw [if_neg h_not_can, h_call]
+              rw [ite_eq_right h_not_can, h_call]
               dsimp only
               rw [h_sc]
               dsimp only
               split
               · rename_i h_cond_lift
                 exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
-              · rw [h_map_eq_prod, if_pos h_eval_cond]
+              · rw [h_map_eq_prod, ite_eq_left h_eval_cond]
                 simp only [LExpr.List_map_fst_map_eval]
                 rw [h_ceval_none]
                 dsimp only
@@ -1739,7 +1739,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                 have h_e'_lift := ih _ _ h_e'_snd
                 show LExpr.eval (n'+1+1) F env e = (v, .value true)
                 conv => lhs; rw [LExpr.eval]
-                rw [if_neg h_not_can, h_call]
+                rw [ite_eq_right h_not_can, h_call]
                 dsimp only
                 rw [h_sc]
                 dsimp only
@@ -1748,7 +1748,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                   exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
                 · rename_i h_cond_lift
                   simp only [LExpr.List_map_fst_map_eval] at h_ceval_res
-                  rw [h_map_eq_prod, if_pos h_eval_cond]
+                  rw [h_map_eq_prod, ite_eq_left h_eval_cond]
                   simp only [LExpr.List_map_fst_map_eval]
                   rw [h_ceval]
                   dsimp only
@@ -1766,7 +1766,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
         have h_ec := evalCore_value_true_mono n' F env e v
           (fun e' v' hev => ih e' v' hev) h
         simp only [LExpr.eval]
-        rw [if_neg h_not_can, h_nocall]
+        rw [ite_eq_right h_not_can, h_nocall]
         exact h_ec
 
 end eval_value_true_mono
@@ -2025,7 +2025,7 @@ private theorem evalApp_frame
       rw [h_e1_lift, h_e2_lift]
       rw [h_e1_eq]
       simp only
-      rw [if_neg h_neq, h_inner_lift]
+      rw [ite_eq_right h_neq, h_inner_lift]
       simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
   · rename_i h_e1_not_abs
     split at h
@@ -2037,7 +2037,7 @@ private theorem evalApp_frame
       · rename_i mAbs' nm' ty' body' h_abs_eq
         exact absurd h_abs_eq (h_e1_not_abs mAbs' nm' ty' body')
       · rename_i h_other
-        rw [if_neg h_neq, h_inner_lift]
+        rw [ite_eq_right h_neq, h_inner_lift]
         simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
 
 /-- Frame for `evalCore`. -/
@@ -2079,7 +2079,7 @@ private theorem evalCore_frame
           LExpr.substFvarsFromEnv env (LExpr.abs m n ty body) :=
         substFvarsFromEnv_env_congr env' env (LExpr.abs m n ty body)
           (fun x hx => (hag x hx).symm)
-      rw [hsub_eq, if_pos hcan, h_fst]
+      rw [hsub_eq, ite_eq_left hcan, h_fst]
     · exact absurd h_snd (by simp)
   | quant m qk n ty tr body =>
     simp only [LExpr.evalCore] at h ⊢
@@ -2093,7 +2093,7 @@ private theorem evalCore_frame
           LExpr.substFvarsFromEnv env (LExpr.quant m qk n ty tr body) :=
         substFvarsFromEnv_env_congr env' env (LExpr.quant m qk n ty tr body)
           (fun x hx => (hag x hx).symm)
-      rw [hsub_eq, if_pos hcan, h_fst]
+      rw [hsub_eq, ite_eq_left hcan, h_fst]
     · exact absurd h_snd (by simp)
   | app m e1 e2 =>
     simp only [LExpr.evalCore] at h ⊢
@@ -2125,12 +2125,12 @@ theorem eval_frame
     intro e v h
     simp only [LExpr.eval] at h
     by_cases hcan : LExpr.isValue F e = true
-    · rw [if_pos hcan] at h
+    · rw [ite_eq_left hcan] at h
       have hfe : v = e := by
         have := congrArg Prod.fst h; simp at this; exact this.symm
       subst hfe
       exact eval_value_identity 0 F env' v hcan
-    · rw [if_neg hcan] at h
+    · rw [ite_eq_right hcan] at h
       have := congrArg Prod.snd h; simp at this
   | succ n' ih =>
     intro e v h
@@ -2184,7 +2184,7 @@ theorem eval_frame
           have h_lift := evalShortCircuit_value_true_transfer n' n' F env env' e op_expr
             a rest ceval v (fun e' v' hev => ih e' v' hev) h
           simp only [LExpr.eval]
-          rw [if_neg h_not_can, h_call]
+          rw [ite_eq_right h_not_can, h_call]
           dsimp only
           rw [h_sc]
           exact h_lift
@@ -2215,7 +2215,7 @@ theorem eval_frame
               rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]; exact h_map_eq'
             show LExpr.eval (n'+1) F env' e = (v, .value true)
             conv => lhs; rw [LExpr.eval]
-            rw [if_neg h_not_can, h_call]
+            rw [ite_eq_right h_not_can, h_call]
             dsimp only
             rw [h_sc]
             dsimp only
@@ -2260,14 +2260,14 @@ theorem eval_frame
                 exact h_map_eq
               show LExpr.eval (n'+1) F env' e = (v, .value true)
               conv => lhs; rw [LExpr.eval]
-              rw [if_neg h_not_can, h_call]
+              rw [ite_eq_right h_not_can, h_call]
               dsimp only
               rw [h_sc]
               dsimp only
               split
               · rename_i h_cond_lift
                 exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
-              · rw [h_map_eq_prod, if_pos h_eval_cond]
+              · rw [h_map_eq_prod, ite_eq_left h_eval_cond]
                 simp only [LExpr.List_map_fst_map_eval]
                 rw [h_ceval_none]
                 dsimp only
@@ -2295,7 +2295,7 @@ theorem eval_frame
                 have h_e'_lift := ih _ _ h_e'_snd
                 show LExpr.eval (n'+1) F env' e = (v, .value true)
                 conv => lhs; rw [LExpr.eval]
-                rw [if_neg h_not_can, h_call]
+                rw [ite_eq_right h_not_can, h_call]
                 dsimp only
                 rw [h_sc]
                 dsimp only
@@ -2304,7 +2304,7 @@ theorem eval_frame
                   exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
                 · rename_i h_cond_lift
                   simp only [LExpr.List_map_fst_map_eval] at h_ceval_res
-                  rw [h_map_eq_prod, if_pos h_eval_cond]
+                  rw [h_map_eq_prod, ite_eq_left h_eval_cond]
                   simp only [LExpr.List_map_fst_map_eval]
                   rw [h_ceval]
                   dsimp only
@@ -2322,7 +2322,7 @@ theorem eval_frame
         have h_ec := evalCore_frame n' F env env' hext e v
           (fun e' v' hev => ih e' v' hev) h
         simp only [LExpr.eval]
-        rw [if_neg h_not_can, h_nocall]
+        rw [ite_eq_right h_not_can, h_nocall]
         exact h_ec
 
 /-- **Store-extension monotonicity of `LExpr.evalFully`.**  A successful
@@ -2692,10 +2692,10 @@ theorem callOfLFunc_substFvars_none
   have hgl_go : getLFuncCall.go (LExpr.substFvars e sm) [] = (LExpr.op mo no to, args) := by
     unfold getLFuncCall at hgl; exact hgl
   by_cases hempty : sm.isEmpty
-  · have hid : LExpr.substFvars e sm = e := by unfold LExpr.substFvars; rw [if_pos hempty]
+  · have hid : LExpr.substFvars e sm = e := by unfold LExpr.substFvars; rw [ite_eq_left hempty]
     rw [hid] at hsome; rw [hsome] at h; simp at h
   · have haux : LExpr.substFvars.substFvarsAux e sm = LExpr.substFvars e sm := by
-      unfold LExpr.substFvars; rw [if_neg hempty]
+      unfold LExpr.substFvars; rw [ite_eq_right hempty]
     obtain ⟨args0, hgo0⟩ := getLFuncCall_go_substFvars_op_head sm hVar e [] []
       mo no to args (by rw [haux]; exact hgl_go)
     have hgl0 : getLFuncCall e = (LExpr.op mo no to, args0) := by
@@ -2857,7 +2857,7 @@ theorem eval_succ_ite
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono) :
     LExpr.eval (n' + 1) F env (.ite m c t f) = LExpr.evalIte n' F env m c t f := by
   rw [LExpr.eval]
-  rw [if_neg (by rw [isValue_ite_false]; simp)]
+  rw [ite_eq_right (by rw [isValue_ite_false]; simp)]
   rw [callOfLFunc_ite_none]
   simp only [LExpr.evalCore]
 
@@ -2867,7 +2867,7 @@ theorem eval_succ_eq
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono) :
     LExpr.eval (n' + 1) F env (.eq m e1 e2) = LExpr.evalEq n' F env m e1 e2 := by
   rw [LExpr.eval]
-  rw [if_neg (by rw [isValue_eq_false]; simp)]
+  rw [ite_eq_right (by rw [isValue_eq_false]; simp)]
   rw [callOfLFunc_eq_none]
   simp only [LExpr.evalCore]
 
@@ -2880,7 +2880,7 @@ theorem eval_succ_app_none
     LExpr.eval (n' + 1) F env (.app m e1 e2)
       = LExpr.evalApp n' F env (.app m e1 e2) e1 e2 := by
   rw [LExpr.eval]
-  rw [if_neg (by rw [hncan]; simp)]
+  rw [ite_eq_right (by rw [hncan]; simp)]
   rw [hcall]
   simp only [LExpr.evalCore]
 
@@ -3000,7 +3000,7 @@ theorem app_reduct_transfer
        ((LExpr.EvalResult.value true).isValueTrue && (LExpr.EvalResult.value true).isValueTrue)))
       = (v, LExpr.EvalResult.value true) := by
   have hgf' : LExpr.eqModuloMeta AgR e' = false := by rw [← hguard e' he'nil]; exact hgf
-  rw [if_neg (by rw [hgf']; simp), ← hev e' he'nil, hinner, hfst]
+  rw [ite_eq_right (by rw [hgf']; simp), ← hev e' he'nil, hinner, hfst]
   simp only [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag, Bool.true_and]
 
 omit [Inhabited Tbase.IDMeta] in
@@ -3066,11 +3066,11 @@ theorem app_dir
       (evL e').fst = v ∧ (evL e').snd = .value true := by
     intro e' hbr
     by_cases hg : LExpr.eqModuloMeta AgL e' = true
-    · rw [if_pos hg] at hbr
+    · rw [ite_eq_left hg] at hbr
       exfalso; have := congrArg Prod.snd hbr
       exact absurd this (by simp)
     · have hgf : LExpr.eqModuloMeta AgL e' = false := Bool.eq_false_iff.mpr hg
-      rw [if_neg hg] at hbr
+      rw [ite_eq_right hg] at hbr
       have hfst : (evL e').fst = v := congrArg Prod.fst hbr
       have hsnd : (evL e').snd.combineValueFlag (r1L.snd.isValueTrue && r2L.snd.isValueTrue)
           = .value true := congrArg Prod.snd hbr
@@ -3406,10 +3406,10 @@ theorem call_node_eval_eq
               have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq x hin
               have h_len : lfunc.inputs.keys.length =
                   (args.map (fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).fst)).length := by
-                rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+                rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans (h_arity.symm.trans (List.length_map _).symm)
               have h_mem_keys : x ∈ Map.keys (lfunc.inputs.keys.zip
                   (args.map (fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).fst))) := by
-                rw [Map.keys_eq_map_fst, List.map_fst_zip (by omega)]; exact hy_key
+                rw [Map.keys_eq_map_fst (lfunc.inputs.keys.zip _), List.map_fst_zip (by omega)]; exact hy_key
               exact Map_find?_ne_none_of_mem_keys _ x h_mem_keys hnone
             · have hv_mem := Map_find?_some_mem_values _ k v hk
               have hv_R := List.mem_map_snd_zip _ _ v hv_mem
@@ -3488,7 +3488,7 @@ private theorem shortCircuit_node_eval_eq
     · simp at hsc
   obtain ⟨_, hce⟩ := LExpr.shortCircuitCall?_some hsc
   have hcomm := h_wf.shortCircuit_substFvars hattr ceval hce
-  simp only [LExpr.eval, hcanFL, hcallL, hcanF, hcall, hscL, hsc, Bool.false_eq_true, if_false]
+  simp only [LExpr.eval, hcanFL, hcallL, hcanF, hcall, hscL, hsc, Bool.false_eq_true, ite_false]
   rw [evalShortCircuit_eq_value_true_iff, evalShortCircuit_eq_value_true_iff, hmeta]
   constructor
   · rintro ⟨a', e', ha, hval, hce', he'⟩
@@ -3540,7 +3540,7 @@ theorem eval_rename_commute
       · apply bicond_of_twisted F σ' sm (n' + 1) e
         simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
         rw [isValue_substFvars_eq F sm hVar e]
-        rw [if_pos hcan, if_pos hcan]
+        rw [ite_eq_left hcan, ite_eq_left hcan]
       · have hcanF : LExpr.isValue F e = false :=
           Bool.eq_false_iff.mpr (by simpa using hcan)
         have hcanFL : LExpr.isValue F (LExpr.substFvars e sm) = false := by
@@ -3621,7 +3621,7 @@ theorem eval_rename_commute
             | none => simp [LExpr.substFvars_fvar_none m x ty sm hfnd]
             | some v =>
               have hcanv : LExpr.isValue F v = true := hwfs x v hσx
-              simp only [hcanv, if_true]
+              simp only [hcanv, ite_true]
               rw [substFvars_value_id F sm v hcanv]
           | some to =>
             obtain ⟨m', y, ty', rfl⟩ := hVar x to hfnd
@@ -3635,7 +3635,7 @@ theorem eval_rename_commute
             | none => rw [hσy] at hsome; simp at hsome
             | some v =>
               have hcanv : LExpr.isValue F v = true := hwfs y v hσy
-              simp only [hcanv, if_true]
+              simp only [hcanv, ite_true]
               rw [substFvars_value_id F sm v hcanv]
       | abs m nm ty body =>
         apply bicond_of_twisted F σ' sm (n' + 1) (.abs m nm ty body)
@@ -3673,7 +3673,7 @@ theorem eval_rename_commute
           apply bicond_of_twisted F σ' sm (n' + 1) (.app m e1 e2)
           simp only [LExpr.eval, LExpr.combineEvalResValueFlag_eq_pair]
           rw [isValue_substFvars_eq F sm hVar (.app m e1 e2)]
-          rw [if_pos hcan, if_pos hcan]
+          rw [ite_eq_left hcan, ite_eq_left hcan]
         · -- non-value, not a factory call: goes through `evalApp` (beta).
           have hcanF : LExpr.isValue F (.app m e1 e2) = false :=
             Bool.eq_false_iff.mpr (by simpa using hcan)
@@ -3866,7 +3866,7 @@ omit [Traceable LExpr.EvalProvenance Tbase.Metadata] in
 theorem eql_self (F : @Factory Tbase) (v : LExpr Tbase.mono) :
     LExpr.eql F v v = some true := by
   unfold LExpr.eql
-  rw [if_pos (eqModuloMeta_self v)]
+  rw [ite_eq_left (eqModuloMeta_self v)]
 
 /-- A literal evaluates to itself. -/
 theorem evalFully_const (F : @Factory Tbase) (env : Env Tbase)
@@ -3884,9 +3884,9 @@ theorem evalFully_fvar_of_value (F : @Factory Tbase) (env : Env Tbase)
     LExpr.evalFully F env (.fvar m x ty) = some v := by
   refine evalFully_of_value_true F env _ 1 v ?_
   rw [LExpr.eval]
-  rw [if_neg (by rw [isValue_fvar_false]; simp)]
+  rw [ite_eq_right (by rw [isValue_fvar_false]; simp)]
   rw [callOfLFunc_fvar_none]
-  simp only [LExpr.evalCore, hx, hv, if_true]
+  simp only [LExpr.evalCore, hx, hv, ite_true]
 
 /-- **The `==` law.**  If both sides of an equality reduce and `eql` decides the
     resulting values, the equality reduces to that Boolean literal. -/
@@ -4021,7 +4021,7 @@ private theorem evalShortCircuit_eraseMetadata
   unfold LExpr.evalShortCircuit
   simp only [LExpr.combineEvalResValueFlag_eq_pair]
   by_cases hv : LExpr.isValue F (LExpr.eval n' F env a₁).fst = true
-  · rw [if_pos hv, if_pos (hval ▸ hv)]
+  · rw [ite_eq_left hv, ite_eq_left (hval ▸ hv)]
     cases hc₁ : ceval e₁.metadata ((LExpr.eval n' F env a₁).fst :: rest₁) with
     | some r₁ =>
       obtain ⟨r₂, hc₂, hr⟩ :=
@@ -4035,7 +4035,7 @@ private theorem evalShortCircuit_eraseMetadata
           h_wf.concreteEval_eraseMetadata ceval hce _ e₁.metadata _ _ r₂ hargs.symm hc₂
         rw [hc₁] at hc₁'; simp at hc₁'
       | none => exact hrebuild
-  · rw [if_neg hv, if_neg (by rwa [← hval])]
+  · rw [ite_eq_right hv, ite_eq_right (by rwa [← hval])]
     exact hrebuild
 
 theorem eval_eraseMetadata_invariant
@@ -4301,7 +4301,7 @@ theorem eval_eraseMetadata_invariant
                   next h_ninline₂ =>
                     -- LHS value check is true (h_val₁); derive RHS value check is true
                     have h_val₂ := h_val_cond_eq ▸ h_val₁
-                    rw [if_pos h_val₂]
+                    rw [ite_eq_left h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
@@ -4321,7 +4321,7 @@ theorem eval_eraseMetadata_invariant
                     exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                   next h_ninline₂ =>
                     have h_val₂ := h_val_cond_eq ▸ h_val₁
-                    rw [if_pos h_val₂]
+                    rw [ite_eq_left h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with

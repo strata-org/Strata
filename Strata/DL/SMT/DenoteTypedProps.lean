@@ -256,6 +256,37 @@ private theorem Term.denoteTyped_store {ctx : TypedContext}
   obtain ⟨k, v, ha, hi, he, hrty, hτ⟩ := Term.typeCheck_store_inv htc
   rfl
 
+/-- Transport-then-cast cancels under `SmtArray.select`. -/
+private theorem select_eqRec_cast {K V τ : TermType} (h : τ = .constr "Array" [K, V])
+    (P : TermType.denoteTyped σ SmtArrayTheory (.constr "Array" [K, V])
+      = TermType.denoteTyped σ SmtArrayTheory τ)
+    (x : TermType.denoteTyped σ SmtArrayTheory (.constr "Array" [K, V]))
+    (k : TermType.denoteTyped σ SmtArrayTheory K) :
+    SmtArray.select (h ▸ cast P x : TermType.denoteTyped σ SmtArrayTheory (.constr "Array" [K, V])) k
+      = SmtArray.select x k := by
+  subst h; rfl
+
+open Classical in
+/-- Reading the denotation of an array `store` at a key `k` (at the array sort `h` transports it to). -/
+private theorem Term.denoteTyped_store_select {ctx : TypedContext}
+    (ufInterp : UFInterp σ SmtArrayTheory) (env : VarEnv σ SmtArrayTheory) (dz mz : Int → Int)
+    (a i e : Term) (rty τ : TermType)
+    (htc : Term.typeCheck ctx (.app .store [a, i, e] rty) = .ok τ)
+    (h : τ = .constr "Array" [(Term.typeCheck_store_inv htc).1, (Term.typeCheck_store_inv htc).2.1])
+    (k : TermType.denoteTyped σ SmtArrayTheory (Term.typeCheck_store_inv htc).1) :
+    SmtArray.select (h ▸ Term.denoteTyped ufInterp env dz mz (.app .store [a, i, e] rty) τ htc :
+        TermType.denoteTyped σ SmtArrayTheory
+          (.constr "Array" [(Term.typeCheck_store_inv htc).1, (Term.typeCheck_store_inv htc).2.1])) k
+      = if k = Term.denoteTyped ufInterp env dz mz i _ (Term.typeCheck_store_inv htc).2.2.2.1
+        then Term.denoteTyped ufInterp env dz mz e _ (Term.typeCheck_store_inv htc).2.2.2.2.1
+        else SmtArray.select
+          (Term.denoteTyped ufInterp env dz mz a _ (Term.typeCheck_store_inv htc).2.2.1) k := by
+  rw [Term.denoteTyped_store]
+  refine (select_eqRec_cast h _ _ k).trans ?_
+  split
+  · next hk => subst hk; exact SmtArray.select_store_self ..
+  · next hk => exact SmtArray.select_store_of_ne _ _ _ _ hk
+
 /-- Unfolding lemma for `Term.denoteTyped` on `eq`, exposing `decide (· = ·)`. -/
 private theorem Term.denoteTyped_eq {ctx : TypedContext}
     (ufInterp : UFInterp σ 𝒜) (env : VarEnv σ 𝒜) (dz mz : Int → Int)
@@ -447,7 +478,7 @@ theorem typeCheck_ufs_mono {uss : USCtx} {ufs ufs' : UFCtx}
       simp only [typeCheck_ufs_mono hsub (vs.reverse ++ Γ) body tyb hb, bind, Except.bind]
       revert h
       split <;> intro h <;> rename_i hcond
-      · rw [if_pos ?_]
+      · rw [ite_eq_left ?_]
         · exact h
         · simp only [Bool.and_eq_true] at hcond ⊢
           exact ⟨hcond.1, wfTriggers_ufs_mono hsub (vs.reverse ++ Γ) tr hcond.2⟩
@@ -456,12 +487,12 @@ theorem typeCheck_ufs_mono {uss : USCtx} {ufs ufs' : UFCtx}
       simp only [Term.typeCheck] at h ⊢
       split at h
       · rename_i hc
-        rw [if_pos ⟨hsub uf hc.1, hc.2⟩]
+        rw [ite_eq_left ⟨hsub uf hc.1, hc.2⟩]
         split at h
         · rename_i hchk
           simp only [Bool.and_eq_true] at hchk
           obtain ⟨⟨⟨hrty, hargs⟩, hall⟩, hout⟩ := hchk
-          rw [if_pos ?_]
+          rw [ite_eq_left ?_]
           · exact h
           · simp only [Bool.and_eq_true]
             exact ⟨⟨⟨hrty, typeCheckArgs_ufs_mono hsub Γ args uf.args hargs⟩, hall⟩, hout⟩
@@ -510,7 +541,7 @@ theorem typeCheck_ufs_mono {uss : USCtx} {ufs ufs' : UFCtx}
       simp only [typeCheck_ufs_mono hsub Γ t1 ty1 h1, bind, Except.bind]
       revert h
       split <;> intro h <;> rename_i hcond
-      · rw [if_pos ?_]
+      · rw [ite_eq_left ?_]
         · exact h
         · simp only [Bool.and_eq_true] at hcond ⊢
           exact ⟨typeCheckArgs_ufs_mono hsub Γ (t2 :: ts) _ hcond.1, hcond.2⟩

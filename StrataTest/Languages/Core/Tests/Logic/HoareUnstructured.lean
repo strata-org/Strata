@@ -1169,8 +1169,8 @@ private theorem frame_project {σ_entry σ' : Core.CoreStore}
       subst hk
       unfold Imperative.projectStore
       by_cases hs : (σ_entry k1).isSome
-      · rw [if_pos hs]; exact heq
-      · rw [if_neg hs]; exact Option.not_isSome_iff_eq_none.mp hs
+      · rw [ite_eq_left hs]; exact heq
+      · rw [ite_eq_right hs]; exact Option.not_isSome_iff_eq_none.mp hs
 
 /-- One CFG step preserves the `copy` body-frame invariant. -/
 private theorem step_preserves_frame {π : String → Option Core.Procedure} {σ_entry : Core.CoreStore}
@@ -1330,7 +1330,7 @@ private theorem copy_body_outputs_typed :
       refine ⟨Lambda.LExpr.intConst () a, ?_, a, rfl⟩
       show Imperative.projectStore σ_entry ρ'.store resultId = some (Lambda.LExpr.intConst () a)
       unfold Imperative.projectStore
-      rw [if_pos hre]
+      rw [ite_eq_left hre]
       exact hr
 
 /-! ### Applying `call_of_contract` to the CFG callee -/

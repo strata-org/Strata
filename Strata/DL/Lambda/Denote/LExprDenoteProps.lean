@@ -473,7 +473,7 @@ theorem denote_replaceMetadata
         .app h_fn' h_arg'
       rw [denote_app bvarVal h_fn h_arg h₁]
       simp only [LExpr.replaceMetadata]
-      rw [denote_app bvarVal h_fn' h_arg' h_app',
+      rw [denote_app (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_fn' h_arg' h_app',
           ih_fn bvarVal h_fn, ih_arg bvarVal h_arg]
     | abs m name ty body ih_body =>
       cases ty with
@@ -485,7 +485,7 @@ theorem denote_replaceMetadata
           have h_body' := replaceMetadata_HasTypeA f h_body
           rw [denote_abs bvarVal h_body (LExpr.HasTypeA.abs h_body)]
           simp only [LExpr.replaceMetadata]
-          rw [denote_abs bvarVal h_body' (.abs h_body')]
+          rw [denote_abs (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_body' (.abs h_body')]
           funext x
           exact ih_body (.cons x bvarVal) h_body
     | ite m c t e ih_c ih_t ih_e =>
@@ -496,7 +496,7 @@ theorem denote_replaceMetadata
         have h_e' := replaceMetadata_HasTypeA f h_e
         rw [denote_ite bvarVal h_c h_t h_e]
         simp only [LExpr.replaceMetadata]
-        rw [denote_ite bvarVal h_c' h_t' h_e' (.ite h_c' h_t' h_e'),
+        rw [denote_ite (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_c' h_t' h_e' (.ite h_c' h_t' h_e'),
             ih_c bvarVal h_c, ih_t bvarVal h_t, ih_e bvarVal h_e]
     | eq m e1 e2 ih1 ih2 =>
       cases h₁ with
@@ -507,11 +507,11 @@ theorem denote_replaceMetadata
           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 _ h_2
         · rw [denote_eq_true bvarVal h_1 h_2 _ heq]
           simp only [LExpr.replaceMetadata]
-          rw [denote_eq_true bvarVal h_1' h_2' (.eq h_1' h_2')
+          rw [denote_eq_true (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_1' h_2' (.eq h_1' h_2')
                 (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
         · rw [denote_eq_false bvarVal h_1 h_2 _ heq]
           simp only [LExpr.replaceMetadata]
-          rw [denote_eq_false bvarVal h_1' h_2' (.eq h_1' h_2')
+          rw [denote_eq_false (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_1' h_2' (.eq h_1' h_2')
                 (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
     | quant m k name ty tr body ih_tr ih_body =>
       cases ty with

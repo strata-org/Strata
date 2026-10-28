@@ -19,7 +19,7 @@ namespace Core
 
 section Tests
 open Std (ToFormat Format format)
-open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Procedure Statement Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /-- info: Error:
 none
@@ -521,7 +521,7 @@ section ConcreteInterpretation
 /-! ## Concrete Interpretation Tests
 -/
 
-open Lambda Strata Lambda.LTy.Syntax
+open Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
 private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except Message Core.Program := do

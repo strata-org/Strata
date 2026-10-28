@@ -62,6 +62,7 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
     name := decl.name
     typeArgs := decl.typeArgs
     isConstr := decl.isConstr
+    isRecursive := decl.isRecursive
     inputs := inputs
     output := output
     body := decl.body

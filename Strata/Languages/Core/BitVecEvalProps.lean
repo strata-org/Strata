@@ -28,7 +28,7 @@ proofs over translated Core programs.
 
 namespace Core
 
-open Imperative Lambda
+open Imperative
 
 /-! ## Equality with bitvector constants -/
 
@@ -51,7 +51,7 @@ theorem eq_bitvecConst_of_eql_true (F : Expression.Factory) {n : Nat} {w : BitVe
   by_cases hmm : Lambda.LExpr.eqModuloMeta v (Lambda.LExpr.bitvecConst () n w) = true
   · exact expr_eq_of_eqModuloMeta hmm
   · unfold Lambda.LExpr.eql at h
-    rw [if_neg hmm] at h
+    rw [ite_eq_right hmm] at h
     cases v with
     | const m c1 =>
       cases c1 <;> simp_all <;>
@@ -182,13 +182,13 @@ private theorem eval_bvPredicate_value
     intro b
     exact Lambda.isValue_const_true f () (.boolConst b)
   simp only [Lambda.LExpr.eval]
-  rw [if_neg (by simp [hcan]), hcall]
+  rw [ite_eq_right (by simp [hcan]), hcall]
   dsimp only
   rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
     (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, bvPredicate, Lambda.binaryOp])]
   dsimp only
   simp only [bvPredicate, Lambda.binaryOp]
-  rw [dif_neg (by simp)]
+  rw [dite_eq_right (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
   have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
@@ -205,8 +205,8 @@ private theorem eval_bvPredicate_value
   have hdb : Lambda.LExpr.denoteBitVec width
       (Lambda.LExpr.bitvecConst () width b : Expression.Expr) = some b := by
     simp [Lambda.LExpr.denoteBitVec]
-  rw [if_pos (by simp [hcanbv])]
-  simp only [hda, hdb, if_true]
+  rw [ite_eq_left (by simp [hcanbv])]
+  simp only [hda, hdb, ite_true]
   rw [Lambda.eval_value_identity fuel f σ _ (hcanb _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair,
     Lambda.LExpr.EvalResult.combineValueFlag]
@@ -247,13 +247,13 @@ private theorem eval_bvBinary_value
     intro a
     exact Lambda.isValue_const_true f () (.bitvecConst width a)
   simp only [Lambda.LExpr.eval]
-  rw [if_neg (by simp [hcan]), hcall]
+  rw [ite_eq_right (by simp [hcan]), hcall]
   dsimp only
   rw [Lambda.LExpr.shortCircuitCall?_of_not_attr _
     (by simp [Strata.DL.Util.FuncAttr.hasShortCircuit, bvBinary, Lambda.binaryOp])]
   dsimp only
   simp only [bvBinary, Lambda.binaryOp]
-  rw [dif_neg (by simp)]
+  rw [dite_eq_right (by simp)]
   have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
   have hf2 : Strata.DL.Util.FuncAttr.findEvalIfValue #[] = none := by decide
   simp only [hf1, hf2, List.map, List.all, Bool.and_true]
@@ -271,8 +271,8 @@ private theorem eval_bvBinary_value
   have hdb : Lambda.LExpr.denoteBitVec width
       (Lambda.LExpr.bitvecConst () width b : Expression.Expr) = some b := by
     simp [Lambda.LExpr.denoteBitVec]
-  rw [if_pos (by simp [hcanbv])]
-  simp only [hda, hdb, if_true]
+  rw [ite_eq_left (by simp [hcanbv])]
+  simp only [hda, hdb, ite_true]
   rw [Lambda.eval_value_identity fuel f σ _ (hcanbv _)]
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair,
     Lambda.LExpr.EvalResult.combineValueFlag]
@@ -447,7 +447,7 @@ private theorem concreteEval_bvPredicate
       (fun ce => ce () [.bitvecConst () width a, .bitvecConst () width b])
       = some (.boolConst () (op a b)) := by
     simp only [bvPredicate, Lambda.binaryOp, Option.bind_some, hcev, hmk,
-      hda, hdb, if_true]
+      hda, hdb, ite_true]
   rw [hc, Option.bind_some] at key
   exact key
 

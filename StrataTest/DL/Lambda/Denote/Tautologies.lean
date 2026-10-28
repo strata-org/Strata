@@ -82,7 +82,7 @@ private abbrev mkNot_ty (ha : LExpr.HasTypeA Δ a boolTy) :
 /-! ### 1. True is valid -/
 
 private def trueExpr : LExpr TP.mono := .const m (.boolConst true)
-private def trueExpr_ty : LExpr.HasTypeA [] trueExpr boolTy := .const
+private theorem trueExpr_ty : LExpr.HasTypeA [] trueExpr boolTy := .const
 
 theorem valid_true : Valid F trueExpr trueExpr_ty := by
   intro I vt fvarVal
@@ -95,7 +95,7 @@ theorem valid_true : Valid F trueExpr trueExpr_ty := by
 private def eq_refl_bool : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg (.eq m bv0 bv0)
 
-private def eq_refl_bool_ty : LExpr.HasTypeA [] eq_refl_bool boolTy :=
+private theorem eq_refl_bool_ty : LExpr.HasTypeA [] eq_refl_bool boolTy :=
   .quant .const (.eq (.bvar (by rfl)) (.bvar (by rfl)))
 
 theorem valid_eq_refl_bool : Valid F eq_refl_bool eq_refl_bool_ty := by
@@ -114,7 +114,7 @@ theorem valid_eq_refl_bool : Valid F eq_refl_bool eq_refl_bool_ty := by
 private def eq_refl_poly : LExpr TP.mono :=
   .quant m .all "x" (some (.ftvar "T")) trg (.eq m bv0 bv0)
 
-private def eq_refl_poly_ty : LExpr.HasTypeA [] eq_refl_poly boolTy :=
+private theorem eq_refl_poly_ty : LExpr.HasTypeA [] eq_refl_poly boolTy :=
   .quant .const (.eq (.bvar (by rfl)) (.bvar (by rfl)))
 
 theorem valid_eq_refl_poly : Valid F eq_refl_poly eq_refl_poly_ty := by
@@ -330,7 +330,7 @@ private def and_elim_left : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl (mkAnd bv1 bv0) bv1))
 
-private def and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
+private theorem and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (mkAnd_ty (.bvar (by rfl)) (.bvar (by rfl))) (.bvar (by rfl))))
@@ -382,7 +382,7 @@ theorem valid_and_elim_left : Valid F and_elim_left and_elim_left_ty := by
   simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> cases q <;> rfl
 
 /-! ### 5. p → p ∨ q (or-introduction left): ∀ p q, p → (p ∨ q) -/
 
@@ -391,7 +391,7 @@ private def or_intro_left : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl bv1 (mkOr bv1 bv0)))
 
-private def or_intro_left_ty : LExpr.HasTypeA [] or_intro_left boolTy :=
+private theorem or_intro_left_ty : LExpr.HasTypeA [] or_intro_left boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (.bvar (by rfl)) (mkOr_ty (.bvar (by rfl)) (.bvar (by rfl)))))
@@ -435,7 +435,7 @@ theorem valid_or_intro_left : Valid F or_intro_left or_intro_left_ty := by
   simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 6. Excluded middle: ∀ p, p ∨ ¬p -/
 
@@ -443,7 +443,7 @@ private def excluded_middle : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (mkOr bv0 (mkNot bv0))
 
-private def excluded_middle_ty : LExpr.HasTypeA [] excluded_middle boolTy :=
+private theorem excluded_middle_ty : LExpr.HasTypeA [] excluded_middle boolTy :=
   .quant .const
     (mkOr_ty (.bvar (by rfl)) (mkNot_ty (.bvar (by rfl))))
 
@@ -477,7 +477,7 @@ theorem valid_excluded_middle : Valid F excluded_middle excluded_middle_ty := by
   simp at h_bv2 h_bv3; subst h_bv2 h_bv3
   simp [boolBinTy, boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op3
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 7. Modus ponens: ∀ p q, p → (p → q) → q -/
 
@@ -486,7 +486,7 @@ private def modus_ponens : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl bv1 (mkImpl (mkImpl bv1 bv0) bv0)))
 
-private def modus_ponens_ty : LExpr.HasTypeA [] modus_ponens boolTy :=
+private theorem modus_ponens_ty : LExpr.HasTypeA [] modus_ponens boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (.bvar (by rfl))
@@ -538,7 +538,7 @@ theorem valid_modus_ponens : Valid F modus_ponens modus_ponens_ty := by
   have h_op6 := HasTypeA.op_inv h_fn6
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4 h_op6
   subst_vars
-  cases p <;> simp
+  cases p <;> cases q <;> rfl
 
 /-! ### 8. Non-contradiction: ∀ p, ¬(p ∧ ¬p) -/
 
@@ -546,7 +546,7 @@ private def non_contradiction : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (mkNot (mkAnd bv0 (mkNot bv0)))
 
-private def non_contradiction_ty : LExpr.HasTypeA [] non_contradiction boolTy :=
+private theorem non_contradiction_ty : LExpr.HasTypeA [] non_contradiction boolTy :=
   .quant .const
     (mkNot_ty (mkAnd_ty (.bvar (by rfl)) (mkNot_ty (.bvar (by rfl)))))
 
@@ -585,7 +585,7 @@ theorem valid_non_contradiction : Valid F non_contradiction non_contradiction_ty
   have h_op4 := HasTypeA.op_inv h_fn4
   simp [boolBinTy, boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op1 h_op3 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 9. Double negation: ∀ p, ¬¬p = p -/
 
@@ -593,7 +593,7 @@ private def double_negation : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (.eq m (mkNot (mkNot bv0)) bv0)
 
-private def double_negation_ty : LExpr.HasTypeA [] double_negation boolTy :=
+private theorem double_negation_ty : LExpr.HasTypeA [] double_negation boolTy :=
   .quant .const
     (.eq (mkNot_ty (mkNot_ty (.bvar (by rfl)))) (.bvar (by rfl)))
 
@@ -634,7 +634,7 @@ theorem valid_double_negation : Valid F double_negation double_negation_ty := by
   have h_op2 := HasTypeA.op_inv h_fn2
   simp [boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op1 h_op2
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 10. Existential witness: ∀ x : int, ∃ y : int, y = x -/
 
@@ -643,7 +643,7 @@ private def exist_witness : LExpr TP.mono :=
     (.quant m .exist "y" (some intTy) trg
       (.eq m bv0 bv1))
 
-private def exist_witness_ty : LExpr.HasTypeA [] exist_witness boolTy :=
+private theorem exist_witness_ty : LExpr.HasTypeA [] exist_witness boolTy :=
   .quant .const
     (.quant .const
       (.eq (.bvar (by rfl)) (.bvar (by rfl))))
@@ -674,7 +674,7 @@ private abbrev emptyF : @Factory TP := Factory.default
 private def all_p : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg bv0
 
-private def all_p_ty : LExpr.HasTypeA [] all_p boolTy :=
+private theorem all_p_ty : LExpr.HasTypeA [] all_p boolTy :=
   .quant .const (.bvar (by rfl))
 
 private def trivialInterp : Interp emptyF where
@@ -697,8 +697,7 @@ theorem not_valid_all_p : ¬ Valid emptyF all_p all_p_ty := by
   have h_false := denote_quant_all_false (T := TP)
     (tcInterp := trivialInterp.tcInterp) (opInterp := trivialInterp.opInterp)
     (fvarVal := h_fv) (vt := fun _ => .tcons "bool" [])
-    .nil h_body all_p_ty (w := false) (by
-      rw [denote_bvar]; rfl)
+    .nil h_body all_p_ty (w := false) rfl
   simp only [all_p] at h_eq
   unfold boolTy at h_eq
   unfold LMonoTy.bool at *

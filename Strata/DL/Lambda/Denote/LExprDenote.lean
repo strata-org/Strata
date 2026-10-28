@@ -209,7 +209,7 @@ public instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
 /-- Type-variable valuation: maps each type variable to a sort. This is a total
 function; type variables that do not appear in the term's type may be assigned
 any sort (e.g. `int`) since their value will never be used. -/
-@[expose] public def TyVarVal := TyIdentifier → LSort
+public abbrev TyVarVal := TyIdentifier → LSort
 
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
 public abbrev TyDenote (tcInterp : TyConstrInterp)
@@ -546,7 +546,7 @@ theorem denote_Denotes
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∀ x : TyDenote tcInterp vt qty,
         (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
-      · simp [hv]
+      · rw [@decide_eq_true _ (Classical.propDecidable _) hv]
         exact .quant_all_true bvarVal fun x =>
           hv x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
       · simp [hv]
@@ -664,7 +664,7 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[ih2]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) ih2)
   | eq_false _ h1 h2 hne ih1 ih2 =>
     rename_i bvarVal  _ _ _ _ htye1 htye2 _ _ _
     unfold LExpr.denote
@@ -674,12 +674,12 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[hne]
+      exact Eq.symm (@decide_eq_false _ (Classical.propDecidable _) hne)
   | quant_all_true _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      simp [fun x => (ih x).symm]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) fun x => (ih x).symm)
   | quant_all_false _ w hbody ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -693,7 +693,7 @@ theorem Denotes_denote
     typecheck_split h_body h_body h_body h_tr heq =>
       have hexists : ∃ x, LExpr.denote tcInterp opInterp fvarVal vt (.cons x _) _ .bool h_body = true :=
         ⟨w, ih.symm⟩
-      simp [hexists]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) hexists)
   | quant_exist_false _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -730,7 +730,7 @@ public theorem denote_intConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.intConst i)) (.tcons "int" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
 
 public theorem denote_boolConst
     {T : LExprParams}
@@ -742,7 +742,7 @@ public theorem denote_boolConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.boolConst b)) (.tcons "bool" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.boolConst b)) (.tcons "bool" []) h = b := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
 
 /-- A string literal denotes to its string value. -/
 public theorem denote_strConst
@@ -756,8 +756,7 @@ public theorem denote_strConst
     (h : LExpr.HasTypeA Δ (.const m (.strConst s)) .string) :
     LExpr.denote tcInterp opInterp fvarVal vt bvarVal
       (.const m (.strConst s)) .string h = s := by
-  rw [denote_const]
-  simp [denoteConst]
+  rw [denote_const]; rfl
 
 /-- A bitvector literal denotes to its bitvector value. -/
 public theorem denote_bitvecConst
@@ -771,8 +770,7 @@ public theorem denote_bitvecConst
     (h : LExpr.HasTypeA Δ (.const m (.bitvecConst n b)) (.bitvec n)) :
     LExpr.denote tcInterp opInterp fvarVal vt bvarVal
       (.const m (.bitvecConst n b)) (.bitvec n) h = b := by
-  rw [denote_const]
-  simp [denoteConst]
+  rw [denote_const]; rfl
 
 /-- Unfolding lemma for `denote` of an operator. -/
 public theorem denote_op

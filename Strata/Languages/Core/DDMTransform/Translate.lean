@@ -15,7 +15,6 @@ namespace Strata
 
 /- Translating concrete syntax into abstract syntax -/
 
-open Core
 open Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
@@ -498,13 +497,12 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
             | none => pure ([], bindings)
             | some arg =>
               let bargs ← checkOpArg arg q`Core.mkBindings 1
-              let args ←
-                  match bargs[0]! with
-                  | .seq _ .comma args =>
-                    let (arr, bindings) ← translateTypeBindings bindings args
-                    return (arr.toList, bindings)
-                  | _ => TransM.error
-                          s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
+              match bargs[0]! with
+              | .seq _ .comma args =>
+                let (arr, bindings) ← translateTypeBindings bindings args
+                return (arr.toList, bindings)
+              | _ => TransM.error
+                      s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
                     op.args[2]!
   let typedef ← translateLMonoTy bindings op.args[4]!
   let md ← getMetaDataWithAnn op annotsArg
