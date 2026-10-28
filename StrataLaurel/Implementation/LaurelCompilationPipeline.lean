@@ -44,6 +44,7 @@ import StrataLaurel.Implementation.YieldElim
 import StrataLaurel.Implementation.CheckOverrideRefinement
 import StrataLaurel.Implementation.TypeAliasElim
 import StrataLaurel.Implementation.EliminateExceptions
+import StrataLaurel.Implementation.InferThrows
 import StrataLaurel.Implementation.MonomorphizeComposites
 import StrataLaurel.Implementation.OpaqueUnusedTypeParams
 import StrataLaurel.Implementation.LaurelNodeKindCheck
@@ -271,7 +272,9 @@ private def runLaurelPasses
   emit "Initial" "laurel.st" program
 
   -- Initial resolution
-  let result := resolve program (gradualTypes := options.gradualTypes)
+  -- Inferred `throws` clauses are filled in here, so every check and pass below
+  -- sees ordinary ones (see `InferThrows`).
+  let result := resolveWithInferredThrows program (gradualTypes := options.gradualTypes)
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
                   (reservedNames := options.reservedNames)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors

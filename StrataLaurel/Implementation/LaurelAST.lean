@@ -839,6 +839,15 @@ structure Procedure : Type where
       both, so a parsed procedure has either both fields or neither. Code that only
       needs to know whether a procedure throws should therefore test `throwsType`. -/
   throwsBinding : Option Identifier := none
+  /-- When `true`, the `throws` clause is *inferred*: `inferThrows` replaces
+      `throwsType` with the join of the declared type (if any) and every exception
+      type that may escape the body uncaught, then clears this flag. Written
+      `throws (e: inferred)`, or `throws (e: T inferred)` to keep a declared part.
+
+      Before inference an inferred procedure may carry a `throwsBinding` with no
+      `throwsType`; inference restores the pairing invariant. Every pass after
+      `inferThrows` sees this flag `false`. -/
+  throwsInferred : Bool := false
   /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
       case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
       its throwing paths beyond the declared `throwsType`. -/

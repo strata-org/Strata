@@ -855,14 +855,21 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Parse the optional `throws (e: T)` clause, which names the thrown value as
     -- well as its type, scoping the name over the `throwsOn` blocks below. The two
     -- come from one op, so they are set or unset together.
-    let (throwsType, throwsBinding) ← match throwsArg with
+    let (throwsType, throwsBinding, throwsInferred) ← match throwsArg with
       | .option _ (some (.op throwsOp)) => match throwsOp.name, throwsOp.args with
         | q`Laurel.throwsClause, #[bindingArg, tyArg] => do
           let binding ← translateIdent bindingArg
           let ty ← translateHighType tyArg
-          pure (some ty, some binding)
+          pure (some ty, some binding, false)
+        | q`Laurel.throwsInferredClause, #[bindingArg] => do
+          let binding ← translateIdent bindingArg
+          pure (none, some binding, true)
+        | q`Laurel.throwsDeclaredInferredClause, #[bindingArg, tyArg] => do
+          let binding ← translateIdent bindingArg
+          let ty ← translateHighType tyArg
+          pure (some ty, some binding, true)
         | _, _ => TransM.error s!"Expected throwsClause, got {repr throwsOp.name}"
-      | _ => pure (none, none)
+      | _ => pure (none, none, false)
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
       | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
@@ -1002,6 +1009,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       isInterpretEntry := isInterpretEntry
       throwsType := throwsType
       throwsBinding := throwsBinding
+      throwsInferred := throwsInferred
       throwsOn := throwsOn
       readsGlobals := readsGlobals
       writesGlobals := writesGlobals

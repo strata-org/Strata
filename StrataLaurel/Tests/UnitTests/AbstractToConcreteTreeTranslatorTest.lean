@@ -91,6 +91,31 @@ procedure add(x: int, y: int): int
 { x + y };
 #end)
 
+-- Inferred `throws` clauses, with and without a declared part.
+/--
+info: composite Exc { }
+
+procedure f() throws (e: inferred)
+  opaque
+{
+  assert true
+};
+
+procedure g() throws (e: Exc inferred)
+  opaque
+{
+  assert true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip <|
+#strata
+program Laurel;
+composite Exc {}
+procedure f() throws (e: inferred) opaque { assert true };
+procedure g() throws (e: Exc inferred) opaque { assert true };
+#end)
+
 /--
 info: procedure aFunction(x: int): int
 {

@@ -404,9 +404,14 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   -- `throws` carries the binding as well as the type. The two are set together by
   -- the parser (one op), and `EliminateExceptions` clears them together, so the
   -- fallback name below is unreachable for anything this printer is given.
-  let throwsArg := optionArg (proc.throwsType.map fun t =>
-    laurelOp "throwsClause"
-      #[ident (proc.throwsBinding.map (·.text) |>.getD "e"), highTypeToArg t])
+  let throwsBindingArg := ident (proc.throwsBinding.map (·.text) |>.getD "e")
+  let throwsArg := optionArg <|
+    if proc.throwsInferred then
+      some (match proc.throwsType with
+        | some t => laurelOp "throwsDeclaredInferredClause" #[throwsBindingArg, highTypeToArg t]
+        | none => laurelOp "throwsInferredClause" #[throwsBindingArg])
+    else proc.throwsType.map fun t =>
+      laurelOp "throwsClause" #[throwsBindingArg, highTypeToArg t]
   let throwsOnArgs := proc.throwsOn.map (fun blk =>
     let ens := blk.postconditions.map (fun c =>
       laurelOp "throwsOnEnsures" #[stmtExprToArg c.condition, errorSummaryToArg c.summary])

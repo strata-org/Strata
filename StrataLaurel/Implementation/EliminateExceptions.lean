@@ -445,6 +445,11 @@ private inductive Frame where
 private structure Ctx where
   /-- Whether the enclosing procedure declares `throws`. -/
   procThrows : Bool
+  /-- Whether the procedure's `throws` was inferred (`InferThrows`). Its body may
+      then let exceptions escape beyond that type (an override capped at the type of
+      the method it overrides); the lowering asserts that those do not happen,
+      where resolution checks a declared `throws` against the body instead. -/
+  capped : Bool := false
   /-- The procedure-level `$exc` (name and declared `throws` type) for a throwing
       procedure — the target for top-level throws and the `Bad` result. `none`
       for a non-throwing procedure (every exception is caught within a `try`). -/
@@ -477,6 +482,14 @@ private def throwTargetOf (ctx : Ctx) : String :=
     does not happen. -/
 private def escapesUncaught (ctx : Ctx) : Bool :=
   ctx.procExc.isNone && (innerTry ctx.frames).isNone
+
+/-- Whether `exc` is the procedure-level `$exc` of a capped procedure
+    (`Ctx.capped`): the region at the top level, or a finally-only `try`, which
+    shares the enclosing region's `$exc`. -/
+private def isCappedProcExc (ctx : Ctx) (exc : Option (String × HighTypeMd)) : Bool :=
+  ctx.capped && match exc, ctx.procExc with
+    | some (v, _), some (p, _) => v == p
+    | _, _ => false
 private def finallyTargetOf (ctx : Ctx) : String :=
   ((innerTry ctx.frames).map (·.finallyLabel)).getD exnExitLabel
 /-- The `$exc` variable (name and type) active in the current region: the
@@ -485,6 +498,15 @@ private def currentExc (ctx : Ctx) : Option (String × HighTypeMd) :=
   match innerTry ctx.frames with
   | some f => f.exc
   | none   => ctx.procExc
+
+/-- Whether an exception of type `ty` raised here would be written into a capped
+    procedure's own `$exc` (`isCappedProcExc`) beyond its `throws` type. The
+    lowering asserts that it does not happen: the `$exc` cannot hold it. -/
+private def escapesBeyondCap (lattice : TypeLattice) (ctx : Ctx) (ty : HighTypeMd) : Bool :=
+  isCappedProcExc ctx (currentExc ctx) &&
+    match ctx.procExc with
+    | some (_, procTy) => !isSubtype lattice ty procTy
+    | none => false
 
 /-- The `finally` arm an `exit target` from here must run before it can leave:
     the innermost enclosing `try` that has a `finally` and that the jump would
@@ -578,12 +600,30 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- reached only when the call did not throw. An else-less `if` keeps this void.
   -- The propagated exception is written into the current region's `$exc` (whose
   -- type is a supertype of the callee's `throws` type, so no cast is needed).
-  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy) errTy
-    (resultApp exnResultErr (localRef callres))
+  -- In a capped procedure, a callee type beyond the cap propagates only the part
+  -- that fits under it (as a checked downcast, after asserting the exception is
+  -- of that type) and asserts that nothing else escapes.
+  let lattice := (← get).lattice
+  -- The cap is compared with the callee's type at this call's type arguments; a
+  -- type that still mentions a type variable was rejected by `inferThrows`.
+  let errAtCall := match callNode.val with
+    | .StaticCall c _ typeArgs => typeAtCall model c typeArgs errTy
+    | _ => errTy
+  let beyondCap := !mentionsTVar errAtCall.val && escapesBeyondCap lattice ctx errAtCall
+  let capTy? : Option HighTypeMd :=
+    if beyondCap then (currentExc ctx).map Prod.snd |>.filter (isSubtype lattice · errAtCall) else none
+  let errVal := resultApp exnResultErr (localRef callres)
+  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy) (capTy?.getD errTy)
+    (match capTy? with | some capTy => asTypeOf errVal capTy | none => errVal)
+  let onBad : List StmtExprMd := match capTy? with
+    | some capTy =>
+      ⟨.Assert (isTypeOf errVal capTy) (some (callEscapeSummary errTy)), callNode.source⟩ ::
+        assumeOf (isTypeOf errVal capTy) :: onBad
+    | none => onBad
   let propagate := iteOf (resultApp exnResultIsBad (localRef callres))
     (blockOf onBad) none
   let propagate : List StmtExprMd :=
-    if escapesUncaught ctx then
+    if escapesUncaught ctx || (beyondCap && capTy?.isNone) then
       assertThenLeave (resultApp exnResultIsGood (localRef callres))
         (callEscapeSummary errTy) propagate
     else [propagate]
@@ -654,11 +694,11 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       let body' := fillSrcs body.source (← lowerStmt ctx body)
       pure [⟨.While c invs dec (blockOf body') postTest, src⟩]
   | .Throw value =>
-      if escapesUncaught ctx then
+      let thrownTy := computeExprType (← get).model value
+      if escapesUncaught ctx || escapesBeyondCap (← get).lattice ctx thrownTy then
         -- Reaching the `throw` is the failure. The thrown value is not evaluated:
         -- the path ends here either way.
-        let ty := computeExprType (← get).model value
-        return assertThenLeave (litBool false) (throwEscapeSummary ty)
+        return assertThenLeave (litBool false) (throwEscapeSummary thrownTy)
           (exitTo exnExitLabel)
       markUsedExc
       -- The current region's `$exc` is typed at a supertype of every type thrown
@@ -920,6 +960,12 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- A finally-only try shares the enclosing `$exc` (same variable), so no copy.
   let thrownExit := ((innerTry saved).map (·.throwLabel)).getD exnExitLabel
   let returnExit := ((innerTry saved).map (·.finallyLabel)).getD exnExitLabel
+  -- A capped procedure (`Ctx.capped`) has no residual analysis behind the
+  -- downcast into its own `$exc`, so the edge asserts it instead of assuming it,
+  -- and an unrelated type asserts that nothing escapes.
+  let toCappedProc := isCappedProcExc ctx parentExc
+  let capSummary (tp : HighTypeMd) : String :=
+    s!"an exception escaping this `try` is a '{showType tp}'"
   let copyStmts : List StmtExprMd :=
     match thisExc, parentExc with
     | some (vi, ti), some (vp, tp) =>
@@ -927,10 +973,15 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         let cast := [ assumeOf isTp, setLocal vp (asTypeOf (localRef vi) tp) ]
         if vi == vp then []
         else if isSubtype lattice ti tp then [ setLocal vp (localRef vi) ]
-        else if isSubtype lattice tp ti then cast
+        else if isSubtype lattice tp ti then
+          -- In a capped procedure nothing behind the cast shows the exception is a
+          -- `tp`, so it is asserted.
+          (if toCappedProc then [⟨.Assert isTp (some (capSummary tp)), src⟩] else []) ++ cast
         else if crossesShared then
           ⟨.Assert isTp (some s!"the exception escaping this try fits the '{showType tp}' \
               it propagates into"), src⟩ :: cast
+        else if toCappedProc then
+          [ ⟨.Assert (litBool false) (some (capSummary tp)), src⟩, assumeOf (litBool false) ]
         else []
     | _, _ => []
   -- Pending unwinding `exit`s, one arm each: continue to the next crossed
@@ -1063,7 +1114,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- `throws` type. Non-throwing procedures have none — every exception they use
   -- is caught within a `try`, which supplies its own `$exc_<i>`.
   let procExc : Option (String × HighTypeMd) := proc.throwsType.map (fun t => (exnExcVar, t))
-  let ctx : Ctx := { procThrows, procExc, frames := [] }
+  let ctx : Ctx := { procThrows, capped := proc.throwsInferred && procThrows, procExc, frames := [] }
   let valueOutputs := valueOutputsOf proc
   -- Lowering limitation: a `throws` procedure lowers to a single `Result` value, so it
   -- can carry at most one value output.

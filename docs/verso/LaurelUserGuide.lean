@@ -541,7 +541,7 @@ procedure-declaration
                       "(" [ parameter , ... ] ")"
                       [ ":" type ]
                       [ "returns" "(" [ parameter , ... ] ")" ]
-                      [ "throws" "(" identifier ":" type ")" ]
+                      [ "throws" "(" identifier ":" ( type | [ type ] "inferred" ) ")" ]
                       { requires-clause }
                       [ "invokeOn" expression ]
                       [ "entry" ]
@@ -2382,6 +2382,42 @@ at the `throw` (or throwing call) it came from.
 Whether the *source* language requires declaring exceptions is a separate question:
 procedures coming from Python or JavaScript can carry a `throws` clause too, even
 though neither language has that surface construct.
+
+### Inferred throws
+
+`throws (e: inferred)` lets Laurel compute the thrown type: it becomes the common
+supertype of every exception that may escape the body uncaught, including those
+propagated from callees (whose own inferred types are computed together with it).
+`throws (e: T inferred)` keeps a declared `T` and joins the inferred types with it.
+When nothing escapes, the procedure declares no `throws`; when the escaping types have
+no common supertype, it is an error.
+
+```laurel
+composite ArithError {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: inferred)   // inferred: throws (e: ArithError)
+  opaque
+{
+  if b == 0 then {
+    var x: ArithError := new ArithError;
+    throw x
+  };
+  r := a / b
+};
+```
+
+This is how a frontend lets unchecked exceptions propagate without declaring them:
+the obligation moves from the thrower to its callers, as for a declared `throws`.
+
+Each procedure is inferred from its own body. An override is capped at the type of
+the method it overrides, so a call through the base never sees more than the base's
+type: what the override lets escape within that type stays in its `throws`, and the
+rest is asserted not to happen, as in a procedure without `throws`. An override may
+throw less than its base, or nothing. A procedure without a body cannot have an
+inferred clause; its type must be declared. A procedure with `throwsOn` cases must
+not have its declared type widened by inference, because the cases' binding would
+widen with it; that is an error.
 
 ### Handling: try, catch, finally
 

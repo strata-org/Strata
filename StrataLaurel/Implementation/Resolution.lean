@@ -5736,16 +5736,34 @@ private def alwaysCompletesAbruptly (stmt : StmtExprMd) : Bool :=
     resolution `T` is not concrete, so — exactly as a poly RETURN flows gradually
     through `isConsistent`'s recursive `.TVar` wildcard — the escape is deferred to
     the post-mono re-resolution, where the clone's throws type is concrete and
-    genuinely checkable (the un-gated `validateExceptionEscapes` in `resolve`). -/
-private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
-    (expr : StmtExprMd) : List (HighTypeMd × FileRange) :=
-  let calleeThrows (callee : Identifier) : List (HighTypeMd × FileRange) :=
+    genuinely checkable (the un-gated `validateExceptionEscapes` in `resolve`).
+
+    `throwsOf` gives a callee's thrown type. `exceptionEscapes` reads the declared
+    `throwsType`; `inferThrows` passes the types inferred so far, and sets
+    `atCallTypeArgs` so a callee's type is taken at the type arguments the call
+    records (`typeAtCall`): a call `g(a)` to `g<T>(x: T) throws (e: T)` at
+    `a : E` escapes `E`. (The declared-`throws` check leaves that to the post-mono
+    re-resolution, as described above.) With `keepTVars`, types that mention a type
+    variable are kept, so `inferThrows` can tell that it cannot infer them.
+
+    Expression forms not matched below (casts, type tests, field reads, compound
+    assignments, …) contribute every throwing call and `throw` nested in them,
+    without regard to any `try` inside, which over-approximates. -/
+public def exceptionEscapesWith (model : SemanticModel) (lattice : TypeLattice)
+    (throwsOf : Procedure → Option HighTypeMd) (expr : StmtExprMd)
+    (keepTVars : Bool := false) (atCallTypeArgs : Bool := false) : List (HighTypeMd × FileRange) :=
+  let calleeThrowsAt (callee : Identifier) (typeArgs : List HighTypeMd) (src : FileRange)
+      : List (HighTypeMd × FileRange) :=
     match model.get callee with
     | .staticProcedure p | .instanceProcedure _ p =>
-      match p.throwsType with
-      | some t => if mentionsTVar t.val then [] else [(t, expr.source)]
+      match throwsOf p with
+      | some t =>
+        let t := if atCallTypeArgs then typeAtCall model callee typeArgs t else t
+        if !keepTVars && mentionsTVar t.val then [] else [(t, src)]
       | none => []
     | _ => []
+  let calleeThrows (callee : Identifier) (typeArgs : List HighTypeMd) :=
+    calleeThrowsAt callee typeArgs expr.source
   -- Recursive descents go through `attach` (and named discriminant equations) so
   -- each child carries the membership/shape proof the termination argument needs.
   match _h : expr.val with
@@ -5756,19 +5774,19 @@ private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
     -- escapes too. A thrown value of poly type (`throw x` where `x : T`) is
     -- dropped like a poly `throws` type — deferred to the post-mono re-check.
     let thrownTy := computeExprType model e
-    (if mentionsTVar thrownTy.val then [] else [(thrownTy, expr.source)])
-      ++ exceptionEscapes model lattice e
-  | .StaticCall callee args _ =>
-    calleeThrows callee ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapes model lattice a)
+    (if !keepTVars && mentionsTVar thrownTy.val then [] else [(thrownTy, expr.source)])
+      ++ exceptionEscapesWith model lattice throwsOf e keepTVars atCallTypeArgs
+  | .StaticCall callee args typeArgs =>
+    calleeThrows callee typeArgs ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapesWith model lattice throwsOf a keepTVars atCallTypeArgs)
   | .InstanceCall target callee args =>
-    calleeThrows callee ++ exceptionEscapes model lattice target
-      ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapes model lattice a)
+    calleeThrows callee [] ++ exceptionEscapesWith model lattice throwsOf target keepTVars atCallTypeArgs
+      ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapesWith model lattice throwsOf a keepTVars atCallTypeArgs)
   | .Try body catches finally? =>
-    let bodyEsc := exceptionEscapes model lattice body
+    let bodyEsc := exceptionEscapesWith model lattice throwsOf body keepTVars atCallTypeArgs
     let uncaught := bodyEsc.filter (fun p => !catches.any (fun c => clauseCatches lattice c p.1))
-    let handlersEsc := catches.attach.flatMap (fun ⟨c, _⟩ => exceptionEscapes model lattice c.body)
+    let handlersEsc := catches.attach.flatMap (fun ⟨c, _⟩ => exceptionEscapesWith model lattice throwsOf c.body keepTVars atCallTypeArgs)
     let finallyEsc := match _hf : finally? with
-      | some f => exceptionEscapes model lattice f
+      | some f => exceptionEscapesWith model lattice throwsOf f keepTVars atCallTypeArgs
       | none => []
     -- A `finally` that definitely completes abruptly *supersedes* whatever the
     -- body or a handler left pending, so nothing from them escapes through it
@@ -5780,23 +5798,30 @@ private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
       | none => false
     if finallyAbrupt then finallyEsc
     else uncaught ++ handlersEsc ++ finallyEsc
-  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapes model lattice s)
+  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapesWith model lattice throwsOf s keepTVars atCallTypeArgs)
   | .IfThenElse c t e =>
-    exceptionEscapes model lattice c ++ exceptionEscapes model lattice t
-      ++ (match _he : e with | some eb => exceptionEscapes model lattice eb | none => [])
+    exceptionEscapesWith model lattice throwsOf c keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf t keepTVars atCallTypeArgs
+      ++ (match _he : e with | some eb => exceptionEscapesWith model lattice throwsOf eb keepTVars atCallTypeArgs | none => [])
   | .While c _ _ b _ =>
-    exceptionEscapes model lattice c ++ exceptionEscapes model lattice b
+    exceptionEscapesWith model lattice throwsOf c keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf b keepTVars atCallTypeArgs
   | .Assign targets value =>
     -- A `Field` target's object expression (`mk()#x := 1`) can throw or call a
     -- throwing procedure, so it escapes exactly like the assigned value does.
     targets.attach.flatMap (fun ⟨t, _⟩ =>
       match _ht : t.val with
-      | .Field obj _ => exceptionEscapes model lattice obj
+      | .Field obj _ => exceptionEscapesWith model lattice throwsOf obj keepTVars atCallTypeArgs
       | _ => [])
-      ++ exceptionEscapes model lattice value
-  | .Return vs => vs.attach.flatMap (fun ⟨v, _⟩ => exceptionEscapes model lattice v)
-  | .ProveBy v pf => exceptionEscapes model lattice v ++ exceptionEscapes model lattice pf
-  | _ => []
+      ++ exceptionEscapesWith model lattice throwsOf value keepTVars atCallTypeArgs
+  | .Return vs => vs.attach.flatMap (fun ⟨v, _⟩ => exceptionEscapesWith model lattice throwsOf v keepTVars atCallTypeArgs)
+  | .ProveBy v pf => exceptionEscapesWith model lattice throwsOf v keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf pf keepTVars atCallTypeArgs
+  | _ =>
+    collectStmtExprList (fun n => match n.val with
+      | .StaticCall callee _ typeArgs => calleeThrowsAt callee typeArgs n.source
+      | .InstanceCall _ callee _ => calleeThrowsAt callee [] n.source
+      | .Throw e =>
+        let ty := computeExprType model e
+        if !keepTVars && mentionsTVar ty.val then [] else [(ty, n.source)]
+      | _ => []) expr
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf
@@ -5811,6 +5836,12 @@ private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
       simp at hsz
       omega))
     all_goals (try (simp_all; omega))
+
+/-- `exceptionEscapesWith`, reading each callee's thrown type from its declared
+    `throwsType`. -/
+private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (expr : StmtExprMd) : List (HighTypeMd × FileRange) :=
+  exceptionEscapesWith model lattice (·.throwsType) expr
 
 /-- Guard: reject a `try` whose escaping exception cannot be copied into the region
     it propagates into.
@@ -5947,6 +5978,9 @@ private def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
     | .Transparent b => some b
     | .Opaque _ (some impl) _ => some impl
     | _ => none
+  -- An inferred clause is checked once `inferThrows` has replaced it: until then
+  -- its declared part is only a lower bound.
+  if proc.throwsInferred then [] else
   match body? with
   | none => []
   | some body =>
@@ -6121,8 +6155,10 @@ where
 private def validateExceptionalClausesNeedThrows
     (procs : List (String × Procedure)) : List Message :=
   procs.flatMap fun (displayName, proc) =>
+    -- An inferred clause is not checked here: `inferThrows` reports a case left
+    -- with no inferred type, and re-resolves the rest with the type filled in.
     let needsThrows :=
-      if proc.throwsType.isSome then []
+      if proc.throwsType.isSome || proc.throwsInferred then []
       else proc.throwsOn.map fun blk =>
         diagnosticFromSource blk.guard.source
           s!"a `throwsOn` case describes the exceptional exit, so procedure '{displayName}' must declare a `throws` type; without one it has no exceptional exit and the case would be silently ignored"
@@ -6211,7 +6247,11 @@ private def validateExceptionLowerability (model : SemanticModel)
     heapGuardErrors ++ match body? with
     | none => []
     | some body =>
-      checkPropagationEdges model (TypeLattice.ofTypes types) proc.throwsType body
+      -- An inferred procedure's own `$exc` may be capped below what escapes into it
+      -- (an override capped at its base's type): `EliminateExceptions` asserts
+      -- that such an escape does not happen, so its top-level edges need no copy.
+      checkPropagationEdges model (TypeLattice.ofTypes types)
+        (if proc.throwsInferred then none else proc.throwsType) body
       ++ (checkThrowingCallPositions model body).map (fun src =>
         diagnosticFromSource src
           "a call to a procedure that `throws` is not yet supported in this expression position; bind it to a variable first (e.g. `var t := f(); … t …`)"

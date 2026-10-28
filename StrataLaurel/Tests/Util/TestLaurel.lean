@@ -15,6 +15,7 @@ public import StrataLaurel.Implementation.EliminateValueInReturns
 public import StrataLaurel.Implementation.GlobalParameterization
 public import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataLaurel.Implementation.InferThrows
 public import StrataLaurel.Implementation
 public import Strata.Languages.Core.ProgramEval
 public import Strata.Languages.Core.Verifier
@@ -169,7 +170,7 @@ def runPassForIdiomaticityCore (pass : Laurel.LaurelPass)
     (prelude : Bool) (options : Laurel.LaurelTranslateOptions) (program : StrataDDM.Program) :
     IO Unit := do
   let parsed ← translateLaurel program
-  let resolved := Laurel.resolve (if prelude then withBuiltins parsed else parsed)
+  let resolved := Laurel.resolveWithInferredThrows (if prelude then withBuiltins parsed else parsed)
   for e in resolved.errors do
     IO.println s!"resolution diagnostic: {e.message}"
   let (out, messages, _stats) :=
@@ -283,7 +284,7 @@ private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
   | .error e =>
     return #[Strata.Message.fromString s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let result := Laurel.resolve (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
+    let result := Laurel.resolveWithInferredThrows (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
@@ -440,7 +441,7 @@ private def runLaurelEvalRaw (program : StrataDDM.Program) :
   let entries := laurelProgram.staticProcedures.filter (·.isInterpretEntry)
   if entries.isEmpty then
     return none
-  let resolved := Laurel.resolve (withBuiltins laurelProgram)
+  let resolved := Laurel.resolveWithInferredThrows (withBuiltins laurelProgram)
   let fatal := resolved.errors.filter (·.kind.impact.isFatal)
   unless fatal.isEmpty do
     throw (IO.userError

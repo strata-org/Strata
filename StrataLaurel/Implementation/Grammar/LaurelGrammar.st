@@ -315,6 +315,13 @@ op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  
 category ThrowsClause;
 op throwsClause(binding: Ident, throwsType: LaurelType): ThrowsClause =>
   " throws (" binding ": " throwsType ")";
+// An inferred clause: the thrown type is computed from the body by `inferThrows`
+// (the join of every exception type that may escape it uncaught). The second
+// form keeps a declared type and joins the inferred escapes with it.
+op throwsInferredClause(binding: Ident): ThrowsClause =>
+  " throws (" binding ": inferred)";
+op throwsDeclaredInferredClause(binding: Ident, throwsType: LaurelType): ThrowsClause =>
+  " throws (" binding ": " throwsType " inferred)";
 
 // The clauses inside a `throwsOn` block: the throwing-path counterparts of
 // `ensures` and `modifies`, scoped to that block's guard.
