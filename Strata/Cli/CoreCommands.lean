@@ -13,9 +13,7 @@ public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.IncrementalSolve
 public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
-public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.B3.Verifier.Program
-public import Strata.Languages.C_Simp.DDMTransform.Parse
 public import Strata.Transform.ProcedureInlining
 public import StrataDDM.Util.IO
 public import Strata.SimpleAPI
@@ -25,7 +23,6 @@ public meta import Strata.Cli.VerifyOptions
 public meta import Strata.Cli.DialectCommands
 public meta import Strata.Languages.Core
 public meta import Strata.Languages.B3.DDMTransform.ParseCST
-public meta import Strata.Languages.C_Simp.DDMTransform.Parse
 public meta import Strata.DL.SMT.DDMTransform.Parse
 
 public section
@@ -208,7 +205,7 @@ private def withContractsHint (resolver : PipelineResolver) (pflags : ParsedFlag
 
 /-- The `verify` command. `backendOf` gives the discharge and the sessions of the solver
     backend an invocation selects, both `none` to use Core's own discharge and local solver
-    processes; the discharge serves Core and C_Simp programs alike. -/
+    processes; the discharge uses Core's own default when both are `none`. -/
 def verifyCommand (dialects : LoadedDialects)
     (extraFlags : List Flag := [])
     (checkOptions : Core.VerifyOptions → ParsedFlags → List String := fun _ _ => [])
@@ -229,7 +226,7 @@ def verifyCommand (dialects : LoadedDialects)
     { name := "parse-only", help := "Exit after DDM parsing and type checking." },
     { name := "output-format", help := "Output format (only 'sarif' supported).", takesArg := .arg "format" },
     { name := "procedures", help := "Verify only the specified procedures (comma-separated).", takesArg := .arg "procs" }]
-  help := "Verify a Strata program file (.core.st, .csimp.st, or .b3.st)."
+  help := "Verify a Strata program file (.core.st or .b3.st)."
   -- Both answer without a file to verify: one lists the phases, the other checks an order.
   reportFlags :=
     [("display-phases", fun _ =>
@@ -295,11 +292,9 @@ def verifyCommand (dialects : LoadedDialects)
           ++ "pipeline: the supplied pipeline is run exactly as given, so the procedure "
           ++ "filter would be silently dropped. Omit --procedures, or run the default "
           ++ "pipeline, which applies it."
-    -- Only the Core path takes a pipeline: a C_Simp program is verified through its own
-    -- translation and a B3 program never reaches the Core phases at all. Accepting a phase
-    -- list for either would run something other than what the caller asked for.
-    if pipeline.isSome
-        && (file.endsWith ".csimp.st" || file.endsWith ".b3.st" || file.endsWith ".b3cst.st") then
+    -- Only the Core path takes a pipeline: a B3 program never reaches the Core phases.
+    -- Accepting a phase list for B3 would run something other than what the caller asked for.
+    if pipeline.isSome && (file.endsWith ".b3.st" || file.endsWith ".b3cst.st") then
       exitUserError <|
         s!"The selected pipeline applies to Core programs only, and {file} is not one."
     -- Print notes only after the Core-only check above, so a rejected run prints nothing.
@@ -318,10 +313,7 @@ def verifyCommand (dialects : LoadedDialects)
     println! s!"Successfully parsed."
       if opts.parseOnly then return
       if opts.typeCheckOnly then
-        let ans := if file.endsWith ".csimp.st" then
-                     C_Simp.typeCheck pgm opts
-                   else
-                     typeCheck inputCtx pgm opts
+        let ans := typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
           println! f!"{e.formatRange (some inputCtx.fileMap) true} {e.message}"
@@ -331,9 +323,7 @@ def verifyCommand (dialects : LoadedDialects)
           return
       -- Full verification
       let vcResults ← try
-        if file.endsWith ".csimp.st" then
-          C_Simp.verify pgm opts (mkDischarge := ownDischarge.getD Core.mkDischargeFn)
-        else if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
+        if file.endsWith ".b3.st" || file.endsWith ".b3cst.st" then
           let ast ← match B3.Verifier.programToB3AST pgm with
             | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
             | Except.ok ast => pure ast
@@ -362,12 +352,9 @@ def verifyCommand (dialects : LoadedDialects)
         println! f!"{e}"
         IO.Process.exit ExitCode.internalError
       if opts.outputSarif then
-        if file.endsWith ".csimp.st" then
-          println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
-        else
-          let uri := Strata.Uri.file file
-          let files := Map.empty.insert uri inputCtx.fileMap
-          Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
+        let uri := Strata.Uri.file file
+        let files := Map.empty.insert uri inputCtx.fileMap
+        Core.Sarif.writeSarifOutput opts.checkMode files vcResults (file ++ ".sarif")
       for vcResult in vcResults do
         let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata (some inputCtx.fileMap)
         -- `formatOutcome` omits the counterexample model, so render it here,
@@ -442,7 +429,6 @@ private def foreignBackendFlagIssues (backends : List SolverBackend) (solver : S
 def baseDialects : LoadedDialects :=
   StrataDDM.Elab.LoadedDialects.builtin
     |>.addDialect! Strata.Core
-    |>.addDialect! C_Simp
     |>.addDialect! B3CST
     |>.addDialect! Strata.smtReservedKeywordsDialect
     |>.addDialect! Strata.SMTCore
