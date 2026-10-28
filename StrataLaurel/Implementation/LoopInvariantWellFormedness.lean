@@ -192,8 +192,9 @@ public def loopInvariantWellFormednessPass : LaurelPass where
       NodeKind.StmtExpr.Assign,
       NodeKind.StmtExpr.Assume
     ]
+  removes := [NodeKind.Pseudo.needsLoopInvariantChecks]
   needsResolves := true
-  documentation := "Emits `if * { havoc(loop targets); assume each invariant in order; assume false }` before each loop carrying invariants, so invariant well-formedness is checked at the loop head (where the invariant is assumed) rather than in the loop's pre-state (where more is known and the obligation can be vacuously discharged). Assuming each invariant in turn lets a later invariant's well-formedness rely on the earlier ones. Must run before the contract pass, which lowers the calls inside those invariants to precondition asserts."
+  documentation := "Emits `if * { havoc(loop targets); assume each invariant in order; assume false }` before each loop carrying invariants, so invariant well-formedness is checked at the loop head (where the invariant is assumed) rather than in the loop's pre-state (where more is known and the obligation can be vacuously discharged). Assuming each invariant in turn lets a later invariant's well-formedness rely on the earlier ones."
   run := fun _ p _m => (loopInvariantWellFormedness p, [], {})
 
 end -- public section
