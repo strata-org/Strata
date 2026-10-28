@@ -6,6 +6,7 @@
 module
 
 public import Strata.Init
+public import Std.Data.HashSet.Basic
 
 public section
 /-!
@@ -188,6 +189,21 @@ def TermType.isOptionType : TermType → Bool
 def TermType.isConstrType : TermType → Bool
   | .constr _ _ => true
   | _         => false
+
+mutual
+/-- Add the names of the constructed sorts in a type, including its
+    arguments. -/
+def TermType.addSortNames (acc : Std.HashSet String) :
+    TermType → Std.HashSet String
+  | .prim _ => acc
+  | .option ty => TermType.addSortNames acc ty
+  | .constr id args => TermType.addSortNamesList (acc.insert id) args
+
+private def TermType.addSortNamesList (acc : Std.HashSet String) :
+    List TermType → Std.HashSet String
+  | [] => acc
+  | ty :: tys => TermType.addSortNamesList (TermType.addSortNames acc ty) tys
+end
 
 end Strata.SMT
 end

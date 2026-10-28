@@ -14,7 +14,7 @@ A monad-agnostic worklist driver: seed a set of items, dequeue one at a time,
 run a user-supplied `process` to discover new items, and re-enqueue only those
 not seen before.  Dedup is by structural `BEq`/`Hashable` on the item type.
 
-The public entry point is `run`. -/
+The public entry points are `run` and `reachable`. -/
 
 namespace Strata.Worklist
 
@@ -75,6 +75,18 @@ def run {m : Type → Type} [Monad m] {α : Type} [BEq α] [Hashable α]
       seen := seen.insert a
       pending := pending.enqueue a
   runIterations process maxIterations (pending, seen)
+
+/-- The items reachable from `initial` by following `next`, `initial`
+    included, or `none` when the walk needs more than `maxIterations` steps.
+    With `next 1 = [2]` and `next 2 = []`, the items reachable from `[1]` are
+    `1` and `2`. -/
+def reachable {α : Type} [BEq α] [Hashable α] (initial : List α)
+    (next : α → List α) (maxIterations : Nat) : Option (Std.HashSet α) :=
+  let visit : α → StateM (Std.HashSet α) (List α) := fun a => do
+    modify fun seen => seen.insert a
+    pure (next a)
+  let (finished, seen) := Id.run ((run initial visit maxIterations).run {})
+  if finished then some seen else none
 
 end -- public section
 

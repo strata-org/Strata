@@ -194,6 +194,9 @@ structure VerifyOptions where
   /-- How aggressively to prune irrelevant axioms from proof
       obligations. See `IrrelevantAxiomsMode` for details. -/
   removeIrrelevantAxioms : IrrelevantAxiomsMode
+  /-- Leave out of each SMT query the datatype declarations that the query
+      does not mention. -/
+  removeIrrelevantDatatypes : Bool := false
   /-- Verification mode: deductive (prove correctness) or
       bugFinding (find bugs). -/
   checkMode : VerificationMode

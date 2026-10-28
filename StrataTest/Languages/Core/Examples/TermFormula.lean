@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import StrataTest.Languages.Core.Examples.DatatypePruningTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -413,6 +414,14 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify termFormulaPgm (options := .quiet)
+
+-- The same programs verify identically with `removeIrrelevantDatatypes`.
+/--
+info: 1 of 1 the same
+-/
+#guard_msgs in
+#eval Core.RemoveIrrelevantDatatypes.TestUtils.sameWithFlag
+  [termFormulaPgm]
 
 end Strata.TermFormulaTest
 end

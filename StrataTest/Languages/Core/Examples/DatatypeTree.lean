@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import StrataTest.Languages.Core.Examples.DatatypePruningTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -628,6 +629,16 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify treeDifferentValuesPgm (options := .quiet)
+
+-- The same programs verify identically with `removeIrrelevantDatatypes`.
+/--
+info: 10 of 10 the same
+-/
+#guard_msgs in
+#eval Core.RemoveIrrelevantDatatypes.TestUtils.sameWithFlag
+  [treeTesterPgm, treeHavocPgm, treeExhaustivePgm, treeMutualExclusionPgm,
+   treeEqualityPgm, treeInequalityPgm, treeDestructorPgm, treeNestedPgm,
+   treeDestructorHavocPgm, treeDifferentValuesPgm]
 
 end Strata.DatatypeTreeTest
 end

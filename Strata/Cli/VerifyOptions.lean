@@ -71,6 +71,9 @@ def verifyOptionsFlags : List Flag := [
     help := "Prune irrelevant axioms: 'off', 'aggressive', 'precise', \
       or 'directed'.",
     takesArg := .arg "mode" },
+  { name := "remove-irrelevant-datatypes",
+    help := "Leave out of each SMT query the datatype declarations that \
+      it does not mention." },
   { name := "overflow-checks",
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
@@ -228,6 +231,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
     useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
     removeIrrelevantAxioms,
+    removeIrrelevantDatatypes :=
+      pflags.getBool "remove-irrelevant-datatypes"
+        || base.removeIrrelevantDatatypes,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,

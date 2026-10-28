@@ -619,6 +619,10 @@ def getTypeRefs (ty: LMonoTy) : List String :=
   | .tcons n args => n :: args.flatMap getTypeRefs
   | _ => []
 
+/-- The type constructor names in the types of `d`'s constructor fields. -/
+def LDatatype.fieldTypeRefs (d : LDatatype IDMeta) : List String :=
+  d.constrs.flatMap fun c => c.args.flatMap fun (_, ty) => getTypeRefs ty
+
 /--
 Every type-constructor reference in a type, paired with the argument count at
 that occurrence.

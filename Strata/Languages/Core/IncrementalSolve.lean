@@ -676,9 +676,11 @@ def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
 
     Encoding and sending are one step because they are one thing: advancing the
     fold discovers the sorts, functions and axioms the assertion mentions, and
-    those have to reach this solver before the check does. -/
+    those have to reach this solver before the check does. With
+    `removeDatatypes`, the solver is sent only the datatypes the query
+    mentions and their field types. -/
 def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory CoreLParams)
-    (item : WorkItem) (satCheck validCheck : Bool) :
+    (item : WorkItem) (satCheck validCheck removeDatatypes : Bool) :
     IO ((Except VCError VCOutcome × LExprModel) × Session τ σ) := do
   -- Append the runs of facts this session has not walked yet. `appendEntry` takes
   -- one entry at a time, so nothing is compared: a session knows what it holds
@@ -711,7 +713,7 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     -- function, axiom or datatype reachable only from the goal and from no assumption on the path
     -- appears in `r.ctx` alone. Declaring from the fold's context would omit it while the goal
     -- still refers to it, and the solver would reject an unknown symbol.
-    let ctx := r.ctx
+    let ctx := r.declaredCtx removeDatatypes
     let managed := (r.varDecls.map (·.name) ++ r.varDefs.map (·.name)).foldl
       (fun acc n => acc.insert n) s.managed
     let newDatatypes := ctx.seenDatatypes.toList.filter fun n => !s.declDatatypes.contains n
@@ -1019,6 +1021,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         s.encodingFailure.set none
         try
           let ((o, model), s') ← s.prove factory item satCheck validCheck
+            options.removeIrrelevantDatatypes
           -- Whether a `sat` reports as unknown depends on what this goal's
           -- pruning drops, as on the per-obligation path, even when lazy
           -- pruning left those axioms in the solver.

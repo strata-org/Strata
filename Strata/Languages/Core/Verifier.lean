@@ -2386,8 +2386,10 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         -- at its last good position (the next obligation re-detects from there).
         pure (ObligationDisposition.resolved result, (default : Statistics), encState0,
               snapCache0, emState0)
-      | .ok ({ assumptions := assumptionTerms, varDefs, varDecls,
-               goal := obligationTerm, ctx, stats := encStats }, encState', snapCache') =>
+      | .ok (encoded, encState', snapCache') =>
+        let { assumptions := assumptionTerms, varDefs, varDecls,
+              goal := obligationTerm, stats := encStats, .. } := encoded
+        let ctx := encoded.declaredCtx options.removeIrrelevantDatatypes
         -- Shared managed definitions can mention variables from unrelated
         -- obligations. Follow only the definitions reachable from this
         -- obligation before deciding which user variables to request in a
