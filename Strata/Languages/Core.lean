@@ -28,6 +28,8 @@ import Strata.Transform.BetaReduce
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
+import Strata.Transform.EqualitySimplification
+import Strata.Transform.FoldAxioms
 
 /-! ## Strata Core Transform & Verification API
 
@@ -223,6 +225,17 @@ def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
 def Core.passSimplify : Core.PipelinePhase :=
   Core.simplifyPhase
 
+/-- Substitute into each `assert` and `cover` goal the values that ground axioms,
+    `assume`s and definitions give its terms, and fold. No default pipeline lists it. -/
+def Core.passEqualitySimplification : Core.PipelinePhase :=
+  _root_.Core.equalitySimplificationPhase
+
+/-- Fold every axiom without quantifiers, so that a later phase reads values that
+    only appear once a field of a constructor application is selected. No default
+    pipeline lists it. -/
+def Core.passFoldAxioms : Core.PipelinePhase :=
+  _root_.Core.foldAxiomsPhase
+
 /-- Attach per-constructor axioms to recursive `@[cases]` functions, which symbolic
     evaluation otherwise generates. For a pipeline that runs `simplify` in its place.
     `Core.verify` rebuilds this phase from its own options, so whether it generates the
@@ -283,7 +296,7 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
     List Core.PipelinePhase :=
   Core.corePipelinePhases options
     ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-        Core.passDeadDefElim]
+        Core.passDeadDefElim, Core.passFoldAxioms, Core.passEqualitySimplification]
 
 /-! ### Standard Core verification pipeline phases
 
