@@ -74,8 +74,6 @@ import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.ProgramFact

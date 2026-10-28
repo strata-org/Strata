@@ -14,10 +14,8 @@ public import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
-public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.B3.Verifier.Program
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
-public import Strata.Languages.C_Simp.DDMTransform.Parse
 public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 public import StrataLaurel.Implementation
 public import StrataLaurel.Implementation.CliOptions
