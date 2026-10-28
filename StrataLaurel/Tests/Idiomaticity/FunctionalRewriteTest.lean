@@ -479,14 +479,15 @@ procedure labelledBlockNotLast(x: int) returns (r: int) {
 };
 #end
 
-/-! ## A block-valued assignment functionalizes the block's statements
+/-! ## A block-valued assignment is flattened into the enclosing statements
 
 An assignment's value is normally an expression, but the transparency pass can emit
 a transparent body as `$result := { <statements>; <tail expression> }`, whose
-statements are genuinely in statement position. Those are functionalized with the
-block's own last element as the continuation — so the destructive update inside the
-block below becomes a nested shadowing declaration, exactly as it would at
-statement level. This is the only shape where a *value* is descended into. -/
+statements are genuinely in statement position. The block is flattened:
+`r := { S; e }` is translated as `S` followed by `r := e` — so the destructive
+update inside the block below becomes a nested shadowing declaration, exactly as it
+would at statement level, and its scope extends over the statements after the
+assignment. This is the only shape where a *value* is descended into. -/
 
 /--
 info: procedure $declHole_blockValued_6(a: int): int
@@ -499,16 +500,16 @@ procedure blockValued(a: int)
 {
   var r: int := $declHole_blockValued_6(a);
   {
-    var r: int := {
-      var $v_7: int := a;
-      {
-        var $v_7: int := step($v_7);
-        $v_7
-      }
-    };
+    var $v_7: int := a;
     {
-      var r: int := r;
-      r
+      var $v_7: int := step($v_7);
+      {
+        var r: int := $v_7;
+        {
+          var r: int := r;
+          r
+        }
+      }
     }
   }
 };
