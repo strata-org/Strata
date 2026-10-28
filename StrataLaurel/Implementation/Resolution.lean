@@ -5586,7 +5586,7 @@ private def placeholderNode : ResolvedNode :=
     The emitted `.TVar` carries the BINDER's identifier (only its source range is the use
     site's), so the stored type names the parameter by `uniqueId` and not just by spelling.
     A call site asks whether a type variable is one IT declares (`tvarInScope`), and text
-    alone cannot tell a callee's own `V` from the caller's. `stampTypeParamIds` gives every
+    alone cannot tell a callee's own `V` from the caller's. `stampBinderIds` gives every
     binder an id before this runs, and `scopeTypeParams` reuses that same id. -/
 private def tvarizeType (params : List Identifier) (ty : HighTypeMd) : HighTypeMd :=
   mapHighTypeNames (fun ctor n =>
@@ -5650,7 +5650,8 @@ private def preRegisterDefinitions (types : List TypeDefinition)
       for ctor in dt.constructors do
         let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
         let testerProc := mkTesterProcedure dt ctor
-        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+        -- `ctor.testerName` carries the id an earlier resolution gave the tester.
+        let _ ← defineNameCheckDup { ctor.testerName with text := dt.testerName ctor }
           (.staticProcedure testerProc) (some (dt.testerName ctor))
         for p in ctor.args do
           let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
@@ -5675,35 +5676,42 @@ private def preRegisterDefinitions (types : List TypeDefinition)
   for proc in procs do
     preRegisterStaticProcedure (tvarizeProcSignature proc.typeArgs proc)
 
-/-- Give every type-parameter binder a `uniqueId` before anything reads it, and return the
-    program carrying them.
+/-- Give every type-parameter binder and `throws` binder a `uniqueId` before anything reads
+    it, and return the program carrying them.
 
     Two places name a generic entity's parameters and must agree on their identity:
     pre-registration, which writes `.TVar`s into the stored field types and signatures a CALLER
     reads (`tvarizeType`), and `scopeTypeParams`, which brings the same parameters into scope
     while the declaration's own body is resolved. Assigning here, on the shared AST binder, makes
     them agree by construction — `defineName` keeps an id the identifier already carries, so
-    `scopeTypeParams` adopts this one rather than allocating a second.
+    `scopeTypeParams` adopts this one rather than allocating a second. Resolution itself does not
+    write back the ids of a datatype's, alias's or opaque type's parameters, or of a `throws`
+    binder (defined once per `throwsOn` case), so without this they would be renumbered on every
+    re-resolution.
 
     Idempotent: a re-resolution (`existingModel`) sees binders that already carry ids and leaves
     them alone, which is also what lets a lifted instance procedure keep its composite's ids. -/
-private def stampTypeParamIds (program : LaurelProgram) : ResolveM LaurelProgram := do
-  let stamp (tvs : List Identifier) : ResolveM (List Identifier) :=
-    tvs.mapM fun tv =>
-      match tv.uniqueId with
-      | some _ => pure tv
-      | none => do
-        let id ← freshId
-        pure { tv with uniqueId := some id }
+private def stampBinderIds (program : LaurelProgram) : ResolveM LaurelProgram := do
+  let stampOne (b : Identifier) : ResolveM Identifier :=
+    match b.uniqueId with
+    | some _ => pure b
+    | none => do
+      let id ← freshId
+      pure { b with uniqueId := some id }
+  let stamp (tvs : List Identifier) : ResolveM (List Identifier) := tvs.mapM stampOne
   let stampProc (p : Procedure) : ResolveM Procedure := do
     let typeArgs ← stamp p.typeArgs
-    return { p with typeArgs := typeArgs }
+    let throwsBinding ← p.throwsBinding.mapM stampOne
+    return { p with typeArgs, throwsBinding }
   let types ← program.types.mapM fun td =>
     match td with
     | .Composite ct => do
       let typeArgs ← stamp ct.typeArgs
       let instProcs ← ct.instanceProcedures.mapM stampProc
       return .Composite { ct with typeArgs := typeArgs, instanceProcedures := instProcs }
+    | .Datatype dt => return .Datatype { dt with typeArgs := ← stamp dt.typeArgs }
+    | .Alias ta => return .Alias { ta with typeArgs := ← stamp ta.typeArgs }
+    | .Opaque ot => return .Opaque { ot with typeArgs := ← stamp ot.typeArgs }
     | other => pure other
   let staticFunctions ← program.staticFunctions.mapM stampProc
   let staticProcs ← program.staticProcedures.mapM stampProc
@@ -7568,9 +7576,9 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM LaurelProgram := do
-    -- Type-param binders get their ids first, so pre-registration and `scopeTypeParams`
-    -- name the same parameter with the same id (see `stampTypeParamIds`).
-    let program ← stampTypeParamIds program
+    -- Binders get their ids first, so pre-registration and `scopeTypeParams` name the same
+    -- type parameter with the same id, and a re-resolution keeps them (see `stampBinderIds`).
+    let program ← stampBinderIds program
     preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant

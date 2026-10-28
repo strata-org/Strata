@@ -210,6 +210,16 @@ def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
   if diagsSoFar.any (·.kind != .warning) then #[]
   else postPassDiags.filter fun e => e.kind != .warning && !initialDiags.contains e
 
+private unsafe def sameDeclarationsUnsafe : LaurelProgram → LaurelProgram → Bool
+  | ⟨procs, fns, fields, types, consts⟩, ⟨procs', fns', fields', types', consts'⟩ =>
+    ptrEqList procs procs' && ptrEqList fns fns' && ptrEqList fields fields'
+      && ptrEqList types types' && ptrEqList consts consts'
+
+/-- Whether `a` holds the very declaration objects `b` does. `false` in the logic, where
+    it only costs a re-resolve. -/
+@[implemented_by sameDeclarationsUnsafe]
+private def sameDeclarations (_ _ : LaurelProgram) : Bool := false
+
 /--
 Run every pass of `laurelPipeline` on a program, returning the final program, the
 last Laurel program it passed through, the accumulated diagnostics, the diagnostics
@@ -273,6 +283,8 @@ private def runLaurelPasses
         else none
       return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats)
 
+  -- The program `model` was resolved from
+  let mut resolved := result.program
   for pass in passes do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
@@ -290,8 +302,12 @@ private def runLaurelPasses
     -- catch it). A pass emitting only warnings continues.
     if diags.any (·.kind != .warning) then
       return (program, laurelProgram, allDiags, lastDiags, allStats)
-    -- Run resolve after the pass if needed
-    if pass.needsResolves then
+    -- Run resolve after the pass if needed, unless the program is still the one `model` was
+    -- resolved from: resolving that again rebuilds the same model (`ReresolutionIdsTest`).
+    let unchanged := match program with
+      | .Unordered p => sameDeclarations p resolved
+      | _ => false
+    if pass.needsResolves && !unchanged then
       match program with
       | .Unordered p =>
         let result := resolve p (some model) (gradualTypes := options.gradualTypes)
@@ -383,6 +399,7 @@ private def runLaurelPasses
             return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
         program := .Unordered result.program
         laurelProgram := result.program
+        resolved := result.program
         model := result.model
       | other =>
         return (program, laurelProgram, allDiags ++ [Message.fromString
