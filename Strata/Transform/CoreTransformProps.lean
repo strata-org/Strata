@@ -270,7 +270,7 @@ private theorem freshenTypeArgsSubst_nonempty {S : Lambda.Subst}
       S = [Strata.Util.HMap.ofList
         ((typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2)))] := by
   unfold freshenTypeArgsSubst at h
-  rw [if_neg (by simp [hne])] at h
+  rw [ite_eq_right (by simp [hne])] at h
   simp only [bind, StateT.bind, pure, StateT.pure] at h
   split at h
   next fresh γ1 hgen =>

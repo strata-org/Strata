@@ -17,7 +17,7 @@ namespace Core
 namespace Procedure
 open Std
 
-open Statement Lambda LExpr
+open Statement Core.Lambda LExpr
 
 def fixupError (E : Env) : Env :=
   match E.error with

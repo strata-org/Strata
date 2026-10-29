@@ -184,7 +184,7 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
@@ -199,7 +199,7 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inl hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
@@ -217,7 +217,7 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inr hn)))
     (fun n hn => hdnr n (List.mem_append.mpr (Or.inr hn)))
@@ -235,7 +235,7 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   have hdefs := h.defsUndefined
   have hdnr := h.definedVarsNotReserved
   simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
-  simp only [Stmt.definedVars, Bool.false_eq_true, if_false] at hdefs hdnr
+  simp only [Stmt.definedVars, Bool.false_eq_true, ite_false] at hdefs hdnr
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
@@ -473,7 +473,7 @@ theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
-    · simp only [projectStore, hn, if_true]
+    · simp only [projectStore, hn, ite_true]
       exact core_stmts_preserves_isSome π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with
@@ -536,7 +536,7 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
   have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
     intro n
     by_cases hn : (ρ.store n).isSome = Bool.true
-    · simp only [projectStore, hn, if_true]
+    · simp only [projectStore, hn, ite_true]
       exact core_stmts_preserves_isSomeE π hrun hn
     · have hnone : ρ.store n = none := by
         cases hq : ρ.store n with

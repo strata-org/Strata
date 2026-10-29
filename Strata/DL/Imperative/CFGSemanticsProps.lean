@@ -208,7 +208,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
       intro y hxy
       show (if y = x then some v else σ_cfg₀ y) = σ_cfg₀ y
       have hne : ¬ (y = x) := fun h => hxy h.symm
-      rw [if_neg hne]
+      rw [ite_eq_right hne]
     have h_init_cfg : InitState P σ_cfg₀ x v σ_cfg₁ :=
       InitState.init h_x_fresh h_cfg_x h_cfg_other
     refine ⟨σ_cfg₁, EvalCmd.eval_init h_eval_cfg h_init_cfg htyped hwfvar, ?_⟩
@@ -246,7 +246,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
       intro y hxy
       show (if y = x then some v else σ_cfg₀ y) = σ_cfg₀ y
       have hne : ¬ (y = x) := fun h => hxy h.symm
-      rw [if_neg hne]
+      rw [ite_eq_right hne]
     have h_init_cfg : InitState P σ_cfg₀ x v σ_cfg₁ :=
       InitState.init h_x_fresh h_cfg_x h_cfg_other
     refine ⟨σ_cfg₁, EvalCmd.eval_init_unconstrained h_init_cfg hval hwfvar, ?_⟩
@@ -291,7 +291,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
         intro y hxy
         show (if y = x then some v else σ_cfg₀ y) = σ_cfg₀ y
         have hne : ¬ (y = x) := fun h => hxy h.symm
-        rw [if_neg hne]
+        rw [ite_eq_right hne]
       have h_upd : UpdateState P σ_cfg₀ x v σ_cfg₁ :=
         UpdateState.update h_cfg_x_old h_cfg_x_new h_cfg_other
       -- Replay the stored-type premise on the CFG store: the old value shares
@@ -339,7 +339,7 @@ theorem EvalCmd_under_agreement {P : PureExpr}
         intro y hxy
         show (if y = x then some v else σ_cfg₀ y) = σ_cfg₀ y
         have hne : ¬ (y = x) := fun h => hxy h.symm
-        rw [if_neg hne]
+        rw [ite_eq_right hne]
       have h_upd : UpdateState P σ_cfg₀ x v σ_cfg₁ :=
         UpdateState.update h_cfg_x_old h_cfg_x_new h_cfg_other
       -- Replay the stored-type premise on the CFG store (nondet set): the

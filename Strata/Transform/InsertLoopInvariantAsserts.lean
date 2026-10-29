@@ -12,7 +12,7 @@ import Strata.Transform.CoreTransform
 import Strata.Transform.LoopElim
 
 namespace Core
-open Imperative Lambda
+open Imperative
 
 public section
 

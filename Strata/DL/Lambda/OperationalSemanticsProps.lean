@@ -1524,7 +1524,7 @@ theorem eql_eraseMetadata_eq
     obtain ⟨_, _, h_call₂', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
     have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by
       revert h_nm'; cases LExpr.eqModuloMeta e₁' e₂' <;> simp
-    symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
+    symm; unfold LExpr.eql; rw [h_ef, ite_eq_right (by decide)]
     split <;>
     first
     | (rw [h_call₁', h_call₂']; simp only [h_nc, ↓reduceIte])
@@ -1545,7 +1545,7 @@ theorem eql_eraseMetadata_eq
     obtain ⟨_, _, h_call₂', _, _⟩ := callOfLFunc_some_of_eraseMetadata_eq F _ _ false h₂ _ _ _ h_call₂
     have h_ef : LExpr.eqModuloMeta e₁' e₂' = false := by
       revert h_nm'; cases LExpr.eqModuloMeta e₁' e₂' <;> simp
-    symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
+    symm; unfold LExpr.eql; rw [h_ef, ite_eq_right (by decide)]
     split <;>
     first
     | (rw [h_call₁', h_call₂']; simp only [h_nc, h_nd, ↓reduceIte])
@@ -1585,10 +1585,10 @@ theorem eql_eraseMetadata_eq
           have hv₁ := EMEquiv.of_eraseMetadata_eq _ _ h₁
           have hv₂ := EMEquiv.of_eraseMetadata_eq _ _ h₂
           cases hv₁; cases hv₂; exact h_not_ac _ _ _ _ _ _ rfl rfl)]
-    rw [h_ef, if_neg (by decide), h_call₁', h_call₂']
+    rw [h_ef, ite_eq_right (by decide), h_call₁', h_call₂']
     simp only [h_nc, h_nd]
     -- Clear remaining if false = true wrappers
-    simp only [if_neg (by decide : ¬(false = true))]
+    simp only [ite_eq_right (by decide : ¬(false = true))]
     -- Convert both foldls from attach.zip to plain zip using the helper
     simp only [foldl_attach_zip_eq_eql F]
     -- Apply the zip congruence helper
@@ -1605,7 +1605,7 @@ theorem eql_eraseMetadata_eq
       rename_i fst args1 f1 fst_1 args2 f2 h1 h2
       exact absurd h2 (fun h2 => h_not_both_some fst args1 f1 fst_1 args2 f2 h1 h2)
     · -- catch-all for e1/e2: LHS = none, now show RHS eql F e₁' e₂' = none
-      symm; unfold LExpr.eql; rw [h_ef, if_neg (by decide)]
+      symm; unfold LExpr.eql; rw [h_ef, ite_eq_right (by decide)]
       split <;>
       first
       | (-- Reach the simultaneous match for e₁'/e₂'; split again

@@ -543,9 +543,10 @@ private def ConfigSE : Config P CmdT → Config P CmdT → Prop
   | .seq i₁ ss₁, .seq i₂ ss₂ => ss₁ = ss₂ ∧ ConfigSE i₁ i₂
   | _, _ => False
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] [HasOps P] in
 /-- Single-step simulation: if two configs agree on store and one steps,
     the other can take the same step with store preserved. -/
-private def step_simulation
+private theorem step_simulation
     (c₁ c₁' c₂ : Config P CmdT)
     (hstep : StepStmt P EvalCmd c₁ c₁')
     (heq : ConfigSE P c₁ c₂) :
@@ -938,8 +939,9 @@ private theorem stmts_noMatchingAssert_append
   | cons s ss ih =>
     exact ⟨h₁.1, ih h₁.2⟩
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] [HasOps P] in
 /-- A single step preserves `Config.noMatchingAssert`. -/
-private def step_preserves_noMatchingAssert [HasBoolOps P]
+private theorem step_preserves_noMatchingAssert [HasBoolOps P]
     (c₁ c₂ : Config P (Cmd P)) (label : String)
     (hstep : StepStmt P (EvalCmd P) c₁ c₂)
     (hno : c₁.noMatchingAssert label) :
@@ -2089,29 +2091,29 @@ theorem projectStore {P : PureExpr} {Extra : P.Ident → Prop}
       hdefined ident (List.mem_singleton.mpr rfl)
     simp only [Imperative.projectStore] at hsourceSome ⊢
     by_cases hsp : (sourceParent ident).isSome
-    · rw [if_pos hsp] at hsourceSome ⊢
+    · rw [ite_eq_left hsp] at hsourceSome ⊢
       have hparentEq : sourceParent ident = targetParent ident :=
         hparent.1 ident (fun x hx => by
           simpa [List.mem_singleton.mp hx] using hsp)
       have htp : (targetParent ident).isSome := by
         rw [← hparentEq]
         exact hsp
-      rw [if_pos htp]
+      rw [ite_eq_left htp]
       exact hinner.1 ident (fun x hx => by
         simpa [List.mem_singleton.mp hx] using hsourceSome)
-    · rw [if_neg hsp] at hsourceSome
+    · rw [ite_eq_right hsp] at hsourceSome
       simp at hsourceSome
   · intro ident htargetSome
     simp only [Imperative.projectStore] at htargetSome ⊢
     by_cases htp : (targetParent ident).isSome
-    · rw [if_pos htp] at htargetSome
+    · rw [ite_eq_left htp] at htargetSome
       rcases hparent.2 ident htp with hsp | hextra
       · rcases hinner.2 ident htargetSome with hsi | hextra
-        · rw [if_pos hsp]
+        · rw [ite_eq_left hsp]
           exact Or.inl hsi
         · exact Or.inr hextra
       · exact Or.inr hextra
-    · rw [if_neg htp] at htargetSome
+    · rw [ite_eq_right htp] at htargetSome
       simp at htargetSome
 
 end StoreExtendsWith
@@ -2148,14 +2150,14 @@ theorem StoreAgreement.of_projectStore_parents {P : PureExpr}
   have h := h_def x (List.mem_singleton.mpr rfl)
   simp only [projectStore] at h ⊢
   by_cases hp : (σp_src x).isSome
-  · rw [if_pos hp] at h ⊢
+  · rw [ite_eq_left hp] at h ⊢
     have h_inn_x : σi_src x = σi_tgt x :=
       h_inn x (fun z hz => by simpa [List.mem_singleton.mp hz] using h)
     have h_par_x : σp_src x = σp_tgt x :=
       h_par x (fun z hz => by simpa [List.mem_singleton.mp hz] using hp)
     have hpt : (σp_tgt x).isSome := by rw [← h_par_x]; exact hp
-    rw [if_pos hpt, h_inn_x]
-  · rw [if_neg hp] at h; simp at h
+    rw [ite_eq_left hpt, h_inn_x]
+  · rw [ite_eq_right hp] at h; simp at h
 
 /-- When every read-var of `e` is defined in the source store, `StoreAgreement`
 pins the two stores to equal values on those vars.  No freshness side-condition
@@ -2356,21 +2358,21 @@ theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableE
     intro x v hx
     simp only [σ₀] at hx
     by_cases hxi : x = ident
-    · rw [if_pos hxi] at hx
+    · rw [ite_eq_left hxi] at hx
       have : b = v := Option.some.inj hx
       subst this; exact hval
-    · rw [if_neg hxi] at hx; exact absurd hx (by simp)
+    · rw [ite_eq_right hxi] at hx; exact absurd hx (by simp)
   have h₀ : P.eval δ σ₀ e = some b := by
     have h := hwf_var e ident σ₀ hwf₀ hfv
-    rw [h]; simp only [σ₀, if_pos rfl]
+    rw [h]; simp only [σ₀, ite_eq_left rfl]
   refine hwf_mono _ _ σ₀ σ ?_ h₀
   intro x w hx
   simp only [σ₀] at hx
   by_cases hxi : x = ident
-  · rw [if_pos hxi] at hx
+  · rw [ite_eq_left hxi] at hx
     have : b = w := Option.some.inj hx
     subst this; rw [hxi]; exact h_def
-  · rw [if_neg hxi] at hx; exact absurd hx (by simp)
+  · rw [ite_eq_right hxi] at hx; exact absurd hx (by simp)
 
 /-- Reading a bare free-variable expression `mkFvar ident` from a store that maps
 `ident` to a value yields that value. -/
@@ -2813,13 +2815,13 @@ theorem Config.varsDefined_step_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     exact ⟨h.1, ih h.2⟩
   | step_block_done =>
     intro y hQ
-    simp only [projectStore]; rw [if_pos (h.1 y hQ)]; exact h.2 y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
   | step_block_exit_match heq =>
     intro y hQ
-    simp only [projectStore]; rw [if_pos (h.1 y hQ)]; exact h.2 y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
   | step_block_exit_mismatch hne =>
     intro y hQ
-    simp only [projectStore]; rw [if_pos (h.1 y hQ)]; exact h.2 y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
 
 /-! ### `Config.storeWellDefined` preservation
 
@@ -2957,7 +2959,7 @@ private theorem Config.varsUndefinedScoped_step_of {P : PureExpr}
   | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
     intro y hQ
     show projectStore _ _ y = none
-    unfold projectStore; rw [if_neg]; rw [h_inv y hQ]; simp
+    unfold projectStore; rw [ite_eq_right]; rw [h_inv y hQ]; simp
   | _ => exact fun y hQ => (h_inv y hQ).1
 
 /-- Trace lift of `Config.varsUndefinedScoped_step_of` (the `excludeScoped = true`
@@ -3040,25 +3042,25 @@ theorem Config.varsUndefinedThroughout_step_of {P : PureExpr}
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
-    simp only [Bool.false_eq_true, if_false] at h_ndef
+    simp only [Bool.false_eq_true, ite_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inl hc)))⟩
   | step_ite_false _ | step_ite_nondet_false =>
     refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
     obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
     rw [Stmt.definedVars] at h_ndef
-    simp only [Bool.false_eq_true, if_false] at h_ndef
+    simp only [Bool.false_eq_true, ite_false] at h_ndef
     exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inr hc)))⟩
   | step_loop_enter _ | step_loop_nondet_enter =>
     refine ⟨⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩, fun y hQ s hs => ?_⟩
     · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
       rw [Stmt.definedVars] at h_ndef
-      simp only [Bool.false_eq_true, if_false] at h_ndef
+      simp only [Bool.false_eq_true, ite_false] at h_ndef
       exact ⟨h_none, all_not_mem_definedVars_of_block h_ndef⟩
     · obtain ⟨_, h_ndef⟩ := h_inv y hQ
       rw [Stmt.definedVars] at h_ndef
-      simp only [Bool.false_eq_true, if_false] at h_ndef
+      simp only [Bool.false_eq_true, ite_false] at h_ndef
       rcases List.mem_cons.mp hs with h_eq | h_in
-      · subst h_eq; rw [Stmt.definedVars]; simp only [Bool.false_eq_true, if_false]; exact h_ndef
+      · subst h_eq; rw [Stmt.definedVars]; simp only [Bool.false_eq_true, ite_false]; exact h_ndef
       · exact absurd h_in (List.not_mem_nil)
   | step_stmts_cons =>
     refine ⟨fun y hQ => ?_, fun y hQ s' hs' => ?_⟩
@@ -3081,7 +3083,7 @@ theorem Config.varsUndefinedThroughout_step_of {P : PureExpr}
     obtain ⟨h_parent, _⟩ := h_inv
     intro y hQ
     show projectStore _ _ y = none
-    unfold projectStore; rw [if_neg]; rw [h_parent y hQ]; simp
+    unfold projectStore; rw [ite_eq_right]; rw [h_parent y hQ]; simp
   | _ => intro y hQ; exact (h_inv y hQ).1
 
 /-- Trace lift of `Config.varsUndefinedThroughout_step_of` (the
@@ -3199,19 +3201,19 @@ theorem Config.varEqUnwritten_step {P : PureExpr}
     exact heq.trans hw
   | step_block =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
-    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩
   | step_ite_true _ | step_ite_nondet_true =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
-    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw,
       all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inl hc))),
       all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inl hc)))⟩
   | step_ite_false _ | step_ite_nondet_false =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
-    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     exact ⟨hw, hw,
       all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inr hc))),
@@ -3219,7 +3221,7 @@ theorem Config.varEqUnwritten_step {P : PureExpr}
   | step_loop_enter _ | step_loop_nondet_enter =>
     obtain ⟨hw, hnd, hnm⟩ := h_inv
     have hnd' := hnd; have hnm' := hnm
-    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, if_false] at hnd
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
     rw [Stmt.modifiedVars] at hnm
     refine ⟨⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩,
       ?_, ?_⟩

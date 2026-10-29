@@ -242,7 +242,7 @@ private theorem agree_def {N : List P.Ident} {σ σ1 σ' : SemanticStore P}
   · simp [SemanticStore.update, ← hyx, h1]
   · simp [SemanticStore.update, Ne.symm hyx, hfr y hyx, hA.1 y (.tail _ hy)]
   · simp [SemanticStore.update, ← hyx, h1]
-  · simp only [SemanticStore.update, if_neg (Ne.symm hyx), hfr y hyx]
+  · simp only [SemanticStore.update, ite_eq_right (Ne.symm hyx), hfr y hyx]
     exact storeAgreement_iff.1 hA.2 y
   · rw [← hyx, h1] at hw
     cases hw
@@ -385,10 +385,10 @@ private theorem dd_run [LawfulBEq P.Ident] (hE : EvCongr F) :
     next he =>
       obtain ⟨x, ty, e, md, hs, hx⟩ := erasable_inv he
       obtain ⟨rfl, hA1, hC1⟩ := erase_init hs hx h1 hC hA
-      rw [if_pos he]
+      rw [ite_eq_left he]
       exact dd_run hE h2 hC1 hA1
     next he =>
-      rw [if_neg he]
+      rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
         dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
@@ -402,7 +402,7 @@ private theorem dd_run [LawfulBEq P.Ident] (hE : EvCongr F) :
       obtain ⟨x, ty, e, md, rfl, hx⟩ := erasable_inv he
       cases h1
     next he =>
-      rw [if_neg he]
+      rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
         dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
@@ -503,7 +503,7 @@ private theorem dd_reach [LawfulBEq P.Ident] (hE : EvCongr F) :
       cases h with
       | cmd h => exact absurd (evalE_init_inv h).choose_spec.2.2.2.2 hne
     next he =>
-      rw [if_neg he]
+      rw [ite_eq_right he]
       obtain ⟨evs', h', hm⟩ :=
         dd_reachS hE (live := Block.idents (deadDefElim live rest) ++ live) h hne hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
@@ -515,10 +515,10 @@ private theorem dd_reach [LawfulBEq P.Ident] (hE : EvCongr F) :
     next he =>
       obtain ⟨x, ty, e, md, hs, hx⟩ := erasable_inv he
       obtain ⟨rfl, hA1, hC1⟩ := erase_init hs hx h1 hC hA
-      rw [if_pos he]
+      rw [ite_eq_left he]
       exact dd_reach hE h2 (by simpa using hne) hC1 hA1
     next he =>
-      rw [if_neg he]
+      rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
         dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)

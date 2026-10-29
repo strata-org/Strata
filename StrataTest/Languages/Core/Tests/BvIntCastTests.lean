@@ -17,7 +17,6 @@ the SMT pipeline via the encoder API.
 -/
 
 namespace Core
-open Lambda
 open Strata.SMT
 
 /-! ## Bv8.ToUInt — unsigned bitvector → Int (ubv_to_int) -/

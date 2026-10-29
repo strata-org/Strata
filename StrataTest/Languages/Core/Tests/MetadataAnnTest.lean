@@ -25,7 +25,6 @@ namespace Strata.Test.MetadataAnn
 
 open Strata
 open Strata.CoreDDM
-open Core
 
 /-- Format a program with a given MetadataAnnFilter. -/
 private def formatWithFilter (program : StrataDDM.Program) (filter : MetadataAnnFilter) : IO Unit := do

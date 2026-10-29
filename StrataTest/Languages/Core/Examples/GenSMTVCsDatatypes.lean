@@ -73,12 +73,20 @@ spec {
 #guard_msgs in
 #check dtPgm.DT.Color.Green
 
-/-- The goals are ordinary statements about the generated inductives.  For the
+/- The goals are ordinary statements about the generated inductives.  For the
     recursive function the two are that the constructors are exhaustive and that
     a selector's result ranks below the constructor it came from; elsewhere a
     hypothesis already carries the tester a selector needs, or a constructor's
-    own selector round-trips. -/
-theorem dtPgm_correct : smtVCsCorrect dtPgm := by
+    own selector round-trips.
+
+    The denotation of SMT queries does not cover datatypes yet, so `gen_smt_vcs`
+    refuses these VCs for now; the proof below is what it should accept once it
+    does. -/
+/--
+error: gen_smt_vcs: verification condition 'depth_body_calls_MyNat..pred_0' uses a datatype, which the denotation of SMT queries does not cover yet, so no Lean goal can be created for it; the SMT path still checks it
+-/
+#guard_msgs in
+example : smtVCsCorrect dtPgm := by
   gen_smt_vcs
   case «depth_body_calls_MyNat..pred_0» =>
     intro n; intros
@@ -106,7 +114,11 @@ procedure Get(b : Box)
 };
 #end
 
-/-- error: gen_smt_vcs: datatype 'Box' is not declared; run `#strata_datatypes Strata.undeclaredPgm` before this proof -/
+-- Until the denotation covers datatypes, the refusal comes first. Once it is lifted, this
+-- program gets: datatype 'Box' is not declared; run `#strata_datatypes Strata.undeclaredPgm`.
+/--
+error: gen_smt_vcs: verification condition 'eta' uses a datatype, which the denotation of SMT queries does not cover yet, so no Lean goal can be created for it; the SMT path still checks it
+-/
 #guard_msgs in
 example : smtVCsCorrect undeclaredPgm := by
   gen_smt_vcs

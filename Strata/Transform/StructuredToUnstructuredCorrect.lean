@@ -134,7 +134,7 @@ private theorem flushCmds_invariant {P : PureExpr} [HasBool P]
     rw [h_tr] at h_gen
     simp only at h_gen
     by_cases h_empty : accum.isEmpty
-    · rw [if_pos h_empty] at h_gen
+    · rw [ite_eq_left h_empty] at h_gen
       simp only [pure, StateT.pure] at h_gen
       injection h_gen with h_pair h_gen_eq
       injection h_pair with h_entry_eq h_blocks_eq
@@ -145,7 +145,7 @@ private theorem flushCmds_invariant {P : PureExpr} [HasBool P]
       · simp
       · intros l hl; simp at hl
       · simp
-    · rw [if_neg h_empty] at h_gen
+    · rw [ite_eq_right h_empty] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
       injection h_gen with h_pair h_gen_eq
       injection h_pair with h_entry_eq h_blocks_eq
@@ -413,12 +413,12 @@ private theorem flushCmds_genStep {P : PureExpr} [HasBool P]
     rw [h_tr] at h_gen
     simp only at h_gen
     by_cases h_empty : accum.isEmpty
-    · rw [if_pos h_empty] at h_gen
+    · rw [ite_eq_left h_empty] at h_gen
       simp only [pure, StateT.pure] at h_gen
       have : gen' = gen := (Prod.mk.inj h_gen).2.symm
       rw [this]
       exact StringGenState.GenStep.refl _
-    · rw [if_neg h_empty] at h_gen
+    · rw [ite_eq_right h_empty] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
       have : gen' = (StringGenState.gen pfx gen).2 := (Prod.mk.inj h_gen).2.symm
       rw [this]
@@ -449,7 +449,7 @@ private theorem invMapM_genStep {P : PureExpr} [HasPassiveCmds P (Cmd P)]
   intro a g g' b h_step
   obtain ⟨srcLabel, i⟩ := a
   by_cases h_empty : srcLabel.isEmpty
-  · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+  · simp only [h_empty, ite_true, bind, StateT.bind, pure, StateT.pure] at h_step
     have h_g_eq : g' = (StringGenState.gen invariantPrefix g).2 := (Prod.mk.inj h_step).2.symm
     rw [h_g_eq]; exact StringGenState.GenStep.of_gen invariantPrefix g
   · simp only [h_empty, bind, pure] at h_step
@@ -507,10 +507,10 @@ private theorem stmtsToBlocks_genStep
     have h_gen_eq : gen_f = gen' := by
       simp only at h_gen
       by_cases h_eq : l = bl
-      · rw [if_pos h_eq] at h_gen
+      · rw [ite_eq_left h_eq] at h_gen
         simp only [pure, StateT.pure] at h_gen
         exact (Prod.mk.inj h_gen).2
-      · rw [if_neg h_eq] at h_gen
+      · rw [ite_eq_right h_eq] at h_gen
         simp only [pure, StateT.pure] at h_gen
         exact (Prod.mk.inj h_gen).2
     exact h_gen_eq ▸ (h_step_rest.trans h_step_body).trans h_step_flush
@@ -755,11 +755,11 @@ private theorem flushCmds_allMem {P : PureExpr} [HasBool P] {R : String → Prop
     rw [h_tr] at h_gen
     simp only at h_gen
     by_cases h_empty : accum.isEmpty
-    · rw [if_pos h_empty] at h_gen
+    · rw [ite_eq_left h_empty] at h_gen
       simp only [pure, StateT.pure] at h_gen
       have : gen' = gen := (Prod.mk.inj h_gen).2.symm
       rw [this]; exact h_in
-    · rw [if_neg h_empty] at h_gen
+    · rw [ite_eq_right h_empty] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
       have : gen' = (StringGenState.gen pfx gen).2 := (Prod.mk.inj h_gen).2.symm
       rw [this]
@@ -825,7 +825,7 @@ private theorem invMapM_allMem {P : PureExpr} [HasPassiveCmds P (Cmd P)]
   intro a g g' b h_step h_g_in
   obtain ⟨srcLabel, i⟩ := a
   by_cases h_empty : srcLabel.isEmpty
-  · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
+  · simp only [h_empty, ite_true, bind, StateT.bind, pure, StateT.pure] at h_step
     have h_g_eq : g' = (StringGenState.gen invariantPrefix g).2 := (Prod.mk.inj h_step).2.symm
     rw [h_g_eq]
     exact StringGenState.allMem_gen R invariantPrefix g h_g_in (h_inv_gen g)
@@ -893,10 +893,10 @@ private theorem stmtsToBlocks_allMem
     have h_gen_eq : gen_f = gen' := by
       simp only at h_gen
       by_cases h_eq : l = bl
-      · rw [if_pos h_eq] at h_gen
+      · rw [ite_eq_left h_eq] at h_gen
         simp only [pure, StateT.pure] at h_gen
         exact (Prod.mk.inj h_gen).2
-      · rw [if_neg h_eq] at h_gen
+      · rw [ite_eq_right h_eq] at h_gen
         simp only [pure, StateT.pure] at h_gen
         exact (Prod.mk.inj h_gen).2
     exact h_gen_eq ▸ h_in_flush
@@ -1232,10 +1232,10 @@ private theorem stmtsToBlocks_invariant_block_arm
   simp only at h_gen
   have h_gen_eq : gen_f = gen' := by
     by_cases h_eq : l = bl
-    · rw [if_pos h_eq] at h_gen
+    · rw [ite_eq_left h_eq] at h_gen
       simp only [pure, StateT.pure] at h_gen
       exact (Prod.mk.inj h_gen).2
-    · rw [if_neg h_eq] at h_gen
+    · rw [ite_eq_right h_eq] at h_gen
       simp only [pure, StateT.pure] at h_gen
       exact (Prod.mk.inj h_gen).2
   -- Use h_gen_eq to derive subsets w.r.t. gen' (= gen_f)
@@ -1326,7 +1326,7 @@ private theorem stmtsToBlocks_invariant_block_arm
   -- Now case-split on the if l == bl
   by_cases h_eq : l = bl
   · -- l = bl: result blocks = accumBlocks ++ bbs ++ bsNext, no extra l-block
-    rw [if_pos h_eq] at h_gen
+    rw [ite_eq_left h_eq] at h_gen
     simp only [pure, StateT.pure] at h_gen
     have h_pair := (Prod.mk.inj h_gen).1
     have h_entry_eq : accumEntry = entry := (Prod.mk.inj h_pair).1
@@ -1347,7 +1347,7 @@ private theorem stmtsToBlocks_invariant_block_arm
     · exact h_disj.2.1
   · -- l ≠ bl: blocks = accumBlocks ++ (l, .goto bl md) :: (bbs ++ bsNext),
     -- entry = accumEntry (after the bug fix that uses accumEntry rather than l).
-    rw [if_neg h_eq] at h_gen
+    rw [ite_eq_right h_eq] at h_gen
     simp only [pure, StateT.pure] at h_gen
     have h_pair := (Prod.mk.inj h_gen).1
     -- Entry is `accumEntry`; we don't constrain entry in StmtsToBlocksInv, so this hypothesis
@@ -3924,7 +3924,7 @@ private theorem flushCmds_nonempty_mem
   cases tr? with
   | none =>
     simp only at h_flush
-    rw [if_neg (by
+    rw [ite_eq_right (by
       simp only [List.isEmpty_iff]
       exact fun h => h_accum_ne h)] at h_flush
     simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_flush
@@ -8251,7 +8251,7 @@ their `loop_det_decompose_h_gen` call. Extracted because this exact ~15-fact blo
 is byte-for-byte identical across the three siblings (`stmtsToBlocks_simulation`,
 `_to_cont`, `_to_fail` `loop_arm`s); the per-arm loop-invariant
 machinery that follows it (`storeInv`/`P_keep`/`h_body_sim_at`) stays inline. -/
-private def loopArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem loopArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P]
     (guardExpr : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (rest : List (Stmt P (Cmd P)))
@@ -9378,7 +9378,7 @@ private theorem stmtsToBlocks_simulation_to_fail_loop_arm {P : PureExpr} [HasFva
 witnesses, so a single conjunction-returning `def` (destructured via `obtain`)
 suffices -- no `structure` is needed here, unlike `BlockArmSideConds`/
 `IteArmSideConds`. -/
-private def cmdArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem cmdArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P]
     (c : Cmd P) (rest : List (Stmt P (Cmd P)))
     (h_simple : Block.noNondetGuards (Stmt.cmd c :: rest) = true)
@@ -9907,7 +9907,7 @@ private theorem stmtsToBlocks_simulation_to_fail_cmd_arm {P : PureExpr} [HasFvar
 witnesses, so a single conjunction-returning `def` (destructured via `obtain`)
 suffices -- no `structure` is needed here, unlike `BlockArmSideConds`/
 `IteArmSideConds`. -/
-private def typeDeclArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+private theorem typeDeclArmSideConds {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     [HasIdent P]
     (tc : TypeConstructor) (md : MetaData P) (rest : List (Stmt P (Cmd P)))
     (h_simple : Block.noNondetGuards (Stmt.typeDecl tc md :: rest) = true)

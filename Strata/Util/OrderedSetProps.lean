@@ -147,7 +147,7 @@ theorem containsKey_ofArrayUnchecked [LawfulBEq κ] [LawfulHashable κ]
 theorem toArray_insert (s : OrderedKeyedSet key) (a : α) :
     (s.insert a).toArray = if s.contains a then s.toArray else s.toArray.push a := by
   simp only [insert, toArray, contains, containsThenInsert_eq]
-  split <;> rfl
+  split <;> grind
 
 /-- When the key is fresh, `insert` pushes the element onto the array. -/
 theorem toArray_insert_of_not_contains (s : OrderedKeyedSet key) (a : α)

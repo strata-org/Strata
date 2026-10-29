@@ -510,7 +510,8 @@ private theorem bv16_result_value
     show Lambda.LExpr.denote model.tcInterp model.opInterp (someValuation model).freeVarVal
       (someValuation model).tyVarVal .nil
       (Lambda.LExpr.const () (Lambda.LConst.bitvecConst 16 w)) (Lambda.LMonoTy.bitvec 16) h = w
-    rw [Lambda.denote_const]; rfl
+    simp only [someValuation]
+    apply Lambda.denote_const
   have hcond_denote : Lambda.LExpr.denote model.tcInterp model.opInterp
       (someValuation model).freeVarVal (someValuation model).tyVarVal .nil
       (bv16ULeApp (bvc va) (bvc vb)) .bool hcond = BitVec.ule va vb := by
@@ -747,7 +748,7 @@ private theorem bv16_bitHack_max (a b : BitVec 16) :
     BitVec.xor a (BitVec.and (BitVec.xor a b) (vMask a b)) = vMax a b := by
   by_cases h : BitVec.ule a b
   · have hall : BitVec.ofNat 16 65535 = BitVec.allOnes 16 := by native_decide
-    simp only [vMask, vMax, h, if_true, hall]
+    simp only [vMask, vMax, h, ite_true, hall]
     change a ^^^ ((a ^^^ b) &&& BitVec.allOnes 16) = b
     rw [BitVec.and_allOnes, ← BitVec.xor_assoc, BitVec.xor_self, BitVec.zero_xor]
   · simp [vMask, vMax, h]
@@ -757,7 +758,7 @@ private theorem bv16_bitHack_min (a b : BitVec 16) :
     BitVec.xor b (BitVec.and (BitVec.xor a b) (vMask a b)) = vMin a b := by
   by_cases h : BitVec.ule a b
   · have hall : BitVec.ofNat 16 65535 = BitVec.allOnes 16 := by native_decide
-    simp only [vMask, vMin, h, if_true, hall]
+    simp only [vMask, vMin, h, ite_true, hall]
     change b ^^^ ((a ^^^ b) &&& BitVec.allOnes 16) = a
     rw [BitVec.and_allOnes, BitVec.xor_comm a b, ← BitVec.xor_assoc,
       BitVec.xor_self, BitVec.zero_xor]
@@ -874,8 +875,7 @@ private theorem post_eq_ite_holds
     intro w h
     show Lambda.LExpr.denote model.tcInterp model.opInterp world.freeVarVal world.tyVarVal
       .nil (Lambda.LExpr.const () (Lambda.LConst.bitvecConst 16 w)) (Lambda.LMonoTy.bitvec 16) h = w
-    rw [Lambda.denote_const]
-    rfl
+    apply Lambda.denote_const
   have hcond_denote : Lambda.LExpr.denote model.tcInterp model.opInterp world.freeVarVal
       world.tyVarVal .nil (bv16ULeApp (bvc va) (bvc vb)) .bool hcond = BitVec.ule va vb := by
     simp only [bv16ULeApp]
@@ -1071,7 +1071,7 @@ private theorem max_body_outputs :
   rw [hexit]
   show Imperative.projectStore σ_entry σCmd resultId = some (bvc (vMax a b))
   unfold Imperative.projectStore
-  rw [if_pos hprev, hnew, hcval]
+  rw [ite_eq_left hprev, hnew, hcval]
 
 /-- Every Min16 body run binds `result` to a 16-bit literal. -/
 private theorem min_body_outputs :
@@ -1099,7 +1099,7 @@ private theorem min_body_outputs :
   rw [hexit]
   show Imperative.projectStore σ_entry σCmd resultId = some (bvc (vMin a b))
   unfold Imperative.projectStore
-  rw [if_pos hprev, hnew, hcval]
+  rw [ite_eq_left hprev, hnew, hcval]
 
 /-- From `outputAsPredicate` and the semantic Max16 postcondition, the callee's
     `result` is exactly the unsigned maximum of its typed inputs. -/

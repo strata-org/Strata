@@ -498,7 +498,8 @@ theorem Step.denote_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Define vt'
     let vt' : TyVarVal := fun x => match tySubst'.find? x with
@@ -506,9 +507,8 @@ theorem Step.denote_preserved
     -- Step 5-6: Sort equalities
     have h_sorts_eq : argTys.map (LMonoTy.substTyVars vt) =
         (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt' ty))).map Prod.snd := by
-      rw [h_argTys_eq]; simp [List.map_map]
-      congr 1; funext; intros a ty a_in
-      exact substTyVars_subst vt tySubst' ty
+      rw [h_argTys_eq]; simp only [List.map_map (l := fn.inputs)]
+      exact List.map_congr_left fun x _ => substTyVars_subst vt tySubst' x.snd
     -- Step 7: Factory consistency
     obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     rw [h_callee_eq] at h_callee_op; cases h_callee_op
@@ -530,8 +530,8 @@ theorem Step.denote_preserved
       rw [h_tv, substTyVars_subst vt tySubst' (fn.output.mkArrow' (fn.inputs.map Prod.snd)),
           substTyVars_mkArrow']
       congr 1
-      simp [inputSorts_vt', bindings_vt', List.map_map]
-      intros; rfl
+      simp only [inputSorts_vt', bindings_vt', List.map_map (l := fn.inputs)]
+      rfl
     have h_ret_eq : LMonoTy.substTyVars vt' fn.output = LMonoTy.substTyVars vt τ := by
       rw [h_τ_eq]; exact (substTyVars_subst vt tySubst' fn.output).symm
     -- Step 8: Use applyArgs_cast_eq to connect h_denote_e with h_icb_inst
@@ -577,13 +577,14 @@ theorem Step.denote_preserved
     -- Part C: use substFvarsLifting_denote
     have h_arity := Factory.callOfLFunc_arity hcall
     have h_keys_len : fn.inputs.keys.length = args.length := by
-      rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+      rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans h_arity.symm
     have h_zip_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
       zip_map_fst_eq _ _ h_keys_len
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
       zip_map_snd_eq _ _ h_keys_len
     have h_keys : (fn.inputs.keys.zip args).map Prod.fst = bindings_vt'.map Prod.fst := by
-      rw [h_zip_fst]; simp [bindings_vt', List.map_map, ListMap.keys_eq_map_fst]
+      rw [h_zip_fst]; simp only [bindings_vt', ListMap.keys_eq_map_fst, List.map_map (l := fn.inputs)]
+      rfl
     have h_len : (fn.inputs.keys.zip args).length = bindings_vt'.length := by
       simp [List.length_zip, h_keys_len, bindings_vt']; grind
     have h_tys_len : argTys.length = (fn.inputs.keys.zip args).length := by
@@ -598,7 +599,7 @@ theorem Step.denote_preserved
       rw [h_zip_fst, ListMap.keys_eq_map_fst, h_argTys_eq]
       have h_map_eq : (fn.inputs.map Prod.fst).zip (List.map (LMonoTy.subst tySubst') (fn.inputs.map Prod.snd)) =
           fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) := by
-          rw[List.map_map]
+          rw [List.map_map (l := fn.inputs)]
           induction fn.inputs with
           | nil => rfl
           | cons h t ih => simp [ih]
@@ -622,7 +623,8 @@ theorem Step.denote_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst)).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Get InterpConsistentEval from Factory.InterpConsistent
     obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
@@ -746,7 +748,8 @@ theorem Step.type_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     subst h_τ_eq h_argTys_eq
     -- Get body typing from Factory.WellTyped
@@ -762,14 +765,14 @@ theorem Step.type_preserved
     have h_annot_subst := applyTypeSubst_fvars_annotated (S := tySubst') h_body_annot
     have h_map_eq : fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) =
         (fn.inputs.map Prod.fst).zip (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
-      rw [List.map_map]; induction fn.inputs with
+      rw [List.map_map (l := fn.inputs)]; induction fn.inputs with
       | nil => rfl
       | cons h t ih => simp [ih]
     rw [h_map_eq] at h_annot_subst
     -- Connect bindings structure
     have h_arity := Factory.callOfLFunc_arity hcall
     have h_keys_len : fn.inputs.keys.length = args.length := by
-      rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+      rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans h_arity.symm
     have h_zip_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
       zip_map_fst_eq _ _ h_keys_len
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
@@ -797,7 +800,8 @@ theorem Step.type_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst)).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     subst h_τ_eq h_argTys_eq
     -- Get fn membership
