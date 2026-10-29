@@ -19,11 +19,10 @@ inductive (`Carrier`). `P` is the type of non-datatype field payloads; in the
 denotation it is a sigma over the denoted sorts.
 
 This file has the carrier, well-sortedness against the SMT declarations, the
-tester and selector on it, and the laws SMT assumes: disjointness,
-injectivity, exhaustiveness, and that fields of a well-sorted value are well
-sorted. A selector applied to another constructor is unspecified in SMT-LIB, so
-`selectorArg` takes that value from a parameter, which the denotation
-quantifies over.
+tester on it, and the laws SMT assumes: disjointness, injectivity,
+exhaustiveness, and that fields of a well-sorted value are well sorted.
+Selectors are denoted in `Denote.lean`, where the value on another constructor
+is an uninterpreted function the denotation quantifies over.
 -/
 
 public section
@@ -81,12 +80,6 @@ variable {P : Type} {ds : Decls} {S : Sorted P} {d : String}
 
 /-- Tester: `is-c`. -/
 @[expose] def tester (c : String) (v : Carrier ds S d) : Prop := v.1.ctor = c
-
-/-- Selector of field `k` of constructor `c`, with `dflt` for the other
-constructors: SMT-LIB leaves that case unspecified, so the denotation takes the
-value from a parameter that `denoteQuery` quantifies over. -/
-@[expose] def selectorArg (c : String) (k : Nat) (dflt : DArg P) (v : Carrier ds S d) : DArg P :=
-  if v.1.ctor = c then (v.1.args.getD k dflt) else dflt
 
 /-! ## The laws SMT assumes -/
 
@@ -158,7 +151,6 @@ abbrev noPayload : Sorted Empty := ⟨fun p _ => p.elim⟩
 
 example : tester "xO" (xO xH) := rfl
 example : ¬ tester "xH" (xO xH) := by simp [tester, xO, DVal.ctor]
-example : selectorArg "xO" 0 (.dt xH.1) (xO xH) = .dt xH.1 := rfl
 
 end Strata.SMT.DT
 

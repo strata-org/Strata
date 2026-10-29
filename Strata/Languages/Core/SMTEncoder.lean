@@ -237,6 +237,8 @@ private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArr
     constructors with selector symbols and field sorts, in factory order. `none` if a
     used datatype is parametric, which the denotation does not cover. -/
 def SMT.Context.denotedDatatypes (ctx : SMT.Context) : Option Strata.SMT.DT.Decls := do
+  -- no datatype in use: say so without touching the registry, which the kernel cannot reduce
+  if ctx.seenDatatypes.isEmpty then return []
   let mut out : Strata.SMT.DT.Decls := []
   for block in ctx.datatypes.factory.toList do
     for d in block do
