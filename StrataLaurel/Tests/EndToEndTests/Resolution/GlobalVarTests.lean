@@ -100,6 +100,7 @@ program Laurel;
 var g: int := 0
 procedure keepPre()
   requires old(g) == 0
+//         ^^^^^^ error: `old(...)` is not allowed in a precondition: it is already evaluated in the pre-state
 //             ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
   opaque
 {

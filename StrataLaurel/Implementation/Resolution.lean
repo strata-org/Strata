@@ -6417,6 +6417,25 @@ def validateOldUsage (model : SemanticModel) (program : LaurelProgram) : List Me
       | none => false
     oldWarningsForProc model.heapReaders writesHeap proc
 
+/-- Reject `old(...)` in a precondition. A precondition is evaluated on entry,
+    where the current state already is the pre-state, so an `old` there is a
+    specification mistake, and the lowering assumes it never occurs
+    (preconditions become Core `requires`, where `old` is not allowed). A
+    `throwsOn` guard is not covered: it is lowered into postconditions, where
+    `old` is meaningful. A source-program check, so `resolve` runs it only on the
+    initial resolution: passes generate labeled `old` forms in preconditions
+    (e.g. coroutine relies). -/
+def validatePreconditionOld (program : LaurelProgram) : List Message :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  (program.staticProcedures ++ instanceProcs).flatMap fun proc =>
+    proc.preconditions.flatMap fun pre =>
+      collectStmtExprList (fun n => match n.val with
+        | .Old _ _ => [diagnosticFromSource n.source
+            "`old(...)` is not allowed in a precondition: it is already evaluated in the pre-state"]
+        | _ => []) pre.condition
+
 private structure InitialEffectAnalysis where
   allProcs : List Procedure
   globals : GlobalEffectsByProcId
@@ -7606,6 +7625,8 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
     if existingModel.isNone && program'.staticFields.isEmpty then
       validateOldUsage semanticModel program'
     else []
+  let preconditionOldErrors :=
+    if existingModel.isNone then validatePreconditionOld program' else []
   let globalNameErrors :=
     if existingModel.isNone then validateGlobalNames program' else []
   let constrainedGlobalErrors :=
@@ -7690,7 +7711,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
-      globalNameErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
+      preconditionOldErrors ++ globalNameErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
       globalInitializerErrors ++
       globalCallErrors ++ bodilessGlobalErrors ++ declaredGlobalErrors ++
       entryGlobalErrors ++ invokeOnErrors ++
