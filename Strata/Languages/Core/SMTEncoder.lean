@@ -225,6 +225,32 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
       .constr name (args.map $ lMonoTyToTermType useArrayTheory)
   | .ftvar tv => .constr tv []
 
+/-- The total twin of a checked sequence operation. -/
+private def seqTotalTwin? : String → Option String
+  | "Sequence.select" => some "Sequence.select!"
+  | "Sequence.update" => some "Sequence.update!"
+  | "Sequence.take" => some "Sequence.take!"
+  | "Sequence.drop" => some "Sequence.drop!"
+  | _ => none
+
+/--
+The solver symbol for the function named `name`.
+
+A checked sequence operation and its total twin denote the same function: they
+differ only in the bounds precondition, which is discharged as a separate
+obligation before encoding. Both are therefore encoded as one symbol, that of
+the total twin, so that a fact stated with either form applies to the other.
+-/
+private def seqSymbol (name : String) : String :=
+  match Core.NameMangling.demangleFuncName name with
+  | some (base, tys) =>
+    match seqTotalTwin? base with
+    | some twin =>
+      let stem := Core.NameMangling.monoPrefix ++ Core.NameMangling.monoDelim ++ twin
+      if tys.isEmpty then stem else stem ++ Core.NameMangling.monoDelim ++ tys
+    | none => name
+  | none => (seqTotalTwin? name).getD name
+
 /-- Convert a datatype's constructors to typed SMT constructors. -/
 private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
   d.constrs.map fun c =>
@@ -635,7 +661,7 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
         let bvs := formalStrs.zip smt_intys
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
         let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
-        let uf : UF := { id := (toString $ format fn), args := smt_intys, out := smt_outty }
+        let uf : UF := { id := seqSymbol (toString $ format fn), args := smt_intys, out := smt_outty }
         let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
         if !arrowParams.isEmpty then
           let names := arrowParams.map (fun (n, _) => toString (format n))
