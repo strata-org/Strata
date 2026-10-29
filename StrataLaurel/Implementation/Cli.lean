@@ -14,10 +14,8 @@ public import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 public import Strata.Languages.Core.Verifier
 public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
-public import Strata.Languages.C_Simp.Verify
 public import Strata.Languages.B3.Verifier.Program
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
-public import Strata.Languages.C_Simp.DDMTransform.Parse
 public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 public import StrataLaurel.Implementation
 public import StrataLaurel.Implementation.CliOptions
@@ -146,6 +144,7 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
   let mut failures : Array Strata.Message := #[]
   let mut seen : Std.HashSet Strata.Message := {}
   let mut errors : Array (String × String) := #[]
+  let mut refusals := 0
   for p in entries do
     try
       let (_, fs, outcome) ← Laurel.Interpreter.evalProgramWithOutcome {}
@@ -159,6 +158,9 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
       | .completed => pure ()
       | .escaped v => errors := errors.push (p.name.text, s!"uncaught throw of {v.display}")
       | .outOfFuel => errors := errors.push (p.name.text, "out of fuel")
+      | .refused reason =>
+        errors := errors.push (p.name.text, reason)
+        refusals := refusals + 1
     catch e =>
       errors := errors.push (p.name.text, toString e)
   IO.println s!"==== DIAGNOSTICS ===="
@@ -167,6 +169,8 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
   for (procName, e) in errors do
     IO.eprintln s!"'{procName}': {e}"
   unless errors.isEmpty do
+    if refusals == errors.size then
+      exitKnownLimitation s!"{refusals} entry procedure(s) stopped at a call the interpreter refuses to run"
     exitFailuresFound s!"{errors.size} entry procedure(s) ended with an interpreter error"
 
 /-- Concretely execute a Laurel Ion program (already loaded as bytes) and print
@@ -272,7 +276,9 @@ def laurelInterpretCommand : Command where
            Assertion violations are reported as diagnostics under `==== DIAGNOSTICS ====` on \
            stdout (the caller detects failures by parsing them); the process still exits 0. A \
            non-zero exit code is reserved for errors that carry no diagnostic (out of fuel, \
-           internal errors, setup failures)."
+           internal errors, setup failures), and `--interpreter laurel` exits 4, a known \
+           limitation, at a call it will not run: one to a procedure with no implementation \
+           that could change something."
   reportFlags := laurelPassReportFlags
   callback := fun v pflags => do
     if ← reportLaurelPasses pflags (withoutInput := false) then return

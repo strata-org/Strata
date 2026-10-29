@@ -111,8 +111,7 @@ lake test
 ## Running Analyses on Existing Strata Programs
 
 Strata programs use the `.st` file extension, preceded by the dialect name,
-preceded by a second `.` e.g., `SimpleProc.core.st` or
-`LoopSimple.csimp.st`. Note the current `strata verify` command
+preceded by a second `.` e.g., `SimpleProc.core.st`. Note the current `strata verify` command
 relies on this file extension convention to know what dialect it's
 parsing (since the Strata IR allows a program to open multiple
 dialects).

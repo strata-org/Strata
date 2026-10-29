@@ -74,7 +74,7 @@ def verifyOptionsFlags : List Flag := [
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
   { name := "incremental",
-    help := "Check the assertions of a Core program that share assumptions in long-lived solvers that keep the shared context. Other front ends (Laurel, C_Simp) keep one live solver per obligation. Ignored when SMT files are kept, which the per-obligation path writes." },
+    help := "Check the assertions of a Core program that share assumptions in long-lived solvers that keep the shared context. Other front ends (such as Laurel) keep one live solver per obligation. Ignored when SMT files are kept, which the per-obligation path writes." },
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
@@ -104,7 +104,7 @@ def verifyOptionsFlags : List Flag := [
     only when the terminal component (or the last component before a trailing
     `ion`) is exactly `st` do we treat the name as `.st`-family and drop both
     the `st` sentinel and the dialect/kind token immediately before it (e.g.
-    `core`, `csimp`, `python`, `laurel`), keeping at least the first component.
+    `core`, `python`, `laurel`), keeping at least the first component.
     Examples: `Foo.core.st → Foo`, `Foo.python.st.ion → Foo`, `Foo.st → Foo`,
     `a.b.core.st → a.b`.
 

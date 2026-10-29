@@ -10,13 +10,10 @@ import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
-public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.SMT.Denote
-import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.ProgramEval
@@ -119,14 +116,6 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
 
 end Core
 
-namespace C_Simp
-
-def genVCs (program : Strata.C_Simp.Program) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
-  let program := Strata.to_core program
-  Core.genVCs program options
-
-end C_Simp
-
 namespace Strata
 
 open StrataDDM
@@ -167,9 +156,6 @@ def genCoreVCs (program : Program)
   if program.dialect == "Core" then
     let (program, #[]) := TransM.run default (translateProgram program) | none
     Core.genVCs program options.toVerifyOptions
-  else if program.dialect == "C_Simp" then
-    let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
-    C_Simp.genVCs program options.toVerifyOptions
   else
     none
 

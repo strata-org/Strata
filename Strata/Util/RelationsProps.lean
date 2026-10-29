@@ -25,6 +25,8 @@ import all Strata.Util.Relations
 * `ReflTransTrace.toReflTrans` — erasing each step's emitted events recovers an
   ordinary reflexive-transitive execution
 * `ReflTransTrace.imp` — a traced closure is monotone in its step relation
+* `ReflTransTraceN.mono`, `reflTransTrace_iff_reflTransTraceN` — a larger bound
+  allows more, and a finite traced execution is one within some bound
 -/
 
 public section
@@ -132,6 +134,42 @@ theorem ReflTransTrace.imp {A E : Type} {r r' : A → List E → A → Prop}
     (h : ∀ x evs y, r x evs y → r' x evs y) :
     ∀ {x evs y}, ReflTransTrace r x evs y → ReflTransTrace r' x evs y :=
   (by induction · <;> solve_by_elim)
+
+/-- A larger bound allows every execution a smaller one does. -/
+theorem ReflTransTraceN.mono {A E : Type} {r : A → List E → A → Prop} {n m : Nat}
+    (hnm : n ≤ m) :
+    ∀ {x t z}, ReflTransTraceN r n x t z → ReflTransTraceN r m x t z := by
+  induction n generalizing m with
+  | zero =>
+    intro x t z h
+    cases m with
+    | zero => exact h
+    | succ m => exact .inl h
+  | succ n ih =>
+    intro x t z h
+    obtain ⟨m, rfl⟩ : ∃ k, m = k + 1 := ⟨m - 1, by omega⟩
+    rcases h with h | ⟨emitted, y, rest, hstep, hrest, ht⟩
+    · exact .inl h
+    · exact .inr ⟨emitted, y, rest, hstep, ih (by omega) hrest, ht⟩
+
+/-- A finite traced execution is one within some bound. -/
+theorem reflTransTrace_iff_reflTransTraceN {A E : Type} {r : A → List E → A → Prop}
+    {x z : A} {t : List E} :
+    ReflTransTrace r x t z ↔ ∃ n, ReflTransTraceN r n x t z := by
+  constructor
+  · intro h
+    induction h with
+    | refl => exact ⟨0, rfl, rfl⟩
+    | step _ emitted y rest _ hstep _ ih =>
+      obtain ⟨n, hn⟩ := ih
+      exact ⟨n + 1, .inr ⟨emitted, y, rest, hstep, hn, rfl⟩⟩
+  · rintro ⟨n, h⟩
+    induction n generalizing x t with
+    | zero => obtain ⟨rfl, rfl⟩ := h; exact .refl _
+    | succ n ih =>
+      rcases h with ⟨rfl, rfl⟩ | ⟨emitted, y, rest, hstep, hrest, rfl⟩
+      · exact .refl _
+      · exact .step _ emitted y rest _ hstep (ih hrest)
 
 end Relation
 end

@@ -50,12 +50,6 @@ It currently provides the following features:
 
 The `Imperative` dialect also includes a verification condition generator (VCG) based on symbolic simulation that produces a proof obligation for each assertion that appears in a statement or list of statements. It currently produces expressions in the `Lambda` dialect, but could be generalized as it depends only on the `.ite` expression constructor, which could equivalently be Boolean negation.
 
-### C_Simp
-
-The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/)) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. C_Simp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
-
-`C_Simp/Verify.lean` demonstrates verification via transformation to Strata Core. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Strata Core's VCG, described above, is used to verify the program.
-
 ### Laurel
 
 The Laurel language is an intermediate analysis language for imperative source languages (currently Java, Python, and JavaScript). It is translated to Strata Core for its analyses, for example deductive verification.

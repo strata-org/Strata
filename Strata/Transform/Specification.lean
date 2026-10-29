@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.Logic.LangDef
 public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.Util.RelationsProps
+public import Strata.DL.Imperative.Analysis.Definitions
 public import Strata.DL.Imperative.Analysis.Assertions
 import all Strata.DL.Imperative.CmdSemantics
 
@@ -378,60 +379,6 @@ up to this same relation. -/
   ∧ ρ₀.hasFailure = ρ₀'.hasFailure
 
 end Transform
-
-
-
-/-! ## Analysis -/
-
-/-- An `Analysis` over programs `ℙ` producing diagnostics `D`.
-    `ℙ` is written double-struck (\bbP) to avoid clashing with the
-    pure-expression parameter `P` used elsewhere in this file. -/
-structure Analysis (ℙ D : Type) where
-  /-- The property we want every program to satisfy. -/
-  desirableProperty : ℙ → Prop
-  /-- The analysis function: produce a diagnostic from a program. -/
-  analyze : ℙ → D
-  /-- Whether a diagnostic is considered passing. -/
-  pass : D → Prop
-
-namespace Analysis
-
-variable {ℙ D : Type}
-
-/-- An analysis is *sound* when a passing diagnostic implies the desirable
-    property holds of the analyzed program. -/
-def Sound (a : Analysis ℙ D) : Prop :=
-  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.pass d → a.desirableProperty p
-
-/-- An analysis is *complete* when every program with the desirable property
-    yields a passing diagnostic. -/
-def Complete (a : Analysis ℙ D) : Prop :=
-  ∀ (p : ℙ) (d : D), a.analyze p = d ∧ a.desirableProperty p → a.pass d
-
-
-/-- An analysis whose desirable property is `AssertValid L s a` for a fixed
-    language `L` and assertion `a`. -/
-def AssertValidityChecker
-    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
-    {D : Type} (L : Lang P) (a : AssertId P) (analyze : L.StmtT → D) (pass : D → Prop) :
-    Analysis L.StmtT D :=
-  { desirableProperty := fun s => AssertValid L s a
-    analyze := analyze
-    pass := pass }
-
-/-- An analysis whose desirable property is `AssertSatisfiable L s a` for a
-    fixed language `L` and assertion `a`. The dual of `AssertValidityChecker`:
-    a passing diagnostic witnesses that *some* execution reaches the assert
-    with a passing expression (the natural target for bug-finding analyses). -/
-def AssertSatisfiabilityChecker
-    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
-    {D : Type} (L : Lang P) (a : AssertId P) (analyze : L.StmtT → D) (pass : D → Prop) :
-    Analysis L.StmtT D :=
-  { desirableProperty := fun s => AssertSatisfiable L s a
-    analyze := analyze
-    pass := pass }
-
-end Analysis
 
 end Specification
 end Imperative

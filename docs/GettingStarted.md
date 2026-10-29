@@ -309,7 +309,7 @@ some next steps to explore:
 
 - **Study Existing Dialects**: Look at the implementation of the
   `Imperative` and `Lambda` dialects, and understand how they are used
-  as building blocks for the existing `Core` and `C_Simp` dialects.
+  as building blocks for the existing `Core` dialect.
 
 - **Add a New Dialect**: Create a new dialect that captures a language
   construct that you want to formalize and reason about. Perhaps you

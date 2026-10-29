@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.Logic.LangDef
 public import Strata.DL.Imperative.Logic.TraceInterp
+public import Strata.DL.Imperative.Analysis.Definitions
 
 /-! # Assertion validity and satisfiability
 
@@ -48,6 +49,11 @@ hypothesis.
 
 On the failure-flag semantics, `Transform.CanFail` says a run of a statement
 reaches a configuration whose failure flag is raised.
+
+It also defines the pass/fail analyses whose passing outputs claim validity or
+satisfiability of one assertion, `Analysis.AssertValidity` and
+`Analysis.AssertSatisfiability`, and `Analysis.NoFailureVerifier`, a verifier
+that passes only statements that cannot fail.
 -/
 
 public section
@@ -179,6 +185,36 @@ namespace Transform
     StepStmtStar P evalCmd (.stmts ss ρ₀) cfg
 
 end Transform
+
+/-! ## Pass/fail analyses for one assertion -/
+
+namespace Analysis
+
+variable {D : Type}
+
+/-- The definition whose passing outputs claim `AssertValid L s a` for a fixed
+    language `L` and assertion `a`. -/
+def AssertValidity
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
+    (L : Lang P) (a : AssertId P) (pass : D → Prop) : L.StmtT → D → Prop :=
+  Imperative.Analysis.Sound (fun s => AssertValid L s a) pass
+
+/-- The definition whose passing outputs claim `AssertSatisfiable L s a`: some
+    execution reaches the assert with a passing expression, the natural target
+    for bug-finding analyses. -/
+def AssertSatisfiability
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
+    (L : Lang P) (a : AssertId P) (pass : D → Prop) : L.StmtT → D → Prop :=
+  Imperative.Analysis.Sound (fun s => AssertSatisfiable L s a) pass
+
+/-- `analyze` is a sound verifier for `L` on the failure-flag semantics, from
+    the entry environments `wf` admits: a statement it passes cannot fail from
+    any of them. -/
+@[expose] def NoFailureVerifier {P : PureExpr} (L : Lang P) (wf : L.StmtT → Env P → Prop)
+    (analyze : L.StmtT → Bool) : Prop :=
+  ∀ s, analyze s = true → ∀ ρ₀, wf s ρ₀ → ¬ Transform.CanFail L s ρ₀
+
+end Analysis
 
 end Specification
 end Imperative
