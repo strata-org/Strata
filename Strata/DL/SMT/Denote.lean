@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.SMT.SmtArray
+public import Strata.DL.SMT.DenoteDatatypes
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 
@@ -75,6 +76,8 @@ abbrev ISContext := Map String TermType
 structure SortContext where
   uss : USContext := []
   iss : ISContext := {}
+  /-- The datatypes in scope, denoted by `DT.Carrier`. -/
+  dts : DT.Decls := []
 
 abbrev SortEnvironment := USEnvironment
 
@@ -146,8 +149,6 @@ end
 def substituteIFIS (isctx : ISContext) (iF : IF) : IF :=
   { iF with args := iF.args.map (substituteTermVarIS isctx), out := substituteIS isctx iF.out, body := substituteTermIS isctx iF.body }
 
-mutual
-
 /-- Interpret primitive SMT types as Lean types, when supported. -/
 @[expose] def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
   match pty with
@@ -158,6 +159,21 @@ mutual
   | .real => none -- fin _ => Real
   | .string => return fun _ => String
   | .regex => none
+
+/-- A non-datatype field of a datatype value: a value of a primitive sort. Fields of
+other sorts (uninterpreted sorts, arrays, options) are not denoted yet. -/
+@[expose] def DtPayload (sctx : SortContext) (sΓ : SortDenoteInput sctx) : Type :=
+  Σ pty : TermPrimType, (denotePrimSort sctx pty).elim Unit (fun f => f sΓ)
+
+/-- A payload has the primitive sort it is tagged with. -/
+@[expose] def dtSorted (sctx : SortContext) (sΓ : SortDenoteInput sctx) : DT.Sorted (DtPayload sctx sΓ) :=
+  ⟨fun p t => t = .prim p.1⟩
+
+/-- Is `id` a datatype declared in `sctx`? -/
+@[expose] def SortContext.isDatatype (sctx : SortContext) (id : String) : Bool :=
+  sctx.dts.any (·.1 == id)
+
+mutual
 
 /--
 Interpret an SMT `TermType` as a Lean `Type`, when supported.
@@ -177,6 +193,9 @@ def denoteSortAux (sctx : SortContext) (ty : TermType) : Option (SortDenoteResul
     let vTy ← denoteSortAux sctx vTy
     return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
+    if args.isEmpty && sctx.isDatatype id then
+      return fun sΓ => DT.Carrier sctx.dts (dtSorted sctx sΓ) id
+    else
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
       have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp hi).left
@@ -217,6 +236,9 @@ Returns `none` when we lack an interpretation (e.g. for reals).
     let vTy ← denoteSort sctx vTy
     return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
+    if args.isEmpty && sctx.isDatatype id then
+      return fun sΓ => DT.Carrier sctx.dts (dtSorted sctx sΓ) id
+    else
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
       have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp hi).left
@@ -1088,10 +1110,10 @@ Eliminate one uninterpreted sort binder by quantifying over all of its
 semantic realizations and extending the sort environment accordingly.
 -/
 @[simp]
-noncomputable def bindUS (uss iss) {us'} (ft' : SortDenoteInput ⟨(us' :: uss), iss⟩ → Prop) :
-  Option (SortDenoteInput ⟨uss, iss⟩ → Prop) := do
-  let sctx' : SortContext := ⟨(us' :: uss), iss⟩
-  let ft (tdi : SortDenoteInput ⟨uss, iss⟩) :=
+noncomputable def bindUS (uss iss dts) {us'} (ft' : SortDenoteInput ⟨(us' :: uss), iss, dts⟩ → Prop) :
+  Option (SortDenoteInput ⟨uss, iss, dts⟩ → Prop) := do
+  let sctx' : SortContext := ⟨(us' :: uss), iss, dts⟩
+  let ft (tdi : SortDenoteInput ⟨uss, iss, dts⟩) :=
     set_option checkBinderAnnotations false in
     ∀ (α : mkTypeFunType us'.arity) [inst : mkNonemptyPred α],
       let us' := { us := us', usΓ := α, nonempty := inst }
@@ -1254,20 +1276,21 @@ It is boolean-specific because SMT queries denote propositions.
 -/
 @[simp]
 noncomputable def denoteBoolTermFromContext
-    (uss : USContext) (iss : ISContext) (ufs : UFContext) (ifs : List IF) (t : Term) := do
+    (uss : USContext) (iss : ISContext) (ufs : UFContext) (ifs : List IF) (t : Term)
+    (dts : DT.Decls := []) := do
   let ufs := if iss.isEmpty then ufs else ufs.map (substituteUFIS iss)
   let ifs := if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)
   let t := substituteTermIS iss t
-  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map IF.toUF ++ ufs⟩⟩ t | none
-  let ft ← bindIFs ⟨uss, iss⟩ {} ufs ifs ft
-  let ft ← bindUFs ⟨uss, iss⟩ {} ufs ft
-  let ft ← bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
+  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss, dts⟩, ⟨{}, ifs.map IF.toUF ++ ufs⟩⟩ t | none
+  let ft ← bindIFs ⟨uss, iss, dts⟩ {} ufs ifs ft
+  let ft ← bindUFs ⟨uss, iss, dts⟩ {} ufs ft
+  let ft ← bindISs uss iss dts fun ⟨sΓ, hsΓ⟩ =>
     let tΓ : TermEnvironment ⟨sΓ, hsΓ⟩ := { vs := {}, ufs := {} }
     let htΓ : tΓ.WF { vs := {}, ufs := {} } :=
       { hv := { h := rfl, ha := fun _ hi => nomatch hi },
         huf := { h := rfl, ha := fun _ hi => nomatch hi } }
     ft { sΓ, hsΓ, tΓ, htΓ }
-  let ft ← bindUSs uss [] ft
+  let ft ← bindUSs uss [] dts ft
   let sΓ : SortEnvironment := {}
   let hsΓ : sΓ.WF {} := { h := rfl, ha := fun _ hi => nomatch hi }
   return PLift.up (ft { sΓ, hsΓ })
@@ -1276,19 +1299,19 @@ where
   Eliminate all uninterpreted sort binders by repeatedly applying `bindUS`.
   -/
   @[simp]
-  bindUSs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨[], iss⟩ → Prop) :=
+  bindUSs uss iss dts (ft' : SortDenoteInput ⟨uss, iss, dts⟩ → Prop) : Option (SortDenoteInput ⟨[], iss, dts⟩ → Prop) :=
     do match (dependent := true) uss with
     | [] => return ft'
     | _ :: uss =>
-      let ft ← bindUS uss iss ft'
-      bindUSs uss iss ft
+      let ft ← bindUS uss iss dts ft'
+      bindUSs uss iss dts ft
   /--
   Eliminate interpreted-sort aliases. They are already substituted, so this
   step only reindexes the context shape.
   -/
   @[simp]
-  bindISs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨uss, []⟩ → Prop) :=
-    return fun (tdi : SortDenoteInput ⟨uss, []⟩) => ft' ⟨tdi.sΓ, tdi.hsΓ⟩
+  bindISs uss iss dts (ft' : SortDenoteInput ⟨uss, iss, dts⟩ → Prop) : Option (SortDenoteInput ⟨uss, [], dts⟩ → Prop) :=
+    return fun (tdi : SortDenoteInput ⟨uss, [], dts⟩) => ft' ⟨tdi.sΓ, tdi.hsΓ⟩
   /--
   Eliminate all uninterpreted-function binders by repeatedly applying `bindUF`.
   -/
