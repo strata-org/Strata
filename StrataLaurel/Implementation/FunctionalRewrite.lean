@@ -143,6 +143,8 @@ fall through:
   the shape that hurts: measured at 681, 4033, and 21745 characters for n = 2, 4,
   and 6, and end-to-end compile time of roughly 6s at n = 10 versus 147s at
   n = 13.
+- An if inside an assigned **block value** counts as one at statement level, since the
+  block is flattened into the enclosing statements.
 
 So the exponential case needs about a dozen consecutive both-branch-falling-through
 ifs in a single transparent body before it becomes noticeable. That is accepted for
@@ -329,9 +331,9 @@ private abbrev HoleBinding := Nat × Identifier × HighTypeMd
 /-- Whether `e` contains an `exit` or a `return` anywhere inside it.
 
     Used to reject a block *value* that contains one, as in `r := { if c then { exit L }; 5 }`.
-    A returned block's statements are translated with its last element as their
-    continuation, which would turn an exit into the returned value, and flattening an
-    assigned block drops the block's own label, so an exit to it would lose its target. -/
+    A block value's own label is not bound, so an exit to it would leave an enclosing
+    block of the same name instead. Only those exits need rejecting, but every exit or
+    return is. -/
 private def containsExitOrReturn (e : StmtExprMd) : Bool :=
   let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
     match n.val with

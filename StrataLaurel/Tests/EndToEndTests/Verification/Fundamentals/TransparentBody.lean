@@ -462,7 +462,7 @@ procedure testDestructiveUpdates()
 };
 #end
 
--- An `exit` inside an assigned *block value* is reported (see `containsExitOrReturn`).
+-- An `exit` inside an assigned *block value* is reported.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -497,10 +497,9 @@ procedure testBlockValueNoExit()
 };
 #end
 
--- An assignment inside a block value to a variable declared *outside* the block is
--- visible after the assignment, as at statement level. `ConstrainedTypeElim` makes
--- `u := (t := t + 1)` such a block value, as it does any assignment used as a value on
--- a constrained type. Run as well as verified, so the two must agree.
+-- An assignment inside a value is visible after it, as at statement level: in
+-- `u := (t := t + 1)` on a constrained type, and in a block value, declared or
+-- assigned. Run as well as verified, so the paths must agree.
 #guard_msgs (drop info) in
 #eval testLaurelExecution {} <|
 #strata
@@ -513,13 +512,24 @@ procedure blockValueOuterLocal(y: nat): int
   return t + u
 };
 
+procedure declaredAndAssignedBlockValue(y: int): int
+{
+  var t: int := y;
+  var u: int := { t := t + 1; t };
+  u := { t := t + 1; t };
+  return t + u
+};
+
 procedure testBlockValueOuterLocal()
   entry
   opaque
 {
   assert blockValueOuterLocal(1) == 4;
-  assert blockValueOuterLocal(1) == 3
+  assert blockValueOuterLocal(1) == 3;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert declaredAndAssignedBlockValue(1) == 6;
+  assert declaredAndAssignedBlockValue(1) == 3
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
