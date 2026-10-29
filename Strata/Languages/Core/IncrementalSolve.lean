@@ -151,7 +151,7 @@ def VTree.goalCount : VTree → Nat
 /-- Read a procedure's body into a tree, for `readDecls`, which hangs the result off the point
     the procedure is declared at. `facts` and `goals` are those of the node
     being read, which a fact after a goal closes: the rest of the body then goes in a child. -/
-private partial def readStmts (facts : Array (PathConditionEntry Expression))
+private def readStmts (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (ss : Statements) : Except String VTree :=
   match ss with
   | [] => .ok { facts, goals, children := #[] }
@@ -189,28 +189,28 @@ private partial def readStmts (facts : Array (PathConditionEntry Expression))
     and no others, which is what `ObligationExtraction` accumulates as it walks. That
     prefix is a chain of ancestors, so procedures sharing a prelude share the nodes
     holding it. -/
-private partial def readDecls (funcNames : List String)
+private def readDecls (funcNames : List String)
     (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (ds : List Decl) : Except String VTree :=
-  -- What follows a goal or a child is read below it, so a node's facts precede its goals and
-  -- its children, and everything after keeps the declaration order.
-  let below (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal)
-      (rest : List Decl) : Except String VTree := do
-    let t ← readDecls funcNames facts' goals' #[] rest
-    .ok { facts, goals, children := kids.push t }
-  let global (entry : PathConditionEntry Expression) (rest : List Decl) :
-      Except String VTree :=
-    if kids.isEmpty && goals.isEmpty then readDecls funcNames (facts.push entry) goals kids rest
-    else below #[entry] #[] rest
-  let definition (rest : List Decl) : Except String VTree :=
-    if kids.isEmpty && goals.isEmpty then readDecls funcNames facts goals kids rest
-    else below #[] #[] rest
   match ds with
   | [] => .ok { facts, goals, children := kids }
   | d :: rest =>
+    -- What follows a goal or a child is read below it, so a node's facts precede its goals and
+    -- its children, and everything after keeps the declaration order.
+    let below (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal) :
+        Except String VTree := do
+      let t ← readDecls funcNames facts' goals' #[] rest
+      .ok { facts, goals, children := kids.push t }
+    let global (entry : PathConditionEntry Expression) : Except String VTree :=
+      if kids.isEmpty && goals.isEmpty then readDecls funcNames (facts.push entry) goals kids rest
+      else below #[entry] #[]
+    -- A function of `()`, so the rest is read only on the paths that use it.
+    let definition (_ : Unit) : Except String VTree :=
+      if kids.isEmpty && goals.isEmpty then readDecls funcNames facts goals kids rest
+      else below #[] #[]
     match d with
-    | .ax a _ => global (.assumption a.name a.e) rest
-    | .distinct name es _ => global (.distinct (toString name) es) rest
+    | .ax a _ => global (.assumption a.name a.e)
+    | .distinct name es _ => global (.distinct (toString name) es)
     -- Read from the statements `extractObligations` reads, so a parameter named like a
     -- function is renamed apart here too and a procedure with a contract is refused.
     | .proc proc _ => do
@@ -221,12 +221,12 @@ private partial def readDecls (funcNames : List String)
     -- declared before it: a definition need not be a conservative extension (a recursive one,
     -- for instance), and a goal must not be checked under one it could not see.
     | .func f _ =>
-      if f.preconditions.isEmpty then definition rest
+      if f.preconditions.isEmpty then definition ()
       else .error (preconditionError f.name)
     | .recFuncBlock funcs _ =>
       match funcs.find? (fun f => !f.preconditions.isEmpty) with
       | some f => .error (preconditionError f.name)
-      | none => definition rest
+      | none => definition ()
     -- A lemma is a goal checked under the declarations before it and never assumed, so it is a
     -- goal of the node it is declared at. The lemmas of one program therefore share a context:
     -- those declared one after another are goals of one node, and one after an axiom or a
@@ -237,13 +237,13 @@ private partial def readDecls (funcNames : List String)
                            property := Imperative.convertMetaDataPropertyType md,
                            expr := l.e, md }
       if kids.isEmpty then readDecls funcNames facts (goals.push goal) kids rest
-      else below #[] #[goal] rest
+      else below #[] #[goal]
     | _ => readDecls funcNames facts goals kids rest
 
 /-- Read a program as one tree. Every verdict of this back end rests on the tree holding exactly
     the obligations `extractObligations` finds, each under the same assumptions in the same order.
-    That agreement is tested, not proved: `sameObligations` in the tests compares the two on every
-    test program. -/
+    That agreement is proved: whenever this succeeds, so does `extractObligations`, with exactly
+    the tree's obligations. -/
 def readProgram (p : Program) : Except String VTree :=
   readDecls (ObligationExtraction.programFuncNames p) #[] #[] #[] p.decls
 
@@ -288,9 +288,17 @@ private structure Build where
   goalIds : Array (Array Nat) := #[]
   children : Array (Array Nat) := #[]
 
+/-- A child of a node is smaller than the node, which is what recursion over a tree's children
+    terminates by. -/
+theorem VTree.sizeOf_lt_of_mem {t c : VTree} (h : c ∈ t.children) : sizeOf c < sizeOf t := by
+  cases t
+  have hlt := Array.sizeOf_lt_of_mem h
+  simp only [VTree.mk.sizeOf_spec] at *
+  omega
+
 /-- For `layoutOf`: number the nodes in pre-order, collecting each one's goals and children, and
     building one `WorkItem` per goal. -/
-private partial def buildLayout (t : VTree) (pos : Pos)
+private def buildLayout (t : VTree) (pos : Pos)
     (path : Array (Array (PathConditionEntry Expression))) (b : Build) : Build :=
   let me := b.goalIds.size
   let path := path.push t.facts
@@ -300,14 +308,13 @@ private partial def buildLayout (t : VTree) (pos : Pos)
     let id := ts.size
     (ts.push { id, pos, path, goal := g }, ids.push id)
   let b := { b with tasks, goalIds := b.goalIds.setIfInBounds me ids }
-  (List.range t.children.size).foldl (init := b) fun b i =>
-    match t.children[i]? with
-    | none => b
-    | some c =>
-      let kid := b.goalIds.size
-      let b := { b with
-        children := b.children.setIfInBounds me ((b.children.getD me #[]).push kid) }
-      buildLayout c (pos.push i) path b
+  (t.children.foldl (init := (b, 0)) fun (b, i) c =>
+    let kid := b.goalIds.size
+    let b := { b with
+      children := b.children.setIfInBounds me ((b.children.getD me #[]).push kid) }
+    (buildLayout c (pos.push i) path b, i + 1)).1
+termination_by t
+decreasing_by exact VTree.sizeOf_lt_of_mem ‹_›
 
 /-- Lay the tree out for the walk. -/
 def layoutOf (t : VTree) : Layout :=
@@ -652,14 +659,17 @@ where
       | .ok id => values[id]?.map (v, ·)
       | .error _ => none
 
-/-- The obligation a goal stands for, in the shape every other back end reports. The path is
-    the assumptions: `PathConditions` is a list of runs, which is what `WorkItem.path` already
-    is. -/
+/-- The obligation `g` stands for under the facts `ctx`, oldest first, as one frame: the shape
+    `extractObligations` gives an obligation. -/
+private def Goal.obligation (ctx : List (PathConditionEntry Expression)) (g : Goal) :
+    Imperative.ProofObligation Expression :=
+  { label := g.label, property := g.property, assumptions := [ctx], obligation := g.expr,
+    metadata := g.md }
+
+/-- The obligation a goal stands for, in the shape every other back end reports. Its
+    assumptions are the facts of the runs on the goal's path, in order. -/
 def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
-  { label := item.goal.label, property := item.goal.property,
-    -- One frame, oldest fact first, which is the shape `extractObligations` gives an obligation.
-    assumptions := [item.path.toList.flatMap (·.toList)],
-    obligation := item.goal.expr, metadata := item.goal.md }
+  item.goal.obligation (item.path.toList.flatMap (·.toList))
 
 /-- Encode one assertion against this session's own state, send whatever that
     turned out to need and this solver has not been told, and check it.

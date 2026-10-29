@@ -79,6 +79,7 @@ import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.B3
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
+import Strata.Languages.Core.IncrementalSolveCorrect
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet

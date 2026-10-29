@@ -143,13 +143,12 @@ def procedureStatements (funcNames : List String) (proc : Procedure) :
       "' has a CFG body; obligations can only be extracted from " ++
       "structured bodies")
 
-/-- Extract proof obligations from a program. Axioms become global assumptions
-    and `distinct` declarations become distinctness facts. -/
-def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  let funcNames := programFuncNames p
-  -- Accumulate global path-condition facts (axioms and distinct groups) and
-  -- obligations as we walk declarations in order.
-  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
+/-- One step of `extractObligations`: read the declaration `decl`, given the global
+    path-condition facts declared before it (newest first) and the obligations found so far. -/
+private def extractDecl (funcNames : List String) :
+    PathCondition Expression × Array (ProofObligation Expression) → Decl →
+    Except String (PathCondition Expression × Array (ProofObligation Expression))
+  | (globalPc, allObs), decl =>
     match decl with
     | .ax a _ =>
       .ok (.assumption a.name a.e :: globalPc, allObs)
@@ -187,6 +186,14 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
         (RevPathConditions.consume (P := Expression) ⟨[globalPc]⟩) l.e md
       .ok (globalPc, allObs.push ob)
     | _ => .ok (globalPc, allObs)
+
+/-- Extract proof obligations from a program. Axioms become global assumptions
+    and `distinct` declarations become distinctness facts. -/
+def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
+  -- Accumulate global path-condition facts (axioms and distinct groups) and
+  -- obligations as we walk declarations in order.
+  let (_, allObs) ← p.decls.foldlM (extractDecl (programFuncNames p))
+    (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))
   return allObs
 
 @[simp] theorem extractFromStatements_eq (pc : RevPathConditions Expression) (ss : Statements) :
