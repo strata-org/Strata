@@ -310,9 +310,8 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
     is constrained so ordinary procedures gain nothing. Assertions are anchored at the
     output's type, so a bad return is reported on the return type the reader wrote.
 
-    `typeArgs` carries the source procedure's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: the mirrored inputs of a polymorphic
-    procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
+    `typeArgs` carries the source procedure's type parameters: the mirrored inputs of a
+    polymorphic procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
     "type variables [T] appear in the signature but are not declared in typeArgs". -/
 private def mkOutputConstraintLemma (ptMap : ConstrainedTypeMap)
     (proc : Procedure) : Option Procedure :=

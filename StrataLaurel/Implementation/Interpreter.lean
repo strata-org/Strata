@@ -395,6 +395,10 @@ inductive Control where
       this step, and by nothing in between — in particular a `finally` must not
       run at a suspension, since the body has not left its `try`. -/
   | suspended
+  /-- A call the interpreter will not run. It ends the run as an `IO` error would, but the
+      failures found so far are kept. No `catch` or `finally` sees it, since they would run
+      on state the call left undetermined. -/
+  | refused (reason : String)
 
 abbrev EvalM := ExceptT Control (StateT EvalState IO)
 
@@ -1507,13 +1511,19 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       pure (outs[0]?.getD default)
   | e => evalError s!"unsupported expression: {e.constrName}"
 
+/-- `msg`, naming the procedures that led here. -/
+partial def withCallStack (msg : String) : EvalM String := do
+  let st ← get
+  if st.callStack.isEmpty then return msg
+  return msg ++ s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
+
 /-- Fail with `msg`, naming the procedures that led here. -/
 partial def evalError (msg : String) : EvalM α := do
-  let st ← get
-  let where_ :=
-    if st.callStack.isEmpty then ""
-    else s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
-  liftM (m := IO) (throw (IO.userError (msg ++ where_)))
+  liftM (m := IO) (throw (IO.userError (← withCallStack msg)))
+
+/-- Refuse with `msg` (`Control.refused`), naming the procedures that led here. -/
+partial def refuse (msg : String) : EvalM α := do
+  throw (.refused (← withCallStack msg))
 
 /-- A partial operation whose prelude declaration is not in the program, so its
     `requires` cannot be reported: a violation is an error rather than a silent
@@ -1774,8 +1784,8 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         let handled ← tryCatch (do evalScopedStmt cfg c.body; pure (none : Option Control)) fun sig =>
           match sig with
           -- As in the body arm: a suspension pauses the handler, it does not leave
-          -- the `try`, so `finally` must not run.
-          | .suspended => throw .suspended
+          -- the `try`, and a refusal ends the run, so `finally` must not run.
+          | .suspended | .refused _ => throw sig
           | _ => pure (some sig)
         modify fun s => { s with stack := unbindCatch s.stack c.binding.text }
         runFinally
@@ -1796,6 +1806,7 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
           -- A suspension is not an exit from the `try`: the body is paused
           -- inside it and will come back, so `finally` must not run.
           throw .suspended
+      | some (.refused r) => throw (.refused r)
       | some (.throw_ v) => do
           -- Clauses are tried in order, first match wins; an unmatched value
           -- keeps unwinding so an outer handler still sees it.
@@ -1815,7 +1826,9 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
                 | none => pure true
                 | some pred => do
                     let pv ← tryCatch (evalExprMd cfg pred) fun sig => do
-                      unbind; runFinally; throw sig
+                      unbind
+                      unless sig matches .refused _ do runFinally
+                      throw sig
                     liftM (isTrue cfg pv)
               if clauseMatches then do
                 enterArm (k + 1) none
@@ -2183,8 +2196,8 @@ partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Proced
             (proc.writesGlobals.head?.map fun g => s!"the global '{g.text}' it writes") <|>
             (if proc.throwsType.isSome then some "whether it throws" else none)
           if let some what := undetermined then
-            evalError s!"procedure '{proc.name.text}' has no implementation, so {what} is \
-                         undetermined"
+            refuse s!"procedure '{proc.name.text}' has no implementation, so {what} is \
+                      undetermined"
           return #[]
   let withParams : StackFrame :=
     (proc.inputs.zip argVals).foldl
@@ -2248,6 +2261,8 @@ inductive Outcome where
   | escaped (value : Value)
   /-- The step budget ran out; the program under test may not terminate. -/
   | outOfFuel
+  /-- The interpreter refused a call (`Control.refused`), for the reason given. -/
+  | refused (reason : String)
   deriving Inhabited
 
 /-- Entry point: locate and run the single procedure named by
@@ -2349,18 +2364,19 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
                     modify fun st =>
                       { st with globals := st.globals.insert f.name.text (defaultValue st.index f.type.val) }
             let start := { initState with stack := withOutputs }
-            let start ← match ← (initGlobals.run.run start) with
-              | (.ok (), s') => pure s'
+            let res ← match ← (initGlobals.run.run start) with
+              | (.ok (), s') => (evalStmt cfg body).run.run s'
+              | refused@(.error (.refused _), _) => pure refused
               | (.error .outOfFuel, _) => throw (IO.userError "out of fuel initialising file-scope globals")
               | (.error (.throw_ v), _) =>
                   throw (IO.userError s!"uncaught throw of {v.display} initialising file-scope globals")
               | (.error _, _) => throw (IO.userError "unexpected control flow initialising file-scope globals")
-            let res ← (evalStmt cfg body).run.run start
             match res with
             | (.ok (),                s') => pure (Outcome.completed, s')
             | (.error (.return_ _),    s') => pure (Outcome.completed, s')
             | (.error (.throw_ v),     s') => pure (Outcome.escaped v, s')
             | (.error .outOfFuel,      s') => pure (Outcome.outOfFuel, s')
+            | (.error (.refused r),    s') => pure (Outcome.refused r, s')
             | (.error (.exit_ l),      _)  =>
                 throw (IO.userError s!"`exit {l}` with no enclosing block labelled '{l}'")
             | (.error .suspended,      _)  =>
@@ -2373,9 +2389,9 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
   finally
     cfg.cleanup
 
-/-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw` or
-    exhausted fuel becomes an `IO` error, and only the display state and
-    assertion failures are returned. -/
+/-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw`,
+    exhausted fuel or a refused call becomes an `IO` error, and only the display
+    state and assertion failures are returned. -/
 def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message) := do
   let (display, failures, outcome) ← evalProgramWithOutcome cfg opts p
@@ -2383,6 +2399,7 @@ def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
   | .completed => pure (display, failures)
   | .escaped v => throw (IO.userError s!"uncaught throw of {v.display}")
   | .outOfFuel => throw (IO.userError "out of fuel")
+  | .refused r => throw (IO.userError r)
 
 def runInternalLaurel (opts : Options) (filePath : String) : IO Unit := do
   let path : System.FilePath := filePath

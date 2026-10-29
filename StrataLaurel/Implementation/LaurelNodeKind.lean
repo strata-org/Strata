@@ -278,6 +278,11 @@ inductive NodeKind where
       body into one expression; `LaurelToCoreSchemaPass` declares it `unsupported`, because a
       Core function body must be an expression. -/
   | Pseudo.imperativeFunction
+  /-- The program still owes the well-formedness checks of its loop invariants: the
+      preconditions of the calls inside them. `LoopInvariantWellFormedness` discharges this
+      by emitting them; `LaurelToCoreSchemaPass` declares it `unsupported`, so the pass
+      cannot be left out of a pipeline. An obligation, like `needsOverrideRules`. -/
+  | Pseudo.needsLoopInvariantChecks
   deriving BEq, Repr, DecidableEq, Hashable
 
 /-- Whether this shape can occur in a program *as authored* — i.e. whether it is present
@@ -314,6 +319,27 @@ def NodeKind.inSource : NodeKind → Bool
   | NodeKind.StmtExpr.Hole.type.some => false  -- InferHoleTypes annotates holes
   -- Everything else can be written, or arises directly from what was written.
   | _ => true
+
+/-- Whether this kind is one of the `Pseudo.*` kinds, which are not Laurel AST constructors
+    and so are not modelled by `Program.Contains`. -/
+def NodeKind.isPseudo : NodeKind → Bool
+  | NodeKind.Pseudo.oldExpr
+  | NodeKind.Pseudo.heapVar
+  | NodeKind.Pseudo.implicitHeap
+  | NodeKind.Pseudo.box
+  | NodeKind.Pseudo.totalMap
+  | NodeKind.Pseudo.typeTag
+  | NodeKind.Pseudo.asFunctionTwin
+  | NodeKind.Pseudo.overload
+  | NodeKind.Pseudo.needsOverrideRules
+  | NodeKind.Pseudo.coroutineOverride
+  | NodeKind.Pseudo.generatedReturn
+  | NodeKind.Pseudo.imperativeShortCircuit
+  | NodeKind.Pseudo.statementExpression
+  | NodeKind.Pseudo.letExpr
+  | NodeKind.Pseudo.imperativeFunction
+  | NodeKind.Pseudo.needsLoopInvariantChecks => true
+  | _ => false
 
 /-- The dotted path, for diagnostics: `StmtExpr.While.postTest.true`. -/
 def NodeKind.name (k : NodeKind) : String :=

@@ -265,6 +265,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 
 /-- The type annotations a node carries directly. -/
 @[expose] def stmtExprTypes : StmtExpr → List HighTypeMd
+  | .StaticCall _ _ typeArgs => typeArgs
   | .New _ typeArgs => typeArgs
   | .AsType _ targetType => [targetType]
   | .IsType _ type => [type]

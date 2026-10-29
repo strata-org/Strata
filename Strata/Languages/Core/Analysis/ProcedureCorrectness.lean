@@ -30,7 +30,7 @@ public section
   **`ProcedureAssertsSatisfiableOnTraces.denote`** — the same properties with
   conditions read by Lambda's denotational semantics: validity in every model
   of `Core.Factory`, satisfiability in some model.
-- **`CoreVerifierModel`** — the desirable property of Core's verifier under each
+- **`CoreVerifierModel`** — what a passing `VCResults` claims under each
   verification mode.
 -/
 
@@ -357,47 +357,46 @@ structure CoreVerifierInput where
   entryPoints : List String
   prog : Program
 
-set_option linter.deprecated false in
-/-- An analysis whose desirable property under each `VerificationMode` is:
+/-- The definition of Core verification under each `VerificationMode`. A
+    `VCResults` array passing under the mode claims:
 
-    * `.deductive` — `ProcedureAssertsValid` (universal: every assert valid
-      and every terminating run satisfies the postconditions);
-    * `.bugFinding` — `ProcedureAssertsSatisfiable` (existential dual: some
-      run reaches each assert and some terminating run satisfies the
-      postconditions);
-    * `.bugFindingAssumingCompleteSpec` — `False` (not yet specified).
+    * `.deductive`: `ProcedureAssertsValidOnTraces.denote` (universal: in
+      every model, every assertion a run reaches is valid and every
+      terminating run satisfies the postconditions);
+    * `.bugFinding`: `ProcedureAssertsSatisfiableOnTraces.denote`
+      (existential dual: in some model, some run reaches each assert and some
+      terminating run satisfies the postconditions);
+    * `.bugFindingAssumingCompleteSpec`: not yet specified. Every result
+      passes and claims `False`, so no analyzer implements this mode yet.
 
-    The diagnostic is a `VCResults` array; the `analyze` function
-    additionally receives the `VerificationMode` so it can shape the
-    obligations it produces, and `pass` reports success on every `VCResult`
-    under the given mode. `params` fixes the entry well-formedness of
-    procedure bodies (see `ProcEnvWF`). It must admit the program's entry
-    environments: when it admits none, the desirable property holds vacuously,
-    so a soundness statement should fix `params` to the one the verifier
-    assumes rather than leave it free. -/
+    A result that does not pass claims nothing. An analyzer `analyze` implements
+    the mode when `MatchesAnalysis (analyze mode) (CoreVerifierModel mode params)`.
+    `params` fixes the entry well-formedness of procedure bodies (see
+    `ProcEnvWF`). It must admit the program's entry environments: when it
+    admits none, the property holds vacuously, so a soundness statement should
+    fix `params` to the one the verifier assumes rather than leave it free. -/
 def CoreVerifierModel
     (mode : VerificationMode)
-    (params : InitEnvWFParams)
-    (analyze : VerificationMode → CoreVerifierInput → VCResults) :
-    Imperative.Specification.Analysis CoreVerifierInput VCResults :=
-  { desirableProperty := fun input =>
+    (params : InitEnvWFParams) :
+    CoreVerifierInput → VCResults → Prop :=
+  Imperative.Analysis.Sound
+    (fun input =>
       match mode with
       | .deductive =>
         ∀ procName ∈ input.entryPoints,
-          ProcedureAssertsValid params procName input.prog
+          ProcedureAssertsValidOnTraces.denote params procName input.prog
       | .bugFinding =>
         ∀ procName ∈ input.entryPoints,
-          ProcedureAssertsSatisfiable params procName input.prog
+          ProcedureAssertsSatisfiableOnTraces.denote params procName input.prog
       | .bugFindingAssumingCompleteSpec =>
         -- bugFinding, but postcondition being checked with validity
         -- TODO!
-        False
-    analyze := analyze mode
-    pass := fun results =>
+        False)
+    (fun results =>
       match mode with
       | .deductive => ∀ r ∈ results, VCResult.isSuccess r = Bool.true
       | .bugFinding => ∀ r ∈ results, VCResult.isBugFindingSuccess r = Bool.true
-      | .bugFindingAssumingCompleteSpec => False }
+      | .bugFindingAssumingCompleteSpec => True)
 
 end Analysis
 

@@ -105,6 +105,11 @@ structure LaurelTranslateOptions where
       procedures + datatype constructors/accessors). A value binding may not shadow one; see
       `TypeLattice.reservedNames`. Threaded onto `TypeLattice`. Empty for native Laurel. -/
   reservedNames : Std.HashSet String := {}
+  /-- The Laurel phases to run, by name: `none` runs the default order; `some names` runs
+      those phases in that order, with the structural phases inserted. The order is checked
+      against the phases' declarations before anything runs, and the input against what the
+      order requires of it. -/
+  passes : Option (List String) := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

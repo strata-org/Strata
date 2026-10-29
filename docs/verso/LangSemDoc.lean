@@ -626,22 +626,26 @@ separate unless an additional progress or trace-extension result relates them.
 
 ### Soundness and Completeness of Analysis
 
-To formally describe analyses that answer validity and satisfiability,
-an abstract notion of analysis is defined over an arbitrary `Lang`:
+An analysis is defined by a relation between a program and an output, saying
+which outputs are correct answers about the program. An analyzer is any function
+producing outputs, and it implements the analysis when every output it produces
+is correct:
 
-{docstring Imperative.Specification.Analysis}
+{docstring Imperative.Analysis.MatchesAnalysis}
 
-{docstring Imperative.Specification.Analysis.Sound}
+Soundness and completeness of a pass/fail analyzer are two such definitions:
 
-{docstring Imperative.Specification.Analysis.Complete}
+{docstring Imperative.Analysis.Sound}
 
-The connection of the definition of analysis to Core's verifier is packaged as {name Core.Specification.Analysis.CoreVerifierModel}`CoreVerifierModel`:
+{docstring Imperative.Analysis.Complete}
+
+Core's verifier is specified by {name Core.Specification.Analysis.CoreVerifierModel}`CoreVerifierModel`:
 
 {docstring Core.Specification.Analysis.CoreVerifierModel}
 
-Its desirable property is selected by the `VerificationMode` — deductive mode
-requires every entry procedure's assertions to be valid, and bug-finding mode
-requires them to be satisfiable.
+What a pass claims is selected by the `VerificationMode`: in deductive mode,
+that every entry procedure's assertions are valid; in bug-finding mode, that
+they are satisfiable.
 
 Fully proving the soundness of Core's verifier is an ongoing work.
 

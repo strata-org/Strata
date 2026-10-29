@@ -376,14 +376,7 @@ def Core.assertPhase (f : Core.ProgramFact) (hc : f.check?.isSome = true := by d
     Core.PipelinePhase :=
   f.assertPhase hc
 
-/-- The flag names a command offers for working with phases. The command supplies them
-    because this package's help text refers to them and only the command knows how it
-    spells them. -/
-structure Core.PhaseFlagNames where
-  /-- The flag taking a phase list, `--phases` for the tools in this repository. -/
-  select : String
-  /-- The flag printing each phase's contract, `--display-phase-contracts` for those tools. -/
-  displayContracts : String
+abbrev Core.PhaseFlagNames := Strata.Pipeline.PhaseFlagNames
 
 /-- The phase list as its dependency table: a numbered row per phase in run order, a column
     per fact, and the back end as the final requirements-only row, so a caller assembling a
@@ -404,26 +397,15 @@ def Core.resolvePhases (available : List Core.PipelinePhase) (requested : List S
     | none =>
       match Core.assertPhaseFor nm with
       | some p => .ok p
-      | none =>
-        .error <| s!"Unknown phase name '{nm}'."
-          ++ (if hint.isEmpty then "" else " " ++ hint)
+      | none => .error (Strata.Pipeline.unknownPhaseName nm hint)
 
 /-- The text describing the available phases: the default order as a pasteable
     `--phases` argument, and the phases available but not in that order. -/
 def Core.displayPhasesText (flags : Core.PhaseFlagNames)
     (defaultPhases : List Core.PipelinePhase)
     (extras : List Core.PipelinePhase := []) : String :=
-  let names := ",".intercalate (defaultPhases.map Core.phaseName)
-  let base :=
-    s!"To run the phases in the default order:\n\n  {flags.select} {names}\n\n"
-      ++ s!"You can change this order. Give it back to {flags.select} with no input file "
-      ++ "and\nStrata reports whether it composes without verifying anything."
-      ++ s!"\nTo see what each phase requires and delivers, use {flags.displayContracts}."
-  match extras.map Core.phaseName with
-  | [] => base
-  | extraNames =>
-    base ++ "\n\nAvailable, not in the default order:\n\n"
-      ++ "\n".intercalate (extraNames.map (fun n => s!"  {n}"))
+  Strata.Pipeline.displayPhasesText flags "phases" "requires and delivers"
+    (defaultPhases.map Core.phaseName) (extras.map Core.phaseName)
 
 /-- Front-end phase: any translation from a source language to Core may
     introduce over-approximations. Until front-ends can validate models or

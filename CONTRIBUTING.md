@@ -131,9 +131,8 @@ main purposes:
   components (e.g., just the DDM, just the evaluator of a
   specific dialect, etc.). These tests serve as guides to understand
   how to set up, use, and compose these core components.
-  `StrataTest/Languages/[Core|C_Simp]/Examples` showcases
-  end-to-end Strata applications and may include output from external
-  solvers.
+  `StrataTest/Languages/Core/Examples` showcases end-to-end Strata
+  applications and may include output from external solvers.
 
 ## Syntactic Style Guidelines
 

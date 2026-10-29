@@ -35,6 +35,7 @@ control falls off the end:
                                         where kr = F(rest, k)
     F({ A } L :: rest, k)             = F(A, kr) with L bound to kr
                                         where kr = F(rest, k)
+    F((x := { S; e }) :: rest, k)     = F(S ++ (x := e) :: rest, k)
 
 ## Uninitialized variables become holes
 
@@ -266,6 +267,27 @@ private theorem sizeOf_dropLast_le {α : Type} [SizeOf α] (xs : List α) :
       simp only [List.dropLast_cons_cons, List.cons.sizeOf_spec] at *
       omega
 
+/-- A non-empty list's last element and the rest of it together are smaller than the
+    list. Used to bound a block value flattened into the enclosing statements, where the
+    last element is re-wrapped in the assignment it was the value of.
+
+    Stated for any element type, as with `sizeOf_append`. -/
+private theorem sizeOf_dropLast_add_getLast_lt {α : Type} [SizeOf α] (xs : List α) (h : xs ≠ []) :
+    sizeOf xs.dropLast + sizeOf (xs.getLast h) < sizeOf xs := by
+  have hsize := sizeOf_append xs.dropLast [xs.getLast h]
+  rw [List.dropLast_concat_getLast h] at hsize
+  simp only [List.cons.sizeOf_spec, List.nil.sizeOf_spec] at hsize
+  omega
+
+/-- The size of a block value flattened in front of `rest`, as `sizeOf_append` gives it.
+    Stated as an equation so `simp` can rewrite with it; stated for any element type. -/
+private theorem sizeOf_dropLast_append_cons {α : Type} [SizeOf α] (xs : List α) (y : α)
+    (rest : List α) :
+    sizeOf (xs.dropLast ++ y :: rest) = sizeOf xs.dropLast + sizeOf y + sizeOf rest := by
+  have hsize := sizeOf_append xs.dropLast (y :: rest)
+  simp only [List.cons.sizeOf_spec] at hsize
+  omega
+
 /-- The name of the uninterpreted function standing for the initial value of the
     bare declaration whose `uniqueId` is `uid`, and the name of the local the rewrite
     binds its result to.
@@ -306,21 +328,10 @@ private abbrev HoleBinding := Nat × Identifier × HighTypeMd
 
 /-- Whether `e` contains an `exit` or a `return` anywhere inside it.
 
-    Used to reject one shape rather than mistranslate it: a block *value*, as in
-    `r := { if c then { exit L }; 5 }`. The block-value arms translate such a block with
-    its last element as the continuation, which turns an `exit` into that label's
-    continuation *as the assigned value* — and then the statements after the assignment
-    still run. For
-
-        r := 1; { r := { if c then { exit done }; 5 }; r := r + 100 } done; return r
-
-    the `exit done` should leave the labelled block before either assignment, giving 1,
-    but yields 1 + 100 instead.
-
-    An exit is control flow that abandons the enclosing statements, and a value's
-    continuation is not the statement's continuation, so expressing this needs more than
-    the single continuation these arms thread through. Rejecting keeps the rewrite honest
-    until then. -/
+    Used to reject a block *value* that contains one, as in `r := { if c then { exit L }; 5 }`.
+    A returned block's statements are translated with its last element as their
+    continuation, which would turn an exit into the returned value, and flattening an
+    assigned block drops the block's own label, so an exit to it would lose its target. -/
 private def containsExitOrReturn (e : StmtExprMd) : Bool :=
   let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
     match n.val with
@@ -409,11 +420,10 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     the *same* value for every input, which lets a caller prove more than "arbitrary" —
     see the module docstring.
 
-    `typeArgs` carries the enclosing function's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: in a polymorphic function (`f<T>(x : T)`) the
-    mirrored inputs and the declared type mention `T`, so the generated hole must bind
-    `T` too, or `T` is a free type variable at Core and the program fails to type-check.
-    Empty for a monomorphic function.
+    `typeArgs` carries the enclosing function's type parameters: in a polymorphic
+    function (`f<T>(x : T)`) the mirrored inputs and the declared type mention `T`, so
+    the generated hole must bind `T` too, or `T` is a free type variable at Core and the
+    program fails to type-check. Empty for a monomorphic function.
 
     The body is `.Opaque [] none []`, which the Core schema translation turns into a
     function with no body, i.e. an uninterpreted one. That is the already-eliminated
@@ -563,8 +573,7 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
     -- The declaration keeps `param`'s name but its `uniqueId` is stripped later by
     -- `stripLocalUids`, so each of the nested declarations this rule produces for one
     -- variable gets its own fresh id from the re-resolve rather than sharing the
-    -- assignment target's. `value` has already been functionalized by the caller (see
-    -- the block-valued arms of `Assign`/`Return`).
+    -- assignment target's.
     let bind (param : Parameter?) (targetSource : FileRange) (value : StmtExprMd)
         : Except Message StmtExprMd := do
       let body ← functionalizeStmts model inputUids retExpr labelConts rest k
@@ -588,11 +597,15 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
     --
     -- A *block* value is the one exception to "an assignment's value is an
     -- expression": the transparency pass can emit a transparent body as
-    -- `$result := { <statements>; <tail expression> }`, whose statements are
-    -- genuinely in statement position, so they are functionalized with the block's
-    -- own final element as the continuation. These arms are spelled out rather than
-    -- funnelled through a helper so that each recursive call is on a structural
-    -- subterm of `s`, which is what lets Lean see this function terminates.
+    -- `$result := { <statements>; <tail expression> }`, and `ConstrainedTypeElim`
+    -- emits `x := { <assignment>; assert …; <target> }`. Their statements are
+    -- genuinely in statement position. A returned block's are functionalized with its
+    -- final element as the continuation. An assigned block is flattened into the
+    -- enclosing statements, `S ++ (x := e) :: rest`, so that its assignments reach
+    -- `rest`; `alphaConvertLocals` has made the locals it declares unique, so their
+    -- scope can extend over `rest`. These arms are spelled out rather than funnelled
+    -- through a helper so that each recursive call is visibly bounded by `s`, which is
+    -- what lets Lean see this function terminates.
     | ⟨.Return (some value@⟨.Block valueStmts _, _⟩), _⟩ =>
       if containsExitOrReturn value then unsupported s.source blockValueExitMsg
       else
@@ -604,6 +617,12 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
         functionalizeStmts model inputUids retExpr labelConts valueStmts.dropLast tail
     | ⟨.Return (some value), _⟩ => .ok value
     | ⟨.Return none, _⟩ => .ok retExpr
+    | ⟨.Assign [target] value@⟨.Block valueStmts@(_ :: _) _, _⟩, src⟩ =>
+      if containsExitOrReturn value then unsupported s.source blockValueExitMsg
+      else
+        have nonempty : valueStmts ≠ [] := by simp_all
+        functionalizeStmts model inputUids retExpr labelConts
+          (valueStmts.dropLast ++ ⟨.Assign [target] (valueStmts.getLast nonempty), src⟩ :: rest) k
     | ⟨.Assign [⟨.Local name, targetSource⟩] value, _⟩ =>
       -- A plain input cannot be mutated anywhere: an `opaque` body writing to its own
       -- input is rejected by Core's type checker, with a far worse message. An *inout*
@@ -624,28 +643,8 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
         unsupported s.source
           s!"a transparent body or contract cannot YET mutate any of its inputs, \
              and this mutates '{name.text}'"
-      else do
-        let value ← match value with
-          | ⟨.Block valueStmts _, _⟩ =>
-            if containsExitOrReturn value then unsupported s.source blockValueExitMsg
-            else
-            match valueStmts.getLast? with
-            | none => .ok value
-            | some tail =>
-              functionalizeStmts model inputUids retExpr labelConts valueStmts.dropLast tail
-          | _ => .ok value
-        bind ⟨name, some (model.get name).getType⟩ targetSource value
-    | ⟨.Assign [⟨.Declare param, targetSource⟩] value, _⟩ => do
-      let value ← match value with
-        | ⟨.Block valueStmts _, _⟩ =>
-          if containsExitOrReturn value then unsupported s.source blockValueExitMsg
-          else
-          match valueStmts.getLast? with
-          | none => .ok value
-          | some tail =>
-            functionalizeStmts model inputUids retExpr labelConts valueStmts.dropLast tail
-        | _ => .ok value
-      bind param targetSource value
+      else bind ⟨name, some (model.get name).getType⟩ targetSource value
+    | ⟨.Assign [⟨.Declare param, targetSource⟩] value, _⟩ => bind param targetSource value
     | ⟨.Var (.Declare param), _⟩ =>
       -- Bind to a hole so an uninitialized read is arbitrary-but-fixed, and cannot
       -- become a free reference that resolves to an input of the same name — see the
@@ -708,12 +707,17 @@ decreasing_by
   -- into the bound, so every recursive call is visibly on a subterm of `s`.
   all_goals simp_wf
   -- Each goal bounds one recursive call by `sizeOf s + sizeOf rest`. Three facts
-  -- cover every shape: `dropLast` and `bodyStatements` do not grow their argument,
-  -- and an append's size is the sum of the parts. `grind` instantiates them at the
-  -- terms each goal actually mentions.
+  -- cover every other shape: `dropLast` and `bodyStatements` do not grow their
+  -- argument, and an append's size is the sum of the parts. `grind` instantiates them
+  -- at the terms each goal actually mentions.
   all_goals
     (first
       | omega
+      -- A flattened block value: the block's statements, its last element re-wrapped
+      -- in the assignment it was the value of, and `rest`.
+      | (subst_vars
+         have hbound := sizeOf_dropLast_add_getLast_lt _ ‹_ ≠ []›
+         simp [sizeOf_dropLast_append_cons] at hbound ⊢ <;> omega)
       | grind [sizeOf_dropLast_le, bodyStatements_sizeOf_le, sizeOf_append])
 
 /-- Rewrite a single function body into a pure expression, reporting the reason

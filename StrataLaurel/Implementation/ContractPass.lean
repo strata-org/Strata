@@ -56,16 +56,11 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
 
 /-- Build a helper function for a single condition over the given parameters.
     Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`.
-    `typeArgs` carries the source procedure's type parameters: a contract on a
-    POLYMORPHIC procedure (`idp<T>`) mentions `T` in its parameter types, so the
-    generated helper function must bind `T` too — otherwise `T` is a free type
-    variable at Core and the program fails to type-check. Empty for a monomorphic
-    procedure, where it has no effect.
 
     `assumptions` are emitted as `assume` statements ahead of the condition. The
     `i`-th precondition helper is given `requires` clauses `0 … i-1`, because a
     precondition may rely on the preceding ones to be well-formed. -/
-private def mkConditionProc (name : String) (typeArgs : List Identifier)
+private def mkConditionProc (name : String)
     (params : List Parameter) (assumptions : List Condition) (condition : Condition) : Procedure :=
   let src := condition.condition.source
   -- Give the pre/post helper procedure a shape the current lowering can turn
@@ -82,7 +77,6 @@ private def mkConditionProc (name : String) (typeArgs : List Identifier)
   let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
   let body : StmtExprMd := ⟨.Block (assumes ++ [assign, exit]) (some returnLabel), src⟩
   { name := mkId name
-    typeArgs := typeArgs
     inputs := params
     outputs := [⟨mkId "$result", { val := .TBool, source := src }⟩]
     preconditions := []
@@ -149,11 +143,8 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
     `precedingPosts` are the `ensures` clauses before this one, assumed for the same
     reason: `ensures r != 0` followed by `ensures 10 / r > 1` makes the second clause
     well-formed only given the first. They do mention outputs, so they are renamed
-    like the condition.
-
-    `typeArgs` carries the source procedure's type parameters so a postcondition
-    on a polymorphic procedure binds `T` (see `mkConditionProc`). -/
-private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
+    like the condition. -/
+private def mkPostConditionProc (name : String)
     (inputs outputs : List Parameter)
     (preconditions precedingPosts : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
@@ -185,7 +176,6 @@ private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
     ⟨.Block (preAssumes ++ postAssumes ++ [assignResult, exitReturn]) (some "$return"),
      postExpr.source⟩
   { name := mkId name
-    typeArgs := typeArgs
     inputs := inputs ++ renamedOutputs
     outputs := [⟨resultName, { val := .TBool, source := postExpr.source }⟩]
     preconditions := []
@@ -482,6 +472,15 @@ private def rewriteCallSitesInProc (model : SemanticModel) (contractInfoMap : St
     return { proc with body := Body.Opaque posts' impl' mods' }
   | _ => return proc
 
+/-- Binds the type parameters in `typeArgs` that `helper` mentions; no call to it could infer
+    the others. -/
+private def bindMentionedTypeArgs (typeArgs : List Identifier) (helper : Procedure) : Procedure :=
+  let collect (ty : HighTypeMd) : StateM (List String) HighTypeMd := do
+    modify (tvarNames ty.val ++ ·)
+    pure ty
+  let mentioned := ((mapProcedureHighTypesM collect helper).run []).2
+  { helper with typeArgs := typeArgs.filter (mentioned.contains ·.text) }
+
 /-- Build the pre/postcondition helper procedures for one procedure, rewriting call
     sites inside the contract expressions so they carry the callee's precondition
     obligations.
@@ -498,14 +497,14 @@ private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap
   let preProcs ← proc.preconditions.zipIdx.mapM fun (c, i) => do
     let condition' ← rw c.condition
     -- See `mkConditionProc` for why the preceding preconditions are assumed.
-    pure (mkConditionProc (preCondProcName proc.name.text i) proc.typeArgs proc.inputs
+    pure (mkConditionProc (preCondProcName proc.name.text i) proc.inputs
       (proc.preconditions.take i) { c with condition := condition' })
   let postProcs ← proc.body.postconditions.zipIdx.mapM fun (c, i) => do
     let condition' ← rw c.condition
-    pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.typeArgs proc.inputs
+    pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs
       proc.outputs proc.preconditions (proc.body.postconditions.take i)
       { c with condition := condition' })
-  return preProcs ++ postProcs
+  return (preProcs ++ postProcs).map (bindMentionedTypeArgs proc.typeArgs)
 
 /-- Conjoin a list of conditions into a single expression with `&&`. -/
 private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=

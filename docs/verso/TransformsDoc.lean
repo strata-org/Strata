@@ -91,9 +91,8 @@ list composes, which is the cheapest way to try an order out. Order matters and 
 checks will tell you so: naming a phase before the one that establishes what it requires
 is refused, with the phase that would have established it named in the message.
 
-`--phases` is also refused for inputs whose verifier cannot honour it, `.csimp.st` and the
-B3 files, because those are verified through their own translation rather than the Core
-pipeline.
+`--phases` is also refused for B3 files because their verifier cannot honour it and
+runs its own translation rather than the Core pipeline.
 
 A phase list may assert a fact instead of establishing it. For every fact with an
 executable check there is an `assert<Fact>` phase — `assertNoLoops` and the like — which

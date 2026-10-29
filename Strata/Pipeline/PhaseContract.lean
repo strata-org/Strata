@@ -319,6 +319,35 @@ def ValidatedPipeline.ofListDelivering (consumer : String) (needed : FactSet F)
     (phases : List P) : Except String (ValidatedPipeline P F emptyFactSet) :=
   ofListFromDelivering emptyFactSet consumer needed phases
 
+/-- The flag names a command offers for working with phases. The command supplies them
+    because this package's help text refers to them and only the command knows how it
+    spells them. -/
+structure PhaseFlagNames where
+  /-- The flag taking a phase list, `--phases` for the tools in this repository. -/
+  select : String
+  /-- The flag printing each phase's contract, `--display-phase-contracts` for those tools. -/
+  displayContracts : String
+
+def unknownPhaseName (name hint : String) : String :=
+  s!"Unknown phase name '{name}'." ++ (if hint.isEmpty then "" else " " ++ hint)
+
+/-- The help text for choosing phases. `subject` names what runs ("To run the {subject} in the
+    default order"), `contracts` says what the contracts table shows ("what each phase
+    {contracts}"); `extraNames` are listed as available but not in the default order. -/
+def displayPhasesText (flags : PhaseFlagNames) (subject contracts : String)
+    (defaultNames : List String) (extraNames : List String := []) : String :=
+  let names := ",".intercalate defaultNames
+  let base :=
+    s!"To run the {subject} in the default order:\n\n  {flags.select} {names}\n\n"
+      ++ s!"You can change this order. Give it back to {flags.select} with no input file "
+      ++ "and\nStrata reports whether it composes without verifying anything."
+      ++ s!"\nTo see what each phase {contracts}, use {flags.displayContracts}."
+  match extraNames with
+  | [] => base
+  | _ =>
+    base ++ "\n\nAvailable, not in the default order:\n\n"
+      ++ "\n".intercalate (extraNames.map (fun n => s!"  {n}"))
+
 end -- public section
 
 end Strata.Pipeline

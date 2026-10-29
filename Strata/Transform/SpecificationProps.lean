@@ -8,6 +8,8 @@ module
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Transform.Specification
 public import Strata.DL.Imperative.Logic.HoareTemplate
+public import Strata.DL.Imperative.Analysis.DefinitionsProps
+public import Strata.DL.Imperative.Logic.TerminationProps
 import all Strata.Transform.Specification
 import all Strata.DL.Imperative.Logic.HoareTemplate
 import all Strata.DL.Imperative.CmdSemantics
@@ -49,6 +51,18 @@ Canonical event-trace overapproximation properties:
   for two stages sharing a transitive trace relation `R` back to the single `R`.
 - `overapproximatesTraces_stmts` — lift per-statement trace overapproximation to
   statement lists when the trace relation relates `[]` and respects append.
+- `Analysis.NoFailureVerifier.of_overapproximates` /
+  `Analysis.NoFailureVerifier.of_overapproximatesUptoWhen` — a verifier sound for
+  the target, after an overapproximating transformation, is sound for the
+  source; `Analysis.NoFailureVerifier.runTransforms_of_overapproximates` and
+  `Analysis.NoFailureVerifier.runTransforms_of_overapproximatesUpto` lift this
+  to a pipeline of phases.
+- `OverapproximatesTracesUptoWhen.runsOverapproximate` — trace overapproximation
+  is overapproximation of runs up to the same trace relation, which carries
+  deductive-verification verdicts back to the source when the relation reflects
+  validity.
+- `OverapproximatesTracesUptoWhen.terminatesAt` — a finishing source run has a
+  finishing target run with related final environment and trace.
 
 Properties of the `Overapproximates` family (monotonicity and composition):
 
@@ -1992,7 +2006,149 @@ theorem overapproximatesTraces_stmts
 
 end TracedStructuredStmts
 
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **Trace overapproximation gives overapproximation of runs**, up to the same
+    trace relation. Bounded paths are finite executions, so each source path has
+    a related target path. -/
+theorem OverapproximatesTracesUptoWhen.runsOverapproximate
+    {EventT : Type} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {L₁ L₂ : Strata.Logic.EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop} {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hover : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂)
+    {st : L₁.StmtT} {st' : L₂.StmtT} (hT : T st = some st') (hpre : pre st)
+    {ρ₀ ρ₀' : Env P} (hin : Rin ρ₀ ρ₀') (hwf : L₁.initEnvWF params₁ st ρ₀) :
+    L₁.RunsOverapproximate Rtrace L₂ (L₁.stmtCfg st ρ₀) (L₂.stmtCfg st' ρ₀') := by
+  intro n trace c h
+  obtain ⟨c', trace', h', hrel⟩ := (hover st st' hT hpre ρ₀ ρ₀' hin hwf).1 c trace
+    (Strata.Logic.EventLang.traceStar_iff_reachesWithin.mpr ⟨n, h⟩)
+  obtain ⟨m, hm⟩ := Strata.Logic.EventLang.traceStar_iff_reachesWithin.mp h'
+  exact ⟨m, trace', c', hm, hrel⟩
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **Trace overapproximation preserves termination forward**: a source run that
+    finishes, normally or by an exit, has a target run that finishes the same
+    way, with a related final environment and trace. So a target with no
+    finishing run has a source with none. -/
+theorem OverapproximatesTracesUptoWhen.terminatesAt
+    {EventT : Type} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {L₁ L₂ : Strata.Logic.EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop} {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    (hover : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂)
+    {st : L₁.StmtT} {st' : L₂.StmtT} (hT : T st = some st') (hpre : pre st)
+    {ρ₀ ρ₀' : Env P} (hin : Rin ρ₀ ρ₀') (hwf : L₁.initEnvWF params₁ st ρ₀)
+    {trace : List EventT} {ρ' : Env P} (h : L₁.TerminatesAt st ρ₀ trace ρ') :
+    ∃ ρ'' trace', L₂.TerminatesAt st' ρ₀' trace' ρ'' ∧ Rout ρ' ρ'' ∧ Rtrace trace trace' := by
+  obtain ⟨_, hterm, hexit, _⟩ := hover st st' hT hpre ρ₀ ρ₀' hin hwf
+  rcases h with h | ⟨lbl, h⟩
+  · obtain ⟨ρ'', trace', h', hout, hrel⟩ := hterm ρ' trace h
+    exact ⟨ρ'', trace', .inl h', hout, hrel⟩
+  · obtain ⟨ρ'', trace', h', hout, hrel⟩ := hexit lbl ρ' trace h
+    exact ⟨ρ'', trace', .inr ⟨lbl, h'⟩, hout, hrel⟩
+
 end Transform
+
+/-! ## Verification pipelines over failure-flag semantics -/
+
+namespace Analysis
+
+open Transform Imperative.Analysis
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **A verifier after a transformation that overapproximates up to state
+    relations is sound** on the source, from every well-formed entry environment
+    that satisfies the precondition and is related to some target entry
+    environment. A source failure gives a target failure from the related
+    environment, which the verifier rules out. -/
+theorem NoFailureVerifier.of_overapproximatesUptoWhen
+    {Rin Rout : Relation (Env P)} {L₁ L₂ : Lang P} {T : L₁.StmtT → Option L₂.StmtT}
+    {pre : L₁.StmtT → Prop} {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    {analyze : L₂.StmtT → Bool}
+    (hover : OverapproximatesUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂)
+    (hsound : NoFailureVerifier L₂ (L₂.initEnvWF params₂) analyze) :
+    NoFailureVerifier L₁ (fun s ρ₀ => pre s ∧ L₁.initEnvWF params₁ s ρ₀ ∧ ∃ ρ₀', Rin ρ₀ ρ₀')
+      (thenVerify T analyze) := by
+  intro s hpass ρ₀ ⟨hpre, hwf, ρ₀', hrel⟩ hfail
+  unfold thenVerify at hpass
+  cases hT : T s with
+  | none => rw [hT] at hpass; cases hpass
+  | some s' =>
+    rw [hT] at hpass
+    obtain ⟨_, hf, hwf'⟩ := hover s s' hT hpre ρ₀ ρ₀' hrel hwf
+    exact hsound s' hpass ρ₀' hwf' (hf hfail)
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **A verifier after an overapproximating transformation is sound** on the
+    source, from every well-formed entry environment. -/
+theorem NoFailureVerifier.of_overapproximates
+    {L₁ L₂ : Lang P} {T : L₁.StmtT → Option L₂.StmtT}
+    {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
+    {analyze : L₂.StmtT → Bool}
+    (hover : Overapproximates L₁ L₂ T params₁ params₂)
+    (hsound : NoFailureVerifier L₂ (L₂.initEnvWF params₂) analyze) :
+    NoFailureVerifier L₁ (L₁.initEnvWF params₁) (thenVerify T analyze) :=
+  fun s hpass ρ₀ hwf =>
+    NoFailureVerifier.of_overapproximatesUptoWhen hover hsound s hpass ρ₀ ⟨trivial, hwf, ρ₀, rfl⟩
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- Verifying after a list of transformations is verifying after the first, of
+    verifying after the rest. -/
+private theorem thenVerify_runTransforms_cons {L : Lang P} (T : L.StmtT → Option L.StmtT)
+    (rest : List (L.StmtT → Option L.StmtT)) (analyze : L.StmtT → Bool) :
+    thenVerify (runTransforms (T :: rest)) analyze =
+      thenVerify T (thenVerify (runTransforms rest) analyze) := by
+  funext s
+  simp only [thenVerify, runTransforms]
+  cases T s <;> rfl
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **A verification pipeline of overapproximating phases is sound**: if every
+    phase overapproximates and the final verifier is sound, running the phases
+    and then the verifier is sound, from every well-formed entry environment. -/
+theorem NoFailureVerifier.runTransforms_of_overapproximates
+    {L : Lang P} {params : L.InitEnvWFParamsTy} {analyze : L.StmtT → Bool} :
+    ∀ phases : List (L.StmtT → Option L.StmtT),
+      (∀ T ∈ phases, Overapproximates L L T params params) →
+      NoFailureVerifier L (L.initEnvWF params) analyze →
+      NoFailureVerifier L (L.initEnvWF params) (thenVerify (runTransforms phases) analyze)
+  | [], _, hsound => fun s hpass => hsound s hpass
+  | T :: rest, hphases, hsound => by
+    rw [thenVerify_runTransforms_cons]
+    exact NoFailureVerifier.of_overapproximates (hphases T (List.mem_cons_self ..))
+      (NoFailureVerifier.runTransforms_of_overapproximates rest
+        (fun T' h => hphases T' (List.mem_cons_of_mem _ h)) hsound)
+
+omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+  [HasSubstFvar P] [HasInt P] [HasIntOps P] in
+/-- **A verification pipeline of phases that overapproximate up to state
+    relations is sound**, when each phase's input relation relates every source
+    entry environment to some target one: running the phases and then a sound
+    verifier is sound, from every well-formed entry environment. -/
+theorem NoFailureVerifier.runTransforms_of_overapproximatesUpto
+    {L : Lang P} {params : L.InitEnvWFParamsTy} {analyze : L.StmtT → Bool} :
+    ∀ phases : List (L.StmtT → Option L.StmtT),
+      (∀ T ∈ phases, ∃ Rin Rout : Relation (Env P),
+        OverapproximatesUptoWhen Rin Rout L L T (fun _ => True) params params ∧
+        ∀ ρ₀, ∃ ρ₀', Rin ρ₀ ρ₀') →
+      NoFailureVerifier L (L.initEnvWF params) analyze →
+      NoFailureVerifier L (L.initEnvWF params) (thenVerify (runTransforms phases) analyze)
+  | [], _, hsound => fun s hpass => hsound s hpass
+  | T :: rest, hphases, hsound => by
+    rw [thenVerify_runTransforms_cons]
+    obtain ⟨Rin, Rout, hover, htot⟩ := hphases T (List.mem_cons_self ..)
+    have hrest := NoFailureVerifier.runTransforms_of_overapproximatesUpto rest
+      (fun T' h => hphases T' (List.mem_cons_of_mem _ h)) hsound
+    exact fun s hpass ρ₀ hwf =>
+      NoFailureVerifier.of_overapproximatesUptoWhen hover hrest s hpass ρ₀
+        ⟨trivial, hwf, htot ρ₀⟩
+
+end Analysis
+
 end Specification
 end Imperative
 
