@@ -395,8 +395,8 @@ procedure onlyUnrelated(x: int) returns (r: int)
 #end
 
 -- A type sharing a descendant with the binding type is not unrelated: under
--- multiple inheritance an `A` may be a `D`, which is a `B`, so the test may be true.
--- It is rejected rather than lowered to `false`.
+-- multiple inheritance an `A` may be a `D`, which is a `B`, so the test is kept and
+-- catches the `D`.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -405,17 +405,58 @@ composite B {}
 composite D extends A, B {}
 procedure commonDescendant() returns (r: int)
   opaque
-  ensures r == 0
+  ensures r == 1
 {
   r := 0;
-  { try {
-      var a: A := new D;
-      throw a
-    } catch c when c is B {
-//                 ^ error: cannot test unrelated type 'A' against 'B'
-      r := 1
-    } finally { exit L }
-  } L
+  try {
+    var a: A := new D;
+    throw a
+  } catch c when c is B {
+    r := 1
+  }
+};
+#end
+
+-- A `C` escapes a `try` whose exception type is `B` into a `throws A` procedure: the
+-- two exception variables are copied through a cast, so the escaping `C` arrives.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite B {}
+composite B2 extends B {}
+composite C extends A, B {}
+procedure escapesThroughSharedDescendant(pick: bool)
+  throws (e: A)
+  opaque
+  throwsOn pick {
+    ensures e is C
+  }
+{
+  var c: C := new C;
+  var b2: B2 := new B2;
+  try {
+    if pick then { throw c } else { throw b2 }
+  } catch e when e is B2 {
+    assert true
+  }
+};
+
+procedure escapesThroughSharedDescendantFalse(pick: bool)
+  throws (e: A)
+  opaque
+  throwsOn pick {
+    ensures !(e is C)
+//          ^^^^^^^^^ error: postcondition could not be proved
+  }
+{
+  var c: C := new C;
+  var b2: B2 := new B2;
+  try {
+    if pick then { throw c } else { throw b2 }
+  } catch e when e is B2 {
+    assert true
+  }
 };
 #end
 

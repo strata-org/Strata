@@ -88,6 +88,20 @@ procedure diamondInheritance()
   assert b is Bottom
 };
 
+// A `Left` may be a `Bottom`, so testing it against, and casting it to, `Right` is allowed.
+procedure crossCast()
+  opaque
+{
+  var l: Left := new Bottom;
+  assert l is Right;
+  var r: Right := l as Right;
+  assert r is Bottom;
+  var m: Left := new Left;
+  assert !(m is Right);
+  var s: Right := m as Right
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+};
+
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
 //procedure typedParameter(b: Bottom) opaque {
 //  var b: Bottom := b;
@@ -504,5 +518,29 @@ procedure concreteChildUpcastFalse()
   var got: int := b#val;
   assert got == 6
 //^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- A `BoxI<int>` may be a `TaggedBox`, which is a `Tag`, so the two can be tested against and cast
+-- to each other.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite BoxI<T> { var val: T }
+composite Tag {}
+composite TaggedBox extends BoxI<int>, Tag {}
+
+procedure crossCastWithMonomorph()
+  entry
+  opaque
+  modifies *
+{
+  var b: BoxI<int> := new TaggedBox;
+  assert b is Tag;
+  var t: Tag := b as Tag;
+  var u: Tag := new TaggedBox;
+  var c: BoxI<int> := u as BoxI<int>;
+  var v: Tag := new Tag;
+  assert !(v is BoxI<int>)
 };
 #end

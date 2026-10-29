@@ -4134,7 +4134,7 @@ def castTargetRejection? (op : String) (ctx : TypeLattice) (ty : HighTypeMd) : O
 /-- (AsType)
     ```
     Γ ⊢ target ⇒ U
-    U ~ T  ∨  U <: T  ∨  T <: U
+    U ~ T  ∨  U <: T  ∨  T <: U  ∨  ∃ D. D <: U ∧ D <: T  (D a non-generic composite)
     ──────────────────────────────────────────────
     Γ ⊢ AsType target T ⇒ T
     ```
@@ -4143,10 +4143,11 @@ def castTargetRejection? (op : String) (ctx : TypeLattice) (ty : HighTypeMd) : O
     consistent after unfolding aliases/constrained types (e.g. `5 as Int`
     where `Int` is a wrapper over `int`), or a subtype in either
     direction (downcast `animal as Cat` when `Cat extends Animal`,
-    upcast `cat as Animal`). Sibling casts (`Dog as Cat`) and casts
-    between unrelated primitives (`"hi" as int`) are rejected. The
-    synthesized type is `T` — the user's claim is honored once the
-    relation check passes.
+    upcast `cat as Animal`), or a non-generic composite descends from
+    both (multiple inheritance, so an `A` may be a `B`). Sibling casts
+    (`Dog as Cat`) and casts between unrelated primitives (`"hi" as int`)
+    are rejected. The synthesized type is `T` — the user's claim is
+    honored once the relation check passes.
 
     `is`/`as` are supported only for COMPOSITE targets (see
     `castTargetRejection?`); a target not known to be one is rejected up front. -/
@@ -4160,7 +4161,7 @@ def Synth.asType (exprMd : StmtExprMd)
   if let some msg := castTargetRejection? "as" ctx ty' then
     let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
-  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  else unless ctx.mayBeBoth targetTy ty' do
     let diag := diagnosticFromSource target.source
       s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
@@ -4174,7 +4175,7 @@ def Synth.asType (exprMd : StmtExprMd)
 /-- (IsType)
     ```
     Γ ⊢ target ⇒ U
-    U ~ T  ∨  U <: T  ∨  T <: U
+    U ~ T  ∨  U <: T  ∨  T <: U  ∨  ∃ D. D <: U ∧ D <: T  (D a non-generic composite)
     ──────────────────────────────────────────────
     Γ ⊢ IsType target T ⇒ TBool
     ```
@@ -4191,15 +4192,13 @@ def Synth.isType (exprMd : StmtExprMd)
   if let some msg := castTargetRejection? "is" ctx ty' then
     let diag := diagnosticFromSource ty.source msg
     modify fun s => { s with errors := s.errors.push diag }
-  else unless isConsistentSubtype ctx targetTy ty' || isConsistentSubtype ctx ty' targetTy do
+  else unless ctx.mayBeBoth targetTy ty' do
     -- In a `catch` guard, testing the caught exception against an unrelated type
     -- is legitimate (a Java multi-catch names an unchecked type the `try` body
     -- never throws): the test is simply never true, and `EliminateExceptions`
     -- lowers it to `false`. It is accepted silently: front ends emit such guards
     -- for valid source programs, so any diagnostic would surface to their users as
-    -- a spurious report. A type sharing a descendant with the binding's type
-    -- (multiple inheritance) is still rejected: the test may be true there, so it
-    -- cannot be lowered to `false`.
+    -- a spurious report.
     let isCaughtBinding := match target'.val, (← get).catchGuardBinding with
       | .Var (.Local ref), some bid => ref.uniqueId == some bid
       | _, _ => false
@@ -5883,17 +5882,16 @@ private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
     `EliminateExceptions` gives each `try` an exception variable typed at its
     least-common-ancestor type `ti`, and on the escaping edge copies it into the
     enclosing region's variable, typed `tp`: a widening when `ti <: tp`, an assumed
-    checked downcast when `tp <: ti`. When the two are unrelated there is no legal
-    copy at all — even `ti as tp` is rejected as a cast between unrelated types — so
-    the lowering emits nothing and the enclosing variable is left unassigned, which
+    checked cast when `tp <: ti` or the two `shareDescendant`. Otherwise the
+    lowering emits no copy and the enclosing variable is left unassigned, which
     then fails the procedure's own `throwsOn` case with a misleading *postcondition
     could not be proved*.
 
-    Under single inheritance that case cannot arise with anything actually escaping.
-    But a composite may extend several parents, and then a common subtype of two
-    otherwise unrelated types can legally escape: with `composite C extends A, B`, a
-    `try` whose types join at `B`, inside a `throws A` procedure, escapes a `C`.
-    Reject that shape here instead of lowering it into an unassigned variable.
+    Only a common subtype of `ti` and `tp` can escape such an edge, and one that is
+    not shared is generic: with `composite D<T> extends A, B`, a `try` whose types
+    join at `B`, inside a `throws A` procedure, escapes a `D<int>`. `shareDescendant`
+    cannot count `D`, so reject that shape here rather than risk an unassigned
+    variable.
 
     `parentTy` is the type of the region the statement propagates into — the
     enclosing `try`'s binding type, or the procedure's declared `throws` type at the
@@ -5910,9 +5908,10 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
       match thisTy, parentTy with
       | some ti, some tp =>
         if !(exceptionEscapes model lattice stmt).isEmpty
-            && !isSubtype lattice ti tp && !isSubtype lattice tp ti then
+            && !isSubtype lattice ti tp && !isSubtype lattice tp ti
+            && !lattice.shareDescendant ti tp then
           [diagnosticFromSource stmt.source
-            s!"an exception escaping this `try` is not yet supported here: the `try`'s exception type '{formatType ti}' is unrelated to '{formatType tp}', the type it must propagate into, so the lowering has no legal copy between the two (this can happen when a composite extends several parents). Catch it inside the `try`, or relate the two types."
+            s!"an exception escaping this `try` is not yet supported here: the `try`'s exception type '{formatType ti}' is unrelated to '{formatType tp}', the type it must propagate into, so the lowering has no legal copy between the two (this can happen when only a generic composite extends both). Catch it inside the `try`, or relate the two types."
             MessageKind.notYetImplemented]
         else []
       | _, _ => []

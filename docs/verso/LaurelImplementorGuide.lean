@@ -525,8 +525,8 @@ A `catch` guard may test its binding against a type unrelated to the binding's t
 what the `try` body throws), as a Java multi-catch arm for an unchecked exception does. Resolution
 accepts it there, and the pass lowers the test to `false`. A type that shares a descendant with the
 binding's type (multiple inheritance, `composite D extends A, B`) is not unrelated, so that test is
-still rejected. A clause whose guard is such a test, or a disjunction of them, is dead, and
-resolution discards its body unresolved, so a front end that reads the binding at the arm's type
+kept. A clause whose guard is an unrelated test, or a disjunction of them, is dead, and resolution
+discards its body unresolved, so a front end that reads the binding at the arm's type
 (`c as T`) is not rejected for casting between unrelated types there. Any other guard shape — `false`,
 a conjunction — keeps its body resolved.
 

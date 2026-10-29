@@ -2189,6 +2189,10 @@ procedure classify(s: Shape): bool
 `x as T` behaves like a checked narrowing — it asserts `x is T` and then has static type `T`, so
 a cast that cannot be justified is a verification failure rather than a runtime one.
 
+The two types must be related: one a subtype of the other, or both extended by some non-generic
+composite. A `Shape` may be a `Circle`, which is a `Colored`, so `s is Colored` and `s as Colored`
+are allowed; a test or cast between unrelated types is rejected.
+
 Fields are inherited through the declared parent graph. If the same field name reaches a child
 along two different paths, accessing it is rejected as ambiguous unless the child declares its
 own field with that name.
@@ -2467,10 +2471,8 @@ A guard may test the binding against a type unrelated to the binding's type, as 
 Java multi-catch arm for an unchecked exception the body never throws does:
 `catch e when e is StateError || e is NotFound`. Such a test can never be true, so
 it is accepted and treated as `false`, and the other tests in the guard still
-catch. A type that shares a descendant with the binding's type (with
-`composite D extends A, B`, an `A` may be a `D`, which is a `B`) is not unrelated,
-and testing against it is still an error. A clause whose guard is only such tests,
-or a disjunction of them, can never catch: its body is not checked.
+catch. A clause whose guard is only such tests, or a disjunction of them, can never
+catch: its body is not checked.
 
 A frontend that needs to catch values with no useful common ancestor — unrelated
 types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a

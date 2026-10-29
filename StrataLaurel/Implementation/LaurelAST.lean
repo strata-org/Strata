@@ -2169,10 +2169,28 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
 
+/-- Whether some non-generic composite is a subtype of both `a` and `b`, neither of which
+    mentions a type variable. Monomorphization drops a generic composite that is never
+    instantiated and may instantiate a `Box<T>` at a `T` the descendant does not extend,
+    and re-resolution would then reject what this accepted. -/
+def TypeLattice.shareDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  !mentionsTVar a.val && !mentionsTVar b.val &&
+    ctx.parentExprMap.toList.any fun (name, (params, _)) =>
+      let d : HighTypeMd := { val := .UserDefined name, source := .unknown }
+      params.isEmpty && isSubtype ctx d a && isSubtype ctx d b
+
+/-- Whether a value of type `a` may also be a `b`: one is a (consistent) subtype of the
+    other, or they `shareDescendant`. A gradual (`Unknown`) type is related to
+    everything. -/
+def TypeLattice.mayBeBoth (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  isConsistentSubtype ctx a b || isConsistentSubtype ctx b a || ctx.shareDescendant a b
+
 /-- Whether `ty` is unrelated to a `catch` binding's type `bindTy`: neither is a
     (consistent) subtype of the other and no composite descends from both, so the
     caught exception can never be a `ty`. A gradual (`Unknown`) binding type is
-    related to everything. -/
+    related to everything. Unlike `mayBeBoth`, it also counts generic descendants and
+    ignores type arguments: it over-approximates, so a test that may hold is never folded
+    to `false`. -/
 def TypeLattice.unrelatedToCatchBinding (ctx : TypeLattice) (bindTy ty : HighTypeMd) : Bool :=
   !isConsistentSubtype ctx bindTy ty && !isConsistentSubtype ctx ty bindTy
     && !ctx.haveCommonDescendant bindTy ty

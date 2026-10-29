@@ -52,9 +52,9 @@ namespace.
 Because each `$exc_<i>` is typed at the `try`'s LCA, a `catch` handler's
 `e#field` type-checks against that supertype with no downcast. Propagating an
 exception out of a `try` into an enclosing region whose `$exc` is a *narrower*
-type inserts an assumed checked downcast (`assume e is T; … as T`) — sound
-because resolution's escape/residual analysis already proved only types `<: T`
-escape.
+type, or one a composite also extends, inserts an assumed checked cast
+(`assume e is T; … as T`) — sound because resolution's escape/residual analysis
+already proved only types `<: T` escape.
 
 - `throw v`  →  `$exc := v; $thrown := true; exit <nearest try | $exnexit>`.
 - `try B catch eᵢ when Pᵢ { Hᵢ } … finally { F }`  →  two nested labeled blocks
@@ -306,10 +306,9 @@ private def localOccursById (targetId : Nat) (e : StmtExprMd) : Bool :=
     in a guard: the caught exception is typed at the join of what
     the `try` body throws, so it can never be a `T` (a Java multi-catch may name an
     unchecked type the body never throws). A type sharing a descendant with `bindTy`
-    is not unrelated (the exception may be that descendant), and Resolution rejects
-    such a test, so it is never folded. Afterwards the guard no longer tests the
-    in-flight exception variable against an unrelated type, which re-resolution
-    would reject. -/
+    is not unrelated (the exception may be that descendant), so such a test is never
+    folded. Afterwards the guard no longer tests the in-flight exception variable
+    against an unrelated type, which re-resolution would reject. -/
 private def falsifyUnrelatedTests (lattice : TypeLattice) (bindingId : Nat)
     (bindTy : HighTypeMd) (p : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun n => match n.val with
@@ -886,15 +885,12 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- exception edge, copy this try's `$exc` into the enclosing region's `$exc`,
   -- relating this try's LCA `ti` to the enclosing type `tp`:
   --   * `ti <: tp` — plain copy (the residual widens to a supertype).
-  --   * `tp <: ti` — assumed checked downcast (`assume … is tp; … as tp`), sound
-  --     because the residual analysis proved only types `<: tp` actually escape.
-  --   * unrelated — no copy is emitted, because none is well-typed (even
-  --     `vi as tp` is rejected as a cast between unrelated types). Reaching this
-  --     edge with something actually escaping needs a common subtype of `ti` and
-  --     `tp`, which only multiple inheritance can produce (`composite C extends
-  --     A, B`); resolution rejects that shape up front in
-  --     `checkPropagationEdges`, so what is left here is the dead case: nothing
-  --     can escape this try into `tp`.
+  --   * `tp <: ti`, or a composite extends both — assumed checked cast
+  --     (`assume … is tp; … as tp`), sound because the residual analysis proved
+  --     only types `<: tp` actually escape.
+  --   * neither — no copy is emitted. Nothing can escape this try into `tp`:
+  --     it would be a common subtype of the two, and resolution rejects a
+  --     generic one up front in `checkPropagationEdges`.
   -- A finally-only try shares the enclosing `$exc` (same variable), so no copy.
   let thrownExit := ((innerTry saved).map (·.throwLabel)).getD exnExitLabel
   let returnExit := ((innerTry saved).map (·.finallyLabel)).getD exnExitLabel
@@ -904,7 +900,7 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     | some (vi, ti), some (vp, tp) =>
         if vi == vp then []
         else if isSubtype lattice ti tp then [ setLocal vp (localRef vi) ]
-        else if isSubtype lattice tp ti then
+        else if isSubtype lattice tp ti || lattice.shareDescendant ti tp then
           [ assumeOf (isTypeOf (localRef vi) tp), setLocal vp (asTypeOf (localRef vi) tp) ]
         else []
     | _, _ => []
